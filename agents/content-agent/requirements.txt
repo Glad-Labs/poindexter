@@ -2,8 +2,13 @@ crewai
 crewai_tools
 google-cloud-aiplatform
 google-cloud-firestore
-google-cloud-pubsub
+google-cloud-storage
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+google-generativeai
+beautifulsoup4
 pydantic
 python-dotenv
 requests
-python-wordpress-xmlrpc
+markdown

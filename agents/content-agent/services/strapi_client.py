@@ -1,8 +1,12 @@
 import requests
 import json
+import logging
 from config import config
 from utils.data_models import StrapiPost
 from typing import Optional
+import os
+
+logger = logging.getLogger(__name__)
 
 class StrapiClient:
     """
@@ -18,9 +22,33 @@ class StrapiClient:
             raise ValueError("STRAPI_API_URL and STRAPI_API_TOKEN must be set in the environment.")
         self.headers = {
             "Authorization": f"Bearer {self.api_token}",
-            "Content-Type": "application/json"
         }
         print("Strapi client initialized.")
+
+    def upload_image(self, file_path: str, alt_text: str, caption: str) -> Optional[int]:
+        """
+        Uploads an image to the Strapi media library.
+
+        Args:
+            file_path (str): The local path to the image file.
+            alt_text (str): The alt text for the image.
+            caption (str): The caption for the image.
+
+        Returns:
+            Optional[int]: The ID of the uploaded image in Strapi, or None on failure.
+        """
+        upload_url = f"{self.api_url}/upload"
+        try:
+            with open(file_path, 'rb') as f:
+                files = {'files': (os.path.basename(file_path), f, 'image/jpeg')}
+                data = {'fileInfo': json.dumps({'alternativeText': alt_text, 'caption': caption})}
+                response = requests.post(upload_url, headers={"Authorization": f"Bearer {self.api_token}"}, files=files, data=data)
+                response.raise_for_status()
+                logger.info(f"Successfully uploaded image {file_path} to Strapi.")
+                return response.json()[0]['id']
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error uploading image to Strapi: {e}")
+            return None
 
     def create_post(self, post_data: StrapiPost) -> Optional[dict]:
         """
@@ -34,22 +62,19 @@ class StrapiClient:
         """
         posts_url = f"{self.api_url}/posts"
         
-        # The Pydantic model is converted to a dictionary.
-        # The `by_alias=True` ensures the keys match Strapi's field names.
-        # The `exclude_none=True` prevents sending empty fields.
         payload = {
             "data": post_data.model_dump(by_alias=True, exclude_none=True)
         }
 
         try:
-            response = requests.post(posts_url, headers=self.headers, data=json.dumps(payload))
-            response.raise_for_status()  # Raises an HTTPError for bad responses (4xx or 5xx)
-            print(f"Successfully created post draft in Strapi. Post ID: {response.json()['data']['id']}")
+            headers = self.headers.copy()
+            headers["Content-Type"] = "application/json"
+            response = requests.post(posts_url, headers=headers, data=json.dumps(payload))
+            response.raise_for_status()
+            logger.info(f"Successfully created post draft in Strapi. Post ID: {response.json()['data']['id']}")
             return response.json()
         except requests.exceptions.RequestException as e:
-            print(f"Error creating post in Strapi: {e}")
-            # In a real application, you might want to handle different error types
-            # or implement retry logic here.
+            logger.error(f"Error creating post in Strapi: {e}")
             return None
 
 # Example of how to use the client

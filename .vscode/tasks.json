@@ -1,0 +1,38 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Start Strapi Dev Server",
+      "type": "shell",
+      "command": "npm run develop",
+      "options": {
+        // IMPORTANT: Update this path to your actual Strapi project directory
+        "cwd": "${workspaceFolder}/cms/strapi-cms" 
+      },
+      "presentation": {
+        "group": "dev",
+        "panel": "new",
+        "reveal": "always"
+      },
+      "runOptions": {
+        "runOn": "folderOpen"
+      }
+    },
+    {
+      "label": "Open Agent Terminal",
+      "type": "shell",
+      "command": "echo 'Python agent terminal ready. Environment activated.'",
+      "options": {
+        "cwd": "${workspaceFolder}/agents/content-agent"
+      },
+      "presentation": {
+        "group": "dev",
+        "panel": "new",
+        "reveal": "always"
+      },
+      "runOptions": {
+        "runOn": "folderOpen"
+      }
+    }
+  ]
+}
