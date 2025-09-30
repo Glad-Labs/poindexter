@@ -10,6 +10,7 @@ from utils.data_models import BlogPost, ImageDetails, ContentGenerationError, QA
 from utils.helpers import load_prompts_from_file # Import the new helper
 from config import MAX_IMAGE_GEN_ATTEMPTS, MAX_IMAGE_METADATA_ATTEMPTS, MAX_CONTENT_GEN_ATTEMPTS # Updated import
 import utils.logging_config as log_utils # FIX: Import logging_config
+from crewai import Agent
 
 logger = logging.getLogger(__name__)
 prompts_logger = log_utils.prompts_logger # FIX: Use imported logger
@@ -208,3 +209,21 @@ class CreativeAgent:
         else:
             logging.error("Failed to refine image assets. The local LLM did not return a valid correction.")
             return None
+
+def create_creative_agent():
+    """
+    Creates the Creative Agent.
+    This agent is responsible for generating initial ideas and content drafts.
+    """
+    return Agent(
+        role='Senior Content Strategist',
+        goal='Generate a compelling and original topic for a blog post about the future of AI in business.',
+        backstory=(
+            "You are a visionary content strategist with a deep understanding of technology trends. "
+            "Your expertise lies in identifying breakthrough topics that captivate audiences and "
+            "establish thought leadership. You are known for your creative flair and ability to "
+            "translate complex concepts into engaging narratives."
+        ),
+        verbose=True,
+        allow_delegation=False
+    )

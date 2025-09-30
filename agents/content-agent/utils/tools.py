@@ -1,72 +1,54 @@
+import json
 from crewai_tools import BaseTool
-from typing import Type
-from pydantic import BaseModel, Field
-import logging
+from services.strapi_client import StrapiClient
+from utils.data_models import StrapiPost
 
-from utils.data_models import BlogPost
-from agents.creative_agent import CreativeAgent
-from agents.image_agent import ImageAgent
-from agents.qa_agent import QAAgent
-from agents.editing_agent import EditingAgent
+class StrapiPublishTool(BaseTool):
+    name: str = "Strapi Publisher"
+    description: str = "Creates a new draft post in the Strapi CMS from a JSON object containing a headline and summary."
 
-class SharedState:
-    """A simple class to hold the shared BlogPost object."""
-    def __init__(self, post: BlogPost):
-        self.post = post
+    def _run(self, argument: str) -> str:
+        """
+        The main execution method for the tool.
+        """
+        try:
+            strapi_client = StrapiClient()
+            
+            # Parse the JSON output from the previous task
+            content_data = json.loads(argument)
+            headline = content_data.get('headline')
+            summary = content_data.get('refined_summary')
 
-class BlogPostToolInput(BaseModel):
-    """Dummy input model for our tools, as CrewAI requires one."""
-    topic: str = Field(description="The main topic of the blog post.")
+            if not headline or not summary:
+                return "Error: The provided content is missing a headline or summary."
 
-class ContentCreationTool(BaseTool):
-    name: str = "Content Creation Tool"
-    description: str = "Generates the initial draft, title, tags, and image metadata for a blog post."
-    args_schema: Type[BaseModel] = BlogPostToolInput
-    creative_agent: CreativeAgent
-    shared_state: SharedState
+            # Create a slug from the headline
+            slug = headline.lower().replace(' ', '-').replace(':', '').replace('"', '')
 
-    def _run(self, topic: str) -> str:
-        logging.info("CrewAI Tool: Running Content Creation")
-        self.shared_state.post = self.creative_agent.run(self.shared_state.post)
-        return "Content draft and metadata have been successfully generated."
+            # Structure the body content for Strapi's Rich Text editor
+            body_content = [{
+                "type": "paragraph",
+                "children": [{"type": "text", "text": summary}]
+            }]
 
-class ImageProcessingTool(BaseTool):
-    name: str = "Image Processing Tool"
-    description: str = "Generates or fetches images, uploads them to cloud storage, and updates the post content with public image URLs."
-    args_schema: Type[BaseModel] = BlogPostToolInput
-    image_agent: ImageAgent
-    shared_state: SharedState
+            # Create the post object using the Pydantic model for validation
+            post_to_create = StrapiPost(
+                Title=headline,
+                Slug=slug,
+                BodyContent=body_content,
+                Author="Content Agent v1"
+            )
 
-    def _run(self, topic: str) -> str:
-        logging.info("CrewAI Tool: Running Image Processing")
-        self.shared_state.post = self.image_agent.run(self.shared_state.post)
-        return "Images have been processed and uploaded. The post content is updated with public URLs."
+            # Call the Strapi client to create the post
+            response = strapi_client.create_post(post_to_create)
 
-class QAReviewTool(BaseTool):
-    name: str = "Quality Assurance Review Tool"
-    description: str = "Performs a final quality check on the content and images. Returns an approval status."
-    args_schema: Type[BaseModel] = BlogPostToolInput
-    qa_agent: QAAgent
-    shared_state: SharedState
+            if response:
+                post_id = response.get('data', {}).get('id')
+                return f"Successfully created draft post in Strapi with ID: {post_id}"
+            else:
+                return "Error: Failed to create post in Strapi."
 
-    def _run(self, topic: str) -> str:
-        logging.info("CrewAI Tool: Running QA Review")
-        is_approved = self.qa_agent.run(self.shared_state.post)
-        if is_approved:
-            return "QA PASSED. The post is approved for the next step."
-        else:
-            reason = self.shared_state.post.qa_review.rejection_reason if self.shared_state.post.qa_review else "No reason provided."
-            # Raise an exception to stop the CrewAI process
-            raise Exception(f"QA FAILED: {reason}")
-
-class EditingTool(BaseTool):
-    name: str = "Final Editing Tool"
-    description: str = "Performs final edits on the post content, such as fixing grammar and formatting."
-    args_schema: Type[BaseModel] = BlogPostToolInput
-    editing_agent: EditingAgent
-    shared_state: SharedState
-
-    def _run(self, topic: str) -> str:
-        logging.info("CrewAI Tool: Running Final Editing")
-        self.shared_state.post = self.editing_agent.run(self.shared_state.post)
-        return "Final edits have been applied to the post."
+        except json.JSONDecodeError:
+            return "Error: Invalid JSON format in the input content."
+        except Exception as e:
+            return f"An unexpected error occurred: {e}"

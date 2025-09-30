@@ -3,6 +3,7 @@ import re
 import os
 from markdown import markdown
 from utils.data_models import BlogPost
+from crewai import Agent
 
 IMAGE_PLACEHOLDER_COMMENT = "<!-- image_placeholder_{i} -->"
 
@@ -48,3 +49,20 @@ class EditingAgent:
             logging.warning("No [IMAGE] placeholders were found in the content to be replaced.")
             
         return content_with_placeholders
+
+def create_editing_agent():
+    """
+    Creates the Editing Agent.
+    This agent refines content for clarity, style, and accuracy.
+    """
+    return Agent(
+        role='Expert Technical Editor',
+        goal='Review the generated blog post topic, ensuring it is clear, concise, and grammatically perfect. Add a compelling headline.',
+        backstory=(
+            "You are a meticulous editor with a sharp eye for detail. You specialize in technology content, "
+            "ensuring that every piece is not only well-written but also technically accurate. "
+            "Your mission is to elevate content from good to great, polishing it to a professional standard."
+        ),
+        verbose=True,
+        allow_delegation=False
+    )

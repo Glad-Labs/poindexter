@@ -1,66 +1,70 @@
 import requests
-import logging
-import config
-from typing import Tuple
-from utils.data_models import BlogPost
-
-class StrapiPublishingError(Exception):
-    """Custom exception for Strapi publishing failures."""
-    pass
+import json
+from config import config
+from utils.data_models import StrapiPost
+from typing import Optional
 
 class StrapiClient:
     """
-    Client for interacting with the Strapi Headless CMS API.
+    A client for interacting with the Strapi CMS API.
     """
     def __init__(self):
+        """
+        Initializes the Strapi client with the API URL and token from the config.
+        """
         self.api_url = config.STRAPI_API_URL
         self.api_token = config.STRAPI_API_TOKEN
         if not self.api_url or not self.api_token:
-            raise ValueError("STRAPI_API_URL and STRAPI_API_TOKEN must be set in environment variables.")
+            raise ValueError("STRAPI_API_URL and STRAPI_API_TOKEN must be set in the environment.")
         self.headers = {
             "Authorization": f"Bearer {self.api_token}",
             "Content-Type": "application/json"
         }
-        self.session = requests.Session()
-        self.session.headers.update(self.headers)
+        print("Strapi client initialized.")
 
-    def publish_post(self, post: BlogPost) -> Tuple[int, str]:
+    def create_post(self, post_data: StrapiPost) -> Optional[dict]:
         """
-        Publishes a blog post to Strapi.
+        Creates a new post in Strapi as a draft.
+
+        Args:
+            post_data (StrapiPost): A Pydantic model instance of the post.
+
+        Returns:
+            Optional[dict]: The JSON response from the Strapi API, or None on failure.
         """
-        endpoint = f"{self.api_url}/api/articles"
+        posts_url = f"{self.api_url}/posts"
         
-        # Map BlogPost data to Strapi content type schema
-        # This assumes your Strapi 'article' content type has these field names
-        data = {
-            "data": {
-                "title": post.generated_title,
-                "content": post.edited_content,
-                "slug": post.slug,
-                "meta_description": post.meta_description,
-                "tags": ", ".join(post.tags),
-                "publishedAt": post.timestamp, # Or use None to save as draft
-            }
+        # The Pydantic model is converted to a dictionary.
+        # The `by_alias=True` ensures the keys match Strapi's field names.
+        # The `exclude_none=True` prevents sending empty fields.
+        payload = {
+            "data": post_data.model_dump(by_alias=True, exclude_none=True)
         }
 
         try:
-            logging.info(f"Publishing post '{post.generated_title}' to Strapi.")
-            response = self.session.post(endpoint, json=data)
-            response.raise_for_status()
-            
-            response_data = response.json()
-            post_id = response_data['data']['id']
-            # Construct a placeholder URL, as Strapi API doesn't return the frontend URL
-            post_url = f"https://your-frontend-url.com/blog/{post.slug}" 
-            
-            logging.info(f"Successfully published to Strapi. Post ID: {post_id}")
-            return post_id, post_url
-
+            response = requests.post(posts_url, headers=self.headers, data=json.dumps(payload))
+            response.raise_for_status()  # Raises an HTTPError for bad responses (4xx or 5xx)
+            print(f"Successfully created post draft in Strapi. Post ID: {response.json()['data']['id']}")
+            return response.json()
         except requests.exceptions.RequestException as e:
-            # FIX: Check if response exists before trying to access it
-            error_text = e.response.text if e.response else str(e)
-            logging.error(f"Error publishing to Strapi: {error_text}", exc_info=True)
-            raise StrapiPublishingError(f"Failed to connect to Strapi API: {error_text}")
-        except KeyError as e:
-            logging.error(f"Unexpected response format from Strapi.", exc_info=True)
-            raise StrapiPublishingError(f"Unexpected response from Strapi, missing key: {e}")
+            print(f"Error creating post in Strapi: {e}")
+            # In a real application, you might want to handle different error types
+            # or implement retry logic here.
+            return None
+
+# Example of how to use the client
+if __name__ == '__main__':
+    # This block is for testing purposes.
+    # Ensure you have set the Strapi URL and Token in your .env file.
+    strapi_client = StrapiClient()
+
+    # Create a sample post using the Pydantic model
+    sample_post = StrapiPost(
+        Title="Test Post from Strapi Client",
+        Slug="test-post-from-strapi-client",
+        BodyContent=[{"type": "paragraph", "children": [{"type": "text", "text": "This is a test."}]}],
+        Author="StrapiClientTest"
+    )
+
+    # Call the create_post method
+    strapi_client.create_post(sample_post)

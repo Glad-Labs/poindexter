@@ -67,3 +67,27 @@ class BlogPost(BaseModel):
     strapi_url: str = ""
     log_sheet_row_index: Optional[int] = None
     qa_review: Optional[QAReview] = None
+
+class StrapiPost(BaseModel):
+    """
+    Pydantic model representing the structure of a Post in Strapi.
+    This ensures type safety and validation when interacting with the Strapi API.
+    """
+    title: str = Field(..., alias="Title")
+    slug: str = Field(..., alias="Slug")
+    body_content: List[dict] = Field(..., alias="BodyContent")
+    post_status: str = Field(default="draft", alias="PostStatus")
+    keywords: Optional[str] = Field(default=None, alias="Keywords")
+    meta_description: Optional[str] = Field(default=None, alias="MetaDescription")
+    featured_image: Optional[int] = Field(default=None, alias="FeaturedImage")
+    image_alt_text: Optional[str] = Field(default=None, alias="ImageAltText")
+    author: Optional[str] = Field(default=None, alias="Author")
+
+    class Config:
+        """
+        Pydantic config to allow population by alias.
+        This lets us use Python-friendly snake_case variable names
+        that map to Strapi's PascalCase field names.
+        """
+        allow_population_by_field_name = False
+        populate_by_name = True
