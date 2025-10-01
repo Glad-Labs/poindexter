@@ -1,5 +1,6 @@
-crewai==0.65.0
-crewai_tools==0.5.2
+beautifulsoup4==4.13.4
+crewai
+crewai_tools
 # google-cloud-aiplatform is removed as it's not used and conflicts with google-generativeai
 google-cloud-firestore==2.21.0
 google-cloud-storage==2.19.0
@@ -7,8 +8,7 @@ google-api-python-client==2.183.0
 google-auth-httplib2==0.2.0
 google-auth-oauthlib==1.2.2
 google-generativeai==0.8.4
-pydantic==2.10.1
+pydantic
 python-dotenv==1.0.1
 requests==2.32.3
 markdown==3.6
-beautifulsoup4==4.12.3
