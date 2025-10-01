@@ -11,26 +11,29 @@ class FirestoreClient:
     """
     def __init__(self):
         """
-        Initializes the Firestore client.
-        Uses the project ID from the central config.
+        Initializes the Firestore client using the project ID from the central config.
         """
         self.db = firestore.Client(project=config.GCP_PROJECT_ID)
-        print("Firestore client initialized.")
+        self.collection_name = config.FIRESTORE_COLLECTION
+        logging.info("Firestore client initialized.")
 
     def update_document(self, document_id: str, data: dict):
         """
-        Creates or updates a document in the 'agent_runs' collection.
+        Creates or updates a document in the configured Firestore collection.
+
+        Args:
+            document_id (str): The ID of the document to create or update.
+            data (dict): A dictionary of fields to set or merge.
         """
-        if not self.db:
-            logging.warning("Firestore client not available. Skipping update.")
-            return
         try:
             doc_ref = self.db.collection(self.collection_name).document(document_id)
-            # Use set with merge=True to create or update fields without overwriting the whole doc
-            doc_ref.set(data, merge=True)
-            logging.debug(f"Updated Firestore document '{document_id}' in collection '{self.collection_name}'.")
+            # Add an 'updatedAt' timestamp to every update for better tracking
+            data_with_timestamp = data.copy()
+            data_with_timestamp['updatedAt'] = datetime.utcnow()
+            doc_ref.set(data_with_timestamp, merge=True)
+            logging.info(f"Updated Firestore document '{document_id}'.")
         except Exception as e:
-            logging.error(f"Failed to update Firestore document '{document_id}': {e}", exc_info=True)
+            logging.error(f"Failed to update Firestore document '{document_id}': {e}")
 
     def create_task(self, task_name: str, agent_id: str, priority: int = 3) -> Optional[str]:
         """
@@ -67,24 +70,10 @@ class FirestoreClient:
 
     def update_task_status(self, task_id: str, status: str):
         """
-        Updates the status of a specific task.
-
-        Args:
-            task_id (str): The document ID of the task to update.
-            status (str): The new status ('in_progress', 'completed', 'failed').
+        Updates the status of a specific task document.
+        This is now a convenience wrapper around update_document.
         """
-        if not self.db:
-            logging.warning("Firestore client not available. Skipping task status update.")
-            return
-        try:
-            task_ref = self.db.collection('tasks').document(task_id)
-            task_ref.update({
-                "status": status,
-                "updatedAt": datetime.utcnow()
-            })
-            logging.info(f"Updated task {task_id} status to: {status}")
-        except Exception as e:
-            logging.error(f"Failed to update status for task ID '{task_id}': {e}", exc_info=True)
+        self.update_document(task_id, {"status": status})
 
 # Example of how to use the client
 if __name__ == '__main__':

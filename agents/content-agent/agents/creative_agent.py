@@ -12,12 +12,13 @@ class CreativeAgent:
         self.llm_client = llm_client
         self.prompts = load_prompts_from_file(config.PROMPTS_PATH)
 
-    def run(self, post: BlogPost, is_refinement: bool = False) -> BlogPost:
+    def run(self, post: BlogPost, research_context: str = "", is_refinement: bool = False) -> BlogPost:
         """
-        Generates or refines the blog post content.
+        Generates or refines the blog post content, now with research context.
 
         Args:
             post (BlogPost): The blog post to process.
+            research_context (str): Context from the ResearchAgent's web search.
             is_refinement (bool): If True, runs the refinement process using QA feedback.
                                   Otherwise, generates the initial draft.
         """
@@ -32,7 +33,8 @@ class CreativeAgent:
                 topic=post.topic,
                 primary_keyword=post.primary_keyword,
                 target_audience=post.target_audience,
-                internal_link_titles=", ".join(post.published_posts_map.keys())
+                internal_link_titles=", ".join(post.published_posts_map.keys()),
+                research_context=research_context # Add research context to the prompt
             )
             post.raw_content = self.llm_client.generate_text_content(draft_prompt)
 

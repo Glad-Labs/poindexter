@@ -1,35 +1,36 @@
 import logging
-import config  # Add this import
-import json
 import markdown
 
-from crewai import Agent
-from services.wordpress_client import WordPressClient # FIX: Use absolute import
 from services.strapi_client import StrapiClient
-from utils.data_models import BlogPost, StrapiPost # FIX: Use absolute import
+from utils.data_models import BlogPost, StrapiPost
 from utils.helpers import slugify
 
 logger = logging.getLogger(__name__)
 
 class PublishingAgent:
-    """Handles the final step of publishing the content to WordPress."""
-    def __init__(self):
-        logging.info("Initializing Publishing Agent...")
-        self.wp_client = WordPressClient(
-            url=config.WORDPRESS_URL,
-            username=config.WORDPRESS_USERNAME,
-            password=config.WORDPRESS_PASSWORD
-        )
+    """Handles the final step of formatting and publishing the content to Strapi."""
 
-    def publish_post(self, post_data: BlogPost) -> BlogPost:
+    def __init__(self, strapi_client: StrapiClient):
         """
-        Publishes the given blog post data to WordPress.
-        Delegates the actual publishing logic to the WordPressClient.
+        Initializes the PublishingAgent with a StrapiClient.
+
+        Args:
+            strapi_client: An instance of the StrapiClient service.
         """
-        logging.info(f"PublishingAgent: Attempting to publish '{post_data.topic}'...")
-        return self.wp_client.post_article(post_data)
+        logging.info("Initializing Publishing Agent...")
+        self.strapi_client = strapi_client
 
     def run(self, post: BlogPost) -> BlogPost:
+        """
+        Takes a completed BlogPost object, formats it for Strapi,
+        and uses the StrapiClient to create a new draft post.
+
+        Args:
+            post: The BlogPost object containing the final content.
+
+        Returns:
+            The updated BlogPost object with Strapi ID and URL if successful.
+        """
         if not post.generated_title or not post.raw_content:
             logging.error("PublishingAgent: Post is missing a title or content. Aborting.")
             post.status = "Error"
@@ -38,9 +39,9 @@ class PublishingAgent:
 
         logging.info(f"PublishingAgent: Preparing to publish '{post.generated_title}' to Strapi.")
 
-        # Convert final Markdown to a simple HTML string for the body
-        html_content = markdown.markdown(post.raw_content)
-        body_content = [{"type": "paragraph", "children": [{"type": "text", "text": html_content}]}]
+        # Convert final Markdown to Strapi's Rich Text (Blocks) format.
+        # This is a basic conversion; more complex markdown-to-blocks logic could be added here.
+        body_content = [{"type": "paragraph", "children": [{"type": "text", "text": post.raw_content}]}]
 
         # Get the ID of the first image to use as the featured image
         featured_image_id = post.images[0].strapi_image_id if post.images and post.images[0].strapi_image_id else None
@@ -52,7 +53,8 @@ class PublishingAgent:
             Keywords=", ".join(post.related_keywords),
             MetaDescription=post.meta_description,
             FeaturedImage=featured_image_id,
-            ImageAltText=post.images[0].alt_text if post.images else None
+            ImageAltText=post.images[0].alt_text if post.images else None,
+            PostStatus="draft" # Explicitly set the post status in Strapi
         )
 
         response = self.strapi_client.create_post(strapi_post)
@@ -60,6 +62,7 @@ class PublishingAgent:
             post.strapi_post_id = response['data']['id']
             # Construct a potential frontend URL (adjust if your frontend has a different structure)
             post.strapi_url = f"http://localhost:3000/blog/{response['data']['attributes']['Slug']}"
+            post.status = "Published"
             logging.info(f"Successfully created draft in Strapi with ID: {post.strapi_post_id}")
         else:
             logging.error("Failed to create post in Strapi.")
@@ -67,21 +70,3 @@ class PublishingAgent:
             post.rejection_reason = "Failed to publish to Strapi."
 
         return post
-
-def create_publishing_agent(tool):
-    """
-    Creates the Publishing Agent.
-    This agent is responsible for creating the draft post in Strapi.
-    """
-    return Agent(
-        role='Digital Publishing Specialist',
-        goal='Take the finalized content (headline and summary) and create a new post draft in the Strapi CMS using the provided tool.',
-        backstory=(
-            "You are a detail-oriented publishing specialist who ensures that content is correctly formatted "
-            "and uploaded to the content management system. You are the final gatekeeper before content "
-            "goes live, ensuring all fields are correctly populated."
-        ),
-        tools=[tool], # Assign the tool to the agent
-        verbose=True,
-        allow_delegation=False
-    )

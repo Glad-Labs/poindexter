@@ -1,54 +1,69 @@
 import os
+import logging
 from dotenv import load_dotenv
 
-# Load environment variables from a .env file for local development
-load_dotenv()
+# Set up a basic logger for the config file itself to catch early errors
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class Config:
     """
-    Centralized configuration class for the Glad Labs Content Agent.
-    Loads all settings from environment variables for maximum security and flexibility.
+    Configuration class for the content agent.
+    Loads environment variables and provides them as attributes.
     """
-    # --- Core Identifiers ---
-    GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID")
-    GCP_REGION = os.getenv("GCP_REGION", "us-central1")
+    def __init__(self):
+        # Load environment variables from .env file
+        load_dotenv()
 
-    # --- AI Model Configuration ---
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
-    
-    # --- Service APIs & Keys ---
-    STRAPI_API_URL = os.getenv("STRAPI_API_URL")
-    STRAPI_API_TOKEN = os.getenv("STRAPI_API_TOKEN")
-    PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
-    
-    # --- Google Cloud Services ---
-    GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
-    FIRESTORE_COLLECTION = os.getenv("FIRESTORE_COLLECTION", "agent_runs")
+        # GCP & Gemini
+        self.GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID")
+        self.GCP_REGION = os.getenv("GCP_REGION")
+        self.GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+        self.GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-pro-latest")
 
-    # --- Input/Output Configuration (Google Sheets) ---
-    SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
-    PLAN_SHEET_NAME = os.getenv("PLAN_SHEET_NAME", "Content Plan")
-    LOG_SHEET_NAME = os.getenv("LOG_SHEET_NAME", "Generated Content Log")
+        # Google Sheets
+        self.SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
+        self.PLAN_SHEET_NAME = os.getenv("PLAN_SHEET_NAME", "Content Plan")
+        self.LOG_SHEET_NAME = os.getenv("LOG_SHEET_NAME", "Generated Content Log")
 
-    # --- File Paths ---
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    PROMPTS_PATH = os.path.join(BASE_DIR, "prompts.json")
-    CREDENTIALS_PATH = os.path.join(BASE_DIR, "credentials.json")
-    IMAGE_STORAGE_PATH = os.path.join(BASE_DIR, "generated_images")
-    
-    # --- Agent Behavior ---
-    MAX_CONTENT_GEN_ATTEMPTS = int(os.getenv("MAX_CONTENT_GEN_ATTEMPTS", 3))
-    DEFAULT_IMAGE_PLACEHOLDERS = int(os.getenv("DEFAULT_IMAGE_PLACEHOLDERS", 2))
+        # Strapi
+        self.STRAPI_API_URL = os.getenv("STRAPI_API_URL")
+        self.STRAPI_API_TOKEN = os.getenv("STRAPI_API_TOKEN")
 
-# Create a single, importable instance of the configuration
+        # GCS
+        self.GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
+
+        # Firestore
+        self.FIRESTORE_COLLECTION = os.getenv("FIRESTORE_COLLECTION", "agent_runs")
+
+        # Image Services
+        self.PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
+        self.LOCAL_IMAGE_PATH = os.getenv("LOCAL_IMAGE_PATH", "generated_images")
+
+        # Web Search
+        self.SERPER_API_KEY = os.getenv("SERPER_API_KEY")
+        
+        # QA Model (Ollama)
+        self.OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        self.QA_MODEL_NAME = os.getenv("QA_MODEL_NAME", "llava:13b")
+
+# Instantiate the config
 config = Config()
 
-# --- Sanity Checks ---
-# Fail fast if critical configurations are missing.
-if not all([config.GCP_PROJECT_ID, config.GEMINI_API_KEY, config.STRAPI_API_URL, 
-            config.STRAPI_API_TOKEN, config.SPREADSHEET_ID, config.GCS_BUCKET_NAME,
-            config.PEXELS_API_KEY]):
-    raise ValueError("CRITICAL: One or more required environment variables are not set. Please check your .env file.")
+# --- Sanity Check for Required Variables ---
+# This check is now more specific and will tell you exactly what's missing.
+required_vars = [
+    "GCP_PROJECT_ID", "GCP_REGION", "GEMINI_API_KEY", "SPREADSHEET_ID",
+    "STRAPI_API_URL", "STRAPI_API_TOKEN", "GCS_BUCKET_NAME",
+    "FIRESTORE_COLLECTION", "PEXELS_API_KEY", "SERPER_API_KEY"
+]
 
-print("✅ Configuration loaded and validated successfully.")
+missing_vars = [var for var in required_vars if not getattr(config, var, None)]
+
+if missing_vars:
+    error_message = f"CRITICAL: The following required environment variables are missing: {', '.join(missing_vars)}"
+    logger.critical(error_message)
+    logger.critical("Please check your .env file and ensure all variables are set correctly.")
+    raise ValueError(error_message)
+
+logger.info("Configuration loaded and validated successfully.")
