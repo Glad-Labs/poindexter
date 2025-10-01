@@ -7,7 +7,7 @@
       "command": "npm run develop",
       "options": {
         // IMPORTANT: Update this path to your actual Strapi project directory
-        "cwd": "${workspaceFolder}/cms/strapi-cms" 
+        "cwd": "${workspaceFolder}/cms/strapi-backend" 
       },
       "presentation": {
         "group": "dev",
@@ -25,7 +25,7 @@
       "options": {
         "cwd": "${workspaceFolder}/agents/content-agent"
       },
-      "presentation": {
+      "presentation": { 
         "group": "dev",
         "panel": "new",
         "reveal": "always"
