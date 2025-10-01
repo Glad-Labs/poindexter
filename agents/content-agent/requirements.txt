@@ -1,5 +1,5 @@
-crewai==0.41.0
-crewai_tools==0.3.0
+crewai==0.65.0
+crewai_tools==0.5.2
 # google-cloud-aiplatform is removed as it's not used and conflicts with google-generativeai
 google-cloud-firestore==2.21.0
 google-cloud-storage==2.19.0
