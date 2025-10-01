@@ -2,6 +2,10 @@ import os
 import logging
 from dotenv import load_dotenv
 
+# --- Define Base Directory ---
+# This makes file paths relative to the config file's location
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # Set up a basic logger for the config file itself to catch early errors
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -14,6 +18,11 @@ class Config:
     def __init__(self):
         # Load environment variables from .env file
         load_dotenv()
+
+        # --- Core Paths ---
+        self.BASE_DIR = BASE_DIR
+        self.CREDENTIALS_PATH = os.path.join(self.BASE_DIR, 'credentials.json')
+        self.PROMPTS_PATH = os.path.join(self.BASE_DIR, 'prompts.json')
 
         # GCP & Gemini
         self.GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID")
@@ -38,7 +47,8 @@ class Config:
 
         # Image Services
         self.PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
-        self.LOCAL_IMAGE_PATH = os.getenv("LOCAL_IMAGE_PATH", "generated_images")
+        self.IMAGE_STORAGE_PATH = os.path.join(self.BASE_DIR, "generated_images")
+        self.DEFAULT_IMAGE_PLACEHOLDERS = 3
 
         # Web Search
         self.SERPER_API_KEY = os.getenv("SERPER_API_KEY")
