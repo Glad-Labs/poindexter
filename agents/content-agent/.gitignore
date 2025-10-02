@@ -71,3 +71,32 @@ credentials.json
 token.json
 generated_images/
 .DS_Store
+
+# Python virtual environment
+.venv/
+venv/
+ENV/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Secrets and credentials - VERY IMPORTANT
+.env
+credentials.json
+token.json
+
+# Generated content
+generated_images/
+
+# Log files
+*.log
+logs/
+
+# OS files
+.DS_Store
+
+# Node.js dependencies
+/node_modules
