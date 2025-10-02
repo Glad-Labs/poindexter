@@ -85,13 +85,12 @@ class Orchestrator:
                 if not approved:
                     raise Exception(f"Final post with images failed QA review. Feedback: {feedback}")
 
-                # --- Stage 5: Publishing ---
-                post = self.publishing_agent.run(post)
-
-                # Log final success
+                # --- Stage 5: Finalization ---
+                post.status = "Published"
                 final_status = "Published to Strapi" if post.status != "Error" else "Error"
                 final_url = post.strapi_url if post.strapi_url else ""
                 self.sheets_client.update_status_by_row(post.sheet_row_index, final_status, final_url)
+                self.sheets_client.log_completed_post(post) # Add this line to log the post
                 self.firestore_client.update_document(doc_id, {"status": final_status, "strapi_url": final_url})
                 logging.info(f"--- Successfully processed post: {post.generated_title} ---")
 

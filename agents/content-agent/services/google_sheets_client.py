@@ -1,5 +1,6 @@
 import os
 import logging
+from datetime import datetime  # Add this import
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -71,6 +72,33 @@ class GoogleSheetsClient:
             ).execute()
         except Exception as e:
             logging.error(f"Error updating row {row_index} in Google Sheets: {e}")
+
+    def log_completed_post(self, post: BlogPost):
+        """Appends a new row to the Generated Content Log sheet."""
+        try:
+            # This order must match the columns in your 'Generated Content Log' sheet
+            timestamp = datetime.now().isoformat()
+            row_data = [
+                post.topic,
+                post.generated_title or "",
+                post.status or "Unknown",
+                post.strapi_url or "",
+                post.category or "",
+                timestamp,
+                post.rejection_reason or ""
+            ]
+            
+            body = {'values': [row_data]}
+            self.service.spreadsheets().values().append(
+                spreadsheetId=config.SPREADSHEET_ID,
+                range=f"{config.LOG_SHEET_NAME}!A1",
+                valueInputOption='USER_ENTERED',
+                insertDataOption='INSERT_ROWS',
+                body=body
+            ).execute()
+            logging.info(f"Successfully logged '{post.generated_title}' to the Generated Content Log.")
+        except Exception as e:
+            logging.error(f"Error logging post to Google Sheets: {e}")
 
     def get_published_posts_map(self) -> dict[str, str]:
         """Creates a map of {Title: URL} for all published posts for internal linking."""
