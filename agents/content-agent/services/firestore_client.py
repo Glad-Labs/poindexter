@@ -34,13 +34,3 @@ class FirestoreClient:
             logging.info(f"Updated Firestore document '{document_id}'.")
         except Exception as e:
             logging.error(f"Failed to update Firestore document '{document_id}': {e}")
-
-# Example of how to use the client
-if __name__ == '__main__':
-    # This block is for testing purposes.
-    # It now relies on the config object, which checks for the env var.
-    fs_client = FirestoreClient()
-    task_id = fs_client.create_task("Generate initial content brief", "creative-agent-v1")
-    if task_id:
-        fs_client.update_task_status(task_id, "in_progress")
-        fs_client.update_task_status(task_id, "completed")
