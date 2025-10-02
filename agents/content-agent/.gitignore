@@ -53,50 +53,34 @@ coverage.xml
 .venv
 env/
 venv/
-ENV/
-env.bak/
-venv.bak/
 
 # IDE / Editor specific
 .vscode/
 .idea/
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
 
 # Local files
 credentials.json
 token.json
 generated_images/
+
+# OS generated files
 .DS_Store
+Thumbs.db
 
-# Python virtual environment
-.venv/
-venv/
-ENV/
-
-# Python cache files
+# Python cache
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 
-# Secrets and credentials - VERY IMPORTANT
-.env
-credentials.json
-token.json
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
 
-# Generated content
-generated_images/
-
-# Log files
+# Logs
 *.log
 logs/
-
-# OS files
-.DS_Store
 
 # Node.js dependencies
 /node_modules

@@ -39,15 +39,8 @@ class PublishingAgent:
 
         logging.info(f"PublishingAgent: Preparing to publish '{post.generated_title}' to Strapi.")
 
-        # A more sophisticated conversion from Markdown to Strapi's Rich Text format.
-        # This handles paragraphs and basic lists.
-        html_content = markdown.markdown(post.raw_content)
-        blocks = []
-        for line in html_content.splitlines():
-            if line.strip(): # Avoid creating empty paragraphs
-                blocks.append({"type": "paragraph", "children": [{"type": "text", "text": line}]})
-        
-        body_content = blocks if blocks else [{"type": "paragraph", "children": [{"type": "text", "text": ""}]}]
+        # Convert Markdown to Strapi's Rich Text "blocks" format
+        body_content = self._markdown_to_strapi_blocks(post.raw_content)
 
         # Get the ID of the first image to use as the featured image
         featured_image_id = post.images[0].strapi_image_id if post.images and post.images[0].strapi_image_id else None
@@ -76,3 +69,49 @@ class PublishingAgent:
             post.rejection_reason = "Failed to publish to Strapi."
 
         return post
+
+    def _markdown_to_strapi_blocks(self, markdown_text: str) -> list[dict]:
+        """
+        A more sophisticated converter from Markdown to Strapi's Rich Text format.
+        This handles paragraphs, headings, and lists.
+        """
+        blocks = []
+        for line in markdown_text.split('\\n'):
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Headings
+            if line.startswith('#'):
+                level = len(line.split(' ')[0])
+                content = line.lstrip('# ').strip()
+                blocks.append({
+                    "type": "heading",
+                    "level": level,
+                    "children": [{"type": "text", "text": content}]
+                })
+            # Unordered Lists
+            elif line.startswith(('* ', '- ')):
+                content = line.lstrip('* ').lstrip('- ').strip()
+                # If the previous block was a list, add to it
+                if blocks and blocks[-1]["type"] == "list" and blocks[-1]["format"] == "unordered":
+                    blocks[-1]["children"].append({
+                        "type": "list-item",
+                        "children": [{"type": "text", "text": content}]
+                    })
+                else: # Otherwise, create a new list
+                    blocks.append({
+                        "type": "list",
+                        "format": "unordered",
+                        "children": [{
+                            "type": "list-item",
+                            "children": [{"type": "text", "text": content}]
+                        }]
+                    })
+            # Paragraphs
+            else:
+                blocks.append({
+                    "type": "paragraph",
+                    "children": [{"type": "text", "text": line}]
+                })
+        return blocks

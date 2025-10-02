@@ -1,5 +1,6 @@
 import os
 import logging
+from config import config # Import the centralized config
 from utils.logging_config import setup_logging
 from services.google_sheets_client import GoogleSheetsClient
 from services.strapi_client import StrapiClient
@@ -39,7 +40,7 @@ class Orchestrator:
         self.creative_agent = CreativeAgent(self.llm_client)
         self.image_agent = ImageAgent(self.llm_client, self.pexels_client, self.gcs_client, self.strapi_client)
         self.qa_agent = QAAgent(self.llm_client)
-        self.publishing_agent = PublishingAgent()
+        self.publishing_agent = PublishingAgent(self.strapi_client)
         
         logging.info("Orchestrator and clients initialized.")
 
@@ -77,7 +78,7 @@ class Orchestrator:
             
             try:
                 logging.info(f"--- Starting processing for topic: {post.topic} ---")
-                self.firestore_client.update_task_status(doc_id, "Processing")
+                self.firestore_client.update_document(doc_id, {"status": "Processing", "topic": post.topic})
                 self.sheets_client.update_status_by_row(post.sheet_row_index, "Processing")
 
                 # --- Stage 1: Research ---
@@ -114,14 +115,14 @@ class Orchestrator:
                 final_status = "Published to Strapi" if post.status != "Error" else "Error"
                 final_url = post.strapi_url if post.strapi_url else ""
                 self.sheets_client.update_status_by_row(post.sheet_row_index, final_status, final_url)
-                self.sheets_client.log_completed_post(post) # Add this line to log the post
+                self.sheets_client.log_completed_post(post)
                 self.firestore_client.update_document(doc_id, {"status": final_status, "strapi_url": final_url})
                 logging.info(f"--- Successfully processed post: {post.generated_title} ---")
 
             except Exception as e:
                 logging.error(f"A critical error occurred while processing topic '{post.topic}'. Error: {e}", exc_info=True)
                 self.sheets_client.update_status_by_row(post.sheet_row_index, "Error", str(e))
-                self.firestore_client.update_task_status(doc_id, "Error")
+                self.firestore_client.update_document(doc_id, {"status": "Error", "error_message": str(e)})
 
 def main():
     """Main function to run the orchestrator."""

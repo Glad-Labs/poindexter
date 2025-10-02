@@ -98,26 +98,6 @@ node_modules
 .node_history
 
 ############################
-# Package managers
-############################
-
-.yarn/*
-!.yarn/cache
-!.yarn/unplugged
-!.yarn/patches
-!.yarn/releases
-!.yarn/sdks
-!.yarn/versions
-.pnp.*
-yarn-error.log
-
-############################
-# Tests
-############################
-
-coverage
-
-############################
 # Strapi
 ############################
 
@@ -129,3 +109,5 @@ dist
 build
 .strapi-updater.json
 .strapi-cloud.json
+/build
+.cache
