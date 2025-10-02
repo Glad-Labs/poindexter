@@ -1,3 +1,4 @@
+import json
 import logging
 from concurrent.futures import TimeoutError
 from google.cloud import pubsub_v1
@@ -40,11 +41,18 @@ class PubSubClient:
         """Callback function to handle incoming Pub/Sub messages."""
         try:
             logger.info(f"Received message: {message.data}")
-            command = message.data.decode("utf-8")
+            data = json.loads(message.data.decode("utf-8"))
+            command = data.get("command")
             
             if command == "RUN_JOB":
-                logger.info("'RUN_JOB' command received. Triggering orchestrator job.")
-                self.orchestrator.run_job()
+                sheet_row_index = data.get("sheet_row_index")
+                if not sheet_row_index:
+                    logger.error("'RUN_JOB' command received without a 'sheet_row_index'.")
+                    message.nack()
+                    return
+
+                logger.info(f"'RUN_JOB' command received for row {sheet_row_index}. Triggering orchestrator job.")
+                self.orchestrator.run_single_job(sheet_row_index)
             else:
                 logger.warning(f"Unknown command received: {command}")
 

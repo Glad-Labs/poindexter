@@ -4,7 +4,6 @@ from config import config
 import logging
 import time
 from functools import wraps
-import os # Import the os module
 
 # Decorator for retries with exponential backoff
 def retry_with_backoff(retries=3, backoff_in_seconds=1):
@@ -37,7 +36,14 @@ class LLMClient:
         try:
             # Initialize the Vertex AI client
             aiplatform.init(project=config.GCP_PROJECT_ID, location=config.GCP_REGION)
-            self.model = aiplatform.GenerativeModel(config.GEMINI_MODEL)
+            # The correct way to access the model in recent versions
+            self.model = aiplatform.gapic.PredictionServiceClient(
+                client_options={"api_endpoint": f"{config.GCP_REGION}-aiplatform.googleapis.com"}
+            )
+            self.endpoint = (
+                f"projects/{config.GCP_PROJECT_ID}/locations/{config.GCP_REGION}/"
+                f"publishers/google/models/{config.GEMINI_MODEL}"
+            )
             logging.info("Vertex AI client initialized successfully.")
         except Exception as e:
             logging.error(f"Failed to initialize Vertex AI client: {e}")
@@ -56,9 +62,23 @@ class LLMClient:
         """
         try:
             prompts_logger.debug(f"--- PROMPT SENT to Vertex AI ---\\n{prompt}\\n--- END PROMPT ---")
-            response = self.model.generate_content(prompt)
-            prompts_logger.debug(f"--- RESPONSE RECEIVED from Vertex AI ---\\n{response.text}\\n--- END RESPONSE ---")
-            return response.text
+            
+            # Construct the request payload for the new API
+            from google.cloud.aiplatform_v1.types import prediction_service
+            from google.protobuf import struct_pb2
+            
+            instance = struct_pb2.Struct()
+            instance.fields['prompt'].string_value = prompt
+            instances = [instance]
+            
+            response = self.model.predict(endpoint=self.endpoint, instances=instances)
+            
+            # Extract the text from the response
+            prediction = response.predictions[0]
+            content = prediction['content']
+            
+            prompts_logger.debug(f"--- RESPONSE RECEIVED from Vertex AI ---\\n{content}\\n--- END RESPONSE ---")
+            return content
         except Exception as e:
             logging.error(f"Error generating text content from Vertex AI: {e}")
             raise
