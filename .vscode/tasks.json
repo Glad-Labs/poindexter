@@ -2,15 +2,14 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Start Strapi Dev Server",
+      "label": "BE: Start Strapi CMS",
       "type": "shell",
       "command": "npm run develop",
       "options": {
-        // IMPORTANT: Update this path to your actual Strapi project directory
-        "cwd": "${workspaceFolder}/cms/strapi-backend" 
+        "cwd": "${workspaceFolder}/cms/strapi-backend"
       },
       "presentation": {
-        "group": "dev",
+        "group": "startup",
         "panel": "new",
         "reveal": "always"
       },
@@ -19,14 +18,46 @@
       }
     },
     {
-      "label": "Open Agent Terminal",
+      "label": "BE: Start Python Agent Listener",
       "type": "shell",
-      "command": "echo 'Python agent terminal ready. Environment activated.'",
+      "command": "python orchestrator.py",
       "options": {
         "cwd": "${workspaceFolder}/agents/content-agent"
       },
-      "presentation": { 
-        "group": "dev",
+      "presentation": {
+        "group": "startup",
+        "panel": "new",
+        "reveal": "always"
+      },
+      "runOptions": {
+        "runOn": "folderOpen"
+      }
+    },
+    {
+      "label": "FE: Start Oversight Hub",
+      "type": "shell",
+      "command": "npm start",
+      "options": {
+        "cwd": "${workspaceFolder}/web/oversight-hub"
+      },
+      "presentation": {
+        "group": "startup",
+        "panel": "new",
+        "reveal": "always"
+      },
+      "runOptions": {
+        "runOn": "folderOpen"
+      }
+    },
+    {
+      "label": "FE: Start Public Site",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": {
+        "cwd": "${workspaceFolder}/web/public-site"
+      },
+      "presentation": {
+        "group": "startup",
         "panel": "new",
         "reveal": "always"
       },
