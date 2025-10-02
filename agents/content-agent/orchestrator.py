@@ -8,7 +8,8 @@ from services.firestore_client import FirestoreClient
 from services.llm_client import LLMClient
 from services.pexels_client import PexelsClient
 from services.gcs_client import GCSClient
-from agents.research_agent import ResearchAgent # Import the ResearchAgent
+from services.pubsub_client import PubSubClient # Import the PubSubClient
+from agents.research_agent import ResearchAgent
 from agents.creative_agent import CreativeAgent
 from agents.image_agent import ImageAgent
 from agents.qa_agent import QAAgent # Import the QAAgent
@@ -111,8 +112,12 @@ class Orchestrator:
                 post = self.publishing_agent.run(post)
 
                 # --- Stage 6: Finalization ---
+                # CRITICAL: Verify that the post was actually created in Strapi
+                if not post.strapi_post_id:
+                    raise Exception("Publishing agent failed to return a Strapi post ID.")
+
                 post.status = "Published"
-                final_status = "Published to Strapi" if post.status != "Error" else "Error"
+                final_status = "Published to Strapi"
                 final_url = post.strapi_url if post.strapi_url else ""
                 self.sheets_client.update_status_by_row(post.sheet_row_index, final_status, final_url)
                 self.sheets_client.log_completed_post(post)
@@ -125,9 +130,16 @@ class Orchestrator:
                 self.firestore_client.update_document(doc_id, {"status": "Error", "error_message": str(e)})
 
 def main():
-    """Main function to run the orchestrator."""
-    orchestrator = Orchestrator()
-    orchestrator.run_job()
+    """
+    Initializes the Orchestrator and starts the Pub/Sub listener to wait for commands.
+    This transforms the agent into a persistent, message-driven service.
+    """
+    try:
+        orchestrator = Orchestrator()
+        pubsub_client = PubSubClient(orchestrator)
+        pubsub_client.listen_for_messages()
+    except Exception as e:
+        logging.critical(f"Orchestrator failed to start: {e}", exc_info=True)
 
 if __name__ == "__main__":
     main()

@@ -1,26 +1,56 @@
-# **GLAD LABS CODE ASSISTANT STANDARDS (MATT GLADDING PROJECT)**
+# **GLAD LABS: AI FRONTIER FIRM MASTER PLAN V2.0**
 
-This guide defines the non-negotiable rules for all development work.
+Project Name: Glad Labs, LLC (Legal Name: Glad Labs LLC)  
+Owner/Manager: Matthew M. Gladding  
+Core Mission: To operate the most efficient, automated, solo-founded digital firm, demonstrating a scalable model for the future of specialized business by fusing high-quality content creation with intelligent, serverless automation.
 
-## **1\. Architectural Mandates (The Stack)**
+## **1\. Strategic Pillars & Value Proposition**
 
-* **Platform:** Always prioritize **Google Cloud Native** solutions (Cloud Run, Pub/Sub, Firestore).  
-* **Deployment:** All services must be designed for **Serverless Micro-Containers** (Docker/Cloud Run). Do not suggest monolithic server deployments.  
-* **Data Structure:** All real-time data must flow through **Firestore**. All content and static structure must be defined in **Strapi schemas**.  
-* **Monorepo:** Maintain dependency isolation. Never mix Python (requirements.txt) and Node.js (package.json) dependencies in the same root file.
+| Pillar | Focus | Goal |
+| :---- | :---- | :---- |
+| **Core Product** | **Intelligent Automation (SaaS)** | The marketable product is the **AI Agent System** itself. This pivots the business model to scalable B2B services (future SaaS). |
+| **Content Engine** | **High-Fidelity Content** | Consistently generate sophisticated, on-brand content (subtle cyberpunk tone) that builds a community and drives traffic for future monetization. |
+| **Technology** | **Serverless Scalability** | Utilize a cost-effective, Google-Native stack to eliminate manual maintenance and pay only for usage, ensuring the **$1,000 budget** has maximum runway. |
 
-## **2\. Code Best Practices (Language & Style)**
+**Brand Tone Mandate:** **Positive, Educational, and Authentically Futuristic.** The tone must be intelligent and empowering, strictly forbidding all cyberpunk slang (e.g., "choom," "jack-in," "preem"). The aesthetic is conveyed only through technical analogy (e.g., "neural network," "asynchronous data stream").
 
-* **Frontend (React/Next.js):** Use **Functional Components** and modern **Hooks**. Styling must use **Tailwind CSS**. Code must be **responsive** by design.  
-* **Backend (Python):** Use **Python 3.11+**. All agents must be built using either **CrewAI** (for workflows) or **LangChain** (for complex RAG/Data Tools).  
-* **Testing:** Every core function or agent task must be accompanied by a suggestion for a basic **Unit Test**.
+## **2\. Technical Architecture (The Google-Native Stack)**
 
-## **3\. Brand & Tone Guidelines**
+The entire system is built on micro-containers and serverless resources for efficiency.
 
-* **Goal:** Code comments, documentation, and interface text must be **positive, educational, and professionally futuristic.**  
-* **Aesthetic Rule:** The "cyberpunk" theme is **subtle and intelligent**. Use advanced technical concepts (e.g., "neural network," "asynchronous data stream") but **strictly forbid** all slang (e.g., "choom," "jack-in," "preem").  
-* **Transparency:** When adding new features, suggest **transparent logging** to Firestore so the Oversight Hub can display the agent's work.
+| Component | Technology | Best Practice |
+| :---- | :---- | :---- |
+| **Monorepo** | **GitHub (glad-labs-website)** | Centralizes all code (Agents, Hub, Configs) using isolated dependency files (requirements.txt, package.json). |
+| **Agent Execution** | **Python** on **Google Cloud Run** | **Serverless.** Provides auto-scaling and minimal cost (pay-per-use) for all agent containers. |
+| **Agent Intelligence** | **CrewAI / LangChain** | Frameworks for the **iterative self-critique loop** and external API calls. |
+| **Content Storage** | **Strapi (Headless CMS)** | **API-First.** Structured, easily queryable database for content. |
+| **Oversight Hub Backend** | **Google Cloud Firestore** | **Real-Time Data.** Serves immediate metrics (tasks, financials) to the React dashboard. |
+| **Frontend/Website** | **Next.js** on **Vercel/Netlify** | **High Performance.** Enables **Static Site Generation (SSG)** for superior SEO and speed. |
+| **Orchestration/Control** | **Google Cloud Pub/Sub** | Central command queue for triggering agents asynchronously from the Oversight Hub. |
 
-## **4\. Optimization Rule (Cost & Speed)**
+## **3\. Financial, Legal, and Future Plans**
 
-* All suggested solutions must adhere to the **Zero-Overhead Rule**. Prioritize solutions that scale down to zero and utilize free-tier cloud resources.
+### **Financial & Legal Status**
+
+* **Legal Status:** LLC \- Single Member (RI). Taxed as a Disregarded Entity (using SSN).  
+* **Startup Budget:** Initial goal of **$1,000** plus **$50–$100 weekly investment**.  
+* **Actionable Risk Mitigation:** Must secure **E\&O Insurance** before publishing begins.  
+* **Cost Control:** Adhere strictly to the **Zero-Overhead Rule** (using free cloud tiers).
+
+### **Future Plans (Scaling the Business)**
+
+| Phase | Product/Activity | Revenue Model | Long-Term Goal |
+| :---- | :---- | :---- | :---- |
+| **Current Focus** | **Content Engine (Blog)** | Ad Revenue & Affiliate Sales (Sustaining Costs) | Prove the agent model provides superior content ROI. |
+| **Future Pivot A** | **Glad Ops Platform (SaaS)** | **Subscription \+ Usage Fee** (B2B Scalability) | Commercialize the **Oversight Hub** and **AI Agents** as a pre-configured solution for other solo entrepreneurs. |
+| **Future Pivot B** | **Unity Game/Game Engine** | **Licensing/Sales Revenue** | Leverage established reputation and capital to build the primary software product (game or engine). |
+
+## **5\. Execution Timeline (Six-Month Path to Full Automation)**
+
+| Phase | Duration | Primary Focus | Technical Milestones (AI and Code) |
+| :---- | :---- | :---- | :---- |
+| **Phase I: Data & Infra** | Months 1–2 | **Build the Data Backbone** | **Strapi:** Install and define **Post Content Model**. **Firestore:** Finalize tasks, financials schema (per tracking sheet). **CI/CD:** Set up GitHub Actions and Google Artifact Registry for Docker builds. |
+| **Phase II: Agent Intelligence** | Months 3–4 | **Automate Content Pipeline** | **CrewAI/LangChain:** Implement iterative critique loop, tone enforcement, and metadata generation. **Publishing:** Program Python agent to push content to **Strapi API** and log results to **Firestore**. |
+| **Phase III: Oversight Hub Launch** | Months 5–6 | **Launch the Full Platform** | **Front-End:** Launch **Next.js Public Site** and **React Oversight Hub** (SSG configured). **Control:** Implement the **// INTERVENE** protocol via Pub/Sub. **Metrics:** Hub displays live burn rate and content ROI. |
+| **Phase IV: Monetization & Pivot** | Months 7+ | **Scale and Decide** | **Funding:** Utilize the working platform and established metrics to secure external funding. **Next Product:** Use data from the Hub to decide between building the **Unity Game MVP** or the **Game Engine.** |
+

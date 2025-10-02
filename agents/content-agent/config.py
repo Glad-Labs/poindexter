@@ -57,6 +57,13 @@ class Config:
         self.OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
         self.QA_MODEL_NAME = os.getenv("QA_MODEL_NAME", "llava:13b")
 
+        # --- Logging Configuration ---
+        self.LOG_DIR = os.path.join(self.BASE_DIR, "logs")
+        self.APP_LOG_FILE = os.path.join(self.LOG_DIR, "app.log")
+        self.PROMPTS_LOG_FILE = os.path.join(self.LOG_DIR, "prompts.log")
+        self.MAX_LOG_SIZE_MB = int(os.getenv("MAX_LOG_SIZE_MB", 5))
+        self.MAX_LOG_BACKUP_COUNT = int(os.getenv("MAX_LOG_BACKUP_COUNT", 3))
+
 # Instantiate the config
 config = Config()
 
