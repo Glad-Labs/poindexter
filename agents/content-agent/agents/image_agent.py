@@ -1,13 +1,16 @@
 import logging
 import os
-from typing import List, Optional
-
-import config
-from services.image_gen_client import ImageGenClient
+import json
+from config import config
+from services.llm_client import LLMClient
 from services.pexels_client import PexelsClient
-from services.gcs_client import GCSClient  # NEW
-from utils.data_models import BlogPost, ImageDetails, ImagePathDetails
-from utils.helpers import slugify
+from services.gcs_client import GCSClient
+from services.strapi_client import StrapiClient  # Import StrapiClient
+from utils.data_models import BlogPost, ImageDetails
+from utils.helpers import load_prompts_from_file, slugify
+
+
+logger = logging.getLogger(__name__)
 
 
 class ImageAgent:
@@ -15,89 +18,66 @@ class ImageAgent:
     Generates and/or fetches images for a blog post and uploads them to GCS.
     """
 
-    def __init__(self):
+    def __init__(self, llm_client: LLMClient, pexels_client: PexelsClient, gcs_client: GCSClient, strapi_client: StrapiClient):
         logging.info("Initializing Image Agent...")
-        self.image_gen_client = ImageGenClient()
-        self.pexels_client = PexelsClient()
-        self.gcs_client = GCSClient()  # NEW
+        self.llm_client = llm_client
+        self.pexels_client = pexels_client
+        self.gcs_client = gcs_client
+        self.strapi_client = strapi_client  # Add StrapiClient
+        self.prompts = load_prompts_from_file(config.PROMPTS_PATH)
+        os.makedirs(config.IMAGE_STORAGE_PATH, exist_ok=True)
 
     def run(self, post: BlogPost) -> BlogPost:
-        logging.info(f"ImageAgent: Processing images for '{post.generated_title}'.")
-
-        if not post.images:
-            logging.warning("No image metadata found in post. Skipping image processing.")
+        if not post.generated_title:
+            logging.warning("ImageAgent: Post is missing a generated title. Skipping image processing.")
             return post
 
-        generated_image_details: List[ImagePathDetails] = []
-        for i, image_details in enumerate(post.images):
-            path_details = self._process_image(post.generated_title, i, image_details)
-            if path_details:
-                generated_image_details.append(path_details)
+        logging.info(f"ImageAgent: Starting image processing for '{post.generated_title}'.")
 
-        post.image_path_details = generated_image_details
-
-        # Upload images and store their public URLs
-        for i, img_path_detail in enumerate(post.image_path_details):
-            try:
-                public_url = self.gcs_client.upload_file(
-                    source_file_name=img_path_detail.local_path,
-                    destination_blob_name=img_path_detail.upload_filename,
-                )
-                # Store the public URL back in the corresponding ImageDetails object
-                if i < len(post.images):
-                    post.images[i].public_url = public_url
-                logging.info(f"Uploaded {img_path_detail.local_path} to {public_url}")
-            except Exception as e:
-                logging.error(f"Failed to upload {img_path_detail.local_path} to GCS: {e}", exc_info=True)
+        # 1. Generate Image Metadata
+        metadata_prompt = self.prompts['image_metadata_generation'].format(
+            title=post.generated_title,
+            num_images=config.DEFAULT_IMAGE_PLACEHOLDERS
+        )
+        metadata_text = self.llm_client.generate_text_content(metadata_prompt)
         
-        logging.info("Finished processing images and storing public URLs.")
+        try:
+            image_metadata_list = json.loads(metadata_text)
+            for metadata in image_metadata_list:
+                post.images.append(ImageDetails(**metadata))
+        except json.JSONDecodeError:
+            logging.error("Failed to parse image metadata from LLM response.")
+            return post
+
+        # 2. Search, Download, Upload to GCS, and Upload to Strapi
+        for i, image in enumerate(post.images):
+            if not image.query:
+                continue
+            
+            slug_title = slugify(post.generated_title)
+            local_path = os.path.join(config.IMAGE_STORAGE_PATH, f"{slug_title}-{i}.jpg")
+            
+            if self.pexels_client.search_and_download(image.query, local_path):
+                # Upload to GCS for embedding in content
+                gcs_path = f"images/{slug_title}-{i}.jpg"
+                image.public_url = self.gcs_client.upload_file(local_path, gcs_path)
+                image.path = gcs_path
+
+                # Upload to Strapi to get an ID for the featured image
+                if i == 0: # Assume the first image is the featured one
+                    alt_text = image.alt_text or "Image for " + post.generated_title
+                    caption = image.caption or post.generated_title
+                    image.strapi_image_id = self.strapi_client.upload_image(local_path, alt_text, caption)
+
+        # 3. Replace Placeholders in Content
+        if post.raw_content:
+            for i, image in enumerate(post.images):
+                if image.public_url:
+                    placeholder = f"[IMAGE-{i+1}]"
+                    alt_text = image.alt_text or "Blog post image"
+                    caption = image.caption or ""
+                    markdown_tag = f"![{alt_text}]({image.public_url})\n*Caption: {caption}*"
+                    post.raw_content = post.raw_content.replace(placeholder, markdown_tag)
+
+        logging.info(f"ImageAgent: Finished image processing for '{post.generated_title}'.")
         return post
-
-    def _process_image(self, title: str, index: int, image_details: ImageDetails) -> Optional[ImagePathDetails]:
-        """Processes a single image, either by generating it or fetching it from Pexels."""
-        path_details = self._get_image_path_details(title, index)
-
-        if image_details.source == "ai":
-            logging.info(f"Generating AI image with prompt: {image_details.query}")
-            success = self._generate_ai_image(image_details.query, path_details.local_path)
-        else:
-            logging.info(f"Fetching Pexels image with query: {image_details.query}")
-            success = self._fetch_pexels_image(image_details.query, path_details.local_path)
-
-        if success:
-            logging.info(f"Successfully processed image and saved to {path_details.local_path}")
-            return path_details
-        else:
-            logging.error(f"Failed to process image for query '{image_details.query}'")
-            return None
-
-    def _get_image_path_details(self, title: str, index: int) -> ImagePathDetails:
-        """Constructs the filename and path for an image."""
-        base_filename = f"{slugify(title)}-img-{index+1}"
-        output_dir = config.IMAGE_STORAGE_PATH
-        os.makedirs(output_dir, exist_ok=True)
-        local_image_path = os.path.join(output_dir, f"{base_filename}.png")
-        upload_filename = f"{base_filename}.png"
-        return ImagePathDetails(local_path=local_image_path, upload_filename=upload_filename)
-
-    def _generate_ai_image(self, query: str, local_path: str) -> bool:
-        """Generates an AI image and saves it to the specified path."""
-        try:
-            self.image_gen_client.generate_images(query, local_path)
-            return True
-        except Exception as e:
-            logging.error(f"Failed to generate AI image for query '{query}': {e}", exc_info=True)
-            return False
-
-    def _fetch_pexels_image(self, query: str, local_path: str) -> bool:
-        """Fetches an image from Pexels and saves it to the specified path."""
-        try:
-            image_content = self.pexels_client.search_and_download_photo(query)
-            if image_content:
-                with open(local_path, 'wb') as f:
-                    f.write(image_content)
-                return True
-            return False
-        except Exception as e:
-            logging.error(f"Failed to fetch Pexels image for query '{query}': {e}", exc_info=True)
-            return False

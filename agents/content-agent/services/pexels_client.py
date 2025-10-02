@@ -1,44 +1,50 @@
-import logging
 import requests
-from typing import Optional
-import config
+import logging
+from config import config
 
 class PexelsClient:
-    def __init__(self):
-        self.api_key = config.PEXELS_API_KEY
-        if not self.api_key:
-            logging.warning("Pexels API key not found. Stock photo functionality will be disabled.")
-            self.is_enabled = False # FIX: Add an enabled flag
-            self.headers = None
-        else:
-            self.is_enabled = True # FIX: Set enabled flag
-            self.headers = {'Authorization': self.api_key}
-        self.search_url = "https://api.pexels.com/v1/search"
-        self.session = requests.Session()
+    """Client for fetching images from the Pexels API."""
+    BASE_URL = "https://api.pexels.com/v1/search"
 
-    def search_and_download_photo(self, query: str) -> Optional[bytes]:
-        if not self.is_enabled: # FIX: Check enabled flag
-            logging.warning("Pexels client is disabled due to missing API key.")
-            return None
-        
-        params = {'query': query, 'per_page': 1, 'orientation': 'landscape'}
+    def __init__(self):
+        if not config.PEXELS_API_KEY:
+            raise ValueError("PEXELS_API_KEY is not set in the environment.")
+        self.headers = {
+            "Authorization": config.PEXELS_API_KEY
+        }
+
+    def search_and_download(self, query: str, file_path: str) -> bool:
+        """
+        Searches for an image on Pexels and downloads the first result.
+
+        Args:
+            query (str): The search term for the image.
+            file_path (str): The local path to save the downloaded image.
+
+        Returns:
+            bool: True if the download was successful, False otherwise.
+        """
+        params = {'query': query, 'per_page': 1}
         try:
-            logging.info(f"Searching Pexels for: '{query}'")
-            response = self.session.get(self.search_url, headers=self.headers, params=params, timeout=15)
+            response = requests.get(self.BASE_URL, headers=self.headers, params=params)
             response.raise_for_status()
-            
             data = response.json()
+            
             if data['photos']:
                 photo = data['photos'][0]
-                image_url = photo['src']['large'] # Download a reasonably sized image
+                image_url = photo['src']['large']
                 
-                logging.info(f"Downloading image from URL: {image_url}")
-                image_response = self.session.get(image_url, timeout=15)
-                image_response.raise_for_status()
-                return image_response.content
+                img_response = requests.get(image_url, stream=True)
+                img_response.raise_for_status()
+                
+                with open(file_path, 'wb') as f:
+                    for chunk in img_response.iter_content(1024):
+                        f.write(chunk)
+                logging.info(f"Successfully downloaded image for query '{query}' to {file_path}.")
+                return True
             else:
-                logging.warning(f"No Pexels results found for query: '{query}'")
-                return None
-        except requests.RequestException as e:
-            logging.error(f"Error fetching image from Pexels for query '{query}': {e}")
-            return None
+                logging.warning(f"No photos found on Pexels for query: '{query}'")
+                return False
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Error fetching image from Pexels: {e}")
+            return False

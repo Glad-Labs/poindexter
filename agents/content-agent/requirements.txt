@@ -1,27 +1,14 @@
-# Core libraries
-requests
-pydantic
-python-dotenv
-tenacity
-markdown
-
-# CrewAI
+beautifulsoup4==4.13.4
 crewai
 crewai_tools
-
-# AI & ML
-accelerate
-torch
-transformers
-ollama
-
-# Google Cloud
-google-cloud-storage
-google-cloud-firestore
-google-api-python-client
-google-auth-httplib2
-google-auth-oauthlib
-
-# Image Generation
-diffusers
-Pillow
+# google-cloud-aiplatform is removed as it's not used and conflicts with google-generativeai
+google-cloud-firestore==2.21.0
+google-cloud-storage==2.19.0
+google-api-python-client==2.183.0
+google-auth-httplib2==0.2.0
+google-auth-oauthlib==1.2.2
+google-generativeai==0.8.4
+pydantic
+python-dotenv==1.0.1
+requests==2.32.3
+markdown==3.6

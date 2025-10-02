@@ -1,86 +1,79 @@
 import os
+import logging
 from dotenv import load_dotenv
 
-# Load environment variables from .env file for local development
-# In production (e.g., Cloud Run), these variables will be set directly
-# and load_dotenv() will effectively do nothing or be skipped.
-load_dotenv() 
+# --- Define Base Directory ---
+# This makes file paths relative to the config file's location
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# --- Google Sheets API ---
-SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
+# Set up a basic logger for the config file itself to catch early errors
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-# --- Gemini API ---
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID")
-GCP_REGION = os.getenv("GCP_REGION", "us-central1")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+class Config:
+    """
+    Configuration class for the content agent.
+    Loads environment variables and provides them as attributes.
+    """
+    def __init__(self):
+        # Load environment variables from .env file
+        load_dotenv()
 
-# --- WordPress Configuration ---
-WP_URL = os.getenv("WP_URL")
-WP_USERNAME = os.getenv("WP_USERNAME")
-WP_PASSWORD = os.getenv("WP_PASSWORD")
+        # --- Core Paths ---
+        self.BASE_DIR = BASE_DIR
+        self.CREDENTIALS_PATH = os.path.join(self.BASE_DIR, 'credentials.json')
+        self.PROMPTS_PATH = os.path.join(self.BASE_DIR, 'prompts.json')
 
-# --- Strapi Configuration ---
-STRAPI_API_URL = os.getenv("STRAPI_API_URL") # e.g., http://localhost:1337
-STRAPI_API_TOKEN = os.getenv("STRAPI_API_TOKEN")
+        # GCP & Gemini
+        self.GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID")
+        self.GCP_REGION = os.getenv("GCP_REGION")
+        self.GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+        self.GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-pro-latest")
 
-# --- Google Cloud Storage ---
-GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
+        # Google Sheets
+        self.SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
+        self.PLAN_SHEET_NAME = os.getenv("PLAN_SHEET_NAME", "Content Plan")
+        self.LOG_SHEET_NAME = os.getenv("LOG_SHEET_NAME", "Generated Content Log")
 
-# --- Firestore Configuration ---
-FIRESTORE_COLLECTION = os.getenv("FIRESTORE_COLLECTION", "agent_runs")
+        # Strapi
+        self.STRAPI_API_URL = os.getenv("STRAPI_API_URL")
+        self.STRAPI_API_TOKEN = os.getenv("STRAPI_API_TOKEN")
 
-# Email recipient for the 'Send as Email' feature
-RECIPIENT_EMAIL = os.getenv("RECIPIENT_EMAIL")
+        # GCS
+        self.GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
 
-# Pexels API for stock photos
-PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
+        # Firestore
+        self.FIRESTORE_COLLECTION = os.getenv("FIRESTORE_COLLECTION", "agent_runs")
 
-# Google Sheets configuration
-PLAN_SHEET_NAME = os.getenv("PLAN_SHEET_NAME", "Content Plan")
-LOG_SHEET_NAME = os.getenv("LOG_SHEET_NAME", "Generated Content Log")
-LOG_SHEET_HEADERS = [
-    "Timestamp", "Topic", "Primary Keyword", "Target Audience", "Category",
-    "Generated Title", "Status", "Rejection Reason", "Strapi URL", # FIX: Changed from "WordPress URL"
-    "Sheet Row Index", "Refinement Loops", "Meta Description", "Related Keywords",
-    "Social Media Posts (Twitter)", "Social Media Posts (Discord)",
-    "Image 0 Source", "Image 0 Query", "Image 0 Alt Text", "Image 0 Caption", "Image 0 Description",
-    "Image 1 Source", "Image 1 Query", "Image 1 Alt Text", "Image 1 Caption", "Image 1 Description",
-    "Image 2 Source", "Image 2 Query", "Image 2 Alt Text", "Image 2 Caption", "Image 2 Description",
-    "Image 3 Source", "Image 3 Query", "Image 3 Alt Text", "Image 3 Caption", "Image 3 Description",
-    "Image 4 Source", "Image 4 Query", "Image 4 Alt Text", "Image 4 Caption", "Image 4 Description"
+        # Image Services
+        self.PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
+        self.IMAGE_STORAGE_PATH = os.path.join(self.BASE_DIR, "generated_images")
+        self.DEFAULT_IMAGE_PLACEHOLDERS = 3
+
+        # Web Search
+        self.SERPER_API_KEY = os.getenv("SERPER_API_KEY")
+        
+        # QA Model (Ollama)
+        self.OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        self.QA_MODEL_NAME = os.getenv("QA_MODEL_NAME", "llava:13b")
+
+# Instantiate the config
+config = Config()
+
+# --- Sanity Check for Required Variables ---
+# This check is now more specific and will tell you exactly what's missing.
+required_vars = [
+    "GCP_PROJECT_ID", "GCP_REGION", "GEMINI_API_KEY", "SPREADSHEET_ID",
+    "STRAPI_API_URL", "STRAPI_API_TOKEN", "GCS_BUCKET_NAME",
+    "FIRESTORE_COLLECTION", "PEXELS_API_KEY", "SERPER_API_KEY"
 ]
 
-# --- Local LLM (Ollama) ---
-QA_MODEL_NAME = os.getenv("QA_MODEL_NAME", "llava:13b")
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+missing_vars = [var for var in required_vars if not getattr(config, var, None)]
 
-# --- Paths ---
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PROMPTS_PATH = os.path.join(BASE_DIR, "prompts.json")
-TOKEN_PATH = os.path.join(BASE_DIR, "token.json") # ADD THIS
-CREDENTIALS_PATH = os.path.join(BASE_DIR, "credentials.json") # ADD THIS
-LOG_DIR = os.path.join(BASE_DIR, "logs")
-ARCHIVE_DIR = os.path.join(BASE_DIR, "archive")
-IMAGE_STORAGE_PATH = os.path.join(BASE_DIR, "generated_images") # RENAMED for clarity
-GENERATED_IMAGES_DIR = IMAGE_STORAGE_PATH # Add for backward compatibility if needed
+if missing_vars:
+    error_message = f"CRITICAL: The following required environment variables are missing: {', '.join(missing_vars)}"
+    logger.critical(error_message)
+    logger.critical("Please check your .env file and ensure all variables are set correctly.")
+    raise ValueError(error_message)
 
-# --- Logging Configuration ---
-MAX_LOG_SIZE_MB = int(os.getenv("MAX_LOG_SIZE_MB", 5))
-MAX_LOG_BACKUP_COUNT = int(os.getenv("MAX_LOG_BACKUP_COUNT", 3))
-MAX_ARCHIVE_LOG_SIZE_MB = int(os.getenv("MAX_ARCHIVE_LOG_SIZE_MB", 10))
-MAX_ARCHIVE_LOG_BACKUP_COUNT = int(os.getenv("MAX_ARCHIVE_LOG_BACKUP_COUNT", 5))
-
-# --- Agent Configuration ---
-MAX_IMAGE_GEN_ATTEMPTS = int(os.getenv("MAX_IMAGE_GEN_ATTEMPTS", 3))
-MAX_IMAGE_METADATA_ATTEMPTS = int(os.getenv("MAX_IMAGE_METADATA_ATTEMPTS", 3))
-MAX_CONTENT_GEN_ATTEMPTS = int(os.getenv("MAX_CONTENT_GEN_ATTEMPTS", 3))
-DEFAULT_IMAGE_PLACEHOLDERS = int(os.getenv("DEFAULT_IMAGE_PLACEHOLDERS", 2))
-
-# --- Stable Diffusion Configuration ---
-SD_NEGATIVE_PROMPT = os.getenv("SD_NEGATIVE_PROMPT", 
-    "blurry, bad anatomy, disfigured, poorly drawn face, mutation, deformed, extra limbs, ugly, "
-    "text, watermark, signature, low quality, low resolution, bad art, poorly drawn, error, "
-    "missing fingers, extra digit, fewer digits, cropped, jpeg artifacts, username, artist name, "
-    "(worst quality, low quality:1.4), (bad anatomy), (bad hands), (bad eyes), (bad face)"
-)
+logger.info("Configuration loaded and validated successfully.")
