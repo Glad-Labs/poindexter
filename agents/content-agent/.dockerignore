@@ -1,0 +1,11 @@
+.venv
+.vscode
+.git
+.gitignore
+Dockerfile
+*.pyc
+__pycache__
+credentials.json
+token.json
+generated_images/
+.env

@@ -1,8 +1,30 @@
 import google.generativeai as genai
 from config import config
 import logging
-import json
+import time
+from functools import wraps
 import os # Import the os module
+
+# Decorator for retries with exponential backoff
+def retry_with_backoff(retries=3, backoff_in_seconds=1):
+    def rwb(f):
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            x = 0
+            while True:
+                try:
+                    return f(*args, **kwargs)
+                except Exception as e:
+                    if x < retries:
+                        sleep = backoff_in_seconds * 2 ** x
+                        logging.warning(f"API call failed, retrying in {sleep} seconds... Error: {e}")
+                        time.sleep(sleep)
+                        x += 1
+                    else:
+                        logging.error(f"API call failed after {retries} retries.")
+                        raise
+        return wrapper
+    return rwb
 
 class LLMClient:
     """Client for interacting with the Google Gemini API."""
@@ -21,7 +43,8 @@ class LLMClient:
             if not hasattr(genai, 'GenerativeModel'):
                 raise AttributeError("The installed google.generativeai library is missing the 'GenerativeModel' class.")
                 
-            self.model = genai.GenerativeModel(config.GEMINI_MODEL) # type: ignore
+            genai.configure(api_key=config.GEMINI_API_KEY)
+            self.model = genai.GenerativeModel(config.GEMINI_MODEL)
         except Exception as e:
             logging.error(f"Failed to initialize Gemini client: {e}")
             raise
@@ -47,9 +70,10 @@ class LLMClient:
             logging.error(f"Error generating JSON content from Gemini: {e}")
             return {}  # Return empty dict on failure
 
+    @retry_with_backoff()
     def generate_text_content(self, prompt: str) -> str:
         """
-        Generates plain text content using the configured Gemini model.
+        Generates text content using the configured Gemini model, with retries.
 
         Args:
             prompt (str): The prompt to send to the language model.
@@ -62,4 +86,5 @@ class LLMClient:
             return response.text
         except Exception as e:
             logging.error(f"Error generating text content from Gemini: {e}")
-            return "" # Return an empty string on failure
+            # Re-raise the exception to be caught by the retry decorator
+            raise

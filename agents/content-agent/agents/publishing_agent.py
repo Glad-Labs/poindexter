@@ -39,9 +39,15 @@ class PublishingAgent:
 
         logging.info(f"PublishingAgent: Preparing to publish '{post.generated_title}' to Strapi.")
 
-        # Convert final Markdown to Strapi's Rich Text (Blocks) format.
-        # This is a basic conversion; more complex markdown-to-blocks logic could be added here.
-        body_content = [{"type": "paragraph", "children": [{"type": "text", "text": post.raw_content}]}]
+        # A more sophisticated conversion from Markdown to Strapi's Rich Text format.
+        # This handles paragraphs and basic lists.
+        html_content = markdown.markdown(post.raw_content)
+        blocks = []
+        for line in html_content.splitlines():
+            if line.strip(): # Avoid creating empty paragraphs
+                blocks.append({"type": "paragraph", "children": [{"type": "text", "text": line}]})
+        
+        body_content = blocks if blocks else [{"type": "paragraph", "children": [{"type": "text", "text": ""}]}]
 
         # Get the ID of the first image to use as the featured image
         featured_image_id = post.images[0].strapi_image_id if post.images and post.images[0].strapi_image_id else None
