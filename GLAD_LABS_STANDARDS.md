@@ -53,4 +53,3 @@ The entire system is built on micro-containers and serverless resources for effi
 | **Phase II: Agent Intelligence** | Months 3–4 | **Automate Content Pipeline** | **CrewAI/LangChain:** Implement iterative critique loop, tone enforcement, and metadata generation. **Publishing:** Program Python agent to push content to **Strapi API** and log results to **Firestore**. |
 | **Phase III: Oversight Hub Launch** | Months 5–6 | **Launch the Full Platform** | **Front-End:** Launch **Next.js Public Site** and **React Oversight Hub** (SSG configured). **Control:** Implement the **// INTERVENE** protocol via Pub/Sub. **Metrics:** Hub displays live burn rate and content ROI. |
 | **Phase IV: Monetization & Pivot** | Months 7+ | **Scale and Decide** | **Funding:** Utilize the working platform and established metrics to secure external funding. **Next Product:** Use data from the Hub to decide between building the **Unity Game MVP** or the **Game Engine.** |
-
