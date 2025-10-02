@@ -2,6 +2,7 @@ import json
 import logging
 from concurrent.futures import TimeoutError
 from google.cloud import pubsub_v1
+from google.api_core import exceptions
 from config import config
 
 logger = logging.getLogger(__name__)
@@ -17,12 +18,27 @@ class PubSubClient:
         self.subscription_path = f'projects/{config.GCP_PROJECT_ID}/subscriptions/content-agent-subscription'
 
     def listen_for_messages(self):
-        """Creates a subscription and enters a loop to listen for messages."""
+        """Creates the topic and subscription if they don't exist, then listens for messages."""
+        # --- Create the Topic if it doesn't exist ---
+        try:
+            self.publisher.create_topic(name=self.topic_path)
+            logger.info(f"Topic created: {self.topic_path}")
+        except exceptions.AlreadyExists:
+            logger.info(f"Topic {self.topic_path} already exists.")
+        except Exception as e:
+            logger.error(f"Failed to create topic {self.topic_path}: {e}")
+            raise # Stop the application if we can't ensure the topic exists
+
+        # --- Create the Subscription if it doesn't exist ---
         try:
             self.subscriber.create_subscription(name=self.subscription_path, topic=self.topic_path)
             logger.info(f"Subscription created: {self.subscription_path}")
+        except exceptions.AlreadyExists:
+            logger.info(f"Subscription {self.subscription_path} already exists.")
         except Exception as e:
-            logger.info(f"Subscription already exists or other error: {e}")
+            logger.error(f"Failed to create subscription {self.subscription_path}: {e}")
+            # Don't raise here, as the listener might still work if the subscription exists
+            # but another error occurred.
 
         streaming_pull_future = self.subscriber.subscribe(self.subscription_path, callback=self._message_callback)
         logger.info(f"Listening for messages on {self.subscription_path}...")
