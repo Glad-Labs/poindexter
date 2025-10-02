@@ -46,12 +46,21 @@ class GoogleSheetsClient:
             headers = values[0]
             for i, row in enumerate(values[1:], start=2):
                 if len(row) > headers.index('Status') and row[headers.index('Status')] == 'Ready':
+                    # Safely get the refinement loops value, defaulting to 1 if the column is missing.
+                    refinement_loops = 1
+                    if 'Refinement Loops' in headers:
+                        try:
+                            refinement_loops = int(row[headers.index('Refinement Loops')] or 1)
+                        except (ValueError, IndexError):
+                            logging.warning(f"Could not parse 'Refinement Loops' for row {i}. Defaulting to 1.")
+                            refinement_loops = 1
+                    
                     requests.append(BlogPost(
                         topic=row[headers.index('Topic')],
                         primary_keyword=row[headers.index('Primary Keyword')],
                         target_audience=row[headers.index('Target Audience')],
                         category=row[headers.index('Category')],
-                        refinement_loops=int(row[headers.index('Refinement Loops')] or 1),
+                        refinement_loops=refinement_loops,
                         sheet_row_index=i
                     ))
             return requests

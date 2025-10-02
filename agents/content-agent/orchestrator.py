@@ -1,3 +1,4 @@
+import os
 import logging
 from utils.logging_config import setup_logging
 from services.google_sheets_client import GoogleSheetsClient
@@ -16,13 +17,15 @@ MAX_REFINEMENT_LOOPS = 3
 
 class Orchestrator:
     """
-    Coordinates the advanced content creation pipeline, including a multi-stage
-    QA and refinement loop.
+    The main orchestrator for the content creation pipeline.
     """
     def __init__(self):
-        setup_logging()
+        """Initializes all clients and agents."""
+        self.config = config
+        self._setup_logging()
+        self._ensure_directories_exist() # Add this line
+
         logging.info("Orchestrator initializing...")
-        
         # Initialize all clients
         self.sheets_client = GoogleSheetsClient()
         self.strapi_client = StrapiClient()
@@ -36,11 +39,29 @@ class Orchestrator:
         self.creative_agent = CreativeAgent(self.llm_client)
         self.image_agent = ImageAgent(self.llm_client, self.pexels_client, self.gcs_client, self.strapi_client)
         self.qa_agent = QAAgent(self.llm_client)
-        self.publishing_agent = PublishingAgent(self.strapi_client)
+        self.publishing_agent = PublishingAgent()
         
         logging.info("Orchestrator and clients initialized.")
 
+    def _setup_logging(self):
+        """Sets up the logging configuration."""
+        setup_logging()
+
+    def _ensure_directories_exist(self):
+        """Checks for and creates required directories."""
+        try:
+            image_path = self.config.IMAGE_STORAGE_PATH
+            if not os.path.exists(image_path):
+                os.makedirs(image_path)
+                logging.info(f"Created directory: {image_path}")
+        except OSError as e:
+            logging.error(f"Error creating directory {self.config.IMAGE_STORAGE_PATH}: {e}")
+            raise
+
     def run_job(self):
+        """
+        The main loop that fetches tasks and processes them.
+        """
         logging.info("Orchestrator: Checking for new content tasks...")
         
         published_posts_map = self.sheets_client.get_published_posts_map()
@@ -85,7 +106,10 @@ class Orchestrator:
                 if not approved:
                     raise Exception(f"Final post with images failed QA review. Feedback: {feedback}")
 
-                # --- Stage 5: Finalization ---
+                # --- Stage 5: Publishing ---
+                post = self.publishing_agent.run(post)
+
+                # --- Stage 6: Finalization ---
                 post.status = "Published"
                 final_status = "Published to Strapi" if post.status != "Error" else "Error"
                 final_url = post.strapi_url if post.strapi_url else ""

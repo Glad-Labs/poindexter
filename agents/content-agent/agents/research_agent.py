@@ -22,7 +22,9 @@ class ResearchAgent:
         # More specific query for better results
         query = f"latest trends and credible sources for {topic}"
         
-        search_results = self.search_tool.run(query)
+        # The 'run' method of crewai tools expects keyword arguments 
+        # that match the tool's argument schema. For Serper, this is 'search_query'.
+        search_results = self.search_tool.run(search_query=query)
         
         # Basic processing to extract URLs (can be made more sophisticated)
         # For now, we'll just return the raw results to be used by the creative agent.
