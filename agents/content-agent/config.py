@@ -6,8 +6,7 @@ from dotenv import load_dotenv
 # This makes file paths relative to the config file's location
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Set up a basic logger for the config file itself to catch early errors
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# The logger will be configured by the main application entry point.
 logger = logging.getLogger(__name__)
 
 class Config:
