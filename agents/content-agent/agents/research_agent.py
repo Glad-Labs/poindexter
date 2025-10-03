@@ -27,9 +27,9 @@ class ResearchAgent:
         """
         try:
             logger.info(f"ResearchAgent: Conducting research for topic: '{topic}'")
-            # The tool's run method expects a single string query
+            # Pass the query as a dictionary for robustness with crewai tools
             search_results = self.search_tool.run(
-                f"latest trends and credible sources for {topic}"
+                tool_input={'query': f"latest trends and credible sources for {topic}"}
             )
             logger.info(f"ResearchAgent: Found search results.")
             return str(search_results) # Convert results to string for the prompt
