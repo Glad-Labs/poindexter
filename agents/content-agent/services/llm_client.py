@@ -4,27 +4,28 @@ from config import config
 import logging
 import time
 from functools import wraps
+import vertexai
+from vertexai.generative_models import GenerativeModel, GenerationConfig
 
 # Decorator for retries with exponential backoff
 def retry_with_backoff(retries=3, backoff_in_seconds=1):
-    def rwb(f):
+    def decorator(f):
         @wraps(f)
         def wrapper(*args, **kwargs):
-            x = 0
-            while True:
+            attempts = 0
+            while attempts < retries:
                 try:
                     return f(*args, **kwargs)
                 except Exception as e:
-                    if x < retries:
-                        sleep = backoff_in_seconds * 2 ** x
-                        logging.warning(f"API call failed, retrying in {sleep} seconds... Error: {e}")
-                        time.sleep(sleep)
-                        x += 1
-                    else:
+                    attempts += 1
+                    if attempts >= retries:
                         logging.error(f"API call failed after {retries} retries.")
                         raise
+                    sleep = backoff_in_seconds * (2 ** (attempts - 1))
+                    logging.warning(f"API call failed, retrying in {sleep} seconds... Error: {e}")
+                    time.sleep(sleep)
         return wrapper
-    return rwb
+    return decorator
 
 # Get the dedicated logger for prompts
 prompts_logger = logging.getLogger('prompts')
@@ -32,19 +33,22 @@ prompts_logger = logging.getLogger('prompts')
 class LLMClient:
     """Client for interacting with Google Cloud's Vertex AI (Gemini)."""
     def __init__(self):
-        """Initializes the Vertex AI client."""
+        """Initializes the Vertex AI client using the modern Generative AI SDK."""
         try:
-            # Initialize the Vertex AI client
-            aiplatform.init(project=config.GCP_PROJECT_ID, location=config.GCP_REGION)
-            # The correct way to access the model in recent versions
-            self.model = aiplatform.gapic.PredictionServiceClient(
-                client_options={"api_endpoint": f"{config.GCP_REGION}-aiplatform.googleapis.com"}
+            # Initialize the Vertex AI SDK
+            vertexai.init(project=config.GCP_PROJECT_ID, location=config.GCP_REGION)
+            
+            # Load the generative model
+            self.model = GenerativeModel(config.GEMINI_MODEL)
+            
+            # Optional: Configure generation parameters
+            self.generation_config = GenerationConfig(
+                temperature=0.7,
+                top_p=1.0,
+                max_output_tokens=8192,
             )
-            self.endpoint = (
-                f"projects/{config.GCP_PROJECT_ID}/locations/{config.GCP_REGION}/"
-                f"publishers/google/models/{config.GEMINI_MODEL}"
-            )
-            logging.info("Vertex AI client initialized successfully.")
+            
+            logging.info("Vertex AI client (Generative AI SDK) initialized successfully.")
         except Exception as e:
             logging.error(f"Failed to initialize Vertex AI client: {e}")
             raise
@@ -52,7 +56,7 @@ class LLMClient:
     @retry_with_backoff()
     def generate_text_content(self, prompt: str) -> str:
         """
-        Generates text content using the configured Vertex AI model.
+        Generates text content using the configured Vertex AI Gemini model.
 
         Args:
             prompt (str): The prompt to send to the language model.
@@ -63,19 +67,12 @@ class LLMClient:
         try:
             prompts_logger.debug(f"--- PROMPT SENT to Vertex AI ---\\n{prompt}\\n--- END PROMPT ---")
             
-            # Construct the request payload for the new API
-            from google.cloud.aiplatform_v1.types import prediction_service
-            from google.protobuf import struct_pb2
+            response = self.model.generate_content(
+                prompt,
+                generation_config=self.generation_config
+            )
             
-            instance = struct_pb2.Struct()
-            instance.fields['prompt'].string_value = prompt
-            instances = [instance]
-            
-            response = self.model.predict(endpoint=self.endpoint, instances=instances)
-            
-            # Extract the text from the response
-            prediction = response.predictions[0]
-            content = prediction['content']
+            content = response.text
             
             prompts_logger.debug(f"--- RESPONSE RECEIVED from Vertex AI ---\\n{content}\\n--- END RESPONSE ---")
             return content
