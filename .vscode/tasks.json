@@ -7,8 +7,12 @@
       "command": "cd c:\\Users\\mattm\\glad-labs-website\\cms\\strapi-backend; npm run develop",
       "problemMatcher": [],
       "presentation": {
+        "group": "startup",
         "reveal": "always",
         "panel": "new"
+      },
+      "runOptions": {
+        "runOn": "folderOpen"
       }
     },
     {

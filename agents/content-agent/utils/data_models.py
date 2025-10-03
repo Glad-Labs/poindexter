@@ -52,7 +52,6 @@ class BlogPost(BaseModel):
 class StrapiPost(BaseModel):
     """
     Pydantic model representing the final structure for the Strapi API call.
-    This now perfectly matches the user's Strapi schema.
     """
     Title: str
     Slug: str
@@ -61,8 +60,6 @@ class StrapiPost(BaseModel):
     Keywords: Optional[str] = None
     MetaDescription: Optional[str] = None
     FeaturedImage: Optional[int] = None
-    ImageAltText: Optional[str] = None
-    Author: str = "AI Content Agent"
 
     model_config = {
         "populate_by_name": True
