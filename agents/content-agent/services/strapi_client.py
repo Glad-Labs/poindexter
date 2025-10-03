@@ -88,7 +88,7 @@ if __name__ == '__main__':
         Title="Test Post from Strapi Client",
         Slug="test-post-from-strapi-client",
         BodyContent=[{"type": "paragraph", "children": [{"type": "text", "text": "This is a test."}]}],
-        Author="StrapiClientTest"
+        #Author="StrapiClientTest"
     )
 
     # Call the create_post method
