@@ -27,7 +27,8 @@ class ResearchAgent:
         """
         try:
             logger.info(f"ResearchAgent: Conducting research for topic: '{topic}'")
-            # The SerperDevTool expects a direct string query.
+            # The SerperDevTool's run method can be finicky.
+            # The most reliable way is to call it with a simple string.
             search_query = f"latest trends and credible sources for {topic}"
             search_results = self.search_tool.run(search_query)
             logger.info(f"ResearchAgent: Found search results.")
