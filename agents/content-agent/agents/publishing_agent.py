@@ -1,5 +1,6 @@
 import logging
-import markdown
+from markdown_it import MarkdownIt
+from mdit_py_plugins.front_matter import front_matter_plugin
 
 from services.strapi_client import StrapiClient
 from utils.data_models import BlogPost, StrapiPost
@@ -39,7 +40,7 @@ class PublishingAgent:
 
         logging.info(f"PublishingAgent: Preparing to publish '{post.generated_title}' to Strapi.")
 
-        # Convert Markdown to Strapi's Rich Text "blocks" format
+        # Use a robust Markdown parser to convert content to Strapi's block format
         body_content = self._markdown_to_strapi_blocks(post.raw_content)
 
         # Get the ID of the first image to use as the featured image
@@ -72,46 +73,38 @@ class PublishingAgent:
 
     def _markdown_to_strapi_blocks(self, markdown_text: str) -> list[dict]:
         """
-        A more sophisticated converter from Markdown to Strapi's Rich Text format.
-        This handles paragraphs, headings, and lists.
+        Converts a markdown string into Strapi's rich text block format using markdown-it-py.
         """
+        md = MarkdownIt()
+        tokens = md.parse(markdown_text)
+        
         blocks = []
-        for line in markdown_text.split('\\n'):
-            line = line.strip()
-            if not line:
-                continue
-            
-            # Headings
-            if line.startswith('#'):
-                level = len(line.split(' ')[0])
-                content = line.lstrip('# ').strip()
-                blocks.append({
-                    "type": "heading",
-                    "level": level,
-                    "children": [{"type": "text", "text": content}]
-                })
-            # Unordered Lists
-            elif line.startswith(('* ', '- ')):
-                content = line.lstrip('* ').lstrip('- ').strip()
-                # If the previous block was a list, add to it
-                if blocks and blocks[-1]["type"] == "list" and blocks[-1]["format"] == "unordered":
-                    blocks[-1]["children"].append({
-                        "type": "list-item",
-                        "children": [{"type": "text", "text": content}]
-                    })
-                else: # Otherwise, create a new list
-                    blocks.append({
-                        "type": "list",
-                        "format": "unordered",
-                        "children": [{
-                            "type": "list-item",
-                            "children": [{"type": "text", "text": content}]
-                        }]
-                    })
-            # Paragraphs
-            else:
-                blocks.append({
-                    "type": "paragraph",
-                    "children": [{"type": "text", "text": line}]
-                })
+        current_list = None
+
+        for token in tokens:
+            if token.type == 'heading_open':
+                level = int(token.tag[1])
+                blocks.append({"type": "heading", "level": level, "children": []})
+            elif token.type == 'paragraph_open':
+                blocks.append({"type": "paragraph", "children": []})
+            elif token.type == 'bullet_list_open':
+                current_list = {"type": "list", "format": "unordered", "children": []}
+            elif token.type == 'list_item_open':
+                if current_list:
+                    current_list["children"].append({"type": "list-item", "children": []})
+            elif token.type == 'inline':
+                # This is the content within a block
+                if blocks and blocks[-1]["children"] is not None:
+                    # Handle inline content for headings and paragraphs
+                    if blocks[-1]['type'] in ['heading', 'paragraph']:
+                         blocks[-1]["children"].append({"type": "text", "text": token.content})
+                elif current_list and current_list["children"]:
+                     # Handle inline content for list items
+                    current_list["children"][-1]["children"].append({"type": "text", "text": token.content})
+
+            elif token.type == 'bullet_list_close':
+                if current_list:
+                    blocks.append(current_list)
+                    current_list = None
+        
         return blocks
