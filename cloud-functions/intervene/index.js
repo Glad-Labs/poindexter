@@ -14,18 +14,19 @@ exports.intervene = async (req, res) => {
 
   const pubsub = new PubSub();
   const topicName = 'agent-commands';
-  
-  // The message must be a JSON object, buffered.
-  const messagePayload = {
-    command: 'RUN_JOB',
-    // We can add more data here in the future, e.g., which specific job to run.
-  };
+
+  // The function will now forward the JSON body from the request
+  const messagePayload = req.body;
+  if (!messagePayload || !messagePayload.command) {
+    return res.status(400).send('Bad Request: Missing command in request body.');
+  }
+
   const dataBuffer = Buffer.from(JSON.stringify(messagePayload));
 
   try {
     const messageId = await pubsub.topic(topicName).publishMessage({ data: dataBuffer });
-    console.log(`Message ${messageId} published.`);
-    res.status(200).send(`Command sent: RUN_JOB`);
+    console.log(`Message ${messageId} published with payload:`, messagePayload);
+    res.status(200).send(`Command sent: ${messagePayload.command}`);
   } catch (error) {
     console.error(`Received error while publishing: ${error.message}`);
     res.status(500).send(`Error publishing message: ${error.message}`);
