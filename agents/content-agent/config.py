@@ -24,6 +24,7 @@ class Config:
         self.PROMPTS_PATH = os.path.join(self.BASE_DIR, 'prompts.json')
 
         # GCP & Gemini
+        self.GCP_SERVICE_ACCOUNT_EMAIL = os.getenv("GCP_SERVICE_ACCOUNT_EMAIL")
         self.GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID")
         self.GCP_REGION = os.getenv("GCP_REGION")
         self.GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -71,7 +72,8 @@ config = Config()
 required_vars = [
     "GCP_PROJECT_ID", "GCP_REGION", "GEMINI_API_KEY", "SPREADSHEET_ID",
     "STRAPI_API_URL", "STRAPI_API_TOKEN", "GCS_BUCKET_NAME",
-    "FIRESTORE_COLLECTION", "PEXELS_API_KEY", "SERPER_API_KEY"
+    "FIRESTORE_COLLECTION", "PEXELS_API_KEY", "SERPER_API_KEY",
+    "GCP_SERVICE_ACCOUNT_EMAIL"
 ]
 
 missing_vars = [var for var in required_vars if not getattr(config, var, None)]

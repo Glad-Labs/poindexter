@@ -61,6 +61,7 @@ venv/
 # Local files
 credentials.json
 token.json
+service-account-key.json
 generated_images/
 
 # OS generated files
