@@ -6,8 +6,7 @@ from dotenv import load_dotenv
 # This makes file paths relative to the config file's location
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Set up a basic logger for the config file itself to catch early errors
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# The logger will be configured by the main application entry point.
 logger = logging.getLogger(__name__)
 
 class Config:
@@ -25,6 +24,7 @@ class Config:
         self.PROMPTS_PATH = os.path.join(self.BASE_DIR, 'prompts.json')
 
         # GCP & Gemini
+        self.GCP_SERVICE_ACCOUNT_EMAIL = os.getenv("GCP_SERVICE_ACCOUNT_EMAIL")
         self.GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID")
         self.GCP_REGION = os.getenv("GCP_REGION")
         self.GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -57,6 +57,13 @@ class Config:
         self.OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
         self.QA_MODEL_NAME = os.getenv("QA_MODEL_NAME", "llava:13b")
 
+        # --- Logging Configuration ---
+        self.LOG_DIR = os.path.join(self.BASE_DIR, "logs")
+        self.APP_LOG_FILE = os.path.join(self.LOG_DIR, "app.log")
+        self.PROMPTS_LOG_FILE = os.path.join(self.LOG_DIR, "prompts.log")
+        self.MAX_LOG_SIZE_MB = int(os.getenv("MAX_LOG_SIZE_MB", 5))
+        self.MAX_LOG_BACKUP_COUNT = int(os.getenv("MAX_LOG_BACKUP_COUNT", 3))
+
 # Instantiate the config
 config = Config()
 
@@ -65,7 +72,8 @@ config = Config()
 required_vars = [
     "GCP_PROJECT_ID", "GCP_REGION", "GEMINI_API_KEY", "SPREADSHEET_ID",
     "STRAPI_API_URL", "STRAPI_API_TOKEN", "GCS_BUCKET_NAME",
-    "FIRESTORE_COLLECTION", "PEXELS_API_KEY", "SERPER_API_KEY"
+    "FIRESTORE_COLLECTION", "PEXELS_API_KEY", "SERPER_API_KEY",
+    "GCP_SERVICE_ACCOUNT_EMAIL"
 ]
 
 missing_vars = [var for var in required_vars if not getattr(config, var, None)]

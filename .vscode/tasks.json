@@ -2,37 +2,75 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Start Strapi Dev Server",
+      "label": "BE: Start Strapi Backend",
       "type": "shell",
-      "command": "npm run develop",
-      "options": {
-        // IMPORTANT: Update this path to your actual Strapi project directory
-        "cwd": "${workspaceFolder}/cms/strapi-backend" 
-      },
+      "command": "cd c:\\Users\\mattm\\glad-labs-website\\cms\\strapi-backend; npm run develop",
+      "problemMatcher": [],
       "presentation": {
-        "group": "dev",
-        "panel": "new",
-        "reveal": "always"
+        "group": "startup",
+        "reveal": "always",
+        "panel": "new"
       },
       "runOptions": {
         "runOn": "folderOpen"
       }
     },
     {
-      "label": "Open Agent Terminal",
+      "label": "BE: Start Python Agent Listener",
       "type": "shell",
-      "command": "echo 'Python agent terminal ready. Environment activated.'",
+      "command": "cd ${workspaceFolder}/agents/content-agent; ./.venv/Scripts/Activate.ps1; python orchestrator.py",
       "options": {
         "cwd": "${workspaceFolder}/agents/content-agent"
       },
-      "presentation": { 
-        "group": "dev",
+      "presentation": {
+        "group": "startup",
         "panel": "new",
         "reveal": "always"
       },
       "runOptions": {
         "runOn": "folderOpen"
-      }
+      },
+      "problemMatcher": [
+        "$python"
+      ]
+    },
+    {
+      "label": "FE: Start Oversight Hub",
+      "type": "shell",
+      "command": "npm start",
+      "options": {
+        "cwd": "${workspaceFolder}/web/oversight-hub"
+      },
+      "presentation": {
+        "group": "startup",
+        "panel": "new",
+        "reveal": "always"
+      },
+      "runOptions": {
+        "runOn": "folderOpen"
+      },
+      "problemMatcher": [
+        "$jshint"
+      ]
+    },
+    {
+      "label": "FE: Start Public Site",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": {
+        "cwd": "${workspaceFolder}/web/public-site"
+      },
+      "presentation": {
+        "group": "startup",
+        "panel": "new",
+        "reveal": "always"
+      },
+      "runOptions": {
+        "runOn": "folderOpen"
+      },
+      "problemMatcher": [
+        "$jshint"
+      ]
     }
   ]
 }

@@ -1,0 +1,22 @@
+# Git and Docker files
+.git
+.gitignore
+Dockerfile
+.dockerignore
+
+# Python virtual environment and cache
+.venv
+__pycache__
+
+# IDE and OS files
+.vscode
+.DS_Store
+
+# Secrets
+.env
+credentials.json
+token.json
+
+# Logs and generated files
+*.log
+generated_images/
