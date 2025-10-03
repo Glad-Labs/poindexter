@@ -1,47 +1,31 @@
 import logging
 from google.cloud import storage
-from google.auth import default
-from google.auth.impersonated_credentials import Credentials
 from config import config
-import datetime
 
 class GCSClient:
     """Client for interacting with Google Cloud Storage."""
     def __init__(self):
-        # Get the default credentials from the gcloud CLI
-        self.source_credentials, _ = default()
-        
-        # Create impersonated credentials
-        self.target_credentials = Credentials(
-            source_credentials=self.source_credentials,
-            target_principal=config.GCP_SERVICE_ACCOUNT_EMAIL,
-            target_scopes=["https://www.googleapis.com/auth/devstorage.full_control"],
-        )
-
-        self.client = storage.Client(project=config.GCP_PROJECT_ID, credentials=self.target_credentials)
+        self.client = storage.Client(project=config.GCP_PROJECT_ID)
         self.bucket_name = config.GCS_BUCKET_NAME
         self.bucket = self.client.bucket(self.bucket_name)
 
     def upload_file(self, source_file_path: str, destination_blob_name: str) -> str:
         """
-        Uploads a file to the GCS bucket and returns a long-lived signed URL.
+        Uploads a file to the GCS bucket and makes it public.
+
+        Args:
+            source_file_path (str): The local path to the file to upload.
+            destination_blob_name (str): The desired name of the object in GCS.
+
+        Returns:
+            str: The public URL of the uploaded file.
         """
         try:
             blob = self.bucket.blob(destination_blob_name)
             blob.upload_from_filename(source_file_path)
-            
-            expiration_date = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=7)
-            
-            # The blob object was created with the impersonated credentials,
-            # so it can now generate the signed URL.
-            signed_url = blob.generate_signed_url(
-                version="v4",
-                expiration=expiration_date,
-                method="GET",
-            )
-            
-            logging.info(f"File {source_file_path} uploaded to GCS. Signed URL generated.")
-            return signed_url
+            blob.make_public()
+            logging.info(f"File {source_file_path} uploaded to {destination_blob_name} and made public.")
+            return blob.public_url
         except Exception as e:
-            logging.error(f"Failed to upload file to GCS or generate signed URL: {e}")
+            logging.error(f"Failed to upload file to GCS: {e}")
             raise

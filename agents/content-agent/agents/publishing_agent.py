@@ -1,6 +1,5 @@
 import logging
-from markdown_it import MarkdownIt
-from mdit_py_plugins.front_matter import front_matter_plugin
+import markdown
 
 from services.strapi_client import StrapiClient
 from utils.data_models import BlogPost, StrapiPost
@@ -40,13 +39,13 @@ class PublishingAgent:
 
         logging.info(f"PublishingAgent: Preparing to publish '{post.generated_title}' to Strapi.")
 
-        # Use a robust Markdown parser to convert content to Strapi's block format
-        body_content = self._markdown_to_strapi_blocks(post.raw_content)
+        # Convert final Markdown to Strapi's Rich Text (Blocks) format.
+        # This is a basic conversion; more complex markdown-to-blocks logic could be added here.
+        body_content = [{"type": "paragraph", "children": [{"type": "text", "text": post.raw_content}]}]
 
         # Get the ID of the first image to use as the featured image
         featured_image_id = post.images[0].strapi_image_id if post.images and post.images[0].strapi_image_id else None
 
-        # Create the final post object that matches the writable Strapi schema
         strapi_post = StrapiPost(
             Title=post.generated_title,
             Slug=slugify(post.generated_title),
@@ -54,7 +53,8 @@ class PublishingAgent:
             Keywords=", ".join(post.related_keywords),
             MetaDescription=post.meta_description,
             FeaturedImage=featured_image_id,
-            PostStatus="draft"
+            ImageAltText=post.images[0].alt_text if post.images else None,
+            PostStatus="draft" # Explicitly set the post status in Strapi
         )
 
         response = self.strapi_client.create_post(strapi_post)
@@ -70,22 +70,3 @@ class PublishingAgent:
             post.rejection_reason = "Failed to publish to Strapi."
 
         return post
-
-    def _markdown_to_strapi_blocks(self, markdown_text: str) -> list[dict]:
-        """
-        Converts a markdown string into a simple Strapi rich text block format.
-        This approach sends the entire markdown content as a single paragraph block.
-        The frontend will then be responsible for rendering the markdown.
-        """
-        if not markdown_text:
-            return []
-            
-        # Create a single paragraph block containing the entire markdown text
-        # This is a robust way to ensure the content is accepted by Strapi,
-        # and the frontend is already set up to render markdown.
-        return [
-            {
-                "type": "paragraph",
-                "children": [{"type": "text", "text": markdown_text}]
-            }
-        ]

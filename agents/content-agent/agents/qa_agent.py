@@ -3,7 +3,7 @@ import json
 from config import config
 from services.llm_client import LLMClient
 from utils.data_models import BlogPost
-from utils.helpers import load_prompts_from_file, extract_json_from_string
+from utils.helpers import load_prompts_from_file
 
 logger = logging.getLogger(__name__)
 
@@ -32,14 +32,10 @@ class QAAgent:
         )
         
         response_text = self.llm_client.generate_text_content(prompt)
-        
-        json_string = extract_json_from_string(response_text)
-        if not json_string:
-            logger.error("QAAgent: Failed to extract JSON review from LLM response.")
-            return False, "Failed to extract the QA review from the model's response."
+        clean_json_text = response_text.strip().replace('```json', '').replace('```', '')
 
         try:
-            review = json.loads(json_string)
+            review = json.loads(clean_json_text)
             approved = review.get('approved', False)
             feedback = review.get('feedback', "No feedback provided.")
             
