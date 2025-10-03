@@ -2,19 +2,13 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "BE: Start Strapi CMS",
+      "label": "BE: Start Strapi Backend",
       "type": "shell",
-      "command": "npm run develop",
-      "options": {
-        "cwd": "${workspaceFolder}/cms/strapi-backend"
-      },
+      "command": "cd c:\\Users\\mattm\\glad-labs-website\\cms\\strapi-backend; npm run develop",
+      "problemMatcher": [],
       "presentation": {
-        "group": "startup",
-        "panel": "new",
-        "reveal": "always"
-      },
-      "runOptions": {
-        "runOn": "folderOpen"
+        "reveal": "always",
+        "panel": "new"
       }
     },
     {
@@ -47,7 +41,10 @@
       },
       "runOptions": {
         "runOn": "folderOpen"
-      }
+      },
+      "problemMatcher": [
+        "$jshint"
+      ]
     },
     {
       "label": "FE: Start Public Site",
@@ -63,7 +60,10 @@
       },
       "runOptions": {
         "runOn": "folderOpen"
-      }
+      },
+      "problemMatcher": [
+        "$jshint"
+      ]
     }
   ]
 }
