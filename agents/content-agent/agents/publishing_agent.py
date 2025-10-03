@@ -45,6 +45,8 @@ class PublishingAgent:
 
         # Get the ID of the first image to use as the featured image
         featured_image_id = post.images[0].strapi_image_id if post.images and post.images[0].strapi_image_id else None
+        # Safely get the alt text from the first image, if it exists
+        image_alt_text = post.images[0].alt_text if post.images and post.images[0].alt_text else None
 
         # Create the final post object that matches the Strapi content type
         strapi_post = StrapiPost(
@@ -54,7 +56,7 @@ class PublishingAgent:
             Keywords=", ".join(post.related_keywords),
             MetaDescription=post.meta_description,
             FeaturedImage=featured_image_id,
-            ImageAltText=post.image_alt_text,
+            ImageAltText=image_alt_text,
             PostStatus="draft",
             Author="AI Content Agent"
         )

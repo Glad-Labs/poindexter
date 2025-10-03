@@ -36,17 +36,18 @@ def slugify(text: str) -> str:
 
 def extract_json_from_string(text: str) -> Optional[str]:
     """
-    Finds and extracts the first valid JSON array from a string.
+    Finds and extracts the first valid JSON object or array from a string.
     Handles cases where JSON is embedded in text or markdown code blocks.
     """
-    # Regex to find content between ```json and ``` or the first [ and last ]
-    json_match = re.search(r'```json\s*(\[.*?\])\s*```', text, re.DOTALL)
+    # Regex to find content between ```json and ```, matching either an object or an array.
+    json_match = re.search(r'```json\s*({.*?}|\[.*?\])\s*```', text, re.DOTALL)
     if json_match:
         return json_match.group(1)
 
-    # Fallback regex to find the first complete JSON array in the string
-    json_match = re.search(r'\[.*\]', text, re.DOTALL)
+    # Fallback regex to find the first complete JSON object or array in the string.
+    json_match = re.search(r'({.*?}|\[.*?\])', text, re.DOTALL)
     if json_match:
         return json_match.group(0)
     
+    logger.warning("Could not extract a valid JSON object or array from the provided text.")
     return None
