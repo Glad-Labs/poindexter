@@ -96,6 +96,9 @@ logs
 results
 node_modules
 .node_history
+.env
+.env.*
+!/.env.example
 
 ############################
 # Package managers
@@ -129,3 +132,6 @@ dist
 build
 .strapi-updater.json
 .strapi-cloud.json
+.cache
+*.db
+*.db-journal
