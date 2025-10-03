@@ -5,31 +5,52 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+import httplib2  # Import httplib2
 from config import config
 from utils.data_models import BlogPost
 
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
+
 class GoogleSheetsClient:
     """Client to interact with the Google Sheets content calendar."""
-    SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
-    def __init__(self):
-        self.creds = self._get_credentials()
-        self.service = build('sheets', 'v4', credentials=self.creds)
-
-    def _get_credentials(self):
+    def __init__(self, credentials_file='credentials.json', token_file='token.json'):
         creds = None
-        token_path = os.path.join(config.BASE_DIR, 'token.json')
-        if os.path.exists(token_path):
-            creds = Credentials.from_authorized_user_file(token_path, self.SCOPES)
+        if os.path.exists(token_file):
+            creds = Credentials.from_authorized_user_file(token_file, SCOPES)
+        
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
             else:
-                flow = InstalledAppFlow.from_client_secrets_file(config.CREDENTIALS_PATH, self.SCOPES)
+                flow = InstalledAppFlow.from_client_secrets_file(credentials_file, SCOPES)
                 creds = flow.run_local_server(port=0)
-            with open(token_path, 'w') as token:
+            with open(token_file, 'w') as token:
                 token.write(creds.to_json())
-        return creds
+        
+        try:
+            # --- Proxy/SSL Configuration ---
+            # Check for a custom CA bundle environment variable, common in corporate environments
+            # with SSL inspection proxies.
+            ca_certs_path = os.environ.get('REQUESTS_CA_BUNDLE')
+            
+            if ca_certs_path:
+                logging.info(f"Found custom CA bundle at {ca_certs_path}. Configuring HTTP client.")
+                http_client = httplib2.Http(ca_certs=ca_certs_path)
+                self.service = build('sheets', 'v4', credentials=creds, http=http_client)
+            else:
+                # Use the default HTTP client if no custom CA bundle is specified
+                self.service = build('sheets', 'v4', credentials=creds)
+            # --- End Configuration ---
+
+            logging.info("Google Sheets client initialized successfully.")
+        except HttpError as err:
+            logging.error(f"An error occurred during Google Sheets client initialization: {err}")
+            self.service = None
+        except Exception as e:
+            logging.error(f"An unexpected error occurred during Google Sheets client initialization: {e}")
+            self.service = None
 
     def get_new_content_requests(self) -> list[BlogPost]:
         """Fetches rows from the content plan that are marked 'Ready'."""

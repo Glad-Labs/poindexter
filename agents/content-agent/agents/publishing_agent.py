@@ -1,12 +1,6 @@
 import logging
-from markdown_it import MarkdownIt
-from mdit_py_plugins.front_matter import front_matter_plugin
-
 from services.strapi_client import StrapiClient
-from utils.data_models import BlogPost, StrapiPost
-from utils.helpers import slugify
-
-logger = logging.getLogger(__name__)
+from typing import Optional
 
 class PublishingAgent:
     """Handles the final step of formatting and publishing the content to Strapi."""
@@ -21,63 +15,68 @@ class PublishingAgent:
         logging.info("Initializing Publishing Agent...")
         self.strapi_client = strapi_client
 
-    def run(self, post: BlogPost) -> BlogPost:
+    def run(self, final_content: dict) -> Optional[int]:
         """
-        Takes a completed BlogPost object, formats it for Strapi,
-        and uses the StrapiClient to create a new draft post.
-
-        Args:
-            post: The BlogPost object containing the final content.
-
-        Returns:
-            The updated BlogPost object with Strapi ID and URL if successful.
+        Validates and publishes the final content to Strapi.
+        Returns the post ID on success, or None on failure.
         """
-        if not post.generated_title or not post.raw_content:
-            logging.error("PublishingAgent: Post is missing a title or content. Aborting.")
-            post.status = "Error"
-            post.rejection_reason = "Missing title or content before publishing."
-            return post
+        title = final_content.get('title')
+        slug = final_content.get('slug')
+        meta_description = final_content.get('meta_description')
+        body_content_raw = final_content.get('body_content')
+        featured_image_id = final_content.get('featured_image_id')
 
-        logging.info(f"PublishingAgent: Preparing to publish '{post.generated_title}' to Strapi.")
+        logging.info(f"PublishingAgent: Preparing to publish '{title}' to Strapi.")
 
-        # Use a robust Markdown parser to convert content to Strapi's block format
-        body_content = self._markdown_to_strapi_blocks(post.raw_content)
+        # --- Defensive Validation ---
+        required_fields = {
+            'title': title,
+            'slug': slug,
+            'meta_description': meta_description,
+            'body_content': body_content_raw
+        }
+        missing_fields = [key for key, value in required_fields.items() if not value]
 
-        # Get the ID of the first image to use as the featured image
-        featured_image_id = post.images[0].strapi_image_id if post.images and post.images[0].strapi_image_id else None
+        if missing_fields:
+            error_message = f"Publishing failed. AI failed to generate required fields: {', '.join(missing_fields)}"
+            logging.error(error_message)
+            raise ValueError(error_message)
+        
+        # Assert to satisfy the static type checker after validation
+        assert isinstance(body_content_raw, str)
+        # --- End Validation ---
 
-        # Create the final post object that matches the writable Strapi schema
-        strapi_post = StrapiPost(
-            Title=post.generated_title,
-            Slug=slugify(post.generated_title),
-            BodyContent=body_content,
-            Keywords=", ".join(post.related_keywords),
-            MetaDescription=post.meta_description,
-            FeaturedImage=featured_image_id,
-            PostStatus="draft"
-        )
+        body_content_blocks = self._format_body_content_for_strapi(body_content_raw)
 
-        response = self.strapi_client.create_post(strapi_post)
-        if response and response.get('data'):
-            post.strapi_post_id = response['data']['id']
-            # Construct a potential frontend URL (adjust if your frontend has a different structure)
-            post.strapi_url = f"http://localhost:3000/blog/{response['data']['attributes']['Slug']}"
-            post.status = "Published"
-            logging.info(f"Successfully created draft in Strapi with ID: {post.strapi_post_id}")
-        else:
-            logging.error("Failed to create post in Strapi.")
-            post.status = "Error"
-            post.rejection_reason = "Failed to publish to Strapi."
+        # Assemble the data into a single dictionary for the Strapi client
+        post_data = {
+            "Title": title,
+            "Slug": slug,
+            "MetaDescription": meta_description,
+            "BodyContent": body_content_blocks,
+            "FeaturedImage": featured_image_id
+        }
 
-        return post
+        try:
+            post_id = self.strapi_client.create_post(post_data)
+            if post_id:
+                logging.info(f"Successfully published post '{title}' with ID: {post_id}")
+                return post_id
+            else:
+                logging.error("Publishing agent received no post ID from Strapi client.")
+                return None
+        except Exception as e:
+            logging.error(f"An exception occurred during publishing: {e}")
+            # Re-raise the exception to be caught by the orchestrator
+            raise
 
-    def _markdown_to_strapi_blocks(self, markdown_text: str) -> list[dict]:
+    def _format_body_content_for_strapi(self, body_content: str) -> list:
         """
         Converts a markdown string into a simple Strapi rich text block format.
         This approach sends the entire markdown content as a single paragraph block.
         The frontend will then be responsible for rendering the markdown.
         """
-        if not markdown_text:
+        if not body_content:
             return []
             
         # Create a single paragraph block containing the entire markdown text
@@ -86,6 +85,6 @@ class PublishingAgent:
         return [
             {
                 "type": "paragraph",
-                "children": [{"type": "text", "text": markdown_text}]
+                "children": [{"type": "text", "text": body_content}]
             }
         ]
