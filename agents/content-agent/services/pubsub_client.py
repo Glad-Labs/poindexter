@@ -60,7 +60,16 @@ class PubSubClient:
             data = json.loads(message.data.decode("utf-8"))
             command = data.get("command")
             
-            if command == "RUN_ALL_JOBS":
+            if command == "RUN_JOB":
+                sheet_row_index = data.get("sheet_row_index")
+                if sheet_row_index is not None:
+                    logger.info(f"'RUN_JOB' command received for row {sheet_row_index}. Triggering single job.")
+                    # Use a non-blocking call or thread if jobs are long
+                    self.orchestrator.run_single_job(sheet_row_index)
+                else:
+                    logger.warning("'RUN_JOB' command received without a 'sheet_row_index'. Cannot process.")
+            
+            elif command == "RUN_ALL_JOBS":
                 logger.info("'RUN_ALL_JOBS' command received. Triggering orchestrator job.")
                 self.orchestrator.run_job()
             else:
