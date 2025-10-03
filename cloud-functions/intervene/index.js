@@ -14,7 +14,13 @@ exports.intervene = async (req, res) => {
 
   const pubsub = new PubSub();
   const topicName = 'agent-commands';
-  const dataBuffer = Buffer.from('RUN_JOB');
+  
+  // The message must be a JSON object, buffered.
+  const messagePayload = {
+    command: 'RUN_JOB',
+    // We can add more data here in the future, e.g., which specific job to run.
+  };
+  const dataBuffer = Buffer.from(JSON.stringify(messagePayload));
 
   try {
     const messageId = await pubsub.topic(topicName).publishMessage({ data: dataBuffer });

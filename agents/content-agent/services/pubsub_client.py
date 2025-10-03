@@ -60,19 +60,16 @@ class PubSubClient:
             data = json.loads(message.data.decode("utf-8"))
             command = data.get("command")
             
-            if command == "RUN_JOB":
-                sheet_row_index = data.get("sheet_row_index")
-                if not sheet_row_index:
-                    logger.error("'RUN_JOB' command received without a 'sheet_row_index'.")
-                    message.nack()
-                    return
-
-                logger.info(f"'RUN_JOB' command received for row {sheet_row_index}. Triggering orchestrator job.")
-                self.orchestrator.run_single_job(sheet_row_index)
+            if command == "RUN_ALL_JOBS":
+                logger.info("'RUN_ALL_JOBS' command received. Triggering orchestrator job.")
+                self.orchestrator.run_job()
             else:
                 logger.warning(f"Unknown command received: {command}")
 
             message.ack()
+        except json.JSONDecodeError:
+            logger.error(f"Received a non-JSON message: {message.data}")
+            message.ack() # Acknowledge the bad message to remove it from the queue
         except Exception as e:
             logger.error(f"Error processing message: {e}")
-            message.nack()
+            message.nack() # Nack for other unexpected errors
