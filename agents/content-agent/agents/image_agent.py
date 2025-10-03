@@ -5,9 +5,9 @@ from config import config
 from services.llm_client import LLMClient
 from services.pexels_client import PexelsClient
 from services.gcs_client import GCSClient
-from services.strapi_client import StrapiClient  # Import StrapiClient
+from services.strapi_client import StrapiClient
 from utils.data_models import BlogPost, ImageDetails
-from utils.helpers import load_prompts_from_file, slugify
+from utils.helpers import load_prompts_from_file, slugify, extract_json_from_string
 
 
 logger = logging.getLogger(__name__)
@@ -41,12 +41,21 @@ class ImageAgent:
         )
         metadata_text = self.llm_client.generate_text_content(metadata_prompt)
         
+        json_string = extract_json_from_string(metadata_text)
+        if not json_string:
+            logging.error("Failed to extract JSON metadata from LLM response.")
+            post.status = "Error"
+            post.rejection_reason = "Failed to parse image metadata from LLM."
+            return post
+
         try:
-            image_metadata_list = json.loads(metadata_text)
+            image_metadata_list = json.loads(json_string)
             for metadata in image_metadata_list:
                 post.images.append(ImageDetails(**metadata))
         except json.JSONDecodeError:
-            logging.error("Failed to parse image metadata from LLM response.")
+            logging.error("Failed to decode extracted JSON for image metadata.")
+            post.status = "Error"
+            post.rejection_reason = "Invalid JSON format for image metadata."
             return post
 
         # 2. Search, Download, Upload to GCS, and Upload to Strapi

@@ -36,39 +36,18 @@ def slugify(text: str) -> str:
 
 def extract_json_from_string(text: str) -> Optional[str]:
     """
-    Finds and extracts the first valid JSON object from a string.
+    Finds and extracts the first valid JSON object or array from a string.
     Handles cases where JSON is embedded in text or markdown code blocks.
     """
-    # Regex to find content between ```json and ``` or the first { and last }
-    json_match = re.search(r'```json\s*(\{.*?\})\s*```', text, re.DOTALL)
+    # Regex to find content between ```json and ```, matching either an object or an array.
+    json_match = re.search(r'```json\s*({.*?}|\[.*?\])\s*```', text, re.DOTALL)
     if json_match:
         return json_match.group(1)
 
-    # Fallback regex to find the first complete JSON object in the string
-    json_match = re.search(r'\{.*\}', text, re.DOTALL)
+    # Fallback regex to find the first complete JSON object or array in the string.
+    json_match = re.search(r'({.*?}|\[.*?\])', text, re.DOTALL)
     if json_match:
-        # Find the substring that is a valid JSON
-        potential_json = json_match.group(0)
-        try:
-            # Attempt to parse to confirm it's valid JSON
-            json.loads(potential_json)
-            return potential_json
-        except json.JSONDecodeError:
-            # This is a more complex case, try to find the boundaries
-            open_braces = 0
-            start_index = -1
-            end_index = -1
-            for i, char in enumerate(potential_json):
-                if char == '{':
-                    if start_index == -1:
-                        start_index = i
-                    open_braces += 1
-                elif char == '}':
-                    open_braces -= 1
-                    if open_braces == 0 and start_index != -1:
-                        end_index = i + 1
-                        break
-            if start_index != -1 and end_index != -1:
-                return potential_json[start_index:end_index]
-
+        return json_match.group(0)
+    
+    logger.warning("Could not extract a valid JSON object or array from the provided text.")
     return None
