@@ -1,7 +1,7 @@
 crewai
 crewai_tools
 beautifulsoup4==4.13.4
-google-cloud-aiplatform>=1.38.0
+google-cloud-aiplatform
 google-cloud-firestore
 google-cloud-storage
 google-cloud-pubsub
@@ -12,4 +12,4 @@ pydantic
 python-dotenv==1.0.1
 requests==2.32.3
 markdown==3.6
-firebase-admin>=6.0.1
+firebase-admin

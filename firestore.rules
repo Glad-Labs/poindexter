@@ -1,8 +1,11 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Only allow authenticated users to read agent runs.
+    // Further rules could restrict this to specific users (admins).
+    // Write access should remain disabled from the client-side.
     match /agent_runs/{document=**} {
-      allow read: if true;
+      allow read: if request.auth != null;
       allow write: if false;
     }
   }

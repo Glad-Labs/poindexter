@@ -14,7 +14,7 @@
     {
       "label": "BE: Start Python Agent Listener",
       "type": "shell",
-      "command": "python orchestrator.py",
+      "command": "cd ${workspaceFolder}/agents/content-agent; ./.venv/Scripts/Activate.ps1; python orchestrator.py",
       "options": {
         "cwd": "${workspaceFolder}/agents/content-agent"
       },
@@ -25,7 +25,10 @@
       },
       "runOptions": {
         "runOn": "folderOpen"
-      }
+      },
+      "problemMatcher": [
+        "$python"
+      ]
     },
     {
       "label": "FE: Start Oversight Hub",
