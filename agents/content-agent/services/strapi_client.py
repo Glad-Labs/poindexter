@@ -37,7 +37,7 @@ class StrapiClient:
         Returns:
             Optional[int]: The ID of the uploaded image in Strapi, or None on failure.
         """
-        upload_url = f"{self.api_url}/api/upload"
+        upload_url = f"{self.api_url}/upload"
         try:
             with open(file_path, 'rb') as f:
                 files = {'files': (os.path.basename(file_path), f, 'image/jpeg')}
@@ -60,7 +60,7 @@ class StrapiClient:
         Returns:
             Optional[dict]: The JSON response from the Strapi API, or None on failure.
         """
-        posts_url = f"{self.api_url}/api/posts"
+        posts_url = f"{self.api_url}/posts"
         
         payload = {
             "data": post_data.model_dump(by_alias=True, exclude_none=True)
@@ -88,7 +88,7 @@ if __name__ == '__main__':
         Title="Test Post from Strapi Client",
         Slug="test-post-from-strapi-client",
         BodyContent=[{"type": "paragraph", "children": [{"type": "text", "text": "This is a test."}]}],
-        #Author="StrapiClientTest"
+        Author="StrapiClientTest"
     )
 
     # Call the create_post method

@@ -1,6 +1,5 @@
 import os
 import logging
-from datetime import datetime  # Add this import
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -46,21 +45,12 @@ class GoogleSheetsClient:
             headers = values[0]
             for i, row in enumerate(values[1:], start=2):
                 if len(row) > headers.index('Status') and row[headers.index('Status')] == 'Ready':
-                    # Safely get the refinement loops value, defaulting to 1 if the column is missing.
-                    refinement_loops = 1
-                    if 'Refinement Loops' in headers:
-                        try:
-                            refinement_loops = int(row[headers.index('Refinement Loops')] or 1)
-                        except (ValueError, IndexError):
-                            logging.warning(f"Could not parse 'Refinement Loops' for row {i}. Defaulting to 1.")
-                            refinement_loops = 1
-                    
                     requests.append(BlogPost(
                         topic=row[headers.index('Topic')],
                         primary_keyword=row[headers.index('Primary Keyword')],
                         target_audience=row[headers.index('Target Audience')],
                         category=row[headers.index('Category')],
-                        refinement_loops=refinement_loops,
+                        refinement_loops=int(row[headers.index('Refinement Loops')] or 1),
                         sheet_row_index=i
                     ))
             return requests
@@ -81,33 +71,6 @@ class GoogleSheetsClient:
             ).execute()
         except Exception as e:
             logging.error(f"Error updating row {row_index} in Google Sheets: {e}")
-
-    def log_completed_post(self, post: BlogPost):
-        """Appends a new row to the Generated Content Log sheet."""
-        try:
-            # This order must match the columns in your 'Generated Content Log' sheet
-            timestamp = datetime.now().isoformat()
-            row_data = [
-                post.topic,
-                post.generated_title or "",
-                post.status or "Unknown",
-                post.strapi_url or "",
-                post.category or "",
-                timestamp,
-                post.rejection_reason or ""
-            ]
-            
-            body = {'values': [row_data]}
-            self.service.spreadsheets().values().append(
-                spreadsheetId=config.SPREADSHEET_ID,
-                range=f"{config.LOG_SHEET_NAME}!A1",
-                valueInputOption='USER_ENTERED',
-                insertDataOption='INSERT_ROWS',
-                body=body
-            ).execute()
-            logging.info(f"Successfully logged '{post.generated_title}' to the Generated Content Log.")
-        except Exception as e:
-            logging.error(f"Error logging post to Google Sheets: {e}")
 
     def get_published_posts_map(self) -> dict[str, str]:
         """Creates a map of {Title: URL} for all published posts for internal linking."""
