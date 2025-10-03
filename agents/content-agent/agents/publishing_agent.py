@@ -73,38 +73,19 @@ class PublishingAgent:
 
     def _markdown_to_strapi_blocks(self, markdown_text: str) -> list[dict]:
         """
-        Converts a markdown string into Strapi's rich text block format using markdown-it-py.
+        Converts a markdown string into a simple Strapi rich text block format.
+        This approach sends the entire markdown content as a single paragraph block.
+        The frontend will then be responsible for rendering the markdown.
         """
-        md = MarkdownIt()
-        tokens = md.parse(markdown_text)
-        
-        blocks = []
-        current_list = None
-
-        for token in tokens:
-            if token.type == 'heading_open':
-                level = int(token.tag[1])
-                blocks.append({"type": "heading", "level": level, "children": []})
-            elif token.type == 'paragraph_open':
-                blocks.append({"type": "paragraph", "children": []})
-            elif token.type == 'bullet_list_open':
-                current_list = {"type": "list", "format": "unordered", "children": []}
-            elif token.type == 'list_item_open':
-                if current_list:
-                    current_list["children"].append({"type": "list-item", "children": []})
-            elif token.type == 'inline':
-                # This is the content within a block
-                if blocks and blocks[-1]["children"] is not None:
-                    # Handle inline content for headings and paragraphs
-                    if blocks[-1]['type'] in ['heading', 'paragraph']:
-                         blocks[-1]["children"].append({"type": "text", "text": token.content})
-                elif current_list and current_list["children"]:
-                     # Handle inline content for list items
-                    current_list["children"][-1]["children"].append({"type": "text", "text": token.content})
-
-            elif token.type == 'bullet_list_close':
-                if current_list:
-                    blocks.append(current_list)
-                    current_list = None
-        
-        return blocks
+        if not markdown_text:
+            return []
+            
+        # Create a single paragraph block containing the entire markdown text
+        # This is a robust way to ensure the content is accepted by Strapi,
+        # and the frontend is already set up to render markdown.
+        return [
+            {
+                "type": "paragraph",
+                "children": [{"type": "text", "text": markdown_text}]
+            }
+        ]

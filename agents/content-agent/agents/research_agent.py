@@ -27,10 +27,9 @@ class ResearchAgent:
         """
         try:
             logger.info(f"ResearchAgent: Conducting research for topic: '{topic}'")
-            # Pass the query as a dictionary for robustness with crewai tools
-            search_results = self.search_tool.run(
-                tool_input={'query': f"latest trends and credible sources for {topic}"}
-            )
+            # The SerperDevTool expects a direct string query.
+            search_query = f"latest trends and credible sources for {topic}"
+            search_results = self.search_tool.run(search_query)
             logger.info(f"ResearchAgent: Found search results.")
             return str(search_results) # Convert results to string for the prompt
         except Exception as e:
