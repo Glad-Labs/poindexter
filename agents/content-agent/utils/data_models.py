@@ -59,9 +59,7 @@ class StrapiPost(BaseModel):
     PostStatus: str = "draft"
     Keywords: Optional[str] = None
     MetaDescription: Optional[str] = None
-    FeaturedImage: Optional[int] = None # Will be the ID of the uploaded image
-    ImageAltText: Optional[str] = None
-    Author: Optional[str] = "Glad Labs Content Agent"
+    FeaturedImage: Optional[int] = None
 
     model_config = {
         "populate_by_name": True
