@@ -134,9 +134,10 @@ class Orchestrator:
             post = self.publishing_agent.run(post)
 
             # --- Stage 6: Finalization ---
-            # CRITICAL: Verify that the post was actually created in Strapi
+            # The PublishingAgent now handles its own error state.
+            # We just need to check if a strapi_post_id was successfully added.
             if not post.strapi_post_id:
-                raise Exception("Publishing agent failed to return a Strapi post ID.")
+                raise Exception(post.rejection_reason or "Publishing agent failed to return a Strapi post ID.")
 
             post.status = "Published"
             final_status = "Published to Strapi"

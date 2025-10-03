@@ -48,9 +48,11 @@ class GoogleSheetsClient:
         except HttpError as err:
             logging.error(f"An error occurred during Google Sheets client initialization: {err}")
             self.service = None
+            raise  # Re-raise the exception to halt initialization
         except Exception as e:
             logging.error(f"An unexpected error occurred during Google Sheets client initialization: {e}")
             self.service = None
+            raise  # Re-raise the exception to halt initialization
 
     def get_new_content_requests(self) -> list[BlogPost]:
         """Fetches rows from the content plan that are marked 'Ready'."""
