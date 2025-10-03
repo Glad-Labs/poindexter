@@ -5,7 +5,7 @@ import logging
 import time
 from functools import wraps
 import vertexai
-from vertexai.generative_models import GenerativeModel, GenerationConfig
+from vertexai.preview.generative_models import GenerativeModel, GenerationConfig
 
 # Decorator for retries with exponential backoff
 def retry_with_backoff(retries=3, backoff_in_seconds=1):
@@ -38,7 +38,7 @@ class LLMClient:
             # Initialize the Vertex AI SDK
             vertexai.init(project=config.GCP_PROJECT_ID, location=config.GCP_REGION)
             
-            # Load the generative model
+            # Load the generative model using the new 'preview' namespace
             self.model = GenerativeModel(config.GEMINI_MODEL)
             
             # Optional: Configure generation parameters
@@ -48,7 +48,7 @@ class LLMClient:
                 max_output_tokens=8192,
             )
             
-            logging.info("Vertex AI client (Generative AI SDK) initialized successfully.")
+            logging.info("Vertex AI client (Preview Generative AI SDK) initialized successfully.")
         except Exception as e:
             logging.error(f"Failed to initialize Vertex AI client: {e}")
             raise
