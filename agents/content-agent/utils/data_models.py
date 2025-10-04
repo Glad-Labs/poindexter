@@ -56,7 +56,7 @@ class StrapiPost(BaseModel):
     Title: str
     Slug: str
     BodyContent: List[Dict]
-    PostStatus: str = "draft"
+    PostStatus: str = "Draft"  # Corrected to capitalized "Draft"
     Keywords: Optional[str] = None
     MetaDescription: Optional[str] = None
     FeaturedImage: Optional[int] = None

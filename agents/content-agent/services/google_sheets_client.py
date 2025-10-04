@@ -10,7 +10,7 @@ import httplib2  # Import httplib2
 from config import config
 from utils.data_models import BlogPost
 
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
 class GoogleSheetsClient:
     """Client to interact with the Google Sheets content calendar."""

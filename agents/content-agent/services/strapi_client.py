@@ -75,6 +75,18 @@ class StrapiClient:
             return response.json()
         except requests.exceptions.RequestException as e:
             logger.error(f"Error creating post in Strapi: {e}")
+            # --- Enhanced Error Logging ---
+            if e.response is not None:
+                logger.error(f"Strapi Response Status Code: {e.response.status_code}")
+                try:
+                    # Try to log the detailed error message from Strapi
+                    strapi_error = e.response.json()
+                    logger.error(f"Strapi Error Details: {json.dumps(strapi_error, indent=2)}")
+                except json.JSONDecodeError:
+                    # If the response isn't JSON, log the raw text
+                    logger.error(f"Strapi Raw Response: {e.response.text}")
+            logger.error(f"Data payload sent to Strapi: {json.dumps(payload, indent=2)}")
+            # --- End Enhanced Error Logging ---
             return None
 
 # Example of how to use the client
