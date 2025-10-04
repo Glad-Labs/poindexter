@@ -4,51 +4,74 @@
   "info": {
     "singularName": "post",
     "pluralName": "posts",
-    "displayName": "Post"
+    "displayName": "Blog Post",
+    "description": "Represents a single blog post, including all its content, metadata, and media. This is the central content type for the website.",
+    "version": "1.1.0"
   },
   "options": {
     "draftAndPublish": true
   },
-  "pluginOptions": {},
+  "pluginOptions": {
+    "i18n": {
+      "localized": false
+    }
+  },
   "attributes": {
     "Title": {
-      "type": "string"
+      "type": "string",
+      "required": true,
+      "description": "The main title of the blog post."
     },
     "Slug": {
-      "type": "string"
+      "type": "uid",
+      "targetField": "Title",
+      "required": true,
+      "description": "The URL-friendly identifier for the post, generated from the title."
     },
     "BodyContent": {
-      "type": "blocks"
+      "type": "blocks",
+      "required": true,
+      "description": "The main content of the blog post, using Strapi's block editor."
     },
     "PostStatus": {
       "type": "enumeration",
       "enum": [
         "Draft",
         "Published",
-        "Scheduled"
-      ]
+        "Archived"
+      ],
+      "default": "Draft",
+      "required": true
     },
     "Keywords": {
-      "type": "string"
+      "type": "string",
+      "description": "A comma-separated list of SEO keywords for the post."
     },
     "MetaDescription": {
-      "type": "text"
+      "type": "text",
+      "maxLength": 160,
+      "description": "A short summary for search engine results (max 160 characters)."
     },
     "FeaturedImage": {
       "type": "media",
       "multiple": false,
+      "required": false,
       "allowedTypes": [
-        "images",
-        "files",
-        "videos",
-        "audios"
-      ]
+        "images"
+      ],
+      "description": "The primary image for the blog post."
     },
-    "ImageAltText": {
-      "type": "string"
+    "author": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "admin::user",
+      "inversedBy": "posts"
     },
-    "Author": {
-      "type": "string"
+    "category": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::category.category",
+      "inversedBy": "posts"
     }
   }
 }

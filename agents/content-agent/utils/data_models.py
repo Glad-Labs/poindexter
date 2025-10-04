@@ -27,27 +27,25 @@ class BlogPost(BaseModel):
 
     # --- Generated Content ---
     generated_title: Optional[str] = None
-    raw_content: Optional[str] = None  # The main Markdown body
+    raw_content: Optional[str] = None  # The main Markdown body from the creative agent
     meta_description: Optional[str] = None
-    related_keywords: List[str] = Field(default_factory=list)
-    internal_links: List[str] = Field(default_factory=list) # Titles of posts to link to
-    external_links: Dict[str, str] = Field(default_factory=dict) # e.g., {"Text": "URL"}
+    keywords: List[str] = Field(default_factory=list) # SEO keywords from CreativeAgent
+    research_data: Optional[str] = None # Raw research data from ResearchAgent
     
-    # --- Image & Asset Management ---
+    # --- Refinement & State Tracking ---
+    qa_feedback: List[str] = Field(default_factory=list)
+    status: str = "New" # Tracks the current state (e.g., "In Progress", "Published", "Failed")
+    
+    # --- Publishing & Finalization ---
     images: List[ImageDetails] = Field(default_factory=list)
-    
-    # --- State & Output ---
-    status: str = "New"
-    rejection_reason: Optional[str] = None
     strapi_post_id: Optional[int] = None
     strapi_url: Optional[str] = None
-    
-    # --- QA & Refinement Tracking ---
-    qa_feedback: List[str] = Field(default_factory=list)
-    
+    rejection_reason: Optional[str] = None # Reason for failing QA or publishing
+
     # --- Internal State ---
-    # Holds a map of {post_title: post_url} for internal linking
+    # Holds a map of {post_title: post_url} for internal linking, excluded from serialization
     published_posts_map: Dict[str, str] = Field(default_factory=dict, exclude=True)
+
 
 class StrapiPost(BaseModel):
     """

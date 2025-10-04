@@ -3,7 +3,7 @@ import logging
 from google.cloud import firestore
 from datetime import datetime
 from config import config
-from typing import Optional
+from typing import Optional, Any
 
 class FirestoreClient:
     """
@@ -15,7 +15,76 @@ class FirestoreClient:
         """
         self.db = firestore.Client(project=config.GCP_PROJECT_ID)
         self.collection_name = config.FIRESTORE_COLLECTION
+        self.run_collection_name = "agent_runs"  # New collection for logging runs
         logging.info("Firestore client initialized.")
+
+    def log_run(self, sheet_row_index: int, topic: str, status: str = "Starting") -> str:
+        """
+        Logs the start of a new agent run and returns the Firestore document ID.
+
+        Args:
+            sheet_row_index (int): The row number from the Google Sheet.
+            topic (str): The topic of the blog post.
+            status (str): The initial status of the run.
+
+        Returns:
+            str: The unique ID of the Firestore document for this run.
+        """
+        try:
+            run_data = {
+                "sheet_row_index": sheet_row_index,
+                "topic": topic,
+                "status": status,
+                "startedAt": datetime.utcnow(),
+                "updatedAt": datetime.utcnow(),
+                "history": [{
+                    "timestamp": datetime.utcnow(),
+                    "status": "Run Started"
+                }]
+            }
+            doc_ref = self.db.collection(self.run_collection_name).add(run_data)
+            run_id = doc_ref[1].id
+            logging.info(f"Started and logged new run with ID: {run_id}")
+            return run_id
+        except Exception as e:
+            logging.error(f"Failed to log new agent run: {e}")
+            raise
+
+    def update_run(self, run_id: str, status: Optional[str] = None, post_data: Optional[dict] = None):
+        """
+        Updates the status and other details of an ongoing agent run.
+
+        Args:
+            run_id (str): The Firestore document ID of the run.
+            status (str, optional): The new status to set.
+            post_data (dict, optional): A dictionary of post-related data to merge.
+        """
+        if not run_id:
+            logging.warning("Update_run called with no run_id. Skipping Firestore update.")
+            return
+            
+        try:
+            doc_ref = self.db.collection(self.run_collection_name).document(run_id)
+            update_data: dict[str, Any] = {
+                "updatedAt": datetime.utcnow()
+            }
+            if status:
+                update_data["status"] = status
+                # Add a history entry for the status change
+                update_data["history"] = firestore.ArrayUnion([{
+                    "timestamp": datetime.utcnow(),
+                    "status": status
+                }])
+
+            if post_data:
+                # Merge the post data into the document
+                for key, value in post_data.items():
+                    update_data[key] = value
+
+            doc_ref.set(update_data, merge=True)
+            logging.info(f"Updated Firestore run document '{run_id}' with status '{status}'.")
+        except Exception as e:
+            logging.error(f"Failed to update Firestore run document '{run_id}': {e}")
 
     def update_document(self, document_id: str, data: dict):
         """

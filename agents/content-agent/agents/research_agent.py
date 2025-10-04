@@ -19,21 +19,24 @@ class ResearchAgent:
             raise ValueError("SERPER_API_KEY is not set in the environment.")
         self.serper_api_key = config.SERPER_API_KEY
 
-    def run(self, topic: str) -> str:
+    def run(self, topic: str, keywords: list[str]) -> str:
         """
-        Conducts a web search for the given topic using the Serper API directly.
+        Conducts a web search using a combination of the topic and keywords
+        to get more targeted and relevant results.
 
         Args:
-            topic: The topic to research.
+            topic (str): The core topic to research.
+            keywords (list[str]): A list of supporting keywords to refine the search.
 
         Returns:
             A string containing the formatted search results, or an empty string on failure.
         """
         try:
-            logger.info(f"ResearchAgent: Conducting research for topic: '{topic}'")
+            search_query = f"{topic} {' '.join(keywords)}"
+            logger.info(f"ResearchAgent: Conducting research for query: '{search_query}'")
             
             url = "https://google.serper.dev/search"
-            payload = json.dumps({"q": f"latest trends and credible sources for {topic}"})
+            payload = json.dumps({"q": search_query})
             headers = {
                 'X-API-KEY': self.serper_api_key,
                 'Content-Type': 'application/json'

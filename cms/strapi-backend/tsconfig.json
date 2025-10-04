@@ -1,43 +1,119 @@
+/**
+ * @file cms/strapi-backend/tsconfig.json
+ * @description TypeScript configuration for the Strapi backend server.
+ * @overview This file configures the TypeScript compiler (tsc) for the Strapi application.
+ * It defines how `.ts` and `.js` files are processed, what libraries are available,
+ * and which files to include or exclude from compilation. This setup is crucial for
+ * ensuring type safety and leveraging modern JavaScript features while building the
+ * Strapi server-side logic. Adheres to GLAD LABS standards for server-side TypeScript projects.
+ */
 {
   "compilerOptions": {
+    /**
+     * @property {string} module - "CommonJS"
+     * @description Specifies the module system. "CommonJS" is standard for Node.js environments,
+     * ensuring compatibility with Strapi's core and the broader Node ecosystem.
+     */
     "module": "CommonJS",
+    /**
+     * @property {string} moduleResolution - "Node"
+     * @description Defines how modules are resolved. "Node" mimics the Node.js module resolution
+     * strategy, which is essential for finding packages in `node_modules`.
+     */
     "moduleResolution": "Node",
+    /**
+     * @property {string[]} lib - ["ES2020"]
+     * @description Specifies the set of built-in API declarations available. "ES2020" provides
+     * modern JavaScript features like `Promise.allSettled` and `globalThis`.
+     */
     "lib": ["ES2020"],
+    /**
+     * @property {string} target - "ES2019"
+     * @description Sets the target ECMAScript version for the compiled JavaScript output.
+     * "ES2019" is a stable target that is widely supported in Node.js environments.
+     */
     "target": "ES2019",
-    "strict": false,
+    /**
+     * @property {boolean} strict - true
+     * @description Enables all strict type-checking options. This is a best practice for
+     * catching common programming errors and ensuring code quality.
+     * @recommendation Set to `true` to enforce strong typing.
+     */
+    "strict": true,
+    /**
+     * @property {boolean} skipLibCheck - true
+     * @description Skips type checking of all declaration files (`.d.ts`). This can speed up
+     * compilation, especially in projects with many dependencies.
+     */
     "skipLibCheck": true,
+    /**
+     * @property {boolean} forceConsistentCasingInFileNames - true
+     * @description Enforces consistent casing in file names, preventing issues on case-sensitive
+     * file systems like Linux.
+     */
     "forceConsistentCasingInFileNames": true,
+    /**
+     * @property {boolean} incremental - true
+     * @description Enables incremental compilation, where the compiler saves project graph
+     * information to a `.tsbuildinfo` file, speeding up subsequent builds.
+     */
     "incremental": true,
+    /**
+     * @property {boolean} esModuleInterop - true
+     * @description Enables compatibility with modules that use `export =` and `module.exports`.
+     * This is crucial for seamless integration with many libraries in the Node.js ecosystem.
+     */
     "esModuleInterop": true,
+    /**
+     * @property {boolean} resolveJsonModule - true
+     * @description Allows importing `.json` files as modules, which is useful for configuration.
+     */
     "resolveJsonModule": true,
+    /**
+     * @property {boolean} noEmitOnError - true
+     * @description Prevents the compiler from emitting output files if any errors are reported.
+     * This ensures that broken code is not deployed.
+     */
     "noEmitOnError": true,
+    /**
+     * @property {boolean} noImplicitThis - true
+     * @description Raises an error on `this` expressions with an implied `any` type.
+     */
     "noImplicitThis": true,
+    /**
+     * @property {string} outDir - "dist"
+     * @description Specifies the output directory for compiled files.
+     */
     "outDir": "dist",
+    /**
+     * @property {string} rootDir - "."
+     * @description Specifies the root directory of input files.
+     */
     "rootDir": "."
   },
   "include": [
-    // Include root files
+    // Include root-level configuration files
     "./",
-    // Include all ts files
+    // Include all TypeScript files throughout the project
     "./**/*.ts",
-    // Include all js files
+    // Include all JavaScript files to allow for mixed codebases
     "./**/*.js",
-    // Force the JSON files in the src folder to be included
+    // Force inclusion of JSON files within the `src` directory (e.g., for schemas)
     "src/**/*.json"
   ],
-
   "exclude": [
+    // Standard exclusion for node modules
     "node_modules/",
+    // Strapi-specific build and cache folders
     "build/",
     "dist/",
     ".cache/",
     ".tmp/",
-
-    // Do not include admin files in the server compilation
+    // Exclude the admin panel's source files from the server-side build
     "src/admin/",
-    // Do not include test files
+    // Exclude test files from the production build
     "**/*.test.*",
-    // Do not include plugins in the server compilation
+    // Exclude plugin source code from the main server build
     "src/plugins/**"
   ]
 }

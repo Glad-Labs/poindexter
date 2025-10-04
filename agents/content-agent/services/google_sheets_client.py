@@ -9,6 +9,7 @@ from googleapiclient.errors import HttpError
 import httplib2  # Import httplib2
 from config import config
 from utils.data_models import BlogPost
+from typing import Generator
 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
@@ -54,59 +55,109 @@ class GoogleSheetsClient:
             self.service = None
             raise  # Re-raise the exception to halt initialization
 
-    def get_new_content_requests(self) -> list[BlogPost]:
-        """Fetches rows from the content plan that are marked 'Ready'."""
+    def get_content_queue(self) -> Generator[BlogPost, None, None]:
+        """
+        Fetches rows from the content plan marked 'Ready' and yields them one by one.
+        This generator approach is more memory-efficient for large content plans.
+
+        Yields:
+            Generator[BlogPost, None, None]: A generator of BlogPost objects.
+        """
+        if not self.service:
+            logging.error("Google Sheets service not initialized. Cannot get content queue.")
+            return
         try:
             sheet = self.service.spreadsheets()
             result = sheet.values().get(spreadsheetId=config.SPREADSHEET_ID, range=f"{config.PLAN_SHEET_NAME}!A:F").execute()
             values = result.get('values', [])
             
-            requests = []
             if not values or len(values) < 2:
-                logging.info("No data found in content plan.")
-                return []
+                logging.info("No data found in content plan or only headers present.")
+                return
 
             headers = values[0]
+            # Create a map of header names to their column index for robustness
+            header_map = {header: i for i, header in enumerate(headers)}
+
+            # Required headers
+            required_headers = ['Topic', 'Primary Keyword', 'Target Audience', 'Category', 'Status']
+            if not all(h in header_map for h in required_headers):
+                logging.error(f"Missing one or more required headers in the sheet: {required_headers}")
+                return
+
             for i, row in enumerate(values[1:], start=2):
-                if len(row) > headers.index('Status') and row[headers.index('Status')] == 'Ready':
-                    # Safely get the refinement loops value, defaulting to 1 if the column is missing.
+                # Check if the row has enough columns and the status is 'Ready'
+                status_col = header_map.get('Status')
+                if status_col is not None and len(row) > status_col and row[status_col] == 'Ready':
+                    
+                    # Safely get the refinement loops value, defaulting to 1.
                     refinement_loops = 1
-                    if 'Refinement Loops' in headers:
+                    loops_col = header_map.get('Refinement Loops')
+                    if loops_col is not None and len(row) > loops_col:
                         try:
-                            refinement_loops = int(row[headers.index('Refinement Loops')] or 1)
+                            refinement_loops = int(row[loops_col] or 1)
                         except (ValueError, IndexError):
                             logging.warning(f"Could not parse 'Refinement Loops' for row {i}. Defaulting to 1.")
                             refinement_loops = 1
                     
-                    requests.append(BlogPost(
-                        topic=row[headers.index('Topic')],
-                        primary_keyword=row[headers.index('Primary Keyword')],
-                        target_audience=row[headers.index('Target Audience')],
-                        category=row[headers.index('Category')],
+                    # Construct the BlogPost object and yield it
+                    yield BlogPost(
+                        topic=row[header_map['Topic']],
+                        primary_keyword=row[header_map['Primary Keyword']],
+                        target_audience=row[header_map['Target Audience']],
+                        category=row[header_map['Category']],
                         refinement_loops=refinement_loops,
                         sheet_row_index=i
-                    ))
-            return requests
+                    )
+        except HttpError as e:
+            logging.error(f"API error fetching content requests from Google Sheets: {e}")
         except Exception as e:
-            logging.error(f"Error fetching content requests from Google Sheets: {e}")
-            return []
+            logging.error(f"Unexpected error fetching content requests from Google Sheets: {e}")
 
-    def update_status_by_row(self, row_index: int, status: str, url: str = ""):
-        """Updates the status and URL of a specific row in the content plan."""
+    def update_sheet_status(self, row_index: int, status: str, url: str = ""):
+        """
+        Updates the status, timestamp, and optionally the URL for a specific row.
+        This provides a clear audit trail directly in the content calendar.
+
+        Args:
+            row_index (int): The 1-based index of the row to update.
+            status (str): The new status to set (e.g., 'In Progress', 'Published').
+            url (str, optional): The URL of the published post. Defaults to "".
+        """
+        if not self.service:
+            logging.error("Google Sheets service not initialized. Cannot update sheet status.")
+            return
         try:
-            # Assuming Status is in Col G and URL is in Col H
-            body = {'values': [[status, url]]}
+            # Recommendation: Make column indices configurable in config.py instead of hardcoding.
+            # This would make the system more robust to changes in the sheet layout.
+            # Example: STATUS_COLUMN = 'G', URL_COLUMN = 'H', LAST_UPDATED_COLUMN = 'I'
+            
+            now = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+            # Assuming Status is Col G, URL is Col H, Last Updated is Col I
+            body = {
+                'values': [[status, url, now]]
+            }
+            
+            # The range starts from column G for the given row.
+            range_to_update = f"{config.PLAN_SHEET_NAME}!G{row_index}"
+
             self.service.spreadsheets().values().update(
                 spreadsheetId=config.SPREADSHEET_ID,
-                range=f"{config.PLAN_SHEET_NAME}!G{row_index}:H{row_index}",
+                range=range_to_update,
                 valueInputOption='USER_ENTERED',
                 body=body
             ).execute()
+            logging.info(f"Updated row {row_index} status to '{status}'.")
+        except HttpError as e:
+            logging.error(f"API error updating row {row_index} in Google Sheets: {e}")
         except Exception as e:
-            logging.error(f"Error updating row {row_index} in Google Sheets: {e}")
+            logging.error(f"Unexpected error updating row {row_index} in Google Sheets: {e}")
 
     def log_completed_post(self, post: BlogPost):
         """Appends a new row to the Generated Content Log sheet."""
+        if not self.service:
+            logging.error("Google Sheets service not initialized. Cannot log completed post.")
+            return
         try:
             # This order must match the columns in your 'Generated Content Log' sheet
             timestamp = datetime.now().isoformat()
@@ -132,24 +183,58 @@ class GoogleSheetsClient:
         except Exception as e:
             logging.error(f"Error logging post to Google Sheets: {e}")
 
-    def get_published_posts_map(self) -> dict[str, str]:
-        """Creates a map of {Title: URL} for all published posts for internal linking."""
+    def get_all_published_posts(self) -> dict[str, str]:
+        """
+        Fetches all posts marked as 'Published' to build a map of titles to URLs.
+        This is used by the Creative Agent to suggest internal links.
+
+        Returns:
+            dict[str, str]: A dictionary mapping post titles to their published URLs.
+        """
+        if not self.service:
+            logging.error("Google Sheets service not initialized. Cannot get published posts.")
+            return {}
+            
+        published_posts = {}
         try:
             sheet = self.service.spreadsheets()
-            # Assuming Title is in Col F and URL is in Col I of the Log Sheet
-            result = sheet.values().get(spreadsheetId=config.SPREADSHEET_ID, range=f"{config.LOG_SHEET_NAME}!F:I").execute()
+            # Fetches columns for Title (assuming in 'J') and URL (assuming in 'H')
+            # Recommendation: Make these columns configurable.
+            result = sheet.values().get(
+                spreadsheetId=config.SPREADSHEET_ID,
+                range=f"{config.PUBLISHED_SHEET_NAME}!A:J" # Adjust range as needed
+            ).execute()
             values = result.get('values', [])
-            
-            post_map = {}
+
             if not values or len(values) < 2:
+                logging.info("No published posts found in the 'Published' sheet.")
                 return {}
-            
+
+            headers = values[0]
+            header_map = {header: i for i, header in enumerate(headers)}
+
+            # Check for required headers
+            if not all(h in header_map for h in ['Final Title', 'URL', 'Status']):
+                logging.error("Missing 'Final Title', 'URL', or 'Status' header in 'Published' sheet.")
+                return {}
+
             for row in values[1:]:
-                if len(row) >= 4 and row[1] == 'Published to Strapi': # Status in Col G
-                    title = row[0] # Title in Col F
-                    url = row[3]   # URL in Col I
-                    post_map[title] = url
-            return post_map
+                status_col = header_map['Status']
+                title_col = header_map['Final Title']
+                url_col = header_map['URL']
+
+                if len(row) > status_col and row[status_col] == 'Published':
+                    if len(row) > title_col and len(row) > url_col:
+                        title = row[title_col]
+                        url = row[url_col]
+                        if title and url:
+                            published_posts[title] = url
+            
+            logging.info(f"Fetched {len(published_posts)} published posts for internal linking.")
+            return published_posts
+        except HttpError as e:
+            logging.error(f"API error fetching published posts: {e}")
+            return {}
         except Exception as e:
-            logging.error(f"Error fetching published posts map from Google Sheets: {e}")
+            logging.error(f"Unexpected error fetching published posts: {e}")
             return {}
