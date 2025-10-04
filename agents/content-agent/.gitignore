@@ -1,6 +1,21 @@
+# This file is intentionally left more comprehensive than the root .gitignore
+# as this agent might be deployed as a standalone service in the future.
+
+# Python virtual environment
+.venv/
+venv/
+env/
+
+# Credentials and sensitive files
+credentials.json
+*.log
+.env
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 *.$py.class
 
 # C extensions

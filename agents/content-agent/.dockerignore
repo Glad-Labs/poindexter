@@ -1,3 +1,5 @@
+# This file prevents local development artifacts from being included in the Docker image.
+
 # Git and Docker files
 .git
 .gitignore
@@ -6,17 +8,39 @@ Dockerfile
 
 # Python virtual environment and cache
 .venv
-__pycache__
+venv
+env
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
 
-# IDE and OS files
-.vscode
+# IDE and OS-specific files
+.vscode/
+.idea/
 .DS_Store
+Thumbs.db
 
-# Secrets
+# Secrets and configuration
+# These files often contain sensitive API keys, credentials, or environment-specific settings.
+# It's crucial to exclude them from the Docker image for security.
+# They should be mounted as secrets or passed as environment variables in production.
 .env
+*.env
 credentials.json
 token.json
+config.py
 
 # Logs and generated files
 *.log
+*.log*
+logs/
 generated_images/
+*.sqlite3
+*.db
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/

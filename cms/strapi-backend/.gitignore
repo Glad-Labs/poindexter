@@ -1,7 +1,14 @@
-############################
-# OS X
-############################
+# Strapi and Node.js specific
+node_modules/
+build/
+.tmp/
+public/uploads/
+*.log
+.env
+.env.*
+!.env.example
 
+# OS generated files
 .DS_Store
 .AppleDouble
 .LSOverride
@@ -9,45 +16,37 @@ Icon
 .Spotlight-V100
 .Trashes
 ._*
-
-
-############################
-# Linux
-############################
-
 *~
-
-
-############################
-# Windows
-############################
-
 Thumbs.db
 ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
-*.cab
-*.msi
-*.msm
-*.msp
 
+# Packages & Archives (generally not needed in a Strapi project)
+# *.7z
+# *.csv
+# *.dat
+# *.dmg
+# *.gz
+# *.iso
+# *.jar
+# *.rar
+# *.tar
+# *.zip
 
-############################
-# Packages
-############################
+# Compiled files (if any)
+# *.com
+# *.class
+# *.dll
+# *.exe
+# *.o
+# *.so
 
-*.7z
-*.csv
-*.dat
-*.dmg
-*.gz
-*.iso
-*.jar
-*.rar
-*.tar
-*.zip
-*.com
-*.class
+# Windows Installer files
+# *.cab
+# *.msi
+# *.msm
+# *.msp
 *.dll
 *.exe
 *.o

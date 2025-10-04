@@ -1,15 +1,30 @@
+# GLAD Labs Content Agent Dependencies
+# This file specifies the Python packages required to run the content creation agent.
+# For reproducibility, key libraries are pinned to specific versions.
+
+# --- Core AI & Agent Framework ---
+# CrewAI provides the foundation for building and orchestrating autonomous AI agents.
 crewai
 crewai_tools
-beautifulsoup4==4.13.4
-google-cloud-aiplatform
-google-cloud-firestore
-google-cloud-storage
-google-cloud-pubsub
-google-api-python-client
-google-auth-httplib2
-google-auth-oauthlib
-pydantic
-python-dotenv==1.0.1
-requests==2.32.3
-markdown==3.6
-firebase-admin
+
+# --- Google Cloud Platform (GCP) Integration ---
+# Libraries for interacting with various Google Cloud services.
+google-cloud-aiplatform    # For Vertex AI models and services
+google-cloud-firestore     # For database interactions with Firestore
+google-cloud-storage       # For object storage via Google Cloud Storage
+google-cloud-pubsub        # For asynchronous messaging with Pub/Sub
+google-api-python-client   # General Google API client library
+google-auth-httplib2       # For Google authentication
+google-auth-oauthlib       # For OAuth 2.0 authentication with Google services
+
+# --- Data Handling & Web ---
+beautifulsoup4==4.12.3     # For parsing HTML and XML, used in web scraping tools
+pydantic                   # For data validation and settings management
+requests==2.31.0           # For making HTTP requests to external APIs
+markdown==3.5.1            # For converting Markdown text to HTML
+
+# --- Firebase Integration ---
+firebase-admin             # For backend integration with Firebase services (e.g., Auth, Firestore)
+
+# --- Environment & Configuration ---
+python-dotenv==1.0.0       # For managing environment variables from a .env file
