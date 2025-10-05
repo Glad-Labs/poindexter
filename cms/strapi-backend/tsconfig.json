@@ -47,6 +47,11 @@
      */
     "skipLibCheck": true,
     /**
+     * @property {boolean} skipDefaultLibCheck - true
+     * @description Skips type checking of TypeScript's default library files.
+     */
+    "skipDefaultLibCheck": true,
+    /**
      * @property {boolean} forceConsistentCasingInFileNames - true
      * @description Enforces consistent casing in file names, preventing issues on case-sensitive
      * file systems like Linux.
@@ -86,10 +91,10 @@
      */
     "outDir": "dist",
     /**
-     * @property {string} rootDir - "."
-     * @description Specifies the root directory of input files.
+     * @property {string[]} types - ["@types/minimatch"]
+     * @description Explicitly include types that are causing issues
      */
-    "rootDir": "."
+    "types": []
   },
   "include": [
     // Include root-level configuration files

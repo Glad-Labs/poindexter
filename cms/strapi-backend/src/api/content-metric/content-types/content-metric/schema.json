@@ -1,0 +1,59 @@
+{
+  "kind": "collectionType",
+  "collectionName": "content_metrics",
+  "info": {
+    "singularName": "content-metric",
+    "pluralName": "content-metrics",
+    "displayName": "Content Metrics",
+    "description": "Performance tracking for published content, including views, engagement, and AI generation metrics."
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "Views": {
+      "type": "integer",
+      "default": 0,
+      "description": "Total number of views for this content"
+    },
+    "Likes": {
+      "type": "integer",
+      "default": 0,
+      "description": "Number of likes or upvotes"
+    },
+    "Shares": {
+      "type": "integer",
+      "default": 0,
+      "description": "Number of shares across social platforms"
+    },
+    "Comments": {
+      "type": "integer",
+      "default": 0,
+      "description": "Number of comments on the content"
+    },
+    "EngagementRate": {
+      "type": "decimal",
+      "default": 0.0,
+      "description": "Calculated engagement rate as a percentage"
+    },
+    "GenerationTimeMs": {
+      "type": "integer",
+      "description": "Time taken by AI agent to generate content (in milliseconds)"
+    },
+    "AgentVersion": {
+      "type": "string",
+      "description": "Version of the AI agent that created this content"
+    },
+    "LastUpdated": {
+      "type": "datetime",
+      "description": "When these metrics were last updated"
+    },
+    "post": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::post.post",
+      "inversedBy": "metrics"
+    }
+  }
+}

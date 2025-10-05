@@ -454,92 +454,6 @@ export interface AdminWorkflowStage extends Schema.CollectionType {
   };
 }
 
-export interface ApiCategoryCategory extends Schema.CollectionType {
-  collectionName: 'categories';
-  info: {
-    singularName: 'category';
-    pluralName: 'categories';
-    displayName: 'Category';
-    description: 'Represents a content category for organizing blog posts.';
-  };
-  options: {
-    draftAndPublish: false;
-  };
-  attributes: {
-    Name: Attribute.String & Attribute.Required & Attribute.Unique;
-    Slug: Attribute.UID<'api::category.category', 'Name'> & Attribute.Required;
-    posts: Attribute.Relation<
-      'api::category.category',
-      'oneToMany',
-      'api::post.post'
-    >;
-    createdAt: Attribute.DateTime;
-    updatedAt: Attribute.DateTime;
-    createdBy: Attribute.Relation<
-      'api::category.category',
-      'oneToOne',
-      'admin::user'
-    > &
-      Attribute.Private;
-    updatedBy: Attribute.Relation<
-      'api::category.category',
-      'oneToOne',
-      'admin::user'
-    > &
-      Attribute.Private;
-  };
-}
-
-export interface ApiPostPost extends Schema.CollectionType {
-  collectionName: 'posts';
-  info: {
-    singularName: 'post';
-    pluralName: 'posts';
-    displayName: 'Blog Post';
-    description: 'Represents a single blog post, including all its content, metadata, and media. This is the central content type for the website.';
-    version: '1.1.0';
-  };
-  options: {
-    draftAndPublish: true;
-  };
-  pluginOptions: {
-    i18n: {
-      localized: false;
-    };
-  };
-  attributes: {
-    Title: Attribute.String & Attribute.Required;
-    Slug: Attribute.UID<'api::post.post', 'Title'> & Attribute.Required;
-    BodyContent: Attribute.Blocks & Attribute.Required;
-    PostStatus: Attribute.Enumeration<['Draft', 'Published', 'Archived']> &
-      Attribute.Required &
-      Attribute.DefaultTo<'Draft'>;
-    Keywords: Attribute.String;
-    MetaDescription: Attribute.Text &
-      Attribute.SetMinMaxLength<{
-        maxLength: 160;
-      }>;
-    FeaturedImage: Attribute.Media;
-    author: Attribute.Relation<
-      'api::post.post',
-      'manyToOne',
-      'plugin::users-permissions.user'
-    >;
-    category: Attribute.Relation<
-      'api::post.post',
-      'manyToOne',
-      'api::category.category'
-    >;
-    createdAt: Attribute.DateTime;
-    updatedAt: Attribute.DateTime;
-    publishedAt: Attribute.DateTime;
-    createdBy: Attribute.Relation<'api::post.post', 'oneToOne', 'admin::user'> &
-      Attribute.Private;
-    updatedBy: Attribute.Relation<'api::post.post', 'oneToOne', 'admin::user'> &
-      Attribute.Private;
-  };
-}
-
 export interface PluginUploadFile extends Schema.CollectionType {
   collectionName: 'files';
   info: {
@@ -855,6 +769,211 @@ export interface PluginUsersPermissionsUser extends Schema.CollectionType {
   };
 }
 
+export interface ApiAuthorAuthor extends Schema.CollectionType {
+  collectionName: 'authors';
+  info: {
+    singularName: 'author';
+    pluralName: 'authors';
+    displayName: 'Author';
+    description: 'Represents content authors, including AI agents and human writers for the GLAD Labs content engine.';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    Name: Attribute.String & Attribute.Required;
+    Bio: Attribute.Text;
+    Avatar: Attribute.Media;
+    IsAIAgent: Attribute.Boolean & Attribute.DefaultTo<false>;
+    AgentVersion: Attribute.String;
+    Email: Attribute.Email;
+    posts: Attribute.Relation<
+      'api::author.author',
+      'oneToMany',
+      'api::post.post'
+    >;
+    createdAt: Attribute.DateTime;
+    updatedAt: Attribute.DateTime;
+    createdBy: Attribute.Relation<
+      'api::author.author',
+      'oneToOne',
+      'admin::user'
+    > &
+      Attribute.Private;
+    updatedBy: Attribute.Relation<
+      'api::author.author',
+      'oneToOne',
+      'admin::user'
+    > &
+      Attribute.Private;
+  };
+}
+
+export interface ApiCategoryCategory extends Schema.CollectionType {
+  collectionName: 'categories';
+  info: {
+    singularName: 'category';
+    pluralName: 'categories';
+    displayName: 'Category';
+    description: 'Represents a content category for organizing blog posts.';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    Name: Attribute.String & Attribute.Required & Attribute.Unique;
+    Slug: Attribute.UID<'api::category.category', 'Name'> & Attribute.Required;
+    posts: Attribute.Relation<
+      'api::category.category',
+      'oneToMany',
+      'api::post.post'
+    >;
+    createdAt: Attribute.DateTime;
+    updatedAt: Attribute.DateTime;
+    createdBy: Attribute.Relation<
+      'api::category.category',
+      'oneToOne',
+      'admin::user'
+    > &
+      Attribute.Private;
+    updatedBy: Attribute.Relation<
+      'api::category.category',
+      'oneToOne',
+      'admin::user'
+    > &
+      Attribute.Private;
+  };
+}
+
+export interface ApiContentMetricContentMetric extends Schema.CollectionType {
+  collectionName: 'content_metrics';
+  info: {
+    singularName: 'content-metric';
+    pluralName: 'content-metrics';
+    displayName: 'Content Metrics';
+    description: 'Performance tracking for published content, including views, engagement, and AI generation metrics.';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    Views: Attribute.Integer & Attribute.DefaultTo<0>;
+    Likes: Attribute.Integer & Attribute.DefaultTo<0>;
+    Shares: Attribute.Integer & Attribute.DefaultTo<0>;
+    Comments: Attribute.Integer & Attribute.DefaultTo<0>;
+    EngagementRate: Attribute.Decimal & Attribute.DefaultTo<0>;
+    GenerationTimeMs: Attribute.Integer;
+    AgentVersion: Attribute.String;
+    LastUpdated: Attribute.DateTime;
+    post: Attribute.Relation<
+      'api::content-metric.content-metric',
+      'oneToOne',
+      'api::post.post'
+    >;
+    createdAt: Attribute.DateTime;
+    updatedAt: Attribute.DateTime;
+    createdBy: Attribute.Relation<
+      'api::content-metric.content-metric',
+      'oneToOne',
+      'admin::user'
+    > &
+      Attribute.Private;
+    updatedBy: Attribute.Relation<
+      'api::content-metric.content-metric',
+      'oneToOne',
+      'admin::user'
+    > &
+      Attribute.Private;
+  };
+}
+
+export interface ApiPostPost extends Schema.CollectionType {
+  collectionName: 'posts';
+  info: {
+    singularName: 'post';
+    pluralName: 'posts';
+    displayName: 'Blog Post';
+    description: 'Represents a single blog post, including all its content, metadata, and media. This is the central content type for the website.';
+    version: '1.1.0';
+  };
+  options: {
+    draftAndPublish: true;
+  };
+  pluginOptions: {
+    i18n: {
+      localized: false;
+    };
+  };
+  attributes: {
+    Title: Attribute.String & Attribute.Required;
+    Slug: Attribute.UID<'api::post.post', 'Title'> & Attribute.Required;
+    BodyContent: Attribute.Blocks & Attribute.Required;
+    PostStatus: Attribute.Enumeration<['Draft', 'Published', 'Archived']> &
+      Attribute.Required &
+      Attribute.DefaultTo<'Draft'>;
+    Keywords: Attribute.String;
+    MetaDescription: Attribute.Text &
+      Attribute.SetMinMaxLength<{
+        maxLength: 160;
+      }>;
+    FeaturedImage: Attribute.Media;
+    author: Attribute.Relation<
+      'api::post.post',
+      'manyToOne',
+      'api::author.author'
+    >;
+    category: Attribute.Relation<
+      'api::post.post',
+      'manyToOne',
+      'api::category.category'
+    >;
+    tags: Attribute.Relation<'api::post.post', 'manyToMany', 'api::tag.tag'>;
+    metrics: Attribute.Relation<
+      'api::post.post',
+      'oneToOne',
+      'api::content-metric.content-metric'
+    >;
+    ReadingTime: Attribute.Integer;
+    Excerpt: Attribute.Text &
+      Attribute.SetMinMaxLength<{
+        maxLength: 300;
+      }>;
+    createdAt: Attribute.DateTime;
+    updatedAt: Attribute.DateTime;
+    publishedAt: Attribute.DateTime;
+    createdBy: Attribute.Relation<'api::post.post', 'oneToOne', 'admin::user'> &
+      Attribute.Private;
+    updatedBy: Attribute.Relation<'api::post.post', 'oneToOne', 'admin::user'> &
+      Attribute.Private;
+  };
+}
+
+export interface ApiTagTag extends Schema.CollectionType {
+  collectionName: 'tags';
+  info: {
+    singularName: 'tag';
+    pluralName: 'tags';
+    displayName: 'Tag';
+    description: 'Tags for fine-grained content categorization and SEO optimization.';
+  };
+  options: {
+    draftAndPublish: false;
+  };
+  attributes: {
+    Name: Attribute.String & Attribute.Required & Attribute.Unique;
+    Slug: Attribute.UID<'api::tag.tag', 'Name'> & Attribute.Required;
+    Color: Attribute.String;
+    Description: Attribute.Text;
+    posts: Attribute.Relation<'api::tag.tag', 'manyToMany', 'api::post.post'>;
+    createdAt: Attribute.DateTime;
+    updatedAt: Attribute.DateTime;
+    createdBy: Attribute.Relation<'api::tag.tag', 'oneToOne', 'admin::user'> &
+      Attribute.Private;
+    updatedBy: Attribute.Relation<'api::tag.tag', 'oneToOne', 'admin::user'> &
+      Attribute.Private;
+  };
+}
+
 export interface AdminAuditLog extends Schema.CollectionType {
   collectionName: 'strapi_audit_logs';
   info: {
@@ -908,14 +1027,17 @@ declare module '@strapi/types' {
       'admin::transfer-token-permission': AdminTransferTokenPermission;
       'admin::workflow': AdminWorkflow;
       'admin::workflow-stage': AdminWorkflowStage;
-      'api::category.category': ApiCategoryCategory;
-      'api::post.post': ApiPostPost;
       'plugin::upload.file': PluginUploadFile;
       'plugin::upload.folder': PluginUploadFolder;
       'plugin::i18n.locale': PluginI18NLocale;
       'plugin::users-permissions.permission': PluginUsersPermissionsPermission;
       'plugin::users-permissions.role': PluginUsersPermissionsRole;
       'plugin::users-permissions.user': PluginUsersPermissionsUser;
+      'api::author.author': ApiAuthorAuthor;
+      'api::category.category': ApiCategoryCategory;
+      'api::content-metric.content-metric': ApiContentMetricContentMetric;
+      'api::post.post': ApiPostPost;
+      'api::tag.tag': ApiTagTag;
       'admin::audit-log': AdminAuditLog;
     }
   }

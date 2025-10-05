@@ -35,11 +35,7 @@
     },
     "PostStatus": {
       "type": "enumeration",
-      "enum": [
-        "Draft",
-        "Published",
-        "Archived"
-      ],
+      "enum": ["Draft", "Published", "Archived"],
       "default": "Draft",
       "required": true
     },
@@ -56,21 +52,41 @@
       "type": "media",
       "multiple": false,
       "required": false,
-      "allowedTypes": [
-        "images"
-      ],
+      "allowedTypes": ["images"],
       "description": "The primary image for the blog post."
     },
     "author": {
       "type": "relation",
       "relation": "manyToOne",
-      "target": "plugin::users-permissions.user"
+      "target": "api::author.author",
+      "inversedBy": "posts"
     },
     "category": {
       "type": "relation",
       "relation": "manyToOne",
       "target": "api::category.category",
       "inversedBy": "posts"
+    },
+    "tags": {
+      "type": "relation",
+      "relation": "manyToMany",
+      "target": "api::tag.tag",
+      "inversedBy": "posts"
+    },
+    "metrics": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::content-metric.content-metric",
+      "mappedBy": "post"
+    },
+    "ReadingTime": {
+      "type": "integer",
+      "description": "Estimated reading time in minutes"
+    },
+    "Excerpt": {
+      "type": "text",
+      "maxLength": 300,
+      "description": "Short excerpt or summary of the post"
     }
   }
 }
