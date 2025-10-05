@@ -24,7 +24,7 @@ The entire system is built on a monorepo structure, leveraging micro-containers 
 
 | Component | Technology | Best Practice & Rationale |
 | :--- | :--- | :--- |
-| **Monorepo** | **GitHub (glad-labs-website)** | Centralizes all code (Agents, CMS, Web) using isolated dependency files (`requirements.txt`, `package.json`) per project. |
+| **Monorepo** | **GitLab (glad-labs-website)** | Centralizes all code (Agents, CMS, Web) using isolated dependency files (`requirements.txt`, `package.json`) per project. |
 | **Agent Execution** | **Python on Google Cloud Run** | **Serverless & Scalable.** Provides auto-scaling and minimal cost (pay-per-use) for all agent containers. |
 | **Agent Intelligence** | **CrewAI / LangChain** | **Iterative Self-Critique.** Frameworks for building sophisticated agent workflows with external API calls. |
 | **Content Storage** | **Strapi v5 (Headless CMS)** | **API-First & Structured.** Provides a robust, queryable database for all generated content. Runs locally for dev, containerized for prod. |

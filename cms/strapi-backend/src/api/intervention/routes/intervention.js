@@ -1,21 +1,19 @@
-module.exports = {module.exports = {
+'use strict';
 
-  routes: [  routes: [
+/**
+ * intervention router
+ */
 
-    {    {
-
-      method: 'POST',      method: 'POST',
-
-      path: '/intervention',      path: '/intervention',
-
-      handler: 'intervention.send',      handler: 'intervention.send',
-
-    },      config: {
-
-  ],        auth: false,
-
-};      },
-
+module.exports = {
+  routes: [
+    {
+      method: 'POST',
+      path: '/intervention',
+      handler: 'intervention.send',
+      config: {
+        auth: false,
+      },
     },
   ],
 };
+
