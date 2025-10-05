@@ -11,11 +11,15 @@
   ],
   "scripts": {
     "bootstrap": "npm install",
-    "start:strapi": "npm start --workspace=strapi-backend",
+    "start:strapi": "npm run develop --workspace=strapi-backend",
     "start:oversight": "npm start --workspace=oversight-hub",
-    "start:public": "npm run dev --workspace=glad-labs-public-site"
+    "start:public": "npm run dev --workspace=glad-labs-public-site -- --port 3002",
+    "start:all": "concurrently \"npm:start:strapi\" \"npm:start:oversight\" \"npm:start:public\""
   },
   "author": "Matthew M. Gladding (Glad Labs, LLC)",
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0"
+  }
 }
-

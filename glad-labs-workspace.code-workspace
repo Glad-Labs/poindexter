@@ -1,0 +1,49 @@
+{
+  "folders": [
+    {
+      "path": "."
+    }
+  ],
+  "settings": {
+    "task.autoDetect": "on",
+    "task.allowAutomaticTasks": "on",
+    "terminal.integrated.defaultProfile.windows": "PowerShell",
+    "files.watcherExclude": {
+      "**/node_modules/**": true,
+      "**/.next/**": true,
+      "**/build/**": true,
+      "**/dist/**": true
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "ms-vscode.vscode-typescript-next",
+      "bradlc.vscode-tailwindcss",
+      "esbenp.prettier-vscode",
+      "ms-vscode.vscode-json"
+    ]
+  },
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "Auto Start All Services",
+        "type": "shell",
+        "command": "npm",
+        "args": ["run", "start:all"],
+        "group": "build",
+        "presentation": {
+          "echo": true,
+          "reveal": "always",
+          "focus": false,
+          "panel": "new"
+        },
+        "isBackground": true,
+        "problemMatcher": [],
+        "runOptions": {
+          "runOn": "folderOpen"
+        }
+      }
+    ]
+  }
+}

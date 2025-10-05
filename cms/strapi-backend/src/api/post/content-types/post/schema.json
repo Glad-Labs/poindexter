@@ -64,8 +64,7 @@
     "author": {
       "type": "relation",
       "relation": "manyToOne",
-      "target": "admin::user",
-      "inversedBy": "posts"
+      "target": "plugin::users-permissions.user"
     },
     "category": {
       "type": "relation",

@@ -2,15 +2,24 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "BE: Start Strapi Backend",
+      "label": "Start All Services",
       "type": "shell",
-      "command": "cd c:\\Users\\mattm\\glad-labs-website\\cms\\strapi-backend; npm run develop",
-      "problemMatcher": [],
-      "presentation": {
-        "group": "startup",
-        "reveal": "always",
-        "panel": "new"
+      "command": "npm",
+      "args": ["run", "start:all"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
       },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "new",
+        "showReuseMessage": true,
+        "clear": false
+      },
+      "isBackground": true,
+      "problemMatcher": [],
       "runOptions": {
         "runOn": "folderOpen"
       }
