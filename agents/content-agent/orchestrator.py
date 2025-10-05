@@ -213,6 +213,46 @@ class Orchestrator:
             # Truncate error for sheet to avoid cell overflow
             self.sheets_client.update_sheet_status(post.sheet_row_index, "Error", error_message[:500])
 
+    def generate_topic_ideas(self):
+        """
+        Generates blog post ideas based on current trends.
+        """
+        logging.info("Generating topic ideas...")
+        
+        # Use google_web_search to find trends
+        try:
+            ai_trends_results = google_web_search(query="AI development trends 2025")
+            gaming_trends_results = google_web_search(query="video game trends 2025")
+        except Exception as e:
+            logging.error(f"Error during web search: {e}")
+            return
+
+        # Extract titles from search results
+        ai_trends = [result.get('title', '') for result in ai_trends_results.get('results', [])]
+        gaming_trends = [result.get('title', '') for result in gaming_trends_results.get('results', [])]
+
+        all_trends = ai_trends + gaming_trends
+
+        if not all_trends:
+            logging.warning("No trends found, cannot generate topic ideas.")
+            return
+
+        # Generate blog post ideas from trends
+        blog_ideas = []
+        for trend in all_trends:
+            if trend:
+                blog_ideas.append(f"Exploring the Impact of {trend} on the Future of Tech")
+                blog_ideas.append(f"A Deep Dive into {trend}: What You Need to Know")
+
+        # Print the generated ideas
+        if blog_ideas:
+            logging.info("Generated Blog Post Ideas:")
+            for idea in list(set(blog_ideas))[:5]: # Show top 5 unique ideas
+                print(f"- {idea}")
+        else:
+            logging.warning("Could not generate any blog post ideas.")
+
+
 # --- Main Execution Block ---
 if __name__ == "__main__":
     """
@@ -222,4 +262,5 @@ if __name__ == "__main__":
     # This is the entry point for the legacy cron job execution.
     # It should be phased out in favor of a web server entry point.
     orchestrator = Orchestrator()
-    orchestrator.run_job()
+    # orchestrator.run_job()
+    orchestrator.generate_topic_ideas()
