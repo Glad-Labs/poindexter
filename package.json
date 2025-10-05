@@ -1,28 +1,21 @@
 {
   "name": "glad-labs-monorepo",
   "version": "1.0.0",
-  "description": "Monorepo for the GLAD Labs project, including the content agent, Strapi CMS, and web frontends.",
+  "description": "Monorepo for the GLAD Labs project, containing all services and applications.",
   "private": true,
-  "author": "Matthew M. Gladding (Glad Labs, LLC)",
-  "license": "UNLICENSED",
   "workspaces": [
     "agents/*",
     "cms/*",
-    "web/*",
-    "cloud-functions/*"
+    "cloud-functions/*",
+    "web/*"
   ],
   "scripts": {
-    "//": "Top-level scripts for managing the monorepo.",
-    "install:all": "npm install --workspaces",
-    "dev:strapi": "npm run develop --workspace=strapi-backend",
-    "dev:oversight": "npm start --workspace=oversight-hub",
-    "dev:public": "npm run dev --workspace=public-site",
-    "build:public": "npm run build --workspace=public-site"
+    "bootstrap": "npm install",
+    "start:strapi": "npm start --workspace=strapi-backend",
+    "start:oversight": "npm start --workspace=oversight-hub",
+    "start:public": "npm run dev --workspace=glad-labs-public-site"
   },
-  "devDependencies": {
-    "autoprefixer": "^10.4.17",
-    "postcss": "^8.4.33",
-    "tailwindcss": "^3.4.1"
-  }
+  "author": "Matthew M. Gladding (Glad Labs, LLC)",
+  "license": "UNLICENSED"
 }
 

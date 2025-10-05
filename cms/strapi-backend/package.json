@@ -1,55 +1,35 @@
 {
   "name": "strapi-backend",
-  "version": "5.0.0",
   "private": true,
-  "description": "The Strapi Headless CMS backend for the GLAD Labs project.",
-  "author": "Matthew M. Gladding (Glad Labs, LLC)",
-  "license": "UNLICENSED",
+  "version": "0.1.0",
+  "description": "A Strapi application",
   "scripts": {
-    "//": "Standard Strapi scripts for development, building, and deployment.",
-    "build": "strapi build",
-    "console": "strapi console",
-    "deploy": "strapi deploy",
-    "dev": "strapi develop",
     "develop": "strapi develop",
     "start": "strapi start",
-    "strapi": "strapi",
-    "//": "Scripts for managing Strapi version upgrades.",
-    "upgrade": "npx @strapi/upgrade latest",
-    "upgrade:dry": "npx @strapi/upgrade latest --dry"
+    "build": "strapi build",
+    "strapi": "strapi"
   },
   "dependencies": {
-    "//": "Core Strapi framework and plugins.",
-    "@strapi/strapi": "5.24.1",
-    "@strapi/plugin-cloud": "5.24.1",
-    "@strapi/plugin-users-permissions": "5.24.1",
-    "@strapi/plugin-graphql": "^5.25.0",
-
-    "//": "Database adapter. Using better-sqlite3 for local development.",
-    "better-sqlite3": "11.3.0",
-
-    "//": "Google Cloud integration for intervention triggers.",
-    "@google-cloud/pubsub": "^5.2.0",
-
-    "//": "React dependencies required by Strapi admin panel.",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-router-dom": "^6.24.1",
-    "styled-components": "^6.1.11"
+    "@strapi/plugin-cloud": "^5.0.0",
+    "@strapi/plugin-documentation": "^5.0.0",
+    "@strapi/plugin-i18n": "^5.0.0",
+    "@strapi/plugin-users-permissions": "^5.0.0",
+    "@strapi/strapi": "^5.0.0",
+    "pg": "^8.12.0"
   },
   "devDependencies": {
-    "//": "TypeScript support for Strapi.",
-    "@types/node": "^20.11.0",
-    "@types/react": "^18.2.47",
-    "@types/react-dom": "^18.2.18",
-    "typescript": "^5.3.3"
+    "@types/node": "^20.14.10",
+    "typescript": "5.5.3"
   },
-  "engines": {
-    "node": ">=18.0.0 <=22.x.x",
-    "npm": ">=6.0.0"
+  "author": {
+    "name": "A Strapi developer"
   },
   "strapi": {
-    "uuid": "6e37fe02-6d79-4ef5-8c38-0f74ddb2dfe6"
-  }
+    "uuid": "b6d69e4a-3932-4a7a-a8f1-435f4a863489"
+  },
+  "engines": {
+    "node": ">=18.0.0 <=20.x.x",
+    "npm": ">=6.0.0"
+  },
+  "license": "MIT"
 }
-
