@@ -2,69 +2,62 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Start All Services",
-      "type": "shell",
-      "command": "npm",
-      "args": ["run", "start:all"],
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      },
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": false,
-        "panel": "new",
-        "showReuseMessage": true,
-        "clear": false
-      },
-      "isBackground": true,
-      "problemMatcher": [],
-      "runOptions": {
-        "runOn": "folderOpen"
-      }
-    },
-    {
       "label": "BE: Start Python Agent Listener",
       "type": "shell",
       "command": "cd ${workspaceFolder}/agents/content-agent; ./.venv/Scripts/Activate.ps1; python orchestrator.py",
-      "options": {
-        "cwd": "${workspaceFolder}/agents/content-agent"
-      },
       "presentation": {
-        "group": "startup",
         "panel": "new",
         "reveal": "always"
       },
+      "isBackground": true,
       "problemMatcher": ["$python"]
     },
     {
       "label": "FE: Start Oversight Hub",
       "type": "shell",
-      "command": "npm start",
-      "options": {
-        "cwd": "${workspaceFolder}/web/oversight-hub"
-      },
+      "command": "npm start --workspace=oversight-hub",
       "presentation": {
-        "group": "startup",
         "panel": "new",
         "reveal": "always"
       },
+      "isBackground": true,
       "problemMatcher": ["$jshint"]
     },
     {
       "label": "FE: Start Public Site",
       "type": "shell",
-      "command": "npm run dev",
-      "options": {
-        "cwd": "${workspaceFolder}/web/public-site"
-      },
+      "command": "npm run dev --workspace=glad-labs-public-site",
       "presentation": {
-        "group": "startup",
         "panel": "new",
         "reveal": "always"
       },
+      "isBackground": true,
       "problemMatcher": ["$jshint"]
+    },
+    {
+      "label": "BE: Start Strapi",
+      "type": "shell",
+      "command": "npm run develop --workspace=strapi-backend",
+      "presentation": {
+        "panel": "new",
+        "reveal": "always"
+      },
+      "isBackground": true,
+      "problemMatcher": []
+    }
+  ],
+  "compounds": [
+    {
+      "label": "Start All Services",
+      "tasks": [
+        "BE: Start Strapi",
+        "BE: Start Python Agent Listener",
+        "FE: Start Oversight Hub",
+        "FE: Start Public Site"
+      ],
+      "runOptions": {
+        "runOn": "folderOpen"
+      }
     }
   ]
 }
