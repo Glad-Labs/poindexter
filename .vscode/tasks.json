@@ -36,12 +36,7 @@
         "panel": "new",
         "reveal": "always"
       },
-      "runOptions": {
-        "runOn": "folderOpen"
-      },
-      "problemMatcher": [
-        "$python"
-      ]
+      "problemMatcher": ["$python"]
     },
     {
       "label": "FE: Start Oversight Hub",
@@ -55,12 +50,7 @@
         "panel": "new",
         "reveal": "always"
       },
-      "runOptions": {
-        "runOn": "folderOpen"
-      },
-      "problemMatcher": [
-        "$jshint"
-      ]
+      "problemMatcher": ["$jshint"]
     },
     {
       "label": "FE: Start Public Site",
@@ -74,12 +64,7 @@
         "panel": "new",
         "reveal": "always"
       },
-      "runOptions": {
-        "runOn": "folderOpen"
-      },
-      "problemMatcher": [
-        "$jshint"
-      ]
+      "problemMatcher": ["$jshint"]
     }
   ]
 }

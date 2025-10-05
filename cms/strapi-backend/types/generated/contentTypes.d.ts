@@ -775,12 +775,13 @@ export interface ApiAuthorAuthor extends Schema.CollectionType {
     singularName: 'author';
     pluralName: 'authors';
     displayName: 'Author';
+    description: 'Represents content authors, including AI agents and human writers for the GLAD Labs content engine.';
   };
   options: {
     draftAndPublish: false;
   };
   attributes: {
-    Name: Attribute.String & Attribute.Required;
+    Name: Attribute.String & Attribute.Required & Attribute.Unique;
     Bio: Attribute.Text;
     posts: Attribute.Relation<
       'api::author.author',
@@ -845,7 +846,8 @@ export interface ApiContentMetricContentMetric extends Schema.CollectionType {
   info: {
     singularName: 'content-metric';
     pluralName: 'content-metrics';
-    displayName: 'Content Metric';
+    displayName: 'Content Metrics';
+    description: 'Performance tracking for published content, including views, engagement, and AI generation metrics.';
   };
   options: {
     draftAndPublish: false;
@@ -854,6 +856,8 @@ export interface ApiContentMetricContentMetric extends Schema.CollectionType {
     Views: Attribute.Integer & Attribute.DefaultTo<0>;
     Likes: Attribute.Integer & Attribute.DefaultTo<0>;
     Shares: Attribute.Integer & Attribute.DefaultTo<0>;
+    GenerationTimeMs: Attribute.Integer;
+    AgentVersion: Attribute.String;
     post: Attribute.Relation<
       'api::content-metric.content-metric',
       'oneToOne',
@@ -943,12 +947,13 @@ export interface ApiTagTag extends Schema.CollectionType {
     singularName: 'tag';
     pluralName: 'tags';
     displayName: 'Tag';
+    description: 'Content tags for categorization, SEO, and filtering purposes.';
   };
   options: {
     draftAndPublish: false;
   };
   attributes: {
-    Name: Attribute.String & Attribute.Required;
+    Name: Attribute.String & Attribute.Required & Attribute.Unique;
     Slug: Attribute.UID<'api::tag.tag', 'Name'>;
     posts: Attribute.Relation<'api::tag.tag', 'manyToMany', 'api::post.post'>;
     createdAt: Attribute.DateTime;
