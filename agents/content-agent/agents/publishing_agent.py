@@ -21,7 +21,8 @@ class PublishingAgent:
         """
         Validates, formats, and publishes the final content to Strapi.
         This method now uses the comprehensive BlogPost object as the single
-        source of truth for all content and metadata.
+        source of truth for all content and metadata and includes the new
+        content type relationships (author, category, tags).
 
         Args:
             post (BlogPost): The central BlogPost object.
@@ -44,6 +45,18 @@ class PublishingAgent:
         # Get the Strapi ID for the featured image (the first image in the list).
         featured_image_id = post.images[0].strapi_image_id if post.images and post.images[0].strapi_image_id else None
 
+        # Get author, category, and tag IDs from Strapi
+        author_id = self._get_or_create_author("Content Agent", True, "v1.0.0")
+        category_id = self._get_category_id(post.topic or "AI Development")
+        tag_ids = self._get_tag_ids(post.keywords)
+
+        # Calculate reading time (rough estimate: 200 words per minute)
+        word_count = len(post.raw_content.split()) if post.raw_content else 0
+        reading_time = max(1, round(word_count / 200))
+
+        # Generate excerpt from content
+        excerpt = self._generate_excerpt(post.raw_content)
+
         # Assemble the data into a StrapiPost Pydantic model for validation.
         strapi_post_data = StrapiPost(
             Title=post.generated_title,
@@ -51,7 +64,12 @@ class PublishingAgent:
             MetaDescription=post.meta_description,
             BodyContent=body_content_blocks,
             FeaturedImage=featured_image_id,
-            Keywords=", ".join(post.keywords) # Use the 'keywords' field
+            Keywords=", ".join(post.keywords) if post.keywords else "",
+            ReadingTime=reading_time,
+            Excerpt=excerpt,
+            author=author_id,
+            category=category_id,
+            tags=tag_ids
         )
 
         try:
@@ -61,9 +79,13 @@ class PublishingAgent:
             if response_data and response_data.get('data'):
                 post.strapi_post_id = response_data['data']['id']
                 # Construct the final URL based on the Strapi response.
-                # Recommendation: Make the base URL configurable.
                 post.strapi_url = f"http://localhost:1337/api/posts/{post.strapi_post_id}"
                 post.status = "Published"
+                
+                # Create content metrics entry
+                if post.strapi_post_id:
+                    self._create_content_metrics(post.strapi_post_id, post)
+                
                 logging.info(f"Successfully published post '{post.generated_title}' with ID: {post.strapi_post_id}")
             else:
                 raise Exception("Publishing failed: Strapi client returned no data or an invalid response.")
@@ -95,3 +117,102 @@ class PublishingAgent:
                 "children": [{"type": "text", "text": body_content}]
             }
         ]
+
+    def _get_or_create_author(self, name: str, is_ai_agent: bool, agent_version: Optional[str] = None) -> Optional[int]:
+        """Get or create an author in Strapi and return the ID."""
+        try:
+            # First, try to find existing author
+            authors_response = self.strapi_client._make_request('GET', '/authors?filters[Name][$eq]=' + name)
+            
+            if authors_response and authors_response.get('data'):
+                return authors_response['data'][0]['id']
+            
+            # Create new author if not found
+            author_data = {
+                "Name": name,
+                "IsAIAgent": is_ai_agent,
+                "Bio": f"AI-powered content generation agent" if is_ai_agent else "Human author"
+            }
+            if agent_version:
+                author_data["AgentVersion"] = agent_version
+                
+            response = self.strapi_client._make_request('POST', '/authors', {"data": author_data})
+            return response['data']['id'] if response and response.get('data') else None
+            
+        except Exception as e:
+            logging.warning(f"Could not get/create author {name}: {e}")
+            return None
+
+    def _get_category_id(self, category_name: str) -> Optional[int]:
+        """Get category ID by name from Strapi."""
+        try:
+            response = self.strapi_client._make_request('GET', f'/categories?filters[Name][$eq]={category_name}')
+            if response and response.get('data'):
+                return response['data'][0]['id']
+            
+            # Default to first available category if not found
+            response = self.strapi_client._make_request('GET', '/categories?pagination[limit]=1')
+            if response and response.get('data'):
+                return response['data'][0]['id']
+                
+        except Exception as e:
+            logging.warning(f"Could not get category {category_name}: {e}")
+        return None
+
+    def _get_tag_ids(self, keywords: list) -> list[int]:
+        """Get tag IDs for the given keywords."""
+        if not keywords:
+            return []
+            
+        tag_ids = []
+        try:
+            for keyword in keywords[:5]:  # Limit to 5 tags
+                response = self.strapi_client._make_request('GET', f'/tags?filters[Name][$eq]={keyword}')
+                if response and response.get('data'):
+                    tag_ids.append(response['data'][0]['id'])
+                    
+        except Exception as e:
+            logging.warning(f"Could not get tags for keywords {keywords}: {e}")
+            
+        return tag_ids
+
+    def _generate_excerpt(self, content: str, max_length: int = 300) -> str:
+        """Generate an excerpt from the content."""
+        if not content:
+            return ""
+            
+        # Remove markdown formatting and get first paragraph
+        clean_content = content.replace('#', '').replace('*', '').replace('`', '')
+        sentences = clean_content.split('.')
+        
+        excerpt = ""
+        for sentence in sentences:
+            if len(excerpt + sentence) < max_length:
+                excerpt += sentence + "."
+            else:
+                break
+                
+        return excerpt.strip()
+
+    def _create_content_metrics(self, post_id: int, post) -> None:
+        """Create initial content metrics entry for the post."""
+        try:
+            metrics_data = {
+                "Views": 0,
+                "Likes": 0,
+                "Shares": 0,
+                "Comments": 0,
+                "EngagementRate": 0.0,
+                "AgentVersion": "v1.0.0",
+                "post": post_id
+            }
+            
+            # Add generation time if available
+            if hasattr(post, 'generation_time_ms'):
+                metrics_data["GenerationTimeMs"] = post.generation_time_ms
+                
+            self.strapi_client._make_request('POST', '/content-metrics', {"data": metrics_data})
+            logging.info(f"Created content metrics for post {post_id}")
+            
+        except Exception as e:
+            logging.warning(f"Could not create content metrics for post {post_id}: {e}")

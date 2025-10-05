@@ -50,6 +50,7 @@ class BlogPost(BaseModel):
 class StrapiPost(BaseModel):
     """
     Pydantic model representing the final structure for the Strapi API call.
+    Includes all the new content type relationships and fields.
     """
     Title: str
     Slug: str
@@ -58,6 +59,11 @@ class StrapiPost(BaseModel):
     Keywords: Optional[str] = None
     MetaDescription: Optional[str] = None
     FeaturedImage: Optional[int] = None
+    ReadingTime: Optional[int] = None
+    Excerpt: Optional[str] = None
+    author: Optional[int] = None  # Author relationship ID
+    category: Optional[int] = None  # Category relationship ID
+    tags: Optional[List[int]] = None  # Tag relationship IDs
 
     model_config = {
         "populate_by_name": True

@@ -50,6 +50,45 @@ class StrapiClient:
             logger.error(f"Error uploading image to Strapi: {e}")
             return None
 
+    def _make_request(self, method: str, endpoint: str, data: Optional[dict] = None) -> Optional[dict]:
+        """
+        Generic method to make HTTP requests to Strapi API.
+        
+        Args:
+            method (str): HTTP method (GET, POST, PUT, DELETE)
+            endpoint (str): API endpoint (e.g., '/posts', '/categories')
+            data (dict): Data to send with POST/PUT requests
+            
+        Returns:
+            Optional[dict]: JSON response from Strapi API
+        """
+        url = f"{self.api_url}/api{endpoint}"
+        headers = self.headers.copy()
+        
+        try:
+            if method.upper() == 'GET':
+                response = requests.get(url, headers=headers)
+            elif method.upper() == 'POST':
+                headers["Content-Type"] = "application/json"
+                response = requests.post(url, headers=headers, data=json.dumps(data) if data else None)
+            elif method.upper() == 'PUT':
+                headers["Content-Type"] = "application/json"
+                response = requests.put(url, headers=headers, data=json.dumps(data) if data else None)
+            elif method.upper() == 'DELETE':
+                response = requests.delete(url, headers=headers)
+            else:
+                raise ValueError(f"Unsupported HTTP method: {method}")
+                
+            response.raise_for_status()
+            return response.json()
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error making {method} request to {endpoint}: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Response status: {e.response.status_code}")
+                logger.error(f"Response text: {e.response.text}")
+            return None
+
     def create_post(self, post_data: StrapiPost) -> Optional[dict]:
         """
         Creates a new post in Strapi as a draft.
