@@ -775,7 +775,6 @@ export interface ApiAuthorAuthor extends Schema.CollectionType {
     singularName: 'author';
     pluralName: 'authors';
     displayName: 'Author';
-    description: 'Represents content authors, including AI agents and human writers for the GLAD Labs content engine.';
   };
   options: {
     draftAndPublish: false;
@@ -783,10 +782,6 @@ export interface ApiAuthorAuthor extends Schema.CollectionType {
   attributes: {
     Name: Attribute.String & Attribute.Required;
     Bio: Attribute.Text;
-    Avatar: Attribute.Media;
-    IsAIAgent: Attribute.Boolean & Attribute.DefaultTo<false>;
-    AgentVersion: Attribute.String;
-    Email: Attribute.Email;
     posts: Attribute.Relation<
       'api::author.author',
       'oneToMany',
@@ -850,8 +845,7 @@ export interface ApiContentMetricContentMetric extends Schema.CollectionType {
   info: {
     singularName: 'content-metric';
     pluralName: 'content-metrics';
-    displayName: 'Content Metrics';
-    description: 'Performance tracking for published content, including views, engagement, and AI generation metrics.';
+    displayName: 'Content Metric';
   };
   options: {
     draftAndPublish: false;
@@ -860,11 +854,6 @@ export interface ApiContentMetricContentMetric extends Schema.CollectionType {
     Views: Attribute.Integer & Attribute.DefaultTo<0>;
     Likes: Attribute.Integer & Attribute.DefaultTo<0>;
     Shares: Attribute.Integer & Attribute.DefaultTo<0>;
-    Comments: Attribute.Integer & Attribute.DefaultTo<0>;
-    EngagementRate: Attribute.Decimal & Attribute.DefaultTo<0>;
-    GenerationTimeMs: Attribute.Integer;
-    AgentVersion: Attribute.String;
-    LastUpdated: Attribute.DateTime;
     post: Attribute.Relation<
       'api::content-metric.content-metric',
       'oneToOne',
@@ -954,16 +943,13 @@ export interface ApiTagTag extends Schema.CollectionType {
     singularName: 'tag';
     pluralName: 'tags';
     displayName: 'Tag';
-    description: 'Tags for fine-grained content categorization and SEO optimization.';
   };
   options: {
     draftAndPublish: false;
   };
   attributes: {
-    Name: Attribute.String & Attribute.Required & Attribute.Unique;
-    Slug: Attribute.UID<'api::tag.tag', 'Name'> & Attribute.Required;
-    Color: Attribute.String;
-    Description: Attribute.Text;
+    Name: Attribute.String & Attribute.Required;
+    Slug: Attribute.UID<'api::tag.tag', 'Name'>;
     posts: Attribute.Relation<'api::tag.tag', 'manyToMany', 'api::post.post'>;
     createdAt: Attribute.DateTime;
     updatedAt: Attribute.DateTime;

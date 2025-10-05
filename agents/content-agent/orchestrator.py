@@ -20,6 +20,12 @@ from agents.publishing_agent import PublishingAgent
 MAX_REFINEMENT_LOOPS = 3
 
 class Orchestrator:
+    """
+    The primary coordinator for the content generation pipeline.
+    This class initializes all necessary clients and agents, and manages the
+    end-to-end workflow from task retrieval to final publication.
+    It is designed to be the main entry point for running content jobs.
+    """
     def __init__(self):
         self.config = config
         self._setup_logging()
@@ -27,6 +33,7 @@ class Orchestrator:
         logging.info("Orchestrator initialized.")
 
     def _setup_logging(self):
+        """Initializes the logging configuration for the application."""
         setup_logging()
 
     def _ensure_directories_exist(self):
@@ -40,6 +47,10 @@ class Orchestrator:
             raise
 
     def run_single_job(self, sheet_row_index: int):
+        """
+        DEPRECATED: Processes a single content job based on a Google Sheets row index.
+        This method is for legacy support and will be removed in future versions.
+        """
         logging.info(f"Orchestrator: Received legacy request to process job from sheet row {sheet_row_index}.")
         sheets_client = GoogleSheetsClient()
         published_posts_map = sheets_client.get_all_published_posts()
@@ -51,6 +62,11 @@ class Orchestrator:
         self._process_post(post_to_process, published_posts_map)
 
     def run_job(self):
+        """
+        DEPRECATED: Runs the content generation process in batch mode based on Google Sheets.
+        This method fetches all 'Ready' tasks from the content queue and processes them sequentially.
+        It will be replaced by a Pub/Sub trigger mechanism.
+        """
         logging.warning("Orchestrator: Running deprecated `run_job` method.")
         sheets_client = GoogleSheetsClient()
         published_posts_map = sheets_client.get_all_published_posts()
@@ -62,6 +78,11 @@ class Orchestrator:
             self._process_post(post, published_posts_map)
 
     def _process_post(self, post: BlogPost, published_posts_map: dict):
+        """
+        Manages the lifecycle of a single blog post from creation to publication.
+        This involves coordinating all agents (Research, Creative, QA, Image, Publishing)
+        and logging the progress to Firestore.
+        """
         strapi_client = StrapiClient()
         firestore_client = FirestoreClient()
         llm_client = LLMClient()

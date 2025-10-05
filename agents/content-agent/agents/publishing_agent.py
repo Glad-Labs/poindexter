@@ -119,7 +119,10 @@ class PublishingAgent:
         ]
 
     def _get_or_create_author(self, name: str, is_ai_agent: bool, agent_version: Optional[str] = None) -> Optional[int]:
-        """Get or create an author in Strapi and return the ID."""
+        """
+        Retrieves an existing author by name from Strapi or creates a new one if not found.
+        This ensures that content is always attributed to a valid author.
+        """
         try:
             # First, try to find existing author
             authors_response = self.strapi_client._make_request('GET', '/authors?filters[Name][$eq]=' + name)

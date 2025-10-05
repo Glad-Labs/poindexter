@@ -15,31 +15,12 @@
     "Name": {
       "type": "string",
       "required": true,
+      "unique": true,
       "description": "Full name of the author (e.g., 'Matthew M. Gladding' or 'Content Agent v1.2')"
     },
     "Bio": {
       "type": "text",
-      "description": "Short biography or description of the author"
-    },
-    "Avatar": {
-      "type": "media",
-      "multiple": false,
-      "required": false,
-      "allowedTypes": ["images"],
-      "description": "Profile picture or avatar for the author"
-    },
-    "IsAIAgent": {
-      "type": "boolean",
-      "default": false,
-      "description": "True if this author is an AI agent, false for human authors"
-    },
-    "AgentVersion": {
-      "type": "string",
-      "description": "Version identifier for AI agents (e.g., 'v1.2.3')"
-    },
-    "Email": {
-      "type": "email",
-      "description": "Contact email for the author"
+      "description": "A brief biography or description of the author, suitable for display on author pages."
     },
     "posts": {
       "type": "relation",

@@ -26,7 +26,8 @@
       "type": "relation",
       "relation": "oneToMany",
       "target": "api::post.post",
-      "mappedBy": "category"
+      "mappedBy": "category",
+      "description": "The collection of posts belonging to this category."
     }
   }
 }

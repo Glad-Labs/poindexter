@@ -69,3 +69,13 @@ The deployment process typically involves:
 
 - **Intervention Endpoint**: A custom controller has been added at `src/api/intervention/` to handle the "INTERVENE" signal from the Oversight Hub. When triggered, it publishes a message to a Google Cloud Pub/Sub topic to activate the agent.
 - **GraphQL Plugin**: The GraphQL plugin is installed (`@strapi/plugin-graphql`) to provide a flexible data query language for the frontends.
+
+---
+
+## **6. Project Standards & Versioning**
+
+This project adheres to the standards outlined in the main `GLAD_LABS_STANDARDS.md` document at the root of the monorepo.
+
+- **Current Version:** This project is currently running **Strapi v4.15.0**. The master plan outlines a future migration to Strapi v5, which will be undertaken as a separate initiative.
+- **TypeScript:** The project is configured to use TypeScript for all new development to ensure type safety and code quality.
+- **Database:** The system uses SQLite for local development and is designed for a more robust database like PostgreSQL in production.
