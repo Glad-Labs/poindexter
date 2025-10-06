@@ -6,7 +6,11 @@
  * performance and preventing abuse.
  */
 
-export default {
+export default ({
+  env,
+}: {
+  env: (key: string, defaultValue?: any) => any;
+}) => ({
   /**
    * @property {object} rest - Configuration for the REST API.
    */
@@ -34,4 +38,4 @@ export default {
      */
     withCount: true,
   },
-};
+});

@@ -1,0 +1,5 @@
+# Flask is used to create the HTTP server
+Flask==2.3.2
+
+# Google Cloud Pub/Sub client library
+google-cloud-pubsub==2.13.4

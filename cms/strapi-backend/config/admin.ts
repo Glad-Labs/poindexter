@@ -31,7 +31,7 @@ export default ({ env }: { env: StrapiEnv }) => ({
      * It should be a long, random, and private string stored securely in an environment variable.
      * @example env('ADMIN_JWT_SECRET', 'a-very-secure-random-string')
      */
-    secret: env('ADMIN_JWT_SECRET'),
+    secret: env("ADMIN_JWT_SECRET"),
   },
   /**
    * @property {object} apiToken - Settings for Strapi's API tokens (v4).
@@ -43,7 +43,7 @@ export default ({ env }: { env: StrapiEnv }) => ({
      * It should be a unique, random string.
      * @example env('API_TOKEN_SALT', 'another-secure-random-string')
      */
-    salt: env('API_TOKEN_SALT'),
+    salt: env("API_TOKEN_SALT"),
   },
   /**
    * @property {object} transfer - Settings for data transfer features (e.g., push/pull).
@@ -55,36 +55,7 @@ export default ({ env }: { env: StrapiEnv }) => ({
        * @description Secures the tokens used for transferring data between Strapi instances.
        * @example env('TRANSFER_TOKEN_SALT', 'yet-another-secure-random-string')
        */
-      salt: env('TRANSFER_TOKEN_SALT'),
+      salt: env("TRANSFER_TOKEN_SALT"),
     },
-  },
-  /**
-   * @property {object} secrets - General-purpose secrets for the application.
-   * @recommendation As of Strapi v4.3.0, it's recommended to consolidate secrets here.
-   */
-  secrets: {
-    /**
-     * @property {string} encryptionKey - A key used for encrypting sensitive data within Strapi.
-     * @description This key is essential for features that require data encryption at rest.
-     * @example env('ENCRYPTION_KEY', 'a-strong-and-long-encryption-key')
-     */
-    encryptionKey: env('ENCRYPTION_KEY'),
-  },
-  /**
-   * @property {object} flags - Feature flags to enable or disable specific Strapi functionalities.
-   * @description Useful for turning off features like the Net Promoter Score (NPS) survey or
-   * promotions for the enterprise edition in the admin UI.
-   */
-  flags: {
-    /**
-     * @property {boolean} nps - Enable or disable the Net Promoter Score (NPS) survey in the admin panel.
-     * @default true
-     */
-    nps: env.bool('FLAG_NPS', true),
-    /**
-     * @property {boolean} promoteEE - Enable or disable promotions for Strapi Enterprise Edition.
-     * @default true
-     */
-    promoteEE: env.bool('FLAG_PROMOTE_EE', true),
   },
 });
