@@ -43,20 +43,16 @@ class BlogPost(BaseModel):
     strapi_url: Optional[str] = None
     published_posts_map: Optional[Dict[str, str]] = {}
 
-    # --- Refinement & State Tracking ---
-    qa_feedback: List[str] = Field(default_factory=list)
-    status: str = "New" # Tracks the current state (e.g., "In Progress", "Published", "Failed")
-    
-    # --- Publishing & Finalization ---
-    images: List[ImageDetails] = Field(default_factory=list)
-    strapi_post_id: Optional[int] = None
-    strapi_url: Optional[str] = None
-    rejection_reason: Optional[str] = None # Reason for failing QA or publishing
-
     # --- Internal State ---
     # Holds a map of {post_title: post_url} for internal linking, excluded from serialization
     published_posts_map: Dict[str, str] = Field(default_factory=dict, exclude=True)
 
+    # --- Refinement & State Tracking ---
+    qa_feedback: List[str] = Field(default_factory=list)
+    
+    # --- Publishing & Finalization ---
+    strapi_post_id: Optional[int] = None
+    rejection_reason: Optional[str] = None # Reason for failing QA or publishing
 
 class StrapiPost(BaseModel):
     """

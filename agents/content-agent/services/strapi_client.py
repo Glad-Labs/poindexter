@@ -113,7 +113,7 @@ class StrapiClient:
                 "Title": post_data.title,
                 "Slug": post_data.slug,
                 "BodyContent": post_data.body_content_blocks,
-                "PostStatus": "Draft",
+                "PostStatus": "Draft",  # Capitalized "Draft"
                 "Keywords": post_data.primary_keyword,
                 "MetaDescription": post_data.meta_description,
                 # Assuming the first image is the featured image

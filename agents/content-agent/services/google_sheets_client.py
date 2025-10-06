@@ -159,29 +159,29 @@ class GoogleSheetsClient:
             logging.error("Google Sheets service not initialized. Cannot log completed post.")
             return
         try:
-            # This order must match the columns in your 'Generated Content Log' sheet
-            timestamp = datetime.now().isoformat()
-            row_data = [
-                post.topic,
-                post.generated_title or "",
-                post.status or "Unknown",
+            sheet = self.service.spreadsheets()
+            # Format the data for the new row
+            new_row = [
+                datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+                post.title or "",
                 post.strapi_url or "",
+                post.primary_keyword or "",
                 post.category or "",
-                timestamp,
-                post.rejection_reason or ""
+                "Published"
             ]
+            body = {'values': [new_row]}
             
-            body = {'values': [row_data]}
-            self.service.spreadsheets().values().append(
+            # Append the new row to the log sheet
+            sheet.values().append(
                 spreadsheetId=config.SPREADSHEET_ID,
-                range=f"{config.LOG_SHEET_NAME}!A1",
+                range=f"{config.LOG_SHEET_NAME}!A:F",
                 valueInputOption='USER_ENTERED',
-                insertDataOption='INSERT_ROWS',
                 body=body
             ).execute()
-            logging.info(f"Successfully logged '{post.generated_title}' to the Generated Content Log.")
+            
+            logging.info(f"Successfully logged '{post.title}' to the Generated Content Log.")
         except Exception as e:
-            logging.error(f"Error logging post to Google Sheets: {e}")
+            logging.error(f"Error logging completed post to Google Sheets: {e}", exc_info=True)
 
     def get_all_published_posts(self) -> dict[str, str]:
         """

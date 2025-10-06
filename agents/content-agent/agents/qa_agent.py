@@ -30,23 +30,16 @@ class QAAgent:
         logger.info(f"QAAgent: Reviewing content for '{post.topic}'.")
         
         prompt = self.prompts['qa_review'].format(
-            draft=previous_content, # Use the passed-in content for review
+            topic=post.topic,
+            primary_keyword=post.primary_keyword,
             target_audience=post.target_audience,
-            primary_keyword=post.primary_keyword
+            content=previous_content
         )
         
-        response_text = self.llm_client.generate_text_content(prompt)
-        clean_json_text = response_text.strip().replace('```json', '').replace('```', '')
-
-        try:
-            review = json.loads(clean_json_text)
-            approved = review.get('approved', False)
-            feedback = review.get('feedback', "No feedback provided.")
-            
-            if not approved:
-                post.qa_feedback.append(feedback)
-
-            return approved, feedback
-        except json.JSONDecodeError:
-            logger.error("QAAgent: Failed to parse QA review from LLM response.")
-            return False, "Failed to parse the QA review. Please check the content."
+        response_text = self.llm_client.generate_text(prompt)
+        
+        # Simple check for approval keyword
+        if "APPROVAL: YES" in response_text:
+            return True, "Content approved."
+        else:
+            return False, response_text
