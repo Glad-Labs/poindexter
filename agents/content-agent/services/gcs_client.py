@@ -29,14 +29,19 @@ class GCSClient:
         try:
             blob = self.bucket.blob(destination_blob_name)
             blob.upload_from_filename(source_file_path)
+
+            # Generate a signed URL that is valid for 7 days.
+            # This is the modern, secure way to grant temporary access to a file
+            # without making the bucket or object publicly accessible.
+            expiration_date = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=7)
+            signed_url = blob.generate_signed_url(
+                version="v4",
+                expiration=expiration_date,
+                method="GET",
+            )
             
-            # Make the blob publicly readable.
-            # This is simpler than managing IAM policies for individual objects,
-            # especially for content that is intended to be public anyway.
-            blob.make_public()
-            
-            logging.info(f"File {source_file_path} uploaded to GCS and made public.")
-            return blob.public_url
+            logging.info(f"File {source_file_path} uploaded to GCS. Signed URL generated.")
+            return signed_url
         except Exception as e:
-            logging.error(f"Failed to upload file to GCS: {e}")
+            logging.error(f"Failed to upload file to GCS or generate signed URL: {e}")
             raise
