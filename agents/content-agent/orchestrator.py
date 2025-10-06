@@ -1,8 +1,8 @@
-import os
 import logging
 import time
-from config import config
+import os
 from utils.logging_config import setup_logging
+from config import config
 from utils.data_models import BlogPost
 from services.strapi_client import StrapiClient
 from services.firestore_client import FirestoreClient
@@ -22,13 +22,26 @@ class Orchestrator:
     end-to-end workflow from task retrieval to final publication.
     """
     def __init__(self):
-        self.config = config
         self._setup_logging()
         logging.info("="*80)
         logging.info("INITIALIZING NEW ORCHESTRATOR RUN")
         logging.info("="*80)
+        self.config = config
         self._ensure_directories_exist()
-        logging.info("Orchestrator initialized.")
+
+        # Initialize all clients and agents once for efficiency
+        self.strapi_client = StrapiClient()
+        self.firestore_client = FirestoreClient()
+        self.llm_client = LLMClient()
+        self.pexels_client = PexelsClient()
+        self.gcs_client = GCSClient()
+        self.research_agent = ResearchAgent()
+        self.creative_agent = CreativeAgent(self.llm_client)
+        self.image_agent = ImageAgent(self.llm_client, self.pexels_client, self.gcs_client, self.strapi_client)
+        self.qa_agent = QAAgent(self.llm_client)
+        self.publishing_agent = PublishingAgent(self.strapi_client)
+        
+        logging.info("Orchestrator and all clients/agents initialized.")
 
     def _setup_logging(self):
         """Initializes the logging configuration for the application."""
@@ -37,7 +50,7 @@ class Orchestrator:
     def _ensure_directories_exist(self):
         try:
             image_path = self.config.IMAGE_STORAGE_PATH
-            if not os.path.exists(image_path):
+            if image_path and not os.path.exists(image_path):
                 os.makedirs(image_path)
                 logging.info(f"Created required directory: {image_path}")
         except OSError as e:
@@ -48,15 +61,12 @@ class Orchestrator:
         """
         Runs the content generation process in batch mode using Firestore as the task queue.
         """
-        firestore_client = FirestoreClient()
-        strapi_client = StrapiClient()
-
-        tasks = firestore_client.get_content_queue()
+        tasks = self.firestore_client.get_content_queue()
         if not tasks:
             logging.info("No new content tasks found in Firestore.")
             return
 
-        published_posts_map = strapi_client.get_all_published_posts()
+        published_posts_map = self.strapi_client.get_all_published_posts()
 
         for task in tasks:
             blog_post = BlogPost(
@@ -64,7 +74,6 @@ class Orchestrator:
                 primary_keyword=task["primary_keyword"],
                 target_audience=task["target_audience"],
                 category=task["category"],
-                sheet_row_index=task.get("sheet_row_index", 0), # Legacy support
                 task_id=task["id"]
             )
             self._process_post(blog_post, published_posts_map)
@@ -73,40 +82,29 @@ class Orchestrator:
         """
         Manages the lifecycle of a single blog post from creation to publication.
         """
-        firestore_client = FirestoreClient()
-        strapi_client = StrapiClient()
-        llm_client = LLMClient()
-        pexels_client = PexelsClient()
-        gcs_client = GCSClient()
-        research_agent = ResearchAgent()
-        creative_agent = CreativeAgent(llm_client)
-        image_agent = ImageAgent(llm_client, pexels_client, gcs_client, strapi_client)
-        qa_agent = QAAgent(llm_client)
-        publishing_agent = PublishingAgent(strapi_client)
-        
         post.published_posts_map = published_posts_map
         run_id = None
         
         try:
             if post.task_id:
-                run_id = firestore_client.log_run(post.task_id, post.topic)
-                firestore_client.update_task_status(post.task_id, "In Progress")
+                run_id = self.firestore_client.log_run(post.task_id, post.topic)
+                self.firestore_client.update_task_status(post.task_id, "In Progress")
             
             logging.info(f"Processing post: '{post.topic}' (Task ID: {post.task_id}, Run ID: {run_id})")
             
-            research_findings = research_agent.run(post.topic, post.primary_keyword.split(','))
+            research_findings = self.research_agent.run(post.topic, post.primary_keyword.split(','))
             post.research_data = research_findings
-            if run_id: firestore_client.update_run(run_id, status="Research Complete")
+            if run_id: self.firestore_client.update_run(run_id, status="Research Complete")
 
             approved = False
             for i in range(post.refinement_loops):
-                post = creative_agent.run(post, is_refinement=(i > 0))
-                if run_id: firestore_client.update_run(run_id, status=f"Draft {i+1} Created")
+                post = self.creative_agent.run(post, is_refinement=(i > 0))
+                if run_id: self.firestore_client.update_run(run_id, status=f"Draft {i+1} Created")
                 
                 if post.raw_content:
-                    approved, qa_feedback = qa_agent.run(post, post.raw_content)
+                    approved, qa_feedback = self.qa_agent.run(post, post.raw_content)
                     post.qa_feedback.append(qa_feedback)
-                    if run_id: firestore_client.update_run(run_id, status=f"QA Review {i+1} Complete")
+                    if run_id: self.firestore_client.update_run(run_id, status=f"QA Review {i+1} Complete")
                 else:
                     approved = False
                     qa_feedback = "No content was generated by the creative agent."
@@ -117,37 +115,29 @@ class Orchestrator:
                     break
             
             if not approved:
-                raise Exception("Failed to produce satisfactory content.")
+                raise Exception("Failed to produce satisfactory content after refinement loops.")
 
-            post = image_agent.run(post)
-            if run_id: firestore_client.update_run(run_id, status="Image Processing Complete")
+            post = self.image_agent.run(post)
+            if run_id: self.firestore_client.update_run(run_id, status="Image Processing Complete")
 
-            post = publishing_agent.run(post)
+            post = self.publishing_agent.run(post)
             
             if not post.strapi_url:
                 raise Exception("Publishing failed to return a valid Strapi URL.")
 
             logging.info(f"Successfully published post: {post.strapi_url}")
             if run_id:
-                firestore_client.update_run(run_id, status="Published", post_data={"strapi_url": post.strapi_url})
+                self.firestore_client.update_run(run_id, status="Published", post_data={"strapi_url": post.strapi_url})
             if post.task_id:
-                firestore_client.update_task_status(post.task_id, "Published", post.strapi_url)
+                self.firestore_client.update_task_status(post.task_id, "Published", post.strapi_url)
 
         except Exception as e:
             error_message = f"An error occurred: {e}"
             logging.error(error_message, exc_info=True)
             if run_id:
-                firestore_client.update_run(run_id, status="Failed", post_data={"error": error_message})
+                self.firestore_client.update_run(run_id, status="Failed", post_data={"error": error_message})
             if post.task_id:
-                firestore_client.update_task_status(post.task_id, "Error", error_message=error_message)
-
-    def run(self):
-        """
-        Starts the orchestrator, running in batch mode to process all content tasks.
-        """
-        logging.info("Orchestrator run started.")
-        self.run_batch_job()
-        logging.info("Orchestrator run completed.")
+                self.firestore_client.update_task_status(post.task_id, "Error", error_message=error_message)
 
 if __name__ == "__main__":
     orchestrator = Orchestrator()
