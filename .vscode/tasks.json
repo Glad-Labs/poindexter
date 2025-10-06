@@ -2,48 +2,72 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "BE: Start Python Agent Listener",
+      "label": "BE: Start Strapi",
       "type": "shell",
-      "command": "cd ${workspaceFolder}/agents/content-agent; ./.venv/Scripts/Activate.ps1; python orchestrator.py",
+      "command": "npm run develop --workspace=strapi-backend",
+      "isBackground": true,
       "presentation": {
+        "group": "backend",
         "panel": "new",
         "reveal": "always"
       },
+      "problemMatcher": []
+    },
+    {
+      "label": "BE: Start Python Agent",
+      "type": "shell",
+      "command": "cd ${workspaceFolder}/agents/content-agent; ./.venv/Scripts/Activate.ps1; python orchestrator.py",
       "isBackground": true,
+      "presentation": {
+        "group": "backend",
+        "panel": "new",
+        "reveal": "always"
+      },
       "problemMatcher": ["$python"]
     },
     {
       "label": "FE: Start Oversight Hub",
       "type": "shell",
       "command": "npm start --workspace=oversight-hub",
+      "isBackground": true,
       "presentation": {
+        "group": "frontend",
         "panel": "new",
         "reveal": "always"
       },
-      "isBackground": true,
-      "problemMatcher": ["$jshint"]
+      "problemMatcher": {
+        "owner": "react-scripts",
+        "pattern": {
+          "regexp": ".*"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Starting the development server...",
+          "endsPattern": "Compiled successfully."
+        }
+      }
     },
     {
       "label": "FE: Start Public Site",
       "type": "shell",
       "command": "npm run dev --workspace=glad-labs-public-site",
+      "isBackground": true,
       "presentation": {
+        "group": "frontend",
         "panel": "new",
         "reveal": "always"
       },
-      "isBackground": true,
-      "problemMatcher": ["$jshint"]
-    },
-    {
-      "label": "BE: Start Strapi",
-      "type": "shell",
-      "command": "npm run develop --workspace=strapi-backend",
-      "presentation": {
-        "panel": "new",
-        "reveal": "always"
-      },
-      "isBackground": true,
-      "problemMatcher": []
+      "problemMatcher": {
+        "owner": "nextjs",
+        "pattern": {
+          "regexp": ".*"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "✓ Starting...",
+          "endsPattern": "✓ Ready in"
+        }
+      }
     }
   ],
   "compounds": [
@@ -51,12 +75,18 @@
       "label": "Start All Services",
       "tasks": [
         "BE: Start Strapi",
-        "BE: Start Python Agent Listener",
+        "BE: Start Python Agent",
         "FE: Start Oversight Hub",
         "FE: Start Public Site"
       ],
       "runOptions": {
         "runOn": "folderOpen"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "showReuseMessage": false,
+        "clear": true
       }
     }
   ]
