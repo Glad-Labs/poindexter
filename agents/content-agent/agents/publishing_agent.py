@@ -69,7 +69,8 @@ class PublishingAgent:
             Excerpt=excerpt,
             author=author_id,
             category=category_id,
-            tags=tag_ids
+            tags=tag_ids,
+            PostStatus="Draft"  # Add the PostStatus field
         )
 
         try:

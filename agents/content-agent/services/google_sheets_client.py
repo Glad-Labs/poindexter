@@ -202,7 +202,7 @@ class GoogleSheetsClient:
             # Recommendation: Make these columns configurable.
             result = sheet.values().get(
                 spreadsheetId=config.SPREADSHEET_ID,
-                range=f"{config.PUBLISHED_SHEET_NAME}!A:J" # Adjust range as needed
+                range=config.PUBLISHED_SHEET_NAME  # Corrected range
             ).execute()
             values = result.get('values', [])
 

@@ -29,6 +29,9 @@ class Orchestrator:
     def __init__(self):
         self.config = config
         self._setup_logging()
+        logging.info("="*80)
+        logging.info("INITIALIZING NEW ORCHESTRATOR RUN")
+        logging.info("="*80)
         self._ensure_directories_exist()
         logging.info("Orchestrator initialized.")
 
