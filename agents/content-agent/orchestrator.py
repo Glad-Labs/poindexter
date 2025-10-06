@@ -135,11 +135,21 @@ class Orchestrator:
 
         except Exception as e:
             error_message = f"An error occurred: {e}"
-            logging.error(error_message, exc_info=True)
+            logging.error(f"An error occurred while processing post '{post.topic}': {e}")
+            # Log traceback for detailed debugging
+            # logging.error(traceback.format_exc())
             if run_id:
-                firestore_client.update_run(run_id, status="Failed", post_data={"error": error_message})
+                self.firestore_client.update_run(run_id, status="Failed")
             if post.task_id:
-                firestore_client.update_task_status(post.task_id, "Error")
+                self.firestore_client.update_task_status(post.task_id, "Error", error_message=str(e))
+
+    def run(self):
+        """
+        Starts the orchestrator, running in batch mode to process all content tasks.
+        """
+        logging.info("Orchestrator run started.")
+        self.run_batch_job()
+        logging.info("Orchestrator run completed.")
 
 if __name__ == "__main__":
     orchestrator = Orchestrator()

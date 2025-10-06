@@ -118,7 +118,7 @@ class FirestoreClient:
             logging.error(f"Failed to get content queue from Firestore: {e}")
             return []
 
-    def update_task_status(self, task_id: str, status: str, url: Optional[str] = None):
+    def update_task_status(self, task_id: str, status: str, url: Optional[str] = None, error_message: Optional[str] = None):
         """
         Updates the status of a specific task in the 'tasks' collection.
         """
@@ -130,6 +130,8 @@ class FirestoreClient:
             }
             if url:
                 update_data["url"] = url
+            if error_message:
+                update_data["error_message"] = error_message
             task_ref.update(update_data)
             logging.info(f"Updated task '{task_id}' to status '{status}'.")
         except Exception as e:
