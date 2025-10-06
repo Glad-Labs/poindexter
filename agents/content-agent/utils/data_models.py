@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 
 class ImageDetails(BaseModel):
     """Holds the details for a single image, from generation to final URL."""
@@ -22,17 +22,27 @@ class BlogPost(BaseModel):
     primary_keyword: str
     target_audience: str
     category: str
-    refinement_loops: int = Field(default=1)
+    status: Optional[str] = "New"
     sheet_row_index: Optional[int] = None  # Make sheet_row_index optional
     task_id: Optional[str] = None # Firestore document ID for the task
-
-    # --- Generated Content ---
-    generated_title: Optional[str] = None
-    raw_content: Optional[str] = None  # The main Markdown body from the creative agent
+    run_id: Optional[str] = None
+    refinement_loops: int = 3
+    # SEO & Metadata
+    title: Optional[str] = None
     meta_description: Optional[str] = None
-    keywords: List[str] = Field(default_factory=list) # SEO keywords from CreativeAgent
-    research_data: Optional[str] = None # Raw research data from ResearchAgent
-    
+    slug: Optional[str] = None
+    # Content Stages
+    research_data: Optional[Any] = None
+    raw_content: Optional[str] = None
+    body_content_blocks: Optional[List[Dict[str, Any]]] = None
+    qa_feedback: List[str] = []
+    # Image data
+    images: Optional[List[ImageDetails]] = []
+    # Publishing data
+    strapi_id: Optional[int] = None
+    strapi_url: Optional[str] = None
+    published_posts_map: Optional[Dict[str, str]] = {}
+
     # --- Refinement & State Tracking ---
     qa_feedback: List[str] = Field(default_factory=list)
     status: str = "New" # Tracks the current state (e.g., "In Progress", "Published", "Failed")

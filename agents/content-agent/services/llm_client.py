@@ -41,3 +41,20 @@ class LLMClient:
         except Exception as e:
             logging.error(f"Error generating JSON content from Gemini: {e}")
             return {}  # Return empty dict on failure
+
+    def generate_text(self, prompt: str) -> str:
+        """
+        Generates plain text content using the configured Gemini model.
+
+        Args:
+            prompt (str): The prompt to send to the language model.
+
+        Returns:
+            str: The generated text content.
+        """
+        try:
+            response = self.model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            logging.error(f"Error generating text content from Gemini: {e}")
+            return ""  # Return empty string on failure

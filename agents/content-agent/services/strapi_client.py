@@ -2,7 +2,7 @@ import requests
 import json
 import logging
 from config import config
-from utils.data_models import StrapiPost
+from utils.data_models import StrapiPost, BlogPost
 from typing import Optional
 import os
 
@@ -91,44 +91,53 @@ class StrapiClient:
                 logger.error(f"Response text: {e.response.text}")
             return None
 
-    def create_post(self, post_data: StrapiPost) -> Optional[dict]:
+    def create_post(self, post_data: BlogPost) -> tuple[Optional[int], Optional[str]]:
         """
-        Creates a new post in Strapi as a draft.
+        Creates a new post in Strapi using the final processed data.
 
         Args:
-            post_data (StrapiPost): A Pydantic model instance of the post.
+            post_data (BlogPost): The BlogPost object containing all necessary data.
 
         Returns:
-            Optional[dict]: The JSON response from the Strapi API, or None on failure.
+            tuple[Optional[int], Optional[str]]: The ID and URL of the created post, or (None, None) on failure.
         """
-        posts_url = f"{self.api_url}/posts"
+        if not self.api_token:
+            logging.error("Strapi API token is not set. Cannot create post.")
+            return None, None
+
+        endpoint = f"{self.api_url}/api/posts"
         
+        # Map the BlogPost model to the structure Strapi expects
         payload = {
-            "data": post_data.model_dump(by_alias=True, exclude_none=True)
+            "data": {
+                "Title": post_data.title,
+                "Slug": post_data.slug,
+                "BodyContent": post_data.body_content_blocks,
+                "PostStatus": "Draft",
+                "Keywords": post_data.primary_keyword,
+                "MetaDescription": post_data.meta_description,
+                # Assuming the first image is the featured image
+                "FeaturedImage": post_data.images[0].strapi_image_id if post_data.images else None
+            }
         }
 
         try:
-            headers = self.headers.copy()
-            headers["Content-Type"] = "application/json"
-            response = requests.post(posts_url, headers=headers, data=json.dumps(payload))
+            response = requests.post(endpoint, headers=self.headers, json=payload)
             response.raise_for_status()
-            logger.info(f"Successfully created post draft in Strapi. Post ID: {response.json()['data']['id']}")
-            return response.json()
+            
+            data = response.json()
+            post_id = data.get("data", {}).get("id")
+            post_url = f"{self.api_url}/api/posts/{post_id}" # This is the API URL, not the frontend URL
+            
+            logging.info(f"Successfully created post in Strapi with ID: {post_id}")
+            return post_id, post_url
+
+        except requests.exceptions.HTTPError as e:
+            logging.error(f"Error creating post in Strapi: {e.response.text}")
+            return None, None
         except requests.exceptions.RequestException as e:
-            logger.error(f"Error creating post in Strapi: {e}")
-            # --- Enhanced Error Logging ---
-            if e.response is not None:
-                logger.error(f"Strapi Response Status Code: {e.response.status_code}")
-                try:
-                    # Try to log the detailed error message from Strapi
-                    strapi_error = e.response.json()
-                    logger.error(f"Strapi Error Details: {json.dumps(strapi_error, indent=2)}")
-                except json.JSONDecodeError:
-                    # If the response isn't JSON, log the raw text
-                    logger.error(f"Strapi Raw Response: {e.response.text}")
-            logger.error(f"Data payload sent to Strapi: {json.dumps(payload, indent=2)}")
-            # --- End Enhanced Error Logging ---
-            return None
+            logging.error(f"A network error occurred while creating a post in Strapi: {e}")
+            return None, None
 
     def get_all_published_posts(self) -> dict[str, str]:
         """
@@ -159,19 +168,22 @@ class StrapiClient:
 
 # Example of how to use the client
 if __name__ == '__main__':
-    # This block is for testing purposes.
-    # Ensure you have set the Strapi URL and Token in your .env file.
+    # This is a simple test block. For a real application, this should be in a separate test file.
+    logging.info("Running StrapiClient test...")
     strapi_client = StrapiClient()
 
-    # Create a sample post using the Pydantic model
-    sample_post = StrapiPost(
-        Title="Test Post from Strapi Client",
-        Slug="test-post-from-strapi-client",
-        BodyContent=[{"type": "paragraph", "children": [{"type": "text", "text": "This is a test."}]}],
-        Author="StrapiClientTest"
+    # Create a sample BlogPost object for testing
+    sample_post = BlogPost(
+        topic="Test Topic",
+        primary_keyword="test",
+        target_audience="testers",
+        category="testing",
+        title="Test Post Title",
+        slug="test-post-title",
+        body_content_blocks=[{"type": "paragraph", "children": [{"type": "text", "text": "This is a test."}]}],
+        meta_description="This is a test meta description."
     )
 
-    # Call the create_post method
     strapi_client.create_post(sample_post)
 
     # Fetch all published posts for internal linking

@@ -14,7 +14,7 @@
   "scripts": {
     "bootstrap": "npm install",
     "start:all": "concurrently \"npm:start:strapi\" \"npm:start:oversight\" \"npm:start:public\"",
-    "start:oversight": "npm start --workspace=oversight-hub",
+    "start:oversight": "cross-env PORT=3003 npm start --workspace=oversight-hub",
     "start:public": "npm run dev --workspace=glad-labs-public-site -- --port 3002",
     "start:strapi": "cd cms/strapi-backend && cross-env NODE_OPTIONS=\"--no-warnings\" npm run develop"
   },

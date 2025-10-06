@@ -1,5 +1,6 @@
 import logging
 import json
+import re
 from config import config
 from services.llm_client import LLMClient
 from utils.data_models import BlogPost
@@ -24,29 +25,33 @@ class CreativeAgent:
                                   from the post object. Otherwise, generates the initial draft.
         """
         raw_draft = ""
-        if is_refinement:
-            logger.info(f"CreativeAgent: Refining content for '{post.topic}' based on QA feedback.")
-            # Access the feedback directly from the post object
-            feedback = "\n".join(post.qa_feedback)
-            refinement_prompt = self.prompts['iterative_refinement'].format(draft=post.raw_content, critique=feedback)
-            raw_draft = self.llm_client.generate_text_content(refinement_prompt)
-        else:
-            logger.info(f"CreativeAgent: Starting initial content generation for '{post.topic}'.")
-            # Access research context directly from the post object
-            draft_prompt = self.prompts['initial_draft_generation'].format(
+        if is_refinement and post.qa_feedback:
+            refinement_prompt = self.prompts['refine_draft'].format(
                 topic=post.topic,
                 primary_keyword=post.primary_keyword,
                 target_audience=post.target_audience,
-                internal_link_titles=", ".join(post.published_posts_map.keys()),
-                research_context=post.research_data or "" # Use research_data from post
+                research_data=post.research_data,
+                previous_draft=post.raw_content,
+                qa_feedback=post.qa_feedback[-1]
             )
-            raw_draft = self.llm_client.generate_text_content(draft_prompt)
+            logger.info(f"CreativeAgent: Refining content for '{post.topic}' based on QA feedback.")
+            raw_draft = self.llm_client.generate_text(refinement_prompt)
+        else:
+            draft_prompt = self.prompts['create_draft'].format(
+                topic=post.topic,
+                primary_keyword=post.primary_keyword,
+                target_audience=post.target_audience,
+                research_data=post.research_data,
+                published_posts_map=post.published_posts_map
+            )
+            logger.info(f"CreativeAgent: Starting initial content generation for '{post.topic}'.")
+            raw_draft = self.llm_client.generate_text(draft_prompt)
 
         # Sanitize the LLM's output and update the post object
         post.raw_content = self._clean_llm_output(raw_draft)
-
-        # Always generate SEO assets after creating or refining content
-        self._generate_seo_assets(post)
+        
+        # Generate SEO assets after the main content is finalized
+        post = self._generate_seo_assets(post)
 
         logger.info(f"CreativeAgent: Finished processing for '{post.topic}'.")
         return post
@@ -67,26 +72,33 @@ class CreativeAgent:
         logger.warning("CreativeAgent: Could not find a starting Markdown heading ('#') in the LLM output. The content might contain unwanted preamble.")
         return text # Return original text if no heading is found, with a warning.
 
-    def _generate_seo_assets(self, post: BlogPost):
-        """Generates and attaches SEO assets to the post."""
-        seo_prompt = self.prompts['seo_and_social_media'].format(draft=post.raw_content)
-        seo_assets_text = self.llm_client.generate_text_content(seo_prompt)
-        
-        json_string = extract_json_from_string(seo_assets_text)
-        if not json_string:
-            logger.error("Failed to extract JSON for SEO assets from LLM response. Using fallback values.")
-            post.generated_title = post.topic
-            post.meta_description = "A detailed look at " + post.topic
-            post.keywords = []
-            return
+    def _generate_seo_assets(self, post: BlogPost) -> BlogPost:
+        """Generates and assigns SEO assets (title, meta description, slug) for the post."""
+        seo_prompt = self.prompts['generate_seo'].format(
+            topic=post.topic,
+            primary_keyword=post.primary_keyword,
+            content=post.raw_content
+        )
+        logger.info(f"CreativeAgent: Generating SEO assets for '{post.topic}'.")
+        seo_assets_text = self.llm_client.generate_text(seo_prompt)
 
+        # Extract the title, meta description, and slug from the response
+        post.title = self._extract_asset(seo_assets_text, "Title")
+        post.meta_description = self._extract_asset(seo_assets_text, "MetaDescription")
+        post.slug = self._extract_asset(seo_assets_text, "Slug")
+        
+        return post
+
+    def _extract_asset(self, text: str, asset_name: str) -> str:
+        """Extracts a specific asset from a text block using regex."""
         try:
-            seo_assets = json.loads(json_string)
-            post.generated_title = seo_assets.get("title", post.topic)
-            post.meta_description = seo_assets.get("meta_description")
-            post.keywords = seo_assets.get("keywords", [])
-        except json.JSONDecodeError:
-            logger.error("Failed to parse SEO assets JSON from LLM response. Using fallback values.")
-            post.generated_title = post.topic
-            post.meta_description = "A detailed look at " + post.topic
-            post.keywords = []
+            # Pattern to find 'Asset Name: Value' and capture 'Value'
+            pattern = re.compile(rf"^\s*{asset_name}:\s*(.*)", re.MULTILINE)
+            match = pattern.search(text)
+            if match:
+                return match.group(1).strip()
+            logger.warning(f"CreativeAgent: Could not find '{asset_name}' in the provided text.")
+            return ""
+        except Exception as e:
+            logger.error(f"CreativeAgent: Error extracting asset '{asset_name}': {e}")
+            return ""
