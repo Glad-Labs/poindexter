@@ -10,17 +10,19 @@
 {
   "compilerOptions": {
     /**
-     * @property {string} module - "CommonJS"
-     * @description Specifies the module system. "CommonJS" is standard for Node.js environments,
-     * ensuring compatibility with Strapi's core and the broader Node ecosystem.
+     * @property {string} module - "NodeNext"
+     * @description Specifies the module system. "NodeNext" is recommended for projects
+     * using ECMAScript modules and allows for top-level await. It is essential for
+     * compatibility with the latest JavaScript features and Strapi's module resolution.
      */
-    "module": "CommonJS",
+    "module": "NodeNext",
     /**
-     * @property {string} moduleResolution - "Node"
-     * @description Defines how modules are resolved. "Node" mimics the Node.js module resolution
-     * strategy, which is essential for finding packages in `node_modules`.
+     * @property {string} moduleResolution - "NodeNext"
+     * @description Defines how modules are resolved. "NodeNext" is the recommended setting
+     * that resolves the deprecation warning for "Node". It also supports the latest module
+     * resolution strategies in TypeScript.
      */
-    "moduleResolution": "Node",
+    "moduleResolution": "NodeNext",
     /**
      * @property {string[]} lib - ["ES2020"]
      * @description Specifies the set of built-in API declarations available. "ES2020" provides
