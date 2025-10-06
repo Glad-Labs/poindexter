@@ -34,12 +34,6 @@ class Config:
         self.GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
         self.GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-pro-latest") # Default to the latest powerful model
 
-        # --- Google Sheets Configuration ---
-        self.SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
-        self.PLAN_SHEET_NAME = os.getenv("PLAN_SHEET_NAME", "Content Plan")
-        self.PUBLISHED_SHEET_NAME = os.getenv("PUBLISHED_SHEET_NAME", "Published")
-        self.LOG_SHEET_NAME = os.getenv("LOG_SHEET_NAME", "Generated Content Log")
-
         # --- Strapi CMS Integration ---
         self.STRAPI_API_URL = os.getenv("STRAPI_API_URL") # e.g., "http://localhost:1337/api"
         self.STRAPI_API_TOKEN = os.getenv("STRAPI_API_TOKEN")

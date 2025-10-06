@@ -23,7 +23,6 @@ class BlogPost(BaseModel):
     target_audience: str
     category: str
     status: Optional[str] = "New"
-    sheet_row_index: Optional[int] = None  # Make sheet_row_index optional
     task_id: Optional[str] = None # Firestore document ID for the task
     run_id: Optional[str] = None
     refinement_loops: int = 3
