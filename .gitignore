@@ -39,9 +39,22 @@ pip-delete-this-directory.txt
 *.egg
 
 # Strapi
-.cache/
-build/
-strapillm.txt
+cms/strapi-backend/.cache/
+cms/strapi-backend/build/
+cms/strapi-backend/database/
+cms/strapi-backend/types/
+cms/strapi-backend/src/admin/
+cms/strapi-backend/src/api/
+cms/strapi-backend/src/components/
+cms/strapi-backend/src/extensions/
+cms/strapi-backend/src/policies/
+cms/strapi-backend/src/middlewares/
+cms/strapi-backend/src/bootstrap.js
+cms/strapi-backend/src/index.js
+cms/strapi-backend/src/register.js
+cms/strapi-backend/src/destroy.js
+# Ignore generated Strapi documentation
+cms/strapi-backend/src/extensions/documentation/documentation/
 
 # Next.js
 .next/
