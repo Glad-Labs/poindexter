@@ -1,6 +1,6 @@
 import os
 import logging
-import argparse
+import time
 from config import config
 from utils.logging_config import setup_logging
 from utils.data_models import BlogPost
@@ -135,13 +135,11 @@ class Orchestrator:
 
         except Exception as e:
             error_message = f"An error occurred: {e}"
-            logging.error(f"An error occurred while processing post '{post.topic}': {e}")
-            # Log traceback for detailed debugging
-            # logging.error(traceback.format_exc())
+            logging.error(error_message, exc_info=True)
             if run_id:
-                self.firestore_client.update_run(run_id, status="Failed")
+                firestore_client.update_run(run_id, status="Failed", post_data={"error": error_message})
             if post.task_id:
-                self.firestore_client.update_task_status(post.task_id, "Error", error_message=str(e))
+                firestore_client.update_task_status(post.task_id, "Error", error_message=error_message)
 
     def run(self):
         """
@@ -153,4 +151,14 @@ class Orchestrator:
 
 if __name__ == "__main__":
     orchestrator = Orchestrator()
-    orchestrator.run_batch_job()
+    POLL_INTERVAL = 60  # seconds
+
+    logging.info(f"Starting autonomous agent loop. Polling for new tasks every {POLL_INTERVAL} seconds.")
+    try:
+        while True:
+            orchestrator.run_batch_job()
+            time.sleep(POLL_INTERVAL)
+    except KeyboardInterrupt:
+        logging.info("Agent loop terminated by user.")
+    except Exception as e:
+        logging.critical(f"A fatal error occurred in the main agent loop: {e}", exc_info=True)

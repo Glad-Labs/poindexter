@@ -106,10 +106,10 @@ class FirestoreClient:
 
     def get_content_queue(self) -> list[dict]:
         """
-        Fetches all tasks from the 'tasks' collection with the status 'Ready'.
+        Fetches all tasks from the 'tasks' collection with the status 'New'.
         """
         try:
-            tasks_ref = self.db.collection("tasks").where("status", "==", "Ready")
+            tasks_ref = self.db.collection("tasks").where("status", "==", "New")
             docs = tasks_ref.stream()
             tasks = [{"id": doc.id, **doc.to_dict()} for doc in docs]
             logging.info(f"Found {len(tasks)} tasks in the content queue.")
