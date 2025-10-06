@@ -18,12 +18,12 @@ class FirestoreClient:
         self.run_collection_name = "agent_runs"  # New collection for logging runs
         logging.info("Firestore client initialized.")
 
-    def log_run(self, sheet_row_index: int, topic: str, status: str = "Starting") -> str:
+    def log_run(self, task_id: str, topic: str, status: str = "Starting") -> str:
         """
         Logs the start of a new agent run and returns the Firestore document ID.
 
         Args:
-            sheet_row_index (int): The row number from the Google Sheet.
+            task_id (str): The Firestore document ID of the task.
             topic (str): The topic of the blog post.
             status (str): The initial status of the run.
 
@@ -32,7 +32,7 @@ class FirestoreClient:
         """
         try:
             run_data = {
-                "sheet_row_index": sheet_row_index,
+                "task_id": task_id,
                 "topic": topic,
                 "status": status,
                 "startedAt": datetime.utcnow(),
@@ -103,3 +103,34 @@ class FirestoreClient:
             logging.info(f"Updated Firestore document '{document_id}'.")
         except Exception as e:
             logging.error(f"Failed to update Firestore document '{document_id}': {e}")
+
+    def get_content_queue(self) -> list[dict]:
+        """
+        Fetches all tasks from the 'tasks' collection with the status 'Ready'.
+        """
+        try:
+            tasks_ref = self.db.collection("tasks").where("status", "==", "Ready")
+            docs = tasks_ref.stream()
+            tasks = [{"id": doc.id, **doc.to_dict()} for doc in docs]
+            logging.info(f"Found {len(tasks)} tasks in the content queue.")
+            return tasks
+        except Exception as e:
+            logging.error(f"Failed to get content queue from Firestore: {e}")
+            return []
+
+    def update_task_status(self, task_id: str, status: str, url: Optional[str] = None):
+        """
+        Updates the status of a specific task in the 'tasks' collection.
+        """
+        try:
+            task_ref = self.db.collection("tasks").document(task_id)
+            update_data = {
+                "status": status,
+                "updatedAt": datetime.utcnow()
+            }
+            if url:
+                update_data["url"] = url
+            task_ref.update(update_data)
+            logging.info(f"Updated task '{task_id}' to status '{status}'.")
+        except Exception as e:
+            logging.error(f"Failed to update task status for '{task_id}': {e}")

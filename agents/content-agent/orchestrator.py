@@ -1,11 +1,9 @@
 import os
 import logging
 import argparse
-from crewai import Crew, Process
 from config import config
 from utils.logging_config import setup_logging
 from utils.data_models import BlogPost
-from services.google_sheets_client import GoogleSheetsClient
 from services.strapi_client import StrapiClient
 from services.firestore_client import FirestoreClient
 from services.llm_client import LLMClient
@@ -17,14 +15,11 @@ from agents.image_agent import ImageAgent
 from agents.qa_agent import QAAgent
 from agents.publishing_agent import PublishingAgent
 
-MAX_REFINEMENT_LOOPS = 3
-
 class Orchestrator:
     """
     The primary coordinator for the content generation pipeline.
     This class initializes all necessary clients and agents, and manages the
     end-to-end workflow from task retrieval to final publication.
-    It is designed to be the main entry point for running content jobs.
     """
     def __init__(self):
         self.config = config
@@ -49,124 +44,103 @@ class Orchestrator:
             logging.error(f"Fatal: Could not create directory {self.config.IMAGE_STORAGE_PATH}. Error: {e}")
             raise
 
-    def run_single_job(self, sheet_row_index: int):
+    def run_batch_job(self):
         """
-        DEPRECATED: Processes a single content job based on a Google Sheets row index.
-        This method is for legacy support and will be removed in future versions.
+        Runs the content generation process in batch mode using Firestore as the task queue.
         """
-        logging.info(f"Orchestrator: Received legacy request to process job from sheet row {sheet_row_index}.")
-        sheets_client = GoogleSheetsClient()
-        published_posts_map = sheets_client.get_all_published_posts()
-        tasks = sheets_client.get_content_queue()
-        post_to_process = next((post for post in tasks if post.sheet_row_index == sheet_row_index), None)
-        if not post_to_process:
-            logging.warning(f"No 'Ready' task found for row index {sheet_row_index}. Skipping.")
-            return
-        self._process_post(post_to_process, published_posts_map)
+        firestore_client = FirestoreClient()
+        strapi_client = StrapiClient()
 
-    def run_job(self):
-        """
-        DEPRECATED: Runs the content generation process in batch mode based on Google Sheets.
-        This method fetches all 'Ready' tasks from the content queue and processes them sequentially.
-        It will be replaced by a Pub/Sub trigger mechanism.
-        """
-        logging.warning("Orchestrator: Running deprecated `run_job` method.")
-        sheets_client = GoogleSheetsClient()
-        published_posts_map = sheets_client.get_all_published_posts()
-        tasks = list(sheets_client.get_content_queue())  # Consume the generator
+        tasks = firestore_client.get_content_queue()
         if not tasks:
-            logging.info("No new content tasks found in batch mode.")
+            logging.info("No new content tasks found in Firestore.")
             return
-        for post in tasks:
-            self._process_post(post, published_posts_map)
+
+        published_posts_map = strapi_client.get_all_published_posts()
+
+        for task in tasks:
+            blog_post = BlogPost(
+                topic=task["topic"],
+                primary_keyword=task["primary_keyword"],
+                target_audience=task["target_audience"],
+                category=task["category"],
+                sheet_row_index=task.get("sheet_row_index", 0), # Legacy support
+                task_id=task["id"]
+            )
+            self._process_post(blog_post, published_posts_map)
 
     def _process_post(self, post: BlogPost, published_posts_map: dict):
         """
         Manages the lifecycle of a single blog post from creation to publication.
-        This involves coordinating all agents (Research, Creative, QA, Image, Publishing)
-        and logging the progress to Firestore.
         """
-        strapi_client = StrapiClient()
         firestore_client = FirestoreClient()
+        strapi_client = StrapiClient()
         llm_client = LLMClient()
         pexels_client = PexelsClient()
         gcs_client = GCSClient()
-        sheets_client = GoogleSheetsClient()
         research_agent = ResearchAgent()
         creative_agent = CreativeAgent(llm_client)
         image_agent = ImageAgent(llm_client, pexels_client, gcs_client, strapi_client)
         qa_agent = QAAgent(llm_client)
         publishing_agent = PublishingAgent(strapi_client)
+        
         post.published_posts_map = published_posts_map
         run_id = None
+        
         try:
-            run_id = firestore_client.log_run(post.sheet_row_index, post.topic)
-            sheets_client.update_sheet_status(post.sheet_row_index, "In Progress")
-            logging.info(f"Processing post: '{post.topic}' (Row: {post.sheet_row_index}, Run ID: {run_id})")
-            logging.info("Executing Research Agent...")
+            if post.task_id:
+                run_id = firestore_client.log_run(post.task_id, post.topic)
+                firestore_client.update_task_status(post.task_id, "In Progress")
+            
+            logging.info(f"Processing post: '{post.topic}' (Task ID: {post.task_id}, Run ID: {run_id})")
+            
             research_findings = research_agent.run(post.topic, post.primary_keyword.split(','))
             post.research_data = research_findings
-            firestore_client.update_run(run_id, status="Research Complete", post_data={"research_data_summary": research_findings[:200]})
+            if run_id: firestore_client.update_run(run_id, status="Research Complete")
+
             approved = False
-            qa_feedback = ""
             for i in range(post.refinement_loops):
-                logging.info(f"Executing Creative Agent (Refinement loop {i+1}/{post.refinement_loops})...")
                 post = creative_agent.run(post, is_refinement=(i > 0))
-                firestore_client.update_run(run_id, status=f"Draft {i+1} Created")
-                logging.info("Executing QA Agent...")
-                if not post.raw_content:
-                    raise ValueError("Content from Creative Agent is empty. Cannot proceed with QA.")
-                approved, qa_feedback = qa_agent.run(post, post.raw_content)
-                post.qa_feedback.append(qa_feedback)
-                firestore_client.update_run(run_id, status=f"QA Review {i+1} Complete", post_data={"qa_feedback": qa_feedback})
-                if approved:
-                    logging.info("QA Agent approved the content. Exiting refinement loop.")
-                    break
+                if run_id: firestore_client.update_run(run_id, status=f"Draft {i+1} Created")
+                
+                if post.raw_content:
+                    approved, qa_feedback = qa_agent.run(post, post.raw_content)
+                    post.qa_feedback.append(qa_feedback)
+                    if run_id: firestore_client.update_run(run_id, status=f"QA Review {i+1} Complete")
                 else:
-                    logging.warning(f"QA Agent requested revisions: {qa_feedback}")
+                    approved = False
+                    qa_feedback = "No content was generated by the creative agent."
+                    post.qa_feedback.append(qa_feedback)
+                    logging.warning("Skipping QA check as no content was generated.")
+
+                if approved:
+                    break
+            
             if not approved:
-                raise Exception(f"Failed to produce satisfactory content after {post.refinement_loops} refinement loops. Last feedback: {qa_feedback}")
-            logging.info("Executing Image Agent...")
+                raise Exception("Failed to produce satisfactory content.")
+
             post = image_agent.run(post)
-            firestore_client.update_run(run_id, status="Image Processing Complete")
-            logging.info("Executing Publishing Agent...")
+            if run_id: firestore_client.update_run(run_id, status="Image Processing Complete")
+
             post = publishing_agent.run(post)
-            logging.info(f"Successfully processed and published post: {post.strapi_url}")
-            firestore_client.update_run(run_id, status="Published", post_data={"strapi_url": post.strapi_url})
-            sheets_client.update_sheet_status(post.sheet_row_index, "Published", post.strapi_url or "")
+            
+            if not post.strapi_url:
+                raise Exception("Publishing failed to return a valid Strapi URL.")
+
+            logging.info(f"Successfully published post: {post.strapi_url}")
+            if run_id:
+                firestore_client.update_run(run_id, status="Published", post_data={"strapi_url": post.strapi_url})
+            if post.task_id:
+                firestore_client.update_task_status(post.task_id, "Published", post.strapi_url)
+
         except Exception as e:
-            error_message = f"An error occurred while processing post '{post.topic}': {e}"
+            error_message = f"An error occurred: {e}"
             logging.error(error_message, exc_info=True)
             if run_id:
                 firestore_client.update_run(run_id, status="Failed", post_data={"error": error_message})
-            sheets_client.update_sheet_status(post.sheet_row_index, "Error", error_message[:500])
-
-    def generate_topic_ideas(self, trends: list[str]):
-        """
-        Generates blog post ideas based on a given list of trends.
-        """
-        logging.info("Generating topic ideas...")
-        if not trends:
-            logging.warning("No trends provided, cannot generate topic ideas.")
-            return
-        blog_ideas = []
-        for trend in trends:
-            if trend:
-                blog_ideas.append(f"Exploring the Impact of {trend} on the Future of Tech")
-                blog_ideas.append(f"A Deep Dive into {trend}: What You Need to Know")
-        if blog_ideas:
-            logging.info("Generated Blog Post Ideas:")
-            for idea in list(set(blog_ideas))[:5]:
-                print(f"- {idea}")
-        else:
-            logging.warning("Could not generate any blog post ideas.")
+            if post.task_id:
+                firestore_client.update_task_status(post.task_id, "Error")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Content creation orchestrator.")
-    parser.add_argument("--trends", nargs='+', help="List of trends to generate blog post ideas from.")
-    args = parser.parse_args()
     orchestrator = Orchestrator()
-    if args.trends:
-        orchestrator.generate_topic_ideas(args.trends)
-    else:
-        orchestrator.run_job()
+    orchestrator.run_batch_job()

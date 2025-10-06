@@ -130,6 +130,33 @@ class StrapiClient:
             # --- End Enhanced Error Logging ---
             return None
 
+    def get_all_published_posts(self) -> dict[str, str]:
+        """
+        Fetches all published posts from Strapi to build a map of titles to URLs
+        for internal linking purposes.
+        """
+        try:
+            response = self._make_request(
+                "GET",
+                "/posts?fields[0]=Title&fields[1]=Slug&filters[PostStatus][$eq]=Published"
+            )
+            if not response or "data" not in response:
+                return {}
+
+            published_posts = {}
+            for post in response["data"]:
+                attrs = post.get("attributes", {})
+                title = attrs.get("Title")
+                slug = attrs.get("Slug")
+                if title and slug:
+                    published_posts[title] = f"/posts/{slug}" # Assuming this URL structure
+            
+            logging.info(f"Fetched {len(published_posts)} published posts from Strapi.")
+            return published_posts
+        except Exception as e:
+            logging.error(f"Failed to get published posts from Strapi: {e}")
+            return {}
+
 # Example of how to use the client
 if __name__ == '__main__':
     # This block is for testing purposes.
@@ -146,3 +173,7 @@ if __name__ == '__main__':
 
     # Call the create_post method
     strapi_client.create_post(sample_post)
+
+    # Fetch all published posts for internal linking
+    published_posts = strapi_client.get_all_published_posts()
+    print("Published Posts:", published_posts)
