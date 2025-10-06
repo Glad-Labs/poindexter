@@ -83,7 +83,6 @@ The content agent requires its own Python environment and dependencies.
    ```
 
 3. **Activate the environment:**
-
    - **PowerShell:** `.\\.venv\\Scripts\\Activate.ps1`
    - **Bash/Zsh:** `source ./.venv/bin/activate`
 

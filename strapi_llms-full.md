@@ -1491,7 +1491,7 @@ To replace the favicon:
 3. Update `/src/admin/app.[tsx|js]` with the following:
 
 ```js title="./src/admin/app.js"
-import favicon from "./extensions/favicon.png";
+import favicon from './extensions/favicon.png';
 
 export default {
   config: {
@@ -1533,7 +1533,7 @@ Plugin developers who want to register widgets should either:
 - or check if the API exists before calling it:
 
 ```js
-if ("widgets" in app) {
+if ('widgets' in app) {
   // proceed with the registration
 }
 ```
@@ -1680,13 +1680,13 @@ policies: [],
 The following file defines a custom controller that counts all content-types:
 
 ```js title="src/plugins/content-metrics/server/src/controllers/metrics.js"
-"use strict";
+'use strict';
 module.exports = ({ strapi }) => ({
   async getContentCounts(ctx) {
     try {
       // Get all content types
       const contentTypes = Object.keys(strapi.contentTypes)
-        .filter((uid) => uid.startsWith("api::"))
+        .filter((uid) => uid.startsWith('api::'))
         .reduce((acc, uid) => {
           const contentType = strapi.contentTypes[uid];
           acc[contentType.info.displayName || uid] = 0;
@@ -1894,7 +1894,7 @@ The Strapi Client provides the following key properties and methods for interact
 The Strapi Client provides access to the underlying JavaScript `fetch` function to make direct API requests. The request is always relative to the base URL provided during client initialization:
 
 ```js
-const result = await client.fetch("articles", { method: "GET" });
+const result = await client.fetch('articles', { method: 'GET' });
 ```
 
 ### Working with collection types
@@ -1972,8 +1972,8 @@ The method can be used as follows:
 ```js
 // Initialize the client
 const client = strapi({
-  baseURL: "http://localhost:1337/api",
-  auth: "your-api-token",
+  baseURL: 'http://localhost:1337/api',
+  auth: 'your-api-token',
 });
 
 // Find all file metadata
@@ -1983,10 +1983,10 @@ console.log(allFiles);
 // Find file metadata with filtering and sorting
 const imageFiles = await client.files.find({
   filters: {
-    mime: { $contains: "image" }, // Only get image files
-    name: { $contains: "avatar" }, // Only get files with 'avatar' in the name
+    mime: { $contains: 'image' }, // Only get image files
+    name: { $contains: 'avatar' }, // Only get files with 'avatar' in the name
   },
-  sort: ["name:asc"], // Sort by name in ascending order
+  sort: ['name:asc'], // Sort by name in ascending order
 });
 ```
 
@@ -2020,15 +2020,15 @@ The methods can be used as follows:
 ```js
 // Initialize the client
 const client = strapi({
-  baseURL: "http://localhost:1337/api",
-  auth: "your-api-token",
+  baseURL: 'http://localhost:1337/api',
+  auth: 'your-api-token',
 });
 
 // Update file metadata
 const updatedFile = await client.files.update(1, {
-  name: "New file name",
-  alternativeText: "Descriptive alt text for accessibility",
-  caption: "A caption for the file",
+  name: 'New file name',
+  alternativeText: 'Descriptive alt text for accessibility',
+  caption: 'A caption for the file',
 });
 ```
 
@@ -2073,15 +2073,15 @@ The method can be used as follows:
 ```js
 // Initialize the client
 const client = strapi({
-  baseURL: "http://localhost:1337/api",
-  auth: "your-api-token",
+  baseURL: 'http://localhost:1337/api',
+  auth: 'your-api-token',
 });
 
 // Delete a file by ID
 const deletedFile = await client.files.delete(1);
-console.log("File deleted successfully");
-console.log("Deleted file ID:", deletedFile.id);
-console.log("Deleted file name:", deletedFile.name);
+console.log('File deleted successfully');
+console.log('Deleted file ID:', deletedFile.id);
+console.log('Deleted file name:', deletedFile.name);
 ```
 
 <br/>
@@ -2615,11 +2615,11 @@ Negates the nested condition(s).
 **Example**
 
 ```js
-const entries = await strapi.documents("api::article.article").findMany({
+const entries = await strapi.documents('api::article.article').findMany({
   filters: {
     title: {
       $not: {
-        $contains: "Hello World",
+        $contains: 'Hello World',
       },
     },
   },
@@ -2633,10 +2633,10 @@ Attribute equals input value.
 **Example**
 
 ```js
-const entries = await strapi.documents("api::article.article").findMany({
+const entries = await strapi.documents('api::article.article').findMany({
   filters: {
     title: {
-      $eq: "Hello World",
+      $eq: 'Hello World',
     },
   },
 });
@@ -2645,9 +2645,9 @@ const entries = await strapi.documents("api::article.article").findMany({
 `$eq` can be omitted:
 
 ```js
-const entries = await strapi.documents("api::article.article").findMany({
+const entries = await strapi.documents('api::article.article').findMany({
   filters: {
-    title: "Hello World",
+    title: 'Hello World',
   },
 });
 ```
@@ -2659,10 +2659,10 @@ Attribute equals input value (case-insensitive).
 **Example**
 
 ```js
-const entries = await strapi.documents("api::article.article").findMany({
+const entries = await strapi.documents('api::article.article').findMany({
   filters: {
     title: {
-      $eqi: "HELLO World",
+      $eqi: 'HELLO World',
     },
   },
 });
@@ -2677,10 +2677,10 @@ Attribute does not equal input value.
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 ```js
-const entries = await strapi.documents("api::article.article").findMany({
+const entries = await strapi.documents('api::article.article').findMany({
   filters: {
     title: {
-      $ne: "ABCD",
+      $ne: 'ABCD',
     },
   },
 });
@@ -2693,10 +2693,10 @@ Attribute does not equal input value (case-insensitive).
 **Example**
 
 ```js
-const entries = await strapi.documents("api::article.article").findMany({
+const entries = await strapi.documents('api::article.article').findMany({
   filters: {
     title: {
-      $nei: "abcd",
+      $nei: 'abcd',
     },
   },
 });
@@ -2709,10 +2709,10 @@ Attribute is contained in the input list.
 **Example**
 
 ```js
-const entries = await strapi.documents("api::article.article").findMany({
+const entries = await strapi.documents('api::article.article').findMany({
   filters: {
     title: {
-      $in: ["Hello", "Hola", "Bonjour"],
+      $in: ['Hello', 'Hola', 'Bonjour'],
     },
   },
 });
@@ -2721,9 +2721,9 @@ const entries = await strapi.documents("api::article.article").findMany({
 `$in` can be omitted when passing an array of values:
 
 ```js
-const entries = await strapi.documents("api::article.article").findMany({
+const entries = await strapi.documents('api::article.article').findMany({
   filters: {
-    title: ["Hello", "Hola", "Bonjour"],
+    title: ['Hello', 'Hola', 'Bonjour'],
   },
 });
 ```
@@ -2754,7 +2754,7 @@ Attribute is less than the input value.
 **Example**
 
 ```js
-const entries = await strapi.documents("api::article.article").findMany({
+const entries = await strapi.documents('api::article.article').findMany({
   filters: {
     rating: {
       $lt: 10,
@@ -2770,7 +2770,7 @@ Attribute is less than or equal to the input value.
 **Example**
 
 ```js
-const entries = await strapi.documents("api::article.article").findMany({
+const entries = await strapi.documents('api::article.article').findMany({
   filters: {
     rating: {
       $lte: 10,
@@ -2786,7 +2786,7 @@ Attribute is greater than the input value.
 **Example**
 
 ```js
-const entries = await strapi.documents("api::article.article").findMany({
+const entries = await strapi.documents('api::article.article').findMany({
   filters: {
     rating: {
       $gt: 5,
@@ -2835,10 +2835,10 @@ Attribute contains the input value (case-sensitive).
 **Example**
 
 ```js
-const entries = await strapi.documents("api::article.article").findMany({
+const entries = await strapi.documents('api::article.article').findMany({
   filters: {
     title: {
-      $contains: "Hello",
+      $contains: 'Hello',
     },
   },
 });
@@ -2851,10 +2851,10 @@ Attribute does not contain the input value (case-sensitive).
 **Example**
 
 ```js
-const entries = await strapi.documents("api::article.article").findMany({
+const entries = await strapi.documents('api::article.article').findMany({
   filters: {
     title: {
-      $notContains: "Hello",
+      $notContains: 'Hello',
     },
   },
 });
@@ -2886,10 +2886,10 @@ Attribute does not contain the input value. `$notContainsi` is not case-sensitiv
 **Example**
 
 ```js
-const entries = await strapi.documents("api::article.article").findMany({
+const entries = await strapi.documents('api::article.article').findMany({
   filters: {
     title: {
-      $notContainsi: "hello",
+      $notContainsi: 'hello',
     },
   },
 });
@@ -2902,10 +2902,10 @@ Attribute starts with input value (case-sensitive).
 **Example**
 
 ```js
-const entries = await strapi.documents("api::article.article").findMany({
+const entries = await strapi.documents('api::article.article').findMany({
   filters: {
     title: {
-      $startsWith: "ABCD",
+      $startsWith: 'ABCD',
     },
   },
 });
@@ -2918,10 +2918,10 @@ Attribute starts with input value (case-insensitive).
 **Example**
 
 ```js
-const entries = await strapi.documents("api::article.article").findMany({
+const entries = await strapi.documents('api::article.article').findMany({
   filters: {
     title: {
-      $startsWithi: "ABCD", // will return the same as filtering with 'abcd'
+      $startsWithi: 'ABCD', // will return the same as filtering with 'abcd'
     },
   },
 });
@@ -2970,7 +2970,7 @@ Attribute is `null`.
 **Example**
 
 ```js
-const entries = await strapi.documents("api::article.article").findMany({
+const entries = await strapi.documents('api::article.article').findMany({
   filters: {
     title: {
       $null: true,
@@ -2986,7 +2986,7 @@ Attribute is not `null`.
 **Example**
 
 ```js
-const entries = await strapi.documents("api::article.article").findMany({
+const entries = await strapi.documents('api::article.article').findMany({
   filters: {
     title: {
       $notNull: true,
@@ -3024,10 +3024,10 @@ const entries = await strapi.documents('api::article.article').findMany({
 `$and` will be used implicitly when passing an object with nested conditions:
 
 ```js
-const entries = await strapi.documents("api::article.article").findMany({
+const entries = await strapi.documents('api::article.article').findMany({
   filters: {
-    title: "Hello World",
-    createdAt: { $gt: "2021-11-17T14:28:25.843Z" },
+    title: 'Hello World',
+    createdAt: { $gt: '2021-11-17T14:28:25.843Z' },
   },
 });
 ```
@@ -3039,14 +3039,14 @@ One or many nested conditions must be `true`.
 **Example**
 
 ```js
-const entries = await strapi.documents("api::article.article").findMany({
+const entries = await strapi.documents('api::article.article').findMany({
   filters: {
     $or: [
       {
-        title: "Hello World",
+        title: 'Hello World',
       },
       {
-        createdAt: { $gt: "2021-11-17T14:28:25.843Z" },
+        createdAt: { $gt: '2021-11-17T14:28:25.843Z' },
       },
     ],
   },
@@ -3060,10 +3060,10 @@ Negates the nested conditions.
 **Example**
 
 ```js
-const entries = await strapi.documents("api::article.article").findMany({
+const entries = await strapi.documents('api::article.article').findMany({
   filters: {
     $not: {
-      title: "Hello World",
+      title: 'Hello World',
     },
   },
 });
@@ -3214,7 +3214,7 @@ If no `status` parameter is passed, draft documents are counted (which is the to
 
 ```js
 // Count number of published documents in French
-strapi.documents("api::restaurant.restaurant").count({ locale: "fr" });
+strapi.documents('api::restaurant.restaurant').count({ locale: 'fr' });
 ```
 
 ## Extending the Document Service behavior
@@ -3504,15 +3504,15 @@ To take into account only draft or published versions of documents while [counti
 ```js
 // Count draft documents (also actually includes published documents)
 const draftsCount = await strapi
-  .documents("api::restaurant.restaurant")
-  .count({ status: "draft" });
+  .documents('api::restaurant.restaurant')
+  .count({ status: 'draft' });
 ```
 
 ```js
 // Count only published documents
 const publishedCount = await strapi
-  .documents("api::restaurant.restaurant")
-  .count({ status: "published" });
+  .documents('api::restaurant.restaurant')
+  .count({ status: 'published' });
 ```
 
 :::note
@@ -4321,12 +4321,12 @@ Relations can be connected, disconnected or set through the Content API by passi
 When [Internationalization (i18n)](/cms/features/internationalization) is enabled on the content type, you can also pass a locale to set relations for a specific locale, as in this Document Service API example:
 
 ```js
-await strapi.documents("api::restaurant.restaurant").update({
-  documentId: "a1b2c3d4e5f6g7h8i9j0klm",
-  locale: "fr",
+await strapi.documents('api::restaurant.restaurant').update({
+  documentId: 'a1b2c3d4e5f6g7h8i9j0klm',
+  locale: 'fr',
   data: {
     category: {
-      connect: ["z0y2x4w6v8u1t3s5r7q9onm", "j9k8l7m6n5o4p3q2r1s0tuv"],
+      connect: ['z0y2x4w6v8u1t3s5r7q9onm', 'j9k8l7m6n5o4p3q2r1s0tuv'],
     },
   },
 });
@@ -4372,13 +4372,13 @@ Omitting the `position` argument (as in `documentId: 'srkvrr77k96o44d9v6ef1vu9'`
 
 ```js
 categories: [
-  { id: "nyk7047azdgbtjqhl7btuxw" },
-  { id: "j9k8l7m6n5o4p3q2r1s0tuv" },
-  { id: "6u86wkc6x3parjd4emikhmx6" },
-  { id: "3r1wkvyjwv0b9b36s7hzpxl7" },
-  { id: "a1b2c3d4e5f6g7h8i9j0klm" },
-  { id: "rkyqa499i84197l29sbmwzl" },
-  { id: "srkvrr77k96o44d9v6ef1vu9" },
+  { id: 'nyk7047azdgbtjqhl7btuxw' },
+  { id: 'j9k8l7m6n5o4p3q2r1s0tuv' },
+  { id: '6u86wkc6x3parjd4emikhmx6' },
+  { id: '3r1wkvyjwv0b9b36s7hzpxl7' },
+  { id: 'a1b2c3d4e5f6g7h8i9j0klm' },
+  { id: 'rkyqa499i84197l29sbmwzl' },
+  { id: 'srkvrr77k96o44d9v6ef1vu9' },
 ];
 ```
 
@@ -4398,10 +4398,10 @@ In this situation you can select which locale you are connecting to:
 data: {
   categories: {
     connect: [
-      { documentId: "z0y2x4w6v8u1t3s5r7q9onm", locale: "en" },
+      { documentId: 'z0y2x4w6v8u1t3s5r7q9onm', locale: 'en' },
 
       // Connect to the same document id but with a different locale ��
-      { documentId: "z0y2x4w6v8u1t3s5r7q9onm", locale: "fr" },
+      { documentId: 'z0y2x4w6v8u1t3s5r7q9onm', locale: 'fr' },
     ];
   }
 }

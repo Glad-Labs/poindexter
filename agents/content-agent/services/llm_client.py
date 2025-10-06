@@ -2,20 +2,22 @@ import google.generativeai as genai
 from config import config
 import logging
 import json
-import os # Import the os module
+import os  # Import the os module
+
 
 class LLMClient:
     """Client for interacting with the Google Gemini API."""
+
     def __init__(self):
         """Initializes the Gemini client."""
         try:
             # The google-generativeai library automatically looks for the GOOGLE_API_KEY env var.
             # We set it here from the config to ensure authentication.
             if config.GEMINI_API_KEY:
-                os.environ['GOOGLE_API_KEY'] = config.GEMINI_API_KEY
+                os.environ["GOOGLE_API_KEY"] = config.GEMINI_API_KEY
             else:
                 raise ValueError("GEMINI_API_KEY not found in config.")
-                
+
             self.model = genai.GenerativeModel(config.GEMINI_MODEL)
         except Exception as e:
             logging.error(f"Failed to initialize Gemini client: {e}")

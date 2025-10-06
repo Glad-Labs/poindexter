@@ -2,16 +2,16 @@
  * Test API connectivity and permissions
  */
 
-const fetch = require("node-fetch");
+const fetch = require('node-fetch');
 
-const baseURL = "http://localhost:1337/api";
+const baseURL = 'http://localhost:1337/api';
 
 async function testAPI() {
   try {
-    console.log("🔍 Testing API connectivity...\n");
+    console.log('🔍 Testing API connectivity...\n');
 
     // Test categories endpoint
-    console.log("Testing categories endpoint...");
+    console.log('Testing categories endpoint...');
     const categoriesResponse = await fetch(`${baseURL}/categories`);
     console.log(`Status: ${categoriesResponse.status}`);
 
@@ -24,7 +24,7 @@ async function testAPI() {
     }
 
     // Test authors endpoint
-    console.log("\nTesting authors endpoint...");
+    console.log('\nTesting authors endpoint...');
     const authorsResponse = await fetch(`${baseURL}/authors`);
     console.log(`Status: ${authorsResponse.status}`);
 
@@ -37,7 +37,7 @@ async function testAPI() {
     }
 
     // Test tags endpoint
-    console.log("\nTesting tags endpoint...");
+    console.log('\nTesting tags endpoint...');
     const tagsResponse = await fetch(`${baseURL}/tags`);
     console.log(`Status: ${tagsResponse.status}`);
 
@@ -49,9 +49,9 @@ async function testAPI() {
       console.log(`❌ Tags: ${error}`);
     }
 
-    console.log("\n🎯 API test complete!");
+    console.log('\n🎯 API test complete!');
   } catch (error) {
-    console.error("❌ API test failed:", error.message);
+    console.error('❌ API test failed:', error.message);
   }
 }
 

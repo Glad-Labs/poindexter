@@ -7,6 +7,7 @@ from utils.helpers import load_prompts_from_file
 
 logger = logging.getLogger(__name__)
 
+
 class QAAgent:
     def __init__(self, llm_client: LLMClient):
         self.llm_client = llm_client
@@ -28,16 +29,16 @@ class QAAgent:
                               and the feedback (string).
         """
         logger.info(f"QAAgent: Reviewing content for '{post.topic}'.")
-        
-        prompt = self.prompts['qa_review'].format(
+
+        prompt = self.prompts["qa_review"].format(
             topic=post.topic,
             primary_keyword=post.primary_keyword,
             target_audience=post.target_audience,
-            content=previous_content
+            content=previous_content,
         )
-        
+
         response_text = self.llm_client.generate_text(prompt)
-        
+
         # Simple check for approval keyword
         if "APPROVAL: YES" in response_text:
             return True, "Content approved."

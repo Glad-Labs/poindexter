@@ -5,11 +5,13 @@ from config import config
 
 logger = logging.getLogger(__name__)
 
+
 class ResearchAgent:
     """
     Performs initial research on a given topic to provide context
     for the creative agent by calling the Serper API directly.
     """
+
     def __init__(self):
         """
         Initializes the ResearchAgent.
@@ -33,28 +35,32 @@ class ResearchAgent:
         """
         try:
             search_query = f"{topic} {' '.join(keywords)}"
-            logger.info(f"ResearchAgent: Conducting research for query: '{search_query}'")
-            
+            logger.info(
+                f"ResearchAgent: Conducting research for query: '{search_query}'"
+            )
+
             url = "https://google.serper.dev/search"
             payload = json.dumps({"q": search_query})
             headers = {
-                'X-API-KEY': self.serper_api_key,
-                'Content-Type': 'application/json'
+                "X-API-KEY": self.serper_api_key,
+                "Content-Type": "application/json",
             }
 
             response = requests.post(url, headers=headers, data=payload)
             response.raise_for_status()
-            
+
             search_results = response.json()
-            
+
             # Format the results into a string for the LLM context
             context = ""
             if search_results.get("organic"):
-                for result in search_results.get("organic", [])[:5]: # Get top 5 results
+                for result in search_results.get("organic", [])[
+                    :5
+                ]:  # Get top 5 results
                     context += f"Title: {result.get('title', 'N/A')}\n"
                     context += f"Link: {result.get('link', 'N/A')}\n"
                     context += f"Snippet: {result.get('snippet', 'N/A')}\n---\n"
-            
+
             logger.info(f"ResearchAgent: Found search results.")
             return context
         except requests.exceptions.RequestException as e:

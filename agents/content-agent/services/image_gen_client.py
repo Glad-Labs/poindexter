@@ -7,6 +7,7 @@ from diffusers import StableDiffusionXLPipeline
 
 import config
 
+
 class ImageGenClient:
     def __init__(self):
         self.pipe = None
@@ -20,7 +21,7 @@ class ImageGenClient:
                     "stabilityai/stable-diffusion-xl-base-1.0",
                     torch_dtype=torch.float16,
                     use_safetensors=True,
-                    variant="fp16"
+                    variant="fp16",
                 ).to("cuda")
                 logging.info("Stable Diffusion XL model loaded successfully.")
             else:
@@ -38,11 +39,13 @@ class ImageGenClient:
                 prompt=prompt,
                 negative_prompt=config.SD_NEGATIVE_PROMPT,
                 num_inference_steps=30,
-                guidance_scale=7.5
+                guidance_scale=7.5,
             ).images[0]
-            
+
             # Save the generated image to the provided output path
             image.save(output_path)
 
         except Exception as e:
-            logging.error(f"Error generating image with Stable Diffusion: {e}", exc_info=True)
+            logging.error(
+                f"Error generating image with Stable Diffusion: {e}", exc_info=True
+            )

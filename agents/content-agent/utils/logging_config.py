@@ -1,19 +1,50 @@
 import logging
-import sys
+from logging.handlers import RotatingFileHandler
+import os
+from pythonjsonlogger import jsonlogger
+
 
 def setup_logging():
     """
-    Configures a centralized logger for the application.
+    Configures the logging for the application to output structured JSON logs.
     """
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        stream=sys.stdout
-    )
-    # You can add file handlers or other handlers here if needed
-    # For example, to log to a file:
-    # file_handler = logging.FileHandler('agent.log')
-    # file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-    # logging.getLogger().addHandler(file_handler)
+    log_dir = 'logs'
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
 
-    logging.info("Logging configured.")
+    log_file = os.path.join(log_dir, 'app.log')
+
+    # Get the root logger
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+
+    # Remove any existing handlers to avoid duplicate logs
+    if logger.hasHandlers():
+        logger.handlers.clear()
+
+    # Create a file handler that logs messages to a file
+    file_handler = RotatingFileHandler(log_file, maxBytes=1024*1024*5, backupCount=5)
+    
+    # Create a JSON formatter
+    formatter = jsonlogger.JsonFormatter(
+        '%(asctime)s %(name)s %(levelname)s %(message)s'
+    )
+    
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+
+    # Also add a handler for console output for local development
+    console_handler = logging.StreamHandler()
+    console_formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    console_handler.setFormatter(console_formatter)
+    logger.addHandler(console_handler)
+
+    logging.info("Structured JSON logging configured.")
+
+if __name__ == '__main__':
+    setup_logging()
+    logging.info("This is an info message.")
+    logging.warning("This is a warning message.")
+    logging.error("This is an error message.")

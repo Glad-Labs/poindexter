@@ -8,6 +8,7 @@ from utils.helpers import load_prompts_from_file, extract_json_from_string
 
 logger = logging.getLogger(__name__)
 
+
 class CreativeAgent:
     def __init__(self, llm_client: LLMClient):
         self.llm_client = llm_client
@@ -26,30 +27,34 @@ class CreativeAgent:
         """
         raw_draft = ""
         if is_refinement and post.qa_feedback:
-            refinement_prompt = self.prompts['refine_draft'].format(
+            refinement_prompt = self.prompts["refine_draft"].format(
                 topic=post.topic,
                 primary_keyword=post.primary_keyword,
                 target_audience=post.target_audience,
                 research_data=post.research_data,
                 previous_draft=post.raw_content,
-                qa_feedback=post.qa_feedback[-1]
+                qa_feedback=post.qa_feedback[-1],
             )
-            logger.info(f"CreativeAgent: Refining content for '{post.topic}' based on QA feedback.")
+            logger.info(
+                f"CreativeAgent: Refining content for '{post.topic}' based on QA feedback."
+            )
             raw_draft = self.llm_client.generate_text(refinement_prompt)
         else:
-            draft_prompt = self.prompts['create_draft'].format(
+            draft_prompt = self.prompts["create_draft"].format(
                 topic=post.topic,
                 primary_keyword=post.primary_keyword,
                 target_audience=post.target_audience,
                 research_data=post.research_data,
-                published_posts_map=post.published_posts_map
+                published_posts_map=post.published_posts_map,
             )
-            logger.info(f"CreativeAgent: Starting initial content generation for '{post.topic}'.")
+            logger.info(
+                f"CreativeAgent: Starting initial content generation for '{post.topic}'."
+            )
             raw_draft = self.llm_client.generate_text(draft_prompt)
 
         # Sanitize the LLM's output and update the post object
         post.raw_content = self._clean_llm_output(raw_draft)
-        
+
         # Generate SEO assets after the main content is finalized
         post = self._generate_seo_assets(post)
 
@@ -63,21 +68,23 @@ class CreativeAgent:
         """
         if not text:
             return ""
-        lines = text.split('\n')
+        lines = text.split("\n")
         for i, line in enumerate(lines):
             # Find the first line that starts with '#' which indicates a Markdown header.
-            if line.strip().startswith('#'):
-                return '\n'.join(lines[i:])
-        
-        logger.warning("CreativeAgent: Could not find a starting Markdown heading ('#') in the LLM output. The content might contain unwanted preamble.")
-        return text # Return original text if no heading is found, with a warning.
+            if line.strip().startswith("#"):
+                return "\n".join(lines[i:])
+
+        logger.warning(
+            "CreativeAgent: Could not find a starting Markdown heading ('#') in the LLM output. The content might contain unwanted preamble."
+        )
+        return text  # Return original text if no heading is found, with a warning.
 
     def _generate_seo_assets(self, post: BlogPost) -> BlogPost:
         """Generates and assigns SEO assets (title, meta description, slug) for the post."""
-        seo_prompt = self.prompts['generate_seo'].format(
+        seo_prompt = self.prompts["generate_seo"].format(
             topic=post.topic,
             primary_keyword=post.primary_keyword,
-            content=post.raw_content
+            content=post.raw_content,
         )
         logger.info(f"CreativeAgent: Generating SEO assets for '{post.topic}'.")
         seo_assets_text = self.llm_client.generate_text(seo_prompt)
@@ -86,7 +93,7 @@ class CreativeAgent:
         post.title = self._extract_asset(seo_assets_text, "Title")
         post.meta_description = self._extract_asset(seo_assets_text, "MetaDescription")
         post.slug = self._extract_asset(seo_assets_text, "Slug")
-        
+
         return post
 
     def _extract_asset(self, text: str, asset_name: str) -> str:
@@ -97,7 +104,9 @@ class CreativeAgent:
             match = pattern.search(text)
             if match:
                 return match.group(1).strip()
-            logger.warning(f"CreativeAgent: Could not find '{asset_name}' in the provided text.")
+            logger.warning(
+                f"CreativeAgent: Could not find '{asset_name}' in the provided text."
+            )
             return ""
         except Exception as e:
             logger.error(f"CreativeAgent: Error extracting asset '{asset_name}': {e}")

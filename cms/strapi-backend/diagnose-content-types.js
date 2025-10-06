@@ -1,17 +1,17 @@
-const fetch = require("node-fetch");
+const fetch = require('node-fetch');
 
 async function diagnoseContentTypes() {
   try {
-    console.log("🔍 Diagnosing Strapi content types...\n");
+    console.log('🔍 Diagnosing Strapi content types...\n');
 
     // Test the content-type-builder API to see what Strapi knows about
     const contentTypesResponse = await fetch(
-      "http://localhost:1337/content-type-builder/content-types"
+      'http://localhost:1337/content-type-builder/content-types'
     );
 
     if (contentTypesResponse.ok) {
       const contentTypes = await contentTypesResponse.json();
-      console.log("✅ Content types known to Strapi:");
+      console.log('✅ Content types known to Strapi:');
       console.log(JSON.stringify(contentTypes, null, 2));
     } else {
       console.log(
@@ -20,14 +20,14 @@ async function diagnoseContentTypes() {
     }
 
     // Test individual API endpoints
-    console.log("\n🧪 Testing API endpoints:");
+    console.log('\n🧪 Testing API endpoints:');
 
     const endpoints = [
-      "categories",
-      "posts",
-      "authors",
-      "tags",
-      "content-metrics",
+      'categories',
+      'posts',
+      'authors',
+      'tags',
+      'content-metrics',
     ];
 
     for (const endpoint of endpoints) {
@@ -39,7 +39,7 @@ async function diagnoseContentTypes() {
       }
     }
   } catch (error) {
-    console.error("❌ Diagnosis failed:", error.message);
+    console.error('❌ Diagnosis failed:', error.message);
   }
 }
 

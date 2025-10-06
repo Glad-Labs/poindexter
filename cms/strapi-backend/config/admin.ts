@@ -31,7 +31,7 @@ export default ({ env }: { env: StrapiEnv }) => ({
      * It should be a long, random, and private string stored securely in an environment variable.
      * @example env('ADMIN_JWT_SECRET', 'a-very-secure-random-string')
      */
-    secret: env("ADMIN_JWT_SECRET"),
+    secret: env('ADMIN_JWT_SECRET'),
   },
   /**
    * @property {object} apiToken - Settings for Strapi's API tokens (v4).
@@ -43,7 +43,7 @@ export default ({ env }: { env: StrapiEnv }) => ({
      * It should be a unique, random string.
      * @example env('API_TOKEN_SALT', 'another-secure-random-string')
      */
-    salt: env("API_TOKEN_SALT"),
+    salt: env('API_TOKEN_SALT'),
   },
   /**
    * @property {object} transfer - Settings for data transfer features (e.g., push/pull).
@@ -55,7 +55,7 @@ export default ({ env }: { env: StrapiEnv }) => ({
        * @description Secures the tokens used for transferring data between Strapi instances.
        * @example env('TRANSFER_TOKEN_SALT', 'yet-another-secure-random-string')
        */
-      salt: env("TRANSFER_TOKEN_SALT"),
+      salt: env('TRANSFER_TOKEN_SALT'),
     },
   },
 });

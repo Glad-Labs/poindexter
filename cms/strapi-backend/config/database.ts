@@ -23,7 +23,10 @@ interface StrapiEnv {
 
 export default ({ env }: { env: StrapiEnv }) => {
   // Determine the database client from environment variables, defaulting to SQLite.
-  const client: 'sqlite' | 'mysql' | 'postgres' = env('DATABASE_CLIENT', 'sqlite');
+  const client: 'sqlite' | 'mysql' | 'postgres' = env(
+    'DATABASE_CLIENT',
+    'sqlite'
+  );
 
   // A map of connection configurations for different database clients.
   const connections = {
@@ -41,11 +44,17 @@ export default ({ env }: { env: StrapiEnv }) => {
           ca: env('DATABASE_SSL_CA', undefined),
           capath: env('DATABASE_SSL_CAPATH', undefined),
           cipher: env('DATABASE_SSL_CIPHER', undefined),
-          rejectUnauthorized: env.bool('DATABASE_SSL_REJECT_UNAUTHORIZED', true),
+          rejectUnauthorized: env.bool(
+            'DATABASE_SSL_REJECT_UNAUTHORIZED',
+            true
+          ),
         },
       },
       // Connection pool settings.
-      pool: { min: env.int('DATABASE_POOL_MIN', 2), max: env.int('DATABASE_POOL_MAX', 10) },
+      pool: {
+        min: env.int('DATABASE_POOL_MIN', 2),
+        max: env.int('DATABASE_POOL_MAX', 10),
+      },
     },
     postgres: {
       connection: {
@@ -57,17 +66,28 @@ export default ({ env }: { env: StrapiEnv }) => {
         user: env('DATABASE_USERNAME', 'strapi'),
         password: env('DATABASE_PASSWORD', 'strapi'),
         ssl: env.bool('DATABASE_SSL', false) && {
-          rejectUnauthorized: env.bool('DATABASE_SSL_REJECT_UNAUTHORIZED', true),
+          rejectUnauthorized: env.bool(
+            'DATABASE_SSL_REJECT_UNAUTHORIZED',
+            true
+          ),
         },
         schema: env('DATABASE_SCHEMA', 'public'),
       },
-      pool: { min: env.int('DATABASE_POOL_MIN', 2), max: env.int('DATABASE_POOL_MAX', 10) },
+      pool: {
+        min: env.int('DATABASE_POOL_MIN', 2),
+        max: env.int('DATABASE_POOL_MAX', 10),
+      },
     },
     sqlite: {
       connection: {
         // The SQLite file is stored in `.tmp/data.db` by default.
         // This path is relative to the project root.
-        filename: path.join(__dirname, '..', '..', env('DATABASE_FILENAME', '.tmp/data.db')),
+        filename: path.join(
+          __dirname,
+          '..',
+          '..',
+          env('DATABASE_FILENAME', '.tmp/data.db')
+        ),
       },
       // Required for SQLite to function correctly.
       useNullAsDefault: true,

@@ -16,10 +16,18 @@
     "start:all": "concurrently \"npm:start:strapi\" \"npm:start:oversight\" \"npm:start:public\"",
     "start:oversight": "cross-env PORT=3003 npm start --workspace=oversight-hub",
     "start:public": "npm run dev --workspace=glad-labs-public-site -- --port 3002",
-    "start:strapi": "cd cms/strapi-backend && cross-env NODE_OPTIONS=\"--no-warnings\" npm run develop"
+    "start:strapi": "cd cms/strapi-backend && cross-env NODE_OPTIONS=\"--no-warnings\" npm run develop",
+    "format": "prettier --write . && npm run format:py",
+    "format:py": "C:/Users/mattm/glad-labs-website/agents/content-agent/.venv/Scripts/python.exe -m black agents/content-agent",
+    "lint:md": "markdownlint \"**/*.md\" --ignore node_modules",
+    "lint:py": "C:/Users/mattm/glad-labs-website/agents/content-agent/.venv/Scripts/python.exe -m flake8 agents/content-agent",
+    "lint": "npm run lint:md && npm run lint:py && npm run format"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
-    "cross-env": "^10.1.0"
+    "cross-env": "^10.1.0",
+    "eslint-config-prettier": "^10.1.8",
+    "markdownlint-cli": "^0.45.0",
+    "prettier": "^3.6.2"
   }
 }

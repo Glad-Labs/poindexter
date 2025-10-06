@@ -3,15 +3,15 @@
  * This will register the content types properly in Strapi using admin API
  */
 
-const fetch = require("node-fetch");
+const fetch = require('node-fetch');
 
-const baseURL = "http://localhost:1337";
+const baseURL = 'http://localhost:1337';
 const adminURL = `${baseURL}/admin`;
 
 async function getAdminToken() {
   // For this demo, we'll use a simple approach
   // In production, you'd use proper authentication
-  console.log("🔑 Using admin API endpoint for content type creation...");
+  console.log('🔑 Using admin API endpoint for content type creation...');
   return null; // We'll use a different approach
 }
 
@@ -20,9 +20,9 @@ async function createContentTypeViaAPI(contentTypeData) {
     const response = await fetch(
       `${adminURL}/content-type-builder/content-types`,
       {
-        method: "POST",
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify(contentTypeData),
       }
@@ -51,32 +51,32 @@ async function createContentTypeViaAPI(contentTypeData) {
 
 async function createContentTypes() {
   try {
-    console.log("🏗️ Creating missing content types via API...\n");
+    console.log('🏗️ Creating missing content types via API...\n');
 
     // Author content type
     const authorSchema = {
       contentType: {
-        displayName: "Author",
-        singularName: "author",
-        pluralName: "authors",
+        displayName: 'Author',
+        singularName: 'author',
+        pluralName: 'authors',
         description:
-          "Represents content authors, including AI agents and human writers for the GLAD Labs content engine.",
-        kind: "collectionType",
+          'Represents content authors, including AI agents and human writers for the GLAD Labs content engine.',
+        kind: 'collectionType',
         attributes: {
           Name: {
-            type: "string",
+            type: 'string',
             required: true,
-            description: "Full name of the author",
+            description: 'Full name of the author',
           },
           Bio: {
-            type: "text",
-            description: "Brief biography or description of the author",
+            type: 'text',
+            description: 'Brief biography or description of the author',
           },
           Avatar: {
-            type: "media",
+            type: 'media',
             multiple: false,
-            allowedTypes: ["images"],
-            description: "Profile picture or avatar",
+            allowedTypes: ['images'],
+            description: 'Profile picture or avatar',
           },
         },
         options: {
@@ -88,25 +88,25 @@ async function createContentTypes() {
     // Tag content type
     const tagSchema = {
       contentType: {
-        displayName: "Tag",
-        singularName: "tag",
-        pluralName: "tags",
-        description: "Content tags for categorization and SEO purposes.",
-        kind: "collectionType",
+        displayName: 'Tag',
+        singularName: 'tag',
+        pluralName: 'tags',
+        description: 'Content tags for categorization and SEO purposes.',
+        kind: 'collectionType',
         attributes: {
           Name: {
-            type: "string",
+            type: 'string',
             required: true,
-            description: "Tag name",
+            description: 'Tag name',
           },
           Slug: {
-            type: "uid",
-            targetField: "Name",
-            description: "URL-friendly version of the tag name",
+            type: 'uid',
+            targetField: 'Name',
+            description: 'URL-friendly version of the tag name',
           },
           Description: {
-            type: "text",
-            description: "Optional description of what this tag represents",
+            type: 'text',
+            description: 'Optional description of what this tag represents',
           },
         },
         options: {
@@ -118,32 +118,32 @@ async function createContentTypes() {
     // Content Metric content type
     const metricSchema = {
       contentType: {
-        displayName: "Content Metric",
-        singularName: "content-metric",
-        pluralName: "content-metrics",
+        displayName: 'Content Metric',
+        singularName: 'content-metric',
+        pluralName: 'content-metrics',
         description:
-          "Performance tracking for published content, including views, engagement, and AI generation metrics.",
-        kind: "collectionType",
+          'Performance tracking for published content, including views, engagement, and AI generation metrics.',
+        kind: 'collectionType',
         attributes: {
           Views: {
-            type: "integer",
+            type: 'integer',
             default: 0,
-            description: "Total number of views for this content",
+            description: 'Total number of views for this content',
           },
           Likes: {
-            type: "integer",
+            type: 'integer',
             default: 0,
-            description: "Number of likes or upvotes",
+            description: 'Number of likes or upvotes',
           },
           Shares: {
-            type: "integer",
+            type: 'integer',
             default: 0,
-            description: "Number of shares across social platforms",
+            description: 'Number of shares across social platforms',
           },
           Comments: {
-            type: "integer",
+            type: 'integer',
             default: 0,
-            description: "Number of comments on the content",
+            description: 'Number of comments on the content',
           },
         },
         options: {
@@ -152,24 +152,24 @@ async function createContentTypes() {
       },
     };
 
-    console.log("� Creating Author content type...");
+    console.log('� Creating Author content type...');
     await createContentTypeViaAPI(authorSchema);
 
-    console.log("📋 Creating Tag content type...");
+    console.log('📋 Creating Tag content type...');
     await createContentTypeViaAPI(tagSchema);
 
-    console.log("📋 Creating Content Metric content type...");
+    console.log('📋 Creating Content Metric content type...');
     await createContentTypeViaAPI(metricSchema);
 
-    console.log("\n🎯 Content type creation complete!");
+    console.log('\n🎯 Content type creation complete!');
     console.log(
-      "🔄 Strapi will restart automatically to register the new content types."
+      '🔄 Strapi will restart automatically to register the new content types.'
     );
     console.log(
-      "📝 After restart, check the permissions page to see all content types."
+      '📝 After restart, check the permissions page to see all content types.'
     );
   } catch (error) {
-    console.error("❌ Error:", error.message);
+    console.error('❌ Error:', error.message);
   }
 }
 

@@ -79,7 +79,8 @@ The agent is designed to be run as a container, ideally deployed on a serverless
    ```bash
    docker run --env-file .env -p 8080:8080 glad-labs-content-agent
    ```
-   *(Note: The port mapping `-p 8080:8080` is necessary for services like Google Cloud Run which expect the container to listen on a specific port.)*
+
+   _(Note: The port mapping `-p 8080:8080` is necessary for services like Google Cloud Run which expect the container to listen on a specific port.)_
 
 ---
 

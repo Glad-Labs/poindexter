@@ -4,6 +4,7 @@ from services.strapi_client import StrapiClient
 from utils.data_models import BlogPost
 from utils.markdown_utils import markdown_to_strapi_blocks
 
+
 class PublishingAgent:
     """Handles the final step of formatting and publishing the content to Strapi."""
 
@@ -46,11 +47,15 @@ class PublishingAgent:
 
             post.strapi_id = post_id
             post.strapi_url = post_url
-            logging.info(f"Successfully published post '{post.title}' to Strapi with ID: {post_id}")
+            logging.info(
+                f"Successfully published post '{post.title}' to Strapi with ID: {post_id}"
+            )
 
         except Exception as e:
-            logging.error(f"An error occurred during the publishing process: {e}", exc_info=True)
-        
+            logging.error(
+                f"An error occurred during the publishing process: {e}", exc_info=True
+            )
+
         return post
 
     def _replace_image_placeholders(self, post: BlogPost) -> str:
@@ -65,12 +70,14 @@ class PublishingAgent:
                 markdown_image = f"![{image_data.alt_text}]({image_data.public_url})"
                 content = content.replace(placeholder, markdown_image)
             else:
-                logging.warning(f"Image {i+1} has no public URL. Cannot replace placeholder.")
+                logging.warning(
+                    f"Image {i+1} has no public URL. Cannot replace placeholder."
+                )
         return content
 
     def _clean_content(self, content: str) -> str:
         """Removes any leftover generation artifacts from the content."""
         # This regex removes lines that start with '### **Blog Post Draft**' and similar artifacts
-        content = re.sub(r'^### \*\*.*\*\*$', '', content, flags=re.MULTILINE)
+        content = re.sub(r"^### \*\*.*\*\*$", "", content, flags=re.MULTILINE)
         # This removes any leading/trailing whitespace and multiple newlines
         return content.strip()

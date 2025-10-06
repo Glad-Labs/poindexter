@@ -18,7 +18,13 @@ class ImageAgent:
     Generates and/or fetches images for a blog post and uploads them to GCS.
     """
 
-    def __init__(self, llm_client: LLMClient, pexels_client: PexelsClient, gcs_client: GCSClient, strapi_client: StrapiClient):
+    def __init__(
+        self,
+        llm_client: LLMClient,
+        pexels_client: PexelsClient,
+        gcs_client: GCSClient,
+        strapi_client: StrapiClient,
+    ):
         logging.info("Initializing Image Agent...")
         self.llm_client = llm_client
         self.pexels_client = pexels_client
@@ -33,11 +39,13 @@ class ImageAgent:
         and then uploads them to Strapi.
         """
         if not post.title or not post.raw_content:
-            logging.warning("ImageAgent: Post title or content is missing, skipping image processing.")
+            logging.warning(
+                "ImageAgent: Post title or content is missing, skipping image processing."
+            )
             return post
 
         logging.info(f"ImageAgent: Starting image processing for '{post.title}'.")
-        
+
         try:
             # Generate metadata for all images first
             image_metadata = self._generate_image_metadata(post)
@@ -52,16 +60,17 @@ class ImageAgent:
                     post.images.append(image_details)
 
         except Exception as e:
-            logging.error(f"An error occurred during image processing: {e}", exc_info=True)
+            logging.error(
+                f"An error occurred during image processing: {e}", exc_info=True
+            )
 
         logging.info(f"ImageAgent: Finished image processing for '{post.title}'.")
         return post
 
     def _generate_image_metadata(self, post: BlogPost) -> list[dict[str, str]]:
         """Generates a list of image metadata dicts using the LLM."""
-        metadata_prompt = self.prompts['generate_image_metadata'].format(
-            title=post.title,
-            content=post.raw_content
+        metadata_prompt = self.prompts["generate_image_metadata"].format(
+            title=post.title, content=post.raw_content
         )
         logging.info("Generating image metadata...")
         try:
@@ -72,9 +81,12 @@ class ImageAgent:
             logging.error(f"Failed to parse image metadata from LLM response: {e}")
             return []
 
-    def _process_single_image(self, metadata: dict[str, str], post: BlogPost, index: int) -> ImageDetails | None:
+    def _process_single_image(
+        self, metadata: dict[str, str], post: BlogPost, index: int
+    ) -> ImageDetails | None:
         """Downloads, uploads, and processes a single image."""
-        if not post.title: return None
+        if not post.title:
+            return None
 
         try:
             query = metadata.get("query")
@@ -90,7 +102,7 @@ class ImageAgent:
             if not self.pexels_client.search_and_download(query, local_path):
                 logging.warning(f"Failed to download image for query: {query}")
                 return None
-            
+
             # Upload to GCS and get signed URL
             gcs_path = f"images/{local_filename}"
             signed_url = self.gcs_client.upload_file(local_path, gcs_path)
@@ -104,7 +116,7 @@ class ImageAgent:
                 path=local_path,
                 public_url=signed_url,
                 alt_text=metadata.get("alt_text", f"Image for {post.title}"),
-                caption=metadata.get("caption", post.title)
+                caption=metadata.get("caption", post.title),
             )
 
             # Upload to Strapi and get the ID
@@ -113,9 +125,12 @@ class ImageAgent:
             strapi_id = self.strapi_client.upload_image(local_path, alt_text, caption)
             if strapi_id:
                 image_details.strapi_image_id = strapi_id
-            
+
             return image_details
 
         except Exception as e:
-            logging.error(f"Error processing image for query '{metadata.get('query')}': {e}", exc_info=True)
+            logging.error(
+                f"Error processing image for query '{metadata.get('query')}': {e}",
+                exc_info=True,
+            )
             return None

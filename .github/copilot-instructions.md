@@ -22,6 +22,7 @@ npm run start:all
 ```
 
 This uses `concurrently` to launch all three web services on their designated ports:
+
 - **Strapi Backend**: `http://localhost:1337`
 - **Oversight Hub**: `http://localhost:3001`
 - **Public Site**: `http://localhost:3002`
@@ -42,10 +43,10 @@ npm install <package-name> --workspace=glad-labs-public-site
 
 ### Strapi Schema and Extensions
 
--   Strapi content type schemas are defined in `cms/strapi-backend/src/api/{content-type}/content-types/{content-type}/schema.json`.
--   **Crucially, to add a relationship to a built-in Strapi model (like `User`), you must formally extend the plugin.** For example, to add a `posts` relation to the `User` model, a schema extension was created at: `cms/strapi-backend/src/extensions/users-permissions/content-types/user/schema.json`. Directly modifying the `post` schema's `author` relation without this extension will cause the server to fail.
+- Strapi content type schemas are defined in `cms/strapi-backend/src/api/{content-type}/content-types/{content-type}/schema.json`.
+- **Crucially, to add a relationship to a built-in Strapi model (like `User`), you must formally extend the plugin.** For example, to add a `posts` relation to the `User` model, a schema extension was created at: `cms/strapi-backend/src/extensions/users-permissions/content-types/user/schema.json`. Directly modifying the `post` schema's `author` relation without this extension will cause the server to fail.
 
 ### Generated Types
 
--   Strapi auto-generates TypeScript definitions in `cms/strapi-backend/types/generated/`.
--   These files (`contentTypes.d.ts`, `components.d.ts`) **should be checked into Git** to ensure type safety and consistency between the backend schema and frontend consumers.
+- Strapi auto-generates TypeScript definitions in `cms/strapi-backend/types/generated/`.
+- These files (`contentTypes.d.ts`, `components.d.ts`) **should be checked into Git** to ensure type safety and consistency between the backend schema and frontend consumers.
