@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "description": "Monorepo for the GLAD Labs project, containing all services and applications.",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "author": "Matthew M. Gladding (Glad Labs, LLC)",
   "workspaces": [
     "agents/*",
