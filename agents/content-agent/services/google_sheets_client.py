@@ -198,11 +198,10 @@ class GoogleSheetsClient:
         published_posts = {}
         try:
             sheet = self.service.spreadsheets()
-            # Fetches columns for Title (assuming in 'J') and URL (assuming in 'H')
-            # Recommendation: Make these columns configurable.
+            # Fetches the entire sheet.
             result = sheet.values().get(
                 spreadsheetId=config.SPREADSHEET_ID,
-                range=config.PUBLISHED_SHEET_NAME  # Corrected range
+                range=config.PUBLISHED_SHEET_NAME
             ).execute()
             values = result.get('values', [])
 
