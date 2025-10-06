@@ -1,118 +1,113 @@
-# GLAD Labs Website - Development Setup
+# GLAD Labs Monorepo
 
-## 🚀 Quick Start
+This repository contains the complete codebase for the GLAD Labs digital firm, encompassing a headless CMS, a public-facing website, a real-time oversight dashboard, and a sophisticated AI content generation agent.
 
-This workspace is configured to automatically launch all services when opened in VS Code.
+## 🚀 System Architecture
 
-### Services Overview
+The system is designed as a decoupled, microservice-oriented architecture, enabling independent development and scaling of each component.
 
-| Service | Port | URL | Description |
-|---------|------|-----|-------------|
-| **Strapi CMS** | 1337 | http://localhost:1337 | Backend CMS and API |
-| **Oversight Hub** | 3001 | http://localhost:3001 | React admin dashboard |
-| **Public Site** | 3002 | http://localhost:3002 | Next.js public website |
+| Service           | Technology    | Port | URL                     | Description                                                   |
+| ----------------- | ------------- | ---- | ----------------------- | ------------------------------------------------------------- |
+| **Strapi CMS**    | Strapi v4     | 1337 | <http://localhost:1337> | Headless CMS for all content.                                 |
+| **Oversight Hub** | React         | 3001 | <http://localhost:3001> | Real-time dashboard for monitoring and managing the AI agent. |
+| **Public Site**   | Next.js       | 3002 | <http://localhost:3002> | The public-facing website that consumes content from Strapi.  |
+| **Content Agent** | Python/CrewAI | N/A  | (Runs in terminal)      | The AI agent responsible for the entire content lifecycle.    |
 
-## 🛠️ Manual Setup
+---
 
-If the auto-launch doesn't work, you can start services manually:
+## Workflow: Content Generation
 
-### Start All Services
+```mermaid
+graph TD
+    A[Oversight Hub] -->|1. User creates new task| B(Firestore 'tasks' Collection);
+    B -->|2. Status: 'New'| C{Content Agent};
+    C -->|3. Polls for new tasks| B;
+    C -->|4. Process Task| D[Research, Writing, QA, Imaging];
+    D -->|5. Update Status & Log Run| B;
+    D -->|6. Publish Article| E[Strapi CMS];
+    E -->|7. Fetch Content| F[Public Site];
+```
+
+---
+
+## 🛠️ Getting Started
+
+### Prerequisites
+
+- **Node.js**: Version `20.11.1` is required. Use `nvm` to manage versions (`nvm use`).
+- **Python**: Version `3.10` or higher.
+- **Google Cloud SDK**: Authenticated with access to Firestore.
+
+### 1. Installation
+
+Clone the repository and install all dependencies for the monorepo workspaces.
+
+```bash
+git clone <repository_url>
+cd glad-labs-website
+npm install
+```
+
+### 2. Environment Configuration
+
+Each service requires its own environment file. Copy the `.env.example` file in each service directory to a new file (`.env` or `.env.local`) and fill in the required credentials.
+
+- `agents/content-agent/.env`: Google Cloud Project ID.
+- `web/oversight-hub/.env`: Firebase SDK credentials.
+- `web/public-site/.env.local`: Strapi API URL and token.
+
+### 3. Launching the System
+
+This workspace is configured to automatically launch all services when opened in VS Code. If you need to start it manually, run the following command from the root directory:
+
 ```bash
 npm run start:all
 ```
 
-### Start Individual Services
-```bash
-# Strapi Backend
-npm run start:strapi
+---
 
-# Oversight Hub (React)
-npm run start:oversight
+## 🐍 Python Agent Setup
 
-# Public Site (Next.js)
-npm run start:public
-```
+The content agent requires its own Python environment and dependencies.
 
-## 📁 Project Structure
+1. **Navigate to the agent directory:**
 
-```
-glad-labs-website/
-├── cms/
-│   └── strapi-backend/          # Strapi CMS (Port 1337)
-├── web/
-│   ├── oversight-hub/           # React Admin Dashboard (Port 3001)
-│   └── public-site/             # Next.js Public Site (Port 3002)
-├── agents/
-│   └── content-agent/           # Python content generation agent
-└── .vscode/                     # VS Code workspace configuration
-```
-
-## 🔧 Configuration
-
-### VS Code Tasks
-
-The workspace includes several pre-configured tasks:
-
-- **Start All Services**: Launches all three web services simultaneously
-- **Start Strapi Backend**: CMS only
-- **Start Oversight Hub**: Admin dashboard only  
-- **Start Public Site**: Public website only
-
-Access via `Ctrl+Shift+P` → "Tasks: Run Task"
-
-### Firebase Setup (Oversight Hub)
-
-1. Copy `.env.example` to `.env` in `web/oversight-hub/`
-2. Fill in your Firebase credentials:
-   ```env
-   REACT_APP_API_KEY=your_firebase_api_key
-   REACT_APP_AUTH_DOMAIN=your_project.firebaseapp.com
-   REACT_APP_PROJECT_ID=your_project_id
-   # ... etc
+   ```bash
+   cd agents/content-agent
    ```
 
-## 🐛 Troubleshooting
+2. **Create a virtual environment:**
 
-### Port Conflicts
-Each service is configured with a specific port. If you get port conflicts:
-- Strapi: Edit `cms/strapi-backend/config/server.ts`
-- Oversight Hub: Edit `web/oversight-hub/package.json` start script
-- Public Site: Edit root `package.json` start:public script
+   ```bash
+   python -m venv .venv
+   ```
 
-### Strapi Issues
-- Clear cache: Delete `cms/strapi-backend/.tmp` and `cms/strapi-backend/build`
-- Reset database: Delete `cms/strapi-backend/database/migrations/*`
+3. **Activate the environment:**
 
-### Node Version
-This project requires Node.js v20.11.1. Use `nvm` to switch versions:
+   - **PowerShell:** `.\\.venv\\Scripts\\Activate.ps1`
+   - **Bash/Zsh:** `source ./.venv/bin/activate`
+
+4. **Install dependencies:**
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+### Running the Agent
+
+The agent is started as part of the `start:all` command. To run it manually:
+
 ```bash
-nvm use 20.11.1
+python orchestrator.py
 ```
 
-## 📋 Available Scripts
+### Creating New Tasks
 
-| Script | Description |
-|--------|-------------|
-| `npm run start:all` | Start all services concurrently |
-| `npm run start:strapi` | Start Strapi CMS in development mode |
-| `npm run start:oversight` | Start React oversight dashboard |
-| `npm run start:public` | Start Next.js public site |
-| `npm install` | Install all dependencies (workspaces) |
+You can create new content tasks in two ways:
 
-## 🎯 Development Workflow
+1. **Via the Oversight Hub:** Use the "New Task" button in the web interface.
+2. **Via the CLI:** Run the `create_task.py` script.
 
-1. **VS Code Auto-Launch**: Open the workspace and services start automatically
-2. **Manual Launch**: Run `npm run start:all` in the terminal
-3. **Individual Services**: Use the specific start scripts as needed
-
-All services support hot-reload for efficient development.
-
-## 🔐 Environment Variables
-
-Each service may require specific environment variables:
-
-- **Strapi**: Database and admin credentials
-- **Oversight Hub**: Firebase configuration
-- **Public Site**: API endpoints and keys
-
-Check each service's `.env.example` file for required variables.
+   ```bash
+   python create_task.py
+   ```

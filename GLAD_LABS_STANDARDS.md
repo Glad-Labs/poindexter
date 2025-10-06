@@ -1,12 +1,17 @@
-# **GLAD LABS: AI FRONTIER FIRM MASTER PLAN V2.1**
+# **GLAD LABS: AI FRONTIER FIRM MASTER PLAN V3.0**
 
 **Project Name:** Glad Labs, LLC  
-**Owner/Manager:** Matthew M. Gladding  
-**Core Mission:** To operate the most efficient, automated, solo-founded digital firm, demonstrating a scalable model for the future of specialized business by fusing high-quality content creation with intelligent, serverless automation.
+**Owner/Manager:** Matthew M. Gladding
 
 ---
 
-## **1. Strategic Pillars & Value Proposition**
+## **Part I: Strategic Overview**
+
+### **1. Core Mission & Vision**
+
+To operate the most efficient, automated, solo-founded digital firm, demonstrating a scalable model for the future of specialized business by fusing high-quality content creation with intelligent, serverless automation.
+
+### **2. Strategic Pillars & Brand**
 
 | Pillar             | Focus                             | Goal                                                                                                                             |
 | :----------------- | :-------------------------------- | :------------------------------------------------------------------------------------------------------------------------------- |
@@ -18,7 +23,9 @@
 
 ---
 
-## **2. Technical Architecture (The Google-Native Stack)**
+## **Part II: Technical Blueprint**
+
+### **3. System Architecture (The Google-Native Stack)**
 
 The entire system is built on a monorepo structure, leveraging micro-containers and serverless resources for maximum efficiency and scalability.
 
@@ -33,9 +40,7 @@ The entire system is built on a monorepo structure, leveraging micro-containers 
 | **Frontend (Public)**     | **Next.js on Vercel/Netlify**     | **High Performance & SEO.** Enables **Static Site Generation (SSG)** for a fast, SEO-friendly public blog and website.                     |
 | **Orchestration/Control** | **Google Cloud Pub/Sub**          | **Asynchronous Command Queue.** Central hub for triggering agents from the Oversight Hub without direct coupling.                          |
 
----
-
-## **3. Project Structure & Codebases**
+### **4. Project Structure & Codebases**
 
 - **/agents/content-agent/**: The primary Python-based CrewAI agent responsible for content generation.
 - **/cms/strapi-backend/**: The Strapi v5 application, serving as the headless CMS.
@@ -45,7 +50,9 @@ The entire system is built on a monorepo structure, leveraging micro-containers 
 
 ---
 
-## **4. Execution Timeline (Path to Full Automation)**
+## **Part III: Execution & Operations**
+
+### **5. Development Roadmap (Path to Full Automation)**
 
 | Phase                              | Duration   | Primary Focus                 | Technical Milestones                                                                                                                                                                                        |
 | :--------------------------------- | :--------- | :---------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -54,30 +61,69 @@ The entire system is built on a monorepo structure, leveraging micro-containers 
 | **Phase III: Oversight & Control** | Months 5–6 | **Launch the Full Platform**  | **Front-End:** Launch **Next.js Public Site** and **React Oversight Hub**. **Control:** Implement the `// INTERVENE` protocol via Pub/Sub. **Metrics:** Hub displays live burn rate and content ROI.        |
 | **Phase IV: Monetization & Pivot** | Months 7+  | **Scale and Decide**          | **Funding:** Utilize the working platform and established metrics to secure external funding. **Next Product:** Use data from the Hub to decide between building a **Unity Game MVP** or a **Game Engine.** |
 
-## **5. Future Plans**
+### **6. Future Agent Roles & Directives**
 
-Agent Name
-Core Responsibility
-Primary Data Source
-Trigger
-Content Agent
-Content generation, refinement, and publishing.
-Strapi, Firestore
-Pub/Sub Task Queue (Intervention Protocol)
-Financial Agent
-Accounting, expense logging, and burn rate calculation.
-Firestore (financials collection)
-API Call/System Event (e.g., subscription renewal)
-Market Insight Agent
-Continuously monitors trends; generates multiple options for highly relevant and popular topics (must align with AI Dev/Video Gaming).
-External APIs
-Scheduled Cloud Run Job
-Compliance Agent
-Reviews code for security best practices; flags legal/financial risks.
-Codebase, Deployment Logs
-Pre-deployment Hook
+| Agent Name               | Core Responsibility                                         | Primary Data Source               | Trigger                                            |
+| :----------------------- | :---------------------------------------------------------- | :-------------------------------- | :------------------------------------------------- |
+| **Content Agent**        | Content generation, refinement, and publishing.             | Strapi, Firestore                 | Pub/Sub Task Queue (Intervention Protocol)         |
+| **Financial Agent**      | Accounting, expense logging, and burn rate calculation.     | Firestore (financials collection) | API Call/System Event (e.g., subscription renewal) |
+| **Market Insight Agent** | Monitors trends; generates relevant, popular topic options. | External APIs                     | Scheduled Cloud Run Job                            |
+| **Compliance Agent**     | Reviews code for security best practices; flags risks.      | Codebase, Deployment Logs         | Pre-deployment Hook                                |
 
-Delegation & Topic Generation of Orchestrator
-When the user asks for new content ideas, you must:
-Market Analysis: Utilize the Market Insight Agent's problem-space analysis to generate three to five distinct blog topic options.
-Alignment: Ensure every option aligns with the AI Development/Video Gaming core principles.
+**Orchestrator Directive for Topic Generation:**
+
+When the user asks for new content ideas, the Orchestrator must:
+
+1. **Market Analysis:** Utilize the Market Insight Agent's problem-space analysis to generate three to five distinct blog topic options.
+2. **Alignment:** Ensure every option aligns with the AI Development/Video Gaming core principles.
+
+### **7. Engineering Standards & Best Practices**
+
+This section codifies the technical standards and operational protocols for the GLAD Labs codebase. Adherence to these standards is mandatory to ensure maintainability, scalability, and security.
+
+#### **A. Code Quality & Style Guides**
+
+| Language / Framework | Linter / Formatter        | Configuration Standard                                                           | Rationale                                                                           |
+| :------------------- | :------------------------ | :------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------- |
+| **Python**           | **Black** & **Flake8**    | PEP 8 compliant, with strict line length (88 chars).                             | Enforces consistency and readability across all Python services.                    |
+| **JavaScript/React** | **ESLint** & **Prettier** | Standard rulesets (e.g., `eslint-config-react-app`, `prettier-config-standard`). | Prevents common errors and maintains a uniform code style in frontend applications. |
+| **Markdown**         | **markdownlint**          | Standard configuration.                                                          | Ensures all documentation is clean, readable, and consistent.                       |
+
+- **Self-Documenting Code:** Variables, functions, and classes must have clear, descriptive names. Complex logic must be accompanied by concise, explanatory comments.
+- **Modularity:** Code must be organized into small, single-responsibility modules or functions to maximize reusability and ease of testing.
+
+#### **B. Testing Strategy**
+
+A multi-layered testing approach is required to ensure system reliability.
+
+| Test Type                  | Scope                           | Implementation                                         | Goal                                                                                                                              |
+| :------------------------- | :------------------------------ | :----------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------- |
+| **Unit Tests**             | Individual functions/components | **Pytest** (Python), **React Testing Library** (React) | Verify that the smallest units of code work as expected in isolation.                                                             |
+| **Integration Tests**      | Service-to-service interaction  | Mocked API calls, database interactions                | Ensure that different parts of the system (e.g., Agent to Strapi) communicate correctly.                                          |
+| **End-to-End (E2E) Tests** | Full user/system workflow       | **Cypress** or **Playwright** (Future)                 | Simulate a full process (e.g., creating a task in the Hub and verifying a post in the Public Site) to validate the entire system. |
+
+#### **C. API & Data Integrity**
+
+- **Schema-First Approach:** All data models (Strapi Content Types, Firestore collections, Pydantic models) must be explicitly defined before implementation. This prevents data inconsistencies.
+- **Idempotent APIs:** All `POST` or `PUT` operations should be idempotent where possible, meaning multiple identical requests have the same effect as a single one.
+- **Error Handling:** APIs must return clear, standardized error messages and appropriate HTTP status codes (e.g., `400` for bad requests, `401` for unauthorized, `500` for server errors).
+
+#### **D. Security Mandates**
+
+- **No Secrets in Code:** All API keys, credentials, and sensitive configuration must be loaded from environment variables (`.env` files) or a dedicated secret manager (e.g., Google Secret Manager). **Secrets must never be committed to Git.**
+- **Principle of Least Privilege:** API tokens and service account permissions must be scoped to the minimum required access level. For example, a token for the Public Site should be read-only.
+- **Dependency Audits:** Regularly run `npm audit` and `pip-audit` to identify and patch vulnerabilities in third-party packages.
+
+#### **E. Git Workflow & CI/CD**
+
+- **Branching Model:** A simplified **GitFlow** model will be used:
+  - `main`: Production-ready, deployable code.
+  - `develop`: The primary integration branch for new features.
+  - `feature/<feature-name>`: Branches for all new development, created from `develop`.
+- **Pull Requests (PRs):** All code must be merged into `develop` via a Pull Request. PRs require at least one review (even if self-reviewed for solo work) and must pass all automated checks (linting, testing).
+- **Semantic Versioning:** The project will follow Semantic Versioning (e.g., `v1.2.5`) to track major, minor, and patch changes.
+
+#### **F. Logging & Monitoring**
+
+- **Structured Logging:** All services must produce structured logs (JSON format) containing a timestamp, severity level (INFO, WARN, ERROR), and a clear message. This is critical for effective analysis in Google Cloud Logging.
+- **Centralized Monitoring:** The **Oversight Hub** is the primary tool for real-time monitoring of agent status. For deeper infrastructure monitoring, **Google Cloud Monitoring** will be used to track resource usage and set up alerts.
