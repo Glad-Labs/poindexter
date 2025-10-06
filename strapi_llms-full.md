@@ -1,12 +1,8 @@
-10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
-
-# Account billing details
-
-Source: https://docs.strapi.io/cloud/account/account-billing
-
 # Account billing & invoices
 
-Through the _Profile_ page, accessible by clicking on your profile picture on the top right hand corner of the interface then clicking on **Profile**, you can access the [ *Billing*](#account billing) and [ _Invoices_](#account-invoices) tabs.
+Source: <https://docs.strapi.io/cloud/account/account-billing>
+
+Through the _Profile_ page, accessible by clicking on your profile picture on the top right hand corner of the interface then clicking on **Profile**, you can access the [Billing](#account billing) and [_Invoices_](#account-invoices) tabs.
 
 ## Account billing
 
@@ -16,17 +12,16 @@ The _Payment method_ section of the _Billing_ tab allows you to manage the credi
 
 ### Adding a new credit card
 
-1. In the _Payment method_ section of the _Billing_ tab, click on the **Add card** button. 2. Fill in the following fields:
+1. In the _Payment method_ section of the _Billing_ tab, click on the **Add card** button.
+2. Fill in the following fields:
 
 | Field name  | Description                                                   |
 | ----------- | ------------------------------------------------------------- | --- | ------- | --------------------------------------------- |
 | Card Number | Write the number of the credit card to add as payment method. |     | Expires | Write the expiration date of the credit card. |
 
-| CVC | Write the 3-numbers code displayed at the back of the credit card. |
+| CVC | Write the 3-numbers code displayed at the back of the credit card. | 3. Click on the **Save** button.
 
-3. Click on the **Save** button.
-
-:::tip  
+:::tip
 The first credit card to be added as payment method for the account will by default be the primary one. It is however possible to define another credit card as primary by clicking on the icon, then **Switch as primary**.
 
 :::
@@ -38,24 +33,19 @@ To remove a credit card from the list of payment methods for the account:
 1. Click on the icon of the credit card you wish to delete.
 2. Click **Remove card**. The card is immediately deleted.
 
-:::note  
+:::note
 You cannot delete the primary card as at least one credit card must be available as payment method, and the primary card is by default that one. If the credit card you wish to delete is currently the primary card, you must first define another credit card as primary, then delete it. :::
 
 ## Account invoices
 
 The _Invoices_ tab displays the complete list of invoices for all your Strapi Cloud projects.
 
-:::strapi Invoices are also available per project.  
+:::strapi Invoices are also available per project.
 In the _Settings > Invoices_ tab of any project, you will find the invoices for that project only. Feel free to check the [dedicated documentation](/cloud/projects/settings#invoices). :::
 
-# Profile settings
+## Profile settings
 
-Source: https://docs.strapi.io/cloud/account/account-settings
-
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 1/232  
-10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
-
-# Profile settings
+Source: <https://docs.strapi.io/cloud/account/account-settings>
 
 The _Profile_ page enables you to manage your account details and preferences. It is accessible by clicking on your profile picture, on the top right hand corner of the interface, and **Profile**.
 
@@ -86,11 +76,9 @@ You can delete your Strapi Cloud account, but it will be permanent and irreversi
 
 2. Confirm the deletion of your account by clicking on the **Delete** button.
 
-# Database
+## Database
 
-Source: https://docs.strapi.io/cloud/advanced/database
-
-# Database
+Source: <https://docs.strapi.io/cloud/advanced/database>
 
 Strapi Cloud provides a pre-configured PostgreSQL database by default. However, you can also configure it to utilize an external SQL database, if needed.
 
@@ -100,12 +88,11 @@ Strapi Cloud provides a pre-configured PostgreSQL database by default. However, 
 - Credentials for an external database.
 - If using an existing database, the schema must match the Strapi project schema. :::
 
-:::caution  
+:::caution
 While it's possible to use an external database with Strapi Cloud, you should do it while keeping in mind the following considerations:
 
 - Strapi Cloud already provides a managed database that is optimized for Strapi. - Using an external database may result in unexpected behavior and/or performance issues (e.g., network latency may impact performance). For performance reasons, it's recommended to host your external database close to the region where your Strapi Cloud project is hosted. You can find where
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 2/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 your Strapi Cloud project is hosted in your Project Settings (see [Project Settings > General > Selected Region](/cloud/projects/settings#general)).
@@ -114,9 +101,7 @@ your Strapi Cloud project is hosted in your Project Settings (see [Project Setti
 
 ## Configuration
 
-The project `./config/database.js` or `./config/database.ts` file must match the configuration found in the [environment variables in database configurations]
-
-(https://docs.strapi.io/cms/configurations/database#environment-variables-in-database-configurations) section.
+The project `./config/database.js` or `./config/database.ts` file must match the configuration found in the [environment variables in database configurations](https://docs.strapi.io/cms/configurations/database#environment-variables-in-database-configurations) section.
 
 Before pushing changes, add environment variables to the Strapi Cloud project:
 
@@ -136,9 +121,9 @@ Before pushing changes, add environment variables to the Strapi Cloud project:
 
 | `DATABASE_SCHEMA` | public | - |
 
-4. Click **Save**.
+3. Click **Save**.
 
-:::caution  
+:::caution
 To ensure a smooth deployment, it is recommended to not change the names of the environment variables.
 
 :::
@@ -151,18 +136,14 @@ Once the application finishes building, the project will use the external databa
 
 To revert back to the default database, remove the previously added environment variables related to the external database from the Strapi Cloud project dashboard, and save. For the changes to take effect, you must redeploy the Strapi Cloud project.
 
-# Email Provider
+## Email Provider
 
-Source: https://docs.strapi.io/cloud/advanced/email
-
-# Email Provider
+Source: <https://docs.strapi.io/cloud/advanced/email>
 
 Strapi Cloud comes with a basic email provider out of the box. However, it can also be configured to utilize another email provider, if needed.
 
-:::caution  
-Please be advised that Strapi is unable to provide support for third-party email providers. https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 3/232  
-10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
-
+:::caution
+Please be advised that Strapi is unable to provide support for third-party email providers.
 :::
 
 :::prerequisites
@@ -172,21 +153,21 @@ Please be advised that Strapi is unable to provide support for third-party email
 
 </Tabs>
 
-:::caution  
+:::caution
 The file structure must match the above path exactly, or the configuration will not be applied to Strapi Cloud.
 
 :::
 
 Each provider will have different configuration settings available. Review the respective entry for that provider in the
 
-</Tabs>   
+</Tabs>
 </TabItem>
 
-</Tabs>   
-</TabItem>   
+</Tabs>
+</TabItem>
 </Tabs>
 
-:::tip  
+:::tip
 Before pushing the above changes to GitHub, add environment variables to the Strapi Cloud project to prevent triggering a rebuild and new deployment of the project before the changes are complete. :::
 
 ### Strapi Cloud Configuration
@@ -206,22 +187,20 @@ To deploy the project and utilize another party email provider, push the changes
 
 Once the application finishes building, the project will use the new email provider.
 
-:::strapi Custom Provider  
+:::strapi Custom Provider
 If you want to create a custom email provider, please refer to the [Email providers] (/cms/features/email#providers) documentation in the CMS Documentation.
 
 :::
 
-# Upload Provider
+## Upload Provider
 
-Source: https://docs.strapi.io/cloud/advanced/upload
-
-# Upload Provider
+Source: <https://docs.strapi.io/cloud/advanced/upload>
 
 Strapi Cloud comes with a local upload provider out of the box. However, it can also be configured to utilize a third-party upload provider, if needed.
 
-:::caution  
-Please be advised that Strapi is unable to provide support for third-party upload providers. https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 4/232  
-10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt :::
+:::caution
+Please be advised that Strapi is unable to provide support for third-party upload providers.
+::: :::
 
 :::prerequisites
 
@@ -230,18 +209,18 @@ Please be advised that Strapi is unable to provide support for third-party uploa
 
 </Tabs>
 
-:::caution  
+:::caution
 The file structure must match the above path exactly, or the configuration will not be applied to Strapi Cloud.
 
 :::
 
 Each provider will have different configuration settings available. Review the respective entry for that provider in the
 
-</Tabs>   
+</Tabs>
 </TabItem>
 
-</Tabs>   
-</TabItem>   
+</Tabs>
+</TabItem>
 </Tabs>
 
 ### Configure the Security Middleware
@@ -254,14 +233,14 @@ To do this in your Strapi project:
 
 **Example:**
 
-</Tabs>   
+</Tabs>
 </TabItem>
 
-</Tabs>   
-</TabItem>   
+</Tabs>
+</TabItem>
 </Tabs>
 
-:::tip  
+:::tip
 Before pushing the above changes to GitHub, add environment variables to the Strapi Cloud project to prevent triggering a rebuild and new deployment of the project before the changes are complete. :::
 
 ### Strapi Cloud Configuration
@@ -279,23 +258,20 @@ Before pushing the above changes to GitHub, add environment variables to the Str
 
 To deploy the project and utilize the third-party upload provider, push the changes from earlier. This will trigger a rebuild and new deployment of the Strapi Cloud project.
 
-Once the application finishes building, the project will use the new upload provider. https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 5/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
-:::strapi Custom Provider  
+:::strapi Custom Provider
 If you want to create a custom upload provider, please refer to the [Providers](/cms/features/media library#providers) documentation in the CMS Documentation.
 
 :::
 
-# Command Line Interface (CLI)
+## Command Line Interface (CLI)
 
-Source: https://docs.strapi.io/cloud/cli/cloud-cli
-
-# Command Line Interface (CLI)
+Source: <https://docs.strapi.io/cloud/cli/cloud-cli>
 
 Strapi Cloud comes with a Command Line Interface (CLI) which allows you to log in and out, and to deploy a local project without it having to be hosted on a remote git repository. The CLI works with both the `yarn` and `npm` package managers.
 
-:::note  
+:::note
 It is recommended to install Strapi locally only, which requires prefixing all of the following `strapi` commands with the package manager used for the project setup (e.g `npm run strapi help` or `yarn strapi help`) or a dedicated node package executor (e.g. `npx strapi help`). :::
 
 ## strapi login
@@ -328,11 +304,10 @@ Deploying a Strapi project through the CLI creates a project on the Free plan.
 
 Once the project is first deployed on Strapi Cloud with the CLI, the `deploy` command can be reused to trigger a new deployment of the same project.
 
-:::note  
+:::note
 Once you deployed your project, if you visit the Strapi Cloud dashboard, you may see some limitations as well as impacts due to creating a Strapi Cloud project that is not in a remote repository and which was deployed with the CLI.
 
-- Some areas in the dashboard that are usually reserved to display information about the git provider https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 6/232  
-  10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
+10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 will be blank.
 
@@ -374,24 +349,17 @@ strapi logout
 
 This command logs you out of Strapi Cloud. Once the `logout` command is run, a browser page will open and the terminal will display a confirmation message that you were successfully logged out. You will not be able to use the `deploy` command anymore.
 
-# Caching & Performance
+## Caching & Performance
 
-Source: https://docs.strapi.io/cloud/getting-started/caching
-
-# Caching & Performance
+Source: <https://docs.strapi.io/cloud/getting-started/caching>
 
 For Strapi Cloud applications with large amounts of cacheable content, such as images, videos, and other static assets, enabling CDN (Content Delivery Network) caching via the
 
 </Tabs>
 
-# Strapi Cloud fundamentals
+## Strapi Cloud fundamentals
 
-Source: https://docs.strapi.io/cloud/getting-started/cloud-fundamentals
-
-# Strapi Cloud fundamentals
-
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 7/232  
-10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
+Source: <https://docs.strapi.io/cloud/getting-started/cloud-fundamentals>
 
 Before going any further into this Strapi Cloud documentation, we recommend you to acknowledge the main concepts below. They will help you to understand how Strapi Cloud works, and ensure a smooth Strapi Cloud experience.
 
@@ -403,15 +371,13 @@ Before going any further into this Strapi Cloud documentation, we recommend you 
 
 - **Support** <br/> The level of support provided by the Strapi Support team depends on the Strapi Cloud plan you subscribed for. The Free plan does not include access to support. The Essential and Pro plans include Basic support while the Scale plan includes Standard support. Please refer to the [dedicated support article](https://support.strapi.io/support/solutions/articles/67000680833-what-is supported-by-the-strapi-team#Not-Supported) for all details regarding support levels.
 
-# with Cloud dashboard
+## Project deployment with the Cloud dashboard
 
-Source: https://docs.strapi.io/cloud/getting-started/deployment
-
-# Project deployment with the Cloud dashboard
+Source: <https://docs.strapi.io/cloud/getting-started/deployment>
 
 This is a step-by-step guide for deploying your project on Strapi Cloud for the first time, using the Cloud dashboard.
 
-:::prerequisites  
+:::prerequisites
 Before you can deploy your Strapi application on Strapi Cloud using the Cloud dashboard, you need to have the following prerequisites:
 
 - Strapi version `4.8.2` or higher
@@ -425,25 +391,24 @@ Before you can deploy your Strapi application on Strapi Cloud using the Cloud da
 
    5.a. Fill in the following information:
 
-| Setting name | Instructions  
-|  
- |--------------|--------------------------------------------------------------------------------- ------------------------|
+| Setting name | Instructions
+|
+|--------------|--------------------------------------------------------------------------------- ------------------------|
 
 | Display name | Write the name of your Strapi app, this is fetched from the repository name but can be edited. It is automatically converted to slug format (`my-strapi-app`). | | Git branch | Choose from the drop-down the branch you want to deploy. | | Deploy on push | Tick this box to automatically trigger a deployment when changes are pushed to your selected branch. When disabled, you will need to manually deploy the latest changes. | | Region | Choose the geographic location of the servers where your Strapi application is
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 8/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt hosted. Selected region can either be US (East), Europe (West), Asia (Southeast) or Oceania. |
 
-:::note  
- The Git branch and "Deploy on push" settings can be modified afterwards through the project's settings, however the hosting region can only be chosen during the creation of the project (see [Project Settings](/cloud/projects/settings)).
+:::note
+The Git branch and "Deploy on push" settings can be modified afterwards through the project's settings, however the hosting region can only be chosen during the creation of the project (see [Project Settings](/cloud/projects/settings)).
 
 :::
 
 5.b. (optional) Click on **Show advanced settings** to fill in the following options:
 
-| Setting name | Instructions  
-|  
- |--------------|--------------------------------------------------------------------------------- ------------------------|
+| Setting name | Instructions
+|
+|--------------|--------------------------------------------------------------------------------- ------------------------|
 
 | Base directory | Write the name of the directory where your Strapi app is located in the repository. This is useful if you have multiple Strapi apps in the same repository or if you have a monorepo. |
 
@@ -451,24 +416,24 @@ https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.t
 
 | Node version | Choose a Node version from the drop-down. The default Node version will automatically be chosen to best match the version of your Strapi project. If you manually choose a version that doesn't match with your Strapi project, the build will fail but the explanation will be displayed in the build logs. |
 
-:::strapi Using Environment Variables  
- You can use environment variable to connect your project to an external database rather than the default one used by Strapi Cloud (see [database configuration]
+:::strapi Using Environment Variables
+You can use environment variable to connect your project to an external database rather than the default one used by Strapi Cloud (see [database configuration]
 
 (/cms/configurations/database#environment-variables-in-database-configurations) for more details). If you would like to revert and use Strapi's default database again, you have to remove your `DATABASE_` environment variables (no automatic migration implied).
 
 You can also set up here a custom email provider. Sendgrid is set as the default one for the Strapi applications hosted on Strapi Cloud (see [providers configuration]
 
-(/cms/features/email#providers) for more details).  
- :::
+(/cms/features/email#providers) for more details).
+:::
 
 ## Setting up billing details
 
-:::strapi No billing step for the Free plan  
+:::strapi No billing step for the Free plan
 If you chose the free plan, this billing step will be skipped as you will not be asked to share your credit card details at the creation of the project.
 
 To upgrade your project to a paid plan, you will need to fill in your billing information in the **Billing** section of your Profile.
 
-Skip to step 5 of the section below to finalize the creation of your project.  
+Skip to step 5 of the section below to finalize the creation of your project.
 :::
 
 1. Click on the **Continue to billing** button. You will directly be redirected to the second and final project deployment interface. There you can review all your new project setup information, enter payment & billing details and receive your invoice.
@@ -479,7 +444,6 @@ Skip to step 5 of the section below to finalize the creation of your project.
 
 4. Check your invoice which informs you of what should be paid now and the following month. Optionally, you can enter a _Discount code_ if you have one.
 
-5. Click on the **Create project** button to finalize the creation of your new Strapi Cloud project. https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 9/232  
    10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 ## Deploying your project
@@ -488,7 +452,7 @@ After confirming the project creation, you will be redirected to your _Project d
 
 While your project is deploying, you can already start configuring some of your [project settings] (/cloud/projects/settings).
 
-:::note  
+:::note
 If an error occurs during the project creation, the progress indicator will stop and display an error message. You will see a **Retry** button next to the failed step, allowing you to restart the creation process.
 
 :::
@@ -501,15 +465,15 @@ Now that you have deployed your project via the Cloud dashboard, we encourage yo
 
 - Invite other users to [collaborate on your project](/cloud/projects/collaboration). - Check out the [deployments management documentation](/cloud/projects/deploys) to learn how to trigger new deployments for your project.
 
-# with Cloud CLI
+## with Cloud CLI
 
-Source: https://docs.strapi.io/cloud/getting-started/deployment-cli
+Source: <https://docs.strapi.io/cloud/getting-started/deployment-cli>
 
-# Project deployment with the Command Line Interface (CLI)
+## Project deployment with the Command Line Interface (CLI)
 
 This is a step-by-step guide for deploying your project on Strapi Cloud for the first time, using the Command Line Interface.
 
-:::prerequisites  
+:::prerequisites
 Before you can deploy your Strapi application on Strapi Cloud using the Command Line Interface, you need to have the following prerequisites:
 
 - Have a Google, GitHub or GitLab account.
@@ -531,7 +495,6 @@ Before you can deploy your Strapi application on Strapi Cloud using the Command 
 
 5. Still in the browser window, choose whether to login via Google, GitHub or GitLab. The window should confirm the successful login soon after.
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 10/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt ## Deploying your project
 
 1. From your terminal, still from the folder of your Strapi project, enter the following command to deploy the project:
@@ -553,7 +516,7 @@ Another option is to enable automatic deployment through a git repository. To do
 
 3. Still in _Projects Settings > General_ tab, tick the box for the "Deploy the project on every commit pushed to this branch" setting. From now on, a new deployment to Strapi Cloud will be triggered any time a commit is pushed to the connected git repository.
 
-:::note  
+:::note
 Automatic deployment is compatible with all other deployment methods, so once a git repository is connected, you can trigger a new deployment to Strapi Cloud [from the Cloud dashboard] (/cloud/projects/deploys), [from the CLI](/cloud/cli/cloud-cli#strapi-deploy), or by pushing new commits to your connected repository.
 
 :::
@@ -566,11 +529,11 @@ Now that you have deployed your project via the Command Line Interface, we encou
 
 - Check out the full [Command Line Interface documentation](/cloud/cli/cloud-cli) to learn about the other commands available.
 
-# Project deployment
+## Project deployment
 
-Source: https://docs.strapi.io/cloud/getting-started/deployment-options
+Source: <https://docs.strapi.io/cloud/getting-started/deployment-options>
 
-# Project deployment with Strapi Cloud
+## Project deployment with Strapi Cloud
 
 You have 2 options to deploy your project with Strapi Cloud:
 
@@ -580,26 +543,25 @@ You have 2 options to deploy your project with Strapi Cloud:
 
 The guides below will guide you through all the steps for each of the deployment options.
 
-# Welcome to the Strapi Cloud Documentation!
+## Welcome to the Strapi Cloud Documentation!
 
-Source: https://docs.strapi.io/cloud/getting-started/intro
+Source: <https://docs.strapi.io/cloud/getting-started/intro>
 
-# Welcome to the Strapi Cloud Documentation!
+## Welcome to the Strapi Cloud Documentation!
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 11/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
-<!-- 
+<!--
 
 -->
 
 The Strapi Cloud documentation contains all information related to the setup, deployment, update and customization of your Strapi Cloud account and applications.
 
-:::strapi What is Strapi Cloud?  
-built on top of Strapi, the open-source headless CMS.  
+:::strapi What is Strapi Cloud?
+built on top of Strapi, the open-source headless CMS.
 :::
 
-:::prerequisites  
+:::prerequisites
 The typical workflow, which is recommended by the Strapi team, is:
 
 1. Create your Strapi application locally (v4.8.2 or later).
@@ -610,32 +572,32 @@ The typical workflow, which is recommended by the Strapi team, is:
 
 The Strapi Cloud documentation is organised in topics in a order that should correspond to your journey with the product. The following cards, on which you can click, will redirect you to the main topics and steps.
 
-:::strapi Welcome to the Strapi community!  
+:::strapi Welcome to the Strapi community!
 Strapi Cloud is built on top of Strapi, an open-source, community-oriented project. The Strapi team has at heart to share their vision and build the future of Strapi with the Strapi community. This is why the is open: as all insights are very important and will help steer the project in the right direction. Any community member is most welcome to share ideas and opinions there.
 
 You can also join , the , and the and benefit from the years of experience, knowledge, and contributions by the Strapi community as a whole.
 
 :::
 
-# Information on billing & usage
+## Information on billing & usage
 
-Source: https://docs.strapi.io/cloud/getting-started/usage-billing
+Source: <https://docs.strapi.io/cloud/getting-started/usage-billing>
 
-# Information on billing & usage
+## Information on billing & usage
 
 This page contains general information related to the usage and billing of your Strapi Cloud account and projects.
 
-Strapi Cloud offers 1 Free plan and 3 paid plans: Essential, Pro and Scale (see [Pricing page] (https://strapi.io/pricing-cloud)). The table below summarizes Strapi Cloud usage-based pricing plans, for general features and usage:
+Strapi Cloud offers 1 Free plan and 3 paid plans: Essential, Pro and Scale (see [Pricing page](https://strapi.io/pricing-cloud)). The table below summarizes Strapi Cloud usage-based pricing plans, for general features and usage:
 
 | Feature              | Free | Essential   | Pro         | Scale       |
 | -------------------- | ---- | ----------- | ----------- | ----------- | --- | ----------------- | ---- | ---- | ----- | ------- |
 | **Database Entries** | 500  | Unlimited\* | Unlimited\* | Unlimited\* |     | **Asset Storage** | 10GB | 50GB | 250GB | 1,000GB |
 
-| **Asset Bandwidth (per month)** | 10GB | 50GB | 500GB | 1,000GB |  
+| **Asset Bandwidth (per month)** | 10GB | 50GB | 500GB | 1,000GB |
 | **API Requests (per month)** | 10,000 | 100,000 | 1,000,000 | 10,000,000 | | | | | | |
 
-| **Backups** | N/A | N/A | Weekly | Daily |  
-| **Custom domains** | N/A | Included | Included | Included |  
+| **Backups** | N/A | N/A | Weekly | Daily |
+| **Custom domains** | N/A | Included | Included | Included |
 | **Environments** | N/A | N/A | 0 included (up to 99 extra) | 1 included (up to 99 extra) |
 
 | **Emails (per month)** | 100 | Unlimited* | Unlimited* | Unlimited\* |
@@ -646,7 +608,6 @@ Strapi Cloud offers 1 Free plan and 3 paid plans: Essential, Pro and Scale (see 
 - Database entries are the number of entries in your database.
 - Asset storage is the amount of storage used by your assets.
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 12/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 - Asset bandwidth is the amount of bandwidth used by your assets.
@@ -661,7 +622,7 @@ https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.t
 
 :::
 
-:::info Scale-to-zero and cold start on the Free plan  
+:::info Scale-to-zero and cold start on the Free plan
 On the Free plan, projects automatically scale down to zero after a short period of inactivity. When the application is accessed again—either through the frontend or via an API request—it may take a few seconds (up to a minute) before a response is returned.
 
 Upgrading to a paid plan disables scaling to zero and cold starts, resulting in instant response times at all times.
@@ -680,8 +641,8 @@ Billing is based on the usage of your Strapi Cloud account and projects. You wil
 
 ### Overages
 
-:::caution  
-Overages are not allowed on the Free plan.  
+:::caution
+Overages are not allowed on the Free plan.
 :::
 
 If you exceed the limits of your plan for API Requests, Asset Bandwidth, or Asset Storage, you will be charged for the corresponding overages.
@@ -698,7 +659,6 @@ Overages are charged according to the following rates:
 
 ### Project suspension
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 13/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 Projects may end up in a **Suspended** state for various reasons, including: not paying the invoice, exceeding the limits of your free plan, or violating the .
@@ -707,7 +667,7 @@ If your project is suspended, you will no longer be able to access the applicati
 
 You can view the status of your project in the section of your Strapi Cloud account and you will be notified by email.
 
-:::warning  
+:::warning
 If you do not resolve the issue within 30 days, your suspended project will be deleted and all data will be permanently lost. To avoid this situation, you will be sent a first email when your project becomes suspended, then another email every 5 days until one week left, to remind you to solve the issue. The last week before the deletion of the project, you will be sent 3 more emails: 6 days, 3 days and 1 day before your project is finally deleted.
 
 :::
@@ -740,18 +700,17 @@ If you want to cancel your Strapi Cloud subscription, you have 2 options:
 
 - either change your project's subscription to the free plan (see [Downgrading to another plan] (/cloud/projects/settings#downgrading-to-another-plan) documentation),
 
-- or completely delete your project (see [Deleting Strapi Cloud project]  
+- or completely delete your project (see [Deleting Strapi Cloud project]
   (/cloud/projects/settings#deleting-strapi-cloud-project) documentation).
 
-# Collaboration
+## Collaboration
 
-Source: https://docs.strapi.io/cloud/projects/collaboration
+Source: <https://docs.strapi.io/cloud/projects/collaboration>
 
-# Collaboration on projects
+## Collaboration on projects
 
 Projects are created by a user via their Strapi Cloud account. Strapi Cloud users can share their projects to anyone else, so these new users can have access to the project dashboard and collaborate
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 14/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt on that project, without the project owner to ever have to share their credentials.
 
 Users invited to collaborate on a project, called maintainers, do not have the same permissions as the project owner. Contrary to the project owner, maintainers:
@@ -776,7 +735,7 @@ To invite a new maintainer to collaborate on a project:
 
 New maintainers will be sent an email containing a link to click on to join the project. Once a project is shared, avatars representing the maintainers will be displayed in the project dashboard's header, next to the **Share** button, to see how many maintainers collaborate on that project and who they are.
 
-:::tip  
+:::tip
 Avatars use GitHub, Google or GitLab profile pictures, but for pending users only initials will be displayed until the activation of the maintainer account. You can hover over an avatar to display the full name of the maintainer.
 
 :::
@@ -805,16 +764,15 @@ The revoked maintainer will completely stop having access to the project dashboa
 
 :::note
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 15/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 Maintainers whose access to the project has been revoked do not receive any email or notification. :::
 
-# Deployments management
+## Deployments management
 
-Source: https://docs.strapi.io/cloud/projects/deploys
+Source: <https://docs.strapi.io/cloud/projects/deploys>
 
-# Deployments management
+## Deployments management
 
 The creation of a new Strapi Cloud project automatically trigger the deployment of that project. After that, deployments can be:
 
@@ -834,16 +792,16 @@ If for any reason you want to cancel an ongoing and unfinished deployment:
 
 2. Click on the **Cancel deployment** button in the top right corner. The status of the deployment will automatically change to _Canceled_.
 
-:::tip  
+:::tip
 You can also cancel a deployment from the _Deployments_ tab which lists the deployments history. The card of ongoing deployment with the _Building_ status will display a ![Cancel button] (/img/assets/icons/clear.svg) button for cancelling the deployment.
 
 :::
 
-# Deployment history & logs
+## Deployment history & logs
 
-Source: https://docs.strapi.io/cloud/projects/deploys-history
+Source: <https://docs.strapi.io/cloud/projects/deploys-history>
 
-# Deployment history and logs {#deploy-history-and-logs}
+## Deployment history and logs {#deploy-history-and-logs}
 
 For each Strapi Cloud project, you can access the history of all deployments that occurred and their details including build and deployment logs. This information is available in the _Deployments_ tab.
 
@@ -860,7 +818,6 @@ In the _Deployments_ tab is displayed a chronological list of cards with the det
 - _Build failed_
 - _Deployment failed_
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 16/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 - Last deployment time (when the deployment was triggered and the duration)
@@ -875,11 +832,11 @@ From the _Deployments_ tab, you can hover a deployment card to make the ![See lo
 - _Source_: the branch and commit message for this deployment
 - _Duration_: the amount of time the deployment took and when it occurred
 
-# Notifications
+## Notifications
 
-Source: https://docs.strapi.io/cloud/projects/notifications
+Source: <https://docs.strapi.io/cloud/projects/notifications>
 
-# Notifications
+## Notifications
 
 The Notification center can be opened by clicking the bell icon in the top navigation of the Cloud dashboard.
 
@@ -892,14 +849,14 @@ The following notifications can be listed in the Notifications center:
 - _deployment failed_: when a deployment fails during the deployment stage.
 - _deployment triggered_: when a deployment is triggered by a new push to the connected repository. This notification is however not sent when the deployment is triggered manually.
 
-:::note  
+:::note
 All notifications older than 30 days are automatically removed from the Notification center. :::
 
-# Projects overview
+## Projects overview
 
-Source: https://docs.strapi.io/cloud/projects/overview
+Source: <https://docs.strapi.io/cloud/projects/overview>
 
-# Projects overview
+## Projects overview
 
 The _Projects_ page displays a list of all your Strapi Cloud projects. From here you can manage your projects and access the corresponding applications.
 
@@ -916,12 +873,11 @@ Each project card also displays a menu icon to access the following options:
 
 - **Visit App**: to be redirected to the application
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 17/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 - **Go to Deployments**: to be redirected to the [_Deployment_](/cloud/projects/deploys) page * **Go to Settings**: to be redirected to the [*Settings\*](/cloud/projects/settings) page
 
-:::tip  
+:::tip
 Click on the _ Product updates_ button in the navigation bar to check out the latest features and fixes released.
 
 :::
@@ -946,11 +902,11 @@ Your project's dashboard also displays:
 - the Strapi version number,
 - the Strapi app's url.
 
-# Runtime logs
+## Runtime logs
 
-Source: https://docs.strapi.io/cloud/projects/runtime-logs
+Source: <https://docs.strapi.io/cloud/projects/runtime-logs>
 
-# Runtime logs
+## Runtime logs
 
 From a chosen project's dashboard, the _Runtime logs_ tab displays the live logs of the project. :::note
 
@@ -958,11 +914,11 @@ From a chosen project's dashboard, the _Runtime logs_ tab displays the live logs
 
 :::
 
-# Project settings
+## Project settings
 
-Source: https://docs.strapi.io/cloud/projects/settings
+Source: <https://docs.strapi.io/cloud/projects/settings>
 
-# Project settings
+## Project settings
 
 From a chosen project's dashboard, the **Settings** button, located in the header, enables you to manage the configurations and settings for your Strapi Cloud project and its environments.
 
@@ -970,7 +926,6 @@ The settings' menu on the left side of the interface is separated into 2 categor
 
 ## Project-level settings
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 18/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 There are 5 tabs available for the project's settings:
@@ -1005,7 +960,7 @@ The project name is set at project creation (see [Project creation](/cloud/getti
 
 A CMS license key can be added and connected to a Strapi Cloud project to be able to use some features of Strapi CMS. The CMS features that will be accessible via the license key depend on the type of license that was purchased: please refer to the for more information and/or to purchase a license.
 
-:::note  
+:::note
 If you don't see the _Strapi CMS license key_ section, it probably means that your subscription is a legacy one and does not support custom CMS licenses. It means that you already have one that is automatically included on your project.
 
 :::
@@ -1018,12 +973,11 @@ To remove the Strapi CMS license from your Strapi Cloud project, you can click o
 
 #### Modifying git repository & branch
 
-The GitHub or GitLab repository, branch and base directory for a Strapi Cloud project are by default https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 19/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 chosen at the creation of the project (see [Creating a project](/cloud/getting-started/deployment)). After the project's creation, via the project's settings, it is possible to update the project's repository or switch to another git provider.
 
-:::caution  
+:::caution
 Updating the git repository could result in the loss of the project and its data, for instance if the wrong repository is selected or if the data schema between the old and new repository doesn't match. :::
 
 1. In the _Connected git repository_ section of the _General_ tab, click on the **Update repository** button. You will be redirected to another interface.
@@ -1046,7 +1000,7 @@ is pushed to the selected branch. Untick it to disable the option. |
 
 The ownership of the Strapi Cloud project can be transferred to another user, as long as they're a maintainer of the project. It can either be at the initiative of the current project owner, or can be requested by a project maintainer. Once the ownership is transferred, it is permanent until the new owner decides to transfer the ownership again to another maintainer.
 
-:::prerequisites  
+:::prerequisites
 For the ownership of a project to be transferred, the following requirements must be met: - The project must be on a paid plan, with no currently expired card and/or unpaid bills. - The maintainer must have filled their billing information.
 
 - No already existing ownership transfer must be pending for the project.
@@ -1065,15 +1019,14 @@ Note that ownership transfers might fail when done the same day of subscription 
 
 An email will be sent to both users. The person who needs to transfer the ownership or inherit it will have to click on the **Confirm transfer** button in the email. Once done, the previous owner will receive a confirmation email that the transfer has successfully been done.
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 20/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
-:::tip  
+:::tip
 As long as the ownership transfer or request hasn't been confirmed, there is the option to cancel in the same dialog that the maintainer was chosen.
 
 :::
 
-:::note  
+:::note
 Once the ownership transfer is done, the project will be disconnected from Strapi Cloud. As new owner, make sure to go to the _General_ tab of project settings to reconnect the project. :::
 
 #### Deleting Strapi Cloud project
@@ -1086,12 +1039,12 @@ You can delete any Strapi Cloud project, but it will be permanent and irreversib
 
 The _Environments_ tab allows to see all configured environments for the Strapi Cloud project, as well as to create new ones. Production is the default environment, which cannot be deleted. Other environments can be created (depending on the subscription plan for your project) to work more safely on isolated instances of your Strapi Cloud project (e.g. a staging environment where tests can be made before being available on production).
 
-:::tip  
+:::tip
 Clicking on the **Manage** button for any environment will redirect you to the environment's own general settings, where it is possible to change the Node version, edit the git branches and delete or reset the environment. Please [refer to the dedicated documentation](#environments) for more information.
 
 :::
 
-:::tip  
+:::tip
 A new environment can also be added from the [project dashboard](/cloud/projects/overview#accessing a-projects-dashboard).
 
 :::
@@ -1111,7 +1064,6 @@ To create a new environment:
 
 :::note
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 21/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 If an error occurs during the environment creation, the progress indicator will stop and display an error message. You will see a **Retry** button next to the failed step, allowing you to restart the creation process.
@@ -1128,12 +1080,12 @@ Through this tab, you also have the possibility to:
 
 - click the **Edit** button in order to set a new payment method (see [related documentation] (/cloud/account/account-billing)).
 
-:::note  
+:::note
 You can attach a dedicated card to your project by choosing the payment method directly from this page. In that way, you can manage your subscriptions with different cards.
 
 :::
 
-:::tip  
+:::tip
 In the Usage section of the _Billing & Usage_ tab, you can see the current monthly usage of your project compared to the maximum usage allowed by your project's subscription. Use the arrows in the top right corner to see the project's usage for any chosen month.
 
 Note also that if your usage indicates that another subscription plan would fit better for your project, a message will be displayed in the _Billing & Usage_ tab to advise which plan you could switch to.
@@ -1144,7 +1096,7 @@ Note also that if your usage indicates that another subscription plan would fit 
 
 The _Plans_ tab displays an overview of the available Strapi Cloud plans and allows you to upgrade or downgrade from your current plan to another.
 
-:::info  
+:::info
 Strapi recently launched [new Cloud plans](https://strapi.io/pricing-cloud). For now, you can [downgrade](#downgrading-to-another-plan) or [upgrade](#upgrading-to-another-plan) to another plan directly from the Cloud dashboard, under the **Settings** > **Plans** section.
 
 If your project was created before the new plans were released, it may be on a _legacy_ plan— deprecated but still supported. You can sidegrade to a new plan if desired (see [downgrade section] (#downgrading-to-another-plan)).
@@ -1155,7 +1107,7 @@ If your project was created before the new plans were released, it may be on a _
 
 Strapi Cloud plan upgrades to another, higher plan are immediate and can be managed for each project via the project settings.
 
-:::note  
+:::note
 When using the Free plan, the buttons to upgrade to another plan are greyed out and unusable until you have filled in your billing information. Please refer to [Account billing details] (/cloud/account/account-billing) for more information.
 
 :::
@@ -1166,11 +1118,10 @@ To upgrade your current plan to a higher one:
 
 2. In the window that opens, check the payment details that indicate how much you will have to pay immediately after confirming the upgrade, and the available options.
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 22/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
-a. (optional) Click the **Edit** button to select another payment method.  
- b. (optional) Click **I have a discount code**, enter your discount code in the field, and click on the **Apply** button.
+a. (optional) Click the **Edit** button to select another payment method.
+b. (optional) Click **I have a discount code**, enter your discount code in the field, and click on the **Apply** button.
 
 3. Click on the **Upgrade to [plan name]** button to confirm the upgrade of your Strapi project to another plan.
 
@@ -1178,7 +1129,7 @@ a. (optional) Click the **Edit** button to select another payment method.
 
 Strapi Cloud plan downgrades can be managed for each project via the project settings. Downgrades are however not immediately effective: the higher plan will still remain active until the end of the current month (e.g. if you downgrade from the Scale plan to the Pro plan on June 18th, your project will remain on the Scale plan until the end of the month: on July 1st, the Pro plan will be effective for the project).
 
-:::caution  
+:::caution
 Make sure to check the usage of your Strapi Cloud project before downgrading: if your current usage exceeds the limits of the lower plan, you are taking the risk of getting charged for the overages. You may also lose access to some features: for example, downgrading to the Essential plan which doesn't include the Backups feature, would make you lose all your project's backups. Please refer to [Information on billing & usage](/cloud/getting-started/usage-billing) for more information.
 
 Note also that you cannot downgrade if you have additional environments (i.e. extra environments that have been purchased, not the default or included environments). For instance, if you wish to downgrade from the Pro plan to the Essential plan, you first need to delete all additional environments that have been configured (see [Resetting & Deleting environment](#resetting--deleting environment)), for the **Downgrade** button to be displayed and available again. :::
@@ -1190,7 +1141,7 @@ To downgrade your current plan to a lower one:
 2. In the window that opens, check the information related to downgrading.
 3. Click on the **Downgrade** button to confirm the downgrade of your Strapi project's plan.
 
-:::tip  
+:::tip
 Downgrades are effective from the 1st of the following month. Before that date, you can click on the **Cancel downgrade** button to remain on the current plan.
 
 :::
@@ -1199,7 +1150,7 @@ Downgrades are effective from the 1st of the following month. Before that date, 
 
 The _Invoices_ tab displays the full list of invoices for your Strapi Cloud project as well as their status.
 
-:::strapi Invoices are also available in your profile settings.  
+:::strapi Invoices are also available in your profile settings.
 In the _Profile > Invoices_ tab, you will find the complete list of invoices for all your projects. Feel free to check the [dedicated documentation](/cloud/account/account-billing#account-invoices). :::
 
 No invoice is issued for the Free plan.
@@ -1213,7 +1164,6 @@ In the project's environments' settings, you first need to select the environmen
 
 - and [_Variables_](#variables).
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 23/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt ### Configuration
 
 The _Configuration_ tab for the environment-level settings enables you to check and update the following options for the project:
@@ -1261,7 +1211,6 @@ Resetting an environment deletes all environments data and resets the variables 
 
 | Setting name | Instructions | | --------------- | ------------------------------------------------------------------------ | | Environment name | (mandatory) Write a name for your project's new environment. |
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 24/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 | Git branch | (mandatory) Choose a branch from the drop-down list. | | Base directory | Write the path of the base directory in the textbox. | | Import variables | Tick the box to import variable names from an existing environment. Values will not be imported, and all variables will remain blank. |
@@ -1289,7 +1238,7 @@ The _Backups_ tab informs you of the status and date of the latest backup of you
 
 - The manual backup option becomes available shortly after the project’s first successful deployment. :::
 
-:::tip  
+:::tip
 For projects created before the release of the Backup feature in October 2023, the first backup will automatically be triggered with the next deployment of the project.
 
 :::
@@ -1300,7 +1249,7 @@ To create a manual backup, in the _Backups_ section, click on the **Create backu
 
 The manual backup should start immediately, and restoration or creation of other backups will be disabled until the backup is complete.
 
-:::caution  
+:::caution
 When creating a new manual backup, any existing manual backup will be deleted. You can only have one manual backup at a time.
 
 :::
@@ -1314,7 +1263,6 @@ If you need to restore a backup of your project:
 
 3. Click on the **Restore** button of the dialog. Once the restoration is finished, your project will be back to the state it was at the time of the chosen backup. You will be able to see the restoration timestamp and the backup restored in the _Backups_ tab.
 
-4. The timestamp of the last completed restoration will be displayed to help you track when the https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 25/232  
    10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt project was last restored.
 
 #### Downloading a backup
@@ -1326,7 +1274,7 @@ If you need to download a backup of your project:
 
 3. Click on the **Download** button of the dialog to download the chosen backup's archive file in `.sql` format.
 
-:::note  
+:::note
 The backup file will include only the database of your default Production environment. It will not include assets or any other environment databases.
 
 :::
@@ -1351,8 +1299,8 @@ Default domain names are made of 2 randomly generated words followed by a hash. 
 1. Click the **Connect new domain** button.
 2. In the window that opens, fill in the following fields:
 
-| Setting name | Instructions  
-|  
+| Setting name | Instructions
+|
 | ------------------------- | ----------------------------------------------------------------------- -- |
 
 | Domain name | Type the new domain name (e.g. _custom-domain-name.com_) |
@@ -1365,22 +1313,21 @@ Default domain names are made of 2 randomly generated words followed by a hash. 
 
 3. Click on the **Save** button.
 
-:::tip  
+:::tip
 To finish setting up your custom domain, in the settings of your domain registar or hosting platform, please add the Target value (e.g., `proud-unicorn-123456af.strapiapp.com`) as a CNAME alias to the DNS records of your domain.
 
 :::
 
-:::caution Custom domains and assets  
+:::caution Custom domains and assets
 When using custom domains, these domains do not apply to the URLs of uploaded assets. Uploaded assets keep the Strapi Cloud project-based URL.
 
-This means that, if your custom domain is hosted at `https://my-custom-domain.com` and your Strapi https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 26/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 Cloud project name is `my-strapi-cloud-instance`, API calls will still return URLs such as `https://my-strapi-cloud-instance.media.strapiapp.com/example.png`.
 
 :::
 
-:::note  
+:::note
 Custom domains are not available on the Free plan. Downgrading to the Free plan will result in the application domain's being restored to the default one.
 
 :::
@@ -1404,32 +1351,31 @@ Hovering on an environment variable, either default or custom, displays the foll
 
 - When deleting a variable, you will be asked to confirm by selecting **Save**, or **Save & deploy** if you want the changes to take effect immediately.
 
-:::tip  
-Use the search bar to find more quickly an environment variable in the list!  
+:::tip
+Use the search bar to find more quickly an environment variable in the list!
 :::
 
 #### Creating custom environment variables
 
 Custom environment variables can be created for the Strapi Cloud project. Make sure to redeploy your project after creating or editing an environment variable.
 
-<!-- Future iteration   
-:::note   
-Instead of creating a new custom environment variable from scratch, you can also import one by clicking on the **Import variables (.env)** button. 
+<!-- Future iteration
+:::note
+Instead of creating a new custom environment variable from scratch, you can also import one by clicking on the **Import variables (.env)** button.
 
-:::   
+:::
 -->
 
 1. In the _Custom environment variables_ section, click on the **Add variable** button. 2. Write the _Name_ and _Value_ of the new environment variable in the same-named fields. Alternatively, you can click on the icon to generate automatically the name and value. 3. (optional) Click on **Add another** to directly create one or more other custom environment variables.
 
 2. Click on the **Save** button to confirm the creation of the custom environment variables. To apply your changes immediately, click on **Save & deploy**.
 
-# Admin panel customization
+## Admin panel customization
 
-Source: https://docs.strapi.io/cms/admin-panel-customization
+Source: <https://docs.strapi.io/cms/admin-panel-customization>
 
-# Admin panel customization
+## Admin panel customization
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 27/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 The **front-end part of Strapi** is called the admin panel. The admin panel presents a graphical user interface to help you structure and manage the content that will be accessible through the Content API. To get an overview of the admin panel, please refer to the [Getting Started > Admin panel](/cms/features/admin-panel) page.
@@ -1444,7 +1390,7 @@ Admin panel customization is done by tweaking the code of the `src/admin/app` fi
 
 ## General considerations
 
-:::prerequisites  
+:::prerequisites
 Before updating code to customize the admin panel:
 
 - Rename the default `app.example.tsx|js` file into `app.ts|js`.
@@ -1473,18 +1419,17 @@ The following is an example of a basic customization of the admin panel:
 
 :::
 
-# Admin panel bundlers
+## Admin panel bundlers
 
-Source: https://docs.strapi.io/cms/admin-panel-customization/bundlers
+Source: <https://docs.strapi.io/cms/admin-panel-customization/bundlers>
 
-# Admin panel bundlers
+## Admin panel bundlers
 
 Strapi's [admin panel](/cms/admin-panel-customization) is a React-based single-page application that encapsulates all the features and installed plugins of a Strapi application. 2 different bundlers can be used with your Strapi 5 application, [Vite](#vite) (the default one) and [webpack](#webpack). Both bundlers can be configured to suit your needs.
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 28/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
-:::info  
+:::info
 For simplification, the following documentation mentions the `strapi develop` command, but in practice you will probably use its alias by running either `yarn develop` or `npm run develop` depending on your package manager of choice.
 
 :::
@@ -1501,11 +1446,11 @@ In Strapi 5, the default bundler is Vite. To use
 
 </Tabs>
 
-# Admin panel extension
+## Admin panel extension
 
-Source: https://docs.strapi.io/cms/admin-panel-customization/extension
+Source: <https://docs.strapi.io/cms/admin-panel-customization/extension>
 
-# Admin panel extension
+## Admin panel extension
 
 Strapi's [admin panel](/cms/admin-panel-customization) is a React-based single-page application that encapsulates all the features and installed plugins of a Strapi application. If the [customization options](/cms/admin-panel-customization#available-customizations) provided by Strapi are not enough for your use case, you will need to extend Strapi's admin panel.
 
@@ -1527,15 +1472,14 @@ There are 2 use cases where you might want to extend the admin panel:
 
 - The also provide extensive additional information on developing for Strapi's admin panel. :::
 
-# Favicon
+## Favicon
 
-Source: https://docs.strapi.io/cms/admin-panel-customization/favicon
+Source: <https://docs.strapi.io/cms/admin-panel-customization/favicon>
 
-# Favicon
+## Favicon
 
 Strapi's [admin panel](/cms/admin-panel-customization) displays its branding on various places, including the [logo](/cms/admin-panel-customization/logos) and the favicon. Replacing these images allows you to match the interface and application to your identity.
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 29/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 To replace the favicon:
@@ -1561,25 +1505,25 @@ export default {
 
 5. Rebuild, launch and revisit your Strapi app by running `yarn build && yarn develop` in the terminal.
 
-:::tip  
+:::tip
 This same process may be used to replace the login logo (i.e. `AuthLogo`) and menu logo (i.e. `MenuLogo`) (see [logos customization documentation](/cms/admin-panel-customization/logos)). :::
 
-:::caution  
+:::caution
 Make sure that the cached favicon is cleared. It can be cached in your web browser and also with your domain management tool like Cloudflare's CDN.
 
 :::
 
-# Homepage customization
+## Homepage customization
 
-Source: https://docs.strapi.io/cms/admin-panel-customization/homepage
+Source: <https://docs.strapi.io/cms/admin-panel-customization/homepage>
 
-# Homepage customization
+## Homepage customization
 
 The
 
 </Tabs>
 
-:::note The API requires Strapi 5.13+  
+:::note The API requires Strapi 5.13+
 The `app.widgets.register` API only works with Strapi 5.13 and above. Trying to call the API with older versions of Strapi will crash the admin panel.
 
 Plugin developers who want to register widgets should either:
@@ -1598,7 +1542,6 @@ The peerDependency approach is recommended if the whole purpose of the plugin is
 
 :::
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 30/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 #### Widget API reference
@@ -1617,12 +1560,12 @@ The `app.widgets.register()` method can take either a single widget configuratio
 
 </Tabs>
 
-:::tip  
+:::tip
 For simplicity, the example below uses data fetching directly inside a useEffect hook. While this works for demonstration purposes, it may not reflect best practices in production.
 
 For more robust solutions, consider alternative approaches recommended in the [React documentation] (https://react.dev/learn/build-a-react-app-from-scratch#data-fetching). If you're looking to integrate a data fetching library, we recommend using [TanStackQuery]
 
-(https://tanstack.com/query/v3/).  
+(https://tanstack.com/query/v3/).
 :::
 
 **Data management**:
@@ -1649,14 +1592,13 @@ Strapi provides several helper components to maintain a consistent user experien
 
 These components help maintain a consistent look and feel across different widgets. You could render these components without children to get the default wording: ` </Td>
 
- </Td>   
- </Tr>   
- ))}   
- </Tbody>   
- </Table>   
+ </Td>
+ </Tr>
+ ))}
+ </Tbody>
+ </Table>
  );
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 31/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt };
 
 ````
@@ -1701,19 +1643,19 @@ module.exports = ({ strapi }) => ({
 
 The following file ensures that the metrics controller is reachable at a custom `/count` route: ```js title="src/plugins/content-metrics/server/src/routes/index.js"
 
-'content-api': {  
- type: 'content-api',  
- routes: [  
- {  
- method: 'GET',  
- path: '/count',  
- handler: 'metrics.getContentCounts',  
- config: {  
- policies: [],  
- },  
- },  
- ],  
- },  
+'content-api': {
+type: 'content-api',
+routes: [
+{
+method: 'GET',
+path: '/count',
+handler: 'metrics.getContentCounts',
+config: {
+policies: [],
+},
+},
+],
+},
 };
 
 ```
@@ -1722,7 +1664,6 @@ The following file ensures that the metrics controller is reachable at a custom 
 
  </Td>
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 32/232
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 
@@ -1776,23 +1717,22 @@ module.exports = ({ strapi }) => ({
 
 The following file ensures that the metrics controller is reachable at a custom `/count` route: ```js title="src/plugins/content-metrics/server/src/routes/index.js"
 
-'content-api': {  
- type: 'content-api',  
- routes: [  
- {  
- method: 'GET',  
- path: '/count',  
- handler: 'metrics.getContentCounts',  
- config: {  
- policies: [],  
- },  
- },  
- ],
+'content-api': {
+type: 'content-api',
+routes: [
+{
+method: 'GET',
+path: '/count',
+handler: 'metrics.getContentCounts',
+config: {
+policies: [],
+},
+},
+],
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 33/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
-},  
+},
 };
 
 ````
@@ -1800,8 +1740,8 @@ https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.t
 </TabItem>
 </Tabs>
 
-# Locales & translations
-Source: https://docs.strapi.io/cms/admin-panel-customization/locales-translations # Locales & translations
+## Locales & translations
+Source: <https://docs.strapi.io/cms/admin-panel-customization/locales-translations> # Locales & translations
 
 The Strapi [admin panel](/cms/admin-panel-customization) ships with English strings and supports adding other locales so your editorial team can work in their preferred language. Locales determine which languages appear in the interface, while translations provide the text displayed for each key in a locale.
 
@@ -1828,14 +1768,13 @@ A plugin's key/value pairs are declared independently in the plugin's files at
 
 If you need to ship additional translation JSON files—for example to organize large overrides or to support a locale not bundled with Strapi—place them in the `/src/admin/extensions/translations` folder and ensure the locale code is listed in `config.locales`.
 
-# Logos
-Source: https://docs.strapi.io/cms/admin-panel-customization/logos
+## Logos
+Source: <https://docs.strapi.io/cms/admin-panel-customization/logos>
 
-# Logos
+## Logos
 
 Strapi's [admin panel](/cms/admin-panel-customization) displays its branding on both the login screen and in the main navigation. Replacing these images allows you to match the interface to your identity. The present page shows how to override the two logo files via the admin panel configuration. If you prefer uploading them directly in the UI, see [Customizing the logo] (/cms/features/admin-panel#customizing-the-logo).
 
-The Strapi admin panel displays a logo in 2 different locations, represented by 2 different keys in https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 34/232
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt the admin panel configuration:
 
 | Location in the UI | Configuration key to update |
@@ -1868,10 +1807,10 @@ To update the logos, put image files in the `/src/admin/extensions` folder, impo
 There is no size limit for image files set through the configuration files.
 :::
 
-# Theme extension
-Source: https://docs.strapi.io/cms/admin-panel-customization/theme-extension
+## Theme extension
+Source: <https://docs.strapi.io/cms/admin-panel-customization/theme-extension>
 
-# Theme extension
+## Theme extension
 
 Strapi's [admin panel](/cms/admin-panel-customization) can be displayed either in light or dark mode (see [profile setup](/cms/getting-started/setting-up-admin-panel#setting-up-your-administrator profile)), and both can be extended through custom theme settings.
 
@@ -1885,20 +1824,19 @@ The default defines various theme-related keys (shadows, colors…) that can be 
 
 :::
 
-# Customizing the rich text editor
-Source: https://docs.strapi.io/cms/admin-panel-customization/wysiwyg-editor
+## Customizing the rich text editor
+Source: <https://docs.strapi.io/cms/admin-panel-customization/wysiwyg-editor>
 
-# Change the default rich text editor
+## Change the default rich text editor
 
-Strapi's [admin panel](/cms/admin-panel-customization) comes with a built-in rich text editor. To https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 35/232
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt change the default editor, several options are at your disposal:
 
 - You can install a third-party plugin, such as one for CKEditor, by visiting . - You can create your own plugin to create and register a fully custom WYSIWYG field (see [custom fields documentation](/cms/features/custom-fields)).
 
-# Strapi Client
-Source: https://docs.strapi.io/cms/api/client
+## Strapi Client
+Source: <https://docs.strapi.io/cms/api/client>
 
-# Strapi Client
+## Strapi Client
 
 The Strapi Client library simplifies interactions with your Strapi back end, providing a way to fetch, create, update, and delete content. This guide walks you through setting up the Strapi Client, configuring authentication, and using its key features effectively.
 
@@ -1942,14 +1880,13 @@ This allows your requests to include the necessary authentication credentials au
 
 The Strapi Client provides the following key properties and methods for interacting with your Strapi back end:
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 36/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
-| Parameter | Description  
-|  
+| Parameter | Description
+|
 | ----------| --------------------------------------------------------------------------------------- ----- |
 
-| `baseURL` | The base API URL of your Strapi back end. |  
+| `baseURL` | The base API URL of your Strapi back end. |
 | `fetch()` | A utility method for making generic API requests similar to the native fetch API. | | `collection()` | Manages collection-type resources (e.g., blog posts, products). | | `single()` | Manages single-type resources (e.g., homepage settings, global configurations). | | `files()` | Enables upload, retrieve and management of files directly to/from the Strapi Media Library. |
 
 ### General purpose fetch
@@ -1964,15 +1901,15 @@ const result = await client.fetch("articles", { method: "GET" });
 
 Collection types in Strapi are entities with multiple entries (e.g., a blog with many posts). The Strapi Client provides a `collection()` method to interact with these resources, with the following methods available:
 
-| Parameter | Description  
-|  
+| Parameter | Description
+|
 | ----------| --------------------------------------------------------------------------------------- ----- |
 
 | `find(queryParams?)` | Fetch multiple documents with optional filtering, sorting, or pagination. |
 
 | `findOne(documentID, queryParams?)` | Retrieve a single document by its unique ID. | | `create(data, queryParams?)` | Create a new document in the collection. |
 
-| `update(documentID, data, queryParams?)` | Update an existing document. |  
+| `update(documentID, data, queryParams?)` | Update an existing document. |
 | `delete(documentID, queryParams?)` | Update an existing document. |
 
 **Usage examples:**
@@ -1983,12 +1920,12 @@ Collection types in Strapi are entities with multiple entries (e.g., a blog with
 
 Single types in Strapi represent unique content entries that exist only once (e.g., the homepage settings or site-wide configurations). The Strapi Client provides a `single()` method to interact with these resources, with the following methods available:
 
-| Parameter | Description  
-|  
+| Parameter | Description
+|
 | ----------| --------------------------------------------------------------------------------------- ----- |
 
-| `find(queryParams?)` | Fetch the document. |  
-| `update(documentID, data, queryParams?)` | Update the document. |  
+| `find(queryParams?)` | Fetch the document. |
+| `update(documentID, data, queryParams?)` | Update the document. |
 | `delete(queryParams?)` | Remove the document. |
 
 **Usage examples:**
@@ -2002,7 +1939,6 @@ const defaultHomepage = await homepage.find();
 // Fetch the Spanish version of the homepage
 const spanishHomepage = await homepage.find({ locale: 'es' });
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 37/232
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 // Update the homepage draft content
@@ -2062,7 +1998,6 @@ The `strapi.client.files.findOne()` method retrieves the metadata for a single f
 // Initialize the client
 const client = strapi({
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 38/232
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
  baseURL: 'http://localhost:1337/api',
@@ -2101,7 +2036,7 @@ const updatedFile = await client.files.update(1, {
 
 </Tabs>
 
-</TabItem>   
+</TabItem>
 </Tabs>
 
 ##### Response Structure
@@ -2122,14 +2057,13 @@ The `strapi.client.files.upload()` method returns an array of file objects, each
 }
 ```
 
-:::note Additional response fields  
+:::note Additional response fields
 The upload response includes additional fields beyond those shown above. See the complete FileResponse interface in the for all available fields.
 
 :::
 
 #### `delete`
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 39/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 The `strapi.client.files.delete()` method deletes a file by its ID.
@@ -2164,15 +2098,15 @@ The following errors might occur when sending queries through the Strapi Client:
 
 | Missing Parameters|When uploading a `Buffer`, both `filename` and `mimetype` must be provided in the options object. If either is missing, an error is thrown. |
 
-:::strapi Additional information  
-More details about the Strapi Client may be found in the .  
+:::strapi Additional information
+More details about the Strapi Client may be found in the .
 :::
 
-# Content API
+## Content API
 
-Source: https://docs.strapi.io/cms/api/content-api
+Source: <https://docs.strapi.io/cms/api/content-api>
 
-# Strapi APIs to access your content
+## Strapi APIs to access your content
 
 Once you've created and configured a Strapi project, created a content structure with the [Content Type Builder](/cms/features/content-type-builder) and started adding data through the [Content Manager](/cms/features/content-manager), you likely would like to access your content.
 
@@ -2187,16 +2121,15 @@ REST and GraphQL APIs represent the top-level layers of the Content API exposed 
 
 - The [Document Service API](/cms/api/document-service), accessible through `strapi.documents`, is the recommended API to interact with your application's database within the [backend server] (/cms/customization) or through [plugins](/cms/plugins-development/developing-plugins). The Document Service is the layer that handles **documents**
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 40/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
-# Documents
+## Documents
 
-Source: https://docs.strapi.io/cms/api/document
+Source: <https://docs.strapi.io/cms/api/document>
 
 <div className="document-concept-page custom-mermaid-layout">
 
-# Documents
+## Documents
 
 A **document** in Strapi 5 is an API-only concept. A document represents all the different variations of content for a given entry of a content-type.
 
@@ -2221,7 +2154,7 @@ The following diagrams represent all the possible variations of content dependin
 
 - If the Draft & Publish feature is enabled on the content-type, a document can have a **published** and a **draft** version.
 
-:::strapi APIs to query documents data  
+:::strapi APIs to query documents data
 To interact with documents or the data they represent:
 
 - From the back-end server (for instance, from controllers, services, and the back-end part of plugins), use the [Document Service API](/cms/api/document-service).
@@ -2232,27 +2165,26 @@ For additional information about the APIs, please refer to the [Content API intr
 
 :::
 
-:::info Default version in returned results  
+:::info Default version in returned results
 An important difference between the back-end and front-end APIs is about the default version returned when no parameter is passed:
 
 - The Document Service API returns the draft version by default,
-- while REST and GraphQL APIs return the published version by default.  
+- while REST and GraphQL APIs return the published version by default.
   :::
 
 </div>
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 41/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
-# Document Service API
+## Document Service API
 
-Source: https://docs.strapi.io/cms/api/document-service
+Source: <https://docs.strapi.io/cms/api/document-service>
 
-# Document Service API
+## Document Service API
 
 The Document Service API is built on top of the **Query Engine API** and is used to perform CRUD ([create](#create), [retrieve](#findone), [update](#update), and [delete](#delete)) operations on **documents**
 
-:::strapi Entity Service API is deprecated in Strapi 5  
+:::strapi Entity Service API is deprecated in Strapi 5
 The Document Service API replaces the Entity Service API used in Strapi v4 (
 
 </ApiCall>
@@ -2301,7 +2233,6 @@ Find documents matching the parameters.
 
 Syntax: `findMany(parameters: Params) => Document[]`
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 42/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 ### Parameters
@@ -2341,43 +2272,42 @@ If no `locale` or `status` parameters are passed, results return the draft versi
 </ApiCall>
 
 <!-- TODO: To be completed post v5 GA -->
-<!-- #### Find ‘fr’ version of all documents with fallback on default (en) 
+<!-- #### Find ‘fr’ version of all documents with fallback on default (en)
 
-```js   
+```js
 await documents('api:restaurant.restaurant').findMany({ locale: 'fr', fallbackLocales: ['en'] } ); ``` -->
 
 <!-- TODO: To be completed post v5 GA -->
-<!-- #### Find sibling locales for one or many documents 
+<!-- #### Find sibling locales for one or many documents
 
-```js   
-await documents('api:restaurant.restaurant').findMany({ locale: 'fr', populateLocales: ['en', 'it'] } ); 
+```js
+await documents('api:restaurant.restaurant').findMany({ locale: 'fr', populateLocales: ['en', 'it'] } );
 
-// Option of response forma for this case    
-{   
- data: {   
-title: { "Wonderful" }   
- },   
- localizations: [   
- { enLocaleData },   
- { itLocaleData } 
+// Option of response forma for this case
+{
+ data: {
+title: { "Wonderful" }
+ },
+ localizations: [
+ { enLocaleData },
+ { itLocaleData }
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 43/232  
-10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 
+10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
- ]   
-} 
+ ]
+}
 
-await documents('api:restaurant.restaurant').findMany({ locale: ['en', 'it'] } ); // Option of response format for this case  
+await documents('api:restaurant.restaurant').findMany({ locale: ['en', 'it'] } ); // Option of response format for this case
 
-{   
- data: {   
-title: {   
-"en": "Wonderful",   
-"it": "Bellissimo"   
-}   
- },   
-}   
-``` 
+{
+ data: {
+title: {
+"en": "Wonderful",
+"it": "Bellissimo"
+}
+ },
+}
+```
 
 </Request> -->
 
@@ -2405,7 +2335,7 @@ If no `locale` parameter is passed, `create()` creates the draft version of the 
 
 </ApiCall>
 
-:::tip  
+:::tip
 If the [Draft & Publish](/cms/features/draft-and-publish) feature is enabled on the content-type, you can automatically publish a document while creating it (see [`status` documentation] (/cms/api/document-service/status#create)).
 
 :::
@@ -2419,15 +2349,14 @@ Syntax: `update(parameters: Params) => Promise
 </ApiCall>
 
 <!-- ! not working -->
-<!-- #### Update many document locales 
+<!-- #### Update many document locales
 
-```js 
+```js
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 44/232  
-10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 
+10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
-// Updates the default locale by default   
-await documents('api:restaurant.restaurant').update(documentId, {locale: ['es', 'en'], data: {name: "updatedName" }} 
+// Updates the default locale by default
+await documents('api:restaurant.restaurant').update(documentId, {locale: ['es', 'en'], data: {name: "updatedName" }}
 
 ``` -->
 
@@ -2453,9 +2382,9 @@ Syntax: `delete(parameters: Params): Promise<{ documentId: ID, entries: Number }
 If no `locale` parameter is passed, `delete()` only deletes the default locale version of a document. This deletes both the draft and published versions:
 
 <!-- ! not working -->
-<!-- #### Delete a document with filters 
+<!-- #### Delete a document with filters
 
-To delete documents matching parameters, pass these parameters to `delete()`. 
+To delete documents matching parameters, pass these parameters to `delete()`.
 
 If no `locale` parameter is passed, it will delete only the default locale version: -->
 
@@ -2480,7 +2409,6 @@ Syntax: `publish(parameters: Params): Promise<{ documentId: ID, entries: Number 
 
 ### Example
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 45/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 If no `locale` parameter is passed, `publish()` only publishes the default locale version of the document:
@@ -2488,13 +2416,13 @@ If no `locale` parameter is passed, `publish()` only publishes the default local
 </ApiCall>
 
 <!-- ! not working -->
-<!-- #### Publish document locales with filters 
+<!-- #### Publish document locales with filters
 
-```js   
-// Only publish locales with title is "Ready to publish"   
-await strapi.documents('api::restaurant.restaurant').publish(   
- { filters: { title: 'Ready to publish' }}   
-);   
+```js
+// Only publish locales with title is "Ready to publish"
+await strapi.documents('api::restaurant.restaurant').publish(
+ { filters: { title: 'Ready to publish' }}
+);
 ``` -->
 
 ## `unpublish()`
@@ -2535,10 +2463,9 @@ Syntax: `discardDraft(parameters: Params): Promise<{ documentId: ID, entries: Nu
 | `documentId`                                               | Document id                         |                          | `ID`                     |
 | [`locale`](/cms/api/document-service/locale#discard-draft) | Locale of the documents to discard. | Only the default locale. | String, `'*'`, or `null` |
 
-| [`filters`](/cms/api/document-service/filters) | [Filters](/cms/api/document-service/filters) to https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 46/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
-use | `null` | Object |  
+use | `null` | Object |
 | [`fields`](/cms/api/document-service/fields#discarddraft) | [Select fields](/cms/api/document service/fields#discarddraft) to return | All fields<br/>(except those not populate by default) | Object |
 
 | [`populate`](/cms/api/document-service/populate) | [Populate](/cms/api/document-service/populate) results with additional fields. | `null` | Object |
@@ -2565,7 +2492,7 @@ Syntax: `count(parameters: Params) => number`
 
 | [`filters`](/cms/api/document-service/filters) | [Filters](/cms/api/document-service/filters) to use | `null` | Object |
 
-:::note  
+:::note
 Since published documents necessarily also have a draft counterpart, a published document is still counted as having a draft version.
 
 This means that counting with the `status: 'draft'` parameter still returns the total number of documents matching other parameters, even if some documents have already been published and are not displayed as "draft" or "modified" in the Content Manager anymore. There currently is no way to prevent already published documents from being counted.
@@ -2588,7 +2515,6 @@ If no `locale` parameter is passed, documents are counted for the default locale
 
 Any [filters](/cms/api/document-service/filters) can be passed to the `count()` method.
 
-If no `locale` and no `status` parameter is passed, draft documents (which is the total of available https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 47/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 documents for the locale since even published documents are counted as having a draft version) are counted only for the default locale:
@@ -2603,15 +2529,15 @@ strapi.documents('api::restaurant.restaurant').count({ filters: { name: { $start
 
 ```
 
-# Using fields with the Document Service API
+## Using fields with the Document Service API
 
-Source: https://docs.strapi.io/cms/api/document-service/fields
+Source: <https://docs.strapi.io/cms/api/document-service/fields>
 
-# Document Service API: Selecting fields
+## Document Service API: Selecting fields
 
 By default the [Document Service API](/cms/api/document-service) returns all the fields of a document but does not populate any fields. This page describes how to use the `fields` parameter to return only specific fields with the query results.
 
-:::tip  
+:::tip
 You can also use the `populate` parameter to populate relations, media fields, components, or dynamic zones (see the [`populate` parameter](/cms/api/document-service/populate) documentation). :::
 
 </ApiCall>
@@ -2646,7 +2572,6 @@ To select fields to return while [deleting documents](/cms/api/document-service#
 
 </ApiCall>
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 48/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 ## Select fields with `publish()` queries {#publish}
@@ -2667,11 +2592,11 @@ To select fields to return while [discarding draft versions of documents](/cms/a
 
 </ApiCall>
 
-# Using filters with the Document Service API
+## Using filters with the Document Service API
 
-Source: https://docs.strapi.io/cms/api/document-service/filters
+Source: <https://docs.strapi.io/cms/api/document-service/filters>
 
-# Document Service API: Filters
+## Document Service API: Filters
 
 The [Document Service API](/cms/api/document-service) offers the ability to filter results. The following operators are available:
 
@@ -2683,7 +2608,6 @@ The [Document Service API](/cms/api/document-service) offers the ability to filt
 
 ### `$not`
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 49/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 Negates the nested condition(s).
@@ -2750,7 +2674,6 @@ Attribute does not equal input value.
 
 **Example**
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 50/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 ```js
@@ -2819,7 +2742,6 @@ const entries = await strapi.documents('api::article.article').findMany({
  },
  },
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 51/232
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 });
@@ -2888,7 +2810,6 @@ const entries = await strapi.documents('api::article.article').findMany({
  },
 });
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 52/232
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt ```
 
 ### `$between`
@@ -2953,7 +2874,6 @@ const entries = await strapi.documents('api::article.article').findMany({
  },
  },
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 53/232
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 });
@@ -3021,7 +2941,6 @@ const entries = await strapi.documents('api::article.article').findMany({
  },
  },
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 54/232
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 });
@@ -3090,7 +3009,6 @@ const entries = await strapi.documents('api::article.article').findMany({
  $and: [
  {
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 55/232
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
  title: 'Hello World',
@@ -3151,23 +3069,22 @@ const entries = await strapi.documents("api::article.article").findMany({
 });
 ```
 
-:::note  
+:::note
 `$not` can be used as:
 
 - a logical operator (e.g. in `filters: { $not: { // conditions… }}`)
 - [an attribute operator](#not) (e.g. in `filters: { attribute-name: $not: { … } }`). :::
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 56/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
-:::tip  
+:::tip
 `$and`, `$or` and `$not` operators are nestable inside of another `$and`, `$or` or `$not` operator. :::
 
-# Using the locale parameter with the Document Service API
+## Using the locale parameter with the Document Service API
 
-Source: https://docs.strapi.io/cms/api/document-service/locale
+Source: <https://docs.strapi.io/cms/api/document-service/locale>
 
-# Document Service API: Using the `locale` parameter
+## Document Service API: Using the `locale` parameter
 
 By default the [Document Service API](/cms/api/document-service) returns the default locale version of documents (which is 'en', i.e. the English version, unless another default locale has been set for the application, see [Internationalization (i18n) feature](/cms/features/internationalization)). This page describes how to use the `locale` parameter to get or manipulate data only for specific locales.
 
@@ -3189,7 +3106,7 @@ When a `locale` is passed to the [`findMany()` method](/cms/api/document-service
 
 If no `status` parameter is passed, the `draft` versions are returned by default. </ApiCall>
 
-<details>   
+<details>
 <summary>Explanation:</summary>
 
 Given the following 4 documents that have various locales:
@@ -3211,7 +3128,6 @@ Given the following 4 documents that have various locales:
 
 </details>
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 57/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 ## `create()` a document for a locale {#create}
@@ -3268,7 +3184,6 @@ To unpublish a specific locale version of a document, pass the `locale` as a par
 
 The `*` wildcard is supported by the `locale` parameter, to unpublish all locale versions of a document:
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 58/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 </ApiCall>
@@ -3302,17 +3217,17 @@ If no `status` parameter is passed, draft documents are counted (which is the to
 strapi.documents("api::restaurant.restaurant").count({ locale: "fr" });
 ```
 
-# Extending the Document Service behavior
+## Extending the Document Service behavior
 
-Source: https://docs.strapi.io/cms/api/document-service/middlewares
+Source: <https://docs.strapi.io/cms/api/document-service/middlewares>
 
-# Document Service API: Middlewares
+## Document Service API: Middlewares
 
 The [Document Service API](/cms/api/document-service) offers the ability to extend its behavior thanks to middlewares.
 
 Document Service middlewares allow you to perform actions before and/or after a method runs.
 
-<figure style={{width: '100%', margin: '0'}}>   
+<figure style={{width: '100%', margin: '0'}}>
  <img src="/img/assets/backend-customization/diagram-controllers-services.png" alt="Simplified Strapi backend diagram with controllers highlighted" />
 
 <em><figcaption style={{fontSize: '12px'}}>The diagram represents a simplified version of how a request travels through the Strapi back end, with the Document Service highlighted. The backend customization introduction page includes a complete, <a href="/cms/backend-customization#interactive diagram">interactive diagram</a>.</figcaption></em>
@@ -3327,7 +3242,6 @@ Syntax: `strapi.documents.use(middleware)`
 
 A middleware is a function that receives a context and a next function.
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 59/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 Syntax: `(context, next) => ReturnType<typeof next>`
@@ -3339,25 +3253,25 @@ Syntax: `(context, next) => ReturnType<typeof next>`
 
 #### `context`
 
-| Parameter | Description  
-| Type |  
+| Parameter | Description
+| Type |
 |---------------|------------------------------------------------------------------------------------ --|---------------|
 
 | `action` | The method that is running ([see available methods](/cms/api/document-service)) | `string` |
 
 | `params` | The method params ([see available methods](/cms/api/document-service)) | `Object` |
 
-| `uid` | Content type unique identifier  
-| `string` |  
-| `contentType` | Content type  
+| `uid` | Content type unique identifier
+| `string` |
+| `contentType` | Content type
 | `ContentType` |
 
-<details>   
+<details>
 <summary>Examples:</summary>
 
 The following examples show what `context` might include depending on the method called:
 
-</Tabs>   
+</Tabs>
 </details>
 
 #### `next`
@@ -3392,7 +3306,6 @@ module.exports = {
 };
 ```
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 60/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 #### Plugin developers
@@ -3415,7 +3328,7 @@ module.exports = {
 
 ## Implementing a middleware
 
-When implementing a middleware, always return the response from `next()`.  
+When implementing a middleware, always return the response from `next()`.
 Failing to do this will break the Strapi application.
 
 ### Examples
@@ -3444,28 +3357,27 @@ ${context.params.data.lastName}`;
 
 <br/>
 
-:::strapi Lifecycle hooks  
+:::strapi Lifecycle hooks
 The Document Service API triggers various database lifecycle hooks based on which method is called. For a complete reference, see [Document Service API: Lifecycle hooks](/cms/migration/v4-to v5/breaking-changes/lifecycle-hooks-document-service#table).
 
 :::
 
-# Using Populate with the Document Service API
+## Using Populate with the Document Service API
 
-Source: https://docs.strapi.io/cms/api/document-service/populate
+Source: <https://docs.strapi.io/cms/api/document-service/populate>
 
-# Document Service API: Populating fields
+## Document Service API: Populating fields
 
 By default the [Document Service API](/cms/api/document-service) does not populate any relations, media fields, components, or dynamic zones. This page describes how to use the `populate` parameter
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 61/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt to populate specific fields.
 
-:::tip  
+:::tip
 You can also use the `select` parameter to return only specific fields with the query results (see the [`select` parameter](/cms/api/document-service/fields) documentation).
 
 :::
 
-:::caution  
+:::caution
 If the Users & Permissions plugin is installed, the `find` permission must be enabled for the content-types that are being populated. If a role doesn't have access to a content-type it will not be populated.
 
 :::
@@ -3512,14 +3424,13 @@ To populate while updating documents:
 
 ## Populating with `publish()`
 
-To populate while publishing documents (same behavior with `unpublish()` and `discardDraft()`): https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 62/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt </ApiCall>
 
-# Using Sort & Pagination with the Document Service API
+## Using Sort & Pagination with the Document Service API
 
-Source: https://docs.strapi.io/cms/api/document-service/sort-pagination
+Source: <https://docs.strapi.io/cms/api/document-service/sort-pagination>
 
-# Document Service API: Sorting and paginating results
+## Document Service API: Sorting and paginating results
 
 The [Document Service API](/cms/api/document-service) offers the ability to sort and paginate query results.
 
@@ -3543,11 +3454,11 @@ To paginate results, pass the `limit` and `start` parameters:
 
 </ApiCall>
 
-# Using Draft & Publish with the Document Service API
+## Using Draft & Publish with the Document Service API
 
-Source: https://docs.strapi.io/cms/api/document-service/status
+Source: <https://docs.strapi.io/cms/api/document-service/status>
 
-# Document Service API: Usage with Draft & Publish
+## Document Service API: Usage with Draft & Publish
 
 By default the [Document Service API](/cms/api/document-service) returns the draft version of a document when the [Draft & Publish](/cms/features/draft-and-publish) feature is enabled. This page describes how to use the `status` parameter to:
 
@@ -3555,7 +3466,7 @@ By default the [Document Service API](/cms/api/document-service) returns the dra
 - count documents depending on their status,
 - and directly publish a document while creating it or updating it.
 
-:::note  
+:::note
 Passing `{ status: 'draft' }` to a Document Service API query returns the same results as not passing any `status` parameter.
 
 :::
@@ -3570,7 +3481,6 @@ To return the published version while [finding a specific document](/cms/api/doc
 
 ## Get the published version with `findFirst()` {#find-first}
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 63/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 `findFirst()` queries return the draft version of a document by default.
@@ -3605,7 +3515,7 @@ const publishedCount = await strapi
   .count({ status: "published" });
 ```
 
-:::note  
+:::note
 Since published documents necessarily also have a draft counterpart, a published document is still counted as having a draft version.
 
 This means that counting with the `status: 'draft'` parameter still returns the total number of documents matching other parameters, even if some documents have already been published and are not displayed as "draft" or "modified" in the Content Manager anymore. There currently is no way to prevent already published documents from being counted.
@@ -3624,21 +3534,20 @@ To automatically publish a document while updating it, add `status: 'published'`
 
 </ApiCall>
 
-# GraphQL API
+## GraphQL API
 
-Source: https://docs.strapi.io/cms/api/graphql
+Source: <https://docs.strapi.io/cms/api/graphql>
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 64/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
-# GraphQL API
+## GraphQL API
 
 The GraphQL API allows performing queries and mutations to interact with the [content-types] (/cms/backend-customization/models#content-types) through Strapi's [GraphQL plugin] (/cms/plugins/graphql). Results can be [filtered](#filters), [sorted](#sorting) and [paginated] (#pagination).
 
-:::prerequisites  
+:::prerequisites
 To use the GraphQL API, install the [GraphQL](/cms/plugins/graphql) plugin:
 
-</Tabs>   
+</Tabs>
 :::
 
 Once installed, the GraphQL playground is accessible at the `/graphql` URL and can be used to interactively build your queries and mutations and read documentation tailored to your content-types:
@@ -3649,7 +3558,7 @@ Once installed, the GraphQL playground is accessible at the `/graphql` URL and c
 
 You can ask to include relation data in your flat queries or in your
 
-</Columns>   
+</Columns>
 </details>
 
 :::
@@ -3690,7 +3599,6 @@ The following example fetches the `label`, `start_date`, and `end_date` attribut
  restaurants {
  closingPeriod {
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 65/232
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
  label
@@ -3706,14 +3614,14 @@ https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.t
 Dynamic zones are union types in GraphQL so you need to use
 
 ```graphql title="Simple examples for membership operators (in, notIn)"
-# in - returns restaurants with category either "pizza" or "burger"
+## in - returns restaurants with category either "pizza" or "burger"
 {
   restaurants(filters: { category: { in: ["pizza", "burger"] } }) {
     name
   }
 }
 
-# notIn - returns restaurants whose category is neither "pizza" nor "burger"
+## notIn - returns restaurants whose category is neither "pizza" nor "burger"
 {
   restaurants(filters: { category: { notIn: ["pizza", "burger"] } }) {
     name
@@ -3722,14 +3630,14 @@ Dynamic zones are union types in GraphQL so you need to use
 ```
 
 ```graphql title="Simple examples for null checks operators (null, notNull)"
-# null - returns restaurants where description is null
+## null - returns restaurants where description is null
 {
   restaurants(filters: { description: { null: true } }) {
     name
   }
 }
 
-# notNull - returns restaurants where description is not null
+## notNull - returns restaurants where description is not null
 {
   restaurants(filters: { description: { notNull: true } }) {
     name
@@ -3738,7 +3646,7 @@ Dynamic zones are union types in GraphQL so you need to use
 ```
 
 ```graphql title="Simple examples for logical operators (and, or, not)"
-# and - both category must be "pizza" AND averagePrice must be < 20
+## and - both category must be "pizza" AND averagePrice must be < 20
 {
  restaurants(filters: {
  and: [
@@ -3750,7 +3658,7 @@ Dynamic zones are union types in GraphQL so you need to use
  }
 }
 
-# or - category is "pizza" OR category is "burger"
+## or - category is "pizza" OR category is "burger"
 {
  restaurants(filters: {
  or: [
@@ -3759,14 +3667,13 @@ Dynamic zones are union types in GraphQL so you need to use
  ]
  }) {
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 66/232
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
  name
  }
 }
 
-# not - category must NOT be "pizza"
+## not - category must NOT be "pizza"
 {
  restaurants(filters: {
  not: { category: { eq: "pizza" } }
@@ -3810,11 +3717,11 @@ To fetch a documents
 
 The `locale` field can be passed to create a localized document
 
-# OpenAPI specification
+## OpenAPI specification
 
-Source: https://docs.strapi.io/cms/api/openapi
+Source: <https://docs.strapi.io/cms/api/openapi>
 
-# OpenAPI specification generation
+## OpenAPI specification generation
 
 Strapi provides a command-line tool to generate
 
@@ -3824,13 +3731,12 @@ You can also path an optional `--output` argument to specify the path and filena
 
 </Tabs>
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 67/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt ### Specification structure and content
 
 The generated OpenAPI specification follows the
 
-<div class="mermaid-download-link">   
- <small>   
+<div class="mermaid-download-link">
+ <small>
  <i class="strapi-icons ph-fill ph-download" style={{color: "inherit;"}}></i>  <a href="/example-openapi-spec.json"download="" target="_blank" title="Click to download a complete OpenAPI 3.1.0 specification file generated with example data extracted from a freshly installed Strapi project">Download an example of a complete specification file</a>  </small>
 
 </div>
@@ -3883,7 +3789,6 @@ This will ensure the Swagger UI display from is not blocked by Strapi's CSP poli
       url: './swagger-spec.json',
       dom_id: '#swagger-ui',
 
-      https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 68/232
       10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
       presets: [
@@ -3902,27 +3807,27 @@ This will ensure the Swagger UI display from is not blocked by Strapi's CSP poli
 
 ![Swagger UI example with Strapi OpenAPI specification](/img/assets/apis/swagger-open-api.png)
 
-# REST API reference
+## REST API reference
 
-Source: https://docs.strapi.io/cms/api/rest
+Source: <https://docs.strapi.io/cms/api/rest>
 
-# REST API reference
+## REST API reference
 
 The REST API allows accessing the [content-types](/cms/backend-customization/models) through API endpoints. Strapi automatically creates [API endpoints](#endpoints) when a content-type is created. [API parameters](/cms/api/rest/parameters) can be used when querying API endpoints to refine the results.
 
 This section of the documentation is for the REST API reference for content-types. We also have [guides](/cms/api/rest/guides/intro) available for specific use cases.
 
-:::prerequisites  
+:::prerequisites
 All content types are private by default and need to be either made public or queries need to be authenticated with the proper permissions. See the [Quick Start Guide](/cms/quick-start#step-4-set roles--permissions), the user guide for the [Users & Permissions feature](/cms/features/users permissions#roles), and [API tokens configuration documentation](/cms/features/api-tokens) for more details.
 
 :::
 
-:::note  
+:::note
 By default, the REST API responses only include top-level fields and does not populate any relations, media fields, components, or dynamic zones. Use the [`populate` parameter](/cms/api/rest/populate select) to populate specific fields. Ensure that the find permission is given to the field(s) for the relation(s) you populate.
 
 :::
 
-:::strapi Strapi Client  
+:::strapi Strapi Client
 The [Strapi Client](/cms/api/client) library simplifies interactions with your Strapi back end, providing a way to fetch, create, update, and delete content.
 
 :::
@@ -3939,7 +3844,6 @@ In the following tables:
 
 - `:singularApiId` refers to the value of the "API ID (Singular)" field of the content-type, - and `:pluralApiId` refers to the value of the "API ID (Plural)" field of the content-type.
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 69/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 These values are defined when creating a content-type in the Content-Type Builder, and can be found while editing a content-type in the admin panel (see [User Guide](/cms/features/content-type builder#creating-content-types)). For instance, by default, for an "Article" content-type:
@@ -3955,18 +3859,18 @@ These values are defined when creating a content-type in the Content-Type Builde
 
 The following endpoint examples are taken from the
 
-</Tabs>   
+</Tabs>
 </details>
 
-:::strapi Upload API  
+:::strapi Upload API
 The Upload package (which powers the [Media Library feature](/cms/features/media-library)) has a specific API accessible through its [`/api/upload` endpoints](/cms/api/rest/upload). :::
 
-:::note  
+:::note
 [Components](/cms/backend-customization/models#components-json) don't have API endpoints. :::
 
 ## Requests
 
-:::strapi Strapi 5 vs. Strapi v4  
+:::strapi Strapi 5 vs. Strapi v4
 Strapi 5's Content API includes 2 major differences with Strapi v4:
 
 - The response format has been flattened, which means attributes are no longer nested in a `data.attributes` object and are directly accessible at the first level of the `data` object (e.g., a content-type's "title" attribute is accessed with `data.title`).
@@ -3979,8 +3883,8 @@ Strapi 5's Content API includes 2 major differences with Strapi v4:
 
 Returns a document by `documentId`.
 
-:::strapi Strapi 5 vs. Strapi v4  
-In Strapi 5, a specific document is reached by its `documentId`.  
+:::strapi Strapi 5 vs. Strapi v4
+In Strapi 5, a specific document is reached by its `documentId`.
 :::
 
 </ApiCall>
@@ -3993,7 +3897,7 @@ If the [Internationalization (i18n) plugin](/cms/features/internationalization) 
 
 (/cms/api/rest/locale#rest-delete).
 
-:::note  
+:::note
 While creating a document, you can define its relations and their order (see [Managing relations through the REST API](/cms/api/rest/relations.md) for more details).
 
 :::
@@ -4002,7 +3906,6 @@ While creating a document, you can define its relations and their order (see [Ma
 
 ### Update a document {#update}
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 70/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 Partially updates a document by `id` and returns its value.
@@ -4025,11 +3928,11 @@ Deletes a document.
 
 </ApiCall>
 
-# Filters
+## Filters
 
-Source: https://docs.strapi.io/cms/api/rest/filters
+Source: <https://docs.strapi.io/cms/api/rest/filters>
 
-# REST API: Filters
+## REST API: Filters
 
 The [REST API](/cms/api/rest) offers the ability to filter results found with its ["Get entries"] (/cms/api/rest#get-all) method.<br/>
 
@@ -4041,7 +3944,7 @@ Using optional Strapi features can provide some more filters:
 
 :::tip
 
-<details>   
+<details>
 <summary>JavaScript query (built with the qs library):</summary>
 
 </ApiCall>
@@ -4050,7 +3953,7 @@ Using optional Strapi features can provide some more filters:
 
 You can use the `$in` filter operator with an array of values to find multiple exact values. <br />
 
-<details>   
+<details>
 <summary>JavaScript query (built with the qs library):</summary>
 
 </ApiCall>
@@ -4063,7 +3966,6 @@ Complex filtering is combining multiple filters using advanced methods such as c
 
 <details>
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 71/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt <summary>JavaScript query (built with the qs library):</summary>
 
 </ApiCall>
@@ -4080,19 +3982,19 @@ Deep filtering is filtering on a relation's fields.
 
 :::
 
-:::caution  
+:::caution
 Querying your API with deep filters may cause performance issues. If one of your deep filtering queries is too slow, we recommend building a custom route with an optimized version of the query. :::
 
-<details>   
+<details>
 <summary>JavaScript query (built with the qs library):</summary>
 
 </ApiCall>
 
-# REST API Guides
+## REST API Guides
 
-Source: https://docs.strapi.io/cms/api/rest/guides/intro
+Source: <https://docs.strapi.io/cms/api/rest/guides/intro>
 
-# REST API Guides
+## REST API Guides
 
 The [REST API reference](/cms/api/rest) documentation is meant to provide a quick reference for all the endpoints and parameters available.
 
@@ -4102,31 +4004,30 @@ The following guides, officially maintained by the Strapi Documentation team, co
 
 ## Additional resources
 
-:::strapi Want to help other users?  
+:::strapi Want to help other users?
 Some of the additional resources listed in this section have been created for Strapi v4 and might not fully work with Strapi 5. If you want to update one of the following articles for Strapi 5, feel free to for the Write for the Community program.
 
 :::
 
 Additional tutorials and guides can be found in the following blog posts:
 
-# Interactive Query Builder
+## Interactive Query Builder
 
-Source: https://docs.strapi.io/cms/api/rest/interactive-query-builder
+Source: <https://docs.strapi.io/cms/api/rest/interactive-query-builder>
 
-# Build your query URL with Strapi's interactive tool
+## Build your query URL with Strapi's interactive tool
 
 A wide range of parameters can be used and combined to query your content with the [REST API] (/cms/api/rest), which can result in long and complex query URLs.
 
 Strapi's codebase uses to parse and stringify nested JavaScript objects. It's recommended to use `qs` directly to generate complex query URLs instead of creating them manually.
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 72/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt You can use the following interactive query builder tool to generate query URLs automatically:
 
 1. Replace the values in the _Endpoint_ and _Endpoint Query Parameters_ fields with content that fits your needs.
 
 2. Click the **Copy to clipboard** button to copy the automatically generated _Query String URL_ which is updated as you type.
 
-:::info Parameters usage  
+:::info Parameters usage
 Please refer to the [REST API parameters table](/cms/api/rest/parameters) and read the corresponding parameters documentation pages to better understand parameters usage.
 
 :::
@@ -4137,12 +4038,12 @@ Please refer to the [REST API parameters table](/cms/api/rest/parameters) and re
 
 <br />
 
-:::note  
+:::note
 The default endpoint path is prefixed with `/api/` and should be kept as-is unless you configured a different API prefix using [the `rest.prefix` API configuration option](/cms/configurations/api). <br/> For instance, to query the `books` collection type using the default API prefix, type `/api/books` in the _Endpoint_ field.
 
 :::
 
-:::caution Disclaimer  
+:::caution Disclaimer
 The `qs` library and the interactive query builder provided on this page:
 
 - might not detect all syntax errors,
@@ -4153,15 +4054,15 @@ Currently, these tools are only provided to transform the JavaScript object in a
 
 :::
 
-# Locale
+## Locale
 
-Source: https://docs.strapi.io/cms/api/rest/locale
+Source: <https://docs.strapi.io/cms/api/rest/locale>
 
-# REST API: `locale`
+## REST API: `locale`
 
 The [Internationalization (i18n) feature](/cms/features/internationalization) adds new abilities to the [REST API](/cms/api/rest).
 
-:::prerequisites  
+:::prerequisites
 To work with API content for a locale, please ensure the locale has been already [added to Strapi in the admin panel](/cms/features/internationalization#settings).
 
 :::
@@ -4180,10 +4081,9 @@ To get a specific document in a given locale, add the `locale` parameter to the 
 
 | Use case | Syntax format and link for more information
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 73/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
-|  
+|
 | -------------------- | ---------------------------------------------------------------------------- ------------------ |
 
 | In a collection type | [`GET /api/content-type-plural-name/document-id?locale=locale-code`](#get one-collection-type) |
@@ -4206,8 +4106,8 @@ To get a specific single type document in a given locale, add the `locale` param
 
 To create a localized document from scratch, send a POST request to the Content API. Depending on whether you want to create it for the default locale or for another locale, you might need to pass the `locale` parameter in the request's body
 
-| Use case | Syntax format and link for more information  
-|  
+| Use case | Syntax format and link for more information
+|
 | ----------------------------- | ------------------------------------------------------------------- -------------------- |
 
 | Create for the default locale | [`POST /api/content-type-plural-name`](#rest-create-default-locale) |
@@ -4233,26 +4133,25 @@ To create a localized entry for a locale different from the default one, add the
 
 Send the `PUT` request to the appropriate URL, adding the `locale=your-locale-code` parameter to the query URL and passing attributes in a `data` object in the request's body:
 
-| Use case | Syntax format and link for more information  
-|  
+| Use case | Syntax format and link for more information
+|
 | -------------------- | ---------------------------------------------------------------------------- ----------- |
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 74/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 | In a collection type | [`PUT /api/content-type-plural-name/document-id?locale=locale-code`](#rest put-collection-type) |
 
 | In a single type | [`PUT /api/content-type-singular-name?locale=locale-code`](#rest-put-single type) |
 
-:::caution  
+:::caution
 When creating a localization for existing localized entries, the body of the request can only accept localized fields.
 
 :::
 
-:::tip  
+:::tip
 The Content-Type should have the [`createLocalization` permission](/cms/features/rbac#collection-and single-types) enabled, otherwise the request will return a `403: Forbidden` status. :::
 
-:::note  
+:::note
 It is not possible to change the locale of an existing localized entry. When updating a localized entry, if you set a `locale` attribute in the request body it will be ignored.
 
 :::
@@ -4285,15 +4184,14 @@ To delete only a specific locale version of a document in a collection type, add
 
 To delete only a specific locale version of a single type document, add the `locale` parameter to the query after the single type name:
 
-# Parameters
+## Parameters
 
-Source: https://docs.strapi.io/cms/api/rest/parameters
+Source: <https://docs.strapi.io/cms/api/rest/parameters>
 
-# REST API parameters
+## REST API parameters
 
 API parameters can be used with the [REST API](/cms/api/rest) to filter, sort, and paginate results and to select fields and relations to populate. Additionally, specific parameters related to optional Strapi features can be used, like the publication state and locale of a content-type.
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 75/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt The following API parameters are available:
 
 | Operator | Type | Description | | ------------------ | ------------- | ----------------------------------------------------- | | `filters` | Object | [Filter the response](/cms/api/rest/filters) | | `locale` | String | [Select a locale](/cms/api/rest/locale) | | `status` | String | [Select the Draft & Publish status](/cms/api/rest/status) | | `populate` | String or Object | [Populate relations, components, or dynamic zones] (/cms/api/rest/populate-select#population) |
@@ -4306,14 +4204,14 @@ https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.t
 
 Query parameters use the (i.e. they are encoded using square brackets `[]`).
 
-:::tip  
+:::tip
 A wide range of REST API parameters can be used and combined to query your content, which can result in long and complex query URLs.<br/>�� You can use Strapi's [interactive query builder] (/cms/api/rest/interactive-query-builder) tool to build query URLs more conveniently. �� :::
 
-# Populate and Select
+## Populate and Select
 
-Source: https://docs.strapi.io/cms/api/rest/populate-select
+Source: <https://docs.strapi.io/cms/api/rest/populate-select>
 
-# REST API: Population & Field Selection
+## REST API: Population & Field Selection
 
 The [REST API](/cms/api/rest) by default does not populate any relations, media fields, components, or dynamic zones. Use the [`populate` parameter](#population) to populate specific fields and the [`select` parameter](#field-selection) to return only specific fields with the query results.
 
@@ -4327,21 +4225,20 @@ The REST API by default does not populate any type of fields, so it will not pop
 
 The `populate` parameter can be used alone or [in combination with with multiple operators] (#combining-population-with-other-operators) to have much more control over the population.
 
-:::caution  
+:::caution
 The `find` permission must be enabled for the content-types that are being populated. If a role doesn't have access to a content-type it will not be populated (see [User Guide](/cms/features/users permissions#editing-a-role) for additional information on how to enable `find` permissions for content-types).
 
 :::
 
-:::note  
-It's currently not possible to return just an array of ids with a request.  
+:::note
+It's currently not possible to return just an array of ids with a request.
 :::
 
 :::strapi Populating guides
 
 The [REST API guides](/cms/api/rest/guides/intro) section includes more detailed information about various possible use cases for the populate parameter:
 
-- The [Understanding populate](/cms/api/rest/guides/understanding-populate) guide explains in details https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 76/232  
-  10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
+10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 how populate works, with diagrams, comparisons, and real-world examples.
 
@@ -4361,15 +4258,15 @@ The following table sums up possible populate use cases and their associated par
 
 (/cms/api/rest/guides/understanding-populate#populate-several-levels-deep-for-specific-relations) | | Populate a component | `populate[0]=component-name`| [Populate components]
 
-(/cms/api/rest/guides/understanding-populate#populate-components) |  
+(/cms/api/rest/guides/understanding-populate#populate-components) |
 | Populate a component and one of its nested components | `populate[0]=component name&populate[1]=component-name.nested-component-name`| [Populate components]
 
-(/cms/api/rest/guides/understanding-populate#populate-components) |  
+(/cms/api/rest/guides/understanding-populate#populate-components) |
 | Populate a dynamic zone (only its first-level elements) | `populate[0]=dynamic-zone-name`| [Populate dynamic zones](/cms/api/rest/guides/understanding-populate#populate-dynamic-zones) | | Populate a dynamic zone and its nested elements and relations, using a precisely defined, detailed population strategy | `populate[dynamic-zone-name][on][component-category.component-name][populate] [relation-name][populate][0]=field-name`| [Populate dynamic zones]
 
 (/cms/api/rest/guides/understanding-populate#populate-dynamic-zones) |
 
-:::tip  
+:::tip
 The easiest way to build complex queries with multiple-level population is to use our [interactive query builder](/cms/api/rest/interactive-query-builder) tool.
 
 :::
@@ -4378,34 +4275,33 @@ The easiest way to build complex queries with multiple-level population is to us
 
 By utilizing the `populate` operator it is possible to combine other operators such as [field selection](/cms/api/rest/populate-select#field-selection), [filters](/cms/api/rest/filters), and [sort](/cms/api/rest/sort-pagination) in the population queries.
 
-:::caution  
-The population and pagination operators cannot be combined.  
+:::caution
+The population and pagination operators cannot be combined.
 :::
 
 #### Populate with field selection
 
 `fields` and `populate` can be combined.
 
-<details>   
-<summary>   
+<details>
+<summary>
 </ApiCall>
 
 #### Populate with filtering
 
 `filters` and `populate` can be combined.
 
-<details>   
-<summary>   
+<details>
+<summary>
 </ApiCall>
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 77/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
-# Relations
+## Relations
 
-Source: https://docs.strapi.io/cms/api/rest/relations
+Source: <https://docs.strapi.io/cms/api/rest/relations>
 
-# Managing relations with API requests
+## Managing relations with API requests
 
 Defining relations between content-types (that are designated as entities in the database layers) is connecting entities with each other.
 
@@ -4421,7 +4317,7 @@ Relations can be connected, disconnected or set through the Content API by passi
 
 | [`set`](#set) | Set entities to a specific set. Using `set` will overwrite all existing connections to other entities.<br /><br />Cannot be used in combination with `connect` or `disconnect`. | Full |
 
-:::note  
+:::note
 When [Internationalization (i18n)](/cms/features/internationalization) is enabled on the content type, you can also pass a locale to set relations for a specific locale, as in this Document Service API example:
 
 ```js
@@ -4436,7 +4332,7 @@ await strapi.documents("api::restaurant.restaurant").update({
 });
 ```
 
-If no locale is passed, the default locale will be assumed.  
+If no locale is passed, the default locale will be assumed.
 :::
 
 ## `connect`
@@ -4453,11 +4349,10 @@ You can also use the longhand syntax to [reorder relations](#relations-reorderin
 
 `connect` can be used in combination with [`disconnect`](#disconnect).
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 78/232  
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
-:::caution  
-`connect` can not be used for media attributes  
+:::caution
+`connect` can not be used for media attributes
 :::
 
 </MultiLanguageSwitcher>
@@ -4466,7 +4361,7 @@ https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.t
 
 </MultiLanguageSwitcher>
 
-</TabItem>   
+</TabItem>
 </Tabs>
 
 ### Relations reordering
@@ -4516,7 +4411,6 @@ data: {
 
 ```js
 
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 79/232
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
 data: {
@@ -4547,7 +4441,7 @@ Using `disconnect` in the body of a request performs a partial update, disconnec
 
 </TabItem>
 
-</TabItem>   
+</TabItem>
 </Tabs>
 
 ## `set`
@@ -4562,7 +4456,7 @@ Using `set` performs a full update, replacing all existing relations with the on
 
 As `set` replaces all existing relations, it should not be used in combination with other parameters. To perform a partial update, use [`connect`](#connect) and [`disconnect`](#disconnect).
 
-:::note Omitting set  
+:::note Omitting set
 Omitting any parameter is equivalent to using `set`.<br/>For instance, the following 3 syntaxes are all equivalent:
 
 - `data: { categories: set: [{ documentId: 'z0y2x4w6v8u1t3s5r7q9onm' }, { documentId: 'j9k8l7m6n5o4p3q2r1s0tuv' }] }}`
@@ -4573,7 +4467,5 @@ Omitting any parameter is equivalent to using `set`.<br/>For instance, the follo
 
 </TabItem>
 
-</TabItem>   
+</TabItem>
 </Tabs>
-
-https://docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt 80/232

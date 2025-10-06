@@ -73,7 +73,7 @@ class Orchestrator:
         logging.warning("Orchestrator: Running deprecated `run_job` method.")
         sheets_client = GoogleSheetsClient()
         published_posts_map = sheets_client.get_all_published_posts()
-        tasks = sheets_client.get_content_queue()
+        tasks = list(sheets_client.get_content_queue())  # Consume the generator
         if not tasks:
             logging.info("No new content tasks found in batch mode.")
             return
