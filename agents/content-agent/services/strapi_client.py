@@ -23,7 +23,9 @@ class StrapiClient:
         self.headers = {
             "Authorization": f"Bearer {self.api_token}",
         }
-        print("Strapi client initialized.")
+        # Add a diagnostic log to confirm which token is being used.
+        token_preview = f"{self.api_token[:5]}...{self.api_token[-4:]}" if self.api_token else "None"
+        logging.info(f"Strapi client initialized. Using token: {token_preview}")
 
     def upload_image(self, file_path: str, alt_text: str, caption: str) -> Optional[int]:
         """
