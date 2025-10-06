@@ -23,7 +23,9 @@ class StrapiClient:
         self.headers = {
             "Authorization": f"Bearer {self.api_token}",
         }
-        print("Strapi client initialized.")
+        # Add a diagnostic log to confirm which token is being used.
+        token_preview = f"{self.api_token[:5]}...{self.api_token[-4:]}" if self.api_token else "None"
+        logging.info(f"Strapi client initialized. Using token: {token_preview}")
 
     def upload_image(self, file_path: str, alt_text: str, caption: str) -> Optional[int]:
         """
@@ -48,6 +50,45 @@ class StrapiClient:
                 return response.json()[0]['id']
         except requests.exceptions.RequestException as e:
             logger.error(f"Error uploading image to Strapi: {e}")
+            return None
+
+    def _make_request(self, method: str, endpoint: str, data: Optional[dict] = None) -> Optional[dict]:
+        """
+        Generic method to make HTTP requests to Strapi API.
+        
+        Args:
+            method (str): HTTP method (GET, POST, PUT, DELETE)
+            endpoint (str): API endpoint (e.g., '/posts', '/categories')
+            data (dict): Data to send with POST/PUT requests
+            
+        Returns:
+            Optional[dict]: JSON response from Strapi API
+        """
+        url = f"{self.api_url}/api{endpoint}"
+        headers = self.headers.copy()
+        
+        try:
+            if method.upper() == 'GET':
+                response = requests.get(url, headers=headers)
+            elif method.upper() == 'POST':
+                headers["Content-Type"] = "application/json"
+                response = requests.post(url, headers=headers, data=json.dumps(data) if data else None)
+            elif method.upper() == 'PUT':
+                headers["Content-Type"] = "application/json"
+                response = requests.put(url, headers=headers, data=json.dumps(data) if data else None)
+            elif method.upper() == 'DELETE':
+                response = requests.delete(url, headers=headers)
+            else:
+                raise ValueError(f"Unsupported HTTP method: {method}")
+                
+            response.raise_for_status()
+            return response.json()
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error making {method} request to {endpoint}: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Response status: {e.response.status_code}")
+                logger.error(f"Response text: {e.response.text}")
             return None
 
     def create_post(self, post_data: StrapiPost) -> Optional[dict]:
@@ -75,7 +116,46 @@ class StrapiClient:
             return response.json()
         except requests.exceptions.RequestException as e:
             logger.error(f"Error creating post in Strapi: {e}")
+            # --- Enhanced Error Logging ---
+            if e.response is not None:
+                logger.error(f"Strapi Response Status Code: {e.response.status_code}")
+                try:
+                    # Try to log the detailed error message from Strapi
+                    strapi_error = e.response.json()
+                    logger.error(f"Strapi Error Details: {json.dumps(strapi_error, indent=2)}")
+                except json.JSONDecodeError:
+                    # If the response isn't JSON, log the raw text
+                    logger.error(f"Strapi Raw Response: {e.response.text}")
+            logger.error(f"Data payload sent to Strapi: {json.dumps(payload, indent=2)}")
+            # --- End Enhanced Error Logging ---
             return None
+
+    def get_all_published_posts(self) -> dict[str, str]:
+        """
+        Fetches all published posts from Strapi to build a map of titles to URLs
+        for internal linking purposes.
+        """
+        try:
+            response = self._make_request(
+                "GET",
+                "/posts?fields[0]=Title&fields[1]=Slug&filters[PostStatus][$eq]=Published"
+            )
+            if not response or "data" not in response:
+                return {}
+
+            published_posts = {}
+            for post in response["data"]:
+                attrs = post.get("attributes", {})
+                title = attrs.get("Title")
+                slug = attrs.get("Slug")
+                if title and slug:
+                    published_posts[title] = f"/posts/{slug}" # Assuming this URL structure
+            
+            logging.info(f"Fetched {len(published_posts)} published posts from Strapi.")
+            return published_posts
+        except Exception as e:
+            logging.error(f"Failed to get published posts from Strapi: {e}")
+            return {}
 
 # Example of how to use the client
 if __name__ == '__main__':
@@ -93,3 +173,7 @@ if __name__ == '__main__':
 
     # Call the create_post method
     strapi_client.create_post(sample_post)
+
+    # Fetch all published posts for internal linking
+    published_posts = strapi_client.get_all_published_posts()
+    print("Published Posts:", published_posts)

@@ -24,45 +24,48 @@ class BlogPost(BaseModel):
     category: str
     refinement_loops: int = Field(default=1)
     sheet_row_index: int
+    task_id: Optional[str] = None # Firestore document ID for the task
 
     # --- Generated Content ---
     generated_title: Optional[str] = None
-    raw_content: Optional[str] = None  # The main Markdown body
+    raw_content: Optional[str] = None  # The main Markdown body from the creative agent
     meta_description: Optional[str] = None
-    related_keywords: List[str] = Field(default_factory=list)
-    internal_links: List[str] = Field(default_factory=list) # Titles of posts to link to
-    external_links: Dict[str, str] = Field(default_factory=dict) # e.g., {"Text": "URL"}
+    keywords: List[str] = Field(default_factory=list) # SEO keywords from CreativeAgent
+    research_data: Optional[str] = None # Raw research data from ResearchAgent
     
-    # --- Image & Asset Management ---
+    # --- Refinement & State Tracking ---
+    qa_feedback: List[str] = Field(default_factory=list)
+    status: str = "New" # Tracks the current state (e.g., "In Progress", "Published", "Failed")
+    
+    # --- Publishing & Finalization ---
     images: List[ImageDetails] = Field(default_factory=list)
-    
-    # --- State & Output ---
-    status: str = "New"
-    rejection_reason: Optional[str] = None
     strapi_post_id: Optional[int] = None
     strapi_url: Optional[str] = None
-    
-    # --- QA & Refinement Tracking ---
-    qa_feedback: List[str] = Field(default_factory=list)
-    
+    rejection_reason: Optional[str] = None # Reason for failing QA or publishing
+
     # --- Internal State ---
-    # Holds a map of {post_title: post_url} for internal linking
+    # Holds a map of {post_title: post_url} for internal linking, excluded from serialization
     published_posts_map: Dict[str, str] = Field(default_factory=dict, exclude=True)
+
 
 class StrapiPost(BaseModel):
     """
     Pydantic model representing the final structure for the Strapi API call.
+    Includes all the new content type relationships and fields.
     """
     Title: str
     Slug: str
     BodyContent: List[Dict]
-    PostStatus: str = "draft"
+    PostStatus: str = "Draft"  # Corrected to capitalized "Draft"
     Keywords: Optional[str] = None
     MetaDescription: Optional[str] = None
-    FeaturedImage: Optional[int] = None # Will be the ID of the uploaded image
-    ImageAltText: Optional[str] = None
-    Author: Optional[str] = "Glad Labs Content Agent"
+    FeaturedImage: Optional[int] = None
+    ReadingTime: Optional[int] = None
+    Excerpt: Optional[str] = None
+    author: Optional[int] = None  # Author relationship ID
+    category: Optional[int] = None  # Category relationship ID
+    tags: Optional[List[int]] = None  # Tag relationship IDs
 
-    class Config:
-        allow_population_by_field_name = False
-        populate_by_name = True
+    model_config = {
+        "populate_by_name": True
+    }

@@ -1,0 +1,25 @@
+{
+  "name": "glad-labs-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Monorepo for the GLAD Labs project, containing all services and applications.",
+  "license": "MIT",
+  "author": "Matthew M. Gladding (Glad Labs, LLC)",
+  "workspaces": [
+    "agents/*",
+    "cms/*",
+    "cloud-functions/*",
+    "web/*"
+  ],
+  "scripts": {
+    "bootstrap": "npm install",
+    "start:all": "concurrently \"npm:start:strapi\" \"npm:start:oversight\" \"npm:start:public\"",
+    "start:oversight": "npm start --workspace=oversight-hub",
+    "start:public": "npm run dev --workspace=glad-labs-public-site -- --port 3002",
+    "start:strapi": "cd cms/strapi-backend && cross-env NODE_OPTIONS=\"--no-warnings\" npm run develop"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0"
+  }
+}

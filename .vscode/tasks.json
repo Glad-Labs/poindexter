@@ -2,34 +2,59 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Start Strapi Dev Server",
+      "label": "BE: Start Python Agent Listener",
       "type": "shell",
-      "command": "npm run develop",
-      "options": {
-        // IMPORTANT: Update this path to your actual Strapi project directory
-        "cwd": "${workspaceFolder}/cms/strapi-backend" 
-      },
+      "command": "cd ${workspaceFolder}/agents/content-agent; ./.venv/Scripts/Activate.ps1; python orchestrator.py",
       "presentation": {
-        "group": "dev",
         "panel": "new",
         "reveal": "always"
       },
-      "runOptions": {
-        "runOn": "folderOpen"
-      }
+      "isBackground": true,
+      "problemMatcher": ["$python"]
     },
     {
-      "label": "Open Agent Terminal",
+      "label": "FE: Start Oversight Hub",
       "type": "shell",
-      "command": "echo 'Python agent terminal ready. Environment activated.'",
-      "options": {
-        "cwd": "${workspaceFolder}/agents/content-agent"
-      },
-      "presentation": { 
-        "group": "dev",
+      "command": "npm start --workspace=oversight-hub",
+      "presentation": {
         "panel": "new",
         "reveal": "always"
       },
+      "isBackground": true,
+      "problemMatcher": ["$jshint"]
+    },
+    {
+      "label": "FE: Start Public Site",
+      "type": "shell",
+      "command": "npm run dev --workspace=glad-labs-public-site",
+      "presentation": {
+        "panel": "new",
+        "reveal": "always"
+      },
+      "isBackground": true,
+      "problemMatcher": ["$jshint"]
+    },
+    {
+      "label": "BE: Start Strapi",
+      "type": "shell",
+      "command": "npm run develop --workspace=strapi-backend",
+      "presentation": {
+        "panel": "new",
+        "reveal": "always"
+      },
+      "isBackground": true,
+      "problemMatcher": []
+    }
+  ],
+  "compounds": [
+    {
+      "label": "Start All Services",
+      "tasks": [
+        "BE: Start Strapi",
+        "BE: Start Python Agent Listener",
+        "FE: Start Oversight Hub",
+        "FE: Start Public Site"
+      ],
       "runOptions": {
         "runOn": "folderOpen"
       }

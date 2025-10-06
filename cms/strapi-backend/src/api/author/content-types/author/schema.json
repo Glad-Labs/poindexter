@@ -1,0 +1,32 @@
+{
+  "kind": "collectionType",
+  "collectionName": "authors",
+  "info": {
+    "singularName": "author",
+    "pluralName": "authors",
+    "displayName": "Author",
+    "description": "Represents content authors, including AI agents and human writers for the GLAD Labs content engine."
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "Name": {
+      "type": "string",
+      "required": true,
+      "unique": true,
+      "description": "Full name of the author (e.g., 'Matthew M. Gladding' or 'Content Agent v1.2')"
+    },
+    "Bio": {
+      "type": "text",
+      "description": "A brief biography or description of the author, suitable for display on author pages."
+    },
+    "posts": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::post.post",
+      "mappedBy": "author"
+    }
+  }
+}

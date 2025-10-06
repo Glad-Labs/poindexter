@@ -1,41 +1,40 @@
 {
-  "name": "glad-labs-cms",
-  "version": "0.1.0",
+  "name": "strapi-backend",
   "private": true,
+  "version": "0.1.0",
   "description": "A Strapi application",
   "scripts": {
-    "build": "strapi build",
-    "console": "strapi console",
-    "deploy": "strapi deploy",
-    "dev": "strapi develop",
     "develop": "strapi develop",
     "start": "strapi start",
-    "strapi": "strapi",
-    "upgrade": "npx @strapi/upgrade latest",
-    "upgrade:dry": "npx @strapi/upgrade latest --dry"
+    "build": "strapi build",
+    "strapi": "strapi"
   },
   "dependencies": {
-    "@strapi/plugin-cloud": "5.24.1",
-    "@strapi/plugin-users-permissions": "5.24.1",
-    "@strapi/strapi": "5.24.1",
-    "better-sqlite3": "11.3.0",
-    "react": "^18.0.0",
-    "react-dom": "^18.0.0",
-    "react-router-dom": "^6.0.0",
-    "styled-components": "^6.0.0"
+    "@strapi/plugin-documentation": "4.15.0",
+    "@strapi/plugin-graphql": "4.15.0",
+    "@strapi/plugin-i18n": "4.15.0",
+    "@strapi/plugin-users-permissions": "4.15.0",
+    "@strapi/strapi": "4.15.0",
+    "better-sqlite3": "8.6.0",
+    "node-fetch": "^2.7.0",
+    "pg": "8.12.0",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "react-router-dom": "5.3.4",
+    "styled-components": "5.3.3"
   },
-  "devDependencies": {
-    "@types/node": "^20",
-    "@types/react": "^18",
-    "@types/react-dom": "^18",
-    "typescript": "^5"
-  },
-  "engines": {
-    "node": ">=18.0.0 <=22.x.x",
-    "npm": ">=6.0.0"
+  "author": {
+    "name": "A Strapi developer"
   },
   "strapi": {
-    "uuid": "6e37fe02-6d79-4ef5-8c38-0f74ddb2dfe6",
-    "installId": "339e5afd2335924004723a04667de04af02ec0523abd49289610df3054fa0657"
+    "uuid": "a9e5ee6a-4514-4253-8317-333f088277a3"
+  },
+  "engines": {
+    "node": ">=18.0.0 <=20.x.x",
+    "npm": ">=6.0.0"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/minimatch": "^6.0.0"
   }
 }

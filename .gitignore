@@ -18,6 +18,59 @@ Thumbs.db
 
 # Node.js
 node_modules/
+npm-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.eggs/
+*.egg-info/
+*.egg
+
+# Strapi
+cms/strapi-backend/.cache/
+cms/strapi-backend/build/
+cms/strapi-backend/database/
+cms/strapi-backend/types/
+cms/strapi-backend/src/admin/
+cms/strapi-backend/src/api/
+cms/strapi-backend/src/components/
+cms/strapi-backend/src/extensions/
+cms/strapi-backend/src/policies/
+cms/strapi-backend/src/middlewares/
+cms/strapi-backend/src/bootstrap.js
+cms/strapi-backend/src/index.js
+cms/strapi-backend/src/register.js
+cms/strapi-backend/src/destroy.js
+# Ignore generated Strapi documentation
+cms/strapi-backend/src/extensions/documentation/documentation/
+
+# Next.js
+.next/
+out/
+
+# General
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+credentials.json
+*.log
+
+# Node.js
+node_modules/
 npm-debug.log
 yarn-error.log
 .env

@@ -12,12 +12,16 @@ class QAAgent:
         self.llm_client = llm_client
         self.prompts = load_prompts_from_file(config.PROMPTS_PATH)
 
-    def review_content(self, post: BlogPost) -> tuple[bool, str]:
+    def run(self, post: BlogPost, previous_content: str) -> tuple[bool, str]:
         """
-        Reviews the content against the quality rubric.
+        Reviews the content against the quality rubric. This method is designed
+        to be called within the iterative refinement loop of the orchestrator.
 
         Args:
-            post (BlogPost): The blog post to review.
+            post (BlogPost): The blog post object containing all context.
+            previous_content (str): The specific version of the content to be reviewed.
+                                    In the future, this could be used to compare versions,
+                                    but for now, it's the current draft.
 
         Returns:
             tuple[bool, str]: A tuple containing the approval status (boolean)
@@ -26,7 +30,7 @@ class QAAgent:
         logger.info(f"QAAgent: Reviewing content for '{post.topic}'.")
         
         prompt = self.prompts['qa_review'].format(
-            draft=post.raw_content,
+            draft=previous_content, # Use the passed-in content for review
             target_audience=post.target_audience,
             primary_keyword=post.primary_keyword
         )

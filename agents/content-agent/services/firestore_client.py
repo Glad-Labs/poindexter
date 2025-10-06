@@ -3,7 +3,7 @@ import logging
 from google.cloud import firestore
 from datetime import datetime
 from config import config
-from typing import Optional
+from typing import Optional, Any
 
 class FirestoreClient:
     """
@@ -15,7 +15,76 @@ class FirestoreClient:
         """
         self.db = firestore.Client(project=config.GCP_PROJECT_ID)
         self.collection_name = config.FIRESTORE_COLLECTION
+        self.run_collection_name = "agent_runs"  # New collection for logging runs
         logging.info("Firestore client initialized.")
+
+    def log_run(self, task_id: str, topic: str, status: str = "Starting") -> str:
+        """
+        Logs the start of a new agent run and returns the Firestore document ID.
+
+        Args:
+            task_id (str): The Firestore document ID of the task.
+            topic (str): The topic of the blog post.
+            status (str): The initial status of the run.
+
+        Returns:
+            str: The unique ID of the Firestore document for this run.
+        """
+        try:
+            run_data = {
+                "task_id": task_id,
+                "topic": topic,
+                "status": status,
+                "startedAt": datetime.utcnow(),
+                "updatedAt": datetime.utcnow(),
+                "history": [{
+                    "timestamp": datetime.utcnow(),
+                    "status": "Run Started"
+                }]
+            }
+            doc_ref = self.db.collection(self.run_collection_name).add(run_data)
+            run_id = doc_ref[1].id
+            logging.info(f"Started and logged new run with ID: {run_id}")
+            return run_id
+        except Exception as e:
+            logging.error(f"Failed to log new agent run: {e}")
+            raise
+
+    def update_run(self, run_id: str, status: Optional[str] = None, post_data: Optional[dict] = None):
+        """
+        Updates the status and other details of an ongoing agent run.
+
+        Args:
+            run_id (str): The Firestore document ID of the run.
+            status (str, optional): The new status to set.
+            post_data (dict, optional): A dictionary of post-related data to merge.
+        """
+        if not run_id:
+            logging.warning("Update_run called with no run_id. Skipping Firestore update.")
+            return
+            
+        try:
+            doc_ref = self.db.collection(self.run_collection_name).document(run_id)
+            update_data: dict[str, Any] = {
+                "updatedAt": datetime.utcnow()
+            }
+            if status:
+                update_data["status"] = status
+                # Add a history entry for the status change
+                update_data["history"] = firestore.ArrayUnion([{
+                    "timestamp": datetime.utcnow(),
+                    "status": status
+                }])
+
+            if post_data:
+                # Merge the post data into the document
+                for key, value in post_data.items():
+                    update_data[key] = value
+
+            doc_ref.set(update_data, merge=True)
+            logging.info(f"Updated Firestore run document '{run_id}' with status '{status}'.")
+        except Exception as e:
+            logging.error(f"Failed to update Firestore run document '{run_id}': {e}")
 
     def update_document(self, document_id: str, data: dict):
         """
@@ -35,52 +104,35 @@ class FirestoreClient:
         except Exception as e:
             logging.error(f"Failed to update Firestore document '{document_id}': {e}")
 
-    def create_task(self, task_name: str, agent_id: str, priority: int = 3) -> Optional[str]:
+    def get_content_queue(self) -> list[dict]:
         """
-        Creates a new task document in the 'tasks' collection.
-
-        Args:
-            task_name (str): A descriptive name for the task.
-            agent_id (str): The ID of the agent assigned to this task.
-            priority (int): The priority of the task (1-5).
-
-        Returns:
-            Optional[str]: The ID of the newly created task document, or None on failure.
+        Fetches all tasks from the 'tasks' collection with the status 'New'.
         """
         try:
-            tasks_ref = self.db.collection('tasks')
-            task_data = {
-                "agentId": agent_id,
-                "taskName": task_name,
-                "status": "queued",
-                "createdAt": datetime.utcnow(),
-                "updatedAt": datetime.utcnow(),
-                "metadata": {
-                    "priority": priority,
-                    "relatedContentId": None
-                }
-            }
-            # Add a new doc with an auto-generated ID
-            update_time, task_ref = tasks_ref.add(task_data)
-            print(f"Created new task with ID: {task_ref.id}")
-            return task_ref.id
+            tasks_ref = self.db.collection("tasks").where("status", "==", "New")
+            docs = tasks_ref.stream()
+            tasks = [{"id": doc.id, **doc.to_dict()} for doc in docs]
+            logging.info(f"Found {len(tasks)} tasks in the content queue.")
+            return tasks
         except Exception as e:
-            print(f"Error creating task in Firestore: {e}")
-            return None
+            logging.error(f"Failed to get content queue from Firestore: {e}")
+            return []
 
-    def update_task_status(self, task_id: str, status: str):
+    def update_task_status(self, task_id: str, status: str, url: Optional[str] = None, error_message: Optional[str] = None):
         """
-        Updates the status of a specific task document.
-        This is now a convenience wrapper around update_document.
+        Updates the status of a specific task in the 'tasks' collection.
         """
-        self.update_document(task_id, {"status": status})
-
-# Example of how to use the client
-if __name__ == '__main__':
-    # This block is for testing purposes.
-    # It now relies on the config object, which checks for the env var.
-    fs_client = FirestoreClient()
-    task_id = fs_client.create_task("Generate initial content brief", "creative-agent-v1")
-    if task_id:
-        fs_client.update_task_status(task_id, "in_progress")
-        fs_client.update_task_status(task_id, "completed")
+        try:
+            task_ref = self.db.collection("tasks").document(task_id)
+            update_data = {
+                "status": status,
+                "updatedAt": datetime.utcnow()
+            }
+            if url:
+                update_data["url"] = url
+            if error_message:
+                update_data["error_message"] = error_message
+            task_ref.update(update_data)
+            logging.info(f"Updated task '{task_id}' to status '{status}'.")
+        except Exception as e:
+            logging.error(f"Failed to update task status for '{task_id}': {e}")
