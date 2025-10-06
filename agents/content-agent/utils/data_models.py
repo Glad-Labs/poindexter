@@ -23,7 +23,7 @@ class BlogPost(BaseModel):
     target_audience: str
     category: str
     refinement_loops: int = Field(default=1)
-    sheet_row_index: int
+    sheet_row_index: Optional[int] = None  # Make sheet_row_index optional
     task_id: Optional[str] = None # Firestore document ID for the task
 
     # --- Generated Content ---
