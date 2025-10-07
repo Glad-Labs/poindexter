@@ -1,6 +1,7 @@
 import logging
 from agents.content_agent.services.firestore_client import FirestoreClient
 from agents.content_agent.services.llm_client import LLMClient
+from agents.financial_agent.agent import FinancialAgent
 # In the future, we will add a PubSubClient to delegate tasks
 # from agents.content_agent.services.pubsub_client import PubSubClient
 
@@ -12,6 +13,7 @@ class Orchestrator:
     def __init__(self):
         self.firestore_client = FirestoreClient()
         self.llm_client = LLMClient()
+        self.financial_agent = FinancialAgent()
         # self.pubsub_client = PubSubClient(...)
         logging.info("Orchestrator Agent logic initialized.")
 
@@ -26,6 +28,8 @@ class Orchestrator:
             return self.get_content_calendar()
         elif "create task" in command or "new post" in command:
             return self.create_content_task(command)
+        elif "financial" in command or "balance" in command or "spend" in command:
+            return self.financial_agent.get_financial_summary()
         # Add more intents here in the future
         # elif "run agent" in command:
         #     return self.execute_content_pipeline()
