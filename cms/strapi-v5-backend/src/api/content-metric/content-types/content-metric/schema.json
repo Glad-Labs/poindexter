@@ -1,0 +1,34 @@
+{
+  "kind": "collectionType",
+  "collectionName": "content-metrics",
+  "info": {
+    "singularName": "content-metric",
+    "pluralName": "content-metrics",
+    "displayName": "Content Metric"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {
+    "i18n": {
+      "localized": false
+    }
+  },
+  "attributes": {
+    "views": {
+      "type": "integer"
+    },
+    "shares": {
+      "type": "integer"
+    },
+    "likes": {
+      "type": "integer"
+    },
+    "post": {
+      "type": "relation",
+      "relation": "oneToOne",
+      "target": "api::post.post",
+      "mappedBy": "metrics"
+    }
+  }
+}
