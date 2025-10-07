@@ -1,5 +1,5 @@
 module.exports = {
-  'graphql': {
+  graphql: {
     enabled: true,
   },
 };

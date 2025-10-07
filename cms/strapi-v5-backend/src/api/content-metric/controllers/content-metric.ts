@@ -2,6 +2,8 @@
  * content-metric controller
  */
 
-import { factories } from '@strapi/strapi'
+import { factories } from '@strapi/strapi';
 
-export default factories.createCoreController('api::content-metric.content-metric');
+export default factories.createCoreController(
+  'api::content-metric.content-metric'
+);

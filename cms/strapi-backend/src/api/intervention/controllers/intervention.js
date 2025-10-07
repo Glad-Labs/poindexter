@@ -23,8 +23,11 @@ module.exports = {
       ctx.body = { success: true, message: 'Intervention signal sent.' };
     } catch (error) {
       strapi.log.error('Failed to send intervention signal:', error);
-      ctx.body = { success: false, message: 'Error sending intervention signal.' };
+      ctx.body = {
+        success: false,
+        message: 'Error sending intervention signal.',
+      };
       ctx.status = 500;
     }
-  }
+  },
 };

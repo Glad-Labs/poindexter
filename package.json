@@ -17,6 +17,7 @@
     "start:oversight": "cross-env PORT=3003 npm start --workspace=oversight-hub",
     "start:public": "wait-on http://localhost:1337/admin && npm run dev --workspace=glad-labs-public-site -- --port 3002",
     "start:strapi": "cd cms/strapi-v5-backend && cross-env NODE_OPTIONS=\"--no-warnings\" npm run develop",
+    "start:orchestrator": "cd agents/orchestrator && ../content-agent/.venv/Scripts/Activate.ps1 && uvicorn main:app --reload --port 8000",
     "format": "prettier --write . && npm run format:py",
     "format:py": "C:/Users/mattm/glad-labs-website/agents/content-agent/.venv/Scripts/python.exe -m black agents/content-agent",
     "lint:md": "markdownlint \"**/*.md\" --ignore node_modules",

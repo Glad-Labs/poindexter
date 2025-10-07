@@ -1,1 +1,4 @@
-module.exports = require('@strapi/strapi').factories.createCoreController('api::author.author'); 
+module.exports =
+  require('@strapi/strapi').factories.createCoreController(
+    'api::author.author'
+  );

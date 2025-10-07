@@ -1,1 +1,2 @@
-module.exports = require('@strapi/strapi').factories.createCoreRouter('api::author.author'); 
+module.exports =
+  require('@strapi/strapi').factories.createCoreRouter('api::author.author');

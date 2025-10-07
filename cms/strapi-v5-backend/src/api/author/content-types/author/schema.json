@@ -22,9 +22,7 @@
     "picture": {
       "type": "media",
       "multiple": false,
-      "allowedTypes": [
-        "images"
-      ]
+      "allowedTypes": ["images"]
     },
     "user": {
       "type": "relation",

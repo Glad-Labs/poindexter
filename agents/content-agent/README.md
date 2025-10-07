@@ -11,6 +11,7 @@ The system is orchestrated by `orchestrator.py`, which listens for messages on a
 - **`orchestrator.py`**: The main control unit. It initializes the agent crew and kicks off the content generation process upon receiving a trigger.
 
 - **Specialized Agents (`agents/`)**: A crew of AI agents, each with a specific role in the content creation pipeline.
+
   - **`CreativeAgent`**: Generates the core text content and identifies strategic opportunities for images.
   - **`ImageAgent`**: Creates relevant images based on prompts from the `CreativeAgent`.
   - **`EditingAgent`**: Cleans, formats, and refines the generated content, ensuring it adheres to brand tone and style guidelines.
@@ -18,6 +19,7 @@ The system is orchestrated by `orchestrator.py`, which listens for messages on a
   - **`PublishingAgent`**: Publishes the final, approved content and images to the Strapi CMS.
 
 - **Services (`services/`)**: Client classes that handle all communication with external APIs and platforms.
+
   - **`firestore_client.py`**: Logs task status, errors, and performance metrics to Google Cloud Firestore.
   - **`llm_client.py`**: Communicates with the chosen Large Language Model API (e.g., Google Gemini).
   - **`image_gen_client.py`**: Communicates with an image generation model (e.g., Stable Diffusion, Pexels API).

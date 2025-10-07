@@ -1,1 +1,2 @@
-module.exports = require('@strapi/strapi').factories.createCoreService('api::tag.tag'); 
+module.exports =
+  require('@strapi/strapi').factories.createCoreService('api::tag.tag');
