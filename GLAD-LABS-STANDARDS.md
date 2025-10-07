@@ -1,4 +1,4 @@
-# **GLAD LABS: AI FRONTIER FIRM MASTER PLAN V3.0**
+# **GLAD LABS: AI FRONTIER FIRM MASTER PLAN V4.0**
 
 **Project Name:** Glad Labs, LLC  
 **Owner/Manager:** Matthew M. Gladding
@@ -9,7 +9,7 @@
 
 ### **1. Core Mission & Vision**
 
-To operate the most efficient, automated, solo-founded digital firm, demonstrating a scalable model for the future of specialized business by fusing high-quality content creation with an intelligent, conversational **AI Business Assistant** that manages all operations.
+To operate the most efficient, automated, solo-founded digital firm, demonstrating a scalable model for the future of specialized business by fusing high-quality content creation with an intelligent, conversational **AI Co-Founder** that manages all operations.
 
 ### **2. Strategic Pillars & Brand**
 
@@ -27,50 +27,52 @@ To operate the most efficient, automated, solo-founded digital firm, demonstrati
 
 ### **3. System Architecture (The Google-Native Stack)**
 
-The entire system is built on a monorepo structure, with a central Orchestrator Agent managing a fleet of specialized, serverless agents.
+The entire system is built on a monorepo structure, with a central **Co-Founder Agent** managing a fleet of specialized, serverless agents.
 
-| Component                | Technology                         | Best Practice & Rationale                                                                                               |
-| :----------------------- | :--------------------------------- | :---------------------------------------------------------------------------------------------------------------------- |
-| **Monorepo**             | **GitLab (glad-labs-website)**     | Centralizes all code (Agents, CMS, Web) using isolated dependency files per project.                                    |
-| **Orchestrator Agent**   | **Python (LangChain/CrewAI)**      | **The AI Business Assistant.** The central brain of the firm. Manages agents and exposes a conversational API.          |
-| **Specialized Agents**   | **Python on Google Cloud Run**     | **Serverless & Scalable.** Provides auto-scaling and minimal cost (pay-per-use) for all agent containers.               |
-| **Content Storage**      | **Strapi v4 (v5 Upgrade Planned)** | **API-First & Structured.** A robust, queryable database for all content. Runs locally for dev, containerized for prod. |
-| **Operational Database** | **Google Cloud Firestore**         | **Real-Time Data.** The primary database for the Orchestrator. Stores tasks, logs, and financials.                      |
-| **Frontend (Oversight)** | **React (CRA) on Vercel/Netlify**  | **Conversational Command Center.** A dual-pane UI with a Data Pane for real-time data and a Command Pane for chat.      |
-| **Frontend (Public)**    | **Next.js on Vercel/Netlify**      | **High Performance & SEO.** Enables **Static Site Generation (SSG)** for a fast, SEO-friendly public blog.              |
-| **Agent Communication**  | **Google Cloud Pub/Sub**           | **Asynchronous Command Bus.** The nervous system. The Orchestrator uses it to dispatch tasks to specialized agents.     |
+| Component                | Technology                        | Best Practice & Rationale                                                                                               |
+| :----------------------- | :-------------------------------- | :---------------------------------------------------------------------------------------------------------------------- |
+| **Monorepo**             | **GitLab (glad-labs-website)**    | Centralizes all code (Agents, CMS, Web) using isolated dependency files per project.                                    |
+| **Co-Founder Agent**     | **Python (FastAPI/Uvicorn)**      | **The AI Business Assistant.** The central brain of the firm. Manages agents and exposes a conversational API.          |
+| **Specialized Agents**   | **Python on Google Cloud Run**    | **Serverless & Scalable.** Provides auto-scaling and minimal cost (pay-per-use) for all agent containers.               |
+| **Content Storage**      | **Strapi v5**                     | **API-First & Structured.** A robust, queryable database for all content. Runs locally for dev, containerized for prod. |
+| **Operational Database** | **Google Cloud Firestore**        | **Real-Time Data.** The primary database for the Co-Founder. Stores tasks, logs, and financials.                        |
+| **Frontend (Oversight)** | **React (CRA) on Vercel/Netlify** | **Conversational Command Center.** A dual-pane UI with a Data Pane for real-time data and a Command Pane for chat.      |
+| **Frontend (Public)**    | **Next.js on Vercel/Netlify**     | **High Performance & SEO.** Enables **Static Site Generation (SSG)** for a fast, SEO-friendly public blog.              |
+| **Agent Communication**  | **Google Cloud Pub/Sub**          | **Asynchronous Command Bus.** The nervous system. The Co-Founder uses it to dispatch tasks to specialized agents.       |
 
 ### **4. Project Structure & Codebases**
 
-- **/agents/orchestrator/**: (New) The central AI Business Assistant.
+- **/cofounder_agent/**: The central AI Business Assistant.
 - **/agents/content-agent/**: The specialized agent responsible for content generation.
-- **/cms/strapi-backend/**: The Strapi v4 application, serving as the headless CMS.
-- **/web/oversight-hub/**: The React dashboard for monitoring and controlling the Orchestrator.
+- **/cms/strapi-v5-backend/**: The Strapi v5 application, serving as the headless CMS.
+- **/web/oversight-hub/**: The React dashboard for monitoring and controlling the Co-Founder.
 - **/web/public-site/**: The public-facing Next.js website and blog.
 - **/cloud-functions/**: Lightweight, serverless functions for specific triggers.
 
 ---
 
-## **Part III: Execution & Operations**
+## **Part III: Feature Roadmap & Milestones**
 
-### **5. Development Roadmap (Path to Full Automation)**
+### **5. Existing Features (Current State)**
 
-| Phase                                     | Timeline     | Primary Focus                        | Key Milestones                                                                                                                 |
-| :---------------------------------------- | :----------- | :----------------------------------- | :----------------------------------------------------------------------------------------------------------------------------- |
-| **Phase I: Foundation & Core Automation** | **Complete** | **Establish Core Pipeline**          | **✓** Core services established. **✓** Firestore schemas defined. **✓** Content Agent MVP developed. **✓** Hub v1 implemented. |
-| **Phase II: The Command Center**          | **Complete** | **Build the Conversational UI**      | **✓** Orchestrator API developed. **✓** Dual-pane UI implemented. **✓** Chat integrated with Orchestrator.                     |
-| **Phase III: Financial Integration**      | **Complete** | **Automate Financial Oversight**     | **✓** Financial Agent developed. **✓** Mercury Bank & GCP Billing integrated. **✓** Orchestrator handles financial queries.    |
-| **Phase IV: Market Intelligence**         | **Complete** | **Enable Proactive Strategy**        | **✓** Market Insight Agent developed. **✓** Trend APIs integrated. **✓** Orchestrator provides topic suggestions.              |
-| **Phase V: Full Autonomy & Monetization** | **Complete** | **Achieve Full Business Automation** | **✓** Compliance Agent developed. **✓** Full conversational control achieved. **✓** System packaged for SaaS.                  |
+| Feature                             | Status     | Description                                                                                             |
+| :---------------------------------- | :--------- | :------------------------------------------------------------------------------------------------------ |
+| **Monorepo Structure**              | **✓ Done** | All services (agents, CMS, web) are managed in a single repository with isolated dependencies.          |
+| **Strapi v5 CMS**                   | **✓ Done** | The content backend has been successfully migrated to Strapi v5, running on a clean, stable foundation. |
+| **Oversight Hub UI**                | **✓ Done** | A functional React-based dashboard for monitoring and interacting with the AI agents.                   |
+| **Public Next.js Site**             | **✓ Done** | A statically generated public blog that fetches and displays content from the Strapi REST API.          |
+| **Co-Founder Agent (Orchestrator)** | **✓ Done** | The central Python agent is refactored and can be started, ready to manage other agents.                |
+| **Content Agent (Basic)**           | **✓ Done** | A foundational agent for content-related tasks exists.                                                  |
+| **Financial Agent (Stub)**          | **✓ Done** | A placeholder agent for financial tasks is in place.                                                    |
+| **Market Insight Agent (Stub)**     | **✓ Done** | A placeholder agent for market analysis is in place.                                                    |
+| **Compliance Agent (Stub)**         | **✓ Done** | A placeholder agent for code and security compliance is in place.                                       |
 
-### **6. The Orchestrator Protocol & Agent Roles**
+### **6. Future Milestones & Feature Enhancements**
 
-The Orchestrator Agent is the single point of contact for all operations. The user interacts with it via the chat interface in the Oversight Hub. The Orchestrator then delegates tasks to the appropriate specialized agent.
+This roadmap outlines the path to achieving full, autonomous operation.
 
-**Example Conversational Workflow:**
+- **Orchestrator Action:** Queries Firestore and displays the relevant tasks in the Data Pane.
 
-1. **User:** `"Show me the content calendar for next month."`
-   - **Orchestrator Action:** Queries Firestore and displays the relevant tasks in the Data Pane.
 2. **User:** `"Suggest three new topics about AI in game design."`
    - **Orchestrator Action:** Dispatches a job to the **Market Insight Agent**. The agent performs its analysis and returns the results. The Orchestrator presents the suggestions in the chat.
 3. **User:** `"I like option 2. Flesh it out for a technical audience, target keyword 'procedural generation', and schedule it for next Friday."`

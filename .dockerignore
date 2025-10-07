@@ -1,0 +1,29 @@
+# Git
+.git
+.gitignore
+
+# Node
+**/node_modules
+**/.next
+npm-debug.log
+
+# Python
+**/__pycache__
+**/.venv
+**/*.pyc
+
+# Strapi
+.tmp
+.cache
+build/
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Development
+.vscode
+README.md
+.dockerignore
+Dockerfile
