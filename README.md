@@ -1,32 +1,17 @@
 # GLAD Labs Monorepo
 
-This repository contains the complete codebase for the GLAD Labs digital firm, encompassing a headless CMS, a public-facing website, a real-time oversight dashboard, and a sophisticated AI content generation agent.
+This repository contains the complete codebase for the GLAD Labs digital firm, encompassing a headless CMS, a public-facing website, a real-time oversight dashboard, and a sophisticated AI agent system managed by a central AI Co-Founder.
 
 ## 🚀 System Architecture
 
 The system is designed as a decoupled, microservice-oriented architecture, enabling independent development and scaling of each component.
 
-| Service           | Technology    | Port | URL                     | Description                                                   |
-| ----------------- | ------------- | ---- | ----------------------- | ------------------------------------------------------------- |
-| **Strapi CMS**    | Strapi v4     | 1337 | <http://localhost:1337> | Headless CMS for all content.                                 |
-| **Oversight Hub** | React         | 3001 | <http://localhost:3001> | Real-time dashboard for monitoring and managing the AI agent. |
-| **Public Site**   | Next.js       | 3002 | <http://localhost:3002> | The public-facing website that consumes content from Strapi.  |
-| **Content Agent** | Python/CrewAI | N/A  | (Runs in terminal)      | The AI agent responsible for the entire content lifecycle.    |
-
----
-
-## Workflow: Content Generation
-
-```mermaid
-graph TD
-    A[Oversight Hub] -->|1. User creates new task| B(Firestore 'tasks' Collection);
-    B -->|2. Status: 'New'| C{Content Agent};
-    C -->|3. Polls for new tasks| B;
-    C -->|4. Process Task| D[Research, Writing, QA, Imaging];
-    D -->|5. Update Status & Log Run| B;
-    D -->|6. Publish Article| E[Strapi CMS];
-    E -->|7. Fetch Content| F[Public Site];
-```
+| Service              | Technology     | Port | URL                     | Description                                                    |
+| -------------------- | -------------- | ---- | ----------------------- | -------------------------------------------------------------- |
+| **Strapi CMS**       | Strapi v5      | 1337 | <http://localhost:1337> | Headless CMS for all content.                                  |
+| **Oversight Hub**    | React          | 3001 | <http://localhost:3001> | Real-time dashboard for monitoring and managing the AI agents. |
+| **Public Site**      | Next.js        | 3002 | <http://localhost:3002> | The public-facing website that consumes content from Strapi.   |
+| **Co-Founder Agent** | Python/FastAPI | 8000 | <http://localhost:8000> | The central "big brain" AI that manages all other agents.      |
 
 ---
 
@@ -34,7 +19,7 @@ graph TD
 
 ### Prerequisites
 
-- **Node.js**: Version `20.11.1` is required. Use `nvm` to manage versions (`nvm use`).
+- **Node.js**: Version `20.11.1` or higher is recommended. Use `nvm` to manage versions (`nvm use`).
 - **Python**: Version `3.10` or higher.
 - **Google Cloud SDK**: Authenticated with access to Firestore.
 
@@ -48,66 +33,48 @@ cd glad-labs-website
 npm install
 ```
 
-### 2. Environment Configuration
+### 2. Python Environment Setup
+
+The Python agents require a shared virtual environment and an editable installation of the project's Python packages.
+
+1.  **Navigate to the content agent directory to find the environment:**
+    ```bash
+    cd src/agents/content-agent
+    ```
+2.  **Create and activate the virtual environment:**
+    ```bash
+    python -m venv .venv
+    ./.venv/Scripts/Activate.ps1
+    ```
+3.  **Navigate back to the project root:**
+    ```bash
+    cd ../../..
+    ```
+4.  **Install the project in editable mode:**
+    This makes all agent code importable across the project.
+    ```bash
+    pip install -e .
+    ```
+
+### 3. Environment Configuration
 
 Each service requires its own environment file. Copy the `.env.example` file in each service directory to a new file (`.env` or `.env.local`) and fill in the required credentials.
 
-- `agents/content-agent/.env`: Google Cloud Project ID.
+- `src/agents/content-agent/.env`: Google Cloud Project ID.
 - `web/oversight-hub/.env`: Firebase SDK credentials.
-- `web/public-site/.env.local`: Strapi API URL and token.
+- `web/public-site/.env.local`: Strapi API URL.
+- `cms/strapi-v5-backend/.env`: Strapi database and security credentials.
 
-### 3. Launching the System
+### 4. Launching the System
 
-This workspace is configured to automatically launch all services when opened in VS Code. If you need to start it manually, run the following command from the root directory:
+You can launch all web services and backends simultaneously using the `start:all` command from the root directory.
 
 ```bash
 npm run start:all
 ```
 
----
-
-## 🐍 Python Agent Setup
-
-The content agent requires its own Python environment and dependencies.
-
-1. **Navigate to the agent directory:**
-
-   ```bash
-   cd agents/content-agent
-   ```
-
-2. **Create a virtual environment:**
-
-   ```bash
-   python -m venv .venv
-   ```
-
-3. **Activate the environment:**
-
-   - **PowerShell:** `.\\.venv\\Scripts\\Activate.ps1`
-   - **Bash/Zsh:** `source ./.venv/bin/activate`
-
-4. **Install dependencies:**
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-### Running the Agent
-
-The agent is started as part of the `start:all` command. To run it manually:
+To start the AI Co-Founder agent, run the following command in a separate terminal from the root directory:
 
 ```bash
-python orchestrator.py
+npm run start:cofounder
 ```
-
-### Creating New Tasks
-
-You can create new content tasks in two ways:
-
-1. **Via the Oversight Hub:** Use the "New Task" button in the web interface.
-2. **Via the CLI:** Run the `create_task.py` script.
-
-   ```bash
-   python create_task.py
-   ```
