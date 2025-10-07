@@ -18,6 +18,7 @@ class FirestoreClient:
         self.db = firestore.Client(project=config.GCP_PROJECT_ID)
         self.collection_name = config.FIRESTORE_COLLECTION
         self.run_collection_name = "agent_runs"  # New collection for logging runs
+        self.task_collection_name = "tasks"  # Collection name for tasks
         logging.info("Firestore client initialized.")
 
     def log_run(self, task_id: str, topic: str, status: str = "Starting") -> str:
@@ -143,4 +144,29 @@ class FirestoreClient:
             task_ref.update(update_data)
             logging.info(f"Updated task '{task_id}' to status '{status}'.")
         except Exception as e:
-            logging.error(f"Failed to update task status for '{task_id}': {e}")
+            logging.error(f"Error updating task status in Firestore: {e}", exc_info=True)
+
+    def add_log_to_run(self, run_id: str, level: str, message: str):
+        """Adds a new log entry to a specific run's sub-collection."""
+        if not run_id:
+            return
+        try:
+            log_data = {
+                "timestamp": datetime.utcnow(),
+                "level": level,
+                "message": message,
+            }
+            self.db.collection(self.run_collection_name).document(run_id).collection("logs").add(log_data)
+        except Exception as e:
+            logging.error(f"Error adding log to run {run_id} in Firestore: {e}", exc_info=True)
+
+    def add_task(self, task_data: dict):
+        """Adds a new task to the content-tasks collection."""
+        try:
+            task_data['createdAt'] = datetime.utcnow()
+            task_data['status'] = 'Ready'
+            self.db.collection(self.task_collection_name).add(task_data)
+            logging.info(f"Successfully added new task to Firestore: {task_data['topic']}")
+        except Exception as e:
+            logging.error(f"Error adding new task to Firestore: {e}", exc_info=True)
+            raise

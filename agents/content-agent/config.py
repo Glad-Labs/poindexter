@@ -78,6 +78,12 @@ class Config:
         self.MAX_LOG_SIZE_MB = int(os.getenv("MAX_LOG_SIZE_MB", 5))
         self.MAX_LOG_BACKUP_COUNT = int(os.getenv("MAX_LOG_BACKUP_COUNT", 3))
 
+        # --- Google Cloud Pub/Sub Configuration ---
+        self.PUBSUB_TOPIC = os.getenv("PUBSUB_TOPIC", "agent-commands")
+        self.PUBSUB_SUBSCRIPTION = os.getenv(
+            "PUBSUB_SUBSCRIPTION", "content-agent-subscription"
+        )
+
 
 # --- Singleton Instance ---
 # Create a single, immutable instance of the configuration to be imported by other modules.

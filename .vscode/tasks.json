@@ -14,6 +14,18 @@
       "problemMatcher": []
     },
     {
+      "label": "BE: Start Orchestrator API",
+      "type": "shell",
+      "command": "cd ${workspaceFolder}/agents/orchestrator; ../content-agent/.venv/Scripts/Activate.ps1; uvicorn main:app --reload --port 8000",
+      "isBackground": true,
+      "presentation": {
+        "group": "backend",
+        "panel": "new",
+        "reveal": "always"
+      },
+      "problemMatcher": ["$python"]
+    },
+    {
       "label": "BE: Start Python Agent",
       "type": "shell",
       "command": "cd ${workspaceFolder}/agents/content-agent; ./.venv/Scripts/Activate.ps1; python orchestrator.py",
@@ -75,6 +87,7 @@
       "label": "Start All Services",
       "tasks": [
         "BE: Start Strapi",
+        "BE: Start Orchestrator API",
         "BE: Start Python Agent",
         "FE: Start Oversight Hub",
         "FE: Start Public Site"

@@ -14,6 +14,9 @@ from agents.creative_agent import CreativeAgent
 from agents.image_agent import ImageAgent
 from agents.qa_agent import QAAgent
 from agents.publishing_agent import PublishingAgent
+from services.pubsub_client import PubSubClient
+from utils.firestore_logger import FirestoreLogHandler
+import threading
 
 
 class Orchestrator:
@@ -24,19 +27,24 @@ class Orchestrator:
     """
 
     def __init__(self):
+        # Initialize Firestore client first, as it's needed for logging
+        self.firestore_client = FirestoreClient()
         self._setup_logging()
+        
         logging.info("=" * 80)
         logging.info("INITIALIZING NEW ORCHESTRATOR RUN")
         logging.info("=" * 80)
         self.config = config
+        self.paused = False  # Add a paused state
         self._ensure_directories_exist()
 
-        # Initialize all clients and agents once for efficiency
+        # Initialize other clients
         self.strapi_client = StrapiClient()
-        self.firestore_client = FirestoreClient()
         self.llm_client = LLMClient()
         self.pexels_client = PexelsClient()
         self.gcs_client = GCSClient()
+
+        # Initialize agents
         self.research_agent = ResearchAgent()
         self.creative_agent = CreativeAgent(self.llm_client)
         self.image_agent = ImageAgent(
@@ -45,11 +53,29 @@ class Orchestrator:
         self.qa_agent = QAAgent(self.llm_client)
         self.publishing_agent = PublishingAgent(self.strapi_client)
 
+        # Initialize Pub/Sub client for command listening
+        if config.GCP_PROJECT_ID and config.PUBSUB_TOPIC and config.PUBSUB_SUBSCRIPTION:
+            self.pubsub_client = PubSubClient(
+                project_id=config.GCP_PROJECT_ID,
+                topic_id=config.PUBSUB_TOPIC,
+                subscription_id=config.PUBSUB_SUBSCRIPTION,
+                orchestrator=self
+            )
+        else:
+            self.pubsub_client = None
+            logging.warning("Pub/Sub client not initialized due to missing configuration.")
+
         logging.info("Orchestrator and all clients/agents initialized.")
+
+    def start_pubsub_listener(self):
+        """Starts the Pub/Sub listener in a separate thread if it exists."""
+        if self.pubsub_client:
+            listener_thread = threading.Thread(target=self.pubsub_client.listen_for_messages, daemon=True)
+            listener_thread.start()
 
     def _setup_logging(self):
         """Initializes the logging configuration for the application."""
-        setup_logging()
+        setup_logging(self.firestore_client)
 
     def _ensure_directories_exist(self):
         try:
@@ -90,16 +116,21 @@ class Orchestrator:
         """
         post.published_posts_map = published_posts_map
         run_id = None
-
+        firestore_handler = None
+        
         try:
+            # Set up Firestore logging for this specific run
+            root_logger = logging.getLogger()
+            firestore_handler = next((h for h in root_logger.handlers if isinstance(h, FirestoreLogHandler)), None)
+
             if post.task_id:
                 run_id = self.firestore_client.log_run(post.task_id, post.topic)
+                if firestore_handler:
+                    firestore_handler.set_run_id(run_id)
                 self.firestore_client.update_task_status(post.task_id, "In Progress")
-
-            logging.info(
-                f"Processing post: '{post.topic}' (Task ID: {post.task_id}, Run ID: {run_id})"
-            )
-
+            
+            logging.info(f"Processing post: '{post.topic}' (Task ID: {post.task_id}, Run ID: {run_id})")
+            
             research_findings = self.research_agent.run(
                 post.topic, post.primary_keyword.split(",")
             )
@@ -167,13 +198,15 @@ class Orchestrator:
                     run_id, status="Failed", post_data={"error": error_message}
                 )
             if post.task_id:
-                self.firestore_client.update_task_status(
-                    post.task_id, "Error", error_message=error_message
-                )
-
+                self.firestore_client.update_task_status(post.task_id, "Error", error_message=error_message)
+        finally:
+            # Clear the run_id from the handler to stop logging to this run
+            if firestore_handler:
+                firestore_handler.set_run_id(None)
 
 if __name__ == "__main__":
     orchestrator = Orchestrator()
+    orchestrator.start_pubsub_listener()
     POLL_INTERVAL = 60  # seconds
 
     logging.info(
@@ -181,7 +214,10 @@ if __name__ == "__main__":
     )
     try:
         while True:
-            orchestrator.run_batch_job()
+            if not orchestrator.paused:
+                orchestrator.run_batch_job()
+            else:
+                logging.info("Agent is paused. Skipping task processing.")
             time.sleep(POLL_INTERVAL)
     except KeyboardInterrupt:
         logging.info("Agent loop terminated by user.")

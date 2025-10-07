@@ -2,11 +2,15 @@ import logging
 from logging.handlers import RotatingFileHandler
 import os
 from pythonjsonlogger import jsonlogger
+from utils.firestore_logger import FirestoreLogHandler
+from services.firestore_client import FirestoreClient
+from typing import Optional
 
 
-def setup_logging():
+def setup_logging(firestore_client: Optional[FirestoreClient] = None):
     """
-    Configures the logging for the application to output structured JSON logs.
+    Configures the logging for the application to output structured JSON logs
+    and stream logs to Firestore.
     """
     log_dir = 'logs'
     if not os.path.exists(log_dir):
@@ -32,6 +36,12 @@ def setup_logging():
     
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
+
+    # Add a handler for Firestore logging if a client is provided
+    if firestore_client:
+        firestore_handler = FirestoreLogHandler(firestore_client)
+        firestore_handler.setLevel(logging.INFO)
+        logger.addHandler(firestore_handler)
 
     # Also add a handler for console output for local development
     console_handler = logging.StreamHandler()

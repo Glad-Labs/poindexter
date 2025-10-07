@@ -1,0 +1,74 @@
+# This is a foundational .gitlab-ci.yml file for the GLAD Labs monorepo.
+# It defines the stages and initial jobs for CI/CD.
+
+stages:
+  - lint
+  - test
+  - security
+  - build
+  - deploy
+
+# --- Job Templates ---
+.node_template:
+  image: node:20.11.1
+  before_script:
+    - npm install
+
+.python_template:
+  image: python:3.12
+  before_script:
+    - pip install -r agents/content-agent/requirements.txt
+    - pip install black flake8 pytest pytest-mock
+
+# --- Linting Jobs ---
+lint_frontend:
+  stage: lint
+  extends: .node_template
+  script:
+    - npm run lint
+
+lint_python:
+  stage: lint
+  extends: .python_template
+  script:
+    - black --check .
+    - flake8 .
+
+# --- Testing Jobs ---
+test_frontend:
+  stage: test
+  extends: .node_template
+  script:
+    - npm test --workspace=oversight-hub
+
+test_python:
+  stage: test
+  extends: .python_template
+  script:
+    - pytest agents/content-agent/tests/
+
+# --- Security Jobs ---
+security_audit_npm:
+  stage: security
+  extends: .node_template
+  script:
+    - npm audit
+
+security_audit_pip:
+  stage: security
+  extends: .python_template
+  script:
+    - pip install pip-audit
+    - pip-audit
+
+# --- Build & Deploy Jobs (Placeholders) ---
+build_strapi:
+  stage: build
+  script:
+    - echo "Building Strapi... (to be implemented)"
+
+deploy_production:
+  stage: deploy
+  script:
+    - echo "Deploying to production... (to be implemented)"
+  when: manual
