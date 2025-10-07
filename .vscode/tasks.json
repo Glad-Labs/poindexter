@@ -26,18 +26,6 @@
       "problemMatcher": ["$python"]
     },
     {
-      "label": "BE: Start Python Agent",
-      "type": "shell",
-      "command": "cd ${workspaceFolder}/agents/content-agent; ./.venv/Scripts/Activate.ps1; python orchestrator.py",
-      "isBackground": true,
-      "presentation": {
-        "group": "backend",
-        "panel": "new",
-        "reveal": "always"
-      },
-      "problemMatcher": ["$python"]
-    },
-    {
       "label": "FE: Start Oversight Hub",
       "type": "shell",
       "command": "npm start --workspace=oversight-hub",
@@ -80,6 +68,13 @@
           "endsPattern": "✓ Ready in"
         }
       }
+    },
+    {
+      "type": "npm",
+      "script": "start:all",
+      "problemMatcher": [],
+      "label": "npm: start:all",
+      "detail": "concurrently \"npm:start:strapi\" \"npm:start:oversight\" \"npm:start:public\""
     }
   ],
   "compounds": [
@@ -88,7 +83,6 @@
       "tasks": [
         "BE: Start Strapi",
         "BE: Start Orchestrator API",
-        "BE: Start Python Agent",
         "FE: Start Oversight Hub",
         "FE: Start Public Site"
       ],
