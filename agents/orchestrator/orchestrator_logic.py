@@ -2,6 +2,8 @@ import logging
 from agents.content_agent.services.firestore_client import FirestoreClient
 from agents.content_agent.services.llm_client import LLMClient
 from agents.financial_agent.agent import FinancialAgent
+from agents.market_insight_agent.agent import MarketInsightAgent
+from agents.compliance_agent.agent import ComplianceAgent
 # In the future, we will add a PubSubClient to delegate tasks
 # from agents.content_agent.services.pubsub_client import PubSubClient
 
@@ -14,6 +16,8 @@ class Orchestrator:
         self.firestore_client = FirestoreClient()
         self.llm_client = LLMClient()
         self.financial_agent = FinancialAgent()
+        self.market_insight_agent = MarketInsightAgent()
+        self.compliance_agent = ComplianceAgent(workspace_root=".") # Assuming the agent runs from the root
         # self.pubsub_client = PubSubClient(...)
         logging.info("Orchestrator Agent logic initialized.")
 
@@ -30,6 +34,12 @@ class Orchestrator:
             return self.create_content_task(command)
         elif "financial" in command or "balance" in command or "spend" in command:
             return self.financial_agent.get_financial_summary()
+        elif "suggest topics" in command or "new ideas" in command:
+            # This is a simple implementation. A more robust version would parse the query.
+            base_query = command.replace("suggest topics about", "").strip()
+            return self.market_insight_agent.suggest_topics(base_query)
+        elif "security audit" in command or "compliance check" in command:
+            return self.compliance_agent.run_security_audit()
         # Add more intents here in the future
         # elif "run agent" in command:
         #     return self.execute_content_pipeline()

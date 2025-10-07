@@ -21,5 +21,8 @@
     "next/dist/client/link.d.ts"
   ],
   "terminal.integrated.cwd": "${workspaceFolder}",
-  "python.analysis.extraPaths": ["${workspaceFolder}"]
+  "python.analysis.extraPaths": ["${workspaceFolder}"],
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.black-formatter"
+  }
 }
