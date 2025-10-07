@@ -29,16 +29,16 @@ To operate the most efficient, automated, solo-founded digital firm, demonstrati
 
 The entire system is built on a monorepo structure, with a central Orchestrator Agent managing a fleet of specialized, serverless agents.
 
-| Component                | Technology                         | Best Practice & Rationale                                                                                                                                                                    |
-| :----------------------- | :--------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Monorepo**             | **GitLab (glad-labs-website)**     | Centralizes all code (Agents, CMS, Web) using isolated dependency files (`requirements.txt`, `package.json`) per project.                                                                    |
-| **Orchestrator Agent**   | **Python (LangChain/CrewAI)**      | **The AI Business Assistant.** The central brain of the firm. Manages all other agents, maintains the content calendar, and exposes a conversational API for the Oversight Hub.              |
-| **Specialized Agents**   | **Python on Google Cloud Run**     | **Serverless & Scalable.** Provides auto-scaling and minimal cost (pay-per-use) for all agent containers (Content, Financial, etc.), dispatched by the Orchestrator.                         |
-| **Content Storage**      | **Strapi v4 (v5 Upgrade Planned)** | **API-First & Structured.** Provides a robust, queryable database for all generated content. Runs locally for dev, containerized for prod.                                                   |
-| **Operational Database** | **Google Cloud Firestore**         | **Real-Time Data.** The primary database for the Orchestrator. Stores the content calendar, agent logs, financial records, and serves real-time data to the Oversight Hub's Data Pane.       |
-| **Frontend (Oversight)** | **React (CRA) on Vercel/Netlify**  | **Conversational Command Center.** A dual-pane UI. The **Data Pane** provides a real-time view of Firestore/Strapi data. The **Command Pane** is a chat interface to the Orchestrator Agent. |
-| **Frontend (Public)**    | **Next.js on Vercel/Netlify**      | **High Performance & SEO.** Enables **Static Site Generation (SSG)** for a fast, SEO-friendly public blog and website.                                                                       |
-| **Agent Communication**  | **Google Cloud Pub/Sub**           | **Asynchronous Command Bus.** The nervous system. The Orchestrator uses Pub/Sub to dispatch tasks to specialized agents and receive completion notifications.                                |
+| Component                | Technology                         | Best Practice & Rationale                                                                                               |
+| :----------------------- | :--------------------------------- | :---------------------------------------------------------------------------------------------------------------------- |
+| **Monorepo**             | **GitLab (glad-labs-website)**     | Centralizes all code (Agents, CMS, Web) using isolated dependency files per project.                                    |
+| **Orchestrator Agent**   | **Python (LangChain/CrewAI)**      | **The AI Business Assistant.** The central brain of the firm. Manages agents and exposes a conversational API.          |
+| **Specialized Agents**   | **Python on Google Cloud Run**     | **Serverless & Scalable.** Provides auto-scaling and minimal cost (pay-per-use) for all agent containers.               |
+| **Content Storage**      | **Strapi v4 (v5 Upgrade Planned)** | **API-First & Structured.** A robust, queryable database for all content. Runs locally for dev, containerized for prod. |
+| **Operational Database** | **Google Cloud Firestore**         | **Real-Time Data.** The primary database for the Orchestrator. Stores tasks, logs, and financials.                      |
+| **Frontend (Oversight)** | **React (CRA) on Vercel/Netlify**  | **Conversational Command Center.** A dual-pane UI with a Data Pane for real-time data and a Command Pane for chat.      |
+| **Frontend (Public)**    | **Next.js on Vercel/Netlify**      | **High Performance & SEO.** Enables **Static Site Generation (SSG)** for a fast, SEO-friendly public blog.              |
+| **Agent Communication**  | **Google Cloud Pub/Sub**           | **Asynchronous Command Bus.** The nervous system. The Orchestrator uses it to dispatch tasks to specialized agents.     |
 
 ### **4. Project Structure & Codebases**
 
@@ -55,13 +55,13 @@ The entire system is built on a monorepo structure, with a central Orchestrator 
 
 ### **5. Development Roadmap (Path to Full Automation)**
 
-| Phase                                     | Timeline     | Primary Focus                        | Key Milestones                                                                                                                                                                                                       |
-| :---------------------------------------- | :----------- | :----------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Phase I: Foundation & Core Automation** | **Complete** | **Establish Core Pipeline**          | **✓** Strapi CMS & Public Site established. **✓** Firestore schemas defined. **✓** Content Agent MVP developed. **✓** Oversight Hub v1 for monitoring and control implemented.                                       |
-| **Phase II: The Command Center**          | **Complete** | **Build the Conversational UI**      | **✓ 2.1:** Develop the Orchestrator Agent's conversational API (e.g., using FastAPI). **✓ 2.2:** Implement the dual-pane UI in the Oversight Hub. **✓ 2.3:** Integrate the Hub's Command Pane with the Orchestrator. |
-| **Phase III: Financial Integration**      | **Complete** | **Automate Financial Oversight**     | **✓ 3.1:** Develop the Financial Agent. **✓ 3.2:** Integrate with **Mercury Bank API** and GCP Billing for data ingestion. **✓ 3.3:** Enhance Orchestrator to process financial queries.                             |
-| **Phase IV: Market Intelligence**         | **Complete** | **Enable Proactive Strategy**        | **✓ 4.1:** Develop the Market Insight Agent. **✓ 4.2:** Integrate with external SEO and trend APIs. **✓ 4.3:** Enhance Orchestrator to provide proactive content suggestions.                                        |
-| **Phase V: Full Autonomy & Monetization** | **Complete** | **Achieve Full Business Automation** | **✓ 5.1:** Develop the Compliance Agent. **✓ 5.2:** Achieve full conversational control over the entire business workflow. **✓ 5.3:** Package the agent system for a potential SaaS offering.                        |
+| Phase                                     | Timeline     | Primary Focus                        | Key Milestones                                                                                                                 |
+| :---------------------------------------- | :----------- | :----------------------------------- | :----------------------------------------------------------------------------------------------------------------------------- |
+| **Phase I: Foundation & Core Automation** | **Complete** | **Establish Core Pipeline**          | **✓** Core services established. **✓** Firestore schemas defined. **✓** Content Agent MVP developed. **✓** Hub v1 implemented. |
+| **Phase II: The Command Center**          | **Complete** | **Build the Conversational UI**      | **✓** Orchestrator API developed. **✓** Dual-pane UI implemented. **✓** Chat integrated with Orchestrator.                     |
+| **Phase III: Financial Integration**      | **Complete** | **Automate Financial Oversight**     | **✓** Financial Agent developed. **✓** Mercury Bank & GCP Billing integrated. **✓** Orchestrator handles financial queries.    |
+| **Phase IV: Market Intelligence**         | **Complete** | **Enable Proactive Strategy**        | **✓** Market Insight Agent developed. **✓** Trend APIs integrated. **✓** Orchestrator provides topic suggestions.              |
+| **Phase V: Full Autonomy & Monetization** | **Complete** | **Achieve Full Business Automation** | **✓** Compliance Agent developed. **✓** Full conversational control achieved. **✓** System packaged for SaaS.                  |
 
 ### **6. The Orchestrator Protocol & Agent Roles**
 
@@ -69,16 +69,16 @@ The Orchestrator Agent is the single point of contact for all operations. The us
 
 **Example Conversational Workflow:**
 
-1.  **User:** `"Show me the content calendar for next month."`
-    - **Orchestrator Action:** Queries Firestore and displays the relevant tasks in the Data Pane.
-2.  **User:** `"Suggest three new topics about AI in game design."`
-    - **Orchestrator Action:** Dispatches a job to the **Market Insight Agent**. The agent performs its analysis and returns the results. The Orchestrator presents the suggestions in the chat.
-3.  **User:** `"I like option 2. Flesh it out for a technical audience, target keyword 'procedural generation', and schedule it for next Friday."`
-    - **Orchestrator Action:** Creates a new task document in the Firestore content calendar with all the specified details and sets its status to "Ready".
-4.  **User:** `"What was our cloud spend last week? And what's our current balance in Mercury?"`
-    - **Orchestrator Action:** Queries the **Financial Agent**, which in turn queries its data from Firestore (GCP Billing) and the **Mercury Bank API**, and returns the answer directly in the chat.
-5.  **User:** `"Execute all 'Ready' tasks in the content calendar."`
-    - **Orchestrator Action:** Finds all relevant tasks and dispatches them to the **Content Agent** via Pub/Sub, updating the UI in real-time as they progress.
+1. **User:** `"Show me the content calendar for next month."`
+   - **Orchestrator Action:** Queries Firestore and displays the relevant tasks in the Data Pane.
+2. **User:** `"Suggest three new topics about AI in game design."`
+   - **Orchestrator Action:** Dispatches a job to the **Market Insight Agent**. The agent performs its analysis and returns the results. The Orchestrator presents the suggestions in the chat.
+3. **User:** `"I like option 2. Flesh it out for a technical audience, target keyword 'procedural generation', and schedule it for next Friday."`
+   - **Orchestrator Action:** Creates a new task document in the Firestore content calendar with all the specified details and sets its status to "Ready".
+4. **User:** `"What was our cloud spend last week? And what's our current balance in Mercury?"`
+   - **Orchestrator Action:** Queries the **Financial Agent**, which in turn queries its data from Firestore (GCP Billing) and the **Mercury Bank API**, and returns the answer directly in the chat.
+5. **User:** `"Execute all 'Ready' tasks in the content calendar."`
+   - **Orchestrator Action:** Finds all relevant tasks and dispatches them to the **Content Agent** via Pub/Sub, updating the UI in real-time as they progress.
 
 | Agent Name               | Core Responsibility                                         | Primary Data Source                              | Triggered By                               |
 | :----------------------- | :---------------------------------------------------------- | :----------------------------------------------- | :----------------------------------------- |

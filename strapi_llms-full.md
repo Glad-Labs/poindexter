@@ -369,7 +369,7 @@ Before going any further into this Strapi Cloud documentation, we recommend you 
 
 - **Types of Strapi Cloud users** <br/> There can be 2 types of users on a Strapi Cloud project: owners and maintainers. The owner is the one who has created the project and has therefore access to all features and options for the project. Maintainers are users who have been invited to contribute to an already created project by its owner. Maintainers, as documented in the [Collaboration] (/cloud/projects/collaboration) page, cannot view and access all features and options from the Strapi Cloud dashboard.
 
-- **Support** <br/> The level of support provided by the Strapi Support team depends on the Strapi Cloud plan you subscribed for. The Free plan does not include access to support. The Essential and Pro plans include Basic support while the Scale plan includes Standard support. Please refer to the [dedicated support article](https://support.strapi.io/support/solutions/articles/67000680833-what-is supported-by-the-strapi-team#Not-Supported) for all details regarding support levels.
+- **Support** <br/> The level of support provided by the Strapi Support team depends on the Strapi Cloud plan you subscribed for. The Free plan does not include access to support. The Essential and Pro plans include Basic support while the Scale plan includes Standard support. Please refer to the [dedicated support article](<https://support.strapi.io/support/solutions/articles/67000680833-what-is> supported-by-the-strapi-team#Not-Supported) for all details regarding support levels.
 
 ## Project deployment with the Cloud dashboard
 
@@ -543,11 +543,11 @@ You have 2 options to deploy your project with Strapi Cloud:
 
 The guides below will guide you through all the steps for each of the deployment options.
 
-## Welcome to the Strapi Cloud Documentation!
+## Welcome to the Strapi Cloud Documentation
 
 Source: <https://docs.strapi.io/cloud/getting-started/intro>
 
-## Welcome to the Strapi Cloud Documentation!
+## Welcome to the Strapi Cloud Documentation
 
 10/5/25, 11:45 PM docs.strapi.io/assets/files/llms-full-6fd9896e033bc9757d40b19af778a371.txt
 
@@ -600,7 +600,7 @@ Strapi Cloud offers 1 Free plan and 3 paid plans: Essential, Pro and Scale (see 
 | **Custom domains** | N/A | Included | Included | Included |
 | **Environments** | N/A | N/A | 0 included (up to 99 extra) | 1 included (up to 99 extra) |
 
-| **Emails (per month)** | 100 | Unlimited* | Unlimited* | Unlimited\* |
+| **Emails (per month)** | 100 | Unlimited*| Unlimited* | Unlimited\* |
 
 :::strapi Additional information on usage and features
 
@@ -878,7 +878,7 @@ Each project card also displays a menu icon to access the following options:
 - **Go to Deployments**: to be redirected to the [_Deployment_](/cloud/projects/deploys) page * **Go to Settings**: to be redirected to the [*Settings\*](/cloud/projects/settings) page
 
 :::tip
-Click on the _ Product updates_ button in the navigation bar to check out the latest features and fixes released.
+Click on the _Product updates_ button in the navigation bar to check out the latest features and fixes released.
 
 :::
 
@@ -1415,7 +1415,7 @@ The following is an example of a basic customization of the admin panel:
 
 :::strapi Detailed examples in the codebase
 
-- You can see the full translation keys, for instance to change the welcome message, [on GitHub] (https://github.com/strapi/strapi/blob/develop/packages/core/admin/admin/src/translations). \* Light and dark colors are also found [on GitHub](https://github.com/strapi/design system/tree/main/packages/design-system/src/themes).
+- You can see the full translation keys, for instance to change the welcome message, [on GitHub] (<https://github.com/strapi/strapi/blob/develop/packages/core/admin/admin/src/translations>). \* Light and dark colors are also found [on GitHub](<https://github.com/strapi/design> system/tree/main/packages/design-system/src/themes).
 
 :::
 
@@ -1563,9 +1563,9 @@ The `app.widgets.register()` method can take either a single widget configuratio
 :::tip
 For simplicity, the example below uses data fetching directly inside a useEffect hook. While this works for demonstration purposes, it may not reflect best practices in production.
 
-For more robust solutions, consider alternative approaches recommended in the [React documentation] (https://react.dev/learn/build-a-react-app-from-scratch#data-fetching). If you're looking to integrate a data fetching library, we recommend using [TanStackQuery]
+For more robust solutions, consider alternative approaches recommended in the [React documentation] (<https://react.dev/learn/build-a-react-app-from-scratch#data-fetching>). If you're looking to integrate a data fetching library, we recommend using [TanStackQuery]
 
-(https://tanstack.com/query/v3/).
+(<https://tanstack.com/query/v3/>).
 :::
 
 **Data management**:
@@ -4126,7 +4126,7 @@ To create a localized entry for a locale different from the default one, add the
 
 </ApiCall>
 
-### `PUT` Create a new, or update an existing, locale version for an existing document {#rest-update} With `PUT` requests sent to an existing document, you can:
+### `PUT` Create a new, or update an existing, locale version for an existing document {#rest-update} With `PUT` requests sent to an existing document, you can
 
 - create another locale version of the document,
 - or update an existing locale version of the document.
