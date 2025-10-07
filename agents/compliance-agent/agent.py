@@ -19,19 +19,22 @@ class ComplianceAgent:
         try:
             logging.info("Running security audit...")
             
-            # In a real implementation, you would run tools like `npm audit`,
-            # `pip-audit`, and static analysis tools (e.g., Bandit for Python).
-            
-            # Placeholder for npm audit
+            # Run npm audit
             npm_audit_result = self._run_command("npm audit")
             
-            # Placeholder for pip-audit
+            # Run pip-audit
             pip_audit_result = self._run_command("pip-audit")
 
+            # Run linters
+            flake8_result = self._run_command("flake8 .")
+            eslint_result = self._run_command("npm run lint --workspace=oversight-hub") # Example for one workspace
+
             response = (
-                "Security audit complete. Here is the summary:\\n"
-                f"**NPM Audit:**\\n{npm_audit_result}\\n\\n"
-                f"**PIP Audit:**\\n{pip_audit_result}"
+                "Compliance audit complete. Here is the summary:\\n\\n"
+                f"**NPM Dependency Audit:**\\n{npm_audit_result}\\n\\n"
+                f"**PIP Dependency Audit:**\\n{pip_audit_result}\\n\\n"
+                f"**Python Linting (Flake8):**\\n{flake8_result}\\n\\n"
+                f"**Frontend Linting (ESLint):**\\n{eslint_result}"
             )
             return response
 

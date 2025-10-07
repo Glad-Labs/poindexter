@@ -40,11 +40,10 @@ class Orchestrator:
             return self.market_insight_agent.suggest_topics(base_query)
         elif "security audit" in command or "compliance check" in command:
             return self.compliance_agent.run_security_audit()
-        # Add more intents here in the future
-        # elif "run agent" in command:
-        #     return self.execute_content_pipeline()
+        elif "run content agent" in command or "execute tasks" in command:
+            return self.run_content_pipeline()
         else:
-            return "I'm sorry, I don't understand that command yet. You can ask me to 'show the content calendar'."
+            return "I'm sorry, I don't understand that command yet. You can ask me to 'show the content calendar', 'create a new task', 'suggest topics', 'run a security audit', or 'run the content agent'."
 
     def get_content_calendar(self) -> str:
         """Fetches the content calendar from Firestore and formats it as a string."""
@@ -87,4 +86,22 @@ class Orchestrator:
         except Exception as e:
             logging.error(f"Error creating content task: {e}")
             return "I'm sorry, I encountered an error while trying to create the new task."
+
+    def run_content_pipeline(self) -> str:
+        """
+        Triggers the content agent pipeline to run for all 'Ready' tasks.
+        This will be done via Pub/Sub in a future, more robust implementation.
+        """
+        try:
+            # For now, we will directly call the content agent's orchestrator.
+            # This is a placeholder for a Pub/Sub implementation.
+            from agents.content_agent.orchestrator import Orchestrator as ContentOrchestrator
+            
+            content_orchestrator = ContentOrchestrator()
+            content_orchestrator.run_batch_job()
+            
+            return "Content agent pipeline has been triggered for all 'Ready' tasks."
+        except Exception as e:
+            logging.error(f"Error running content pipeline: {e}")
+            return "I'm sorry, I encountered an error while trying to run the content pipeline."
 

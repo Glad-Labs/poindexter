@@ -1,35 +1,49 @@
 import logging
+from pytrends.request import TrendReq
 
 class MarketInsightAgent:
     """
     An agent responsible for monitoring market trends and generating
-    relevant, popular topic options for content creation.
+    relevant, popular topic options for content creation using Google Trends.
     """
     def __init__(self):
-        # In the future, this will initialize clients for external trend APIs
-        # (e.g., Google Trends, SEO tools, etc.)
-        logging.info("Market Insight Agent initialized.")
+        self.pytrends = TrendReq(hl='en-US', tz=360)
+        logging.info("Market Insight Agent initialized with Pytrends.")
 
     def suggest_topics(self, base_query: str) -> str:
         """
-        Generates a list of suggested blog post topics based on a query.
-        (This is a placeholder implementation)
+        Generates a list of suggested blog post topics based on a query
+        using related and rising queries from Google Trends.
         """
         try:
             logging.info(f"Generating topic suggestions for query: '{base_query}'")
             
-            # Placeholder: In a real implementation, you would call an external API here.
-            suggestions = [
-                f"The Future of {base_query} in 2026",
-                f"A Beginner's Guide to {base_query}",
-                f"How {base_query} is Changing the Industry"
-            ]
+            # Build the payload
+            self.pytrends.build_payload(kw_list=[base_query])
+
+            # Get related queries (these are often long-tail keywords)
+            related_queries = self.pytrends.related_queries().get(base_query, {}).get('top', [])
             
-            response = "Here are a few topic suggestions I've generated:\\n"
-            for topic in suggestions:
-                response += f"- {topic}\\n"
+            # Get rising queries (these indicate growing interest)
+            rising_queries = self.pytrends.related_queries().get(base_query, {}).get('rising', [])
+
+            if not related_queries and not rising_queries:
+                return f"I couldn't find any significant trends related to '{base_query}'. You might want to try a broader topic."
+
+            response = f"Here are some topic suggestions for '{base_query}' based on Google Trends:\\n"
+            
+            if related_queries:
+                response += "\\n**Top Related Topics:**\\n"
+                for item in related_queries.head(5).to_dict('records'):
+                    response += f"- {item['query']}\\n"
+
+            if rising_queries:
+                response += "\\n**Rising Topics (Growing Interest):**\\n"
+                for item in rising_queries.head(5).to_dict('records'):
+                    response += f"- {item['query']} (Trending up by {item['value']}%)\\n"
+            
             return response
             
         except Exception as e:
-            logging.error(f"Error generating topic suggestions: {e}")
-            return "I'm sorry, I had trouble generating topic suggestions."
+            logging.error(f"Error generating topic suggestions from Google Trends: {e}")
+            return "I'm sorry, I had trouble fetching data from Google Trends."
