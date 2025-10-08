@@ -4,11 +4,10 @@ import json
 
 from agents.content_agent.services.firestore_client import FirestoreClient
 from agents.content_agent.services.llm_client import LLMClient
-# from agents.financial_agent.agent import FinancialAgent
-# from agents.market_insight_agent.agent import MarketInsightAgent
+from agents.financial_agent.financial_agent import FinancialAgent
+from agents.market_insight_agent.market_insight_agent import MarketInsightAgent
+from agents.content_agent.services.pubsub_client import PubSubClient
 # from agents.compliance_agent.agent import ComplianceAgent
-# In the future, we will add a PubSubClient to delegate tasks
-# from agents.content_agent.services.pubsub_client import PubSubClient
 
 class Orchestrator:
     """
@@ -19,10 +18,10 @@ class Orchestrator:
         """Initializes the Orchestrator and its clients."""
         self.firestore_client = FirestoreClient()
         self.llm_client = LLMClient()
-        # self.financial_agent = FinancialAgent()
-        # self.market_insight_agent = MarketInsightAgent()
+        self.financial_agent = FinancialAgent()
+        self.market_insight_agent = MarketInsightAgent()
+        self.pubsub_client = PubSubClient()
         # self.compliance_agent = ComplianceAgent(workspace_root=".")
-        # self.pubsub_client = PubSubClient(...)
         logging.info("Orchestrator Agent logic initialized.")
 
     def process_command(self, command: str) -> str:
@@ -36,11 +35,14 @@ class Orchestrator:
             return self.get_content_calendar()
         elif "create task" in command or "new post" in command:
             return self.create_content_task(command)
-        # elif "financial" in command or "balance" in command or "spend" in command:
-        #     return self.financial_agent.get_financial_summary()
-        # elif "suggest topics" in command or "new ideas" in command:
-        #     base_query = command.replace("suggest topics about", "").strip()
-        #     return self.market_insight_agent.suggest_topics(base_query)
+        elif "financial" in command or "balance" in command or "spend" in command:
+            return self.financial_agent.get_financial_summary()
+        elif "suggest topics" in command or "new ideas" in command:
+            base_query = command.replace("suggest topics about", "").strip()
+            return self.market_insight_agent.suggest_topics(base_query)
+        elif "create tasks from trend" in command:
+            trend = command.replace("create tasks from trend", "").strip()
+            return self.market_insight_agent.create_tasks_from_trends(trend)
         # elif "security audit" in command or "compliance check" in command:
         #     return self.compliance_agent.run_security_audit()
         elif "run content agent" in command or "execute tasks" in command:
@@ -87,14 +89,11 @@ class Orchestrator:
 
     def run_content_pipeline(self) -> str:
         """
-        Triggers the content agent pipeline for all 'Ready' tasks.
-        In a future implementation, this will be done via Pub/Sub.
+        Triggers the content agent pipeline for all 'Ready' tasks by publishing a message to Pub/Sub.
         """
         try:
-            # This is a placeholder for a more robust implementation.
-            # In the future, this will publish a message to a Pub/Sub topic.
-            logging.info("Triggering content pipeline for 'Ready' tasks...")
-            return "I've started the content creation pipeline for all 'Ready' tasks. You can monitor their progress in the Oversight Hub."
+            self.pubsub_client.publish_message("content-creation-topic", "run")
+            return "I've sent a signal to the Content Agent to begin processing all 'Ready' tasks. You can monitor their progress in the Oversight Hub."
         except Exception as e:
             logging.error(f"Error running content pipeline: {e}", exc_info=True)
             return "I'm sorry, I encountered an error while trying to start the content pipeline."

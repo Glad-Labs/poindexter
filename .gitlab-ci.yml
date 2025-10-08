@@ -47,6 +47,13 @@ test_python:
   script:
     - pytest agents/content-agent/tests/
 
+test:
+  stage: test
+  script:
+    - npm install
+    - src/agents/content-agent/.venv/Scripts/python.exe -m pip install -e .
+    - npm run test
+
 # --- Security Jobs ---
 security_audit_npm:
   stage: security
