@@ -27,25 +27,21 @@ class CreativeAgent:
         """
         raw_draft = ""
         if is_refinement and post.qa_feedback:
-            refinement_prompt = self.prompts["refine_draft"].format(
-                topic=post.topic,
-                primary_keyword=post.primary_keyword,
-                target_audience=post.target_audience,
-                research_data=post.research_data,
-                previous_draft=post.raw_content,
-                qa_feedback=post.qa_feedback[-1],
+            refinement_prompt = self.prompts["iterative_refinement"].format(
+                draft=post.raw_content,
+                critique=post.qa_feedback[-1],
             )
             logger.info(
                 f"CreativeAgent: Refining content for '{post.topic}' based on QA feedback."
             )
             raw_draft = self.llm_client.generate_text(refinement_prompt)
         else:
-            draft_prompt = self.prompts["create_draft"].format(
+            draft_prompt = self.prompts["initial_draft_generation"].format(
                 topic=post.topic,
-                primary_keyword=post.primary_keyword,
                 target_audience=post.target_audience,
-                research_data=post.research_data,
-                published_posts_map=post.published_posts_map,
+                primary_keyword=post.primary_keyword,
+                research_context=post.research_data,
+                internal_link_titles=list(post.published_posts_map.keys()),
             )
             logger.info(
                 f"CreativeAgent: Starting initial content generation for '{post.topic}'."
@@ -81,10 +77,8 @@ class CreativeAgent:
 
     def _generate_seo_assets(self, post: BlogPost) -> BlogPost:
         """Generates and assigns SEO assets (title, meta description, slug) for the post."""
-        seo_prompt = self.prompts["generate_seo"].format(
-            topic=post.topic,
-            primary_keyword=post.primary_keyword,
-            content=post.raw_content,
+        seo_prompt = self.prompts["seo_and_social_media"].format(
+            draft=post.raw_content,
         )
         logger.info(f"CreativeAgent: Generating SEO assets for '{post.topic}'.")
         seo_assets_text = self.llm_client.generate_text(seo_prompt)

@@ -39,6 +39,9 @@ class Config:
         self.GEMINI_MODEL = os.getenv(
             "GEMINI_MODEL", "gemini-1.5-pro-latest"
         )  # Default to the latest powerful model
+        self.SUMMARIZER_MODEL = os.getenv(
+            "SUMMARIZER_MODEL", "gemini-1.5-flash-latest"
+        ) # Default to a fast and cheap model for summarization
 
         # --- Strapi CMS Integration ---
         self.STRAPI_API_URL = os.getenv(
@@ -66,10 +69,15 @@ class Config:
             3  # Default number of images to generate for a post
         )
 
-        # --- Local QA Model (Ollama) ---
+        # --- Language Model Provider --
+        # Determines the LLM provider to use. Can be 'gemini' for Google's API
+        # or 'local' for a local model (e.g., Ollama).
+        self.LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini")
+
+        # --- Local LLM (Ollama) Configuration --
         # For running a local quality assurance model if available.
-        self.OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-        self.QA_MODEL_NAME = os.getenv("QA_MODEL_NAME", "llava:13b")
+        self.LOCAL_LLM_API_URL = os.getenv("LOCAL_LLM_API_URL", "http://localhost:11434")
+        self.LOCAL_LLM_MODEL_NAME = os.getenv("LOCAL_LLM_MODEL_NAME", "llava:13b")
 
         # --- Logging Configuration ---
         self.LOG_DIR = os.path.join(self.BASE_DIR, "content-agent", "logs")

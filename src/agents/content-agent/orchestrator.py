@@ -14,10 +14,11 @@ from agents.creative_agent import CreativeAgent
 from agents.image_agent import ImageAgent
 from agents.qa_agent import QAAgent
 from agents.publishing_agent import PublishingAgent
+from agents.summarizer_agent import SummarizerAgent
 from services.pubsub_client import PubSubClient
 from utils.firestore_logger import FirestoreLogHandler
 import threading
-
+from utils.helpers import load_prompts_from_file
 
 class Orchestrator:
     """
@@ -38,6 +39,9 @@ class Orchestrator:
         self.paused = False  # Add a paused state
         self._ensure_directories_exist()
 
+        # Load prompts
+        self.prompts = load_prompts_from_file(config.PROMPTS_PATH)
+
         # Initialize other clients
         self.strapi_client = StrapiClient()
         self.llm_client = LLMClient()
@@ -46,6 +50,7 @@ class Orchestrator:
 
         # Initialize agents
         self.research_agent = ResearchAgent()
+        self.summarizer_agent = SummarizerAgent(self.llm_client)
         self.creative_agent = CreativeAgent(self.llm_client)
         self.image_agent = ImageAgent(
             self.llm_client, self.pexels_client, self.gcs_client, self.strapi_client
@@ -143,12 +148,23 @@ class Orchestrator:
             research_findings = self.research_agent.run(
                 post.topic, post.primary_keyword.split(",")
             )
-            post.research_data = research_findings
+            
+            summarized_research = self.summarizer_agent.run(
+                research_findings, self.prompts["summarize_research_data"]
+            )
+            post.research_data = summarized_research
+
             if run_id:
                 self.firestore_client.update_run(run_id, status="Research Complete")
 
             approved = False
             for i in range(post.refinement_loops):
+                if i > 0:
+                    summarized_draft = self.summarizer_agent.run(
+                        post.raw_content, self.prompts["summarize_previous_draft"]
+                    )
+                    post.raw_content = summarized_draft
+
                 post = self.creative_agent.run(post, is_refinement=(i > 0))
                 if run_id:
                     self.firestore_client.update_run(
