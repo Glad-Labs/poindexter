@@ -13,12 +13,24 @@ stages:
   image: node:20.11.1
   before_script:
     - npm install
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - node_modules/
 
 .python_template:
   image: python:3.12
   before_script:
-    - pip install -r agents/content-agent/requirements.txt
-    - pip install black flake8 pytest pytest-mock
+    - pip install -r requirements.txt
+    - pip install ruff pytest pip-audit
+  cache:
+    key:
+      files:
+        - requirements.txt
+    paths:
+      - .venv/
 
 # --- Linting Jobs ---
 lint_frontend:
@@ -31,8 +43,7 @@ lint_python:
   stage: lint
   extends: .python_template
   script:
-    - black --check .
-    - flake8 .
+    - ruff check .
 
 # --- Testing Jobs ---
 test_frontend:
@@ -45,14 +56,7 @@ test_python:
   stage: test
   extends: .python_template
   script:
-    - pytest agents/content-agent/tests/
-
-test:
-  stage: test
-  script:
-    - npm install
-    - src/agents/content-agent/.venv/Scripts/python.exe -m pip install -e .
-    - npm run test
+    - pytest src/agents/
 
 # --- Security Jobs ---
 security_audit_npm:
@@ -65,7 +69,6 @@ security_audit_pip:
   stage: security
   extends: .python_template
   script:
-    - pip install pip-audit
     - pip-audit
 
 # --- Build & Deploy Jobs (Placeholders) ---
