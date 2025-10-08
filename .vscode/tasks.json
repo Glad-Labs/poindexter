@@ -2,99 +2,84 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "BE: Start Strapi",
+      "label": "Start Strapi CMS",
       "type": "shell",
-      "command": "npm run develop --workspace=strapi-backend",
-      "isBackground": true,
-      "presentation": {
-        "group": "backend",
-        "panel": "new",
-        "reveal": "always"
+      "command": "npm run develop",
+      "options": {
+        "cwd": "${workspaceFolder}/cms/strapi-v5-backend"
       },
-      "problemMatcher": []
-    },
-    {
-      "label": "BE: Start Orchestrator API",
-      "type": "shell",
-      "command": "cd ${workspaceFolder}/agents/orchestrator; ../content-agent/.venv/Scripts/Activate.ps1; uvicorn main:app --reload --port 8000",
-      "isBackground": true,
-      "presentation": {
-        "group": "backend",
-        "panel": "new",
-        "reveal": "always"
-      },
-      "problemMatcher": ["$python"]
-    },
-    {
-      "label": "FE: Start Oversight Hub",
-      "type": "shell",
-      "command": "npm start --workspace=oversight-hub",
-      "isBackground": true,
-      "presentation": {
-        "group": "frontend",
-        "panel": "new",
-        "reveal": "always"
-      },
-      "problemMatcher": {
-        "owner": "react-scripts",
-        "pattern": {
-          "regexp": ".*"
-        },
-        "background": {
-          "activeOnStart": true,
-          "beginsPattern": "Starting the development server...",
-          "endsPattern": "Compiled successfully."
-        }
-      }
-    },
-    {
-      "label": "FE: Start Public Site",
-      "type": "shell",
-      "command": "npm run dev --workspace=glad-labs-public-site",
-      "isBackground": true,
-      "presentation": {
-        "group": "frontend",
-        "panel": "new",
-        "reveal": "always"
-      },
-      "problemMatcher": {
-        "owner": "nextjs",
-        "pattern": {
-          "regexp": ".*"
-        },
-        "background": {
-          "activeOnStart": true,
-          "beginsPattern": "✓ Starting...",
-          "endsPattern": "✓ Ready in"
-        }
-      }
-    },
-    {
-      "type": "npm",
-      "script": "start:all",
       "problemMatcher": [],
-      "label": "npm: start:all",
-      "detail": "concurrently \"npm:start:strapi\" \"npm:start:oversight\" \"npm:start:public\""
-    }
-  ],
-  "compounds": [
+      "presentation": {
+        "group": "services",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Start Oversight Hub",
+      "type": "shell",
+      "command": "npm start",
+      "options": {
+        "cwd": "${workspaceFolder}/web/oversight-hub"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "group": "services",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Start Public Site",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": {
+        "cwd": "${workspaceFolder}/web/public-site"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "group": "services",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Start Intervene Trigger",
+      "type": "shell",
+      "command": "python main.py",
+      "options": {
+        "cwd": "${workspaceFolder}/cloud-functions/intervene-trigger",
+        "env": {
+          "GCP_PROJECT": "your-gcp-project-id",
+          "PUBSUB_TOPIC": "your-topic-name"
+        }
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "group": "services",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Start Co-founder Agent",
+      "type": "shell",
+      "command": "uvicorn main:app --reload",
+      "options": {
+        "cwd": "${workspaceFolder}/src/cofounder_agent"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "group": "services",
+        "panel": "dedicated"
+      }
+    },
     {
       "label": "Start All Services",
-      "tasks": [
-        "BE: Start Strapi",
-        "BE: Start Orchestrator API",
-        "FE: Start Oversight Hub",
-        "FE: Start Public Site"
+      "dependsOn": [
+        "Start Strapi CMS",
+        "Start Oversight Hub",
+        "Start Public Site",
+        "Start Intervene Trigger",
+        "Start Co-founder Agent"
       ],
-      "runOptions": {
-        "runOn": "folderOpen"
-      },
-      "presentation": {
-        "reveal": "always",
-        "panel": "dedicated",
-        "showReuseMessage": false,
-        "clear": true
-      }
+      "problemMatcher": []
     }
   ]
 }
