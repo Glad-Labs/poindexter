@@ -1,3 +1,0 @@
-# This agent will have its own dependencies in the future
-# For now, it relies on shared libraries
-pytrends

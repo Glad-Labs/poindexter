@@ -1,28 +1,56 @@
+"""
+This module contains the core logic for the Co-Founder Agent's orchestrator.
+It receives commands and delegates them to the appropriate specialized agents.
+"""
 import logging
 from typing import Dict, Any, List
 import json
+import os
 
 from agents.content_agent.services.firestore_client import FirestoreClient
 from agents.content_agent.services.llm_client import LLMClient
+from agents.content_agent.content_agent import ContentAgent
 from agents.financial_agent.financial_agent import FinancialAgent
 from agents.market_insight_agent.market_insight_agent import MarketInsightAgent
 from agents.content_agent.services.pubsub_client import PubSubClient
-# from agents.compliance_agent.agent import ComplianceAgent
+from agents.compliance_agent.agent import ComplianceAgent
 
 class Orchestrator:
-    """
-    The AI Business Assistant. It understands user commands and delegates tasks
-    to specialized agents or interacts with data sources directly.
-    """
+    """The main orchestrator for the AI Co-Founder."""
+
     def __init__(self):
-        """Initializes the Orchestrator and its clients."""
+        """Initializes the Orchestrator with all specialized agents."""
+        # --- LLM Client Configuration ---
+        # Allow flexible configuration of LLM providers via environment variables.
+        # Defaults to 'ollama' for local development to minimize costs.
+        parsing_llm_provider = os.getenv("PARSING_LLM_PROVIDER", "ollama")
+        insights_llm_provider = os.getenv("INSIGHTS_LLM_PROVIDER", "ollama")
+        # Default to Gemini for final content generation, but allow override.
+        content_llm_provider = os.getenv("CONTENT_LLM_PROVIDER", "gemini")
+
+        # --- Client Initialization ---
+        # Create a dictionary of clients to avoid re-initializing the same client.
+        self.llm_clients = {
+            "ollama": LLMClient(provider="ollama"),
+            "gemini": LLMClient(provider="gemini")
+        }
+
+        # Select the correct client based on configuration.
+        self.parsing_llm_client = self.llm_clients.get(parsing_llm_provider)
+        self.insights_llm_client = self.llm_clients.get(insights_llm_provider)
+        self.content_llm_client = self.llm_clients.get(content_llm_provider)
+
+        if not all([self.parsing_llm_client, self.insights_llm_client, self.content_llm_client]):
+            raise ValueError("An invalid LLM provider was configured. Check your environment variables.")
+
         self.firestore_client = FirestoreClient()
-        self.llm_client = LLMClient()
-        self.financial_agent = FinancialAgent()
-        self.market_insight_agent = MarketInsightAgent()
         self.pubsub_client = PubSubClient()
-        # self.compliance_agent = ComplianceAgent(workspace_root=".")
-        logging.info("Orchestrator Agent logic initialized.")
+
+        # --- Agent Initialization (with Dependency Injection) ---
+        self.content_agent = ContentAgent(llm_client=self.content_llm_client, firestore_client=self.firestore_client)
+        self.financial_agent = FinancialAgent()
+        self.market_insight_agent = MarketInsightAgent(llm_client=self.insights_llm_client, firestore_client=self.firestore_client)
+        logging.info("Orchestrator initialized with all agents.")
 
     def process_command(self, command: str) -> str:
         """
@@ -43,8 +71,6 @@ class Orchestrator:
         elif "create tasks from trend" in command:
             trend = command.replace("create tasks from trend", "").strip()
             return self.market_insight_agent.create_tasks_from_trends(trend)
-        # elif "security audit" in command or "compliance check" in command:
-        #     return self.compliance_agent.run_security_audit()
         elif "run content agent" in command or "execute tasks" in command:
             return self.run_content_pipeline()
         else:
@@ -70,19 +96,35 @@ class Orchestrator:
         Parses a user's command to create a new content task and saves it to Firestore.
         """
         try:
-            # This is a simplified implementation. A more robust version would use a dedicated prompt
-            # and more sophisticated parsing logic with validation.
-            prompt = f"Parse the following command into a JSON object with keys 'topic', 'primary_keyword', 'target_audience', and 'category'. Command: '{command}'"
-            parsed_data = self.llm_client.generate_text(prompt)
-            
-            # Basic validation
-            task_data = json.loads(parsed_data)
+            # Define the desired structure for the LLM to populate.
+            # This is more efficient than asking the model to parse a long string.
+            tool_schema = {
+                "type": "function",
+                "function": {
+                    "name": "create_content_task",
+                    "description": "Creates a new content task with a topic, keyword, audience, and category.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "topic": {"type": "string", "description": "The main topic of the content."},
+                            "primary_keyword": {"type": "string", "description": "The primary SEO keyword."},
+                            "target_audience": {"type": "string", "description": "The intended audience for the content."},
+                            "category": {"type": "string", "description": "A content category, like 'Technology' or 'Finance'."}
+                        },
+                        "required": ["topic", "primary_keyword", "target_audience", "category"]
+                    }
+                }
+            }
+
+            # Use the LLM's tool-calling feature to extract structured data.
+            # This assumes your LLMClient has a method that supports tool/function calling.
+            task_data = self.parsing_llm_client.generate_with_tools(command, tools=[tool_schema])
+
             if not all(k in task_data for k in ['topic', 'primary_keyword', 'target_audience', 'category']):
                 return "I'm sorry, I couldn't understand all the details. Please provide a topic, primary keyword, target audience, and category."
 
             self.firestore_client.add_content_task(task_data)
             return f"I've created a new content task with the topic: '{task_data['topic']}'."
-
         except Exception as e:
             logging.error(f"Error creating content task: {e}", exc_info=True)
             return "I'm sorry, I had trouble creating the new content task."
@@ -97,4 +139,3 @@ class Orchestrator:
         except Exception as e:
             logging.error(f"Error running content pipeline: {e}", exc_info=True)
             return "I'm sorry, I encountered an error while trying to start the content pipeline."
-

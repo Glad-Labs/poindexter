@@ -7,10 +7,10 @@ class MarketInsightAgent:
     """
     A specialized agent for analyzing market trends and suggesting content topics.
     """
-    def __init__(self):
-        """Initializes the MarketInsightAgent."""
-        self.llm_client = LLMClient()
-        self.firestore_client = FirestoreClient()
+    def __init__(self, llm_client: LLMClient, firestore_client: FirestoreClient):
+        """Initializes the MarketInsightAgent with required clients."""
+        self.llm_client = llm_client
+        self.firestore_client = firestore_client
         logging.info("Market Insight Agent initialized.")
 
     def suggest_topics(self, base_query: str) -> str:
@@ -33,9 +33,35 @@ class MarketInsightAgent:
         Analyzes a trend, generates topic ideas, and creates new tasks in Firestore.
         """
         try:
-            prompt = f"Generate three blog post ideas based on the trend: '{trend}'. For each idea, provide a 'topic', 'primary_keyword', 'target_audience', and 'category'. Return them as a JSON array of objects."
-            suggestions_json = self.llm_client.generate_text(prompt)
-            suggestions = json.loads(suggestions_json)
+            # Define a tool for the LLM to generate structured task ideas.
+            tool_schema = {
+                "type": "function",
+                "function": {
+                    "name": "create_blog_post_ideas",
+                    "description": "Generates a list of blog post ideas based on a trend.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "ideas": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "topic": {"type": "string"},
+                                        "primary_keyword": {"type": "string"},
+                                        "target_audience": {"type": "string"},
+                                        "category": {"type": "string"}
+                                    },
+                                    "required": ["topic", "primary_keyword", "target_audience", "category"]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            prompt = f"Generate three blog post ideas based on the trend: '{trend}'."
+            response = self.llm_client.generate_with_tools(prompt, tools=[tool_schema])
+            suggestions = response.get("ideas", [])
 
             for task_data in suggestions:
                 self.firestore_client.add_content_task(task_data)

@@ -1,3 +1,9 @@
+"""
+This script defines a Google Cloud Function that acts as a secure endpoint 
+for the Oversight Hub. It receives commands via an HTTP POST request and 
+publishes them to a Google Cloud Pub/Sub topic for further processing by 
+other services, such as the Co-Founder Agent.
+"""
 import os
 import json
 from google.cloud import pubsub_v1
@@ -21,7 +27,18 @@ topic_path = publisher.topic_path(PROJECT_ID, TOPIC_NAME)
 def intervene():
     """
     HTTP-triggered Cloud Function to publish a message to a Pub/Sub topic.
+
     This function is designed to be a secure endpoint for the Oversight Hub.
+    It expects a JSON payload with a 'command' key.
+
+    Request Body (JSON):
+        {
+            "command": "Your command for the AI agent",
+            "task": { ... task object ... }
+        }
+
+    Returns:
+        JSON: A status message indicating success or failure.
     """
     # --- Security: CORS and Authentication ---
     # In a production environment, you would add more robust security here,
