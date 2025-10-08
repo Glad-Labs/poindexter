@@ -4,11 +4,10 @@ from typing import Dict, Any, List
 
 from agents.content_agent.services.firestore_client import FirestoreClient
 from agents.content_agent.services.llm_client import LLMClient
-# from agents.financial_agent.agent import FinancialAgent
-# from agents.market_insight_agent.agent import MarketInsightAgent
-# from agents.compliance_agent.agent import ComplianceAgent
-# In the future, we will add a PubSubClient to delegate tasks
-# from agents.content_agent.services.pubsub_client import PubSubClient
+from src.agents.content_agent.content_agent import ContentAgent
+from src.agents.financial_agent.financial_agent import FinancialAgent
+from src.agents.market_insight_agent.market_insight_agent import MarketInsightAgent
+from src.agents.compliance_agent.agent import ComplianceAgent
 
 class Orchestrator:
     """
@@ -19,11 +18,11 @@ class Orchestrator:
         """Initializes the Orchestrator and its clients."""
         self.firestore_client = FirestoreClient()
         self.llm_client = LLMClient()
-        # self.financial_agent = FinancialAgent()
-        # self.market_insight_agent = MarketInsightAgent()
-        # self.compliance_agent = ComplianceAgent(workspace_root=".")
-        # self.pubsub_client = PubSubClient(...)
-        logging.info("Orchestrator Agent logic initialized.")
+        self.content_agent = ContentAgent()
+        self.financial_agent = FinancialAgent()
+        self.market_insight_agent = MarketInsightAgent()
+        self.compliance_agent = ComplianceAgent(workspace_root=".")
+        logging.info("Orchestrator initialized with all agents.")
 
     def process_command(self, command: str) -> str:
         """
@@ -36,17 +35,17 @@ class Orchestrator:
             return self.get_content_calendar()
         elif "create task" in command or "new post" in command:
             return self.create_content_task(command)
-        # elif "financial" in command or "balance" in command or "spend" in command:
-        #     return self.financial_agent.get_financial_summary()
-        # elif "suggest topics" in command or "new ideas" in command:
-        #     base_query = command.replace("suggest topics about", "").strip()
-        #     return self.market_insight_agent.suggest_topics(base_query)
-        # elif "security audit" in command or "compliance check" in command:
-        #     return self.compliance_agent.run_security_audit()
-        elif "run content agent" in command or "execute tasks" in command:
-            return self.run_content_pipeline()
+        elif "financial" in command or "balance" in command or "spend" in command:
+            return self.financial_agent.get_financial_summary()
+        elif "suggest topics" in command or "new ideas" in command:
+            return self.market_insight_agent.suggest_content_topics(command)
+        elif "create tasks from trend" in command:
+            trend = command.split(":")[-1].strip()
+            return self.market_insight_agent.create_tasks_from_trends(trend)
+        elif "run compliance" in command or "security audit" in command:
+            return self.compliance_agent.run_security_audit()
         else:
-            return "I'm sorry, I don't understand that command yet. You can ask me to 'show the content calendar', 'create a new task', or 'run the content agent'."
+            return "I'm sorry, I don't understand that command. Please try again."
 
     def get_content_calendar(self) -> str:
         """Fetches the content calendar from Firestore and formats it as a string."""

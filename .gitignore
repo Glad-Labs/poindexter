@@ -1,145 +1,39 @@
-# IDE & OS files
+# IDE & OS
 .vscode/
 .idea/
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
-# OS generated files
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
 
 # Node.js
 node_modules/
-npm-debug.log*
-yarn-error.log*
-package-lock.json
-yarn.lock
 .next/
 build/
 dist/
 .pnp.*
+npm-debug.log*
+yarn-error.log*
 
 # Python
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
 .venv/
-pip-log.txt
-pip-delete-this-directory.txt
 .eggs/
 *.egg-info/
 *.egg
 
 # Strapi
-cms/strapi-backend/.cache/
-cms/strapi-backend/build/
-cms/strapi-backend/database/
-cms/strapi-backend/types/
-cms/strapi-backend/src/admin/
-cms/strapi-backend/src/api/
-cms/strapi-backend/src/components/
-cms/strapi-backend/src/extensions/
-cms/strapi-backend/src/policies/
-cms/strapi-backend/src/middlewares/
-cms/strapi-backend/src/bootstrap.js
-cms/strapi-backend/src/index.js
-cms/strapi-backend/src/register.js
-cms/strapi-backend/src/destroy.js
-# Ignore generated Strapi documentation
-cms/strapi-backend/src/extensions/documentation/documentation/
+cms/strapi-v5-backend/build/
+cms/strapi-v5-backend/.cache/
+cms/strapi-v5-backend/database/
+cms/strapi-v5-backend/export/
+cms/strapi-v5-backend/public/uploads/
 .tmp/
-.cache/
-*.db
 
-# Next.js
-.next/
-out/
-
-# General
+# Environment & Credentials
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+!/.env.example
 credentials.json
+service-account-key.json
+token.json
 *.log
-
-# Node.js
-node_modules/
-npm-debug.log
-yarn-error.log
-.env
-.env.local
-
-# Strapi
-cms/strapi-backend/build/
-cms/strapi-backend/.cache/
-cms/strapi-backend/database/
-cms/strapi-backend/export/
-cms/strapi-backend/public/uploads/
-
-# Next.js
-web/public-site/.next/
-web/public-site/out/
-
-# Python
-agents/content-agent/.venv/
-agents/content-agent/__pycache__/
-agents/content-agent/*.log
-agents/content-agent/credentials.json
-
-# Node / JavaScript
-node_modules/
-.next/
-build/
-dist/
-.pnp.*
-
-# Python
-__pycache__/
-*.pyc
-.venv/
-*.egg-info/
-
-# Strapi
-.cache/
-.tmp/
-*.db
-
-# OS / Editor
-.DS_Store
-*.pem
-.vscode/
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-!**/.vscode/settings.json
-!**/.vscode/tasks.json
-!**/.vscode/launch.json
-!**/.vscode/extensions.json
-
-# Logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Environment
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
