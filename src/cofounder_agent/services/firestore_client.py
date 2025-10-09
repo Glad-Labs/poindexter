@@ -50,19 +50,39 @@ class FirestoreClient:
             Document ID of the created task
         """
         try:
-            # Add timestamp and ensure required fields
-            task_data.update({
-                'created_at': firestore.SERVER_TIMESTAMP,
-                'updated_at': firestore.SERVER_TIMESTAMP,
-                'status': task_data.get('status', 'pending')
-            })
+            # Add timestamp and ensure required fields following data_schemas.md
+            enhanced_task_data = {
+                "taskName": task_data.get("taskName", f"Task: {task_data.get('topic', 'Unknown')}"),
+                "agentId": task_data.get("agentId", "content-creation-agent-v1"),
+                "status": task_data.get("status", "queued"),
+                "createdAt": firestore.SERVER_TIMESTAMP,
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+                
+                # Core task data
+                "topic": task_data.get("topic", "Unknown topic"),
+                "primary_keyword": task_data.get("primary_keyword", "content"),
+                "target_audience": task_data.get("target_audience", "General"),
+                "category": task_data.get("category", "Blog Post"),
+                
+                # Metadata following GLAD Labs schema
+                "metadata": {
+                    "priority": task_data.get("metadata", {}).get("priority", 2),
+                    "estimated_duration_minutes": task_data.get("metadata", {}).get("estimated_duration_minutes", 45),
+                    "source": task_data.get("metadata", {}).get("source", "cofounder_orchestrator"),
+                    "content_type": task_data.get("metadata", {}).get("content_type", "blog_post"),
+                    "word_count_target": task_data.get("metadata", {}).get("word_count_target", 1500),
+                    **task_data.get("metadata", {})  # Include any additional metadata
+                }
+            }
             
             # Add the task document
-            doc_ref = self.db.collection('tasks').add(task_data)[1]
+            doc_ref = self.db.collection('tasks').add(enhanced_task_data)[1]
             
             logger.info("Task created successfully", 
                        task_id=doc_ref.id, 
-                       topic=task_data.get('topic', 'unknown'))
+                       topic=enhanced_task_data.get('topic', 'unknown'),
+                       agent_id=enhanced_task_data.get('agentId', 'unknown'),
+                       status=enhanced_task_data.get('status', 'unknown'))
             
             return doc_ref.id
             

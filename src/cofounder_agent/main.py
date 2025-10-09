@@ -26,10 +26,12 @@ from cofounder_agent.orchestrator_logic import Orchestrator
 try:
     from services.firestore_client import FirestoreClient
     from services.pubsub_client import PubSubClient
+    from services.performance_monitor import PerformanceMonitor
     GOOGLE_CLOUD_AVAILABLE = True
 except ImportError:
     FirestoreClient = None
     PubSubClient = None
+    PerformanceMonitor = None
     GOOGLE_CLOUD_AVAILABLE = False
     logging.warning("Google Cloud services not available - running in development mode")
 
@@ -63,11 +65,12 @@ except ImportError:
 firestore_client: Optional[object] = None
 pubsub_client: Optional[object] = None
 orchestrator: Optional[Orchestrator] = None
+performance_monitor: Optional[object] = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager for service initialization and cleanup"""
-    global firestore_client, pubsub_client, orchestrator
+    global firestore_client, pubsub_client, orchestrator, performance_monitor
     
     try:
         # Initialize services
@@ -77,6 +80,9 @@ async def lifespan(app: FastAPI):
             # Initialize Firestore client
             firestore_client = FirestoreClient()
             
+            # Initialize performance monitor with Firestore
+            performance_monitor = PerformanceMonitor(firestore_client=firestore_client)
+            
             # Initialize Pub/Sub client
             pubsub_client = PubSubClient()
             await pubsub_client.ensure_topics_exist()
@@ -85,8 +91,11 @@ async def lifespan(app: FastAPI):
             await firestore_client.update_agent_status("cofounder", {
                 "status": "online",
                 "service_version": "1.0.0",
-                "capabilities": ["command_processing", "agent_orchestration", "task_management"]
+                "capabilities": ["command_processing", "agent_orchestration", "task_management", "performance_monitoring"]
             })
+        else:
+            # Development mode - initialize performance monitor without Firestore
+            performance_monitor = PerformanceMonitor() if PerformanceMonitor else None
         
         # Initialize orchestrator with services
         orchestrator = Orchestrator(
@@ -175,8 +184,12 @@ async def process_command(request: CommandRequest, background_tasks: BackgroundT
         if orchestrator is None:
             raise HTTPException(status_code=503, detail="Orchestrator not initialized")
         
-        # Process command through orchestrator
-        response = orchestrator.process_command(request.command, request.context)
+        # Use async version if Google Cloud services are available
+        if GOOGLE_CLOUD_AVAILABLE and orchestrator.firestore_client and orchestrator.pubsub_client:
+            response = await orchestrator.process_command_async(request.command, request.context)
+        else:
+            # Fall back to synchronous version for development
+            response = orchestrator.process_command(request.command, request.context)
         
         return CommandResponse(
             response=response.get("response", "Command processed"),
@@ -280,6 +293,57 @@ async def get_pending_tasks(limit: int = 10):
     except Exception as e:
         logger.error("Error getting pending tasks", error=str(e))
         raise HTTPException(status_code=500, detail=f"Failed to get tasks: {str(e)}")
+
+@app.get("/metrics/performance")
+async def get_performance_metrics(hours: int = 24):
+    """
+    Get comprehensive performance metrics and analytics
+    """
+    try:
+        if performance_monitor:
+            metrics = await performance_monitor.get_performance_summary(hours=hours)
+            return {"metrics": metrics, "status": "success"}
+        else:
+            return {"message": "Performance monitoring not available", "status": "disabled"}
+    except Exception as e:
+        logger.error(f"Error getting performance metrics: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get performance metrics: {str(e)}")
+
+@app.get("/metrics/health")
+async def get_health_metrics():
+    """
+    Get current system health metrics and status
+    """
+    try:
+        if performance_monitor:
+            health = await performance_monitor.get_health_metrics()
+            return {"health": health, "status": "success"}
+        else:
+            return {
+                "health": {
+                    "overall_status": "unknown",
+                    "message": "Performance monitoring not available"
+                },
+                "status": "disabled"
+            }
+    except Exception as e:
+        logger.error(f"Error getting health metrics: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get health metrics: {str(e)}")
+
+@app.post("/metrics/reset")
+async def reset_performance_metrics():
+    """
+    Reset session-level performance metrics (admin endpoint)
+    """
+    try:
+        if performance_monitor:
+            performance_monitor.reset_session_metrics()
+            return {"message": "Performance metrics reset successfully", "status": "success"}
+        else:
+            return {"message": "Performance monitoring not available", "status": "disabled"}
+    except Exception as e:
+        logger.error(f"Error resetting metrics: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to reset metrics: {str(e)}")
 
 @app.get("/")
 async def root():
