@@ -1,5 +1,5 @@
 import google.generativeai as genai
-from config import config
+from agents.content_agent.config import config
 import logging
 import json
 import os

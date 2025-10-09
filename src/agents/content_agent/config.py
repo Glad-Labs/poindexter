@@ -2,6 +2,8 @@ import os
 import logging
 from dotenv import load_dotenv
 
+from pathlib import Path
+
 # --- Define Base Directory ---
 # Ensures that all file paths are relative to the project root, making the application more portable.
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -22,7 +24,9 @@ class Config:
     def __init__(self):
         # Load environment variables from a .env file into the environment.
         # This allows for secure and flexible configuration without hardcoding secrets.
-        load_dotenv()
+        project_root = Path(__file__).resolve().parents[3]
+        dotenv_path = project_root / '.env'
+        load_dotenv(dotenv_path=dotenv_path)
 
         # --- Core Application Paths ---
         self.BASE_DIR = BASE_DIR

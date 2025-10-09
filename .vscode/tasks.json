@@ -60,9 +60,9 @@
     {
       "label": "Start Co-founder Agent",
       "type": "shell",
-      "command": "uvicorn main:app --reload",
+      "command": "python -m uvicorn cofounder_agent.main:app --reload",
       "options": {
-        "cwd": "${workspaceFolder}/src/cofounder_agent"
+        "cwd": "${workspaceFolder}/src"
       },
       "problemMatcher": [],
       "presentation": {
