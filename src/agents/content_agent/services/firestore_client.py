@@ -2,7 +2,7 @@ import os
 import logging
 from google.cloud import firestore
 from datetime import datetime
-from config import config
+from agents.content_agent.config import config
 from typing import Optional, Any
 
 
