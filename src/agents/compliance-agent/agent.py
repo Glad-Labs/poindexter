@@ -27,7 +27,8 @@ class ComplianceAgent:
 
             # Run linters
             flake8_result = self._run_command("flake8 .")
-            eslint_result = self._run_command("npm run lint --workspace=oversight-hub") # Example for one workspace
+            # Run ESLint against all workspaces that have a 'lint' script
+            eslint_result = self._run_command("npm run lint --workspaces")
 
             response = (
                 "Compliance audit complete. Here is the summary:\\n\\n"

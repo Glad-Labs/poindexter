@@ -4,7 +4,7 @@ import re
 from config import config
 from services.llm_client import LLMClient
 from utils.data_models import BlogPost
-from utils.helpers import load_prompts_from_file, extract_json_from_string
+from utils.helpers import load_prompts_from_file, extract_json_from_string, slugify
 
 logger = logging.getLogger(__name__)
 
@@ -83,25 +83,21 @@ class CreativeAgent:
         logger.info(f"CreativeAgent: Generating SEO assets for '{post.topic}'.")
         seo_assets_text = self.llm_client.generate_text(seo_prompt)
 
-        # Extract the title, meta description, and slug from the response
-        post.title = self._extract_asset(seo_assets_text, "Title")
-        post.meta_description = self._extract_asset(seo_assets_text, "MetaDescription")
-        post.slug = self._extract_asset(seo_assets_text, "Slug")
+        # Extract the JSON object from the LLM's output
+        seo_assets_json = extract_json_from_string(seo_assets_text)
+        if seo_assets_json:
+            try:
+                seo_assets = json.loads(seo_assets_json)
+                post.title = seo_assets.get("title", "")
+                post.meta_description = seo_assets.get("meta_description", "")
+                post.slug = slugify(post.title) # Generate slug from title
+            except json.JSONDecodeError:
+                logger.error(
+                    f"CreativeAgent: Failed to decode JSON from SEO assets response: {seo_assets_json}"
+                )
+        else:
+            logger.error(
+                f"CreativeAgent: Could not extract JSON from SEO assets response: {seo_assets_text}"
+            )
 
         return post
-
-    def _extract_asset(self, text: str, asset_name: str) -> str:
-        """Extracts a specific asset from a text block using regex."""
-        try:
-            # Pattern to find 'Asset Name: Value' and capture 'Value'
-            pattern = re.compile(rf"^\s*{asset_name}:\s*(.*)", re.MULTILINE)
-            match = pattern.search(text)
-            if match:
-                return match.group(1).strip()
-            logger.warning(
-                f"CreativeAgent: Could not find '{asset_name}' in the provided text."
-            )
-            return ""
-        except Exception as e:
-            logger.error(f"CreativeAgent: Error extracting asset '{asset_name}': {e}")
-            return ""

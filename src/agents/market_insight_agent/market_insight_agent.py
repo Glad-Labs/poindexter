@@ -13,17 +13,44 @@ class MarketInsightAgent:
         self.firestore_client = firestore_client
         logging.info("Market Insight Agent initialized.")
 
+import logging
+import json
+from agents.content_agent.services.llm_client import LLMClient
+from agents.content_agent.services.firestore_client import FirestoreClient
+from agents.content_agent.agents.research_agent import ResearchAgent
+
+class MarketInsightAgent:
+    """
+    A specialized agent for analyzing market trends and suggesting content topics.
+    """
+    def __init__(self, llm_client: LLMClient, firestore_client: FirestoreClient):
+        """Initializes the MarketInsightAgent with required clients."""
+        self.llm_client = llm_client
+        self.firestore_client = firestore_client
+        self.research_agent = ResearchAgent()
+        logging.info("Market Insight Agent initialized.")
+
     def suggest_topics(self, base_query: str) -> str:
         """
         Suggests new content topics based on a base query.
 
-        In the future, this will use a web search tool to gather real-time data.
-        For now, it uses the LLM to generate suggestions based on the query.
+        This method uses a web search tool to gather real-time data and then
+        uses the LLM to generate suggestions based on the search results.
+
+        Args:
+            base_query (str): The base query to search for.
+
+        Returns:
+            str: A string containing the suggested topics.
         """
         try:
-            prompt = f"Generate three blog post titles based on the topic: '{base_query}'. Return them as a numbered list."
+            # Get real-time data from the web
+            search_results = self.research_agent.run(base_query, [])
+
+            # Generate suggestions based on the search results
+            prompt = f"Based on the following search results, generate three blog post titles related to '{base_query}'. Return them as a numbered list.\n\n---SEARCH RESULTS---\n{search_results}\n---END SEARCH RESULTS---"
             suggestions = self.llm_client.generate_text(prompt)
-            return f"Here are some topic suggestions based on '{base_query}':\\n{suggestions}"
+            return f"Here are some topic suggestions based on '{base_query}':\n{suggestions}"
         except Exception as e:
             logging.error(f"Error suggesting topics: {e}", exc_info=True)
             return "I'm sorry, I had trouble generating topic suggestions."

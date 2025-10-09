@@ -46,11 +46,17 @@ lint_python:
     - ruff check .
 
 # --- Testing Jobs ---
-test_frontend:
+test_oversight_hub:
   stage: test
   extends: .node_template
   script:
     - npm test --workspace=oversight-hub
+
+test_public_site:
+  stage: test
+  extends: .node_template
+  script:
+    - npm test --workspace=glad-labs-public-site
 
 test_python:
   stage: test
