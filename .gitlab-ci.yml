@@ -37,7 +37,7 @@ lint_frontend:
   stage: lint
   extends: .node_template
   script:
-    - npm run lint
+    - npm run lint --workspaces
 
 lint_python:
   stage: lint
@@ -46,23 +46,17 @@ lint_python:
     - ruff check .
 
 # --- Testing Jobs ---
-test_oversight_hub:
+test_frontend:
   stage: test
   extends: .node_template
   script:
-    - npm test --workspace=oversight-hub
-
-test_public_site:
-  stage: test
-  extends: .node_template
-  script:
-    - npm test --workspace=glad-labs-public-site
+    - npm run test:frontend
 
 test_python:
   stage: test
   extends: .python_template
   script:
-    - pytest src/agents/
+    - npm run test:python
 
 # --- Security Jobs ---
 security_audit_npm:

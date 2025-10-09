@@ -12,30 +12,29 @@
     "web/*"
   ],
   "scripts": {
-    "//": "--- CLEAN & INSTALL ---",
+    "//": "--- QUALITY & TESTING ---",
     "clean": "rimraf node_modules package-lock.json **/node_modules **/dist **/.next **/build .venv",
     "install:clean": "npm run clean && npm install",
-    "//": "--- DEVELOPMENT ---",
     "dev": "npm-run-all --parallel dev:*",
     "dev:strapi": "npm run develop --workspace=strapi-v5-backend",
     "dev:oversight": "npm start --workspace=oversight-hub",
     "dev:public": "npm run dev --workspace=glad-labs-public-site -- --port 3000",
     "dev:cofounder": "python -m uvicorn src.cofounder_agent.main:app --reload --port 8000",
-    "//": "--- PRODUCTION BUILD ---",
     "build": "npm run build --workspaces --if-present",
-    "//": "--- PRODUCTION START ---",
     "start:all": "npm-run-all --parallel start:*",
     "start:strapi": "npm run start --workspace=strapi-v5-backend",
     "start:public": "npm run start --workspace=glad-labs-public-site",
     "start:cofounder": "python -m uvicorn src.cofounder_agent.main:app --port 8000",
-    "//": "--- QUALITY & TESTING ---",
-    "test": "npm test --workspaces --if-present",
+    "test": "npm-run-all --parallel test:frontend test:python",
+    "test:frontend": "npm test --workspaces --if-present",
+    "test:python": "pytest src/agents/",
     "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md}\" \"!**/package-lock.json\""
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
     "cross-env": "^10.1.0",
     "markdownlint-cli": "^0.32.2",
+    "npm-run-all": "^4.1.5",
     "prettier": "^2.8.8",
     "wait-on": "^7.2.0"
   }

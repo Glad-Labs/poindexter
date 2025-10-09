@@ -21,13 +21,16 @@ beautifulsoup4==4.13.4     # For parsing HTML and XML, used in web scraping tool
 pydantic                   # For data validation and settings management
 requests==2.31.0           # For making HTTP requests to external APIs
 markdown==3.5.1            # For converting Markdown text to HTML
-pytrends
+pytrends                   # For accessing Google Trends data
 
 # --- Firebase Integration ---
 firebase-admin             # For backend integration with Firebase services (e.g., Auth, Firestore)
 
 # --- Environment & Configuration ---
 python-dotenv==1.0.0       # For managing environment variables from a .env file
+
+# --- Pytest for Testing ---
+pytest==7.4.2              # For writing and running tests
 
 # --- Web Server ---
 # Flask is used to create the HTTP server
