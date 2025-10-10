@@ -119,7 +119,7 @@ cd web/public-site && npm test
 
 # Lint checks
 ruff check src/         # Python
-npm run lint           # JavaScript/React
+npm run lint           # JavaScript/Reacts
 ```
 
 ### **3. Environment Variables**

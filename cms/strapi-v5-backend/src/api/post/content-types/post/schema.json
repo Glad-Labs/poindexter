@@ -54,8 +54,7 @@
       "inversedBy": "post"
     },
     "featured": {
-      "type": "boolean",
-      "default": false
+      "type": "boolean"
     }
   }
 }
