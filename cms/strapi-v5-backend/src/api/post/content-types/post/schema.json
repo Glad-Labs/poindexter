@@ -9,11 +9,7 @@
   "options": {
     "draftAndPublish": true
   },
-  "pluginOptions": {
-    "i18n": {
-      "localized": false
-    }
-  },
+  "pluginOptions": {},
   "attributes": {
     "title": {
       "type": "string",
@@ -32,7 +28,9 @@
     "coverImage": {
       "type": "media",
       "multiple": false,
-      "allowedTypes": ["images"]
+      "allowedTypes": [
+        "images"
+      ]
     },
     "date": {
       "type": "datetime"
@@ -54,6 +52,9 @@
       "relation": "oneToOne",
       "target": "api::content-metric.content-metric",
       "inversedBy": "post"
+    },
+    "Featured": {
+      "type": "boolean"
     }
   }
 }
