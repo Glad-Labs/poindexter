@@ -118,8 +118,6 @@ cd web/oversight-hub && npm test
 cd web/public-site && npm test
 
 # Lint checks
-ruff check src/
-npm run lint
 ruff check src/         # Python
 npm run lint           # JavaScript/React
 ```
