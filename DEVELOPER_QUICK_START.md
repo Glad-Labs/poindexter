@@ -13,7 +13,7 @@ GLAD Labs AI Co-Founder is a production-ready Google Cloud native system with co
 
 ### **Start All Services (Recommended)**
 
-```bash
+````bash
 # Use VS Code task (preferred)
 Ctrl+Shift+P → "Tasks: Run Task" → "Start All Services"
 
@@ -22,7 +22,7 @@ cd web/public-site && npm run dev          # Port 3000
 cd web/oversight-hub && npm start          # Port 3001
 cd cms/strapi-v5-backend && npm run develop # Port 1337
 cd src && python -m uvicorn cofounder_agent.main:app --reload # Port 8000
-```
+```text
 
 ### **Development Environment Setup**
 
@@ -33,7 +33,7 @@ cd web/public-site && npm install
 cd web/oversight-hub && npm install
 cd cms/strapi-v5-backend && npm install
 pip install -r requirements.txt  # Python dependencies
-```
+```text
 
 ---
 
@@ -51,13 +51,13 @@ pip install -r requirements.txt  # Python dependencies
 
 ## **Core Architecture**
 
-```
+```text
 Public Site (Next.js) ──┐
 Oversight Hub (React) ──┼──► AI Co-Founder (FastAPI) ──► Google Cloud
 Strapi CMS (Headless) ──┘                              ├── Firestore
                                                         ├── Pub/Sub
                                                         └── Cloud Run
-```
+````
 
 ---
 
@@ -79,7 +79,7 @@ GET /status
 # Performance metrics
 GET /metrics/performance
 
-# Create tasks
+# Create a task
 POST /tasks
 {
   "description": "Generate quarterly financial report",
@@ -118,6 +118,8 @@ cd web/oversight-hub && npm test
 cd web/public-site && npm test
 
 # Lint checks
+ruff check src/
+npm run lint
 ruff check src/         # Python
 npm run lint           # JavaScript/React
 ```

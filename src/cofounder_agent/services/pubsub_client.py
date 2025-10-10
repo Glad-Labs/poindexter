@@ -9,8 +9,13 @@ import asyncio
 import logging
 from typing import Dict, Any, Callable, Optional
 from concurrent.futures import ThreadPoolExecutor
-from google.cloud import pubsub_v1
-from google.cloud.pubsub_v1.types import PushConfig
+try:
+    from google.cloud import pubsub_v1  # type: ignore
+    from google.cloud.pubsub_v1.types import PushConfig  # type: ignore
+except Exception:  # pragma: no cover - optional dependency at dev time
+    pubsub_v1 = None  # type: ignore
+    class PushConfig:  # type: ignore
+        pass
 import structlog
 
 # Configure structured logging
@@ -34,6 +39,8 @@ class PubSubClient:
             logger.warning("No GCP_PROJECT_ID found, using default project")
         
         try:
+            if pubsub_v1 is None:
+                raise RuntimeError("google-cloud-pubsub not installed or import failed")
             # Initialize publisher and subscriber clients
             self.publisher = pubsub_v1.PublisherClient()
             self.subscriber = pubsub_v1.SubscriberClient()

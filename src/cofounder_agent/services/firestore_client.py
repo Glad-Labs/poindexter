@@ -7,8 +7,20 @@ import os
 import logging
 from typing import Dict, List, Optional, Any
 from datetime import datetime
-from google.cloud import firestore
-from google.cloud.firestore import DocumentReference, DocumentSnapshot
+try:
+    from google.cloud import firestore  # type: ignore
+    from google.cloud.firestore import DocumentReference, DocumentSnapshot  # type: ignore
+except Exception:  # pragma: no cover - optional dependency at dev time
+    firestore = None  # type: ignore
+    DocumentReference = object  # type: ignore
+    DocumentSnapshot = object  # type: ignore
+    class _FireStoreStubs:
+        SERVER_TIMESTAMP = None
+        class Query:
+            DESCENDING = None
+    FIRESTORE_STUBS = _FireStoreStubs()
+else:
+    FIRESTORE_STUBS = firestore  # type: ignore
 import structlog
 
 # Configure structured logging
@@ -32,6 +44,8 @@ class FirestoreClient:
             logger.warning("No GCP_PROJECT_ID found, using default project")
         
         try:
+            if firestore is None:
+                raise RuntimeError("google-cloud-firestore not installed or import failed")
             self.db = firestore.Client(project=self.project_id)
             logger.info("Firestore client initialized", project_id=self.project_id)
         except Exception as e:
@@ -55,8 +69,8 @@ class FirestoreClient:
                 "taskName": task_data.get("taskName", f"Task: {task_data.get('topic', 'Unknown')}"),
                 "agentId": task_data.get("agentId", "content-creation-agent-v1"),
                 "status": task_data.get("status", "queued"),
-                "createdAt": firestore.SERVER_TIMESTAMP,
-                "updatedAt": firestore.SERVER_TIMESTAMP,
+                "createdAt": FIRESTORE_STUBS.SERVER_TIMESTAMP,
+                "updatedAt": FIRESTORE_STUBS.SERVER_TIMESTAMP,
                 
                 # Core task data
                 "topic": task_data.get("topic", "Unknown topic"),
@@ -114,7 +128,7 @@ class FirestoreClient:
         try:
             update_data = {
                 'status': status,
-                'updated_at': firestore.SERVER_TIMESTAMP
+                'updated_at': FIRESTORE_STUBS.SERVER_TIMESTAMP
             }
             
             if metadata:
@@ -162,7 +176,7 @@ class FirestoreClient:
         """Add a financial transaction entry"""
         try:
             entry_data.update({
-                'created_at': firestore.SERVER_TIMESTAMP,
+                'created_at': FIRESTORE_STUBS.SERVER_TIMESTAMP,
                 'timestamp': entry_data.get('timestamp', datetime.utcnow())
             })
             
@@ -188,7 +202,7 @@ class FirestoreClient:
             
             query = (self.db.collection('financials')
                     .where('timestamp', '>=', start_date)
-                    .order_by('timestamp', direction=firestore.Query.DESCENDING))
+                    .order_by('timestamp', direction=FIRESTORE_STUBS.Query.DESCENDING))
             
             entries = []
             total_spend = 0.0
@@ -222,8 +236,8 @@ class FirestoreClient:
         """Update agent status and heartbeat"""
         try:
             status_data.update({
-                'last_heartbeat': firestore.SERVER_TIMESTAMP,
-                'updated_at': firestore.SERVER_TIMESTAMP
+                'last_heartbeat': FIRESTORE_STUBS.SERVER_TIMESTAMP,
+                'updated_at': FIRESTORE_STUBS.SERVER_TIMESTAMP
             })
             
             doc_ref = self.db.collection('agents').document(agent_name)
@@ -267,7 +281,7 @@ class FirestoreClient:
             log_data = {
                 'level': level,
                 'message': message,
-                'timestamp': firestore.SERVER_TIMESTAMP,
+                'timestamp': FIRESTORE_STUBS.SERVER_TIMESTAMP,
                 'metadata': metadata or {}
             }
             
@@ -285,7 +299,7 @@ class FirestoreClient:
             # Try to read from a test collection
             test_doc = self.db.collection('health').document('check')
             test_doc.set({
-                'timestamp': firestore.SERVER_TIMESTAMP,
+                'timestamp': FIRESTORE_STUBS.SERVER_TIMESTAMP,
                 'status': 'healthy'
             })
             

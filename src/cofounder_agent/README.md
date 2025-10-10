@@ -15,7 +15,7 @@ The AI Co-Founder Agent serves as the central "big brain" of GLAD Labs, orchestr
 
 ### **Core Components**
 
-```
+````text
 ┌─────────────────────────────────────────────────────┐
 │                AI Co-Founder Agent                  │
 ├─────────────────────────────────────────────────────┤
@@ -38,7 +38,7 @@ The AI Co-Founder Agent serves as the central "big brain" of GLAD Labs, orchestr
 │  └─────────────┘    └──────────────┘              │
 │                                                     │
 └─────────────────────────────────────────────────────┘
-```
+```bash
 
 ### **Key Features**
 
@@ -61,7 +61,7 @@ python --version
 
 # Required packages (auto-installed)
 pip install fastapi uvicorn structlog pydantic google-cloud-firestore google-cloud-pubsub
-```
+```text
 
 ### **Environment Configuration**
 
@@ -76,7 +76,7 @@ PUBSUB_TOPIC_CONTENT=content-creation-requests
 
 # Development Mode (optional)
 DEVELOPMENT_MODE=true  # Enables graceful fallback without Google Cloud
-```
+```text
 
 ### **Development Startup**
 
@@ -87,7 +87,7 @@ python -m uvicorn cofounder_agent.main:app --reload --host 0.0.0.0 --port 8000
 
 # Or using npm script
 npm run dev:cofounder
-```
+````
 
 ### **Production Deployment**
 
@@ -460,7 +460,7 @@ curl http://localhost:8000/metrics/performance
 
 ## **📁 File Structure**
 
-```
+```text
 src/cofounder_agent/
 ├── main.py                 # FastAPI application and routes
 ├── orchestrator_logic.py   # Core orchestration logic

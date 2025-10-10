@@ -78,17 +78,17 @@ async def lifespan(app: FastAPI):
         
         if GOOGLE_CLOUD_AVAILABLE:
             # Initialize Firestore client
-            firestore_client = FirestoreClient()
+            firestore_client = FirestoreClient()  # type: ignore[call-arg]
             
             # Initialize performance monitor with Firestore
-            performance_monitor = PerformanceMonitor(firestore_client=firestore_client)
+            performance_monitor = PerformanceMonitor(firestore_client=firestore_client)  # type: ignore[call-arg]
             
             # Initialize Pub/Sub client
-            pubsub_client = PubSubClient()
+            pubsub_client = PubSubClient()  # type: ignore[call-arg]
             await pubsub_client.ensure_topics_exist()
             
             # Update agent status
-            await firestore_client.update_agent_status("cofounder", {
+            await firestore_client.update_agent_status("cofounder", {  # type: ignore[union-attr]
                 "status": "online",
                 "service_version": "1.0.0",
                 "capabilities": ["command_processing", "agent_orchestration", "task_management", "performance_monitoring"]
@@ -116,7 +116,7 @@ async def lifespan(app: FastAPI):
         
         if GOOGLE_CLOUD_AVAILABLE and firestore_client:
             try:
-                await firestore_client.update_agent_status("cofounder", {
+                await firestore_client.update_agent_status("cofounder", {  # type: ignore[union-attr]
                     "status": "offline"
                 })
             except Exception as e:
@@ -124,7 +124,7 @@ async def lifespan(app: FastAPI):
         
         if GOOGLE_CLOUD_AVAILABLE and pubsub_client:
             try:
-                await pubsub_client.close()
+                await pubsub_client.close()  # type: ignore[union-attr]
             except Exception as e:
                 logger.error(f"Error closing pub/sub: {e}")
 
@@ -179,7 +179,7 @@ async def process_command(request: CommandRequest, background_tasks: BackgroundT
     and returns the result. Can optionally execute tasks in the background.
     """
     try:
-        logger.info("Received command", command=request.command)
+        logger.info(f"Received command: {request.command}")
         
         if orchestrator is None:
             raise HTTPException(status_code=503, detail="Orchestrator not initialized")
@@ -197,7 +197,7 @@ async def process_command(request: CommandRequest, background_tasks: BackgroundT
             metadata=response.get("metadata")
         )
     except Exception as e:
-        logger.error("Error processing command", command=request.command, error=str(e))
+        logger.error(f"Error processing command: {str(e)} | command={request.command}")
         raise HTTPException(status_code=500, detail=f"An internal error occurred: {str(e)}")
 
 @app.post("/tasks", response_model=TaskResponse)
@@ -206,7 +206,7 @@ async def create_task(request: TaskRequest, background_tasks: BackgroundTasks):
     Create a new task for content creation or business operations
     """
     try:
-        logger.info("Creating task", topic=request.topic, task_type=request.task_type)
+        logger.info(f"Creating task: topic={request.topic} type={request.task_type}")
         
         if not GOOGLE_CLOUD_AVAILABLE or not firestore_client:
             # Development mode - simulate task creation
@@ -225,7 +225,7 @@ async def create_task(request: TaskRequest, background_tasks: BackgroundTasks):
             "status": "pending"
         }
         
-        task_id = await firestore_client.add_task(task_data)
+        task_id = await firestore_client.add_task(task_data)  # type: ignore[union-attr]
         
         # Optionally trigger content agent if it's a content task
         if request.task_type == "content_creation" and pubsub_client:
@@ -243,7 +243,7 @@ async def create_task(request: TaskRequest, background_tasks: BackgroundTasks):
         )
         
     except Exception as e:
-        logger.error("Error creating task", error=str(e))
+        logger.error(f"Error creating task: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create task: {str(e)}")
 
 @app.get("/status", response_model=StatusResponse)
@@ -262,17 +262,17 @@ async def get_status():
         if GOOGLE_CLOUD_AVAILABLE:
             # Add Google Cloud service health checks
             if firestore_client:
-                firestore_health = await firestore_client.health_check()
+                firestore_health = await firestore_client.health_check()  # type: ignore[union-attr]
                 status_data["firestore"] = firestore_health
             
             if pubsub_client:
-                pubsub_health = await pubsub_client.health_check()
+                pubsub_health = await pubsub_client.health_check()  # type: ignore[union-attr]
                 status_data["pubsub"] = pubsub_health
         
         return StatusResponse(status="healthy", data=status_data)
         
     except Exception as e:
-        logger.error("Error getting status", error=str(e))
+        logger.error(f"Error getting status: {e}")
         return StatusResponse(
             status="unhealthy", 
             data={"error": str(e)}
@@ -287,11 +287,11 @@ async def get_pending_tasks(limit: int = 10):
         if not GOOGLE_CLOUD_AVAILABLE or not firestore_client:
             return {"tasks": [], "message": "Running in development mode"}
         
-        tasks = await firestore_client.get_pending_tasks(limit)
+        tasks = await firestore_client.get_pending_tasks(limit)  # type: ignore[union-attr]
         return {"tasks": tasks, "count": len(tasks)}
         
     except Exception as e:
-        logger.error("Error getting pending tasks", error=str(e))
+        logger.error(f"Error getting pending tasks: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get tasks: {str(e)}")
 
 @app.get("/metrics/performance")
@@ -301,7 +301,7 @@ async def get_performance_metrics(hours: int = 24):
     """
     try:
         if performance_monitor:
-            metrics = await performance_monitor.get_performance_summary(hours=hours)
+            metrics = await performance_monitor.get_performance_summary(hours=hours)  # type: ignore[union-attr]
             return {"metrics": metrics, "status": "success"}
         else:
             return {"message": "Performance monitoring not available", "status": "disabled"}
@@ -316,7 +316,7 @@ async def get_health_metrics():
     """
     try:
         if performance_monitor:
-            health = await performance_monitor.get_health_metrics()
+            health = await performance_monitor.get_health_metrics()  # type: ignore[union-attr]
             return {"health": health, "status": "success"}
         else:
             return {
@@ -337,7 +337,7 @@ async def reset_performance_metrics():
     """
     try:
         if performance_monitor:
-            performance_monitor.reset_session_metrics()
+            performance_monitor.reset_session_metrics()  # type: ignore[union-attr]
             return {"message": "Performance metrics reset successfully", "status": "success"}
         else:
             return {"message": "Performance monitoring not available", "status": "disabled"}
@@ -367,16 +367,11 @@ async def trigger_content_agent(task_id: str, topic: str, metadata: Optional[Dic
                 "metadata": metadata or {}
             }
             
-            message_id = await pubsub_client.publish_content_request(content_request)
-            logger.info("Content agent triggered", 
-                       task_id=task_id, 
-                       topic=topic, 
-                       message_id=message_id)
+            message_id = await pubsub_client.publish_content_request(content_request)  # type: ignore[union-attr]
+            logger.info(f"Content agent triggered: task_id={task_id} topic={topic} message_id={message_id}")
             
     except Exception as e:
-        logger.error("Failed to trigger content agent", 
-                    task_id=task_id, 
-                    error=str(e))
+        logger.error(f"Failed to trigger content agent: task_id={task_id} error={e}")
 
 if __name__ == "__main__":
     uvicorn.run(

@@ -1,9 +1,9 @@
 # 🚀 **GLAD Labs AI Frontier Firm - Production Ready Monorepo**
 
-[![Production Ready](https://img.shields.io/badge/Status-Production_Ready-brightgreen)](#)
-[![GLAD Labs Standards](https://img.shields.io/badge/Standards-v4.0_Compliant-blue)](#)
-[![Google Cloud Native](https://img.shields.io/badge/Cloud-Google_Native-orange)](#)
-[![Serverless](https://img.shields.io/badge/Architecture-Serverless-purple)](#)
+![Production Ready](https://img.shields.io/badge/Status-Production_Ready-brightgreen)
+![GLAD Labs Standards](https://img.shields.io/badge/Standards-v4.0_Compliant-blue)
+![Google Cloud Native](https://img.shields.io/badge/Cloud-Google_Native-orange)
+![Serverless](https://img.shields.io/badge/Architecture-Serverless-purple)
 
 > **Autonomous AI-driven digital firm with central AI Co-Founder orchestrating specialized agents across a Google-native serverless architecture.**
 

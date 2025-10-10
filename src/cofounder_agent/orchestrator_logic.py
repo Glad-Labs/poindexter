@@ -13,19 +13,15 @@ import re
 
 # Try to import complex dependency agents, but don't fail if unavailable
 try:
-    from agents.financial_agent.financial_agent import FinancialAgent
-    FINANCIAL_AGENT_AVAILABLE = True
-except ImportError:
-    FinancialAgent = None
-    FINANCIAL_AGENT_AVAILABLE = False
+    from agents.financial_agent.financial_agent import FinancialAgent  # type: ignore
+except ImportError:  # pragma: no cover - optional dependency
+    FinancialAgent = None  # type: ignore[assignment]
     logging.warning("Financial agent not available")
 
 try:
-    from agents.compliance_agent.agent import ComplianceAgent
-    COMPLIANCE_AGENT_AVAILABLE = True
-except ImportError:
-    ComplianceAgent = None
-    COMPLIANCE_AGENT_AVAILABLE = False
+    from agents.compliance_agent.agent import ComplianceAgent  # type: ignore
+except ImportError:  # pragma: no cover - optional dependency
+    ComplianceAgent = None  # type: ignore[assignment]
     logging.warning("Compliance agent not available")
 
 class Orchestrator:
@@ -44,23 +40,29 @@ class Orchestrator:
         self.firestore_client = firestore_client
         self.pubsub_client = pubsub_client
         
-        # Initialize agents if available
-        if FINANCIAL_AGENT_AVAILABLE:
+        # Initialize agents if available (guard against None for type checkers)
+        if 'FinancialAgent' in globals() and FinancialAgent is not None:
             self.financial_agent = FinancialAgent()
+            self.financial_agent_available = True
         else:
             self.financial_agent = None
-        
-        if COMPLIANCE_AGENT_AVAILABLE:
+            self.financial_agent_available = False
+
+        if 'ComplianceAgent' in globals() and ComplianceAgent is not None:
             workspace_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
             self.compliance_agent = ComplianceAgent(workspace_root=workspace_root)
+            self.compliance_agent_available = True
         else:
             self.compliance_agent = None
-        
-        logging.info("Orchestrator initialized", 
-                    firestore_available=firestore_client is not None,
-                    pubsub_available=pubsub_client is not None,
-                    financial_agent=FINANCIAL_AGENT_AVAILABLE,
-                    compliance_agent=COMPLIANCE_AGENT_AVAILABLE)
+            self.compliance_agent_available = False
+
+        logging.info(
+            "Orchestrator initialized: firestore_available=%s pubsub_available=%s financial_agent=%s compliance_agent=%s",
+            firestore_client is not None,
+            pubsub_client is not None,
+            self.financial_agent_available,
+            self.compliance_agent_available,
+        )
 
     async def process_command_async(self, command: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
@@ -195,8 +197,8 @@ class Orchestrator:
             response = ""
             
             # Get data from financial agent if available
-            if self.financial_agent:
-                agent_response = self.financial_agent.get_financial_summary()
+            if getattr(self, 'financial_agent_available', False) and getattr(self, 'financial_agent', None) is not None:
+                agent_response = self.financial_agent.get_financial_summary()  # type: ignore[call-arg,union-attr]
                 response += agent_response + "\n\n"
             
             # Enhance with Firestore financial data
@@ -225,83 +227,13 @@ class Orchestrator:
             logging.error(f"Error getting financial summary: {e}")
             return "❌ Error retrieving financial data"
 
-    def run_content_pipeline(self) -> str:
-        """Synchronous version of content pipeline"""
-        try:
-            if self.pubsub_client:
-                return "🚀 Content pipeline ready to start (Use async version for immediate execution)"
-            else:
-                return "🚀 Content pipeline ready to start (Pub/Sub integration available for distributed processing)"
-                
-        except Exception as e:
-            logging.error(f"Error running content pipeline: {e}")
-            return "I'm sorry, I encountered an error while trying to start the content pipeline."
+    # Removed: older duplicate run_content_pipeline implementation
 
-    def run_security_audit(self) -> str:
-        """Enhanced security audit"""
-        try:
-            if self.compliance_agent:
-                return self.compliance_agent.run_security_audit()
-            else:
-                return "🔒 Security audit system ready (compliance agent in development mode)"
-                
-        except Exception as e:
-            logging.error(f"Error running security audit: {e}")
-            return "I'm sorry, I encountered an error during the security audit."
+    # Removed: older duplicate run_security_audit implementation
 
-    def _get_system_status(self) -> Dict[str, Any]:
-        """Synchronous version of system status"""
-        status_data = {
-            "orchestrator": "online",
-            "google_cloud": {
-                "firestore": self.firestore_client is not None,
-                "pubsub": self.pubsub_client is not None
-            },
-            "agents": {
-                "financial": FINANCIAL_AGENT_AVAILABLE,
-                "compliance": COMPLIANCE_AGENT_AVAILABLE
-            },
-            "mode": "production" if (self.firestore_client and self.pubsub_client) else "development"
-        }
-        
-        status_message = f"🟢 System Status: {status_data['mode'].upper()}\n"
-        status_message += f"☁️  Google Cloud: Firestore {'✓' if status_data['google_cloud']['firestore'] else '✗'}, Pub/Sub {'✓' if status_data['google_cloud']['pubsub'] else '✗'}\n"
-        status_message += f"🤖 Agents: Financial {'✓' if status_data['agents']['financial'] else '✗'}, Compliance {'✓' if status_data['agents']['compliance'] else '✗'}"
-        
-        return {
-            "response": status_message,
-            "status": "success",
-            "metadata": status_data
-        }
+    # Removed: older duplicate _get_system_status implementation
 
-    def _handle_intervention(self, command: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Synchronous version of intervention protocol"""
-        try:
-            reason = "user_intervention_request"
-            if "emergency" in command.lower():
-                reason = "emergency_situation"
-            elif "budget" in command.lower():
-                reason = "financial_concern"
-                
-            response_message = f"🚨 // INTERVENE protocol activated: {reason}"
-            
-            if self.pubsub_client:
-                response_message += "\n📢 Ready to notify all agents (Use async version for immediate execution)"
-            else:
-                response_message += "\n⚠️  Emergency protocol ready (Pub/Sub integration available)"
-            
-            return {
-                "response": response_message,
-                "status": "intervention",
-                "metadata": {"reason": reason, "protocol": "INTERVENE"}
-            }
-            
-        except Exception as e:
-            logging.error(f"Error in intervention: {e}")
-            return {
-                "response": f"🚨 CRITICAL: Intervention failed: {str(e)}",
-                "status": "error"
-            }
+    # Removed: older duplicate _handle_intervention implementation
 
     async def run_content_pipeline_async(self) -> str:
         """Async version of content pipeline with real Pub/Sub orchestration"""
@@ -356,8 +288,8 @@ class Orchestrator:
                     "pubsub": self.pubsub_client is not None
                 },
                 "agents": {
-                    "financial": FINANCIAL_AGENT_AVAILABLE,
-                    "compliance": COMPLIANCE_AGENT_AVAILABLE
+                    "financial": getattr(self, 'financial_agent_available', False),
+                    "compliance": getattr(self, 'compliance_agent_available', False)
                 },
                 "mode": "production" if (self.firestore_client and self.pubsub_client) else "development"
             }
@@ -465,17 +397,7 @@ class Orchestrator:
                 "status": "error",
                 "metadata": {"error": str(e), "protocol": "INTERVENE_FAILED"}
             }
-        """Enhanced content calendar with Firestore integration"""
-        try:
-            if self.firestore_client:
-                # In a real implementation, this would be async
-                # tasks = await self.firestore_client.get_pending_tasks()
-                return "Content calendar loaded from Firestore. (Database integration active)"
-            else:
-                return "Content calendar feature available. (Running in development mode - Firestore not connected)"
-        except Exception as e:
-            logging.error(f"Error fetching content calendar: {e}")
-            return "I'm sorry, I had trouble fetching the content calendar."
+        # Removed: unreachable content calendar block
 
     def create_content_task_sync(self, command: str) -> str:
         """Synchronous version of content task creation for backward compatibility"""
@@ -583,9 +505,9 @@ class Orchestrator:
     def get_financial_summary(self) -> str:
         """Enhanced financial summary with multiple data sources"""
         try:
-            if self.financial_agent:
+            if getattr(self, 'financial_agent_available', False) and getattr(self, 'financial_agent', None) is not None:
                 # Use the existing financial agent
-                agent_response = self.financial_agent.get_financial_summary()
+                agent_response = self.financial_agent.get_financial_summary()  # type: ignore[call-arg,union-attr]
                 
                 if self.firestore_client:
                     # In real implementation: cloud_data = await self.firestore_client.get_financial_summary()
@@ -610,7 +532,7 @@ class Orchestrator:
                 return "🚀 Content pipeline started via Pub/Sub messaging. All content agents notified."
             else:
                 return "🚀 Content pipeline ready to start (Pub/Sub integration available for distributed processing)"
-                
+
         except Exception as e:
             logging.error(f"Error running content pipeline: {e}")
             return "I'm sorry, I encountered an error while trying to start the content pipeline."
@@ -622,7 +544,7 @@ class Orchestrator:
                 return self.compliance_agent.run_security_audit()
             else:
                 return "🔒 Security audit system ready (compliance agent in development mode)"
-                
+
         except Exception as e:
             logging.error(f"Error running security audit: {e}")
             return "I'm sorry, I encountered an error during the security audit."
@@ -636,8 +558,8 @@ class Orchestrator:
                 "pubsub": self.pubsub_client is not None
             },
             "agents": {
-                "financial": FINANCIAL_AGENT_AVAILABLE,
-                "compliance": COMPLIANCE_AGENT_AVAILABLE
+                "financial": getattr(self, 'financial_agent_available', False),
+                "compliance": getattr(self, 'compliance_agent_available', False)
             },
             "mode": "production" if (self.firestore_client and self.pubsub_client) else "development"
         }
@@ -715,8 +637,8 @@ class Orchestrator:
                 "available_services": {
                     "firestore": self.firestore_client is not None,
                     "pubsub": self.pubsub_client is not None,
-                    "financial_agent": FINANCIAL_AGENT_AVAILABLE,
-                    "compliance_agent": COMPLIANCE_AGENT_AVAILABLE
+                    "financial_agent": getattr(self, 'financial_agent_available', False),
+                    "compliance_agent": getattr(self, 'compliance_agent_available', False)
                 }
             }
         }

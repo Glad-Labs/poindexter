@@ -18,18 +18,18 @@ GLAD Labs operates as a fully autonomous AI-driven digital firm, orchestrated by
 4. [API Documentation](#api-documentation)
 5. [Development Environment](#development-environment)
 6. [Production Deployment](#production-deployment)
-7. [Monitoring & Performance](#monitoring--performance)
-8. [Security & Compliance](#security--compliance)
+7. [Monitoring and Performance](#monitoring-and-performance)
+8. [Security and Compliance](#security-and-compliance)
 9. [Troubleshooting](#troubleshooting)
 10. [Version History](#version-history)
 
 ---
 
-## **🏗️ Architecture Overview**
+## Architecture Overview
 
 ### **System Architecture Diagram**
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │                 GLAD Labs AI Ecosystem                 │
 ├─────────────────────────────────────────────────────────┤
@@ -70,7 +70,7 @@ GLAD Labs operates as a fully autonomous AI-driven digital firm, orchestrated by
 
 ---
 
-## **🔧 Core Services**
+## Core Services
 
 ### **1. AI Co-Founder Agent (Central Orchestrator)**
 
@@ -79,7 +79,7 @@ GLAD Labs operates as a fully autonomous AI-driven digital firm, orchestrated by
 **Port:** 8000  
 **Status:** ✅ Production Ready
 
-#### **Key Features:**
+#### **Key Features — AI Co-Founder:**
 
 - **Dual Async/Sync Processing**: Handles both real-time and development operations
 - **Google Cloud Integration**: Native Firestore and Pub/Sub connectivity
@@ -117,7 +117,7 @@ DEVELOPMENT_MODE=true  # Enables graceful fallback
 **Port:** 3001  
 **Status:** ✅ Production Ready
 
-#### **Key Features:**
+#### **Key Features — Oversight Hub:**
 
 - **Dual-Pane Interface**: Data visualization + Command interface
 - **Real-Time Firebase Integration**: Live data synchronization
@@ -140,7 +140,7 @@ DEVELOPMENT_MODE=true  # Enables graceful fallback
 **Port:** 3000  
 **Status:** ✅ Production Ready
 
-#### **Key Features:**
+#### **Key Features — Public Site:**
 
 - **Static Site Generation**: Fast, SEO-optimized performance
 - **Strapi Integration**: Dynamic content from headless CMS
@@ -155,7 +155,7 @@ DEVELOPMENT_MODE=true  # Enables graceful fallback
 **Port:** 1337  
 **Status:** ✅ Production Ready
 
-#### **Key Features:**
+#### **Key Features — CMS:**
 
 - **Headless Architecture**: API-first content management
 - **Custom Content Types**: Blog posts, pages, media management
@@ -180,7 +180,7 @@ DEVELOPMENT_MODE=true  # Enables graceful fallback
 
 ---
 
-## **🗃️ Data Management**
+## Data Management
 
 ### **Firestore Collections Schema**
 
@@ -265,12 +265,12 @@ Following `data_schemas.md` v1.1 specification:
 
 ---
 
-## **📚 API Documentation**
+## API Documentation
 
 ### **FastAPI Automatic Documentation**
 
-**Development:** http://localhost:8000/docs  
-**Production:** https://your-domain.com/docs
+**Development:** <http://localhost:8000/docs>
+**Production:** <https://your-domain.com/docs>
 
 ### **Command Processing API**
 
@@ -322,7 +322,7 @@ Retrieve system health and service connectivity status.
 
 ---
 
-## **💻 Development Environment**
+## Development Environment
 
 ### **Prerequisites**
 
@@ -336,19 +336,19 @@ Retrieve system health and service connectivity status.
 
 1. **Clone Repository**
 
-   ```bash
-   git clone <repository-url>
-   cd glad-labs-website
-   ```
+```bash
+ git clone <repository-url>
+ cd glad-labs-website
+```
 
-2. **Install Dependencies**
+1. **Install Dependencies**
 
    ```bash
    npm install
    pip install -e .
    ```
 
-3. **Environment Setup**
+1. **Environment Setup**
 
    ```bash
    # Copy environment templates
@@ -358,18 +358,18 @@ Retrieve system health and service connectivity status.
    cp cms/strapi-v5-backend/.env.example cms/strapi-v5-backend/.env
    ```
 
-4. **Start Development Services**
+1. **Start Development Services**
 
-   ```bash
-   # Start all services
-   npm run dev
+```bash
+ # Start all services
+ npm run dev
 
-   # Or start individually
-   npm run dev:strapi    # Port 1337
-   npm run dev:hub       # Port 3001
-   npm run dev:public    # Port 3000
-   npm run dev:cofounder # Port 8000
-   ```
+ # Or start individually
+ npm run dev:strapi    # Port 1337
+ npm run dev:hub       # Port 3001
+ npm run dev:public    # Port 3000
+ npm run dev:cofounder # Port 8000
+```
 
 ### **VS Code Workspace**
 
@@ -382,7 +382,7 @@ The project includes a pre-configured VS Code workspace (`glad-labs-workspace.co
 
 ---
 
-## **🚀 Production Deployment**
+## Production Deployment
 
 ### **Google Cloud Setup**
 
@@ -408,10 +408,11 @@ The project includes a pre-configured VS Code workspace (`glad-labs-workspace.co
    ```
 
 4. **Create Pub/Sub Topics**
-   ```bash
-   gcloud pubsub topics create content-creation-requests
-   gcloud pubsub topics create task-notifications
-   ```
+
+```bash
+ gcloud pubsub topics create content-creation-requests
+ gcloud pubsub topics create task-notifications
+```
 
 ### **Container Deployment**
 
@@ -460,7 +461,7 @@ firebase deploy
 
 ---
 
-## **📊 Monitoring & Performance**
+## Monitoring and Performance
 
 ### **Performance Metrics Tracked**
 
@@ -503,7 +504,7 @@ firebase deploy
 
 ---
 
-## **🔒 Security & Compliance**
+## Security and Compliance
 
 ### **Security Measures**
 
@@ -537,7 +538,7 @@ firebase deploy
 
 ---
 
-## **🛠️ Troubleshooting**
+## Troubleshooting
 
 ### **Common Issues**
 
@@ -603,7 +604,7 @@ curl http://localhost:8000/metrics/performance
 
 ---
 
-## **📈 Version History**
+## Version History
 
 ### **v4.0 (October 2025) - Production Ready**
 
