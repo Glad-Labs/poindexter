@@ -53,8 +53,9 @@
       "target": "api::content-metric.content-metric",
       "inversedBy": "post"
     },
-    "Featured": {
-      "type": "boolean"
+    "featured": {
+      "type": "boolean",
+      "default": false
     }
   }
 }
