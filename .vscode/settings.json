@@ -25,5 +25,8 @@
   "[python]": {
     "editor.defaultFormatter": "ms-python.python"
   },
-  "github.copilot.instructions.file": "${workspaceFolder}/GLAD-LABS-STANDARDS.md"
+  "github.copilot.instructions.file": "${workspaceFolder}/GLAD-LABS-STANDARDS.md",
+  "python.testing.pytestArgs": ["."],
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestEnabled": true
 }
