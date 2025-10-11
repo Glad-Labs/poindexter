@@ -18,13 +18,13 @@ GLAD Labs AI Co-Founder is a production-ready Google Cloud native system with co
 Ctrl+Shift+P → "Tasks: Run Task" → "Start All Services"
 
 # Or start individually:
-cd web/public-site && npm run dev          # Port 3000
-cd web/oversight-hub && npm start          # Port 3001
-cd cms/strapi-v5-backend && npm run develop # Port 1337
-cd src && python -m uvicorn cofounder_agent.main:app --reload # Port 8000
+cd cms/strapi-v5-backend; npm run develop # Port 1337
+cd web/public-site; npm run dev          # Port 3000
+cd web/oversight-hub; npm start          # Port 3001
+cd src; python -m uvicorn cofounder_agent.main:app --reload # Port 8000
 ```text
 
-### **Development Environment Setup**
+### **Development Environment Setup*
 
 ```bash
 # Install dependencies
