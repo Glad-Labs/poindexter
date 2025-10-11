@@ -14,7 +14,7 @@
   "scripts": {
     "//": "--- QUALITY & TESTING ---",
     "clean": "rimraf node_modules package-lock.json **/node_modules **/dist **/.next **/build .venv",
-    "install:clean": "npm run clean && npm install",
+    "install:clean": "npm run clean; npm install",
     "lint": "npm run lint --workspaces --if-present",
     "lint:fix": "npm run lint:fix --workspaces --if-present",
     "dev": "npm-run-all --parallel dev:*",
