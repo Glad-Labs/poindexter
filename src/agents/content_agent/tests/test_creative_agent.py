@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock
-from agents.creative_agent import CreativeAgent
+from src.agents.content_agent.agents.creative_agent import CreativeAgent
 
 
 @pytest.fixture
