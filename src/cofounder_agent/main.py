@@ -20,7 +20,7 @@ import structlog
 # Add the parent directory (src) to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from cofounder_agent.orchestrator_logic import Orchestrator
+from orchestrator_logic import Orchestrator
 
 # Try to import Google Cloud services (may not be available in dev)
 try:

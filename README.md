@@ -66,31 +66,32 @@ graph TB
 
 ### **Installation & Setup**
 
-1.  **Clone the repository:**
+1. **Clone the repository:**
 
-    ```bash
-    git clone <repository-url>
-    cd glad-labs-website
-    ```
+   ```bash
+   git clone <repository-url>
+   cd glad-labs-website
+   ```
 
-2.  **Install dependencies:**
+2. **Install dependencies:**
 
-    ```bash
-    npm install && pip install -e .
-    ```
+   ```bash
+   npm install && pip install -e .
+   ```
 
-3.  **Configure environment variables:**
-    Copy the `.env.example` file in each service directory to a new `.env` file and fill in the required credentials.
+3. **Configure environment variables:**
+   Copy the `.env.example` file in each service directory to a new `.env` file and fill in the required credentials.
 
-    - `src/agents/content_agent/.env`
-    - `web/oversight-hub/.env`
-    - `web/public-site/.env.local`
-    - `cms/strapi-v5-backend/.env`
+   - `src/agents/content_agent/.env`
+   - `web/oversight-hub/.env`
+   - `web/public-site/.env.local`
+   - `cms/strapi-v5-backend/.env`
 
-4.  **Start all services in development mode:**
-    ```bash
-    npm run dev
-    ```
+4. **Start all services in development mode:**
+
+   ```bash
+   npm run dev
+   ```
 
 ### **Development URLs**
 

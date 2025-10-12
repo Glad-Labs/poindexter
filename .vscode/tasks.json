@@ -62,7 +62,7 @@
       "type": "shell",
       "command": "python -m uvicorn cofounder_agent.main:app --reload",
       "options": {
-        "cwd": "${workspaceFolder}/src"
+        "cwd": "${workspaceFolder}/src/cofounder_agent"
       },
       "problemMatcher": [],
       "presentation": {

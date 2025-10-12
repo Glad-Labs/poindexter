@@ -57,6 +57,8 @@ class ImageAgent:
             for i, meta in enumerate(image_metadata):
                 image_details = self._process_single_image(meta, post, i)
                 if image_details:
+                    if post.images is None:
+                        post.images = []
                     post.images.append(image_details)
 
         except Exception as e:
