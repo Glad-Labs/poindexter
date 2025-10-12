@@ -104,4 +104,4 @@ npm run dev:cofounder
 ---
 
 **Maintained by:** GLAD Labs Development Team  
-**Last Updated:** October 11, 2025  
+**Last Updated:** October 11, 2025

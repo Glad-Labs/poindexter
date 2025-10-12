@@ -67,18 +67,21 @@ graph TB
 ### **Installation & Setup**
 
 1.  **Clone the repository:**
+
     ```bash
     git clone <repository-url>
     cd glad-labs-website
     ```
 
 2.  **Install dependencies:**
+
     ```bash
     npm install && pip install -e .
     ```
 
 3.  **Configure environment variables:**
     Copy the `.env.example` file in each service directory to a new `.env` file and fill in the required credentials.
+
     - `src/agents/content_agent/.env`
     - `web/oversight-hub/.env`
     - `web/public-site/.env.local`

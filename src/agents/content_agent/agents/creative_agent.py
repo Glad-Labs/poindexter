@@ -1,15 +1,25 @@
 import logging
 import json
 import re
-from config import config
-from services.llm_client import LLMClient
-from utils.data_models import BlogPost
-from utils.helpers import load_prompts_from_file, extract_json_from_string, slugify
+from ..config import config
+from ..services.llm_client import LLMClient
+from ..utils.data_models import BlogPost
+from ..utils.helpers import load_prompts_from_file, extract_json_from_string, slugify
 
 logger = logging.getLogger(__name__)
 
 
 class CreativeAgent:
+    def _extract_asset(self, text: str, asset_name: str) -> str:
+        """
+        Extracts the value of a named asset from a text block, e.g., 'Title: ...'.
+        Returns the value as a string, or an empty string if not found.
+        """
+        pattern = rf"^{asset_name}\s*:\s*(.*)$"
+        match = re.search(pattern, text, re.MULTILINE)
+        if match:
+            return match.group(1).strip()
+        return ""
     def __init__(self, llm_client: LLMClient):
         self.llm_client = llm_client
         self.prompts = load_prompts_from_file(config.PROMPTS_PATH)

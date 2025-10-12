@@ -1,23 +1,8 @@
 import logging
 import json
-from agents.content_agent.services.llm_client import LLMClient
-from agents.content_agent.services.firestore_client import FirestoreClient
-
-class MarketInsightAgent:
-    """
-    A specialized agent for analyzing market trends and suggesting content topics.
-    """
-    def __init__(self, llm_client: LLMClient, firestore_client: FirestoreClient):
-        """Initializes the MarketInsightAgent with required clients."""
-        self.llm_client = llm_client
-        self.firestore_client = firestore_client
-        logging.info("Market Insight Agent initialized.")
-
-import logging
-import json
-from agents.content_agent.services.llm_client import LLMClient
-from agents.content_agent.services.firestore_client import FirestoreClient
-from agents.content_agent.agents.research_agent import ResearchAgent
+from src.agents.content_agent.services.llm_client import LLMClient
+from src.agents.content_agent.services.firestore_client import FirestoreClient
+from src.agents.content_agent.agents.research_agent import ResearchAgent
 
 class MarketInsightAgent:
     """

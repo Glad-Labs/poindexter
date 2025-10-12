@@ -6,7 +6,7 @@ from pathlib import Path
 
 # --- Define Base Directory ---
 # Ensures that all file paths are relative to the project root, making the application more portable.
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)))  # This gets us to src/agents/content_agent/
 
 # The logger is configured in `logging_config.py` and used throughout the application.
 logger = logging.getLogger(__name__)
@@ -31,9 +31,9 @@ class Config:
         # --- Core Application Paths ---
         self.BASE_DIR = BASE_DIR
         self.CREDENTIALS_PATH = os.path.join(
-            self.BASE_DIR, "content-agent", "credentials.json"
+            self.BASE_DIR, "credentials.json"
         )
-        self.PROMPTS_PATH = os.path.join(self.BASE_DIR, "content-agent", "prompts.json")
+        self.PROMPTS_PATH = os.path.join(self.BASE_DIR, "prompts.json")
 
         # --- Google Cloud Platform (GCP) & AI Configuration ---
         self.GCP_SERVICE_ACCOUNT_EMAIL = os.getenv("GCP_SERVICE_ACCOUNT_EMAIL")

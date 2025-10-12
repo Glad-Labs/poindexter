@@ -1,5 +1,5 @@
 import pytest
-from utils.markdown_utils import markdown_to_strapi_blocks
+from src.agents.content_agent.utils.markdown_utils import markdown_to_strapi_blocks
 
 
 def test_markdown_to_strapi_blocks_conversion():

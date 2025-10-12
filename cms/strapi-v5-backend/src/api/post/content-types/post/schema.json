@@ -28,9 +28,7 @@
     "coverImage": {
       "type": "media",
       "multiple": false,
-      "allowedTypes": [
-        "images"
-      ]
+      "allowedTypes": ["images"]
     },
     "date": {
       "type": "datetime"

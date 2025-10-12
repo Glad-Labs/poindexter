@@ -1,7 +1,7 @@
 import logging
 import requests
 import json
-from config import config
+from src.agents.content_agent.config import config
 
 logger = logging.getLogger(__name__)
 

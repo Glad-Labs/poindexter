@@ -11,7 +11,7 @@ def creative_agent():
 
 def test_extract_asset_success(creative_agent):
     """Tests that the _extract_asset method correctly parses a value."""
-    text = "Title: This is the Title\\nMetaDescription: This is the description."
+    text = "Title: This is the Title\nMetaDescription: This is the description."
     result = creative_agent._extract_asset(text, "Title")
     assert result == "This is the Title"
 

@@ -1,13 +1,13 @@
 import logging
 import os
 import json
-from config import config
-from services.llm_client import LLMClient
-from services.pexels_client import PexelsClient
-from services.gcs_client import GCSClient
-from services.strapi_client import StrapiClient
-from utils.data_models import BlogPost, ImageDetails
-from utils.helpers import load_prompts_from_file, slugify, extract_json_from_string
+from src.agents.content_agent.config import config
+from src.agents.content_agent.services.llm_client import LLMClient
+from src.agents.content_agent.services.pexels_client import PexelsClient
+from src.agents.content_agent.services.gcs_client import GCSClient
+from src.agents.content_agent.services.strapi_client import StrapiClient
+from src.agents.content_agent.utils.data_models import BlogPost, ImageDetails
+from src.agents.content_agent.utils.helpers import load_prompts_from_file, slugify, extract_json_from_string
 
 
 logger = logging.getLogger(__name__)
