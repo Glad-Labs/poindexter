@@ -9,6 +9,10 @@ This application is a fully autonomous AI agent designed to create and publish h
 The system is orchestrated by `orchestrator.py`, which listens for messages on a Pub/Sub topic. Upon receiving a task, it coordinates a workflow through a series of specialized agents built with CrewAI.
 
 - **`orchestrator.py`**: The main control unit. It initializes the agent crew and kicks off the content generation process upon receiving a trigger.
+- **`config.py`**: Contains configuration settings for the agent, such as API keys and other parameters.
+- **`create_task.py`**: A script to manually create tasks for the content agent.
+- **`prompts.json`**: Stores the prompts used by the AI agents.
+- **`Dockerfile`**: Defines the Docker container for the agent.
 
 - **Specialized Agents (`agents/`)**: A crew of AI agents, each with a specific role in the content creation pipeline.
 
@@ -48,41 +52,7 @@ The system is orchestrated by `orchestrator.py`, which listens for messages on a
 
 ## **3. Setup and Running**
 
-### **A. Local Development (Without Docker)**
-
-1. **Install Dependencies**:
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-2. **Configure Environment**: Copy `.env.example` to `.env` and fill in all required API keys, project IDs, and endpoints.
-
-3. **Run the Application**:
-
-   ```bash
-   python orchestrator.py
-   ```
-
-### **B. Running with Docker**
-
-The agent is designed to be run as a container, ideally deployed on a serverless platform like Google Cloud Run.
-
-1. **Build the Docker Image**:
-
-   ```bash
-   docker build -t glad-labs-content-agent .
-   ```
-
-2. **Run the Docker Container**:
-
-   You must pass the environment variables to the container. The easiest way is using an `.env` file.
-
-   ```bash
-   docker run --env-file .env -p 8080:8080 glad-labs-content-agent
-   ```
-
-   _(Note: The port mapping `-p 8080:8080` is necessary for services like Google Cloud Run which expect the container to listen on a specific port.)_
+For detailed instructions on how to set up the environment and run the agent, please refer to the main [project README.md](../../../README.md).
 
 ---
 
