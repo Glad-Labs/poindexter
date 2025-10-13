@@ -33,8 +33,10 @@ module.exports = {
 
       console.log('✓ Found public role');
 
+      const isDev = process.env.NODE_ENV !== 'production';
+
       // Define the permissions to set for all content types
-      const permissionsToSet = [
+      const basePermissions = [
         // Single types
         {
           role: publicRole.id,
@@ -65,13 +67,6 @@ module.exports = {
           action: 'findOne',
           enabled: true,
         },
-        {
-          role: publicRole.id,
-          type: 'application',
-          controller: 'category',
-          action: 'create',
-          enabled: true,
-        },
         // Collection types - Tags
         {
           role: publicRole.id,
@@ -85,13 +80,6 @@ module.exports = {
           type: 'application',
           controller: 'tag',
           action: 'findOne',
-          enabled: true,
-        },
-        {
-          role: publicRole.id,
-          type: 'application',
-          controller: 'tag',
-          action: 'create',
           enabled: true,
         },
         // Collection types - Authors
@@ -109,13 +97,6 @@ module.exports = {
           action: 'findOne',
           enabled: true,
         },
-        {
-          role: publicRole.id,
-          type: 'application',
-          controller: 'author',
-          action: 'create',
-          enabled: true,
-        },
         // Collection types - Posts
         {
           role: publicRole.id,
@@ -131,36 +112,43 @@ module.exports = {
           action: 'findOne',
           enabled: true,
         },
-        {
-          role: publicRole.id,
-          type: 'application',
-          controller: 'post',
-          action: 'create',
-          enabled: true,
-        },
-        // Content Metrics
-        {
-          role: publicRole.id,
-          type: 'application',
-          controller: 'content-metric',
-          action: 'find',
-          enabled: true,
-        },
-        {
-          role: publicRole.id,
-          type: 'application',
-          controller: 'content-metric',
-          action: 'findOne',
-          enabled: true,
-        },
-        {
-          role: publicRole.id,
-          type: 'application',
-          controller: 'content-metric',
-          action: 'create',
-          enabled: true,
-        },
       ];
+
+      // In development only, allow create for seeding convenience
+      const devCreatePermissions = isDev
+        ? [
+            {
+              role: publicRole.id,
+              type: 'application',
+              controller: 'category',
+              action: 'create',
+              enabled: true,
+            },
+            {
+              role: publicRole.id,
+              type: 'application',
+              controller: 'tag',
+              action: 'create',
+              enabled: true,
+            },
+            {
+              role: publicRole.id,
+              type: 'application',
+              controller: 'author',
+              action: 'create',
+              enabled: true,
+            },
+            {
+              role: publicRole.id,
+              type: 'application',
+              controller: 'post',
+              action: 'create',
+              enabled: true,
+            },
+          ]
+        : [];
+
+      const permissionsToSet = [...basePermissions, ...devCreatePermissions];
 
       // Set permissions
       for (const permission of permissionsToSet) {
