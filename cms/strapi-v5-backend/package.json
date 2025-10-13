@@ -1,8 +1,8 @@
 {
-  "name": "strapi-v-5-backend",
+  "name": "glad-labs-strapi-v5-backend",
   "version": "0.1.0",
   "private": true,
-  "description": "A Strapi application",
+  "description": "Strapi v5 headless CMS backend for GLAD Labs content platform - manages posts, categories, tags, and media with automatic REST API generation",
   "scripts": {
     "build": "strapi build",
     "console": "strapi console",

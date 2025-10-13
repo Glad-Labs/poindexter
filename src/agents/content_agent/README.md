@@ -1,65 +1,216 @@
-# **GLAD Labs: Autonomous AI Content Agent v1.0**
+# 🤖 **GLAD Labs: Autonomous AI Content Agent v2.0**
 
-This application is a fully autonomous AI agent designed to create and publish high-quality blog posts. It runs within a Docker container, managing the entire content lifecycle from idea to publication without human intervention, based on tasks triggered via Google Cloud Pub/Sub.
+![Python](https://img.shields.io/badge/Python-3.12-blue)
+![OpenAI](https://img.shields.io/badge/AI-OpenAI_GPT-green)
+![Strapi](https://img.shields.io/badge/CMS-Strapi_v5-4945ff)
+![Status](https://img.shields.io/badge/Status-Production_Ready-brightgreen)
 
----
-
-## **1. High-Level Architecture**
-
-The system is orchestrated by `orchestrator.py`, which listens for messages on a Pub/Sub topic. Upon receiving a task, it coordinates a workflow through a series of specialized agents built with CrewAI.
-
-- **`orchestrator.py`**: The main control unit. It initializes the agent crew and kicks off the content generation process upon receiving a trigger.
-- **`config.py`**: Contains configuration settings for the agent, such as API keys and other parameters.
-- **`create_task.py`**: A script to manually create tasks for the content agent.
-- **`prompts.json`**: Stores the prompts used by the AI agents.
-- **`Dockerfile`**: Defines the Docker container for the agent.
-
-- **Specialized Agents (`agents/`)**: A crew of AI agents, each with a specific role in the content creation pipeline.
-
-  - **`CreativeAgent`**: Generates the core text content and identifies strategic opportunities for images.
-  - **`ImageAgent`**: Creates relevant images based on prompts from the `CreativeAgent`.
-  - **`EditingAgent`**: Cleans, formats, and refines the generated content, ensuring it adheres to brand tone and style guidelines.
-  - **`QAAgent`**: Performs a final quality assurance check on the content and formatting.
-  - **`PublishingAgent`**: Publishes the final, approved content and images to the Strapi CMS.
-
-- **Services (`services/`)**: Client classes that handle all communication with external APIs and platforms.
-
-  - **`firestore_client.py`**: Logs task status, errors, and performance metrics to Google Cloud Firestore.
-  - **`llm_client.py`**: Communicates with the chosen Large Language Model API (e.g., Google Gemini).
-  - **`image_gen_client.py`**: Communicates with an image generation model (e.g., Stable Diffusion, Pexels API).
-  - **`strapi_client.py`**: Communicates with the Strapi API to publish posts and upload media.
-
-- **Utilities (`utils/`)**:
-  - **`data_models.py`**: Defines the central Pydantic models (e.g., `BlogPost`) used to pass structured data between agents.
-  - **`logging_config.py`**: Configures application-wide structured logging.
-  - **`tools.py`**: Defines custom tools available to the agents (e.g., web search, reading files).
+> **Fully autonomous AI-powered content creation system that researches, generates, reviews, and publishes high-quality blog posts through a sophisticated multi-agent pipeline.**
 
 ---
 
-## **2. Workflow**
+## **🎯 Overview**
 
-1. A message is published to a Google Cloud Pub/Sub topic, triggering the agent. This can be done manually from the Oversight Hub, on a schedule, or via an API call.
-2. The `orchestrator.py` script, running in a Cloud Run container, receives the message.
-3. It initializes the CrewAI crew, assigning the defined tasks to the specialized agents.
-4. The `CreativeAgent` drafts the article.
-5. The `ImageAgent` generates or sources images.
-6. The `EditingAgent` and `QAAgent` refine the post.
-7. The `PublishingAgent` sends the final content to the Strapi CMS via the `strapi_client`.
-8. Throughout the process, agents use the `firestore_client` to log progress and outcomes to the `tasks` and `agent_logs` collections in Firestore.
-9. If the pipeline completes successfully, the final status is logged as "completed". If any agent fails, the status is updated to "failed" with detailed error information.
+The Content Agent is a sophisticated AI system that autonomously creates and publishes high-quality blog content. It orchestrates multiple specialized agents through a complete content lifecycle, from initial research to final publication, ensuring consistent quality and brand alignment.
+
+**Status:** ✅ Production Ready  
+**Version:** 2.0  
+**Last Updated:** October 13, 2025
 
 ---
 
-## **3. Setup and Running**
+## **🏗️ Architecture**
 
-For detailed instructions on how to set up the environment and run the agent, please refer to the main [project README.md](../../../README.md).
+### **Core Components**
+
+- **`orchestrator.py`**: Main control unit managing the entire content creation pipeline
+- **`config.py`**: Centralized configuration management for API keys and settings
+- **`prompts.json`**: AI prompts and templates for consistent content generation
+- **`Dockerfile`**: Container configuration for cloud deployment
+
+### **Multi-Agent Pipeline**
+
+#### **1. Research Agent**
+
+- **Purpose**: Gathers background information and context
+- **Capabilities**: Web research, fact-checking, topic exploration
+- **Output**: Structured research context for content generation
+
+#### **2. Creative Agent**
+
+- **Purpose**: Generates initial content drafts using AI
+- **Capabilities**: SEO-optimized writing, structured content creation
+- **AI Integration**: OpenAI GPT for high-quality content generation
+- **Output**: Complete blog post draft with metadata
+
+#### **3. QA Agent**
+
+- **Purpose**: Reviews content for quality, accuracy, and compliance
+- **Capabilities**: Quality assessment, brand tone verification, error detection
+- **Refinement**: Multiple review cycles until content meets standards
+- **Output**: Approved content or specific improvement feedback
+
+#### **4. Image Agent**
+
+- **Purpose**: Sources and processes relevant images
+- **Integration**: Pexels API for high-quality stock images
+- **Processing**: Image optimization, alt text generation, placeholder replacement
+- **Output**: Processed images ready for publication
+
+#### **5. Publishing Agent**
+
+- **Purpose**: Formats and publishes final content to Strapi CMS
+- **Capabilities**: Markdown processing, metadata formatting, API integration
+- **Validation**: Content structure verification before publication
+- **Output**: Published post with Strapi ID and URL
+
+### **Service Layer**
+
+#### **External API Clients**
+
+- **`llm_client.py`**: OpenAI GPT integration for content generation
+- **`strapi_client.py`**: Strapi v5 API communication for publishing
+- **`pexels_client.py`**: Image sourcing from Pexels stock library
+- **`gcs_client.py`**: Google Cloud Storage for image hosting
+- **`firestore_client.py`**: Firebase logging and task tracking
+
+#### **Utility Components**
+
+- **`data_models.py`**: Pydantic models (`BlogPost`, `ImageDetails`) for type safety
+- **`helpers.py`**: Common utilities (slugification, JSON parsing, prompt loading)
+- **`logging_config.py`**: Structured logging configuration
 
 ---
 
-## **4. Future Enhancements (TODO)**
+## **🔄 Content Creation Workflow**
 
-- **Content Update/Refresh**: Add a new agent or task to periodically review and update existing articles.
-- **Vector DB for Memory**: Integrate a vector database (e.g., Pinecone, or Firestore's vector search) to provide agents with long-term memory of previously generated content, avoiding repetition and enabling context-aware linking.
-- **Advanced Image Strategy**: Implement more sophisticated image placement logic, potentially using different image sizes (thumbnail, hero, inline) based on context.
-- **Internal Linking**: Develop a tool for agents to search the Strapi CMS for existing articles and intelligently insert internal links.
-- **Cost Tracking**: Enhance the `firestore_client` to log the token usage and cost of each API call to the `financials` collection for real-time budget monitoring.
+```mermaid
+graph TD
+    A[Task Trigger] --> B[Research Agent]
+    B --> C[Creative Agent]
+    C --> D{QA Review}
+    D -->|Approved| E[Image Agent]
+    D -->|Rejected| F[Refinement Loop]
+    F --> C
+    E --> G[Publishing Agent]
+    G --> H[Published Content]
+
+    style A fill:#ffa726
+    style H fill:#4caf50
+    style D fill:#ff9800
+```
+
+### **Step-by-Step Process**
+
+1. **Task Initialization**: Receive content request with topic and metadata
+2. **Research Phase**: Gather background information and context
+3. **Content Generation**: Create initial draft with SEO optimization
+4. **Quality Review**: Automated assessment with refinement loops
+5. **Image Processing**: Source and optimize relevant images
+6. **Final Publishing**: Format and publish to Strapi CMS
+7. **Completion Logging**: Record success metrics and performance data
+
+### **Quality Assurance Loop**
+
+The QA Agent implements a sophisticated review process:
+
+- **Content Analysis**: Structure, readability, and engagement assessment
+- **SEO Evaluation**: Keyword integration and optimization review
+- **Brand Compliance**: Tone and style consistency checking
+- **Technical Validation**: Markdown formatting and link verification
+- **Iterative Refinement**: Up to 3 revision cycles for optimization
+
+---
+
+## **🚀 Setup and Configuration**
+
+### **Prerequisites**
+
+- Python 3.12+
+- OpenAI API key
+- Pexels API key
+- Strapi v5 backend running
+- Google Cloud credentials (optional)
+
+### **Environment Configuration**
+
+```env
+# AI Services
+OPENAI_API_KEY=your-openai-api-key
+PEXELS_API_KEY=your-pexels-api-key
+
+# Content Management
+STRAPI_API_URL=http://localhost:1337
+STRAPI_API_TOKEN=your-strapi-api-token
+
+# Cloud Services (Optional)
+GOOGLE_CLOUD_PROJECT_ID=your-project-id
+GOOGLE_APPLICATION_CREDENTIALS=path/to/credentials.json
+
+# Agent Configuration
+MAX_QA_LOOPS=3
+IMAGE_GENERATION_ENABLED=true
+LOGGING_LEVEL=INFO
+```
+
+### **Installation**
+
+```bash
+# Navigate to content agent directory
+cd src/agents/content_agent
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your API keys
+
+# Run content agent
+python orchestrator.py
+```
+
+---
+
+## **📊 Performance Monitoring**
+
+### **Logging and Metrics**
+
+- **Task Tracking**: Real-time status updates in Firestore
+- **Performance Metrics**: Generation time, token usage, success rates
+- **Error Handling**: Detailed error logging with stack traces
+- **Quality Metrics**: QA scores and refinement iteration counts
+
+### **Integration Points**
+
+- **Oversight Hub**: Real-time monitoring and control interface
+- **Strapi CMS**: Automatic content publishing and management
+- **Firebase**: Operational logging and metrics storage
+- **Google Cloud**: Optional cloud deployment and storage
+
+---
+
+## **🔮 Future Enhancements**
+
+### **Planned Features**
+
+- **Content Update Engine**: Automatic refresh of existing articles
+- **Vector Memory System**: Long-term content memory for context-aware creation
+- **Advanced Image Strategy**: Dynamic image sizing and placement optimization
+- **Internal Linking System**: Automatic cross-referencing with existing content
+- **Cost Optimization**: Token usage tracking and budget management
+- **Multi-language Support**: Content generation in multiple languages
+
+### **Technical Improvements**
+
+- **Caching Layer**: Redis caching for improved performance
+- **Batch Processing**: Multiple content creation in parallel
+- **A/B Testing**: Content variation testing for optimization
+- **Analytics Integration**: Performance tracking and ROI measurement
+
+---
+
+**Agent Documentation maintained by:** GLAD Labs Development Team  
+**Contact:** Matthew M. Gladding (Glad Labs, LLC)  
+**Last Review:** October 13, 2025  
+**Production Status:** ✅ Ready for Deployment

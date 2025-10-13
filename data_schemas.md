@@ -1,105 +1,299 @@
-# **Data Schemas for GLAD Labs Firestore Collections v1.1**
+# **Data Schemas for GLAD Labs Content Platform v2.0**
 
-This document defines the JSON schemas for the core Firestore collections used by the Oversight Hub and the Content Creation Agent. Clear and consistent data structures are essential for the reliability of the automated systems.
+This document defines the data schemas for the content platform, including Strapi v5 content types, API structures, and supporting data models used throughout the system.
+
+**Last Updated:** October 13, 2025  
+**Version:** 2.0  
+**Architecture:** Strapi v5 + Next.js + AI Content Agents
 
 ---
 
-## 1. `tasks` Collection
+## **Strapi v5 Content Types**
 
-Stores the real-time status of tasks assigned to the agent network. This collection acts as the primary command and control log.
+### 1. `posts` Content Type
 
-**Schema:**
+Represents blog posts and articles created by the content agents or manually.
+
+**Strapi Schema:**
 
 ```json
 {
-  "taskId": "string", // (Document ID) Unique identifier for the task, typically a UUID.
-  "agentId": "string", // ID of the agent responsible for the task (e.g., "content-creation-agent-v1").
-  "taskName": "string", // Human-readable name of the task (e.g., "Generate Weekly Content Brief", "Publish Article to Strapi").
-  "status": "string", // Current status: "queued", "in_progress", "completed", "failed", "pending_review".
-  "createdAt": "timestamp", // Firestore timestamp of when the task was created.
-  "updatedAt": "timestamp", // Firestore timestamp of the last status update.
-  "metadata": {
-    "priority": "number", // Priority level (e.g., 1-High, 2-Medium, 3-Low).
-    "relatedContentId": "string", // Optional: Link to a document in the `content_metrics` collection.
-    "trigger": "string" // How the task was initiated (e.g., "manual_intervention", "scheduled", "api_call").
+  "id": "number", // Auto-generated primary key
+  "documentId": "string", // Strapi v5 document identifier
+  "title": "string", // Post title (required)
+  "slug": "string", // URL-friendly identifier (required, unique)
+  "content": "string", // Main post content in markdown format
+  "excerpt": "string", // Short description/summary for previews
+  "date": "datetime", // Publication date
+  "featured": "boolean", // Whether post should be featured on homepage
+  "coverImage": "media", // Featured image for the post
+  "category": "relation", // Belongs to one category
+  "tags": "relation", // Many-to-many relationship with tags
+  "seo": {
+    "metaTitle": "string",
+    "metaDescription": "string",
+    "metaKeywords": "string"
+  },
+  "createdAt": "datetime", // Auto-generated creation timestamp
+  "updatedAt": "datetime", // Auto-generated update timestamp
+  "publishedAt": "datetime" // Publication timestamp
+}
+```
+
+**API Response Structure:**
+
+```json
+{
+  "data": [
+    {
+      "id": 16,
+      "documentId": "vl126xqnf9wf3wsvf5vgnqaz",
+      "title": "Building Neural Networks for Computer Vision",
+      "slug": "building-neural-networks-computer-vision",
+      "content": "# Building Neural Networks...",
+      "excerpt": "A comprehensive guide to implementing...",
+      "date": "2025-02-01T00:00:00.000Z",
+      "featured": true,
+      "coverImage": null,
+      "category": {
+        "id": 4,
+        "name": "AI & Machine Learning",
+        "slug": "ai-machine-learning"
+      },
+      "tags": [
+        {
+          "id": 8,
+          "name": "Neural Networks",
+          "slug": "neural-networks"
+        }
+      ],
+      "createdAt": "2025-10-13T03:58:25.579Z",
+      "updatedAt": "2025-10-13T05:01:13.053Z",
+      "publishedAt": "2025-10-13T05:01:13.062Z"
+    }
+  ],
+  "meta": {
+    "pagination": {
+      "page": 1,
+      "pageSize": 25,
+      "pageCount": 1,
+      "total": 5
+    }
   }
+}
+```
+
+### 2. `categories` Content Type
+
+Organizes posts into topical categories.
+
+**Strapi Schema:**
+
+```json
+{
+  "id": "number",
+  "documentId": "string",
+  "name": "string", // Category name (required)
+  "slug": "string", // URL-friendly identifier (required, unique)
+  "description": "text", // Optional category description
+  "posts": "relation", // One-to-many relationship with posts
+  "createdAt": "datetime",
+  "updatedAt": "datetime",
+  "publishedAt": "datetime"
+}
+```
+
+### 3. `tags` Content Type
+
+Provides flexible tagging system for posts.
+
+**Strapi Schema:**
+
+```json
+{
+  "id": "number",
+  "documentId": "string",
+  "name": "string", // Tag name (required)
+  "slug": "string", // URL-friendly identifier (required, unique)
+  "posts": "relation", // Many-to-many relationship with posts
+  "createdAt": "datetime",
+  "updatedAt": "datetime",
+  "publishedAt": "datetime"
+}
+```
+
+### 4. `pages` Content Type (Optional)
+
+For static pages like About, Privacy Policy, etc.
+
+**Strapi Schema:**
+
+```json
+{
+  "id": "number",
+  "documentId": "string",
+  "title": "string",
+  "slug": "string",
+  "content": "string", // Markdown content
+  "seo": {
+    "metaTitle": "string",
+    "metaDescription": "string"
+  },
+  "createdAt": "datetime",
+  "updatedAt": "datetime",
+  "publishedAt": "datetime"
 }
 ```
 
 ---
 
-## 2. `financials` Collection
+## **Content Agent Data Models**
 
-Tracks key financial metrics for the "Frontier Firm" project, providing a real-time view of the budget burn rate and operational costs.
+### 1. `BlogPost` Model (Python)
 
-**Schema:**
+Used by content agents during the creation process.
 
-```json
-{
-  "metricId": "string", // (Document ID) Unique identifier for the metric (e.g., "monthly_cloud_spend").
-  "metricName": "string", // Human-readable name (e.g., "Monthly Google Cloud Spend").
-  "value": "number", // The numerical value of the metric.
-  "currency": "string", // Currency code (e.g., "USD").
-  "timestamp": "timestamp", // Firestore timestamp of when the metric was recorded.
-  "metadata": {
-    "source": "string", // Data source (e.g., "GCP Billing API", "Manual Entry", "Stripe API").
-    "isProjection": "boolean" // `true` if the value is a forecast, `false` if it's a historical fact.
-  }
-}
+```python
+class BlogPost(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+    raw_content: Optional[str] = None
+    excerpt: Optional[str] = None
+    slug: Optional[str] = None
+    primary_keyword: Optional[str] = None
+    category: Optional[str] = None
+    tags: List[str] = []
+    images: List[ImageDetails] = []
+    body_content_blocks: Optional[List[Dict[str, Any]]] = None
+    strapi_id: Optional[int] = None
+    strapi_url: Optional[str] = None
+    qa_feedback: List[str] = []
+```
+
+### 2. `ImageDetails` Model (Python)
+
+Represents images processed by the content agent.
+
+```python
+class ImageDetails(BaseModel):
+    query: Optional[str] = None
+    source: str = "pexels"  # Default to Pexels
+    path: Optional[str] = None  # Local path or GCS blob name
+    public_url: Optional[str] = None
+    alt_text: Optional[str] = None
+    caption: Optional[str] = None
+    description: Optional[str] = None
+    strapi_image_id: Optional[int] = None
 ```
 
 ---
 
-## 3. `content_metrics` Collection
+## **Firebase Collections (Oversight Hub)**
 
-Monitors the performance and status of content created by the agents. This collection is vital for measuring the ROI of the content engine.
+### 1. `tasks` Collection
 
-**Schema:**
+Tracks content generation tasks and agent activities.
 
 ```json
 {
-  "contentId": "string", // (Document ID) Unique identifier for the content piece.
-  "title": "string", // The title of the content.
-  "type": "string", // Type of content (e.g., "blog_post", "social_media_update", "technical_doc").
-  "status": "string", // Current status: "draft", "published", "archived", "error".
-  "publishedAt": "timestamp", // Firestore timestamp of when the content was published.
-  "url": "string", // Direct URL to the published content.
+  "taskId": "string", // Document ID - UUID
+  "agentId": "string", // "content-agent"
+  "taskName": "string", // "Generate Blog Post: [Topic]"
+  "status": "string", // "queued", "in_progress", "completed", "failed"
+  "createdAt": "timestamp",
+  "updatedAt": "timestamp",
+  "metadata": {
+    "topic": "string",
+    "priority": "number", // 1-High, 2-Medium, 3-Low
+    "strapiId": "number", // Link to created post
+    "trigger": "string" // "manual", "scheduled", "api"
+  }
+}
+```
+
+### 2. `agent_logs` Collection
+
+Detailed logging from content agent operations.
+
+```json
+{
+  "logId": "string", // Document ID
+  "agentId": "string",
+  "taskId": "string",
+  "level": "string", // "INFO", "WARNING", "ERROR", "DEBUG"
+  "message": "string",
+  "timestamp": "timestamp",
+  "payload": {
+    "step": "string", // "Research", "Generation", "QA", "Publishing"
+    "durationMs": "number",
+    "error": "string", // Optional error details
+    "metadata": "object" // Flexible additional data
+  }
+}
+```
+
+### 3. `content_metrics` Collection
+
+Performance tracking for published content.
+
+```json
+{
+  "contentId": "string", // Document ID
+  "strapiId": "number", // Link to Strapi post
+  "title": "string",
+  "type": "string", // "blog_post"
+  "status": "string", // "published", "draft", "archived"
+  "publishedAt": "timestamp",
+  "url": "string",
   "performance": {
     "views": "number",
-    "likes": "number",
-    "shares": "number",
-    "comments": "number",
-    "engagementRate": "number" // A calculated percentage.
+    "engagement": "number",
+    "socialShares": "number"
   },
   "metadata": {
-    "strapiId": "string", // ID of the corresponding entry in the Strapi CMS.
-    "agentVersion": "string", // Version of the agent that created the content (e.g., "content-agent-v1.2").
-    "generationTimeMs": "number" // Time taken for the agent to generate the content, in milliseconds.
+    "agentVersion": "string",
+    "generationTimeMs": "number",
+    "aiModel": "string" // "gpt-4", "gpt-3.5-turbo"
   }
 }
 ```
 
 ---
 
-## 4. `agent_logs` Collection (New)
+## **API Endpoints Reference**
 
-Provides detailed, structured logs from agent operations for debugging and performance analysis.
+### Strapi v5 REST API
 
-**Schema:**
+- **Posts**: `/api/posts` (GET, POST, PUT, DELETE)
+- **Categories**: `/api/categories` (GET, POST, PUT, DELETE)
+- **Tags**: `/api/tags` (GET, POST, PUT, DELETE)
+- **Upload**: `/api/upload` (POST for media files)
 
-```json
-{
-  "logId": "string", // (Document ID) Unique identifier for the log entry.
-  "agentId": "string", // ID of the agent that produced the log.
-  "taskId": "string", // Optional: The taskId this log relates to.
-  "level": "string", // Log level: "INFO", "WARNING", "ERROR", "DEBUG".
-  "message": "string", // The primary log message.
-  "timestamp": "timestamp", // Firestore timestamp when the log was created.
-  "payload": {
-    // A flexible object for structured data, e.g., API responses, error traces, etc.
-    "step": "string", // e.g., "Fetching Pexels Image"
-    "durationMs": "number", // e.g., 1500
-    "error": "string" // e.g., "API key invalid"
-  }
-}
+### Common Query Parameters
+
+- `populate=*` - Include all relations
+- `filters[field][$eq]=value` - Filter by field value
+- `sort[field]=asc|desc` - Sort by field
+- `pagination[page]=1&pagination[pageSize]=25` - Pagination
+
+### Example API Calls
+
+```bash
+# Get all posts with relations
+GET /api/posts?populate=*
+
+# Get featured posts
+GET /api/posts?filters[featured][$eq]=true&populate=*
+
+# Get posts by category
+GET /api/posts?filters[category][slug][$eq]=ai-machine-learning&populate=*
+
+# Get single post by slug
+GET /api/posts?filters[slug][$eq]=post-slug&populate=*
 ```
+
+---
+
+**Schema Documentation maintained by:** GLAD Labs Development Team  
+**Contact:** Matthew M. Gladding (Glad Labs, LLC)  
+**Last Review:** October 13, 2025

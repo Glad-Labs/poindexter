@@ -1,8 +1,8 @@
 {
   "name": "glad-labs-monorepo",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "Monorepo for the GLAD Labs project, containing all services and applications.",
+  "description": "AI-powered content platform monorepo featuring Next.js frontend, Strapi v5 CMS, and autonomous content generation agents",
   "license": "MIT",
   "author": "Matthew M. Gladding (Glad Labs, LLC)",
   "workspaces": [
