@@ -1,0 +1,21 @@
+# AI Co-Founder Requirements
+# Core MCP and existing requirements
+mcp>=1.0.0
+ollama>=0.3.0
+openai>=1.0.0
+google-generativeai>=0.3.0
+
+# Business Intelligence System
+aiohttp>=3.8.0
+sqlite3  # Built-in with Python
+numpy>=1.24.0
+
+# Memory System (sentence transformers optional but recommended)
+sentence-transformers>=2.2.0  # Optional but recommended for semantic similarity
+
+# Data handling
+python-dateutil>=2.8.0
+
+# Development and testing
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
