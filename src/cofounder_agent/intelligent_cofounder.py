@@ -21,11 +21,31 @@ from enum import Enum
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'agents', 'content_agent'))
 
-from mcp.client_manager import MCPClientManager
-from mcp.servers.ai_model_server import AIModelServer
-from mcp.servers.strapi_server import StrapiMCPServer
-from .business_intelligence import BusinessIntelligenceSystem
-from .memory_system import AIMemorySystem, MemoryType, ImportanceLevel
+try:
+    from mcp.client_manager import MCPClientManager
+    from mcp.servers.ai_model_server import AIModelServer
+    from mcp.servers.strapi_server import StrapiMCPServer
+except ImportError:
+    # Fallback if MCP not available
+    MCPClientManager = None
+    AIModelServer = None
+    StrapiMCPServer = None
+
+try:
+    from .business_intelligence import BusinessIntelligenceSystem
+    from .memory_system import AIMemorySystem, MemoryType, ImportanceLevel
+    from .notification_system import SmartNotificationSystem
+    from .advanced_dashboard import AdvancedBusinessDashboard
+    from .multi_agent_orchestrator import MultiAgentOrchestrator, TaskPriority
+    from .voice_interface import VoiceInterfaceSystem
+except ImportError:
+    # For direct execution, use absolute imports
+    from business_intelligence import BusinessIntelligenceSystem
+    from memory_system import AIMemorySystem, MemoryType, ImportanceLevel
+    from notification_system import SmartNotificationSystem
+    from advanced_dashboard import AdvancedBusinessDashboard
+    from multi_agent_orchestrator import MultiAgentOrchestrator, TaskPriority
+    from voice_interface import VoiceInterfaceSystem
 
 
 class BusinessArea(str, Enum):
@@ -77,27 +97,27 @@ class BusinessContext:
     total_content_pieces: int = 0
     active_campaigns: int = 0
     monthly_costs: float = 0.0
-        revenue_streams: Optional[List[str]] = None
+    revenue_streams: Optional[List[str]] = None
     
     # Performance data
-        content_performance: Optional[Dict[str, Any]] = None
-        cost_optimization: Optional[Dict[str, Any]] = None
-        growth_metrics: Optional[Dict[str, Any]] = None
+    content_performance: Optional[Dict[str, Any]] = None
+    cost_optimization: Optional[Dict[str, Any]] = None
+    growth_metrics: Optional[Dict[str, Any]] = None
     
     # Strategic context
-        current_goals: Optional[List[str]] = None
-        challenges: Optional[List[str]] = None
-        opportunities: Optional[List[str]] = None
+    current_goals: Optional[List[str]] = None
+    challenges: Optional[List[str]] = None
+    opportunities: Optional[List[str]] = None
     
     # Technical context
-        active_services: Optional[List[str]] = None
-        system_health: Optional[Dict[str, Any]] = None
+    active_services: Optional[List[str]] = None
+    system_health: Optional[Dict[str, Any]] = None
     
     # Market context
-        competitor_analysis: Optional[Dict[str, Any]] = None
-        market_trends: Optional[List[str]] = None
+    competitor_analysis: Optional[Dict[str, Any]] = None
+    market_trends: Optional[List[str]] = None
     
-        last_updated: Optional[datetime] = None
+    last_updated: Optional[datetime] = None
 
 
 class IntelligentCoFounder:
@@ -118,12 +138,18 @@ class IntelligentCoFounder:
         self.logger = logging.getLogger("intelligent_cofounder")
         
         # Core systems
-        self.mcp_manager = MCPClientManager()
+        self.mcp_manager = MCPClientManager() if MCPClientManager else None
         self.business_context = BusinessContext(business_name=business_name)
         
         # Enhanced intelligence systems
         self.business_intelligence = BusinessIntelligenceSystem()
         self.memory_system = AIMemorySystem()
+        
+        # Advanced systems
+        self.notification_system = SmartNotificationSystem()
+        self.dashboard = AdvancedBusinessDashboard()
+        self.orchestrator = MultiAgentOrchestrator()
+        self.voice_interface = VoiceInterfaceSystem()
         
         # Memory and knowledge
         self.conversation_memory: List[Dict[str, Any]] = []
@@ -137,6 +163,9 @@ class IntelligentCoFounder:
         # State management
         self.initialized = False
         self.last_context_update = None
+        
+        # Initialize advanced systems
+        asyncio.create_task(self._initialize_advanced_systems())
     
     async def initialize(self) -> bool:
         """Initialize the AI co-founder with full business context"""
@@ -146,23 +175,23 @@ class IntelligentCoFounder:
             # Initialize MCP infrastructure
             await self._setup_mcp_systems()
             
-                # Initialize business intelligence system
-                await self.business_intelligence.collect_all_metrics()
+            # Initialize business intelligence system
+            await self.business_intelligence.collect_all_metrics()
             
-                # Initialize memory system (loads existing memories)
-                # Memory system initialization is automatic in __init__
+            # Initialize memory system (loads existing memories)
+            # Memory system initialization is automatic in __init__
             
             # Gather comprehensive business context
             await self._gather_business_context()
             
-                # Store initialization in memory
-                await self.memory_system.store_memory(
-                    content=f"AI Co-Founder initialized for {self.business_name}",
-                    memory_type=MemoryType.BUSINESS_FACT,
-                    importance=ImportanceLevel.HIGH,
-                    tags=["initialization", "system_startup"],
-                    metadata={"business_name": self.business_name, "timestamp": datetime.now().isoformat()}
-                )
+            # Store initialization in memory
+            await self.memory_system.store_memory(
+                content=f"AI Co-Founder initialized for {self.business_name}",
+                memory_type=MemoryType.BUSINESS_FACT,
+                importance=ImportanceLevel.HIGH,
+                tags=["initialization", "system_startup"],
+                metadata={"business_name": self.business_name, "timestamp": datetime.now().isoformat()}
+            )
             
             # Generate initial business assessment
             await self._perform_initial_assessment()
@@ -176,15 +205,41 @@ class IntelligentCoFounder:
             self.logger.error(f"Failed to initialize AI Co-Founder: {e}")
             return False
     
+    async def _initialize_advanced_systems(self):
+        """Initialize advanced AI systems"""
+        try:
+            # Initialize notification system
+            if hasattr(self, 'notification_system'):
+                await self.notification_system.initialize()
+            
+            # Start orchestration system
+            if hasattr(self, 'orchestrator'):
+                # Orchestrator starts automatically
+                pass
+            
+            # Set up dashboard monitoring
+            if hasattr(self, 'dashboard'):
+                # Dashboard starts collecting metrics automatically
+                pass
+            
+            self.logger.info("Advanced systems initialized successfully")
+        except Exception as e:
+            self.logger.error(f"Error initializing advanced systems: {e}")
+    
     async def _setup_mcp_systems(self):
         """Set up MCP servers and capabilities"""
+        if not self.mcp_manager:
+            return
+            
         # Register AI model server
-        ai_server = AIModelServer()
-        await self.mcp_manager.register_server("ai-models", ai_server)
+        if AIModelServer:
+            ai_server = AIModelServer()
+            await self.mcp_manager.register_server("ai-models", ai_server)
         
         # Register Strapi CMS server
-        strapi_server = StrapiMCPServer()
-        await self.mcp_manager.register_server("strapi-cms", strapi_server)
+        if StrapiMCPServer:
+            strapi_server = StrapiMCPServer()
+            await self.mcp_manager.register_server("strapi-cms", strapi_server)
         
         # Future: Register additional business intelligence servers
         # - Analytics server (Google Analytics, social media metrics)
@@ -342,47 +397,47 @@ class IntelligentCoFounder:
         
         try:
             # Add message to conversation memory
-                await self.memory_system.store_conversation_turn("user", message, context)
-                self._add_to_memory("user", message, context)  # Keep for backward compatibility
+            await self.memory_system.store_conversation_turn("user", message, context)
+            self._add_to_memory("user", message, context)  # Keep for backward compatibility
             
-                # Store important user messages as memories
-                if len(message) > 30:  # Only store substantial messages
-                    importance = ImportanceLevel.LOW
-                    if any(keyword in message.lower() for keyword in 
-                           ["strategy", "goal", "important", "priority", "plan", "decision", "revenue", "growth"]):
-                        importance = ImportanceLevel.MEDIUM
-                
-                    await self.memory_system.store_memory(
-                        content=message,
-                        memory_type=MemoryType.CONVERSATION,
-                        importance=importance,
-                        tags=["user_input", "conversation"],
-                        metadata={"context": context, "timestamp": datetime.now().isoformat()}
-                    )
+            # Store important user messages as memories
+            if len(message) > 30:  # Only store substantial messages
+                importance = ImportanceLevel.LOW
+                if any(keyword in message.lower() for keyword in 
+                       ["strategy", "goal", "important", "priority", "plan", "decision", "revenue", "growth"]):
+                    importance = ImportanceLevel.MEDIUM
+            
+                await self.memory_system.store_memory(
+                    content=message,
+                    memory_type=MemoryType.CONVERSATION,
+                    importance=importance,
+                    tags=["user_input", "conversation"],
+                    metadata={"context": context, "timestamp": datetime.now().isoformat()}
+                )
             
             # Analyze message intent and context
             intent = await self._analyze_message_intent(message)
             
-                # Recall relevant memories for context
-                relevant_memories = await self.memory_system.recall_memories(message, limit=5)
+            # Recall relevant memories for context
+            relevant_memories = await self.memory_system.recall_memories(message, limit=5)
             
             # Generate comprehensive response
-                response = await self._generate_intelligent_response(message, intent, context, relevant_memories)
+            response = await self._generate_intelligent_response(message, intent, context, relevant_memories)
             
             # Add response to memory
-                await self.memory_system.store_conversation_turn("assistant", response)
+            await self.memory_system.store_conversation_turn("assistant", response)
             self._add_to_memory("assistant", response)
             
-                # Store strategic insights as memories
-                if any(keyword in response.lower() for keyword in 
-                       ["recommend", "suggest", "strategy", "opportunity", "should", "insight"]):
-                    await self.memory_system.store_memory(
-                        content=f"AI Recommendation: {response[:200]}...",
-                        memory_type=MemoryType.STRATEGIC_INSIGHT,
-                        importance=ImportanceLevel.MEDIUM,
-                        tags=["ai_recommendation", "strategic_insight"],
-                        metadata={"user_message": message, "full_response": response}
-                    )
+            # Store strategic insights as memories
+            if any(keyword in response.lower() for keyword in 
+                   ["recommend", "suggest", "strategy", "opportunity", "should", "insight"]):
+                await self.memory_system.store_memory(
+                    content=f"AI Recommendation: {response[:200]}...",
+                    memory_type=MemoryType.STRATEGIC_INSIGHT,
+                    importance=ImportanceLevel.MEDIUM,
+                    tags=["ai_recommendation", "strategic_insight"],
+                    metadata={"user_message": message, "full_response": response}
+                )
             
             return response
             
@@ -469,46 +524,34 @@ class IntelligentCoFounder:
         context_parts = []
         
         # Business overview
-        context_parts.append(f"""
-BUSINESS OVERVIEW:
-""")
+        context_parts.append("BUSINESS OVERVIEW:")
         
         # Current metrics
-        context_parts.append(f"""
-CURRENT METRICS:
+        context_parts.append("CURRENT METRICS:")
+        
+        # Relevant insights
         if self.insights_history:
             recent_insights = self.insights_history[-3:]  # Last 3 insights
+            insights_text = "\n".join([
+                f"- {insight.title}: {insight.description[:100]}..."
+                for insight in recent_insights
+            ])
+            context_parts.append(f"RECENT INSIGHTS:\n{insights_text}")
+        
         # Relevant memories from previous conversations
         if relevant_memories:
             memories_text = "\n".join([
                 f"- {memory.memory_type.value}: {memory.content[:80]}..."
                 for memory in relevant_memories[:3]  # Show top 3 most relevant
             ])
-            context_parts.append(f"""
-RELEVANT CONTEXT FROM MEMORY:
-{memories_text}
-""")
-        
-            insights_text = "\n".join([
-                f"- {insight.title}: {insight.description[:100]}..."
-                for insight in recent_insights
-            ])
-            context_parts.append(f"""
-RECENT INSIGHTS:
-{insights_text}
-""")
+            context_parts.append(f"RELEVANT CONTEXT FROM MEMORY:\n{memories_text}")
         
         # User intent context
-        context_parts.append(f"""
-CURRENT CONVERSATION:
-- User Intent: {intent.get('primary_intent', 'general')}
-- Message Type: {intent.get('message_type', 'unknown')}
-- Urgency: {intent.get('urgency', 'normal')}
-""")
+        context_parts.append(f"CURRENT CONVERSATION:\n- User Intent: {intent.get('primary_intent', 'general')}\n- Message Type: {intent.get('message_type', 'unknown')}\n- Urgency: {intent.get('urgency', 'normal')}")
         
-        return "\n".join(context_parts)
+        return "\n\n".join(context_parts)
     
-          f"- {mem.memory_type.value}: {mem.content[:80]}..."
+    def _create_cofounder_prompt(self, message: str, ai_context: str) -> str:
         """Create comprehensive AI prompt for co-founder response"""
         
         return f"""You are an intelligent AI Co-Founder for GLAD Labs, a business partner with deep knowledge of AI, content marketing, and small business operations. You are knowledgeable, strategic, actionable, and focused on driving business results.
@@ -517,7 +560,7 @@ CURRENT CONVERSATION:
 
 PERSONALITY & EXPERTISE:
 - You're a strategic business partner, not just an assistant
-- You think like an experienced entrepreneur and business consultant
+- You think like an experienced entrepreneur and business consultant  
 - You provide specific, actionable advice with clear next steps
 - You understand both the technical and business sides of AI automation
 - You're focused on ROI, growth, and practical business outcomes
@@ -529,14 +572,14 @@ CURRENT BUSINESS FOCUS:
 - Ensuring low technical barriers for non-technical users
 - Optimizing costs while maintaining quality
 
+USER MESSAGE: {message}
+
 Provide a comprehensive, strategic response that:
 1. Directly addresses the user's question or request
 2. Includes relevant business context and insights
 3. Provides specific, actionable recommendations
-         context_parts.append(f"""
-RELEVANT CONTEXT FROM MEMORY:
-{memories_text}
-""")
+4. Shows deep understanding of the business
+
 Keep your response focused, practical, and valuable for business decision-making."""
     
     def _enhance_response(self, ai_response: str, intent: Dict[str, Any]) -> str:
@@ -573,21 +616,23 @@ Keep your response focused, practical, and valuable for business decision-making
         
         primary_intent = intent.get("primary_intent", "general")
         
-        fallback_responses = {
-            "business_status": f"""📊 **Business Status Overview:**
+        # Create fallback response based on intent
+        if primary_intent == "business_status":
+            return f"""Business Status Overview:
 
-**Current Metrics:**
+Current Metrics:
     - Content Library: {self.business_context.total_content_pieces} pieces
     - Active Systems: {len(self.business_context.active_services or [])} services
 
-**Key Focus Areas:**
+Key Focus Areas:
     - Content production and optimization
     - Cost management across AI providers
     - Building SaaS product for small businesses
 
-What specific aspect would you like me to analyze in detail?""",
-            
-            "content_strategy": """📝 **Content Strategy Guidance:**
+What specific aspect would you like me to analyze in detail?"""
+        
+        elif primary_intent == "content_strategy":
+            return """Content Strategy Guidance:
 
 Based on our current setup, I recommend:
 1. Implementing automated daily content generation
@@ -595,9 +640,10 @@ Based on our current setup, I recommend:
 3. Optimizing for SEO and engagement metrics
 4. Building content calendars for consistency
 
-Would you like me to create a specific content plan or analyze current performance?""",
-            
-            "growth_planning": """📈 **Growth Planning Insights:**
+Would you like me to create a specific content plan or analyze current performance?"""
+        
+        elif primary_intent == "growth_planning":
+            return """Growth Planning Insights:
 
 Our growth strategy should focus on:
 1. Scaling content production capabilities
@@ -606,10 +652,9 @@ Our growth strategy should focus on:
 4. Building strong customer success processes
 
 What growth area is your top priority right now?"""
-        }
         
-        return fallback_responses.get(primary_intent, 
-            "🤖 I understand you're asking about business operations. Let me help you with specific insights based on our current business context. What particular area would you like me to focus on?")
+        else:
+            return f"I'm your AI Co-Founder assistant. I understand you asked about: {message[:50]}{'...' if len(message) > 50 else ''}\n\nI'm here to help with business strategy, content planning, growth optimization, and technical guidance for GLAD Labs.\n\nHow can I assist you with your business needs today?"
     
     def _add_to_memory(self, role: str, content: str, context: Optional[Dict[str, Any]] = None):
         """Add interaction to conversation memory"""
@@ -722,21 +767,7 @@ What growth area is your top priority right now?"""
         
         # Use AI to generate comprehensive report
         try:
-            report_prompt = f"""
-Generate a comprehensive business report for GLAD Labs based on the following data:
-
-{json.dumps(dashboard, indent=2, default=str)}
-
-Create a professional business report that includes:
-1. Executive Summary
-2. Current Performance Metrics
-3. Key Insights and Recommendations
-4. Growth Opportunities
-5. Risk Assessment
-6. Next Steps and Action Items
-
-Format the report in a clear, professional manner suitable for business decision-making.
-"""
+            report_prompt = f"Generate a comprehensive business report for GLAD Labs based on the following data:\n\n{json.dumps(dashboard, indent=2, default=str)}\n\nCreate a professional business report that includes:\n1. Executive Summary\n2. Current Performance Metrics\n3. Key Insights and Recommendations\n4. Growth Opportunities\n5. Risk Assessment\n6. Next Steps and Action Items\n\nFormat the report in a clear, professional manner suitable for business decision-making."
             
             result = await self.mcp_manager.call_tool("generate_text", {
                 "prompt": report_prompt,
@@ -752,6 +783,399 @@ Format the report in a clear, professional manner suitable for business decision
         except Exception as e:
             self.logger.error(f"Error generating business report: {e}")
             return "❌ Error generating business report. Please try again later."
+    
+    async def create_task(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new task with AI assistance"""
+        try:
+            # Enhance task data with AI insights
+            enhanced_task = await self._enhance_task_with_ai(task_data)
+            
+            # Store task creation in memory
+            await self.memory_system.store_memory(
+                content=f"Created task: {enhanced_task.get('topic')}",
+                memory_type=MemoryType.BUSINESS_FACT,
+                importance=ImportanceLevel.MEDIUM,
+                tags=["task_creation", "management"],
+                metadata={"task_data": enhanced_task}
+            )
+            
+            self.logger.info(f"Task created with AI enhancement: {enhanced_task.get('topic')}")
+            return enhanced_task
+            
+        except Exception as e:
+            self.logger.error(f"Error creating task: {e}")
+            return {"error": str(e)}
+    
+    async def _enhance_task_with_ai(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Enhance task data with AI insights and optimization"""
+        try:
+            enhancement_prompt = f"""
+Analyze and enhance this task for optimal execution:
+
+Task Data: {json.dumps(task_data, indent=2)}
+
+Provide enhancements including:
+1. Optimized keywords for better SEO
+2. Refined target audience segmentation  
+3. Suggested content angles and approaches
+4. Priority level recommendation
+5. Estimated completion timeline
+6. Success metrics and KPIs
+
+Return as JSON with enhanced fields.
+"""
+            
+            result = await self.mcp_manager.call_tool("generate_text", {
+                "prompt": enhancement_prompt,
+                "cost_tier": "balanced",
+                "max_tokens": 800
+            })
+            
+            if result.get("text"):
+                # Try to parse AI enhancement
+                try:
+                    enhanced_data = json.loads(result["text"])
+                    return {**task_data, **enhanced_data}
+                except json.JSONDecodeError:
+                    # If not valid JSON, add AI suggestions as text
+                    task_data["ai_enhancement"] = result["text"]
+                    
+            return task_data
+            
+        except Exception as e:
+            self.logger.error(f"Error enhancing task with AI: {e}")
+            return task_data
+    
+    async def analyze_command_intent(self, command: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Analyze command intent using AI and business context"""
+        try:
+            intent_prompt = f"""
+Analyze this business command for intent and required actions:
+
+Command: "{command}"
+Context: {json.dumps(context or {}, indent=2)}
+
+Business Context:
+- Company: GLAD Labs (AI content and business automation)
+- Focus: Content marketing, task management, business intelligence
+- Goal: Scaling through AI automation
+
+Provide analysis as JSON:
+{{
+    "intent": "primary_intent_category",
+    "confidence": 0.0-1.0,
+    "entities": ["extracted", "entities"], 
+    "required_actions": [
+        {{"type": "action_type", "priority": "high/medium/low", "data": {{}}}}
+    ],
+    "business_impact": "description of potential impact",
+    "recommendations": ["actionable recommendations"]
+}}
+"""
+            
+            result = await self.mcp_manager.call_tool("generate_text", {
+                "prompt": intent_prompt,
+                "cost_tier": "fast",
+                "max_tokens": 500
+            })
+            
+            if result.get("text"):
+                try:
+                    return json.loads(result["text"])
+                except json.JSONDecodeError:
+                    pass
+            
+            # Fallback to rule-based analysis
+            return await self._fallback_intent_analysis(command, context)
+            
+        except Exception as e:
+            self.logger.error(f"Error analyzing command intent: {e}")
+            return await self._fallback_intent_analysis(command, context)
+    
+    async def _fallback_intent_analysis(self, command: str, context: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Fallback intent analysis using rules"""
+        command_lower = command.lower()
+        
+        # Task management intents
+        if any(word in command_lower for word in ["create", "new", "add", "make"]) and "task" in command_lower:
+            return {
+                "intent": "create_task",
+                "confidence": 0.8,
+                "entities": ["task"],
+                "required_actions": [{"type": "create_task", "priority": "medium", "data": {}}],
+                "business_impact": "New task creation will increase workload but advance business goals",
+                "recommendations": ["Ensure task aligns with strategic priorities", "Set clear success metrics"]
+            }
+        
+        # Business analysis intents
+        elif any(word in command_lower for word in ["report", "metrics", "performance", "analytics"]):
+            return {
+                "intent": "business_analysis",
+                "confidence": 0.9,
+                "entities": ["business", "metrics"],
+                "required_actions": [{"type": "generate_report", "priority": "high", "data": {}}],
+                "business_impact": "Business analysis provides insights for strategic decision-making",
+                "recommendations": ["Review all key metrics", "Identify improvement opportunities"]
+            }
+        
+        # Default general intent
+        return {
+            "intent": "general_inquiry",
+            "confidence": 0.5,
+            "entities": [],
+            "required_actions": [],
+            "business_impact": "General inquiry requiring contextual response",
+            "recommendations": ["Provide helpful information", "Offer specific assistance options"]
+        }
+    
+    async def create_strategic_plan(self, goals: List[str], timeframe: str = "quarterly") -> Dict[str, Any]:
+        """Create a strategic business plan with AI assistance"""
+        try:
+            current_context = await self.get_business_dashboard()
+            
+            planning_prompt = f"""
+Create a strategic business plan for GLAD Labs:
+
+Goals: {json.dumps(goals)}
+Timeframe: {timeframe}
+Current Business Context: {json.dumps(current_context, default=str)}
+
+Create a comprehensive strategic plan including:
+1. Executive Summary
+2. Current State Analysis  
+3. Strategic Objectives and Key Results (OKRs)
+4. Action Plan with Timeline
+5. Resource Requirements
+6. Risk Assessment and Mitigation
+7. Success Metrics and KPIs
+8. Review and Adjustment Framework
+
+Format as detailed business document.
+"""
+            
+            result = await self.mcp_manager.call_tool("generate_text", {
+                "prompt": planning_prompt,
+                "cost_tier": "premium",
+                "max_tokens": 2000
+            })
+            
+            plan = {
+                "id": f"plan-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+                "goals": goals,
+                "timeframe": timeframe,
+                "created_at": datetime.now().isoformat(),
+                "plan_content": result.get("text", "Unable to generate plan at this time"),
+                "status": "draft"
+            }
+            
+            # Store strategic plan in memory
+            await self.memory_system.store_memory(
+                content=f"Strategic plan created with {len(goals)} goals for {timeframe}",
+                memory_type=MemoryType.STRATEGIC_INSIGHT,
+                importance=ImportanceLevel.HIGH,
+                tags=["strategic_planning", "business_strategy"],
+                metadata={"plan_id": plan["id"], "goals": goals}
+            )
+            
+            return plan
+            
+        except Exception as e:
+            self.logger.error(f"Error creating strategic plan: {e}")
+            return {"error": str(e)}
+    
+    async def optimize_content_strategy(self, current_performance: Dict[str, Any]) -> Dict[str, Any]:
+        """Optimize content strategy based on performance data"""
+        try:
+            optimization_prompt = f"""
+Optimize GLAD Labs content strategy based on performance data:
+
+Current Performance: {json.dumps(current_performance, default=str)}
+Business Context: AI content marketing and automation company
+
+Provide optimization recommendations including:
+1. Content topic prioritization
+2. Publishing schedule optimization
+3. Audience targeting refinements
+4. Content format recommendations
+5. SEO optimization strategies
+6. Performance improvement tactics
+7. Resource allocation suggestions
+
+Format as actionable strategy document.
+"""
+            
+            result = await self.mcp_manager.call_tool("generate_text", {
+                "prompt": optimization_prompt,
+                "cost_tier": "balanced",
+                "max_tokens": 1200
+            })
+            
+            optimization = {
+                "id": f"content-opt-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+                "analysis_date": datetime.now().isoformat(),
+                "performance_data": current_performance,
+                "recommendations": result.get("text", "Unable to generate recommendations"),
+                "status": "active"
+            }
+            
+            # Store optimization in memory
+            await self.memory_system.store_memory(
+                content="Content strategy optimization completed",
+                memory_type=MemoryType.STRATEGIC_INSIGHT,
+                importance=ImportanceLevel.HIGH,
+                tags=["content_strategy", "optimization"],
+                metadata={"optimization_id": optimization["id"]}
+            )
+            
+            return optimization
+            
+        except Exception as e:
+            self.logger.error(f"Error optimizing content strategy: {e}")
+            return {"error": str(e)}
+    
+    async def delegate_task_to_agent(self, task_description: str, requirements: List[str], 
+                                   priority: str = "medium") -> Dict[str, Any]:
+        """Delegate a task to the multi-agent orchestrator"""
+        try:
+            # Convert priority string to enum
+            priority_map = {
+                "low": TaskPriority.LOW,
+                "medium": TaskPriority.MEDIUM,
+                "high": TaskPriority.HIGH,
+                "critical": TaskPriority.CRITICAL
+            }
+            
+            task_priority = priority_map.get(priority.lower(), TaskPriority.MEDIUM)
+            
+            # Create orchestration task
+            task_id = await self.orchestrator.create_task(
+                name=f"Delegated Task: {task_description[:50]}...",
+                description=task_description,
+                requirements=requirements,
+                priority=task_priority
+            )
+            
+            # Store in memory
+            await self.memory_system.store_memory(
+                content=f"Delegated task to agents: {task_description}",
+                memory_type=MemoryType.BUSINESS_FACT,
+                importance=ImportanceLevel.MEDIUM,
+                tags=["task_delegation", "agent_orchestration"],
+                metadata={"task_id": task_id, "requirements": requirements}
+            )
+            
+            return {
+                "success": True,
+                "task_id": task_id,
+                "message": f"Task delegated successfully. Tracking ID: {task_id}"
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error delegating task: {e}")
+            return {"error": str(e)}
+    
+    async def get_comprehensive_status(self) -> Dict[str, Any]:
+        """Get comprehensive status from all systems"""
+        try:
+            # Get dashboard data
+            dashboard_data = await self.dashboard.get_dashboard_data()
+            
+            # Get orchestration status
+            orchestration_status = await self.orchestrator.get_orchestration_status()
+            
+            # Get agent recommendations
+            agent_recommendations = await self.orchestrator.get_agent_recommendations()
+            
+            # Get recent notifications
+            recent_notifications = await self.notification_system.get_recent_notifications(limit=10)
+            
+            # Get business context
+            business_context = await self.get_business_context()
+            
+            return {
+                "timestamp": datetime.now().isoformat(),
+                "business_health": dashboard_data.get("metrics", {}).get("summary", {}),
+                "dashboard": dashboard_data,
+                "orchestration": orchestration_status,
+                "recommendations": agent_recommendations,
+                "notifications": recent_notifications,
+                "business_context": business_context,
+                "system_status": "operational"
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error getting comprehensive status: {e}")
+            return {"error": str(e)}
+    
+    async def create_strategic_workflow(self, workflow_name: str, objectives: List[str]) -> Dict[str, Any]:
+        """Create a comprehensive strategic workflow"""
+        try:
+            # Define workflow steps based on objectives
+            workflow_steps = []
+            
+            for i, objective in enumerate(objectives):
+                if "content" in objective.lower():
+                    workflow_steps.append({
+                        "name": f"Content Strategy for: {objective}",
+                        "description": f"Develop content strategy to achieve: {objective}",
+                        "requirements": ["blog_writing", "content_optimization"],
+                        "priority": 3 if i == 0 else 2,
+                        "input_data": {"objective": objective}
+                    })
+                
+                elif "market" in objective.lower() or "research" in objective.lower():
+                    workflow_steps.append({
+                        "name": f"Market Research for: {objective}",
+                        "description": f"Conduct market research to support: {objective}",
+                        "requirements": ["market_analysis", "competitor_analysis"],
+                        "priority": 3,
+                        "input_data": {"objective": objective}
+                    })
+                
+                elif "analysis" in objective.lower() or "data" in objective.lower():
+                    workflow_steps.append({
+                        "name": f"Data Analysis for: {objective}",
+                        "description": f"Perform data analysis to achieve: {objective}",
+                        "requirements": ["business_intelligence", "data_visualization"],
+                        "priority": 2,
+                        "input_data": {"objective": objective}
+                    })
+                
+                elif "plan" in objective.lower() or "strategy" in objective.lower():
+                    workflow_steps.append({
+                        "name": f"Strategic Planning for: {objective}",
+                        "description": f"Develop strategic plan for: {objective}",
+                        "requirements": ["business_planning", "process_optimization"],
+                        "priority": 3,
+                        "input_data": {"objective": objective}
+                    })
+            
+            # Create workflow in orchestrator
+            workflow_id = await self.orchestrator.create_workflow(workflow_name, workflow_steps)
+            
+            # Store strategic plan in memory
+            await self.memory_system.store_memory(
+                content=f"Created strategic workflow: {workflow_name}",
+                memory_type=MemoryType.STRATEGIC_INSIGHT,
+                importance=ImportanceLevel.HIGH,
+                tags=["strategic_planning", "workflow", "business_objectives"],
+                metadata={
+                    "workflow_id": workflow_id,
+                    "objectives": objectives,
+                    "steps_count": len(workflow_steps)
+                }
+            )
+            
+            return {
+                "success": True,
+                "workflow_id": workflow_id,
+                "steps_created": len(workflow_steps),
+                "message": f"Strategic workflow '{workflow_name}' created with {len(workflow_steps)} steps"
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error creating strategic workflow: {e}")
+            return {"error": str(e)}
 
 
 # Example usage and testing

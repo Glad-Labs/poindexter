@@ -60,9 +60,9 @@ class Memory:
     created_at: datetime
     last_accessed: datetime
     access_count: int = 0
-        tags: Optional[List[str]] = None
-        related_memories: Optional[List[str]] = None
-        metadata: Optional[Dict[str, Any]] = None
+    tags: Optional[List[str]] = None
+    related_memories: Optional[List[str]] = None
+    metadata: Optional[Dict[str, Any]] = None
     embedding: Optional[List[float]] = None
 
 
@@ -76,7 +76,7 @@ class KnowledgeCluster:
     confidence: float
     last_updated: datetime
     importance_score: float
-        topics: Optional[List[str]] = None
+    topics: Optional[List[str]] = None
 
 
 @dataclass
@@ -216,17 +216,17 @@ class AIMemorySystem:
     
     def _init_embedding_model(self):
         """Initialize sentence embedding model for semantic similarity"""
-            try:
-                # Use a lightweight but effective sentence transformer model
-                if SENTENCE_TRANSFORMERS_AVAILABLE and SentenceTransformer:
-                    self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-                    self.logger.info("Embedding model initialized successfully")
-                else:
-                    self.embedding_model = None
-                    self.logger.info("Sentence transformers not available, using fallback similarity")
-            except Exception as e:
-                self.logger.error(f"Failed to initialize embedding model: {e}")
+        try:
+            # Use a lightweight but effective sentence transformer model
+            if SENTENCE_TRANSFORMERS_AVAILABLE and SentenceTransformer:
+                self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+                self.logger.info("Embedding model initialized successfully")
+            else:
                 self.embedding_model = None
+                self.logger.info("Sentence transformers not available, using fallback similarity")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize embedding model: {e}")
+            self.embedding_model = None
     
     async def _load_persistent_memory(self):
         """Load persistent memory from database"""
