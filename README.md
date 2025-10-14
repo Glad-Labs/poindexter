@@ -1,53 +1,100 @@
-# 🚀 **GLAD Labs AI Frontier Firm - Complete AI Co-Founder System**
+# 🚀 **GLAD Labs AI Co-Founder System**
 
 ![Production Ready](https://img.shields.io/badge/Status-Production_Ready-brightgreen)
 ![GLAD Labs Standards](https://img.shields.io/badge/Standards-v2.0_Compliant-blue)
-![Next.js](https://img.shields.io/badge/Frontend-Next.js_14-black)
+![Next.js](https://img.shields.io/badge/Frontend-Next.js_15-black)
 ![Strapi](https://img.shields.io/badge/CMS-Strapi_v5-blue)
 ![Python](https://img.shields.io/badge/Backend-Python_3.12-blue)
 ![AI Powered](https://img.shields.io/badge/AI-Powered_Co--Founder-purple)
 
 > **Revolutionary AI-powered business co-founder system featuring autonomous agents, intelligent orchestration, and comprehensive business intelligence - delivering the world's first complete AI business partner.**
 
----
+## **📚 Documentation Index**
+
+| Document                                               | Description                              | For        |
+| ------------------------------------------------------ | ---------------------------------------- | ---------- |
+| [🚀 **Quick Start Guide**](#-quick-start)              | Get up and running in 5 minutes          | New Users  |
+| [🏗️ **Architecture Overview**](./ARCHITECTURE.md)      | System design and component interactions | Developers |
+| [📋 **Developer Guide**](./docs/DEVELOPER_GUIDE.md)    | Technical documentation and APIs         | Developers |
+| [⚙️ **Installation Guide**](./INSTALLATION_SUMMARY.md) | Dependency setup and configuration       | DevOps     |
+| [📊 **System Standards**](./GLAD_LABS_STANDARDS.md)    | Coding standards and best practices      | Team       |
 
 ## **🎯 Executive Summary**
 
-GLAD Labs has evolved into a comprehensive AI Co-Founder ecosystem that combines autonomous content creation with intelligent business management. The system features a sophisticated AI Co-Founder that provides strategic insights, manages business operations, orchestrates specialized agents, and delivers real-time business intelligence through advanced dashboards and voice interfaces.
+GLAD Labs is a comprehensive AI Co-Founder ecosystem that combines autonomous content creation with intelligent business management. The system features a sophisticated AI Co-Founder that provides strategic insights, manages business operations, orchestrates specialized agents, and delivers real-time business intelligence through advanced dashboards and voice interfaces.
 
 **Current Status:** ✅ **Production Ready v3.0** - Complete AI Co-Founder System  
-**Last Updated:** December 19, 2024  
-**Architecture:** Enterprise-grade microservices with AI orchestration
+**Last Updated:** October 14, 2025  
+**Architecture:** Enterprise-grade monorepo with AI orchestration
 
 ---
 
+## **🚀 Quick Start**
+
+### **Prerequisites**
+
+- Node.js 18+ and Python 3.12+
+- Git and a code editor
+
+### **Installation**
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd glad-labs-website
+
+# Install all dependencies (Python + Node.js)
+npm run setup:all
+
+# Start all services in development mode
+npm run dev
+```
+
+### **Access Points**
+
+| Service           | URL                   | Purpose               |
+| ----------------- | --------------------- | --------------------- |
+| **Public Site**   | http://localhost:3000 | Next.js website       |
+| **Oversight Hub** | http://localhost:3001 | React admin dashboard |
+| **Strapi CMS**    | http://localhost:1337 | Content management    |
+| **AI Co-Founder** | http://localhost:8000 | Python API server     |
+
+### **Available Commands**
+
+```bash
+npm run dev           # Start all services
+npm run build         # Build for production
+npm test              # Run all tests
+npm run lint          # Check code quality
+```
+
 ## **🏗️ System Architecture**
 
-The system is designed as a modern full-stack application with clear separation of concerns and automated content workflows.
+The system is designed as a modern monorepo with clear separation of concerns and automated AI workflows.
 
-| Service           | Technology | Port | Status   | URL                     | Description                                                       |
-| ----------------- | ---------- | ---- | -------- | ----------------------- | ----------------------------------------------------------------- |
-| **Public Site**   | Next.js 14 | 3000 | ✅ Ready | <http://localhost:3000> | High-performance public website with SSG optimization             |
-| **Strapi CMS**    | Strapi v5  | 1337 | ✅ Ready | <http://localhost:1337> | Headless API-first CMS for content management                     |
-| **Content Agent** | Python     | -    | ✅ Ready | -                       | Autonomous content creation with AI integration                   |
-| **Oversight Hub** | React 18   | 3001 | 🚧 Dev   | <http://localhost:3001> | Admin interface for monitoring and controlling content generation |
+| Service           | Technology  | Port | Status   | Description                       |
+| ----------------- | ----------- | ---- | -------- | --------------------------------- |
+| **Public Site**   | Next.js 15  | 3000 | ✅ Ready | High-performance public website   |
+| **Oversight Hub** | React 18    | 3001 | ✅ Ready | Admin interface for AI management |
+| **Strapi CMS**    | Strapi v5   | 1337 | ✅ Ready | Headless content management       |
+| **AI Co-Founder** | Python 3.12 | 8000 | ✅ Ready | AI business intelligence system   |
+| **Content Agent** | Python      | -    | ✅ Ready | Autonomous content creation       |
 
-### **Technology Stack**
+### **Workspace Structure**
 
-```mermaid
-graph TB
-    A[Next.js Frontend<br/>SSG + API Routes] --> B[Strapi v5 CMS<br/>SQLite Database]
-    C[Content Agent<br/>Python + OpenAI] --> B
-    D[Oversight Hub<br/>React + Firebase] --> C
-    E[Google Cloud<br/>Pub/Sub + Storage] --> C
-    F[Pexels API<br/>Image Generation] --> C
-
-    style A fill:#000000
-    style B fill:#4945ff
-    style C fill:#4caf50
-    style D fill:#61dafb
-    style E fill:#ffa726
-    style F fill:#ff6b6b
+```
+glad-labs-website/
+├── 📁 web/
+│   ├── public-site/      # Next.js 15 public website
+│   └── oversight-hub/    # React admin dashboard
+├── 📁 cms/
+│   └── strapi-v5-backend/ # Strapi CMS backend
+├── 📁 src/
+│   ├── cofounder_agent/  # AI Co-Founder system
+│   └── mcp/              # Model Context Protocol
+├── 📁 agents/
+│   └── content-agent/    # Content generation agents
+└── 📁 docs/              # Documentation
 ```
 
 ---
