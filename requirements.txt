@@ -6,6 +6,10 @@
 crewai
 crewai_tools
 
+# --- Model Context Protocol (MCP) ---
+# MCP SDK for building servers and clients that connect AI applications to external systems
+mcp>=1.0.0
+
 # --- Google Cloud Platform (GCP) Integration ---
 # Libraries for interacting with various Google Cloud services.
 google-cloud-aiplatform    # For Vertex AI models and services
@@ -26,6 +30,10 @@ pytrends                   # For accessing Google Trends data
 
 # --- Firebase Integration ---
 firebase-admin             # For backend integration with Firebase services (e.g., Auth, Firestore)
+
+# --- Local LLM Integration ---
+# Ollama Python client for local model inference during development
+ollama>=0.3.0              # For local LLM model access and development
 
 # --- Environment & Configuration ---
 python-dotenv==1.0.0       # For managing environment variables from a .env file
