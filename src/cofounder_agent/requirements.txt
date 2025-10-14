@@ -1,21 +1,74 @@
-# AI Co-Founder Requirements
-# Core MCP and existing requirements
+# AI Co-Founder System Requirements
+# Complete dependency list for the AI Co-Founder system including all components
+
+# ===== CORE AI & MCP FRAMEWORK =====
+# Model Context Protocol and AI model integration
 mcp>=1.0.0
-ollama>=0.3.0
-openai>=1.0.0
-google-generativeai>=0.3.0
+openai>=1.30.0
+google-generativeai>=0.8.5
+anthropic>=0.18.0
 
-# Business Intelligence System
-aiohttp>=3.8.0
-sqlite3  # Built-in with Python
+# ===== BUSINESS INTELLIGENCE & ANALYTICS =====
+# Required for business intelligence system and data processing
+aiohttp>=3.9.0
 numpy>=1.24.0
-
-# Memory System (sentence transformers optional but recommended)
-sentence-transformers>=2.2.0  # Optional but recommended for semantic similarity
-
-# Data handling
+pandas>=2.0.0
 python-dateutil>=2.8.0
 
-# Development and testing
-pytest>=7.0.0
+# ===== WEB FRAMEWORK & API =====
+# FastAPI and web server capabilities
+fastapi>=0.104.0
+uvicorn>=0.24.0
+websockets>=12.0
+starlette>=0.27.0
+
+# ===== MEMORY & SEMANTIC SEARCH =====
+# Advanced memory system with semantic similarity
+sentence-transformers>=2.2.0
+
+# ===== DATABASE & STORAGE =====
+# Database connectivity and storage
+aiosqlite>=0.19.0
+
+# ===== GOOGLE CLOUD INTEGRATION =====
+# Google Cloud Platform services
+google-cloud-aiplatform>=1.35.0
+google-cloud-firestore>=2.12.0
+google-cloud-storage>=2.10.0
+google-cloud-pubsub>=2.18.0
+google-api-python-client>=2.100.0
+google-auth-httplib2>=0.2.0
+google-auth-oauthlib>=1.1.0
+firebase-admin>=6.2.0
+
+# ===== DATA PROCESSING =====
+# Data handling, parsing, and web scraping
+beautifulsoup4>=4.12.0
+requests>=2.31.0
+markdown>=3.5.0
+pydantic>=2.5.0
+python-dotenv>=1.0.0
+
+# ===== TESTING FRAMEWORK =====
+# Comprehensive testing infrastructure
+pytest>=7.4.0
 pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+pytest-timeout>=2.1.0
+
+# ===== DEVELOPMENT & MONITORING =====
+# Development tools and logging
+structlog>=23.2.0
+rich>=13.7.0
+typer>=0.9.0
+
+# ===== SECURITY & AUTHENTICATION =====
+# Security and authentication
+cryptography>=41.0.0
+PyJWT>=2.8.0
+
+# ===== UTILITIES =====
+# General utilities and helpers
+click>=8.1.0
+tqdm>=4.66.0
+pyyaml>=6.0.0
