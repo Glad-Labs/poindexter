@@ -2,12 +2,12 @@
 
 ## Table of Contents
 
-1. [Architecture Overview](#architecture-overview)
-2. [Development Environment](#development-environment)
-3. [Component Documentation](#component-documentation)
-4. [API References](#api-references)
-5. [Testing Guide](#testing-guide)
-6. [Deployment Guide](#deployment-guide)
+1. [Architecture Overview](#️-architecture-overview)
+2. [Development Environment](#-development-environment)
+3. [Component Documentation](#-component-documentation)
+4. [API References](#-api-references)
+5. [Testing Guide](#-testing-guide)
+6. [Deployment Guide](#-deployment-guide)
 
 ---
 
