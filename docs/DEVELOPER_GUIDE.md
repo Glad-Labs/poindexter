@@ -2,12 +2,12 @@
 
 ## Table of Contents
 
-1. [Architecture Overview](#️-architecture-overview)
-2. [Development Environment](#-development-environment)
-3. [Component Documentation](#-component-documentation)
-4. [API References](#-api-references)
-5. [Testing Guide](#-testing-guide)
-6. [Deployment Guide](#-deployment-guide)
+1. [Architecture Overview](#architecture-overview)
+2. [Development Environment](#development-environment)
+3. [Component Documentation](#component-documentation)
+4. [API References](#api-references)
+5. [Testing Guide](#testing-guide)
+6. [Deployment Guide](#deployment-guide)
 
 ---
 
@@ -217,7 +217,9 @@ python main.py     # Start server
 python -m pytest  # Run tests
 ```
 
-### 📝 Content Agent (`agents/content-agent/`)
+### 📝 Content Agent (`src/agents/content_agent/`)
+
+Note: The production task runner currently references `agents/content-agent/` for the live agent process. The unit tests and newer modules live under `src/agents/content_agent/`. We recommend consolidating to a single location; until then, prefer `src/agents/content_agent/` for development and tests, and use the workspace task for starting the live agent.
 
 **Purpose**: Autonomous content creation system with AI-powered research and writing.
 
