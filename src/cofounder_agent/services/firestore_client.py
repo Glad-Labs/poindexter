@@ -132,8 +132,12 @@ class FirestoreClient:
     
     async def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
         """Get a specific task by ID"""
+        if not self._check_db_available():
+            logger.debug("Get task skipped - dev mode")
+            return None
+            
         try:
-            doc_ref = self.db.collection('tasks').document(task_id)
+            doc_ref = self.db.collection('tasks').document(task_id)  # type: ignore[union-attr]
             doc = doc_ref.get()
             
             if doc.exists:
@@ -151,6 +155,10 @@ class FirestoreClient:
     async def update_task_status(self, task_id: str, status: str, 
                                 metadata: Optional[Dict[str, Any]] = None) -> bool:
         """Update task status and optional metadata"""
+        if not self._check_db_available():
+            logger.debug("Update task status skipped - dev mode")
+            return True  # Return success in dev mode
+            
         try:
             update_data = {
                 'status': status,
@@ -160,7 +168,7 @@ class FirestoreClient:
             if metadata:
                 update_data.update(metadata)
             
-            doc_ref = self.db.collection('tasks').document(task_id)
+            doc_ref = self.db.collection('tasks').document(task_id)  # type: ignore[union-attr]
             doc_ref.update(update_data)
             
             logger.info("Task status updated", 
@@ -178,8 +186,12 @@ class FirestoreClient:
     
     async def get_pending_tasks(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Get pending tasks for processing"""
+        if not self._check_db_available():
+            logger.debug("Get pending tasks skipped - dev mode")
+            return []
+            
         try:
-            query = (self.db.collection('tasks')
+            query = (self.db.collection('tasks')  # type: ignore[union-attr]
                     .where('status', '==', 'pending')
                     .order_by('created_at')
                     .limit(limit))
@@ -200,13 +212,19 @@ class FirestoreClient:
     # Financial Tracking Methods
     async def add_financial_entry(self, entry_data: Dict[str, Any]) -> str:
         """Add a financial transaction entry"""
+        if not self._check_db_available():
+            import uuid
+            mock_id = str(uuid.uuid4())
+            logger.info("Financial entry created in DEV MODE (not persisted)", entry_id=mock_id)
+            return mock_id
+            
         try:
             entry_data.update({
                 'created_at': FIRESTORE_STUBS.SERVER_TIMESTAMP,
                 'timestamp': entry_data.get('timestamp', datetime.utcnow())
             })
             
-            doc_ref = self.db.collection('financials').add(entry_data)[1]
+            doc_ref = self.db.collection('financials').add(entry_data)[1]  # type: ignore[union-attr]
             
             logger.info("Financial entry added", 
                        entry_id=doc_ref.id,
@@ -221,12 +239,16 @@ class FirestoreClient:
     
     async def get_financial_summary(self, days: int = 30) -> Dict[str, Any]:
         """Get financial summary for the specified period"""
+        if not self._check_db_available():
+            logger.debug("Get financial summary skipped - dev mode")
+            return {'total_spend': 0.0, 'entry_count': 0, 'average_daily_spend': 0.0, 'entries': []}
+            
         try:
             from datetime import timedelta
             
             start_date = datetime.utcnow() - timedelta(days=days)
             
-            query = (self.db.collection('financials')
+            query = (self.db.collection('financials')  # type: ignore[union-attr]
                     .where('timestamp', '>=', start_date)
                     .order_by('timestamp', direction=FIRESTORE_STUBS.Query.DESCENDING))
             
@@ -260,13 +282,17 @@ class FirestoreClient:
     # Agent Status Methods
     async def update_agent_status(self, agent_name: str, status_data: Dict[str, Any]) -> bool:
         """Update agent status and heartbeat"""
+        if not self._check_db_available():
+            logger.debug("Update agent status skipped - dev mode", agent_name=agent_name)
+            return True
+            
         try:
             status_data.update({
                 'last_heartbeat': FIRESTORE_STUBS.SERVER_TIMESTAMP,
                 'updated_at': FIRESTORE_STUBS.SERVER_TIMESTAMP
             })
             
-            doc_ref = self.db.collection('agents').document(agent_name)
+            doc_ref = self.db.collection('agents').document(agent_name)  # type: ignore[union-attr]
             doc_ref.set(status_data, merge=True)
             
             logger.info("Agent status updated", 
@@ -283,8 +309,12 @@ class FirestoreClient:
     
     async def get_agent_status(self, agent_name: str) -> Optional[Dict[str, Any]]:
         """Get current status of a specific agent"""
+        if not self._check_db_available():
+            logger.debug("Get agent status skipped - dev mode")
+            return None
+            
         try:
-            doc_ref = self.db.collection('agents').document(agent_name)
+            doc_ref = self.db.collection('agents').document(agent_name)  # type: ignore[union-attr]
             doc = doc_ref.get()
             
             if doc.exists:
@@ -303,6 +333,10 @@ class FirestoreClient:
     async def add_log_entry(self, level: str, message: str, 
                            metadata: Optional[Dict[str, Any]] = None) -> str:
         """Add a structured log entry"""
+        if not self._check_db_available():
+            import uuid
+            return str(uuid.uuid4())
+            
         try:
             log_data = {
                 'level': level,
@@ -311,7 +345,7 @@ class FirestoreClient:
                 'metadata': metadata or {}
             }
             
-            doc_ref = self.db.collection('logs').add(log_data)[1]
+            doc_ref = self.db.collection('logs').add(log_data)[1]  # type: ignore[union-attr]
             return doc_ref.id
             
         except Exception as e:
@@ -321,9 +355,17 @@ class FirestoreClient:
     # Health Check Methods
     async def health_check(self) -> Dict[str, Any]:
         """Perform a basic health check on Firestore connection"""
+        if not self._check_db_available():
+            return {
+                'status': 'dev_mode',
+                'timestamp': datetime.utcnow().isoformat(),
+                'project_id': self.project_id,
+                'message': 'Running in development mode without Firestore'
+            }
+            
         try:
             # Try to read from a test collection
-            test_doc = self.db.collection('health').document('check')
+            test_doc = self.db.collection('health').document('check')  # type: ignore[union-attr]
             test_doc.set({
                 'timestamp': FIRESTORE_STUBS.SERVER_TIMESTAMP,
                 'status': 'healthy'
