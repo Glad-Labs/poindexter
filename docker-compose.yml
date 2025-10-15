@@ -3,8 +3,6 @@
 # ==================================
 # Full-stack orchestration for development and production
 
-version: "3.8"
-
 services:
   # ==================================
   # Strapi CMS Backend
