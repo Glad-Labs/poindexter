@@ -52,11 +52,30 @@ test_frontend:
   script:
     - npm run test:frontend
 
-test_python:
+test_python_cofounder:
   stage: test
   extends: .python_template
   script:
-    - npm run test:python
+    - cd src/cofounder_agent/tests
+    - python run_tests.py all
+  artifacts:
+    when: always
+    reports:
+      junit: src/cofounder_agent/tests/junit.xml
+
+test_content_agent:
+  stage: test
+  extends: .python_template
+  script:
+    - cd src/agents/content_agent
+    - pip install -r requirements.txt
+    - cd tests
+    - python -m pytest . -v --tb=short --junitxml=junit.xml --maxfail=5
+  artifacts:
+    when: always
+    reports:
+      junit: src/agents/content_agent/tests/junit.xml
+  allow_failure: false
 
 # --- Security Jobs ---
 security_audit_npm:

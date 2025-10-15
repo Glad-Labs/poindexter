@@ -19,13 +19,13 @@ function Check-EnvVar {
     $value = [Environment]::GetEnvironmentVariable($VarName)
     if ([string]::IsNullOrEmpty($value)) {
         if ($Required) {
-            Write-Host "✗ $VarName`: NOT SET (REQUIRED)" -ForegroundColor Red
+            Write-Host "✗ ${VarName}: NOT SET (REQUIRED)" -ForegroundColor Red
             $script:Failures++
         } else {
-            Write-Host "⚠ $VarName`: NOT SET (OPTIONAL)" -ForegroundColor Yellow
+            Write-Host "⚠ ${VarName}: NOT SET (OPTIONAL)" -ForegroundColor Yellow
         }
     } else {
-        Write-Host "✓ $VarName`: SET" -ForegroundColor Green
+        Write-Host "✓ ${VarName}: SET" -ForegroundColor Green
     }
 }
 
