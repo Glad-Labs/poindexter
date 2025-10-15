@@ -111,9 +111,15 @@ class MultiAgentOrchestrator:
         # Initialize with default agents
         self._initialize_default_agents()
         
-        # Start orchestration loop
+        # Start orchestration loop (only if event loop is running)
         self.orchestration_active = True
-        asyncio.create_task(self._orchestration_loop())
+        self._orchestration_task = None
+        try:
+            loop = asyncio.get_running_loop()
+            self._orchestration_task = asyncio.create_task(self._orchestration_loop())
+        except RuntimeError:
+            # No running event loop (likely in tests), will start manually if needed
+            self.logger.debug("No running event loop detected, orchestration loop not started")
     
     def _initialize_default_agents(self):
         """Initialize default AI agents"""

@@ -136,17 +136,19 @@ async def ws_client():
 class TestAPIEndpoints:
     """Test REST API endpoints"""
     
-    async def test_health_endpoint(self, api_client, test_utils):
+    async def test_health_endpoint(self, api_client, performance_monitor, test_utils):
         """Test health check endpoint"""
-        response = await api_client.get("/health")
+        response = await api_client.get("/metrics/health")
         
         # Should respond with 200 or provide meaningful error
         if response["status"] == 200:
             test_utils.assert_valid_response_structure(
                 response["data"], 
-                ["status", "timestamp"]
+                ["health", "status"]
             )
-            assert response["data"]["status"] in ["healthy", "ok"]
+            # Check the nested health object
+            assert "overall_status" in response["data"]["health"]
+            assert response["data"]["health"]["overall_status"] in ["healthy", "ok", "degraded", "unknown"]
         else:
             # If server not running, that's expected in some test environments
             assert "error" in response or response["status"] == 0
@@ -572,7 +574,7 @@ class TestAPIDataValidation:
         ]
         
         for test_data in test_cases:
-            response = await api_client.post("/tasks/create", test_data)
+            response = await api_client.post("/tasks", test_data)
             
             if response["status"] not in [0, 503]:
                 assert response["status"] in [200, 400, 422]
