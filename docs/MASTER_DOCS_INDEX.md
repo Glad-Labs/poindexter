@@ -11,26 +11,26 @@
 ### 👤 **I'm a New User**
 
 1. [Main README](../README.md) - Start here for overview
-2. [Installation Guide](../INSTALLATION_SUMMARY.md) - Setup instructions
+2. [Installation Guide](./INSTALLATION_SUMMARY.md) - Setup instructions
 3. [Quick Start](../README.md#-quick-start) - Run in 5 minutes
 
 ### 👨‍💻 **I'm a Developer**
 
 1. [Developer Guide](./DEVELOPER_GUIDE.md) - Complete dev docs
-2. [Architecture](../ARCHITECTURE.md) - System design
+2. [Architecture](./ARCHITECTURE.md) - System design
 3. [Testing Guide](./TEST_IMPLEMENTATION_SUMMARY.md) - Run tests
-4. [Standards](../GLAD_LABS_STANDARDS.md) - Code guidelines
+4. [Standards](./GLAD-LABS-STANDARDS.md) - Code guidelines
 
 ### 🚀 **I'm DevOps/Admin**
 
-1. [Installation Summary](../INSTALLATION_SUMMARY.md) - Setup
+1. [Installation Summary](./INSTALLATION_SUMMARY.md) - Setup
 2. [CI/CD Review](./CI_CD_TEST_REVIEW.md) - Pipeline docs
-3. [Codebase Analysis](../CODEBASE_ANALYSIS_REPORT.md) - System overview
+3. [Codebase Analysis](./CODEBASE_ANALYSIS_REPORT.md) - System overview
 
 ### 📊 **I Want Business Context**
 
 1. [Executive Summary](../README.md#-executive-summary) - What this is
-2. [Architecture Overview](../ARCHITECTURE.md) - How it works
+2. [Architecture Overview](./ARCHITECTURE.md) - How it works
 3. [Co-Founder Guide](../src/cofounder_agent/INTELLIGENT_COFOUNDER.md) - AI capabilities
 
 ---
@@ -42,10 +42,10 @@
 | Document                                                  | Purpose                                          | Last Updated | Status     |
 | --------------------------------------------------------- | ------------------------------------------------ | ------------ | ---------- |
 | **[README.md](../README.md)**                             | Main project overview, quick start, features     | Oct 14, 2025 | ✅ Current |
-| **[ARCHITECTURE.md](../ARCHITECTURE.md)**                 | System design, component interactions, data flow | Oct 14, 2025 | ✅ Current |
+| **[ARCHITECTURE.md](./ARCHITECTURE.md)**                 | System design, component interactions, data flow | Oct 14, 2025 | ✅ Current |
 | **[DEVELOPER_GUIDE.md](./DEVELOPER_GUIDE.md)**            | Development setup, APIs, workflows               | Oct 14, 2025 | ✅ Current |
-| **[INSTALLATION_SUMMARY.md](../INSTALLATION_SUMMARY.md)** | Dependency installation, configuration           | Oct 14, 2025 | ✅ Current |
-| **[GLAD_LABS_STANDARDS.md](../GLAD_LABS_STANDARDS.md)**   | Coding standards, best practices, patterns       | Oct 14, 2025 | ✅ Current |
+| **[INSTALLATION_SUMMARY.md](./INSTALLATION_SUMMARY.md)** | Dependency installation, configuration           | Oct 14, 2025 | ✅ Current |
+| **[GLAD_LABS_STANDARDS.md](./GLAD-LABS-STANDARDS.md)**   | Coding standards, best practices, patterns       | Oct 14, 2025 | ✅ Current |
 
 ### Testing Documentation
 
@@ -53,17 +53,17 @@
 | ---------------------------------------------------------------------- | ------------------------------------------------ | ----- | ----------- |
 | **[TEST_IMPLEMENTATION_SUMMARY.md](./TEST_IMPLEMENTATION_SUMMARY.md)** | Complete test coverage report, 10 new test files | 500+  | ✅ New      |
 | **[CI_CD_TEST_REVIEW.md](./CI_CD_TEST_REVIEW.md)**                     | Pipeline analysis, gaps, recommendations         | 650+  | ✅ Complete |
-| **[TESTING.md](../TESTING.md)**                                        | How to run tests locally                         | 200+  | ✅ Current  |
+| **[TESTING.md](./TESTING.md)**                                        | How to run tests locally                         | 200+  | ✅ Current  |
 | **[Co-Founder Tests README](../src/cofounder_agent/tests/README.md)**  | Python test suite documentation                  | 100+  | ✅ Current  |
 
 ### Analysis & Reports
 
 | Document                                                          | Purpose                       | Status      |
 | ----------------------------------------------------------------- | ----------------------------- | ----------- |
-| **[CODEBASE_ANALYSIS_REPORT.md](../CODEBASE_ANALYSIS_REPORT.md)** | Comprehensive system analysis | ✅ Complete |
+| **[CODEBASE_ANALYSIS_REPORT.md](./CODEBASE_ANALYSIS_REPORT.md)** | Comprehensive system analysis | ✅ Complete |
 | **[DOCUMENTATION_SUMMARY.md](./DOCUMENTATION_SUMMARY.md)**        | Documentation inventory       | ✅ Current  |
 | **[STRAPI_CONTENT_SETUP.md](./STRAPI_CONTENT_SETUP.md)**          | CMS configuration guide       | ✅ Current  |
-| **[data_schemas.md](../data_schemas.md)**                         | Database and API schemas      | ✅ Current  |
+| **[data_schemas.md](./data_schemas.md)**                         | Database and API schemas      | ✅ Current  |
 
 ---
 
@@ -248,7 +248,7 @@ cd src/agents/content_agent
 
 ### Database Schema
 
-- **Document:** [data_schemas.md](../data_schemas.md)
+- **Document:** [data_schemas.md](./data_schemas.md)
 - **Firestore Collections:**
   - `tasks` - Content creation tasks
   - `blog_posts` - Published blog posts
@@ -492,7 +492,7 @@ All rights reserved.
 - [↑ Back to Top](#-glad-labs-master-documentation-index)
 - [← Main README](../README.md)
 - [→ Developer Guide](./DEVELOPER_GUIDE.md)
-- [→ Architecture](../ARCHITECTURE.md)
+- [→ Architecture](./ARCHITECTURE.md)
 
 **Last Updated:** October 14, 2025  
 **Maintained By:** GLAD Labs Development Team  

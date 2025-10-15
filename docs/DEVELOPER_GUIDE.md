@@ -362,9 +362,9 @@ DATABASE_URL=your-production-db-url
 
 ## 📚 Additional Resources
 
-- [Architecture Documentation](../ARCHITECTURE.md)
-- [Installation Guide](../INSTALLATION_SUMMARY.md)
-- [Coding Standards](../GLAD_LABS_STANDARDS.md)
+- [Architecture Documentation](./ARCHITECTURE.md)
+- [Installation Guide](./INSTALLATION_SUMMARY.md)
+- [Coding Standards](./GLAD-LABS-STANDARDS.md)
 - [Component README Files](../README.md)
 
 ---

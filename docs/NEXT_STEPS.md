@@ -47,7 +47,7 @@ cd c:\Users\mattm\glad-labs-website\src\agents\content_agent
 **If any check fails:**
 
 1. Review the error message
-2. Check the [Codebase Health Report](./docs/CODEBASE_HEALTH_REPORT.md)
+2. Check the [Codebase Health Report](./CODEBASE_HEALTH_REPORT.md)
 3. Consult the [Troubleshooting Guide](./docs/DEVELOPER_GUIDE.md#troubleshooting)
 
 ---
@@ -308,7 +308,7 @@ Alerts:
 **Solution:**
 
 1. Check the failed job logs in GitLab
-2. Review the [CI/CD Test Review](./docs/CI_CD_TEST_REVIEW.md)
+2. Review the [CI/CD Test Review](./CI_CD_TEST_REVIEW.md)
 3. Run tests locally to reproduce
 4. Fix issue and push again
 
@@ -320,7 +320,7 @@ Alerts:
 2. Verify environment variables set correctly
 3. Confirm Docker image built successfully
 4. Check cloud platform status page
-5. Review [Codebase Health Report](./docs/CODEBASE_HEALTH_REPORT.md)
+5. Review [Codebase Health Report](./CODEBASE_HEALTH_REPORT.md)
 
 ### Issue: Tests Pass Locally But Fail in CI
 
@@ -349,12 +349,12 @@ Alerts:
 
 | Document                                                             | Purpose          | When to Use             |
 | -------------------------------------------------------------------- | ---------------- | ----------------------- |
-| [Master Documentation Index](./docs/MASTER_DOCS_INDEX.md)            | Complete doc hub | Start here              |
-| [Codebase Health Report](./docs/CODEBASE_HEALTH_REPORT.md)           | Current status   | Check health            |
-| [Developer Guide](./docs/DEVELOPER_GUIDE.md)                         | APIs & workflows | Development             |
-| [Test Implementation Summary](./docs/TEST_IMPLEMENTATION_SUMMARY.md) | Testing guide    | Writing tests           |
-| [CI/CD Test Review](./docs/CI_CD_TEST_REVIEW.md)                     | Pipeline docs    | CI/CD issues            |
-| [Architecture](./ARCHITECTURE.md)                                    | System design    | Understanding structure |
+| [Master Documentation Index](./MASTER_DOCS_INDEX.md)            | Complete doc hub | Start here              |
+| [Codebase Health Report](./CODEBASE_HEALTH_REPORT.md)           | Current status   | Check health            |
+| [Developer Guide](./DEVELOPER_GUIDE.md)                         | APIs & workflows | Development             |
+| [Test Implementation Summary](./TEST_IMPLEMENTATION_SUMMARY.md) | Testing guide    | Writing tests           |
+| [CI/CD Test Review](./CI_CD_TEST_REVIEW.md)                     | Pipeline docs    | CI/CD issues            |
+| [Architecture](./docs/ARCHITECTURE.md)                                    | System design    | Understanding structure |
 
 ---
 
@@ -407,8 +407,8 @@ git push origin main
 
 **Need help?**
 
-1. **Check Documentation:** [Master Index](./docs/MASTER_DOCS_INDEX.md)
-2. **Review Health Report:** [Codebase Health](./docs/CODEBASE_HEALTH_REPORT.md)
+1. **Check Documentation:** [Master Index](./MASTER_DOCS_INDEX.md)
+2. **Review Health Report:** [Codebase Health](./CODEBASE_HEALTH_REPORT.md)
 3. **Run Validation:** `.\validate_pipeline.ps1`
 4. **Check Logs:** Application and CI/CD logs
 5. **Contact Team:** [Your support channel]

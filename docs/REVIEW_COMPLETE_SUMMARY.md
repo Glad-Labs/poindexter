@@ -233,13 +233,13 @@ git push
 
 - [Developer Guide](./DEVELOPER_GUIDE.md) - APIs and workflows
 - [Test Implementation Summary](./TEST_IMPLEMENTATION_SUMMARY.md) - How to test
-- [Architecture](../ARCHITECTURE.md) - System design
+- [Architecture](./ARCHITECTURE.md) - System design
 
 ### For DevOps
 
 - [CI/CD Review](./CI_CD_TEST_REVIEW.md) - Pipeline docs
 - [Codebase Health Report](./CODEBASE_HEALTH_REPORT.md) - Current status
-- [Installation Guide](../INSTALLATION_SUMMARY.md) - Setup
+- [Installation Guide](./INSTALLATION_SUMMARY.md) - Setup
 
 ### For Troubleshooting
 

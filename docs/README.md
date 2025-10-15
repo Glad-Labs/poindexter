@@ -10,8 +10,8 @@ Welcome to the comprehensive documentation for the GLAD Labs AI Co-Founder Syste
 | ----------------------------------------------------- | ---------------------------------- | --------------------- |
 | [README.md](../README.md)                             | Project overview and quick start   | All users             |
 | [DEVELOPER_GUIDE.md](./DEVELOPER_GUIDE.md)            | Complete development documentation | Developers            |
-| [ARCHITECTURE.md](../ARCHITECTURE.md)                 | System architecture and design     | Architects/Developers |
-| [INSTALLATION_SUMMARY.md](../INSTALLATION_SUMMARY.md) | Dependency setup and configuration | DevOps/Setup          |
+| [ARCHITECTURE.md](./ARCHITECTURE.md)                 | System architecture and design     | Architects/Developers |
+| [INSTALLATION_SUMMARY.md](./INSTALLATION_SUMMARY.md) | Dependency setup and configuration | DevOps/Setup          |
 
 ### 🧩 Component Documentation
 
@@ -29,32 +29,32 @@ Welcome to the comprehensive documentation for the GLAD Labs AI Co-Founder Syste
 | Document                                                | Purpose                       |
 | ------------------------------------------------------- | ----------------------------- |
 | [Testing Guide](../src/cofounder_agent/tests/README.md) | Python testing procedures     |
-| [E2E Test Documentation](./TESTING.md)                  | End-to-end testing strategies |
+| [E2E Test Documentation](./docs/TESTING.md)                  | End-to-end testing strategies |
 
 ### 📋 Standards & Guidelines
 
 | Document                                         | Purpose                               |
 | ------------------------------------------------ | ------------------------------------- |
-| [GLAD Labs Standards](../GLAD_LABS_STANDARDS.md) | Coding standards and best practices   |
-| [Data Schemas](../data_schemas.md)               | Database and API schema documentation |
+| [GLAD Labs Standards](./GLAD-LABS-STANDARDS.md) | Coding standards and best practices   |
+| [Data Schemas](./data_schemas.md)               | Database and API schema documentation |
 
 ## 🚀 Quick Navigation
 
 ### For New Users
 
 1. Start with [README.md](../README.md) for project overview
-2. Follow [Installation Guide](../INSTALLATION_SUMMARY.md) for setup
+2. Follow [Installation Guide](./INSTALLATION_SUMMARY.md) for setup
 3. Use [Quick Start](../README.md#quick-start) to run the system
 
 ### For Developers
 
 1. Read [Developer Guide](./DEVELOPER_GUIDE.md) for complete technical docs
-2. Review [Architecture](../ARCHITECTURE.md) for system design
+2. Review [Architecture](./ARCHITECTURE.md) for system design
 3. Check component-specific READMEs for detailed implementation
 
 ### For DevOps/Setup
 
-1. Follow [Installation Summary](../INSTALLATION_SUMMARY.md) for dependencies
+1. Follow [Installation Summary](./INSTALLATION_SUMMARY.md) for dependencies
 2. Review [Developer Guide - Deployment](./DEVELOPER_GUIDE.md#deployment-guide)
 3. Check environment configuration requirements
 

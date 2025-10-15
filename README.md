@@ -13,14 +13,14 @@
 
 | Document                                                        | Description                               | For        |
 | --------------------------------------------------------------- | ----------------------------------------- | ---------- |
-| [� **Master Documentation Index**](./docs/MASTER_DOCS_INDEX.md) | Complete documentation hub with all links | Everyone   |
+| [� **Master Documentation Index**](./MASTER_DOCS_INDEX.md) | Complete documentation hub with all links | Everyone   |
 | [�🚀 **Quick Start Guide**](#-quick-start)                      | Get up and running in 5 minutes           | New Users  |
-| [🏗️ **Architecture Overview**](./ARCHITECTURE.md)               | System design and component interactions  | Developers |
-| [📋 **Developer Guide**](./docs/DEVELOPER_GUIDE.md)             | Technical documentation and APIs          | Developers |
-| [⚙️ **Installation Guide**](./INSTALLATION_SUMMARY.md)          | Dependency setup and configuration        | DevOps     |
-| [🧪 **Testing Guide**](./docs/TEST_IMPLEMENTATION_SUMMARY.md)   | Complete test coverage and execution      | Everyone   |
-| [🔧 **CI/CD Review**](./docs/CI_CD_TEST_REVIEW.md)              | Pipeline analysis and recommendations     | DevOps     |
-| [📊 **System Standards**](./GLAD_LABS_STANDARDS.md)             | Coding standards and best practices       | Team       |
+| [🏗️ **Architecture Overview**](./docs/ARCHITECTURE.md)               | System design and component interactions  | Developers |
+| [📋 **Developer Guide**](./DEVELOPER_GUIDE.md)             | Technical documentation and APIs          | Developers |
+| [⚙️ **Installation Guide**](./docs/INSTALLATION_SUMMARY.md)          | Dependency setup and configuration        | DevOps     |
+| [🧪 **Testing Guide**](./TEST_IMPLEMENTATION_SUMMARY.md)   | Complete test coverage and execution      | Everyone   |
+| [🔧 **CI/CD Review**](./CI_CD_TEST_REVIEW.md)              | Pipeline analysis and recommendations     | DevOps     |
+| [📊 **System Standards**](./docs/GLAD-LABS-STANDARDS.md)             | Coding standards and best practices       | Team       |
 
 ## **🎯 Executive Summary**
 

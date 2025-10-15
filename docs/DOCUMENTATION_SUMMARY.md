@@ -58,10 +58,10 @@ glad-labs-website/
 
 | Audience         | Start Here                                       | Then Read                                                                  |
 | ---------------- | ------------------------------------------------ | -------------------------------------------------------------------------- |
-| **New Users**    | [README.md](../README.md) → Quick Start          | [Installation Guide](../INSTALLATION_SUMMARY.md)                           |
-| **Developers**   | [Developer Guide](./docs/DEVELOPER_GUIDE.md)     | [Architecture](../ARCHITECTURE.md) + Component READMEs                     |
-| **DevOps/Setup** | [Installation Guide](../INSTALLATION_SUMMARY.md) | [Developer Guide - Deployment](./docs/DEVELOPER_GUIDE.md#deployment-guide) |
-| **Contributors** | [Standards](../GLAD_LABS_STANDARDS.md)           | [Documentation Index](./docs/README.md)                                    |
+| **New Users**    | [README.md](../README.md) → Quick Start          | [Installation Guide](./INSTALLATION_SUMMARY.md)                           |
+| **Developers**   | [Developer Guide](./DEVELOPER_GUIDE.md)     | [Architecture](./ARCHITECTURE.md) + Component READMEs                     |
+| **DevOps/Setup** | [Installation Guide](./INSTALLATION_SUMMARY.md) | [Developer Guide - Deployment](./docs/DEVELOPER_GUIDE.md#deployment-guide) |
+| **Contributors** | [Standards](./GLAD-LABS-STANDARDS.md)           | [Documentation Index](./docs/README.md)                                    |
 
 ## 📊 Documentation Metrics
 
