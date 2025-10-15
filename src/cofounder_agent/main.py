@@ -9,13 +9,16 @@ import os
 import logging
 import asyncio
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
 import uvicorn
 import structlog
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 # Add the parent directory (src) to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -135,6 +138,16 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Initialize rate limiter
+try:
+    limiter = Limiter(key_func=get_remote_address)
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    logger.info("Rate limiting enabled")
+except (ImportError, NameError):
+    logger.warning("slowapi not available - rate limiting disabled (install with: pip install slowapi)")
+    limiter = None
+
 # CORS middleware for frontend integration
 app.add_middleware(
     CORSMiddleware,
@@ -143,6 +156,36 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Security logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log all API requests for security monitoring"""
+    import time
+    start_time = time.time()
+    
+    # Log request
+    logger.info(
+        "API Request",
+        method=request.method,
+        path=request.url.path,
+        client_ip=request.client.host if request.client else "unknown"
+    )
+    
+    # Process request
+    response = await call_next(request)
+    
+    # Log response
+    duration = time.time() - start_time
+    logger.info(
+        "API Response",
+        method=request.method,
+        path=request.url.path,
+        status_code=response.status_code,
+        duration_ms=round(duration * 1000, 2)
+    )
+    
+    return response
 
 class CommandRequest(BaseModel):
     """Request model for processing a command."""
@@ -171,13 +214,22 @@ class TaskResponse(BaseModel):
     message: str
 
 @app.post("/command", response_model=CommandResponse)
-async def process_command(request: CommandRequest, background_tasks: BackgroundTasks):
+async def process_command(request: CommandRequest, background_tasks: BackgroundTasks, http_request: Request):
     """
     Processes a command sent to the Co-Founder agent.
 
     This endpoint receives a command, delegates it to the orchestrator logic,
     and returns the result. Can optionally execute tasks in the background.
+    
+    Rate limit: 20 requests per minute
     """
+    # Apply rate limiting if available
+    if limiter:
+        try:
+            await limiter.check_request_limit(http_request, "20/minute")
+        except RateLimitExceeded:
+            raise HTTPException(status_code=429, detail="Too many requests. Please try again later.")
+    
     try:
         logger.info(f"Received command: {request.command}")
         

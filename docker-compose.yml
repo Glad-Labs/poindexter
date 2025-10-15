@@ -1,0 +1,226 @@
+# ==================================
+# GLAD LABS - Docker Compose Configuration
+# ==================================
+# Full-stack orchestration for development and production
+
+version: "3.8"
+
+services:
+  # ==================================
+  # Strapi CMS Backend
+  # ==================================
+  strapi:
+    build:
+      context: ./cms/strapi-v5-backend
+      dockerfile: Dockerfile
+    container_name: glad-labs-strapi
+    restart: unless-stopped
+    ports:
+      - "${STRAPI_PORT:-1337}:1337"
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_CLIENT: ${DATABASE_CLIENT:-sqlite}
+      DATABASE_FILENAME: ${DATABASE_FILENAME:-.tmp/data.db}
+      JWT_SECRET: ${STRAPI_JWT_SECRET}
+      ADMIN_JWT_SECRET: ${STRAPI_ADMIN_JWT_SECRET}
+      APP_KEYS: ${STRAPI_APP_KEYS}
+      API_TOKEN_SALT: ${STRAPI_API_TOKEN_SALT}
+      HOST: 0.0.0.0
+      PORT: 1337
+    volumes:
+      - strapi-data:/app/.tmp
+      - strapi-uploads:/app/public/uploads
+    networks:
+      - glad-labs-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://localhost:1337/_health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ==================================
+  # Next.js Public Site
+  # ==================================
+  public-site:
+    build:
+      context: ./web/public-site
+      dockerfile: Dockerfile
+    container_name: glad-labs-public-site
+    restart: unless-stopped
+    ports:
+      - "${PUBLIC_SITE_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      NEXT_PUBLIC_STRAPI_API_URL: ${NEXT_PUBLIC_STRAPI_API_URL:-http://strapi:1337}
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:3000}
+      STRAPI_API_TOKEN: ${STRAPI_API_TOKEN}
+    depends_on:
+      strapi:
+        condition: service_healthy
+    networks:
+      - glad-labs-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://localhost:3000/api/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ==================================
+  # React Oversight Hub
+  # ==================================
+  oversight-hub:
+    build:
+      context: ./web/oversight-hub
+      dockerfile: Dockerfile
+    container_name: glad-labs-oversight-hub
+    restart: unless-stopped
+    ports:
+      - "${OVERSIGHT_HUB_PORT:-3001}:80"
+    environment:
+      REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:8000}
+      REACT_APP_STRAPI_URL: ${REACT_APP_STRAPI_URL:-http://localhost:1337}
+    depends_on:
+      - strapi
+      - cofounder-agent
+    networks:
+      - glad-labs-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ==================================
+  # AI Co-Founder Agent API
+  # ==================================
+  cofounder-agent:
+    build:
+      context: ./src/cofounder_agent
+      dockerfile: Dockerfile
+    container_name: glad-labs-cofounder-agent
+    restart: unless-stopped
+    ports:
+      - "${COFOUNDER_AGENT_PORT:-8000}:8000"
+    environment:
+      PYTHONUNBUFFERED: 1
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+      # API Keys
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+
+      # Google Cloud
+      GCP_PROJECT_ID: ${GCP_PROJECT_ID}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS}
+
+      # Firebase
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}
+      FIREBASE_PRIVATE_KEY: ${FIREBASE_PRIVATE_KEY}
+      FIREBASE_CLIENT_EMAIL: ${FIREBASE_CLIENT_EMAIL}
+
+      # Security
+      JWT_SECRET: ${JWT_SECRET}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:3001}
+
+      # Rate Limiting
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-20}
+    volumes:
+      - cofounder-logs:/app/logs
+      - cofounder-cache:/app/.cache
+    networks:
+      - glad-labs-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/metrics/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ==================================
+  # PostgreSQL Database (Optional - for production)
+  # ==================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: glad-labs-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-gladlabs}
+      POSTGRES_USER: ${POSTGRES_USER:-gladlabs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - glad-labs-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gladlabs}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - production
+
+  # ==================================
+  # Redis Cache (Optional - for production)
+  # ==================================
+  redis:
+    image: redis:7-alpine
+    container_name: glad-labs-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis-data:/data
+    networks:
+      - glad-labs-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - production
+
+# ==================================
+# Networks
+# ==================================
+networks:
+  glad-labs-network:
+    driver: bridge
+    name: glad-labs-network
+
+# ==================================
+# Volumes
+# ==================================
+volumes:
+  strapi-data:
+    name: glad-labs-strapi-data
+  strapi-uploads:
+    name: glad-labs-strapi-uploads
+  cofounder-logs:
+    name: glad-labs-cofounder-logs
+  cofounder-cache:
+    name: glad-labs-cofounder-cache
+  postgres-data:
+    name: glad-labs-postgres-data
+  redis-data:
+    name: glad-labs-redis-data
