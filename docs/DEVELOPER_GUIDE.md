@@ -23,13 +23,11 @@ graph TB
         A[Next.js Public Site<br/>Port: 3000]
         B[React Oversight Hub<br/>Port: 3001]
     end
-
     subgraph "Backend Services"
         C[Strapi CMS<br/>Port: 1337]
         D[AI Co-Founder API<br/>Port: 8000]
         E[Content Agent<br/>Background Service]
     end
-
     subgraph "Data Layer"
         F[SQLite Database]
         G[Firebase Firestore]
