@@ -40,17 +40,36 @@ class FirestoreClient:
     def __init__(self, project_id: Optional[str] = None):
         """Initialize Firestore client with project configuration"""
         self.project_id = project_id or os.getenv('GCP_PROJECT_ID')
+        self.dev_mode = os.getenv('DEV_MODE', 'false').lower() == 'true' or os.getenv('USE_MOCK_SERVICES', 'false').lower() == 'true'
+        
         if not self.project_id:
             logger.warning("No GCP_PROJECT_ID found, using default project")
+            self.project_id = "glad-labs-dev-local"
         
         try:
             if firestore is None:
                 raise RuntimeError("google-cloud-firestore not installed or import failed")
             self.db = firestore.Client(project=self.project_id)
-            logger.info("Firestore client initialized", project_id=self.project_id)
+            
+            if self.dev_mode:
+                logger.info("Firestore client initialized in DEV MODE (local/mock services)", project_id=self.project_id)
+            else:
+                logger.info("Firestore client initialized", project_id=self.project_id)
         except Exception as e:
             logger.error("Failed to initialize Firestore client", error=str(e))
-            raise
+            if not self.dev_mode:
+                raise
+            else:
+                logger.warning("Continuing in dev mode without Firestore functionality")
+                self.db = None  # Set to None for dev mode fallback
+    
+    def _check_db_available(self) -> bool:
+        """Check if database is available, log warning if in dev mode"""
+        if self.db is None:
+            if self.dev_mode:
+                logger.debug("Firestore operation skipped - running in dev mode")
+            return False
+        return True
     
     # Task Management Methods
     async def add_task(self, task_data: Dict[str, Any]) -> str:
@@ -63,6 +82,13 @@ class FirestoreClient:
         Returns:
             Document ID of the created task
         """
+        if not self._check_db_available():
+            # Return a mock task ID in dev mode
+            import uuid
+            mock_id = str(uuid.uuid4())
+            logger.info("Task created in DEV MODE (not persisted)", task_id=mock_id)
+            return mock_id
+            
         try:
             # Add timestamp and ensure required fields following data_schemas.md
             enhanced_task_data = {
@@ -90,7 +116,7 @@ class FirestoreClient:
             }
             
             # Add the task document
-            doc_ref = self.db.collection('tasks').add(enhanced_task_data)[1]
+            doc_ref = self.db.collection('tasks').add(enhanced_task_data)[1]  # type: ignore[union-attr]
             
             logger.info("Task created successfully", 
                        task_id=doc_ref.id, 

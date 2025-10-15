@@ -6,9 +6,24 @@ This script bypasses the complex import issues by running directly
 
 import sys
 import os
+from pathlib import Path
 
 # Add the src directory to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    # Find .env file in project root (two levels up from this file)
+    env_path = Path(__file__).parent.parent.parent / '.env'
+    if env_path.exists():
+        load_dotenv(env_path)
+        print(f"✅ Loaded environment variables from {env_path}")
+    else:
+        print(f"⚠️  No .env file found at {env_path}")
+except ImportError:
+    print("⚠️  python-dotenv not installed. Environment variables from .env will not be loaded.")
+    print("   Install with: pip install python-dotenv")
 
 try:
     from main import app
