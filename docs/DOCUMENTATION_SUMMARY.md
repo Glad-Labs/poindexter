@@ -8,7 +8,7 @@ The GLAD Labs AI Co-Founder System documentation has been successfully consolida
 
 ### **Main Documentation Hub**
 
-```
+```text
 glad-labs-website/
 ├── 📄 README.md                    # Main project overview & quick start
 ├── 📄 ARCHITECTURE.md             # System architecture (existing)
@@ -22,7 +22,7 @@ glad-labs-website/
 
 ### **Component Documentation**
 
-```
+```text
 ├── 📁 src/cofounder_agent/README.md    # AI Co-Founder system docs
 ├── 📁 web/public-site/README.md        # Next.js frontend docs
 ├── 📁 web/oversight-hub/README.md      # React admin docs

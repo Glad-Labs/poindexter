@@ -1,13 +1,30 @@
 import logging
 from logging.handlers import RotatingFileHandler
 import os
-from pythonjsonlogger import jsonlogger
-from utils.firestore_logger import FirestoreLogHandler
-from services.firestore_client import FirestoreClient
 from typing import Optional
+import importlib
+
+# Optional dependency: python-json-logger (avoid direct import to satisfy static analyzers)
+jsonlogger = None
+try:  # pragma: no cover - exercised via tests
+    _mod = importlib.import_module("pythonjsonlogger.jsonlogger")
+    jsonlogger = getattr(_mod, "jsonlogger", _mod)
+except Exception:  # pragma: no cover
+    jsonlogger = None
+
+# Firestore logging handler imported lazily in setup_logging to avoid heavy deps at import time.
+# from utils.firestore_logger import FirestoreLogHandler
+# from services.firestore_client import FirestoreClient
 
 
-def setup_logging(firestore_client: Optional[FirestoreClient] = None):
+def _make_formatter() -> logging.Formatter:
+    """Return a JSON formatter when available, otherwise a plain formatter."""
+    if jsonlogger is not None:
+        return jsonlogger.JsonFormatter("%(asctime)s %(name)s %(levelname)s %(message)s")
+    return logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s")
+
+
+def setup_logging(firestore_client: Optional[object] = None):
     """
     Configures the logging for the application to output structured JSON logs
     and stream logs to Firestore.
@@ -31,19 +48,23 @@ def setup_logging(firestore_client: Optional[FirestoreClient] = None):
         log_file, maxBytes=1024 * 1024 * 5, backupCount=5
     )
 
-    # Create a JSON formatter
-    formatter = jsonlogger.JsonFormatter(
-        "%(asctime)s %(name)s %(levelname)s %(message)s"
-    )
+    # Create formatter (JSON if available)
+    formatter = _make_formatter()
 
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 
     # Add a handler for Firestore logging if a client is provided
     if firestore_client:
-        firestore_handler = FirestoreLogHandler(firestore_client)
-        firestore_handler.setLevel(logging.INFO)
-        logger.addHandler(firestore_handler)
+        # Lazy import to avoid requiring google.cloud during import or unit tests
+        try:
+            from utils.firestore_logger import FirestoreLogHandler  # type: ignore
+        except Exception:  # pragma: no cover - environment without GCP libs
+            FirestoreLogHandler = None
+        if FirestoreLogHandler is not None:
+            handler = FirestoreLogHandler(firestore_client)  # type: ignore[arg-type]
+            handler.setLevel(logging.INFO)
+            logger.addHandler(handler)
 
     # Also add a handler for console output for local development
     console_handler = logging.StreamHandler()
@@ -53,7 +74,7 @@ def setup_logging(firestore_client: Optional[FirestoreClient] = None):
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
 
-    logging.info("Structured JSON logging configured.")
+    logging.info("Structured logging configured.")
 
 
 if __name__ == "__main__":

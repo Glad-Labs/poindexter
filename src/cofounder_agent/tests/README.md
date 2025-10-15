@@ -8,20 +8,18 @@ The AI Co-Founder system includes a comprehensive testing framework designed to 
 
 ### **Test Architecture**
 
-```
-src/cofounder_agent/tests/
-├── conftest.py                    # Test configuration and fixtures
-├── pytest.ini                    # Pytest configuration
-├── pytest.ini.cfg               # Additional pytest settings
-├── run_tests.py                  # Test execution script
-├── test_unit_comprehensive.py    # Unit tests for all components
-├── test_api_integration.py       # API and WebSocket integration tests
-├── test_e2e_comprehensive.py     # Original E2E tests (has issues)
-├── test_e2e_fixed.py            # Fixed E2E tests with working mocks
-└── test_results/                # Generated test reports and outputs
+```bash
+# usage
 ```
 
-## **🎯 Test Categories**
+├── pytest.ini # Pytest configuration
+├── pytest.ini.cfg # Additional pytest settings
+├── run_tests.py # Test execution script
+├── test_unit_comprehensive.py # Unit tests for all components
+├── test_api_integration.py # API and WebSocket integration tests
+├── test_e2e_comprehensive.py # Original E2E tests (has issues)
+├── test_e2e_fixed.py # Fixed E2E tests with working mocks
+└── test_results/ # Generated test reports and outputs
 
 ### **1. Unit Tests** (`test_unit_comprehensive.py`)
 
@@ -201,7 +199,7 @@ The test runner generates detailed execution reports:
 
 ### **Example Report Output**
 
-```
+```text
 🎯 AI CO-FOUNDER TEST SUITE RESULTS
 =====================================
 📊 Test Statistics:

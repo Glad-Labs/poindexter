@@ -53,13 +53,13 @@ scipy>=1.11.0
 
 # Web scraping and parsing
 beautifulsoup4>=4.12.0
-requests>=2.31.0
+requests>=2.32.4
 aiohttp>=3.9.0
 
 # Document and content processing
 markdown>=3.5.0
 python-docx>=1.1.0
-PyPDF2>=3.0.0
+pypdf>=6.0.0
 
 # ===== DATA VALIDATION & SERIALIZATION =====
 pydantic>=2.5.0
@@ -83,7 +83,7 @@ websockets>=12.0
 # ===== MACHINE LEARNING & AI =====
 # Transformers and embeddings
 sentence-transformers>=2.2.0
-transformers>=4.35.0
+transformers>=4.53.0
 
 # Vector database support
 # faiss-cpu>=1.7.4  # Uncomment for large-scale vector search
@@ -145,7 +145,7 @@ APScheduler>=3.10.0
 # ===== HTTP & API CLIENTS =====
 # Enhanced HTTP clients
 httpx>=0.25.0
-urllib3>=2.0.0
+urllib3>=2.5.0
 
 # ===== DATE & TIME =====
 python-dateutil>=2.8.0

@@ -21,8 +21,6 @@ pip install mcp>=1.0.0 ollama>=0.3.0
 pip install -r requirements.txt
 ```
 
-### 2. Set Up Ollama (Optional - for local models)
-
 ```bash
 # Install Ollama on Windows
 # Download from: https://ollama.ai/download/windows
@@ -139,7 +137,7 @@ graph TB
 
 ## File Structure
 
-```
+```text
 src/mcp/
 ├── __init__.py                 # MCP module initialization
 ├── base_server.py             # Base MCP server class (future use)

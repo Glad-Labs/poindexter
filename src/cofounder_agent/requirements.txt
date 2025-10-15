@@ -44,10 +44,11 @@ firebase-admin>=6.2.0
 # ===== DATA PROCESSING =====
 # Data handling, parsing, and web scraping
 beautifulsoup4>=4.12.0
-requests>=2.31.0
+requests>=2.32.4
 markdown>=3.5.0
 pydantic>=2.5.0
 python-dotenv>=1.0.0
+pypdf>=6.0.0
 
 # ===== TESTING FRAMEWORK =====
 # Comprehensive testing infrastructure
@@ -72,3 +73,4 @@ PyJWT>=2.8.0
 click>=8.1.0
 tqdm>=4.66.0
 pyyaml>=6.0.0
+urllib3>=2.5.0

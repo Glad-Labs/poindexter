@@ -39,7 +39,7 @@ npm run dev
 
 ### Individual Service Development
 
-```bash
+````bash
 # Public website (Next.js)
 npm run dev:public
 
@@ -51,16 +51,13 @@ npm run dev:strapi
 
 # AI Co-Founder agent (Python)
 npm run dev:cofounder
-```
 
 ### Production Build
 
 ```bash
 npm run build
 npm run start:all
-```
-
-### Testing
+````
 
 ```bash
 # Run all tests
@@ -77,7 +74,7 @@ npm run test:frontend
 
 ### Workspace Structure
 
-```
+```text
 glad-labs-website/
 ├── web/public-site/          # Next.js 15 public website
 ├── web/oversight-hub/        # React admin dashboard
@@ -88,10 +85,10 @@ glad-labs-website/
 
 ### Service Endpoints (Development)
 
-- **Public Site**: http://localhost:3000
-- **Oversight Hub**: http://localhost:3001
-- **Strapi CMS**: http://localhost:1337
-- **AI Co-Founder API**: http://localhost:8000
+- **Public Site**: <http://localhost:3000>
+- **Oversight Hub**: <http://localhost:3001>
+- **Strapi CMS**: <http://localhost:1337>
+- **AI Co-Founder API**: <http://localhost:8000>
 
 ## 📋 System Health Check
 

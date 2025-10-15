@@ -2,12 +2,12 @@
 
 ## Table of Contents
 
-1. [🏗️ Architecture Overview](#architecture-overview)
-2. [🔧 Development Environment](#development-environment)
-3. [📦 Component Documentation](#component-documentation)
-4. [🔌 API References](#api-references)
-5. [🧪 Testing Guide](#testing-guide)
-6. [🚀 Deployment Guide](#deployment-guide)
+1. [Architecture Overview](#architecture-overview)
+2. [Development Environment](#development-environment)
+3. [Component Documentation](#component-documentation)
+4. [API References](#api-references)
+5. [Testing Guide](#testing-guide)
+6. [Deployment Guide](#deployment-guide)
 
 ---
 
@@ -92,6 +92,7 @@ graph TB
    ```
 
 4. **Configure API Keys**
+
    ```env
    # .env file
    OPENAI_API_KEY=your_openai_key
@@ -147,13 +148,15 @@ npm run start      # Production server
 
 **File Structure**:
 
-```
+```text
+
 web/public-site/
-├── pages/           # Next.js pages
-├── components/      # Reusable UI components
-├── styles/          # CSS and Tailwind
-├── lib/            # Utility functions
-└── public/         # Static assets
+├── pages/ # Next.js pages
+├── components/ # Reusable UI components
+├── styles/ # CSS and Tailwind
+├── lib/ # Utility functions
+└── public/ # Static assets
+
 ```
 
 ### ⚛️ React Oversight Hub (`web/oversight-hub/`)
@@ -282,7 +285,7 @@ ws.onmessage = (event) => {
 
 ### Test Structure
 
-```
+```text
 tests/
 ├── frontend/        # Frontend component tests
 ├── integration/     # Cross-service integration tests

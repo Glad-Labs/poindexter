@@ -19,6 +19,7 @@ from services.pubsub_client import PubSubClient
 from utils.firestore_logger import FirestoreLogHandler
 import threading
 from utils.helpers import load_prompts_from_file
+from threading import Event
 
 class Orchestrator:
     """
@@ -37,6 +38,8 @@ class Orchestrator:
         logging.info("=" * 80)
         self.config = config
         self.paused = False  # Add a paused state
+        self._stop_event = Event()
+        self._poll_thread = None
         self._ensure_directories_exist()
 
         # Load prompts
@@ -97,6 +100,52 @@ class Orchestrator:
                 f"Fatal: Could not create directory {self.config.IMAGE_STORAGE_PATH}. Error: {e}"
             )
             raise
+
+    def _poll_loop(self, poll_interval: float):
+        """Internal polling loop that runs until stop() is called."""
+        logging.info(
+            f"Starting autonomous agent loop. Polling for new tasks every {poll_interval} seconds."
+        )
+        try:
+            while not self._stop_event.is_set():
+                if not self.paused:
+                    self.run_batch_job()
+                else:
+                    logging.info("Agent is paused. Skipping task processing.")
+                # Wait with wake-on-stop semantics
+                if self._stop_event.wait(timeout=poll_interval):
+                    break
+        except Exception as e:
+            logging.critical(
+                f"A fatal error occurred in the polling loop: {e}", exc_info=True
+            )
+
+    def start_polling(self, poll_interval: float = 60.0):
+        """Starts the background polling thread if not already running."""
+        if self._poll_thread and self._poll_thread.is_alive():
+            logging.debug("Polling already running; start_polling() is a no-op.")
+            return
+        # Reset the stop event in case of reuse
+        self._stop_event.clear()
+        self._poll_thread = threading.Thread(
+            target=self._poll_loop, args=(poll_interval,), daemon=True
+        )
+        self._poll_thread.start()
+
+    def start(self, poll_interval: float = 60.0):
+        """Starts Pub/Sub listener (if configured) and begins polling in background."""
+        self.start_pubsub_listener()
+        self.start_polling(poll_interval=poll_interval)
+
+    def stop(self, timeout: float | None = None):
+        """Signals the polling thread to stop and waits for it to exit."""
+        self._stop_event.set()
+        if self._poll_thread:
+            try:
+                self._poll_thread.join(timeout=timeout)
+            except Exception:
+                # Avoid raising during shutdown; log and continue
+                logging.debug("Exception while joining poll thread", exc_info=True)
 
     def run_batch_job(self):
         """
@@ -161,7 +210,7 @@ class Orchestrator:
             for i in range(post.refinement_loops):
                 if i > 0:
                     summarized_draft = self.summarizer_agent.run(
-                        post.raw_content, self.prompts["summarize_previous_draft"]
+                        post.raw_content or "", self.prompts["summarize_previous_draft"]
                     )
                     post.raw_content = summarized_draft
 
@@ -234,22 +283,17 @@ class Orchestrator:
 
 if __name__ == "__main__":
     orchestrator = Orchestrator()
-    orchestrator.start_pubsub_listener()
     POLL_INTERVAL = 60  # seconds
-
-    logging.info(
-        f"Starting autonomous agent loop. Polling for new tasks every {POLL_INTERVAL} seconds."
-    )
     try:
+        orchestrator.start(poll_interval=POLL_INTERVAL)
+        # Keep the main thread alive until interrupted
         while True:
-            if not orchestrator.paused:
-                orchestrator.run_batch_job()
-            else:
-                logging.info("Agent is paused. Skipping task processing.")
-            time.sleep(POLL_INTERVAL)
+            time.sleep(1)
     except KeyboardInterrupt:
-        logging.info("Agent loop terminated by user.")
+        logging.info("Agent loop termination requested by user. Stopping...")
+        orchestrator.stop(timeout=5.0)
+        logging.info("Agent stopped.")
     except Exception as e:
         logging.critical(
-            f"A fatal error occurred in the main agent loop: {e}", exc_info=True
+            f"A fatal error occurred in the main agent: {e}", exc_info=True
         )

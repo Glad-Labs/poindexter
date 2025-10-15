@@ -18,6 +18,7 @@
 | [📋 **Developer Guide**](./docs/DEVELOPER_GUIDE.md)    | Technical documentation and APIs         | Developers |
 | [⚙️ **Installation Guide**](./INSTALLATION_SUMMARY.md) | Dependency setup and configuration       | DevOps     |
 | [📊 **System Standards**](./GLAD_LABS_STANDARDS.md)    | Coding standards and best practices      | Team       |
+| [🧪 **Testing Guide**](./TESTING.md)                   | How to run Python tests locally          | Everyone   |
 
 ## **🎯 Executive Summary**
 
@@ -31,7 +32,7 @@ GLAD Labs is a comprehensive AI Co-Founder ecosystem that combines autonomous co
 
 ## **🚀 Quick Start**
 
-### **Prerequisites**
+### **Prerequisites (Quick Start)**
 
 - Node.js 18+ and Python 3.12+
 - Git and a code editor
@@ -52,12 +53,12 @@ npm run dev
 
 ### **Access Points**
 
-| Service           | URL                   | Purpose               |
-| ----------------- | --------------------- | --------------------- |
-| **Public Site**   | http://localhost:3000 | Next.js website       |
-| **Oversight Hub** | http://localhost:3001 | React admin dashboard |
-| **Strapi CMS**    | http://localhost:1337 | Content management    |
-| **AI Co-Founder** | http://localhost:8000 | Python API server     |
+| Service           | URL                     | Purpose               |
+| ----------------- | ----------------------- | --------------------- |
+| **Public Site**   | <http://localhost:3000> | Next.js website       |
+| **Oversight Hub** | <http://localhost:3001> | React admin dashboard |
+| **Strapi CMS**    | <http://localhost:1337> | Content management    |
+| **AI Co-Founder** | <http://localhost:8000> | Python API server     |
 
 ### **Available Commands**
 
@@ -82,19 +83,19 @@ The system is designed as a modern monorepo with clear separation of concerns an
 
 ### **Workspace Structure**
 
-```
+```text
 glad-labs-website/
 ├── 📁 web/
-│   ├── public-site/      # Next.js 15 public website
-│   └── oversight-hub/    # React admin dashboard
+│ ├── public-site/ # Next.js 15 public website
+│ └── oversight-hub/ # React admin dashboard
 ├── 📁 cms/
-│   └── strapi-v5-backend/ # Strapi CMS backend
+│ └── strapi-v5-backend/ # Strapi CMS backend
 ├── 📁 src/
-│   ├── cofounder_agent/  # AI Co-Founder system
-│   └── mcp/              # Model Context Protocol
+│ ├── cofounder_agent/ # AI Co-Founder system
+│ └── mcp/ # Model Context Protocol
 ├── 📁 agents/
-│   └── content-agent/    # Content generation agents
-└── 📁 docs/              # Documentation
+│ └── content-agent/ # Content generation agents
+└── 📁 docs/ # Documentation
 ```
 
 ---
@@ -116,7 +117,7 @@ glad-labs-website/
    cd glad-labs-website
    ```
 
-2. **Install dependencies:**
+1. **Install dependencies:**
 
    ```bash
    # Install root dependencies
@@ -133,7 +134,7 @@ glad-labs-website/
    cd src/agents/content_agent && pip install -r requirements.txt && cd ../../..
    ```
 
-3. **Configure environment variables:**
+1. **Configure environment variables:**
 
    **Strapi CMS** (`cms/strapi-v5-backend/.env`):
 
@@ -162,7 +163,7 @@ glad-labs-website/
    STRAPI_API_TOKEN=your-strapi-api-token
    ```
 
-4. **Start the development environment:**
+1. **Start the development environment:**
 
    ```bash
    # Terminal 1: Start Strapi CMS
@@ -311,6 +312,8 @@ glad-labs-website/
 - **Backend**: Strapi built-in testing framework
 - **Content Agent**: Python unittest framework
 - **Integration**: End-to-end testing with Playwright
+
+For step-by-step local testing instructions on Windows PowerShell (including virtualenv setup), see the Testing Guide: `TESTING.md`.
 
 ---
 
