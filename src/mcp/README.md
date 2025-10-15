@@ -195,12 +195,10 @@ The co-founder agent (`src/cofounder_agent/mcp_integration.py`) now includes:
    ```
 
 2. **Ollama Connection Failed**
-
    - Ensure Ollama is installed and running
    - Try `ollama list` to verify installation
 
 3. **Strapi Connection Failed**
-
    - Ensure Strapi is running on port 1337
    - Check STRAPI_API_TOKEN is valid
 
