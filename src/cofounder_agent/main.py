@@ -30,11 +30,14 @@ try:
     from services.firestore_client import FirestoreClient
     from services.pubsub_client import PubSubClient
     from services.performance_monitor import PerformanceMonitor
+    from services.intervention_handler import InterventionHandler, initialize_intervention_handler
     GOOGLE_CLOUD_AVAILABLE = True
 except ImportError:
     FirestoreClient = None
     PubSubClient = None
     PerformanceMonitor = None
+    InterventionHandler = None
+    initialize_intervention_handler = None
     GOOGLE_CLOUD_AVAILABLE = False
     logging.warning("Google Cloud services not available - running in development mode")
 
@@ -99,6 +102,19 @@ async def lifespan(app: FastAPI):
         else:
             # Development mode - initialize performance monitor without Firestore
             performance_monitor = PerformanceMonitor() if PerformanceMonitor else None
+        
+        # Initialize intervention handler
+        if GOOGLE_CLOUD_AVAILABLE and InterventionHandler:
+            intervention_handler = initialize_intervention_handler(
+                pubsub_client=pubsub_client,
+                confidence_threshold=0.75,
+                error_threshold=3,
+                budget_threshold=1000.0,
+                enable_notifications=True
+            )
+            logger.info("Intervention handler initialized")
+        else:
+            intervention_handler = None
         
         # Initialize orchestrator with services
         orchestrator = Orchestrator(
