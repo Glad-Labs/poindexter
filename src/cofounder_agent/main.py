@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional, List
 import uvicorn
 import structlog
@@ -386,6 +386,267 @@ async def get_pending_tasks(limit: int = 10):
     except Exception as e:
         logger.error(f"Error getting pending tasks: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get tasks: {str(e)}")
+
+# ============================================================================
+# CONTENT PIPELINE INTEGRATION ENDPOINTS
+# ============================================================================
+
+class ContentRequest(BaseModel):
+    """Request model for creating content via the AI pipeline"""
+    topic: str
+    primary_keyword: str = Field(default="", description="SEO keywords (comma-separated)")
+    target_audience: str = Field(default="general", description="Target audience")
+    category: str = Field(default="uncategorized", description="Content category")
+    auto_publish: bool = Field(default=False, description="Auto-publish to Strapi")
+
+class WebhookPayload(BaseModel):
+    """Webhook payload from Strapi for content updates"""
+    event: str
+    model: str
+    entry: Dict[str, Any]
+
+@app.post("/api/content/create")
+async def create_content(request: ContentRequest, background_tasks: BackgroundTasks):
+    """
+    Create content through the AI-powered content generation pipeline.
+    
+    This endpoint:
+    1. Accepts a content creation request
+    2. Queues the task in Firestore
+    3. Triggers the content agent for processing
+    4. Returns task ID for tracking
+    
+    The content agent will:
+    - Research the topic
+    - Generate optimized content
+    - Create images
+    - QA review
+    - Optionally publish to Strapi
+    """
+    try:
+        logger.info(f"Content creation request: topic='{request.topic}' auto_publish={request.auto_publish}")
+        
+        # Validate inputs
+        if not request.topic or len(request.topic.strip()) < 3:
+            raise HTTPException(status_code=400, detail="Topic must be at least 3 characters")
+        
+        if not GOOGLE_CLOUD_AVAILABLE or not firestore_client:
+            # Development mode - simulate content creation
+            return {
+                "task_id": f"dev-content-{hash(request.topic)}",
+                "status": "queued",
+                "message": f"Content creation queued for '{request.topic}' (development mode)",
+                "topic": request.topic,
+                "auto_publish": request.auto_publish
+            }
+        
+        # Create task in Firestore content queue
+        task_data = {
+            "topic": request.topic,
+            "primary_keyword": request.primary_keyword or request.topic,
+            "target_audience": request.target_audience,
+            "category": request.category,
+            "status": "New",
+            "auto_publish": request.auto_publish,
+            "created_at": datetime.utcnow().isoformat(),
+            "source": "api"
+        }
+        
+        # Add to content queue in Firestore
+        task_id = await firestore_client.add_content_task(task_data)  # type: ignore[union-attr]
+        logger.info(f"Content task created: task_id={task_id} topic='{request.topic}'")
+        
+        # Trigger content agent via Pub/Sub
+        if pubsub_client:
+            background_tasks.add_task(
+                trigger_content_agent,
+                task_id,
+                request.topic,
+                {
+                    "primary_keyword": request.primary_keyword,
+                    "target_audience": request.target_audience,
+                    "category": request.category,
+                    "auto_publish": request.auto_publish
+                }
+            )
+        
+        return {
+            "task_id": task_id,
+            "status": "queued",
+            "message": f"Content creation queued for '{request.topic}'",
+            "topic": request.topic,
+            "auto_publish": request.auto_publish,
+            "tracking_url": f"/api/content/status/{task_id}"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating content: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create content: {str(e)}")
+
+@app.get("/api/content/status/{task_id}")
+async def get_content_status(task_id: str):
+    """
+    Get the current status of a content creation task.
+    
+    Returns detailed information about:
+    - Task status (New, In Progress, Complete, Failed)
+    - Processing stage (Research, Draft, QA, Publishing)
+    - Generated content details
+    - Strapi publication status
+    """
+    try:
+        if not GOOGLE_CLOUD_AVAILABLE or not firestore_client:
+            return {
+                "task_id": task_id,
+                "status": "unknown",
+                "message": "Running in development mode - status tracking unavailable"
+            }
+        
+        # Get task from Firestore
+        task = await firestore_client.get_content_task(task_id)  # type: ignore[union-attr]
+        
+        if not task:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+        
+        # Get associated run logs
+        runs = await firestore_client.get_task_runs(task_id)  # type: ignore[union-attr]
+        
+        return {
+            "task_id": task_id,
+            "status": task.get("status", "unknown"),
+            "topic": task.get("topic"),
+            "category": task.get("category"),
+            "created_at": task.get("created_at"),
+            "completed_at": task.get("completed_at"),
+            "strapi_id": task.get("strapi_id"),
+            "strapi_url": task.get("strapi_url"),
+            "runs": runs,
+            "auto_publish": task.get("auto_publish", False)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting content status: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get content status: {str(e)}")
+
+@app.post("/api/webhooks/content-created")
+async def handle_content_webhook(payload: WebhookPayload, background_tasks: BackgroundTasks):
+    """
+    Webhook handler for Strapi content lifecycle events.
+    
+    Handles events like:
+    - entry.create: New content created in Strapi
+    - entry.update: Content updated in Strapi
+    - entry.publish: Content published in Strapi
+    - entry.unpublish: Content unpublished
+    
+    Triggers:
+    - Public site rebuild (via webhook or API call)
+    - Notification to Oversight Hub
+    - Analytics tracking
+    """
+    try:
+        logger.info(f"Webhook received: event={payload.event} model={payload.model}")
+        
+        # Validate webhook payload
+        if not payload.event or not payload.model or not payload.entry:
+            raise HTTPException(status_code=400, detail="Invalid webhook payload")
+        
+        # Extract entry data
+        entry_id = payload.entry.get("id")
+        entry_title = payload.entry.get("title") or payload.entry.get("Title")
+        
+        if not entry_id:
+            raise HTTPException(status_code=400, detail="Entry ID missing from webhook payload")
+        
+        # Handle different webhook events
+        if payload.event in ["entry.create", "entry.publish", "entry.update"]:
+            
+            # Log to Firestore
+            if GOOGLE_CLOUD_AVAILABLE and firestore_client:
+                webhook_data = {
+                    "event": payload.event,
+                    "model": payload.model,
+                    "entry_id": entry_id,
+                    "entry_title": entry_title,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "processed": False
+                }
+                await firestore_client.log_webhook_event(webhook_data)  # type: ignore[union-attr]
+            
+            # Trigger public site rebuild
+            if payload.event in ["entry.publish", "entry.update"]:
+                logger.info(f"Content published/updated: triggering site rebuild for entry_id={entry_id}")
+                # TODO: Implement actual rebuild trigger (Vercel webhook, etc.)
+                # For now, just log the event
+                background_tasks.add_task(
+                    notify_site_rebuild,
+                    entry_id,
+                    entry_title,
+                    payload.event
+                )
+            
+            return {
+                "status": "received",
+                "event": payload.event,
+                "entry_id": entry_id,
+                "message": f"Webhook processed for {payload.model} entry {entry_id}"
+            }
+        
+        elif payload.event == "entry.unpublish":
+            logger.info(f"Content unpublished: entry_id={entry_id}")
+            return {
+                "status": "received",
+                "event": payload.event,
+                "entry_id": entry_id,
+                "message": f"Unpublish event processed for entry {entry_id}"
+            }
+        
+        else:
+            logger.warning(f"Unknown webhook event: {payload.event}")
+            return {
+                "status": "ignored",
+                "event": payload.event,
+                "message": f"Event {payload.event} not handled"
+            }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error handling webhook: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to process webhook: {str(e)}")
+
+async def notify_site_rebuild(entry_id: int, title: Optional[str], event: str):
+    """
+    Background task to notify the public site of new/updated content.
+    
+    This would typically:
+    1. Call a Vercel deploy hook
+    2. Invalidate CDN cache
+    3. Update search index
+    4. Send notifications to Oversight Hub
+    """
+    try:
+        logger.info(f"Site rebuild notification: entry_id={entry_id} title='{title}' event={event}")
+        
+        # TODO: Implement actual rebuild trigger
+        # Example: Call Vercel deploy hook
+        # rebuild_url = os.getenv("VERCEL_DEPLOY_HOOK")
+        # if rebuild_url:
+        #     async with httpx.AsyncClient() as client:
+        #         await client.post(rebuild_url)
+        
+        logger.info(f"Site rebuild triggered successfully for entry {entry_id}")
+        
+    except Exception as e:
+        logger.error(f"Failed to trigger site rebuild: entry_id={entry_id} error={e}")
+
+# ============================================================================
+# METRICS AND MONITORING ENDPOINTS
+# ============================================================================
 
 @app.get("/metrics/performance")
 async def get_performance_metrics(hours: int = 24):

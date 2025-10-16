@@ -57,6 +57,16 @@ class SmartNotificationSystem:
         self.subscribers = []
         self.notification_rules = self._initialize_rules()
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        self.initialized = False
+    
+    async def initialize(self):
+        """Initialize the notification system"""
+        if not self.initialized:
+            self.logger.info("Initializing notification system")
+            # Load any saved notifications, setup connections, etc.
+            self.initialized = True
+            self.logger.info("Notification system initialized successfully")
+        return self
     
     def _initialize_rules(self) -> Dict[str, Any]:
         """Initialize notification rules and thresholds"""
@@ -347,6 +357,24 @@ class SmartNotificationSystem:
                 self.logger.info(f"Marked notification {notification_id} as read")
                 return True
         return False
+    
+    def get_recent_notifications(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get recent notifications in a JSON-serializable format"""
+        recent = self.get_notifications(limit=limit)
+        return [
+            {
+                "id": n.id,
+                "type": n.type.value,
+                "priority": n.priority.value,
+                "title": n.title,
+                "message": n.message,
+                "timestamp": n.timestamp.isoformat(),
+                "read": n.read,
+                "data": n.data,
+                "actions": n.actions
+            }
+            for n in recent
+        ]
     
     def get_notification_stats(self) -> Dict[str, Any]:
         """Get notification system statistics"""
