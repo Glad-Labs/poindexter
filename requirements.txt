@@ -1,0 +1,17 @@
+# GLAD Labs Platform - Root Requirements
+# Core Python dependencies for the entire platform
+# For component-specific dependencies, see:
+# - scripts/requirements.txt (all agents and services)
+# - src/cofounder_agent/requirements.txt (AI Co-Founder)
+# - src/agents/content_agent/requirements.txt (Content Agent)
+
+# Include AI Co-Founder requirements (most comprehensive)
+-r src/cofounder_agent/requirements.txt
+
+# Additional platform-wide dependencies
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+black>=23.9.0
+flake8>=6.1.0
+isort>=5.12.0
