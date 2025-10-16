@@ -34,6 +34,8 @@ GLAD Labs is a comprehensive AI Co-Founder ecosystem that combines autonomous co
 
 ## **🚀 Quick Start**
 
+> 📘 **New to the platform?** Follow the comprehensive [Local Setup & Testing Guide](./docs/LOCAL_SETUP_GUIDE.md) for step-by-step instructions, troubleshooting, and testing the complete end-to-end pipeline.
+
 ### **Prerequisites (Quick Start)**
 
 - Node.js 18+ and Python 3.12+
