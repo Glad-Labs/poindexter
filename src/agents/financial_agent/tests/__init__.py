@@ -1,0 +1,1 @@
+"""Financial Agent tests package."""
