@@ -1771,6 +1771,266 @@ async def delete_social_post(request: Request, post_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to delete post: {str(e)}")
 
 
+# ============================================================================
+# CONTENT GENERATION ENDPOINTS - Revenue-First Phase 1
+# ============================================================================
+
+class ContentGenerateRequest(BaseModel):
+    """Request model for content generation"""
+    topic: str = Field(..., description="Topic or title for the blog post")
+    target_audience: str = Field(default="tech entrepreneurs and AI developers", description="Target audience for the content")
+    category: str = Field(default="AI & Machine Learning", description="Content category")
+    auto_publish: bool = Field(default=False, description="Whether to automatically publish to Strapi")
+
+
+@app.post("/api/content/generate")
+@limiter.limit("10/hour")
+async def generate_content(request: Request, content_request: ContentGenerateRequest):
+    """
+    Generate a blog post using AI and optionally publish to Strapi.
+    
+    This endpoint is the core of the automated content pipeline:
+    1. Generates blog post using Content Agent
+    2. Saves draft to Firestore (for approval queue)
+    3. Optionally publishes directly to Strapi
+    
+    Returns:
+        Dict with content_id, status, and optionally strapi_id/url
+    """
+    try:
+        logger.info(f"Content generation requested: {content_request.topic}")
+        
+        # Import content agent
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'agents', 'content_agent'))
+        from agents.content_agent.content_agent_main import ContentAgent
+        from agents.content_agent.services.strapi_client import StrapiClient
+        from agents.content_agent.utils.data_models import BlogPost
+        
+        # Initialize Content Agent
+        content_agent = ContentAgent()
+        
+        # Generate blog post
+        logger.info("Generating blog post with Content Agent...")
+        blog_post: BlogPost = await asyncio.to_thread(
+            content_agent.run,
+            topic=content_request.topic,
+            target_audience=content_request.target_audience,
+            category=content_request.category
+        )
+        
+        # Create content draft record
+        content_draft = {
+            "topic": content_request.topic,
+            "title": blog_post.title,
+            "slug": blog_post.slug,
+            "excerpt": blog_post.excerpt or "",
+            "content": blog_post.body_content_blocks,
+            "category": content_request.category,
+            "target_audience": content_request.target_audience,
+            "status": "auto_approved" if content_request.auto_publish else "pending_approval",
+            "created_at": datetime.now().isoformat(),
+            "primary_keyword": blog_post.primary_keyword,
+            "meta_description": blog_post.meta_description,
+        }
+        
+        # Save to Firestore (if available)
+        content_id = None
+        if firestore_client:
+            try:
+                doc_ref = await firestore_client.create_document("content_drafts", content_draft)  # type: ignore[union-attr]
+                content_id = doc_ref.id
+                logger.info(f"Content draft saved to Firestore: {content_id}")
+            except Exception as e:
+                logger.warning(f"Could not save to Firestore: {e}")
+                content_id = f"local_{datetime.now().timestamp()}"
+        else:
+            content_id = f"local_{datetime.now().timestamp()}"
+        
+        # If auto_publish, publish to Strapi immediately
+        strapi_id = None
+        strapi_url = None
+        
+        if content_request.auto_publish:
+            try:
+                logger.info("Auto-publishing to Strapi...")
+                strapi_client = StrapiClient()
+                strapi_id, strapi_url = strapi_client.create_post(blog_post)
+                
+                # Update Firestore with publishing info
+                if firestore_client and content_id:
+                    try:
+                        await firestore_client.update_document(  # type: ignore[union-attr]
+                            "content_drafts",
+                            content_id,
+                            {
+                                "status": "published",
+                                "strapi_id": strapi_id,
+                                "strapi_url": strapi_url,
+                                "published_at": datetime.now().isoformat()
+                            }
+                        )
+                    except Exception as e:
+                        logger.warning(f"Could not update Firestore: {e}")
+                
+                logger.info(f"Content published to Strapi: {strapi_id}")
+                
+            except Exception as e:
+                logger.error(f"Failed to publish to Strapi: {e}")
+                # Don't fail the whole request, just mark as failed
+                if firestore_client and content_id:
+                    try:
+                        await firestore_client.update_document(  # type: ignore[union-attr]
+                            "content_drafts",
+                            content_id,
+                            {"status": "publish_failed", "error": str(e)}
+                        )
+                    except:
+                        pass
+        
+        response = {
+            "success": True,
+            "content_id": content_id,
+            "status": "published" if strapi_id else ("pending_approval" if not content_request.auto_publish else "publish_failed"),
+            "title": blog_post.title,
+            "slug": blog_post.slug,
+        }
+        
+        if strapi_id:
+            response["strapi_id"] = strapi_id
+            response["strapi_url"] = strapi_url
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Content generation failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Content generation failed: {str(e)}")
+
+
+@app.post("/api/content/publish-approved")
+@limiter.limit("30/minute")
+async def publish_approved_content(request: Request, content_id: str):
+    """
+    Publish approved content from Firestore to Strapi.
+    
+    This endpoint is used by the approval workflow in Oversight Hub.
+    It takes a content_id, retrieves the draft from Firestore,
+    and publishes it to Strapi.
+    
+    Args:
+        content_id: The Firestore document ID of the content draft
+        
+    Returns:
+        Dict with success status and Strapi post URL
+    """
+    try:
+        logger.info(f"Publishing approved content: {content_id}")
+        
+        # Get content from Firestore
+        if not firestore_client:
+            raise HTTPException(status_code=503, detail="Firestore not available")
+        
+        draft = await firestore_client.get_document("content_drafts", content_id)  # type: ignore[union-attr]
+        
+        if not draft:
+            raise HTTPException(status_code=404, detail="Content draft not found")
+        
+        if draft.get("status") == "published":
+            return {
+                "success": True,
+                "message": "Content already published",
+                "strapi_url": draft.get("strapi_url")
+            }
+        
+        # Import Strapi client
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'agents', 'content_agent'))
+        from agents.content_agent.services.strapi_client import StrapiClient
+        from agents.content_agent.utils.data_models import BlogPost
+        
+        # Reconstruct BlogPost from draft
+        blog_post = BlogPost(
+            topic=draft.get("topic", ""),
+            primary_keyword=draft.get("primary_keyword", ""),
+            target_audience=draft.get("target_audience", ""),
+            category=draft.get("category", ""),
+            title=draft.get("title", ""),
+            slug=draft.get("slug", ""),
+            body_content_blocks=draft.get("content", []),
+            excerpt=draft.get("excerpt", ""),
+            meta_description=draft.get("meta_description", "")
+        )
+        
+        # Publish to Strapi
+        strapi_client = StrapiClient()
+        strapi_id, strapi_url = strapi_client.create_post(blog_post)
+        
+        if not strapi_id:
+            raise HTTPException(status_code=500, detail="Failed to publish to Strapi")
+        
+        # Update Firestore status
+        await firestore_client.update_document(  # type: ignore[union-attr]
+            "content_drafts",
+            content_id,
+            {
+                "status": "published",
+                "strapi_id": strapi_id,
+                "strapi_url": strapi_url,
+                "published_at": datetime.now().isoformat()
+            }
+        )
+        
+        logger.info(f"Content published successfully: {strapi_id}")
+        
+        return {
+            "success": True,
+            "content_id": content_id,
+            "strapi_id": strapi_id,
+            "strapi_url": strapi_url
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Publishing failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Publishing failed: {str(e)}")
+
+
+@app.get("/api/content/drafts")
+@limiter.limit("60/minute")
+async def get_content_drafts(request: Request, status: Optional[str] = None, limit: int = 50):
+    """
+    Get content drafts from Firestore.
+    
+    This endpoint is used by Oversight Hub to display pending content for approval.
+    
+    Args:
+        status: Filter by status (pending_approval, auto_approved, published, publish_failed)
+        limit: Maximum number of drafts to return (default: 50)
+        
+    Returns:
+        List of content drafts
+    """
+    try:
+        if not firestore_client:
+            return {"drafts": [], "message": "Firestore not available"}
+        
+        # Query Firestore
+        query = {"collection": "content_drafts", "limit": limit}
+        if status:
+            query["filters"] = [("status", "==", status)]
+        
+        drafts = await firestore_client.query_documents(**query)  # type: ignore[union-attr]
+        
+        return {
+            "drafts": drafts,
+            "total": len(drafts),
+            "filtered_by": status if status else "all"
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to fetch drafts: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch drafts: {str(e)}")
+
+
 if __name__ == "__main__":
     uvicorn.run(
         "main:app", 
