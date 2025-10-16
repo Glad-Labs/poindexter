@@ -10,9 +10,15 @@ Welcome to the comprehensive documentation for the GLAD Labs AI Co-Founder Syste
 
 ### 🎯 **Core Documentation** (Start Here!)
 
+## 🚀 START HERE - Revenue-First Quick Start
+
+- **[QUICK START: Revenue-First Implementation](./QUICK_START_REVENUE_FIRST.md)** - Get live and earning in 2 weeks! 💰
+- **[Revenue-First Phase 1 Plan](./REVENUE_FIRST_PHASE_1.md)** - Complete 8-task implementation guide
+- **[Vercel Deployment Guide](./VERCEL_DEPLOYMENT_GUIDE.md)** - Deploy your site in 20 minutes
+
 ## Core Documentation
 
-- ⚡ **[Quick Reference](./QUICK_REFERENCE.md)** - One-page system overview (start here!)
+- ⚡ **[Quick Reference](./QUICK_REFERENCE.md)** - One-page system overview
 - 🚀 **[Vision & Roadmap](./VISION_AND_ROADMAP.md)** - Complete AI co-founder vision and implementation plan
 - 📋 **[Phase 1 Implementation Plan](./PHASE_1_IMPLEMENTATION_PLAN.md)** - Detailed implementation plan for the foundation phase
 - **[Setup Guide](./01-SETUP_GUIDE.md)** - Complete installation and deployment instructions
