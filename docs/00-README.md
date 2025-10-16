@@ -8,26 +8,37 @@ Welcome to the comprehensive documentation for the GLAD Labs AI Co-Founder Syste
 
 ## 🚀 Quick Navigation
 
-### 🎯 **Getting Started** (Start Here!)
+### 🎯 **Core Documentation** (Start Here!)
 
 - **[Setup Guide](./01-SETUP_GUIDE.md)** - Complete installation and deployment instructions
-- **[Quick Start](./OVERSIGHT_HUB_QUICK_START.md)** - Get up and running in 5 minutes
-- **[Developer Guide](./02-DEVELOPER_GUIDE.md)** - Development workflow and best practices
-
-### 🏗️ **Architecture & Design**
-
-- **[Technical Design Document](./03-TECHNICAL_DESIGN.md)** - System architecture, data models, and design decisions
-- **[API Reference](./04-API_REFERENCE.md)** - Complete REST API documentation with examples
-
-### 📝 **Development Journal**
-
+- **[Technical Design](./03-TECHNICAL_DESIGN.md)** - System architecture, data models, and design decisions
 - **[Developer Journal](./05-DEVELOPER_JOURNAL.md)** - Chronological log of all changes, phases, and implementations
-- **[Phase 2 Implementation](./PHASE_2_IMPLEMENTATION.md)** - Latest feature release (Gemini AI + Social Media Suite)
 
-### 🔧 **Operations & Maintenance**
+### 📖 **Documentation Categories**
 
-- **[Cost Optimization Guide](./COST_OPTIMIZATION_GUIDE.md)** - Reduce AI API costs by up to 80%
-- **[Production Deployment](./PRODUCTION_DEPLOYMENT_CHECKLIST.md)** - Production readiness checklist
+- **[Guides](./guides/)** - Setup guides, quick starts, and how-to documentation
+  - Local setup and environment configuration
+  - Ollama and Docker deployment
+  - Developer workflows and troubleshooting
+  - Cost optimization strategies
+
+- **[Reference](./reference/)** - Technical specifications and standards
+  - Architecture and design patterns
+  - Data schemas and API references
+  - Coding standards and best practices
+  - Testing guidelines
+
+- **[Archive](./archive/)** - Historical documentation and legacy reports
+  - Previous implementation logs
+  - Archived analysis reports
+  - Superseded technical documents
+
+### 🛠️ **Quick Links**
+
+- **[NPM Scripts Health Check](./NPM_SCRIPTS_HEALTH_CHECK.md)** - npm script audit and fixes
+- **[NPM Dev Troubleshooting](./guides/NPM_DEV_TROUBLESHOOTING.md)** - Resolve npm run dev issues
+- **[Lint Resolution Summary](./LINT_RESOLUTION_SUMMARY.md)** - ESLint configuration fixes
+- **[Error Resolution Summary](./ERROR_RESOLUTION_SUMMARY.md)** - How all errors were resolved
 
 ---
 
