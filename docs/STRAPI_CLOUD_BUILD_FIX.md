@@ -200,6 +200,7 @@ See: `docs/QUICK_START_REVENUE_FIRST.md` for full plan
 ## 🔄 Update: Monorepo Workspace Hoisting Fix
 
 **Additional Issue Found:** Even with date-fns v2.30.0 in public-site, the build still failed because:
+
 - npm workspaces can hoist dependencies unpredictably
 - Strapi didn't explicitly declare date-fns
 - Cloud build picked up wrong version due to workspace hoisting
