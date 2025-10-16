@@ -53,7 +53,7 @@ class InterventionHandler:
         pubsub_client=None,
         confidence_threshold: float = 0.75,
         error_threshold: int = 3,
-        budget_threshold: float = 1000.0,
+        budget_threshold: float = 100.0,
         enable_notifications: bool = True
     ):
         """
@@ -63,7 +63,7 @@ class InterventionHandler:
             pubsub_client: Optional Pub/Sub client for notifications
             confidence_threshold: Minimum confidence score (0-1) before intervention
             error_threshold: Number of errors before triggering intervention
-            budget_threshold: Dollar amount threshold for budget alerts
+            budget_threshold: Monthly dollar amount threshold for budget alerts ($100/month)
             enable_notifications: Whether to send Pub/Sub notifications
         """
         self.pubsub_client = pubsub_client

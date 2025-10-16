@@ -8,6 +8,7 @@ import sys
 import os
 import logging
 import asyncio
+from datetime import datetime
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,6 +32,8 @@ try:
     from services.pubsub_client import PubSubClient
     from services.performance_monitor import PerformanceMonitor
     from services.intervention_handler import InterventionHandler, initialize_intervention_handler
+    from services.ai_cache import AIResponseCache, initialize_ai_cache
+    from services.model_router import ModelRouter, initialize_model_router
     GOOGLE_CLOUD_AVAILABLE = True
 except ImportError:
     FirestoreClient = None
@@ -38,6 +41,10 @@ except ImportError:
     PerformanceMonitor = None
     InterventionHandler = None
     initialize_intervention_handler = None
+    AIResponseCache = None
+    initialize_ai_cache = None
+    ModelRouter = None
+    initialize_model_router = None
     GOOGLE_CLOUD_AVAILABLE = False
     logging.warning("Google Cloud services not available - running in development mode")
 
@@ -103,18 +110,36 @@ async def lifespan(app: FastAPI):
             # Development mode - initialize performance monitor without Firestore
             performance_monitor = PerformanceMonitor() if PerformanceMonitor else None
         
-        # Initialize intervention handler
+        # Initialize intervention handler with strict cost controls
         if GOOGLE_CLOUD_AVAILABLE and InterventionHandler:
             intervention_handler = initialize_intervention_handler(
                 pubsub_client=pubsub_client,
                 confidence_threshold=0.75,
                 error_threshold=3,
-                budget_threshold=1000.0,
+                budget_threshold=100.0,  # Strict $100 monthly budget limit
                 enable_notifications=True
             )
-            logger.info("Intervention handler initialized")
+            logger.info("Intervention handler initialized with $100/month budget threshold")
         else:
             intervention_handler = None
+        
+        # Initialize AI response cache for cost savings
+        if GOOGLE_CLOUD_AVAILABLE and AIResponseCache:
+            ai_cache = initialize_ai_cache(
+                firestore_client=firestore_client,
+                ttl_hours=24,
+                max_memory_entries=1000
+            )
+            logger.info("AI response cache initialized (24h TTL, 1000 memory entries)")
+        else:
+            ai_cache = None
+        
+        # Initialize smart model router for cost optimization
+        if ModelRouter:
+            model_router = initialize_model_router(default_model="gpt-3.5-turbo")
+            logger.info("Smart model router initialized (default: gpt-3.5-turbo)")
+        else:
+            model_router = None
         
         # Initialize orchestrator with services
         orchestrator = Orchestrator(
@@ -398,6 +423,127 @@ async def get_health_metrics():
         logger.error(f"Error getting health metrics: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get health metrics: {str(e)}")
 
+@app.get("/metrics/costs")
+async def get_cost_metrics():
+    """
+    Get comprehensive cost metrics including AI API usage, cache performance, and savings.
+    Provides real-time cost analysis for budget monitoring and optimization.
+    """
+    try:
+        from services.ai_cache import get_ai_cache
+        from services.model_router import get_model_router
+        from services.intervention_handler import get_intervention_handler
+        
+        cost_data = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "budget": {
+                "monthly_limit": 100.0,
+                "current_spent": 0.0,  # TODO: Track actual spend
+                "remaining": 100.0,
+                "alerts": []
+            },
+            "ai_cache": None,
+            "model_router": None,
+            "interventions": None
+        }
+        
+        # AI Cache metrics
+        cache = get_ai_cache()
+        if cache:
+            cache_metrics = cache.get_metrics()
+            cost_data["ai_cache"] = {
+                "total_requests": cache_metrics['total_requests'],
+                "cache_hits": cache_metrics['hits'],
+                "cache_misses": cache_metrics['misses'],
+                "hit_rate_percentage": cache_metrics['hit_rate'],
+                "memory_hits": cache_metrics['memory_hits'],
+                "firestore_hits": cache_metrics['firestore_hits'],
+                "memory_entries": cache_metrics['memory_entries'],
+                "estimated_savings_usd": round(cache_metrics['hits'] * 0.015, 2)  # Avg $0.015 per cached call
+            }
+        
+        # Model Router metrics
+        router = get_model_router()
+        if router:
+            router_metrics = router.get_metrics()
+            cost_data["model_router"] = {
+                "total_requests": router_metrics['total_requests'],
+                "budget_model_uses": router_metrics['budget_model_uses'],
+                "budget_model_percentage": router_metrics['budget_model_percentage'],
+                "premium_model_uses": router_metrics['premium_model_uses'],
+                "estimated_cost_actual_usd": router_metrics['estimated_cost_actual'],
+                "estimated_cost_baseline_usd": router_metrics['estimated_cost_premium_baseline'],
+                "estimated_savings_usd": router_metrics['estimated_cost_saved'],
+                "savings_percentage": router_metrics['savings_percentage']
+            }
+        
+        # Intervention metrics
+        handler = get_intervention_handler()
+        if handler:
+            pending_interventions = handler.get_pending_interventions()
+            cost_data["interventions"] = {
+                "pending_count": len(pending_interventions),
+                "pending_task_ids": pending_interventions,
+                "budget_threshold_usd": 100.0
+            }
+        
+        # Calculate total savings
+        total_savings = 0.0
+        if cost_data["ai_cache"]:
+            total_savings += cost_data["ai_cache"]["estimated_savings_usd"]
+        if cost_data["model_router"]:
+            total_savings += cost_data["model_router"]["estimated_savings_usd"]
+        
+        cost_data["summary"] = {
+            "total_estimated_savings_usd": round(total_savings, 2),
+            "optimization_status": "active" if total_savings > 0 else "inactive"
+        }
+        
+        return {
+            "costs": cost_data,
+            "status": "success"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting cost metrics: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get cost metrics: {str(e)}")
+
+@app.post("/metrics/costs/reset")
+async def reset_cost_metrics():
+    """
+    Reset cost tracking metrics (admin endpoint).
+    Useful for starting new billing periods or after optimization changes.
+    """
+    try:
+        from services.ai_cache import get_ai_cache
+        from services.model_router import get_model_router
+        
+        reset_results = {}
+        
+        # Reset AI cache metrics
+        cache = get_ai_cache()
+        if cache:
+            cache.reset_metrics()
+            reset_results["ai_cache"] = "reset"
+        
+        # Reset model router metrics
+        router = get_model_router()
+        if router:
+            router.reset_metrics()
+            reset_results["model_router"] = "reset"
+        
+        logger.info("Cost metrics reset", components=list(reset_results.keys()))
+        
+        return {
+            "message": "Cost metrics reset successfully",
+            "reset_components": reset_results,
+            "status": "success"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error resetting cost metrics: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to reset cost metrics: {str(e)}")
+
 @app.post("/metrics/reset")
 async def reset_performance_metrics():
     """
@@ -423,6 +569,81 @@ async def root():
         "version": "1.0.0",
         "google_cloud_enabled": GOOGLE_CLOUD_AVAILABLE
     }
+
+@app.get("/financial/cost-analysis")
+@limiter.limit("20/minute")
+async def get_cost_analysis(request: Request):
+    """
+    Get comprehensive cost analysis from Financial Agent.
+    
+    Returns:
+        - Monthly budget status
+        - Optimization performance (cache, routing)
+        - Budget alerts and recommendations
+        - End-of-month projections
+    """
+    try:
+        # Import Financial Agent
+        from agents.financial_agent.financial_agent import FinancialAgent
+        
+        # Initialize with cost tracking
+        financial_agent = FinancialAgent(
+            cofounder_api_url="http://localhost:8000",
+            pubsub_client=pubsub_client,
+            enable_cost_tracking=True
+        )
+        
+        # Perform cost analysis
+        analysis = await financial_agent.analyze_costs()
+        
+        return {
+            "analysis": analysis,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error("Error performing cost analysis", error=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to analyze costs: {str(e)}"
+        )
+
+@app.get("/financial/monthly-summary")
+@limiter.limit("20/minute")
+async def get_monthly_summary(request: Request):
+    """
+    Get monthly cost summary from Financial Agent.
+    
+    Returns:
+        - Monthly spending and remaining budget
+        - Alert history
+        - Spending projections
+    """
+    try:
+        # Import Financial Agent
+        from agents.financial_agent.financial_agent import FinancialAgent
+        
+        # Initialize with cost tracking
+        financial_agent = FinancialAgent(
+            cofounder_api_url="http://localhost:8000",
+            pubsub_client=pubsub_client,
+            enable_cost_tracking=True
+        )
+        
+        # Get monthly summary
+        summary = financial_agent.get_monthly_summary()
+        
+        return {
+            "summary": summary,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error("Error fetching monthly summary", error=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch monthly summary: {str(e)}"
+        )
 
 async def trigger_content_agent(task_id: str, topic: str, metadata: Optional[Dict[str, Any]]):
     """Background task to trigger content agent via Pub/Sub"""
