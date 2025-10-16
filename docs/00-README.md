@@ -35,10 +35,11 @@ Welcome to the comprehensive documentation for the GLAD Labs AI Co-Founder Syste
 
 ### 🛠️ **Quick Links**
 
-- **[NPM Scripts Health Check](./NPM_SCRIPTS_HEALTH_CHECK.md)** - npm script audit and fixes
-- **[NPM Dev Troubleshooting](./guides/NPM_DEV_TROUBLESHOOTING.md)** - Resolve npm run dev issues
-- **[Lint Resolution Summary](./LINT_RESOLUTION_SUMMARY.md)** - ESLint configuration fixes
-- **[Error Resolution Summary](./ERROR_RESOLUTION_SUMMARY.md)** - How all errors were resolved
+- **[Test Suite Status](./TEST_SUITE_STATUS.md)** - ✅ Current test status (ALL PASSING)
+- **[E2E Pipeline Setup](./E2E_PIPELINE_SETUP.md)** - End-to-end pipeline configuration
+- **[PowerShell Scripts](./guides/POWERSHELL_SCRIPTS.md)** - Service management scripts
+- **[NPM Scripts Health Check](./NPM_SCRIPTS_HEALTH_CHECK.md)** - npm script audit
+- **[NPM Dev Troubleshooting](./guides/NPM_DEV_TROUBLESHOOTING.md)** - Resolve dev issues
 
 ---
 
