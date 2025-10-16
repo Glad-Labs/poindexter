@@ -3,18 +3,13 @@ nixPkgs = ["nodejs_20", "python3"]
 
 [phases.install]
 cmds = [
-  "cd cms/strapi-v5-backend",
   "npm ci --production=false"
 ]
 
 [phases.build]
 cmds = [
-  "cd cms/strapi-v5-backend",
   "npm run build"
 ]
 
 [start]
-cmd = "cd cms/strapi-v5-backend && npm run start"
-
-[env]
-NODE_ENV = "production"
+cmd = "npm run start"
