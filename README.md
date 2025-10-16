@@ -11,16 +11,16 @@
 
 ## **📚 Documentation Index**
 
-| Document                                                        | Description                               | For        |
-| --------------------------------------------------------------- | ----------------------------------------- | ---------- |
-| [� **Master Documentation Index**](./MASTER_DOCS_INDEX.md) | Complete documentation hub with all links | Everyone   |
-| [�🚀 **Quick Start Guide**](#-quick-start)                      | Get up and running in 5 minutes           | New Users  |
-| [🏗️ **Architecture Overview**](./docs/ARCHITECTURE.md)               | System design and component interactions  | Developers |
-| [📋 **Developer Guide**](./DEVELOPER_GUIDE.md)             | Technical documentation and APIs          | Developers |
-| [⚙️ **Installation Guide**](./docs/INSTALLATION_SUMMARY.md)          | Dependency setup and configuration        | DevOps     |
-| [🧪 **Testing Guide**](./TEST_IMPLEMENTATION_SUMMARY.md)   | Complete test coverage and execution      | Everyone   |
-| [🔧 **CI/CD Review**](./CI_CD_TEST_REVIEW.md)              | Pipeline analysis and recommendations     | DevOps     |
-| [📊 **System Standards**](./docs/GLAD-LABS-STANDARDS.md)             | Coding standards and best practices       | Team       |
+| Document                                                    | Description                               | For        |
+| ----------------------------------------------------------- | ----------------------------------------- | ---------- |
+| [� **Master Documentation Index**](./MASTER_DOCS_INDEX.md)  | Complete documentation hub with all links | Everyone   |
+| [�🚀 **Quick Start Guide**](#-quick-start)                  | Get up and running in 5 minutes           | New Users  |
+| [🏗️ **Architecture Overview**](./docs/ARCHITECTURE.md)      | System design and component interactions  | Developers |
+| [📋 **Developer Guide**](./DEVELOPER_GUIDE.md)              | Technical documentation and APIs          | Developers |
+| [⚙️ **Installation Guide**](./docs/INSTALLATION_SUMMARY.md) | Dependency setup and configuration        | DevOps     |
+| [🧪 **Testing Guide**](./TEST_IMPLEMENTATION_SUMMARY.md)    | Complete test coverage and execution      | Everyone   |
+| [🔧 **CI/CD Review**](./CI_CD_TEST_REVIEW.md)               | Pipeline analysis and recommendations     | DevOps     |
+| [📊 **System Standards**](./docs/GLAD-LABS-STANDARDS.md)    | Coding standards and best practices       | Team       |
 
 ## **🎯 Executive Summary**
 
@@ -70,6 +70,38 @@ npm run build         # Build for production
 npm test              # Run all tests
 npm run lint          # Check code quality
 ```
+
+### **💰 Zero-Cost AI Option (NEW!)**
+
+Run the entire platform with **$0.00 API costs** using Ollama for local AI inference:
+
+```bash
+# 1. Install Ollama
+# Download from: https://ollama.ai/download
+
+# 2. Pull a model (recommended: mistral)
+ollama pull mistral
+
+# 3. Enable Ollama
+$env:USE_OLLAMA = "true"  # Windows
+export USE_OLLAMA=true     # macOS/Linux
+
+# 4. Start platform
+npm run dev
+
+# ✅ All AI requests now run locally at $0.00 cost!
+```
+
+**Benefits:**
+
+- 💰 **$0.00/month** - No API costs
+- 🔒 **100% private** - Data never leaves your machine
+- ⚡ **Fast** - Direct GPU acceleration
+- 🌐 **Offline** - Works without internet
+
+**Learn More:** See [Ollama Setup Guide](./docs/OLLAMA_SETUP.md) for detailed instructions, model recommendations, and performance optimization.
+
+---
 
 ## **🏗️ System Architecture**
 

@@ -120,6 +120,312 @@ npm run lint           # Lint all code
 npm run format         # Format code
 ```
 
+### 🆓 Local Development with Ollama (Zero-Cost AI)
+
+**Purpose**: Enable zero-cost local AI inference for development and testing without cloud API costs.
+
+#### **Quick Setup**
+
+1. **Install Ollama**
+
+   ```bash
+   # Windows (winget)
+   winget install Ollama.Ollama
+
+   # macOS (Homebrew)
+   brew install ollama
+
+   # Linux (curl)
+   curl -fsSL https://ollama.ai/install.sh | sh
+   ```
+
+2. **Pull a Model**
+
+   ```bash
+   # Recommended for most development work
+   ollama pull mistral
+
+   # Alternative models
+   ollama pull phi           # Smaller, faster (2.7B)
+   ollama pull codellama     # Code-focused (7B-34B)
+   ollama pull mixtral       # More powerful (8x7B)
+   ```
+
+3. **Enable Ollama in GLAD Labs**
+
+   ```bash
+   # PowerShell (Windows)
+   $env:USE_OLLAMA = "true"
+
+   # Bash/Linux/macOS
+   export USE_OLLAMA=true
+
+   # Or add to .env file
+   echo "USE_OLLAMA=true" >> .env
+   echo "OLLAMA_HOST=http://localhost:11434" >> .env
+   ```
+
+4. **Start Development**
+
+   ```bash
+   npm run dev
+   # All AI requests now use local Ollama inference ($0.00 cost)
+   ```
+
+#### **OllamaClient API Reference**
+
+```python
+# src/cofounder_agent/services/ollama_client.py
+
+from services.ollama_client import OllamaClient
+
+# Initialize client
+client = OllamaClient(host="http://localhost:11434")
+
+# Check health
+is_healthy = await client.check_health()
+# Returns: True if Ollama is running
+
+# Generate text
+response = await client.generate(
+    prompt="Explain quantum computing",
+    model="mistral",
+    temperature=0.7,
+    max_tokens=500
+)
+# Returns: {"response": "...", "model": "mistral", "created_at": "..."}
+
+# Chat completion
+chat_response = await client.chat(
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "What is AI?"}
+    ],
+    model="mistral"
+)
+# Returns: {"message": {"role": "assistant", "content": "..."}, ...}
+
+# Streaming generation
+async for chunk in client.stream_generate(prompt, model="mistral"):
+    print(chunk.get("response", ""), end="", flush=True)
+# Yields: Incremental response chunks for real-time display
+```
+
+#### **ModelRouter Integration**
+
+```python
+# src/cofounder_agent/services/model_router.py
+
+from services.model_router import ModelRouter, ModelProvider, ModelTier
+
+# Initialize router with Ollama enabled
+router = ModelRouter(use_ollama=True)
+
+# Route request (automatically uses Ollama if enabled)
+model_config = router.route_request(task_type="content_generation")
+# Returns: {
+#     'provider': ModelProvider.OLLAMA,
+#     'tier': ModelTier.FREE,
+#     'model': 'mistral',
+#     'cost_per_1k_tokens': 0.00
+# }
+
+# Manual provider selection
+if router.use_ollama:
+    client = OllamaClient()
+    response = await client.generate(prompt, model="mistral")
+else:
+    # Fallback to cloud API
+    response = await openai_client.generate(prompt)
+```
+
+#### **Testing with Ollama**
+
+**Unit Tests (Mocking)**:
+
+```python
+# tests/test_ollama_integration.py
+
+import pytest
+from unittest.mock import AsyncMock, patch
+
+@pytest.mark.asyncio
+async def test_ollama_generation():
+    """Test Ollama client generation."""
+    with patch('aiohttp.ClientSession.post') as mock_post:
+        mock_post.return_value.__aenter__.return_value.json = AsyncMock(
+            return_value={"response": "Test output", "model": "mistral"}
+        )
+
+        client = OllamaClient()
+        result = await client.generate("Test prompt", model="mistral")
+
+        assert result["response"] == "Test output"
+        assert result["model"] == "mistral"
+```
+
+**Integration Tests (Real Ollama Server)**:
+
+```python
+# tests/integration/test_ollama_live.py
+
+import pytest
+from services.ollama_client import OllamaClient
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_ollama_health_check():
+    """Test actual Ollama server health."""
+    client = OllamaClient()
+    is_healthy = await client.check_health()
+    assert is_healthy, "Ollama server is not running"
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_ollama_real_generation():
+    """Test real generation with Ollama."""
+    client = OllamaClient()
+    response = await client.generate(
+        prompt="Say 'Hello, Ollama!' and nothing else.",
+        model="mistral",
+        max_tokens=10
+    )
+    assert "response" in response
+    assert len(response["response"]) > 0
+```
+
+**Run Integration Tests**:
+
+```bash
+# Ensure Ollama is running
+ollama serve
+
+# Run integration tests
+pytest tests/integration/test_ollama_live.py -v -m integration
+```
+
+#### **Performance Profiling**
+
+**Benchmark Tokens/Second**:
+
+```python
+# scripts/benchmark_ollama.py
+
+import asyncio
+import time
+from services.ollama_client import OllamaClient
+
+async def benchmark_model(model: str, prompt: str, iterations: int = 5):
+    """Benchmark Ollama model performance."""
+    client = OllamaClient()
+
+    total_tokens = 0
+    total_time = 0
+
+    for i in range(iterations):
+        start = time.time()
+        response = await client.generate(prompt, model=model)
+        elapsed = time.time() - start
+
+        tokens = len(response["response"].split())
+        total_tokens += tokens
+        total_time += elapsed
+
+        print(f"Iteration {i+1}: {tokens} tokens in {elapsed:.2f}s ({tokens/elapsed:.1f} tokens/sec)")
+
+    avg_tps = total_tokens / total_time
+    print(f"\n{model} Average: {avg_tps:.1f} tokens/sec")
+    return avg_tps
+
+# Run benchmark
+asyncio.run(benchmark_model("mistral", "Explain AI in 200 words"))
+```
+
+**Monitor GPU Usage**:
+
+```bash
+# NVIDIA GPU
+nvidia-smi -l 1
+
+# AMD GPU
+rocm-smi
+
+# macOS (Apple Silicon)
+sudo powermetrics --samplers gpu_power -i 1000
+```
+
+#### **Troubleshooting Development Issues**
+
+| Issue                                       | Solution                                                                                                  |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **"Connection refused" on localhost:11434** | Start Ollama: `ollama serve`                                                                              |
+| **GLAD Labs still using OpenAI**            | Verify `USE_OLLAMA=true` in environment: `echo $env:USE_OLLAMA` (PowerShell) or `echo $USE_OLLAMA` (Bash) |
+| **"Model not found" error**                 | Pull model: `ollama pull mistral`                                                                         |
+| **Slow generation (< 10 tokens/sec)**       | Check GPU availability: `ollama list` shows models, ensure GPU drivers installed                          |
+| **High memory usage**                       | Use smaller model (phi instead of mixtral) or close other applications                                    |
+| **Import errors in Python**                 | Reinstall dependencies: `pip install -r src/cofounder_agent/requirements.txt`                             |
+
+#### **Cost Comparison (Development)**
+
+| Scenario                         | Ollama (Local) | OpenAI (Cloud) | Monthly Savings |
+| -------------------------------- | -------------- | -------------- | --------------- |
+| **Light Dev** (10K tokens/day)   | $0.00          | $0.75          | $0.75           |
+| **Active Dev** (100K tokens/day) | $0.00          | $7.50          | $7.50           |
+| **Heavy Dev** (1M tokens/day)    | $0.00          | $75.00         | $75.00          |
+
+**ROI for Development Teams**:
+
+- 5 developers × $75/month saved = **$375/month** = **$4,500/year**
+- Plus: 100% privacy, offline capability, no API rate limits
+
+#### **Best Practices**
+
+1. **Start with Ollama for All Development**
+   - Zero cost for rapid iteration
+   - Test and validate features locally
+   - Switch to cloud APIs only for production deployment
+
+2. **Model Selection Strategy**
+   - **Quick tests**: Use `phi` (2.7B) - fastest inference
+   - **General development**: Use `mistral` (7B) - best balance
+   - **Code generation**: Use `codellama` (7B-34B) - code-optimized
+   - **Complex logic**: Use `mixtral` (8x7B) - highest quality
+
+3. **Preload Models**
+
+   ```bash
+   # Preload frequently used models
+   ollama pull phi
+   ollama pull mistral
+   ollama pull codellama
+   ```
+
+4. **Monitor Resources**
+
+   ```bash
+   # Check loaded models
+   ollama list
+
+   # Monitor Ollama logs
+   ollama logs
+   ```
+
+5. **Hybrid Development Strategy**
+   ```python
+   # Use Ollama for development, cloud for validation
+   if os.getenv('ENVIRONMENT') == 'development':
+       os.environ['USE_OLLAMA'] = 'true'
+   else:
+       os.environ['USE_OLLAMA'] = 'false'
+   ```
+
+#### **Additional Resources**
+
+- **Comprehensive Guide**: [docs/OLLAMA_SETUP.md](./OLLAMA_SETUP.md)
+- **Official Docs**: https://ollama.ai/docs
+- **Model Library**: https://ollama.ai/library
+- **GitHub**: https://github.com/ollama/ollama
+
 ---
 
 ## 📦 Component Documentation

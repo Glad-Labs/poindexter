@@ -304,6 +304,248 @@ System Health:
 
 ---
 
+## **🤖 AI Model Provider Architecture**
+
+### **Overview**
+
+The GLAD Labs platform supports flexible AI model routing with **zero-cost local inference** (Ollama) and **cloud API providers** (OpenAI, Anthropic). This hybrid architecture enables cost-effective development while maintaining production-grade quality.
+
+### **Model Provider Flow**
+
+```mermaid
+graph TD
+    A[API Request] --> B{ModelRouter}
+    B --> C{Check USE_OLLAMA}
+    C -->|true| D[OllamaClient]
+    C -->|false| E{Select Provider}
+    E -->|OpenAI| F[OpenAI API]
+    E -->|Anthropic| G[Anthropic API]
+
+    D --> H[Local Inference]
+    F --> I[Cloud Inference]
+    G --> I
+
+    H --> J[Response]
+    I --> J
+
+    style A fill:#e3f2fd
+    style B fill:#fff3e0
+    style C fill:#f3e5f5
+    style D fill:#c8e6c9
+    style E fill:#fff9c4
+    style F fill:#bbdefb
+    style G fill:#f8bbd0
+    style H fill:#a5d6a7
+    style I fill:#90caf9
+    style J fill:#c5e1a5
+```
+
+### **Provider Selection Logic**
+
+```python
+# src/cofounder_agent/services/model_router.py
+
+class ModelProvider(str, Enum):
+    OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+    OLLAMA = "ollama"
+
+class ModelTier(str, Enum):
+    FREE = "free"          # $0.00 - Ollama local models
+    BUDGET = "budget"      # $0.15-0.60/1M tokens
+    STANDARD = "standard"  # $2-3/1M tokens
+    PREMIUM = "premium"    # $10-15/1M tokens
+    FLAGSHIP = "flagship"  # $30-75/1M tokens
+
+def route_request(task_type: str) -> dict:
+    """Route request to appropriate model provider."""
+    if os.getenv('USE_OLLAMA', '').lower() == 'true':
+        return {
+            'provider': ModelProvider.OLLAMA,
+            'tier': ModelTier.FREE,
+            'model': 'mistral',  # or llama2, codellama, etc.
+            'cost_per_1k_tokens': 0.00
+        }
+    else:
+        complexity = _assess_complexity(task_type)
+        return MODEL_RECOMMENDATIONS[complexity]['primary']
+```
+
+### **Model Recommendations by Complexity**
+
+| Task Type    | Local (Ollama)     | Cloud (OpenAI/Anthropic) | Cost Comparison          |
+| ------------ | ------------------ | ------------------------ | ------------------------ |
+| **Simple**   | `phi` (2.7B)       | `gpt-4o-mini`            | $0.00 vs $0.15/1M tokens |
+| **General**  | `mistral` (7B)     | `gpt-4o`                 | $0.00 vs $2.50/1M tokens |
+| **Code**     | `codellama` (7B)   | `claude-3-5-sonnet`      | $0.00 vs $3.00/1M tokens |
+| **Complex**  | `mixtral` (8x7B)   | `gpt-4-turbo`            | $0.00 vs $10/1M tokens   |
+| **Critical** | `llama2:70b` (70B) | `claude-opus-4`          | $0.00 vs $15/1M tokens   |
+
+### **Integration Points**
+
+#### **Content Agent Integration**
+
+```python
+# src/agents/content_agent/content_agent.py
+from services.model_router import ModelRouter
+
+router = ModelRouter(use_ollama=True)  # Enable zero-cost mode
+response = router.route_request(task_type='content_generation')
+
+# Automatic provider selection based on USE_OLLAMA
+if router.use_ollama:
+    client = OllamaClient()
+    content = client.generate(prompt, model='mistral')
+else:
+    # Cloud API fallback
+    content = openai_client.generate(prompt)
+```
+
+#### **Cost Tracking Integration**
+
+```python
+# src/cofounder_agent/services/cost_tracker.py
+class CostTracker:
+    def track_request(self, provider: str, tokens: int):
+        if provider == ModelProvider.OLLAMA:
+            # Zero cost for local inference
+            self.total_cost += 0.00
+            self.provider_costs[ModelProvider.OLLAMA] = 0.00
+        else:
+            # Track cloud API costs
+            cost = tokens * PROVIDER_RATES[provider]
+            self.total_cost += cost
+```
+
+### **Environment Configuration**
+
+#### **Enable Zero-Cost Local Inference**
+
+```bash
+# PowerShell
+$env:USE_OLLAMA = "true"
+
+# Bash/Linux
+export USE_OLLAMA=true
+
+# .env file
+USE_OLLAMA=true
+OLLAMA_HOST=http://localhost:11434
+```
+
+#### **Cloud Provider Configuration**
+
+```bash
+# OpenAI
+OPENAI_API_KEY=sk-proj-...
+
+# Anthropic
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Disable Ollama for cloud inference
+USE_OLLAMA=false
+```
+
+### **Performance Benchmarks**
+
+| Hardware                | Model          | Tokens/Sec | Latency (First Token) | Memory Usage |
+| ----------------------- | -------------- | ---------- | --------------------- | ------------ |
+| **Intel i7 + RTX 3060** | mistral (7B)   | 80-120     | ~200ms                | 6-8 GB       |
+| **Intel i7 + RTX 3060** | mixtral (8x7B) | 40-60      | ~400ms                | 10-12 GB     |
+| **Apple M2 Max**        | mistral (7B)   | 100-150    | ~150ms                | 8-10 GB      |
+| **Apple M2 Max**        | llama2:70b     | 15-25      | ~800ms                | 40-45 GB     |
+| **Cloud API**           | gpt-4o         | N/A        | ~300ms                | N/A          |
+
+### **Cost Analysis**
+
+#### **Monthly Cost Comparison (100K tokens/day)**
+
+| Provider           | Model             | Cost/Month | Annual Cost |
+| ------------------ | ----------------- | ---------- | ----------- |
+| **Ollama (Local)** | mistral           | **$0.00**  | **$0.00**   |
+| OpenAI             | gpt-4o-mini       | $4.50      | $54         |
+| OpenAI             | gpt-4o            | $75        | $900        |
+| Anthropic          | claude-3-5-sonnet | $90        | $1,080      |
+| OpenAI             | gpt-4-turbo       | $300       | $3,600      |
+
+**Savings with Ollama**: $54 - $3,600/year depending on usage
+
+### **Provider Capabilities**
+
+| Feature            | Ollama (Local)                       | OpenAI                    | Anthropic                |
+| ------------------ | ------------------------------------ | ------------------------- | ------------------------ |
+| **Cost**           | $0.00                                | $0.15-30/1M               | $3-15/1M                 |
+| **Privacy**        | 100% local                           | Cloud                     | Cloud                    |
+| **Latency**        | 50-200ms                             | 200-500ms                 | 200-500ms                |
+| **Offline**        | ✅ Yes                               | ❌ No                     | ❌ No                    |
+| **GPU Required**   | Recommended                          | N/A                       | N/A                      |
+| **Context Length** | 2K-32K                               | 128K-200K                 | 200K                     |
+| **Quality**        | Good                                 | Excellent                 | Excellent                |
+| **Use Case**       | Development, testing, cost-sensitive | Production, complex tasks | Production, long context |
+
+### **Hybrid Strategy**
+
+**Recommended Approach:**
+
+1. **Development**: Use Ollama (FREE tier) for rapid iteration
+2. **Testing**: Validate with Ollama before cloud deployment
+3. **Production**:
+   - Non-critical tasks → Ollama (mistral)
+   - User-facing content → Cloud APIs (gpt-4o, claude-3-5-sonnet)
+   - Complex analysis → Cloud APIs (gpt-4-turbo, claude-opus-4)
+
+**Cost Optimization Example:**
+
+```python
+def select_model_intelligently(task_type: str, is_production: bool):
+    """Smart model selection based on environment and task."""
+    if not is_production:
+        # Always use Ollama in development
+        return ModelProvider.OLLAMA, 'mistral'
+
+    # Production: Use cloud for user-facing, Ollama for internal
+    if task_type in ['user_query', 'content_generation']:
+        return ModelProvider.OPENAI, 'gpt-4o'
+    else:
+        return ModelProvider.OLLAMA, 'mistral'
+```
+
+### **Monitoring & Observability**
+
+```yaml
+Model Provider Metrics:
+  - Request volume by provider (Ollama vs Cloud)
+  - Average latency by model
+  - Cost per request
+  - Provider error rates
+  - Model fallback frequency
+
+Cost Tracking:
+  - Daily/monthly spend by provider
+  - Cost per feature/agent
+  - Budget alerts and thresholds
+  - Savings from Ollama usage
+
+Performance Metrics:
+  - Tokens per second (local inference)
+  - GPU utilization (Ollama)
+  - Cache hit rates
+  - Response quality scores
+```
+
+### **Setup Instructions**
+
+For detailed setup instructions, see [Ollama Setup Guide](./OLLAMA_SETUP.md).
+
+**Quick Start:**
+
+1. Install Ollama: `https://ollama.ai/download`
+2. Pull model: `ollama pull mistral`
+3. Enable: `$env:USE_OLLAMA = "true"`
+4. Start platform: `npm run dev`
+
+---
+
 ## **🚀 Deployment Architecture**
 
 ### **Development Environment**
