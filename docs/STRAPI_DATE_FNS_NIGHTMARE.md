@@ -8,6 +8,7 @@
 ## 🔥 The Problem
 
 Strapi Cloud build fails with:
+
 ```
 [commonjs--resolver] Missing "./format/index.js" specifier in "date-fns" package
 ```
@@ -26,6 +27,7 @@ Strapi Cloud build fails with:
 ```
 
 **The Issue:**
+
 - `date-fns-tz@2.0.1` is compatible with `date-fns@2.x`
 - Workspace has `date-fns@^2.30.0` in public-site
 - npm hoisting installs `date-fns@4.1.0` instead
@@ -36,33 +38,41 @@ Strapi Cloud build fails with:
 ## 🛠️ Attempted Fixes
 
 ### Attempt 1: Downgrade public-site date-fns ❌
+
 ```json
 // web/public-site/package.json
 "date-fns": "^2.30.0"  // Still got 4.1.0
 ```
+
 **Result:** Failed - workspace hoisting picked up v4
 
 ### Attempt 2: Add date-fns to Strapi package.json ❌
+
 ```json
 // cms/strapi-v5-backend/package.json
 "date-fns": "2.30.0"
 ```
+
 **Result:** Failed - still conflicting with workspace
 
 ### Attempt 3: Remove date-fns from Strapi (you were right!) ❌
+
 Removed explicit dependency, let Strapi handle it.
 **Result:** Failed - workspace hoisting still problematic
 
 ### Attempt 4: Workspace overrides ❌
+
 ```json
 // package.json (root)
 "overrides": {
   "date-fns": "2.30.0"
 }
 ```
+
 **Result:** Failed - `date-fns-tz` still pulled in v4
 
 ### Attempt 5: Nested overrides ❌
+
 ```json
 "overrides": {
   "date-fns": "2.30.0",
@@ -72,14 +82,17 @@ Removed explicit dependency, let Strapi handle it.
   }
 }
 ```
+
 **Result:** Testing now...
 
 ### Attempt 6: Add resolutions (Yarn-style for npm) 🔄
+
 ```json
 "resolutions": {
   "date-fns": "2.30.0"
 }
 ```
+
 **Result:** Testing now with --force flag...
 
 ---
@@ -87,6 +100,7 @@ Removed explicit dependency, let Strapi handle it.
 ## 🎯 Alternative Solutions
 
 ### Option A: Use pnpm Instead of npm (RECOMMENDED)
+
 pnpm has stricter dependency resolution that respects overrides better.
 
 ```bash
@@ -97,34 +111,38 @@ pnpm run build
 ```
 
 **Pros:**
+
 - Better dependency resolution
 - Stricter about versions
 - Faster installs
 
 **Cons:**
+
 - Requires changing Strapi Cloud build config
 - May not be supported by Strapi Cloud
 
 ---
 
 ### Option B: .yarnrc.yml with Yarn Berry (Alternative)
+
 ```yaml
 nodeLinker: node-modules
-npmRegistryServer: "https://registry.yarnpkg.org"
+npmRegistryServer: 'https://registry.yarnpkg.org'
 ```
 
 ---
 
 ### Option C: Remove content-releases Plugin (NUCLEAR)
+
 If you don't need the content releases feature:
 
 ```javascript
 // config/plugins.ts
 module.exports = {
   'content-releases': {
-    enabled: false
-  }
-}
+    enabled: false,
+  },
+};
 ```
 
 **Pros:** Removes the problematic dependency chain  
@@ -133,6 +151,7 @@ module.exports = {
 ---
 
 ### Option D: Fork date-fns-tz with Fixed Dependency (EXTREME)
+
 Create a fork of `date-fns-tz` that correctly specifies `date-fns@2.30.0`.
 
 **Not recommended** - too much maintenance overhead.
@@ -140,6 +159,7 @@ Create a fork of `date-fns-tz` that correctly specifies `date-fns@2.30.0`.
 ---
 
 ### Option E: Wait for Strapi 5.29 (PASSIVE)
+
 The Strapi team may update `date-fns-tz` or fix the dependency chain in the next release.
 
 **Timeline:** Unknown, could be weeks/months.
@@ -147,6 +167,7 @@ The Strapi team may update `date-fns-tz` or fix the dependency chain in the next
 ---
 
 ### Option F: Custom Strapi Cloud Build Script (WORKAROUND)
+
 Create a custom build script that forces the right version:
 
 ```json
@@ -160,6 +181,7 @@ Create a custom build script that forces the right version:
 ---
 
 ### Option G: Deploy to Different Platform (ALTERNATIVE)
+
 Deploy Strapi to a platform where you have full build control:
 
 1. **Railway.app** - Full Docker control
@@ -177,6 +199,7 @@ Deploy Strapi to a platform where you have full build control:
 ### Immediate (If current fix fails):
 
 **Option 1: Switch to Railway.app** (30 minutes)
+
 1. Create Railway account
 2. Connect GitLab repo
 3. Set environment variables
@@ -184,12 +207,13 @@ Deploy Strapi to a platform where you have full build control:
 5. Cost: ~$5/month (vs Strapi Cloud's $15)
 
 **Option 2: Disable content-releases** (5 minutes)
+
 1. Add to `config/plugins.ts`:
    ```typescript
    export default {
      'content-releases': {
-       enabled: false
-     }
+       enabled: false,
+     },
    };
    ```
 2. Commit and push
@@ -208,13 +232,13 @@ Deploy Strapi to a platform where you have full build control:
 
 ## 📊 Decision Matrix
 
-| Solution | Time | Cost | Risk | Control |
-|----------|------|------|------|---------|
-| Wait for npm fix | 5min | $0 | High | None |
-| Disable content-releases | 5min | $0 | Low | Medium |
-| Switch to Railway | 30min | -$10/mo | Low | Full |
-| Use pnpm (if supported) | 10min | $0 | Medium | Medium |
-| Fork date-fns-tz | 2hr | $0 | High | Full |
+| Solution                 | Time  | Cost    | Risk   | Control |
+| ------------------------ | ----- | ------- | ------ | ------- |
+| Wait for npm fix         | 5min  | $0      | High   | None    |
+| Disable content-releases | 5min  | $0      | Low    | Medium  |
+| Switch to Railway        | 30min | -$10/mo | Low    | Full    |
+| Use pnpm (if supported)  | 10min | $0      | Medium | Medium  |
+| Fork date-fns-tz         | 2hr   | $0      | High   | Full    |
 
 **Recommendation:** Try disabling content-releases first. If you need that feature, switch to Railway.
 
@@ -235,7 +259,7 @@ This is a **perfect storm** of dependency management issues.
 ## 💡 Learning for Future
 
 1. **Avoid monorepos for Strapi projects** - Keep CMS separate
-2. **Pin all date/time libraries** - They change export formats frequently  
+2. **Pin all date/time libraries** - They change export formats frequently
 3. **Test builds in isolated environment** - Don't rely on local success
 4. **Use platforms with build control** - Flexibility is worth it
 
