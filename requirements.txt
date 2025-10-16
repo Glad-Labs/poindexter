@@ -15,6 +15,7 @@ google-cloud-pubsub==2.13.4 # For asynchronous messaging with Pub/Sub
 google-api-python-client   # General Google API client library
 google-auth-httplib2       # For Google authentication
 google-auth-oauthlib       # For OAuth 2.0 authentication with Google services
+google-generativeai        # For generative AI models
 
 # --- Data Handling & Web ---
 beautifulsoup4==4.13.4     # For parsing HTML and XML, used in web scraping tools

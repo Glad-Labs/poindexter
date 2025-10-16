@@ -1,5 +1,5 @@
 import logging
-from services.llm_client import LLMClient
+from src.agents.content_agent.services.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
 

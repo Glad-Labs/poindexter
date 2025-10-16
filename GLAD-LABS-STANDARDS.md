@@ -29,16 +29,16 @@ To operate the most efficient, automated, solo-founded digital firm by fusing hi
 
 The entire system is built on a monorepo structure, with a central AI Co-Founder managing a fleet of specialized, serverless agents.
 
-| Component                | Technology                     | Best Practice & Rationale                                                                                               |
-| :----------------------- | :----------------------------- | :---------------------------------------------------------------------------------------------------------------------- |
-| **Monorepo**             | **GitLab (glad-labs-website)** | Centralizes all code (Agents, CMS, Web) using isolated dependency files per project.                                    |
-| **AI Co-Founder**        | **Python (FastAPI)**           | **The "Big Brain".** The central agent of the firm. Manages other agents and exposes a conversational API.              |
-| **Specialized Agents**   | **Python on Google Cloud Run** | **Serverless & Scalable.** Provides auto-scaling and minimal cost (pay-per-use) for all agent containers.               |
-| **Content Storage**      | **Strapi v5**                  | **API-First & Structured.** A robust, queryable database for all content. Runs locally for dev, containerized for prod. |
-| **Operational Database** | **Google Cloud Firestore**     | **Real-Time Data.** The primary database for the Co-Founder. Stores tasks, logs, and financials.                        |
-| **Frontend (Oversight)** | **React (CRA)**                | **Conversational Command Center.** A dual-pane UI with a Data Pane for real-time data and a Command Pane for chat.      |
-| **Frontend (Public)**    | **Next.js**                    | **High Performance & SEO.** Enables **Static Site Generation (SSG)** for a fast, SEO-friendly public blog.              |
-| **Agent Communication**  | **Google Cloud Pub/Sub**       | **Asynchronous Command Bus.** The nervous system. The Co-Founder uses it to dispatch tasks to specialized agents.       |
+| Component                | Technology                          | Best Practice & Rationale                                                                                                                                                                                                |
+| :----------------------- | :---------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Monorepo**             | **GitLab (glad-labs-website)**      | Centralizes all code (Agents, CMS, Web) using isolated dependency files per project.                                                                                                                                     |
+| **AI Co-Founder**        | **Python (FastAPI)**                | **The "Big Brain".** The central agent of the firm. Manages other agents and exposes a conversational API.                                                                                                               |
+| **Specialized Agents**   | **Python on Google Cloud Run**      | **Serverless & Scalable.** Provides auto-scaling and minimal cost (pay-per-use) for all agent containers.                                                                                                                |
+| **Content Storage**      | **Strapi v5**                       | **API-First & Structured.** A robust, queryable database for all content. Runs locally for dev, containerized for prod.                                                                                                  |
+| **Operational Database** | **Google Cloud Firestore**          | **Real-Time Data.** The primary database for the Co-Founder. Stores tasks, logs, and financials.                                                                                                                         |
+| **Frontend (Oversight)** | **React (CRA), Zustand, ChatScope** | **Conversational Command Center.** A resizable, dual-pane UI with a Data Pane for real-time data and a Command Pane for chat. Uses Zustand for state management and @chatscope/chat-ui-kit-react for the chat interface. |
+| **Frontend (Public)**    | **Next.js**                         | **High Performance & SEO.** Enables **Static Site Generation (SSG)** for a fast, SEO-friendly public blog.                                                                                                               |
+| **Agent Communication**  | **Google Cloud Pub/Sub**            | **Asynchronous Command Bus.** The nervous system. The Co-Founder uses it to dispatch tasks to specialized agents.                                                                                                        |
 
 ### **4. Project Structure & Codebases**
 
@@ -65,10 +65,10 @@ This section outlines the current capabilities of the system and a roadmap for f
 - **[✓] Real-Time Oversight Hub:** A React-based dashboard for monitoring agent status and viewing operational data from Firestore.
 - **[✓] High-Performance Public Site:** A Next.js frontend with Static Site Generation (SSG) for a fast, SEO-friendly user experience.
 - **[✓] Asynchronous Task Management:** Firestore is used as a real-time task queue for the AI agents.
+- **[✓] Conversational UI:** A chat interface is integrated into the Oversight Hub, allowing for natural language commands to be sent to the AI Co-Founder.
 
 #### **Phase II: Enhanced Automation & Intelligence (Next Steps)**
 
-- **[ ] Conversational UI:** Integrate a chat interface into the Oversight Hub to allow for natural language commands to be sent to the AI Co-Founder.
 - **[ ] Financial Agent:** Develop a specialized agent to track expenses, monitor burn rate, and provide financial summaries by integrating with services like the Mercury Bank API and GCP Billing.
 - **[ ] Market Insight Agent:** Create an agent that can analyze market trends, research competitors, and suggest new, high-value content topics.
 - **[ ] Proactive Task Generation:** Enable the Market Insight Agent to automatically create new task documents in Firestore based on its findings.

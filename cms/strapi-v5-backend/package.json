@@ -18,6 +18,7 @@
     "@strapi/plugin-cloud": "5.27.0",
     "@strapi/plugin-users-permissions": "5.27.0",
     "@strapi/strapi": "5.27.0",
+    "axios": "^1.12.2",
     "glad-labs-monorepo": "file:../..",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",

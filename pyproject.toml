@@ -5,10 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "glad-labs-agents"
 version = "0.1.0"
+description = "Python agents for GLAD Labs"
+dependencies = [
+    "pytest>=8.0.0",
+    "google-generativeai>=0.x.x"
+]
 authors = [
   { name="Matthew M. Gladding", email="mattg@gladlabs.io" },
 ]
-description = "The collection of AI agents for GLAD Labs."
 readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [
@@ -19,3 +23,15 @@ classifiers = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["src"]
+pythonpath = ["src"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--tb=short",
+    "--strict-markers",
+]
