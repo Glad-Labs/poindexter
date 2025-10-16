@@ -197,10 +197,34 @@ See: `docs/QUICK_START_REVENUE_FIRST.md` for full plan
 
 ---
 
-**✅ Fixes committed and pushed!**  
+## 🔄 Update: Monorepo Workspace Hoisting Fix
+
+**Additional Issue Found:** Even with date-fns v2.30.0 in public-site, the build still failed because:
+- npm workspaces can hoist dependencies unpredictably
+- Strapi didn't explicitly declare date-fns
+- Cloud build picked up wrong version due to workspace hoisting
+
+**Solution 3: Explicitly pin date-fns in Strapi**
+
+**File:** `cms/strapi-v5-backend/package.json`
+
+```json
+"dependencies": {
+  "date-fns": "2.30.0",  // ✅ Now explicitly pinned (no caret)
+  // ... other deps
+}
+```
+
+**Commit:** `90f1e477f` - "fix: explicitly pin date-fns@2.30.0 in Strapi to prevent workspace hoisting issues"
+
+This ensures Strapi Cloud gets the exact right version regardless of workspace hoisting behavior.
+
+---
+
+**✅ All fixes committed and pushed!**  
 **🔄 Strapi Cloud rebuild should be running now**  
 **📊 Check Strapi Cloud dashboard for build status**
 
 ---
 
-_Last updated: October 16, 2025_
+_Last updated: October 16, 2025 - 17:40 EST (Commit 90f1e477f)_
