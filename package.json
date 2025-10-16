@@ -38,7 +38,11 @@
     "lint": "npm run lint --workspaces --if-present && markdownlint *.md",
     "lint:fix": "npm run lint:fix --workspaces --if-present",
     "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md}\" \"!**/package-lock.json\" \"!**/node_modules/**\"",
-    "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,md}\" \"!**/package-lock.json\" \"!**/node_modules/**\""
+    "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,md}\" \"!**/package-lock.json\" \"!**/node_modules/**\"",
+    "//": "--- UTILITIES ---",
+    "services:check": "powershell -ExecutionPolicy Bypass -File ./scripts/check-services.ps1",
+    "services:kill": "powershell -ExecutionPolicy Bypass -File ./scripts/kill-services.ps1",
+    "services:restart": "npm run services:kill && npm run dev"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",

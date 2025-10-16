@@ -1,85 +1,51 @@
 # Kill All GLAD Labs Services
-# This script stops all running services on their designated ports
+# Stops all running services on their designated ports
 
-Write-Host "`n🛑 Stopping all GLAD Labs services..." -ForegroundColor Yellow
-Write-Host "=" * 60
+Write-Host ""
+Write-Host "========================================" -ForegroundColor Yellow
+Write-Host " Stopping GLAD Labs Services" -ForegroundColor Yellow  
+Write-Host "========================================" -ForegroundColor Yellow
+Write-Host ""
 
-# Define ports and service names
 $services = @(
-    @{Port = 8000; Name = "AI Co-Founder API (FastAPI)"}
-    @{Port = 3001; Name = "Oversight Hub (React)"}
-    @{Port = 3000; Name = "Public Site (Next.js)"}
+    @{Port = 8000; Name = "AI Co-Founder API"}
+    @{Port = 3001; Name = "Oversight Hub"}
+    @{Port = 3000; Name = "Public Site"}
     @{Port = 1337; Name = "Strapi CMS"}
 )
 
-$stoppedCount = 0
+$stopped = 0
 
 foreach ($service in $services) {
-    Write-Host "`nChecking port $($service.Port) - $($service.Name)..." -ForegroundColor Cyan
+    Write-Host "Checking port $($service.Port) - $($service.Name)..." -ForegroundColor Cyan
     
     try {
-        # Find process using this port
-        $connection = Get-NetTCPConnection -LocalPort $service.Port -State Listen -ErrorAction SilentlyContinue
+        $conn = Get-NetTCPConnection -LocalPort $service.Port -State Listen -ErrorAction SilentlyContinue
         
-        if ($connection) {
-            $processId = $connection.OwningProcess
-            $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
+        if ($conn) {
+            $processId = $conn.OwningProcess
+            $proc = Get-Process -Id $processId -ErrorAction SilentlyContinue
             
-            if ($process) {
-                Write-Host "  ├─ Found: $($process.ProcessName) (PID: $processId)" -ForegroundColor Yellow
-                Write-Host "  ├─ Stopping process..." -ForegroundColor Yellow
-                
+            if ($proc) {
+                Write-Host "  Found: $($proc.ProcessName) (PID: $processId)" -ForegroundColor Yellow
                 Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
-                Start-Sleep -Milliseconds 500
-                
-                # Verify it stopped
-                $stillRunning = Get-Process -Id $processId -ErrorAction SilentlyContinue
-                if (-not $stillRunning) {
-                    Write-Host "  └─ ✅ Stopped successfully" -ForegroundColor Green
-                    $stoppedCount++
-                } else {
-                    Write-Host "  └─ ⚠️  Process still running" -ForegroundColor Red
-                }
+                Start-Sleep -Milliseconds 300
+                Write-Host "  Stopped" -ForegroundColor Green
+                $stopped++
             }
         } else {
-            Write-Host "  └─ ✅ Port is free" -ForegroundColor Green
+            Write-Host "  Port is free" -ForegroundColor Gray
         }
     } catch {
-        Write-Host "  └─ ❌ Error: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Red
     }
 }
 
-# Also kill any Python processes that might be lingering
-Write-Host "`nChecking for lingering Python processes..." -ForegroundColor Cyan
-$pythonProcesses = Get-Process -Name python -ErrorAction SilentlyContinue | Where-Object {
-    $_.Path -like "*glad-labs*" -or $_.MainWindowTitle -like "*Co-Founder*"
-}
-
-if ($pythonProcesses) {
-    foreach ($proc in $pythonProcesses) {
-        Write-Host "  ├─ Found Python process: PID $($proc.Id)" -ForegroundColor Yellow
-        Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-        Write-Host "  └─ ✅ Stopped" -ForegroundColor Green
-        $stoppedCount++
-    }
-}
-
-# Also kill any Node processes that might be lingering
-Write-Host "`nChecking for lingering Node processes..." -ForegroundColor Cyan
-$nodeProcesses = Get-Process -Name node -ErrorAction SilentlyContinue | Where-Object {
-    $_.CommandLine -like "*glad-labs*" -or $_.CommandLine -like "*strapi*" -or $_.CommandLine -like "*next*"
-}
-
-if ($nodeProcesses) {
-    foreach ($proc in $nodeProcesses) {
-        Write-Host "  ├─ Found Node process: PID $($proc.Id)" -ForegroundColor Yellow
-        Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
-        Write-Host "  └─ ✅ Stopped" -ForegroundColor Green
-        $stoppedCount++
-    }
-}
-
-Write-Host "`n" + "=" * 60
-Write-Host "✅ Cleanup complete! Stopped $stoppedCount process(es)." -ForegroundColor Green
-Write-Host "`n💡 You can now run: npm run dev" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "========================================" -ForegroundColor Green
+Write-Host " Cleanup Complete" -ForegroundColor Green
+Write-Host " Stopped: $stopped process(es)" -ForegroundColor Green  
+Write-Host "========================================" -ForegroundColor Green
+Write-Host ""
+Write-Host "You can now run: npm run dev" -ForegroundColor Cyan
 Write-Host ""
