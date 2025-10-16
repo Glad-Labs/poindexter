@@ -10,6 +10,11 @@ Welcome to the comprehensive documentation for the GLAD Labs AI Co-Founder Syste
 
 ### 🎯 **Core Documentation** (Start Here!)
 
+## Core Documentation
+
+- ⚡ **[Quick Reference](./QUICK_REFERENCE.md)** - One-page system overview (start here!)
+- 🚀 **[Vision & Roadmap](./VISION_AND_ROADMAP.md)** - Complete AI co-founder vision and implementation plan
+- 📋 **[Phase 1 Implementation Plan](./PHASE_1_IMPLEMENTATION_PLAN.md)** - Detailed implementation plan for the foundation phase
 - **[Setup Guide](./01-SETUP_GUIDE.md)** - Complete installation and deployment instructions
 - **[Technical Design](./03-TECHNICAL_DESIGN.md)** - System architecture, data models, and design decisions
 - **[Developer Journal](./05-DEVELOPER_JOURNAL.md)** - Chronological log of all changes, phases, and implementations
