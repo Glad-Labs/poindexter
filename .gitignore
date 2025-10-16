@@ -29,11 +29,16 @@ cms/strapi-v5-backend/export/
 cms/strapi-v5-backend/public/uploads/
 .tmp/
 
-# Environment & Credentials
+# Environment variables
 .env
-.env.*
-!/.env.example
+.env.local
+.env.*.local
+.env.production
+.env.development
+
+# Environment & Credentials
 credentials.json
 service-account-key.json
 token.json
 *.log
+.env.old

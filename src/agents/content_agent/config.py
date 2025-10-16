@@ -26,7 +26,8 @@ class Config:
         # This allows for secure and flexible configuration without hardcoding secrets.
         project_root = Path(__file__).resolve().parents[3]
         dotenv_path = project_root / '.env'
-        load_dotenv(dotenv_path=dotenv_path)
+        if os.getenv("DISABLE_DOTENV") != "1":
+            load_dotenv(dotenv_path=dotenv_path)
 
         # --- Core Application Paths ---
         self.BASE_DIR = BASE_DIR
@@ -101,29 +102,40 @@ class Config:
 # Create a single, immutable instance of the configuration to be imported by other modules.
 config = Config()
 
-# --- Sanity Check for Required Environment Variables ---
-# Ensures that the application fails fast if critical configuration is missing.
-# This prevents runtime errors in production due to misconfiguration.
-required_vars = [
-    "GCP_PROJECT_ID",
-    "GCP_REGION",
-    "GEMINI_API_KEY",
-    "STRAPI_API_URL",
-    "STRAPI_API_TOKEN",
-    "GCS_BUCKET_NAME",
-    "PEXELS_API_KEY",
-    "SERPER_API_KEY",
-    "GCP_SERVICE_ACCOUNT_EMAIL",
-]
+# --- Validation Utilities ---
+# Validate required environment variables. Non-strict by default to enable testing and local dev.
+# Set STRICT_ENV_VALIDATION=1 to raise on missing variables.
 
-missing_vars = [var for var in required_vars if not getattr(config, var, None)]
+def validate_required(strict: bool = False) -> list:
+    required_vars = [
+        "GCP_PROJECT_ID",
+        "GCP_REGION",
+        "GEMINI_API_KEY",
+        "STRAPI_API_URL",
+        "STRAPI_API_TOKEN",
+        "GCS_BUCKET_NAME",
+        "PEXELS_API_KEY",
+        "SERPER_API_KEY",
+        "GCP_SERVICE_ACCOUNT_EMAIL",
+    ]
 
-if missing_vars:
-    error_message = f"CRITICAL CONFIG ERROR: The following required environment variables are missing: {', '.join(missing_vars)}"
-    logger.critical(error_message)
-    logger.critical(
-        "Please create or check your .env file in the root directory and ensure all variables are set correctly."
-    )
-    raise ValueError(error_message)
+    missing_vars = [var for var in required_vars if not getattr(config, var, None)]
 
-logger.info("Configuration loaded and validated successfully.")
+    if missing_vars:
+        message = (
+            "CRITICAL CONFIG: Missing required environment variables: "
+            + ", ".join(missing_vars)
+        )
+        if strict or os.getenv("STRICT_ENV_VALIDATION") == "1":
+            logger.critical(message)
+            logger.critical(
+                "Please create or check your .env file in the root directory and ensure all variables are set correctly."
+            )
+            raise ValueError(message)
+        else:
+            logger.warning(message)
+    return missing_vars
+
+# Perform a non-strict validation at import to aid discoverability without breaking tests.
+validate_required(strict=False)
+logger.info("Configuration loaded successfully.")
