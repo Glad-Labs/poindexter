@@ -347,14 +347,14 @@ Alerts:
 
 **Quick Links:**
 
-| Document                                                             | Purpose          | When to Use             |
-| -------------------------------------------------------------------- | ---------------- | ----------------------- |
+| Document                                                        | Purpose          | When to Use             |
+| --------------------------------------------------------------- | ---------------- | ----------------------- |
 | [Master Documentation Index](./MASTER_DOCS_INDEX.md)            | Complete doc hub | Start here              |
 | [Codebase Health Report](./CODEBASE_HEALTH_REPORT.md)           | Current status   | Check health            |
 | [Developer Guide](./DEVELOPER_GUIDE.md)                         | APIs & workflows | Development             |
 | [Test Implementation Summary](./TEST_IMPLEMENTATION_SUMMARY.md) | Testing guide    | Writing tests           |
 | [CI/CD Test Review](./CI_CD_TEST_REVIEW.md)                     | Pipeline docs    | CI/CD issues            |
-| [Architecture](./docs/ARCHITECTURE.md)                                    | System design    | Understanding structure |
+| [Architecture](./docs/ARCHITECTURE.md)                          | System design    | Understanding structure |
 
 ---
 

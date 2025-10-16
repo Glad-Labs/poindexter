@@ -6,10 +6,10 @@ Welcome to the comprehensive documentation for the GLAD Labs AI Co-Founder Syste
 
 ### 📖 Main Documentation
 
-| Document                                              | Purpose                            | Audience              |
-| ----------------------------------------------------- | ---------------------------------- | --------------------- |
-| [README.md](../README.md)                             | Project overview and quick start   | All users             |
-| [DEVELOPER_GUIDE.md](./DEVELOPER_GUIDE.md)            | Complete development documentation | Developers            |
+| Document                                             | Purpose                            | Audience              |
+| ---------------------------------------------------- | ---------------------------------- | --------------------- |
+| [README.md](../README.md)                            | Project overview and quick start   | All users             |
+| [DEVELOPER_GUIDE.md](./DEVELOPER_GUIDE.md)           | Complete development documentation | Developers            |
 | [ARCHITECTURE.md](./ARCHITECTURE.md)                 | System architecture and design     | Architects/Developers |
 | [INSTALLATION_SUMMARY.md](./INSTALLATION_SUMMARY.md) | Dependency setup and configuration | DevOps/Setup          |
 
@@ -29,12 +29,12 @@ Welcome to the comprehensive documentation for the GLAD Labs AI Co-Founder Syste
 | Document                                                | Purpose                       |
 | ------------------------------------------------------- | ----------------------------- |
 | [Testing Guide](../src/cofounder_agent/tests/README.md) | Python testing procedures     |
-| [E2E Test Documentation](./docs/TESTING.md)                  | End-to-end testing strategies |
+| [E2E Test Documentation](./docs/TESTING.md)             | End-to-end testing strategies |
 
 ### 📋 Standards & Guidelines
 
-| Document                                         | Purpose                               |
-| ------------------------------------------------ | ------------------------------------- |
+| Document                                        | Purpose                               |
+| ----------------------------------------------- | ------------------------------------- |
 | [GLAD Labs Standards](./GLAD-LABS-STANDARDS.md) | Coding standards and best practices   |
 | [Data Schemas](./data_schemas.md)               | Database and API schema documentation |
 

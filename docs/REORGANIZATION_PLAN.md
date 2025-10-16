@@ -12,6 +12,7 @@
 ### Files Currently in Root:
 
 **Configuration Files (9):**
+
 - `.dockerignore`
 - `.gitignore`
 - `.gitlab-ci.yml`
@@ -23,10 +24,12 @@
 - `glad-labs-workspace.code-workspace`
 
 **Environment Files (2):**
+
 - `.env`
 - `.env.example`
 
 **Documentation Files (8):**
+
 - `README.md` ← KEEP IN ROOT
 - `ARCHITECTURE.md`
 - `CODEBASE_ANALYSIS_REPORT.md`
@@ -37,11 +40,13 @@
 - `TESTING.md`
 
 **Dependency Files (3):**
+
 - `requirements.txt`
 - `requirements-core.txt`
 - `setup-dependencies.ps1`
 
 **Other (2):**
+
 - `LICENSE` ← KEEP IN ROOT
 
 ---
@@ -216,6 +221,7 @@ git mv requirements-core.txt scripts/
 Only move files that don't break tooling:
 
 **Move to docs/:**
+
 - ✅ ARCHITECTURE.md
 - ✅ CODEBASE_ANALYSIS_REPORT.md
 - ✅ data_schemas.md
@@ -225,14 +231,17 @@ Only move files that don't break tooling:
 - ✅ TESTING.md
 
 **Move to scripts/:**
+
 - ✅ setup-dependencies.ps1
 - ✅ requirements.txt
 - ✅ requirements-core.txt
 
 **Move to .vscode/:**
+
 - ✅ glad-labs-workspace.code-workspace
 
 **Keep in root:**
+
 - `.dockerignore` (Docker convention)
 - `.gitlab-ci.yml` (GitLab convention)
 - `.gitignore` (Git convention)
@@ -250,11 +259,13 @@ Only move files that don't break tooling:
 ## 📊 Before & After
 
 ### Before:
+
 ```
 Root: 24 files (cluttered)
 ```
 
 ### After:
+
 ```
 Root: 13 files (essential config only)
 docs/: +7 documentation files
@@ -271,12 +282,14 @@ scripts/: +3 dependency/setup files
 **Immediate (Safe to move):**
 
 1. Create directories:
+
    ```bash
    mkdir scripts
    mkdir .vscode  # if doesn't exist
    ```
 
 2. Move documentation (7 files):
+
    ```bash
    git mv ARCHITECTURE.md docs/
    git mv CODEBASE_ANALYSIS_REPORT.md docs/
@@ -288,6 +301,7 @@ scripts/: +3 dependency/setup files
    ```
 
 3. Move scripts (3 files):
+
    ```bash
    git mv setup-dependencies.ps1 scripts/
    git mv requirements.txt scripts/
@@ -295,6 +309,7 @@ scripts/: +3 dependency/setup files
    ```
 
 4. Move workspace file:
+
    ```bash
    git mv glad-labs-workspace.code-workspace .vscode/
    ```
@@ -314,6 +329,7 @@ scripts/: +3 dependency/setup files
 ## 🎯 Final Result
 
 **Clean Root Directory:**
+
 ```
 glad-labs-website/
 ├── .dockerignore              (Docker standard)
@@ -340,6 +356,7 @@ glad-labs-website/
 ```
 
 **Benefits:**
+
 - ✅ Root reduced from 24 → 13 files
 - ✅ All documentation centralized in `docs/`
 - ✅ Setup scripts organized in `scripts/`
