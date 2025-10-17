@@ -8,39 +8,43 @@ module.exports = {
    */
   register({ strapi }) {
     // ========================================
-    // RAILWAY PROXY COOKIE FIX - REGISTER PHASE
+    // RAILWAY PROXY HTTPS FIX
     // ========================================
-    console.log('🔧 Attempting to patch Koa cookies in register phase...');
+    console.log('🔧 Setting up Railway HTTPS proxy middleware...');
     
-    // Patch Strapi's server creation
+    // Patch Strapi's server creation to force HTTPS protocol detection
     const originalServer = strapi.server;
     Object.defineProperty(strapi, 'server', {
       get() {
         return originalServer;
       },
       set(value) {
-        console.log('✅ Strapi server being set, patching Koa app...');
+        console.log('✅ Strapi server being set, patching Koa for HTTPS...');
         
         if (value && value.app) {
           const app = value.app;
           
-          // Store original createContext
-          const originalCreateContext = app.createContext;
+          // Enable proxy trust
+          app.proxy = true;
           
-          // Patch createContext
-          app.createContext = function(req, res) {
-            const ctx = originalCreateContext.call(this, req, res);
-            
-            // Patch cookies.set
-            const originalSet = ctx.cookies.set.bind(ctx.cookies);
-            ctx.cookies.set = function(name, value, opts = {}) {
-              return originalSet(name, value, { ...opts, secure: false });
-            };
-            
-            return ctx;
-          };
+          // Intercept all requests to force HTTPS protocol
+          app.use(async (ctx, next) => {
+            // Force the protocol to be https for Railway proxy
+            if (process.env.NODE_ENV === 'production') {
+              ctx.request.protocol = 'https';
+              ctx.protocol = 'https';
+              ctx.secure = true;
+              
+              // Log once for debugging
+              if (!global._railwayHttpsLogged) {
+                console.log('✅ Forcing HTTPS protocol for Railway proxy');
+                global._railwayHttpsLogged = true;
+              }
+            }
+            await next();
+          });
           
-          console.log('✅ Koa cookie patch applied successfully');
+          console.log('✅ Railway HTTPS middleware applied');
         }
         
         originalServer = value;
