@@ -3,19 +3,22 @@
  * 
  * Railway.app Cookie Settings:
  * - Railway's proxy handles SSL (HTTPS → HTTP internally)
- * - Must set secure: false for cookies or get "Cannot send secure cookie over unencrypted connection"
+ * - Must explicitly set URLs to use HTTPS protocol
  * - External users still connect via HTTPS (Railway proxy layer)
  * 
  * @see https://docs.strapi.io/dev-docs/configurations/admin-panel
  * @see https://docs.railway.app/deploy/deployments#https-and-ssl
  */
 export default ({ env }) => ({
+  // Explicitly set admin URLs to use HTTPS
+  url: env('ADMIN_URL', '/admin'),
+  serveAdminPanel: true,
   auth: {
     secret: env('ADMIN_JWT_SECRET'), // Used to sign admin JWT tokens
     sessions: {
       // Admin refresh token cookie settings (Strapi v5+)
       cookie: {
-        secure: false, // CRITICAL: Railway proxy handles SSL - must be false
+        secure: env.bool('NODE_ENV', 'development') === 'production', // Use secure cookies in production
         httpOnly: true, // Prevent XSS attacks
         sameSite: 'lax', // Allow navigation from external sites
       },
