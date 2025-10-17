@@ -15,6 +15,7 @@ export default ({ env }) => ({
   port: env.int('PORT', 1337), // Railway overrides to 5000
   app: {
     keys: env.array('APP_KEYS'), // Required for session encryption
+    proxy: true, // CRITICAL: Tell Koa to trust proxy headers (X-Forwarded-Proto, etc.)
   },
   proxy: true, // CRITICAL: Trust Railway's proxy layer for SSL termination
   url: env(
