@@ -11,7 +11,7 @@
     "cms/strapi-v5-backend"
   ],
   "scripts": {
-    "//": "--- DEVELOPMENT & BUILD ---",
+    "//": "--- UTILITIES ---",
     "dev": "npm-run-all --parallel dev:*",
     "dev:strapi": "npm run develop --workspace=cms/strapi-v5-backend",
     "dev:oversight": "npm start --workspace=web/oversight-hub",
@@ -23,13 +23,11 @@
     "start:public": "npm run start --workspace=web/public-site",
     "start:oversight": "npm run build --workspace=web/oversight-hub && npm run start --workspace=web/oversight-hub",
     "start:cofounder": "python src/cofounder_agent/main.py",
-    "//": "--- INSTALLATION & MAINTENANCE ---",
     "setup:all": "npm run install:all && npm run setup:python",
     "install:all": "npm install && npm install --workspaces",
     "setup:python": "pip install -r requirements.txt && pip install -r src/cofounder_agent/requirements.txt",
     "clean": "rimraf node_modules package-lock.json **/node_modules **/dist **/.next **/build .venv __pycache__ **/__pycache__",
     "clean:install": "npm run clean && npm run install:all",
-    "//": "--- TESTING ---",
     "test": "npm-run-all test:python test:frontend:ci",
     "test:frontend": "npm test --workspaces --if-present",
     "test:frontend:ci": "npm run test:public:ci && npm run test:oversight:ci",
@@ -37,12 +35,10 @@
     "test:oversight:ci": "npm test --workspace=web/oversight-hub -- --watchAll=false --passWithNoTests",
     "test:python": "cd src/cofounder_agent/tests && python run_tests.py all",
     "test:python:smoke": "cd src/cofounder_agent/tests && python -m pytest test_e2e_fixed.py -v",
-    "//": "--- CODE QUALITY ---",
     "lint": "npm run lint --workspaces --if-present && markdownlint *.md",
     "lint:fix": "npm run lint:fix --workspaces --if-present",
     "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md}\" \"!**/package-lock.json\" \"!**/node_modules/**\"",
     "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,md}\" \"!**/package-lock.json\" \"!**/node_modules/**\"",
-    "//": "--- UTILITIES ---",
     "services:check": "powershell -ExecutionPolicy Bypass -File ./scripts/check-services.ps1",
     "services:kill": "powershell -ExecutionPolicy Bypass -File ./scripts/kill-services.ps1",
     "services:restart": "npm run services:kill && npm run dev"
@@ -76,5 +72,10 @@
     "esbuild": ">=0.24.4",
     "koa": ">=2.16.2",
     "nth-check": ">=2.1.1"
+  },
+  "dependencies": {
+    "@strapi/plugin-cloud": "^5.28.0",
+    "@strapi/plugin-users-permissions": "^5.28.0",
+    "@strapi/strapi": "^5.28.0"
   }
 }
