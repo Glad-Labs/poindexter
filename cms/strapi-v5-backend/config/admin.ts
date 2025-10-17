@@ -1,6 +1,9 @@
 export default ({ env }) => ({
   auth: {
     secret: env('ADMIN_JWT_SECRET'),
+    options: {
+      cookieSecure: false, // Disable secure flag for Railway proxy
+    },
   },
   apiToken: {
     salt: env('API_TOKEN_SALT'),
