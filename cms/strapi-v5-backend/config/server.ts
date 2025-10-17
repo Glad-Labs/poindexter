@@ -12,15 +12,9 @@
 export default ({ env }) => ({
   host: env('HOST', '0.0.0.0'),
   port: env.int('PORT', 1337),
-  url: env('URL'),
   proxy: true,
   app: {
     keys: env.array('APP_KEYS'),
   },
-  admin: {
-    auth: {
-      // This is the crucial part to force secure admin cookies
-      secure: env.bool('ADMIN_AUTH_SECURE', true),
-    },
-  },
+  url: env('URL'),
 });
