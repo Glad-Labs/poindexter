@@ -1,11 +1,11 @@
 /**
  * Strapi Admin Panel Configuration
- * 
+ *
  * Railway.app Cookie Settings:
  * - Railway's proxy handles SSL (HTTPS → HTTP internally)
  * - Must explicitly set URLs to use HTTPS protocol
  * - External users still connect via HTTPS (Railway proxy layer)
- * 
+ *
  * @see https://docs.strapi.io/dev-docs/configurations/admin-panel
  * @see https://docs.railway.app/deploy/deployments#https-and-ssl
  */
@@ -16,6 +16,8 @@ export default ({ env }) => ({
   auth: {
     secret: env('ADMIN_JWT_SECRET'), // Used to sign admin JWT tokens
     sessions: {
+      maxSessionLifespan: 1000 * 60 * 60 * 24 * 7, // 7 days
+      maxRefreshTokenLifespan: 1000 * 60 * 60 * 24 * 30, // 30 days
       // Admin refresh token cookie settings (Strapi v5+)
       cookie: {
         secure: env.bool('NODE_ENV', 'development') === 'production', // Use secure cookies in production
