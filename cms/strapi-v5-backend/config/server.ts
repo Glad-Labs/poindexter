@@ -5,6 +5,7 @@
  * - Proxy: Railway terminates SSL, so we must trust the proxy headers
  * - Port: Railway sets PORT=5000 via environment variable
  * - URL: Public-facing URL for generating absolute links
+ * - Cookies: Must set secure: false because Railway proxy handles SSL (HTTPS → HTTP internally)
  *
  * @see https://docs.strapi.io/dev-docs/configurations/server
  * @see https://docs.railway.app
@@ -20,4 +21,8 @@ export default ({ env }) => ({
     'PUBLIC_URL',
     'https://glad-labs-strapi-v5-backend-production.up.railway.app'
   ), // Used for password resets, webhooks, etc.
+  cookies: {
+    // CRITICAL: Railway proxy terminates SSL, connection to Strapi is HTTP
+    secure: false, // Must be false or get "Cannot send secure cookie over unencrypted connection"
+  },
 });
