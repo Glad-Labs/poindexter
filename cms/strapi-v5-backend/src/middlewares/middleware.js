@@ -8,7 +8,9 @@
  * @see https://github.com/koajs/koa/issues/974
  * @see https://docs.railway.app/deploy/deployments#https-and-ssl
  */
-module.exports = () => {
+'use strict';
+
+module.exports = (config, { strapi }) => {
   return async (ctx, next) => {
     // Store original cookie set method
     const originalSet = ctx.cookies.set.bind(ctx.cookies);
