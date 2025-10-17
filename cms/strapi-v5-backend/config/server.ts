@@ -11,14 +11,13 @@
  */
 export default ({ env }) => ({
   host: env('HOST', '0.0.0.0'),
-  port: env.int('PORT', 1337), // Railway overrides to 5000
+  port: env.int('PORT', 1337),
   app: {
-    keys: env.array('APP_KEYS'), // Required for session encryption
-    proxy: true, // CRITICAL: Tell Koa to trust proxy headers (X-Forwarded-Proto, etc.)
+    keys: env.array('APP_KEYS'),
+    proxy: true, // Trust the proxy headers
   },
-  proxy: true, // CRITICAL: Trust Railway's proxy layer for SSL termination
   url: env(
     'PUBLIC_URL',
     'https://glad-labs-strapi-v5-backend-production.up.railway.app'
-  ), // Used for password resets, webhooks, etc.
+  ),
 });

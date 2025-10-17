@@ -23,12 +23,13 @@ export default [
     name: 'strapi::session',
     config: {
       cookie: {
-        secure: false, // CRITICAL: Railway proxy handles SSL termination
-        httpOnly: true, // Prevent XSS attacks
-        sameSite: 'lax', // Allow cross-site navigation
+        secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
+        httpOnly: true,
+        sameSite: 'lax',
       },
     },
   },
   'strapi::favicon',
   'strapi::public',
+  'global::custom-header-inspector', // Add our custom middleware
 ];
