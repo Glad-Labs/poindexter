@@ -6,7 +6,48 @@ module.exports = {
    * This gives you an opportunity to set up your data model,
    * run jobs, or perform some special logic.
    */
-  register(/*{ strapi }*/) {},
+  register({ strapi }) {
+    // ========================================
+    // RAILWAY PROXY COOKIE FIX - REGISTER PHASE
+    // ========================================
+    console.log('🔧 Attempting to patch Koa cookies in register phase...');
+    
+    // Patch Strapi's server creation
+    const originalServer = strapi.server;
+    Object.defineProperty(strapi, 'server', {
+      get() {
+        return originalServer;
+      },
+      set(value) {
+        console.log('✅ Strapi server being set, patching Koa app...');
+        
+        if (value && value.app) {
+          const app = value.app;
+          
+          // Store original createContext
+          const originalCreateContext = app.createContext;
+          
+          // Patch createContext
+          app.createContext = function(req, res) {
+            const ctx = originalCreateContext.call(this, req, res);
+            
+            // Patch cookies.set
+            const originalSet = ctx.cookies.set.bind(ctx.cookies);
+            ctx.cookies.set = function(name, value, opts = {}) {
+              return originalSet(name, value, { ...opts, secure: false });
+            };
+            
+            return ctx;
+          };
+          
+          console.log('✅ Koa cookie patch applied successfully');
+        }
+        
+        originalServer = value;
+      },
+      configurable: true,
+    });
+  },
 
   /**
    * An asynchronous bootstrap function that runs before
