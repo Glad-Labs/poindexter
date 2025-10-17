@@ -14,22 +14,13 @@
 export default [
   'strapi::logger',
   'strapi::errors',
+  'global::proxy-header-handler', // Custom middleware to handle proxy headers
   'strapi::security',
   'strapi::cors',
   'strapi::poweredBy',
   'strapi::query',
   'strapi::body',
-  {
-    name: 'strapi::session',
-    config: {
-      cookie: {
-        secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
-        httpOnly: true,
-        sameSite: 'lax',
-      },
-    },
-  },
+  'strapi::session',
   'strapi::favicon',
   'strapi::public',
-  'global::custom-header-inspector', // Add our custom middleware
 ];
