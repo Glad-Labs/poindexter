@@ -736,8 +736,8 @@ Closes #123
 
 - [Technical Design](./03-TECHNICAL_DESIGN.md) - System architecture
 - [Setup Guide](./01-SETUP_GUIDE.md) - Installation instructions
-- [API Reference](./04-API_REFERENCE.md) - API documentation
-- [Phase 2 Implementation](./PHASE_2_IMPLEMENTATION.md) - Latest release details
+- [Architecture](./reference/ARCHITECTURE.md) - API documentation
+- [Phase 1 Implementation](./PHASE_1_IMPLEMENTATION_PLAN.md) - Latest release details
 
 ---
 

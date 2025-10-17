@@ -702,14 +702,14 @@ After setup is complete:
    - Test each model
 
 3. ✅ **Explore Features**
-   - See [Oversight Hub Quick Start](./OVERSIGHT_HUB_QUICK_START.md)
-   - Try [Phase 2 Features](./PHASE_2_IMPLEMENTATION.md)
-   - Read [Developer Guide](./02-DEVELOPER_GUIDE.md)
+   - See [Oversight Hub Quick Start](./guides/OVERSIGHT_HUB_QUICK_START.md)
+   - Try [Technical Design](./03-TECHNICAL_DESIGN.md)
+   - Read [Developer Guide](./guides/DEVELOPER_GUIDE.md)
 
 4. ✅ **Start Developing**
    - Read [Technical Design](./03-TECHNICAL_DESIGN.md)
-   - Check [API Reference](./04-API_REFERENCE.md)
-   - Follow [GLAD Labs Standards](./GLAD-LABS-STANDARDS.md)
+   - Check [API Reference](./reference/ARCHITECTURE.md)
+   - Follow [GLAD Labs Standards](./reference/GLAD-LABS-STANDARDS.md)
 
 ---
 
@@ -755,6 +755,6 @@ npm run build
 
 **[← Back to Documentation Hub](./00-README.md)**
 
-[Developer Guide](./02-DEVELOPER_GUIDE.md) • [Technical Design](./03-TECHNICAL_DESIGN.md) • [API Reference](./04-API_REFERENCE.md)
+[Developer Guide](./guides/DEVELOPER_GUIDE.md) • [Technical Design](./03-TECHNICAL_DESIGN.md) • [Architecture](./reference/ARCHITECTURE.md)
 
 </div>

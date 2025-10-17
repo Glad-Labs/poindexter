@@ -8,17 +8,17 @@ This document consolidates all technical design information including system arc
 
 ## 📋 Table of Contents
 
-1. [Strategic Overview](#strategic-overview)
-2. [System Architecture](#system-architecture)
-3. [Component Design](#component-design)
-4. [Data Architecture](#data-architecture)
-5. [API Design](#api-design)
-6. [AI Model Architecture](#ai-model-architecture)
-7. [Security Architecture](#security-architecture)
-8. [Performance Design](#performance-design)
-9. [Deployment Architecture](#deployment-architecture)
-10. [Coding Standards](#coding-standards)
-11. [Development Workflows](#development-workflows)
+1. Strategic Overview
+2. System Architecture
+3. Component Design
+4. Data Architecture
+5. API Design
+6. AI Model Architecture
+7. Security Architecture
+8. Performance Design
+9. Deployment Architecture
+10. Coding Standards
+11. Development Workflows
 
 ---
 
@@ -1471,8 +1471,8 @@ test('creates and publishes blog post', async () => {
 
 - [Setup Guide](./01-SETUP_GUIDE.md) - Installation and configuration
 - [Developer Journal](./05-DEVELOPER_JOURNAL.md) - Chronological changelog
-- [API Reference](./04-API_REFERENCE.md) - Comprehensive API documentation
-- [Architecture Diagrams](./ARCHITECTURE.md) - Visual system diagrams
+- [Architecture Reference](./reference/ARCHITECTURE.md) - System design documentation
+- [Standards](./reference/GLAD-LABS-STANDARDS.md) - Code standards and guidelines
 
 ---
 

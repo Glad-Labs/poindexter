@@ -153,7 +153,7 @@ glad-labs-website/
    cd glad-labs-website
    ```
 
-1. **Install dependencies:**
+2. **Install dependencies:**
 
    ```bash
    # Install root dependencies
@@ -170,7 +170,7 @@ glad-labs-website/
    cd src/agents/content_agent && pip install -r requirements.txt && cd ../../..
    ```
 
-1. **Configure environment variables:**
+3. **Configure environment variables:**
 
    **Strapi CMS** (`cms/strapi-v5-backend/.env`):
 
@@ -199,7 +199,7 @@ glad-labs-website/
    STRAPI_API_TOKEN=your-strapi-api-token
    ```
 
-1. **Start the development environment:**
+4. **Start the development environment:**
 
    ```bash
    # Terminal 1: Start Strapi CMS

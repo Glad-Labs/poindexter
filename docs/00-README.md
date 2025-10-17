@@ -158,26 +158,26 @@ Welcome to the comprehensive documentation for the GLAD Labs AI Co-Founder Syste
 | Document                                       | Description               | Status     |
 | ---------------------------------------------- | ------------------------- | ---------- |
 | [Setup Guide](./01-SETUP_GUIDE.md)             | Installation & deployment | ✅ Current |
-| [Developer Guide](./02-DEVELOPER_GUIDE.md)     | Development workflow      | ✅ Current |
+| [Developer Guide](./guides/DEVELOPER_GUIDE.md) | Development workflow      | ✅ Current |
 | [Technical Design](./03-TECHNICAL_DESIGN.md)   | Architecture & schemas    | ✅ Current |
-| [API Reference](./04-API_REFERENCE.md)         | REST API docs             | ✅ Current |
+| [Architecture](./reference/ARCHITECTURE.md)    | System design & API       | ✅ Current |
 | [Developer Journal](./05-DEVELOPER_JOURNAL.md) | Change log                | ✅ Current |
 
 ### Feature Documentation
 
-| Document                                                      | Description           | Status     |
-| ------------------------------------------------------------- | --------------------- | ---------- |
-| [Oversight Hub Enhancements](./OVERSIGHT_HUB_ENHANCEMENTS.md) | Phase 1 features      | ✅ Current |
-| [Phase 2 Implementation](./PHASE_2_IMPLEMENTATION.md)         | Gemini & Social Media | ✅ Current |
-| [Cost Optimization Guide](./COST_OPTIMIZATION_GUIDE.md)       | Reduce AI costs       | ✅ Current |
+| Document                                                  | Description           | Status     |
+| --------------------------------------------------------- | --------------------- | ---------- |
+| [Strapi Content Setup](./STRAPI_CONTENT_TYPES_SETUP.md)   | Content types setup   | ✅ Current |
+| [E2E Pipeline Setup](./E2E_PIPELINE_SETUP.md)             | Pipeline configuration | ✅ Current |
+| [Quick Start Revenue First](./QUICK_START_REVENUE_FIRST.md) | Revenue strategy      | ✅ Current |
 
 ### Setup & Operations
 
 | Document                                                     | Description          | Status     |
 | ------------------------------------------------------------ | -------------------- | ---------- |
-| [Quick Start Guide](./OVERSIGHT_HUB_QUICK_START.md)          | 5-minute setup       | ✅ Current |
-| [Ollama Setup](./OLLAMA_SETUP.md)                            | Local AI models      | ✅ Current |
-| [Docker Deployment](./DOCKER_DEPLOYMENT.md)                  | Container deployment | ✅ Current |
+| [Guide: Ollama Setup](./guides/OLLAMA_SETUP.md)             | Local AI models      | ✅ Current |
+| [Guide: Docker Deployment](./guides/DOCKER_DEPLOYMENT.md)   | Container deployment | ✅ Current |
+| [Guide: Local Setup](./guides/LOCAL_SETUP_GUIDE.md)         | Development setup    | ✅ Current |
 | [Production Checklist](./PRODUCTION_DEPLOYMENT_CHECKLIST.md) | Go-live checklist    | ✅ Current |
 
 ### Reference & Standards
@@ -300,7 +300,7 @@ pip install -r requirements.txt
 pip install -r src/cofounder_agent/requirements.txt
 ```
 
-See [Developer Guide](./02-DEVELOPER_GUIDE.md) for more troubleshooting.
+See [Developer Guide](./guides/DEVELOPER_GUIDE.md) for more troubleshooting.
 
 ---
 
@@ -407,6 +407,6 @@ See [LICENSE](../LICENSE) for details.
 
 **Made with ❤️ by the GLAD Labs Team**
 
-[Documentation](./00-README.md) • [Setup Guide](./01-SETUP_GUIDE.md) • [API Reference](./04-API_REFERENCE.md) • [Support](#support--resources)
+[Documentation](./00-README.md) • [Setup Guide](./01-SETUP_GUIDE.md) • [Architecture](./reference/ARCHITECTURE.md) • [Support](#-support--resources)
 
 </div>
