@@ -6,12 +6,12 @@ Welcome to the comprehensive documentation for the GLAD Labs AI Co-Founder Syste
 
 ### 📖 Main Documentation
 
-| Document                                             | Purpose                            | Audience              |
-| ---------------------------------------------------- | ---------------------------------- | --------------------- |
-| [README.md](../README.md)                            | Project overview and quick start   | All users             |
-| [DEVELOPER_GUIDE.md](./guides/DEVELOPER_GUIDE.md)    | Complete development documentation | Developers            |
-| [ARCHITECTURE.md](./reference/ARCHITECTURE.md)       | System architecture and design     | Architects/Developers |
-| [SETUP_GUIDE.md](./01-SETUP_GUIDE.md)               | Dependency setup and configuration | DevOps/Setup          |
+| Document                                          | Purpose                            | Audience              |
+| ------------------------------------------------- | ---------------------------------- | --------------------- |
+| [README.md](../README.md)                         | Project overview and quick start   | All users             |
+| [DEVELOPER_GUIDE.md](./guides/DEVELOPER_GUIDE.md) | Complete development documentation | Developers            |
+| [ARCHITECTURE.md](./reference/ARCHITECTURE.md)    | System architecture and design     | Architects/Developers |
+| [SETUP_GUIDE.md](./01-SETUP_GUIDE.md)             | Dependency setup and configuration | DevOps/Setup          |
 
 ### 🧩 Component Documentation
 
@@ -33,10 +33,10 @@ Welcome to the comprehensive documentation for the GLAD Labs AI Co-Founder Syste
 
 ### 📋 Standards & Guidelines
 
-| Document                                          | Purpose                               |
-| ------------------------------------------------- | ------------------------------------- |
+| Document                                                  | Purpose                               |
+| --------------------------------------------------------- | ------------------------------------- |
 | [GLAD Labs Standards](./reference/GLAD-LABS-STANDARDS.md) | Coding standards and best practices   |
-| [Data Schemas](./reference/data_schemas.md)       | Database and API schema documentation |
+| [Data Schemas](./reference/data_schemas.md)               | Database and API schema documentation |
 
 ## 🚀 Quick Navigation
 
