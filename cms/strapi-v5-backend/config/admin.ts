@@ -4,6 +4,11 @@ export default ({ env }) => ({
     sessions: {
       maxRefreshTokenLifespan: 60 * 60 * 24 * 30, // 30 days
       maxSessionLifespan: 60 * 60 * 24 * 7, // 7 days
+      cookie: {
+        secure: false, // Railway proxy handles SSL, internal connection is HTTP
+        httpOnly: true,
+        sameSite: 'lax',
+      },
     },
   },
   apiToken: {
