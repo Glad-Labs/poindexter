@@ -12,11 +12,10 @@
 export default ({ env }) => ({
   host: env('HOST', '0.0.0.0'),
   port: env.int('PORT', 1337),
+  proxy: true,
   app: {
     keys: env.array('APP_KEYS'),
+    proxy: true,
   },
-  url: env(
-    'URL', // Use the URL env var set in Railway
-    'https://glad-labs-strapi-v5-backend-production.up.railway.app'
-  ),
+  url: env('URL'),
 });
