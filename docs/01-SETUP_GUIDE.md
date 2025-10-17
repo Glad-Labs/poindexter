@@ -408,6 +408,7 @@ The easiest way to deploy Strapi to production is using the official Railway Str
 **Template URL:** https://railway.com/template/strapi
 
 **Features:**
+
 - One-click deployment
 - Includes PostgreSQL database
 - Automatic SSL/HTTPS
@@ -416,6 +417,7 @@ The easiest way to deploy Strapi to production is using the official Railway Str
 - Full monitoring dashboard
 
 **Setup Steps:**
+
 1. Click the template link above
 2. Authorize Railway with GitHub
 3. Deploy (takes ~5 minutes)

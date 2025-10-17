@@ -2,7 +2,7 @@
 
 **Date:** October 17, 2025  
 **Environment:** Production (Railway)  
-**Status:** Ready for configuration  
+**Status:** Ready for configuration
 
 ---
 
@@ -37,6 +37,7 @@ This is your primary content type for generated articles.
 4. **Add Fields** (in this order)
 
 **Field 1: Title**
+
 - Type: `Text`
 - Name: `title`
 - ✅ Required
@@ -44,6 +45,7 @@ This is your primary content type for generated articles.
 - ✅ Private: No
 
 **Field 2: Slug**
+
 - Type: `Text`
 - Name: `slug`
 - ✅ Required
@@ -52,24 +54,28 @@ This is your primary content type for generated articles.
 - Help text: "URL-friendly version of title"
 
 **Field 3: Content**
+
 - Type: `Rich Text` (Markdown)
 - Name: `content`
 - ✅ Required
 - Private: No
 
 **Field 4: Excerpt**
+
 - Type: `Text` (Long text)
 - Name: `excerpt`
 - Private: No
 - Help text: "Brief summary for previews"
 
 **Field 5: Featured Image**
+
 - Type: `Media`
 - Name: `featuredImage`
 - Allow multiple: No
 - Private: No
 
 **Field 6: Category**
+
 - Type: `Enumeration`
 - Name: `category`
 - Options:
@@ -81,12 +87,14 @@ This is your primary content type for generated articles.
 - Default value: `Technology`
 
 **Field 7: Tags**
+
 - Type: `JSON`
 - Name: `tags`
 - Private: No
 - Help text: "Array of tag strings"
 
 **Field 8: SEO**
+
 - Type: `Component`
 - Name: `seo`
 - ✅ Create a new component
@@ -98,6 +106,7 @@ This is your primary content type for generated articles.
   - `ogImage` (Media)
 
 **Field 9: Status**
+
 - Type: `Enumeration`
 - Name: `status`
 - Options:
@@ -107,6 +116,7 @@ This is your primary content type for generated articles.
 - Default value: `draft`
 
 **Field 10: Published At**
+
 - Type: `DateTime`
 - Name: `publishedAt`
 - Private: No
@@ -132,25 +142,30 @@ For organizing and categorizing content generation topics.
 3. **Add Fields**
 
 **Field 1: Name**
+
 - Type: `Text`
 - Name: `name`
 - ✅ Required
 - ✅ Unique
 
 **Field 2: Description**
+
 - Type: `Text` (Long)
 - Name: `description`
 
 **Field 3: Keywords**
+
 - Type: `JSON`
 - Name: `keywords`
 - Help text: "Array of relevant keywords"
 
 **Field 4: Icon**
+
 - Type: `Media`
 - Name: `icon`
 
 **Field 5: Featured**
+
 - Type: `Boolean`
 - Name: `featured`
 - Default value: false
@@ -170,16 +185,20 @@ For content attribution.
 2. **Add Fields**
 
 **Field 1: Name**
+
 - Type: `Text`
 - ✅ Required
 
 **Field 2: Bio**
+
 - Type: `Text` (Long)
 
 **Field 3: Email**
+
 - Type: `Email`
 
 **Field 4: Avatar**
+
 - Type: `Media`
 
 3. **Save**
@@ -362,19 +381,23 @@ GET /api/blog-posts?fields[0]=title&fields[1]=slug
 ## Troubleshooting
 
 ### Issue: "Content type not found"
+
 - Make sure you **Published** the content type
 - Check API ID matches in your requests
 
 ### Issue: "Unauthorized" error
+
 - Verify your API token is correct
 - Check that the token hasn't expired
 - Verify permissions are set correctly in the role
 
 ### Issue: "Field validation failed"
+
 - Check required fields are included
 - Verify field types match your schema
 
 ### Issue: "Slug must be unique"
+
 - Each blog post needs a unique slug
 - Include timestamp or UUID to ensure uniqueness
 

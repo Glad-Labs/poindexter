@@ -2,7 +2,7 @@
 
 **Date:** October 17, 2025  
 **Status:** ✅ PRODUCTION LIVE  
-**Approach:** Railway Official Strapi Template  
+**Approach:** Railway Official Strapi Template
 
 ---
 
@@ -24,6 +24,7 @@ You are now using the official **Railway Strapi Template** from https://railway.
 ## 📋 Current Setup Status
 
 ### Infrastructure
+
 - ✅ Railway account and project created
 - ✅ PostgreSQL database provisioned
 - ✅ Strapi instance running at: `https://glad-labs-strapi-v5-backend-production.up.railway.app`
@@ -31,12 +32,14 @@ You are now using the official **Railway Strapi Template** from https://railway.
 - ✅ SSL/HTTPS enabled automatically
 
 ### Application
+
 - ✅ Strapi v5.27.0 running
 - ✅ Admin panel accessible
 - ✅ API endpoints operational
 - ✅ Database connected
 
 ### Next Steps
+
 - ⏳ Create content types (blog posts, articles, etc.)
 - ⏳ Configure API permissions
 - ⏳ Connect content generation pipeline
@@ -82,6 +85,7 @@ Your next phase is to create the content types needed for the content generation
 ### Recommended Content Types
 
 #### 1. **Blog Post** (Primary)
+
 ```
 - Title (String, required)
 - Slug (String, required, unique)
@@ -99,6 +103,7 @@ Your next phase is to create the content types needed for the content generation
 ```
 
 #### 2. **Content Topic** (For organization)
+
 ```
 - Name (String, required)
 - Description (Text)
@@ -108,6 +113,7 @@ Your next phase is to create the content types needed for the content generation
 ```
 
 #### 3. **Author** (For attribution)
+
 ```
 - Name (String, required)
 - Bio (Text)
@@ -116,6 +122,7 @@ Your next phase is to create the content types needed for the content generation
 ```
 
 #### 4. **SEO Component** (Reusable)
+
 ```
 - Meta Title (String)
 - Meta Description (Text)
@@ -160,18 +167,21 @@ STRAPI_API_URL=https://glad-labs-strapi-v5-backend-production.up.railway.app
 ## 📊 Monitoring & Maintenance
 
 ### Railway Dashboard
+
 - Visit https://railway.app and select your project
 - Monitor logs, CPU, memory usage
 - View deployment history
 - Manage environment variables
 
 ### Strapi Admin Panel
+
 - Access at: https://glad-labs-strapi-v5-backend-production.up.railway.app/admin
 - Create and manage content
 - Monitor API usage
 - Configure plugins
 
 ### Health Checks
+
 - **API Status:** `curl https://glad-labs-strapi-v5-backend-production.up.railway.app/api`
 - **Admin Access:** Browser test of admin panel
 - **Database:** Automatically monitored by Railway

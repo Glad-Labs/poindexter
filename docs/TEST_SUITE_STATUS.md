@@ -274,7 +274,7 @@ pytest test_content_pipeline.py -v            # Pipeline tests
 - **[E2E Pipeline Setup](./E2E_PIPELINE_SETUP.md)** - Detailed pipeline configuration
 - **[Testing Standards](./reference/TESTING.md)** - Testing best practices
 - **[Developer Guide](./guides/DEVELOPER_GUIDE.md)** - Development workflow
-- **[PowerShell Scripts](./POWERSHELL_SCRIPTS_FIXED.md)** - Service management
+- **[PowerShell Scripts](./guides/POWERSHELL_SCRIPTS.md)** - Service management
 
 ---
 
