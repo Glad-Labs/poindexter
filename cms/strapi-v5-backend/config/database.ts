@@ -1,18 +1,18 @@
 /**
  * Strapi Database Configuration
- * 
+ *
  * Supports multiple database clients (postgres, mysql, sqlite).
- * 
+ *
  * Railway.app Production:
  * - DATABASE_CLIENT=postgres (MUST be set in Railway env vars)
  * - DATABASE_URL=postgres://user:pass@host:port/db (auto-provided by Railway)
  * - Use DATABASE_PRIVATE_URL to avoid egress fees
- * 
+ *
  * Local Development:
  * - Defaults to SQLite for quick setup
- * 
+ *
  * Important: PostgreSQL driver (pg) must be in package.json dependencies
- * 
+ *
  * @see https://docs.strapi.io/dev-docs/configurations/database
  * @see https://docs.railway.app/databases/postgresql
  */

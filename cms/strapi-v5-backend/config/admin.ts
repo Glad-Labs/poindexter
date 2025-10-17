@@ -2,7 +2,8 @@
  * Strapi Admin Panel Configuration
  * 
  * Railway.app Cookie Settings:
- * - cookieSecure: false - Railway's proxy handles SSL (HTTPS → HTTP internally)
+ * - Cookie security is controlled by middlewares.ts (session middleware)
+ * - Railway's proxy handles SSL (HTTPS → HTTP internally)
  * - Setting secure=true causes "Cannot send secure cookie over unencrypted connection"
  * 
  * Security Note: External users still connect via HTTPS (Railway proxy)
@@ -13,9 +14,6 @@
 export default ({ env }) => ({
   auth: {
     secret: env('ADMIN_JWT_SECRET'), // Used to sign admin JWT tokens
-    options: {
-      cookieSecure: false, // CRITICAL: Disable for Railway proxy SSL termination
-    },
   },
   apiToken: {
     salt: env('API_TOKEN_SALT'), // Used to salt API tokens
