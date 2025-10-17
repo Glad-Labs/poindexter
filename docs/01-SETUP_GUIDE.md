@@ -399,7 +399,36 @@ curl http://localhost:11434/api/generate -d '{
 
 ## Production Deployment
 
-### Cloud Providers
+### Strapi CMS Deployment (Railway Template - RECOMMENDED)
+
+**Status:** ✅ PRODUCTION LIVE
+
+The easiest way to deploy Strapi to production is using the official Railway Strapi Template:
+
+**Template URL:** https://railway.com/template/strapi
+
+**Features:**
+- One-click deployment
+- Includes PostgreSQL database
+- Automatic SSL/HTTPS
+- Environment variables pre-configured
+- Automatic backups
+- Full monitoring dashboard
+
+**Setup Steps:**
+1. Click the template link above
+2. Authorize Railway with GitHub
+3. Deploy (takes ~5 minutes)
+4. Copy the admin URL from Railway dashboard
+5. Create content types via admin panel
+
+**Admin Panel:** https://glad-labs-strapi-v5-backend-production.up.railway.app/admin
+
+**Complete Setup Guide:** See [RAILWAY_STRAPI_TEMPLATE_SETUP.md](./RAILWAY_STRAPI_TEMPLATE_SETUP.md)
+
+---
+
+### Cloud Providers (For Backend & Frontend)
 
 #### Google Cloud Platform (Recommended)
 
