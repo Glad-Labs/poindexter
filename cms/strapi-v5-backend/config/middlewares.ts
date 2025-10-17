@@ -13,7 +13,10 @@
  */
 export default [
   // CRITICAL: Load Railway proxy cookie fix FIRST
-  'global::middleware',
+  {
+    name: 'global::middleware',
+    config: {},
+  },
   'strapi::logger',
   'strapi::errors',
   'strapi::security',
