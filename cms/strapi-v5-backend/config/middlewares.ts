@@ -12,11 +12,6 @@
  * @see https://docs.railway.app/deploy/deployments#https-and-ssl
  */
 export default [
-  // CRITICAL: Load Railway proxy cookie fix FIRST
-  {
-    name: 'global::middleware',
-    config: {},
-  },
   'strapi::logger',
   'strapi::errors',
   'strapi::security',

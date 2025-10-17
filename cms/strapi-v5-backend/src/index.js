@@ -16,6 +16,37 @@ module.exports = {
    * run jobs, or perform some special logic.
    */
   async bootstrap({ strapi }) {
+    // ========================================
+    // RAILWAY PROXY COOKIE FIX
+    // ========================================
+    // Patch Koa to force all cookies to secure: false for Railway proxy
+    const app = strapi.server.app;
+    
+    // Store the original context creation
+    const originalCreateContext = app.createContext.bind(app);
+    
+    // Override createContext to patch cookies.set
+    app.createContext = function(req, res) {
+      const ctx = originalCreateContext(req, res);
+      
+      // Store original cookie set method
+      const originalSet = ctx.cookies.set.bind(ctx.cookies);
+      
+      // Override to force secure: false
+      ctx.cookies.set = function(name, value, opts = {}) {
+        const modifiedOpts = {
+          ...opts,
+          secure: false, // Railway proxy handles SSL
+        };
+        return originalSet(name, value, modifiedOpts);
+      };
+      
+      return ctx;
+    };
+    
+    strapi.log.info('✅ Railway proxy cookie patch applied');
+    // ========================================
+
     console.log('🔧 Setting up public permissions for all content types...');
 
     try {
