@@ -2,10 +2,11 @@
  * Strapi Admin Panel Configuration
  *
  * Railway proxy terminates SSL (HTTPS → HTTP internally)
- * We set secure: false to let Railway handle SSL wrapping
- * This works for both local HTTP and Railway HTTPS without detection
+ * Koa (Node.js framework) automatically detects HTTPS via X-Forwarded-Proto header
+ * Set secure: true so cookies work over HTTPS on Railway
  *
  * @see https://docs.strapi.io/dev-docs/configurations/admin-panel
+ * @see https://koajs.com/
  */
 export default ({ env }) => ({
   url: env('ADMIN_URL', '/admin'),
@@ -16,9 +17,9 @@ export default ({ env }) => ({
       maxSessionLifespan: 1000 * 60 * 60 * 24 * 7,
       maxRefreshTokenLifespan: 1000 * 60 * 60 * 24 * 30,
       cookie: {
-        secure: false, // Railway proxy handles SSL wrapping
+        secure: true, // Set to true - Koa detects HTTPS via X-Forwarded-Proto
         httpOnly: true,
-        sameSite: 'lax',
+        sameSite: 'strict',
       },
     },
   },
