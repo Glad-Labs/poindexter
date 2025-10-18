@@ -13,43 +13,43 @@
 
 ### 🟢 START HERE
 
-| File | Purpose | Read Time |
-|------|---------|-----------|
-| **NEXT_STEPS.md** | What to do right now | 2 min |
-| **VISUAL_SUMMARY.md** | Visual overview of fix | 3 min |
+| File                  | Purpose                | Read Time |
+| --------------------- | ---------------------- | --------- |
+| **NEXT_STEPS.md**     | What to do right now   | 2 min     |
+| **VISUAL_SUMMARY.md** | Visual overview of fix | 3 min     |
 
 ### 🔵 DEPLOYMENT STATUS
 
-| File | Purpose | Read Time |
-|------|---------|-----------|
-| **DEPLOYMENT_SUMMARY.md** | Full deployment guide | 5 min |
-| **FIX_DEPLOYED.md** | What changed & why | 5 min |
+| File                      | Purpose               | Read Time |
+| ------------------------- | --------------------- | --------- |
+| **DEPLOYMENT_SUMMARY.md** | Full deployment guide | 5 min     |
+| **FIX_DEPLOYED.md**       | What changed & why    | 5 min     |
 
 ### 🟣 TECHNICAL DETAILS
 
-| File | Purpose | Read Time |
-|------|---------|-----------|
-| **CRITICAL_COOKIE_FIX.md** | Deep technical explanation | 8 min |
-| **README_COOKIE_FIX.md** | Complete reference | 10 min |
-| **docs/reference/COOKIE_FIX_VISUAL_GUIDE.md** | Network diagrams | 10 min |
+| File                                          | Purpose                    | Read Time |
+| --------------------------------------------- | -------------------------- | --------- |
+| **CRITICAL_COOKIE_FIX.md**                    | Deep technical explanation | 8 min     |
+| **README_COOKIE_FIX.md**                      | Complete reference         | 10 min    |
+| **docs/reference/COOKIE_FIX_VISUAL_GUIDE.md** | Network diagrams           | 10 min    |
 
 ### 🟠 TROUBLESHOOTING
 
-| File | Purpose | Read Time |
-|------|---------|-----------|
-| **docs/troubleshooting/QUICK_FIX_CHECKLIST.md** | Quick action items | 3 min |
-| **docs/troubleshooting/STRAPI_COOKIE_ERROR_DIAGNOSTIC.md** | Full diagnostic guide | 15 min |
+| File                                                       | Purpose               | Read Time |
+| ---------------------------------------------------------- | --------------------- | --------- |
+| **docs/troubleshooting/QUICK_FIX_CHECKLIST.md**            | Quick action items    | 3 min     |
+| **docs/troubleshooting/STRAPI_COOKIE_ERROR_DIAGNOSTIC.md** | Full diagnostic guide | 15 min    |
 
 ### 🟡 REFERENCE
 
-| File | Purpose | Read Time |
-|------|---------|-----------|
-| **docs/deployment/RAILWAY_ENV_VARIABLES.md** | Environment variables | 10 min |
+| File                                         | Purpose               | Read Time |
+| -------------------------------------------- | --------------------- | --------- |
+| **docs/deployment/RAILWAY_ENV_VARIABLES.md** | Environment variables | 10 min    |
 
 ### 🔧 TOOLS
 
-| File | Purpose | Usage |
-|------|---------|-------|
+| File                                      | Purpose                 | Usage                                       |
+| ----------------------------------------- | ----------------------- | ------------------------------------------- |
 | **cms/strapi-v5-backend/validate-env.js** | Validate Railway config | `railway shell` then `node validate-env.js` |
 
 ---
@@ -57,6 +57,7 @@
 ## 🎯 Read Based on Your Situation
 
 ### 👤 "I just want it to work"
+
 1. Read: **NEXT_STEPS.md** (2 min)
 2. Run: `railway logs -f`
 3. Wait for: "Strapi fully loaded"
@@ -64,11 +65,13 @@
 5. Done! ✅
 
 ### 🤔 "I want to understand what happened"
+
 1. Read: **VISUAL_SUMMARY.md** (3 min)
 2. Read: **CRITICAL_COOKIE_FIX.md** (8 min)
 3. Optional: **docs/reference/COOKIE_FIX_VISUAL_GUIDE.md** (10 min)
 
 ### 🐛 "Something is still broken"
+
 1. Read: **docs/troubleshooting/QUICK_FIX_CHECKLIST.md** (3 min)
 2. Check logs: `railway logs -f | grep -i error`
 3. Run validator: `node cms/strapi-v5-backend/validate-env.js`
@@ -76,6 +79,7 @@
 5. Follow troubleshooting steps
 
 ### 📚 "I want the complete picture"
+
 1. Read: **DEPLOYMENT_SUMMARY.md** (5 min)
 2. Read: **README_COOKIE_FIX.md** (10 min)
 3. Read: **docs/reference/COOKIE_FIX_VISUAL_GUIDE.md** (10 min)
@@ -146,16 +150,16 @@ START
 
 ## 📋 Quick Reference
 
-| Need | File | Location |
-|------|------|----------|
-| What to do now | NEXT_STEPS.md | Root |
-| Simple overview | VISUAL_SUMMARY.md | Root |
-| Why it works | CRITICAL_COOKIE_FIX.md | Root |
-| Troubleshooting | QUICK_FIX_CHECKLIST.md | docs/troubleshooting/ |
-| Network details | COOKIE_FIX_VISUAL_GUIDE.md | docs/reference/ |
-| Environment vars | RAILWAY_ENV_VARIABLES.md | docs/deployment/ |
-| Full diagnostic | STRAPI_COOKIE_ERROR_DIAGNOSTIC.md | docs/troubleshooting/ |
-| Validation tool | validate-env.js | cms/strapi-v5-backend/ |
+| Need             | File                              | Location               |
+| ---------------- | --------------------------------- | ---------------------- |
+| What to do now   | NEXT_STEPS.md                     | Root                   |
+| Simple overview  | VISUAL_SUMMARY.md                 | Root                   |
+| Why it works     | CRITICAL_COOKIE_FIX.md            | Root                   |
+| Troubleshooting  | QUICK_FIX_CHECKLIST.md            | docs/troubleshooting/  |
+| Network details  | COOKIE_FIX_VISUAL_GUIDE.md        | docs/reference/        |
+| Environment vars | RAILWAY_ENV_VARIABLES.md          | docs/deployment/       |
+| Full diagnostic  | STRAPI_COOKIE_ERROR_DIAGNOSTIC.md | docs/troubleshooting/  |
+| Validation tool  | validate-env.js                   | cms/strapi-v5-backend/ |
 
 ---
 
@@ -165,7 +169,7 @@ START
 ✅ **Deployed automatically** via git push  
 ✅ **No manual steps** on Railway needed  
 ✅ **Fully documented** with 7+ reference guides  
-✅ **Ready to test** in 2-3 minutes  
+✅ **Ready to test** in 2-3 minutes
 
 ---
 

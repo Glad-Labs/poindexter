@@ -13,6 +13,7 @@
 ## 📋 DO THIS NOW
 
 ### ☐ Step 1: Watch the Deployment (Next 2-3 minutes)
+
 ```bash
 # In a terminal:
 railway logs -f
@@ -22,6 +23,7 @@ railway logs -f
 ```
 
 **What to look for:**
+
 ```
 ✅ "Application started"
 ✅ "Listening on http://0.0.0.0:1337"
@@ -29,6 +31,7 @@ railway logs -f
 ```
 
 ### ☐ Step 2: Test Admin Login
+
 Once logs show "Strapi fully loaded":
 
 ```
@@ -36,6 +39,7 @@ https://glad-labs-strapi-v5-backend-production.up.railway.app/admin
 ```
 
 **Expected result:**
+
 - Can see login page
 - Can enter credentials
 - Dashboard loads without errors ✅
@@ -54,17 +58,20 @@ railway logs -f | grep -i "cookie\|Cannot send"
 ## 🆘 IF IT STILL FAILS
 
 ### Check #1: Environment Variables
+
 ```bash
 railway secret list | grep -E "URL|DATABASE_CLIENT"
 ```
 
 **Should show:**
+
 - `URL=https://glad-labs-strapi-v5-backend-production.up.railway.app`
 - `DATABASE_CLIENT=postgres`
 
 **If missing:** Go to Railway dashboard and add them
 
 ### Check #2: Validate Config
+
 ```bash
 railway shell
 node cms/strapi-v5-backend/validate-env.js
@@ -73,6 +80,7 @@ node cms/strapi-v5-backend/validate-env.js
 **Should show:** All ✅ checks
 
 ### Check #3: Force Redeploy
+
 1. Go to Railway dashboard
 2. Select Strapi service
 3. Go to Settings
@@ -82,9 +90,11 @@ node cms/strapi-v5-backend/validate-env.js
 7. Check logs again
 
 ### Check #4: Clear Browser Cache
+
 ```
 Ctrl+Shift+Delete (or Cmd+Shift+Delete on Mac)
 ```
+
 Delete all cookies for the domain, then try again
 
 ---
@@ -96,6 +106,7 @@ Delete all cookies for the domain, then try again
    - Follow troubleshooting steps in order
 
 2. **Check the validator**:
+
    ```bash
    railway shell
    node cms/strapi-v5-backend/validate-env.js
@@ -110,13 +121,13 @@ Delete all cookies for the domain, then try again
 
 ## ✨ Timeline
 
-| Time | Action |
-|------|--------|
-| Now | Start watching logs |
-| +2 min | Deployment building |
+| Time   | Action                           |
+| ------ | -------------------------------- |
+| Now    | Start watching logs              |
+| +2 min | Deployment building              |
 | +3 min | Should see "Strapi fully loaded" |
-| +4 min | Test admin login |
-| +5 min | ✅ Success or troubleshoot |
+| +4 min | Test admin login                 |
+| +5 min | ✅ Success or troubleshoot       |
 
 ---
 

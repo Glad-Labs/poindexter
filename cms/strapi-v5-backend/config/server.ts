@@ -20,6 +20,6 @@ export default ({ env }) => ({
   url: env('URL'),
   proxy: {
     enabled: true,
-    trust: ['127.0.0.1'],  // Trust Railway's internal network
+    trust: ['127.0.0.1'], // Trust Railway's internal network
   },
 });

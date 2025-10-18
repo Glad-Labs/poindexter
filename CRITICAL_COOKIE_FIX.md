@@ -5,6 +5,7 @@
 Your `force-https` middleware is **a workaround** that indicates Strapi isn't properly detecting HTTPS from Railway's proxy headers.
 
 **Current flow:**
+
 ```
 1. Railway sends: X-Forwarded-Proto: https
 2. Your middleware checks for it manually
@@ -14,6 +15,7 @@ Your `force-https` middleware is **a workaround** that indicates Strapi isn't pr
 ```
 
 **Why it's still failing:**
+
 - The middleware sets `ctx.scheme` but Koa session middleware might not respect it
 - Or the `proxy` configuration in `server.ts` is NOT properly reading the header
 
@@ -42,12 +44,13 @@ export default ({ env }) => ({
   url: env('URL'),
   proxy: {
     enabled: true,
-    trust: ['127.0.0.1'],  // Railway's internal IP
+    trust: ['127.0.0.1'], // Railway's internal IP
   },
 });
 ```
 
 **Why this works:**
+
 - Tells Koa to trust proxy headers from 127.0.0.1 (Railway's internal network)
 - Koa then properly respects X-Forwarded-Proto header
 - Sessions middleware uses the correct scheme
@@ -67,15 +70,15 @@ export default () => {
     // Detect HTTPS from proxy
     if (ctx.request.header['x-forwarded-proto'] === 'https') {
       ctx.scheme = 'https';
-      ctx.secure = true;  // IMPORTANT: Also set secure flag
+      ctx.secure = true; // IMPORTANT: Also set secure flag
     }
-    
+
     // Also check the default - if URL starts with https, we're on HTTPS
     if (ctx.URL?.href?.startsWith('https')) {
       ctx.scheme = 'https';
       ctx.secure = true;
     }
-    
+
     await next();
   };
 };
@@ -140,27 +143,34 @@ Koa has a built-in trust mechanism. When you set `proxy: { enabled: true, trust:
 Check these in order:
 
 **1. Is URL set?**
+
 ```bash
 railway secret list | grep URL
 ```
+
 Should show: `URL=https://your-domain.up.railway.app`
 
 **2. Are headers being sent?**
+
 ```bash
 railway shell
 curl -I -H "X-Forwarded-Proto: https" http://localhost:1337/admin
 ```
+
 Should NOT error about secure cookies
 
 **3. Check exact error**
+
 ```bash
 railway logs -f | grep -A5 "Cannot send secure cookie"
 ```
+
 Look for the exact circumstances
 
 **4. Nuclear option - disable cookie security temporarily**
 
 Add to `src/index.ts` or middleware:
+
 ```typescript
 // TEMPORARY DEBUG ONLY
 app.use(async (ctx, next) => {
@@ -180,4 +190,3 @@ app.use(async (ctx, next) => {
 - **Strapi Proxy Docs**: https://docs.strapi.io/dev-docs/configurations/server#proxy
 
 The explicit `proxy: { enabled: true, trust: ['127.0.0.1'] }` is the correct approach for Railway.
-

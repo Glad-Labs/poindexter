@@ -180,7 +180,7 @@ WHEN IT'S WORKING ✅
 
 ✓ Logs show "Strapi fully loaded"
 ✓ Can visit /admin page
-✓ Can enter login credentials  
+✓ Can enter login credentials
 ✓ Dashboard appears without errors
 ✓ No "Cannot send secure cookie" in logs
 ✓ Admin panel fully functional

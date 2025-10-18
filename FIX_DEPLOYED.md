@@ -5,6 +5,7 @@
 Your `server.ts` had `proxy: true`, which tells Koa to trust proxy headers **but doesn't explicitly tell it which IPs to trust**.
 
 On Railway, this can cause Koa's session middleware to NOT properly detect the HTTPS scheme, resulting in:
+
 ```
 Cannot send secure cookie over unencrypted connection
 ```
@@ -14,11 +15,13 @@ Cannot send secure cookie over unencrypted connection
 **File: `cms/strapi-v5-backend/config/server.ts`**
 
 ### Before (Broken)
+
 ```typescript
 proxy: true,
 ```
 
 ### After (Fixed) ✅
+
 ```typescript
 proxy: {
   enabled: true,
@@ -27,6 +30,7 @@ proxy: {
 ```
 
 **Why this works:**
+
 - Explicitly tells Koa to trust proxy headers from Railway's internal IPs
 - Koa properly reads `X-Forwarded-Proto: https` header
 - Session middleware knows connection is actually HTTPS
@@ -42,6 +46,7 @@ proxy: {
 ## 📋 What To Do Now
 
 ### Step 1: Monitor Deployment
+
 ```bash
 # Watch logs in real time
 railway logs -f
@@ -53,7 +58,9 @@ railway logs -f
 ```
 
 ### Step 2: Test Admin Login
+
 Once deployment completes:
+
 ```
 https://glad-labs-strapi-v5-backend-production.up.railway.app/admin
 ```
@@ -63,6 +70,7 @@ Try to login. It should work now! ✅
 ### Step 3: Verify Environment Variables
 
 If still broken, verify on Railway dashboard:
+
 1. Go to your Strapi service
 2. Click **Variables**
 3. Ensure you have:
@@ -71,6 +79,7 @@ If still broken, verify on Railway dashboard:
    - All other required vars
 
 Or run the validator:
+
 ```bash
 railway shell
 node cms/strapi-v5-backend/validate-env.js
@@ -119,6 +128,7 @@ ERROR: "Cannot send secure cookie over unencrypted connection"
 ## ✨ Additional Improvements
 
 ### 1. Environment Validator
+
 Added `validate-env.js` to check your Railway configuration:
 
 ```bash
@@ -127,30 +137,36 @@ node cms/strapi-v5-backend/validate-env.js
 ```
 
 This checks:
+
 - DATABASE_CLIENT = postgres ✓
 - URL starts with https:// ✓
 - All secrets are set ✓
 
 ### 2. Diagnostic Guide
+
 Created `CRITICAL_COOKIE_FIX.md` with complete troubleshooting steps
 
 ### 3. Force-HTTPS Middleware
+
 Your existing `src/middlewares/force-https.ts` now has backup detection for extra safety
 
 ## 📞 If Still Broken
 
 1. **Check logs first**:
+
    ```bash
    railway logs -f | grep -i "cookie\|secure\|https"
    ```
 
 2. **Run validator**:
+
    ```bash
    railway shell
    node cms/strapi-v5-backend/validate-env.js
    ```
 
 3. **Verify URL is set**:
+
    ```bash
    railway shell
    echo $URL
@@ -187,15 +203,15 @@ curl -I https://YOUR_DOMAIN/admin
 
 ## 📊 Timeline
 
-| Time | Event |
-|------|-------|
-| 06:02:29 | Original error observed |
-| --- | Investigation: found `proxy: true` was too loose |
-| --- | Updated to explicit `proxy: { enabled: true, trust: [...] }` |
-| Just now | Committed and pushed fix |
-| +1 min | Railway starts rebuilding |
-| +2-3 min | Deployment complete |
-| +3-5 min | Test and verify ✅ |
+| Time     | Event                                                        |
+| -------- | ------------------------------------------------------------ |
+| 06:02:29 | Original error observed                                      |
+| ---      | Investigation: found `proxy: true` was too loose             |
+| ---      | Updated to explicit `proxy: { enabled: true, trust: [...] }` |
+| Just now | Committed and pushed fix                                     |
+| +1 min   | Railway starts rebuilding                                    |
+| +2-3 min | Deployment complete                                          |
+| +3-5 min | Test and verify ✅                                           |
 
 ---
 

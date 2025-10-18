@@ -12,7 +12,9 @@
 ## 🎯 What Changed
 
 ### The Problem
+
 Your `server.ts` had:
+
 ```typescript
 proxy: true,  // ❌ Too loose - doesn't explicitly trust proxies
 ```
@@ -20,7 +22,9 @@ proxy: true,  // ❌ Too loose - doesn't explicitly trust proxies
 This told Koa to trust proxy headers, but without an explicit IP allowlist, Railway's internal requests might not be properly recognized, causing Koa to think the connection is HTTP even though it's actually HTTPS.
 
 ### The Solution
+
 Updated to:
+
 ```typescript
 proxy: {
   enabled: true,
@@ -29,6 +33,7 @@ proxy: {
 ```
 
 Now Koa:
+
 1. Recognizes requests from Railway's internal network
 2. Reads the `X-Forwarded-Proto: https` header
 3. Sets `ctx.scheme = 'https'` and `ctx.secure = true`
@@ -39,15 +44,15 @@ Now Koa:
 
 ## 📁 Files Changed
 
-| File | Change | Reason |
-|------|--------|--------|
-| `cms/strapi-v5-backend/config/server.ts` | `proxy: true` → explicit config | Fix root cause |
-| `cms/strapi-v5-backend/validate-env.js` | NEW | Validate Railway env vars |
-| `CRITICAL_COOKIE_FIX.md` | NEW | Complete technical explanation |
-| `FIX_DEPLOYED.md` | NEW | Deployment status & next steps |
-| `docs/troubleshooting/QUICK_FIX_CHECKLIST.md` | NEW | Quick action checklist |
-| `docs/troubleshooting/STRAPI_COOKIE_ERROR_DIAGNOSTIC.md` | NEW | Full diagnostic guide |
-| `docs/deployment/RAILWAY_ENV_VARIABLES.md` | NEW | Environment reference |
+| File                                                     | Change                          | Reason                         |
+| -------------------------------------------------------- | ------------------------------- | ------------------------------ |
+| `cms/strapi-v5-backend/config/server.ts`                 | `proxy: true` → explicit config | Fix root cause                 |
+| `cms/strapi-v5-backend/validate-env.js`                  | NEW                             | Validate Railway env vars      |
+| `CRITICAL_COOKIE_FIX.md`                                 | NEW                             | Complete technical explanation |
+| `FIX_DEPLOYED.md`                                        | NEW                             | Deployment status & next steps |
+| `docs/troubleshooting/QUICK_FIX_CHECKLIST.md`            | NEW                             | Quick action checklist         |
+| `docs/troubleshooting/STRAPI_COOKIE_ERROR_DIAGNOSTIC.md` | NEW                             | Full diagnostic guide          |
+| `docs/deployment/RAILWAY_ENV_VARIABLES.md`               | NEW                             | Environment reference          |
 
 ---
 
@@ -78,18 +83,22 @@ Now Koa:
 ## ✅ What To Do Right Now
 
 ### 1. Monitor Deployment (Next 2-3 minutes)
+
 ```bash
 railway logs -f
 ```
 
 **Wait for this message:**
+
 ```
 ✓ Strapi fully loaded
 🚀 Application started (http://0.0.0.0:1337)
 ```
 
 ### 2. Test Login
+
 Once deployment is complete:
+
 ```
 https://glad-labs-strapi-v5-backend-production.up.railway.app/admin
 ```
@@ -97,6 +106,7 @@ https://glad-labs-strapi-v5-backend-production.up.railway.app/admin
 Try to login. **Should work now!** ✅
 
 ### 3. Verify No Errors
+
 ```bash
 railway logs -f | grep -i "Cannot send secure cookie"
 # Should show: (nothing)
@@ -161,7 +171,7 @@ railway logs -f | grep -i "Cannot send secure cookie"
 ✅ **Only trusts 127.0.0.1** - Just Railway's internal network  
 ✅ **Cookies sent over HTTPS** - Browser receives them encrypted  
 ✅ **Secure flag prevents HTTP** - Cookies only sent over HTTPS  
-✅ **HttpOnly flag** - JavaScript can't access (XSS protection)  
+✅ **HttpOnly flag** - JavaScript can't access (XSS protection)
 
 Same approach as Railway's official template!
 
@@ -169,13 +179,13 @@ Same approach as Railway's official template!
 
 ## 📋 Troubleshooting Quick Reference
 
-| Problem | Check | Fix |
-|---------|-------|-----|
-| Still getting cookie error | Logs show "Strapi fully loaded"? | Wait 3 min for deployment |
-| Deployment hasn't started | `git status` shows clean? | Already pushed ✅ |
-| Can't access admin | `URL` variable set on Railway? | Add to Variables section |
-| Login page loads but login fails | `ADMIN_JWT_SECRET` set? | Regenerate secrets |
-| Intermittent errors | Browser cookies cached? | Ctrl+Shift+Delete |
+| Problem                          | Check                            | Fix                       |
+| -------------------------------- | -------------------------------- | ------------------------- |
+| Still getting cookie error       | Logs show "Strapi fully loaded"? | Wait 3 min for deployment |
+| Deployment hasn't started        | `git status` shows clean?        | Already pushed ✅         |
+| Can't access admin               | `URL` variable set on Railway?   | Add to Variables section  |
+| Login page loads but login fails | `ADMIN_JWT_SECRET` set?          | Regenerate secrets        |
+| Intermittent errors              | Browser cookies cached?          | Ctrl+Shift+Delete         |
 
 ---
 
@@ -217,6 +227,7 @@ https://YOUR_DOMAIN/admin
 ## 🔄 Next Steps
 
 **Immediate (Next 5 minutes):**
+
 1. Run: `railway logs -f`
 2. Wait for: "Strapi fully loaded"
 3. Test: Go to `/admin` and login
@@ -224,6 +235,7 @@ https://YOUR_DOMAIN/admin
 **If Successful:** Done! 🎉
 
 **If Still Broken:**
+
 1. Read: `CRITICAL_COOKIE_FIX.md`
 2. Run: `validate-env.js` to check variables
 3. Follow: `STRAPI_COOKIE_ERROR_DIAGNOSTIC.md`
@@ -232,13 +244,13 @@ https://YOUR_DOMAIN/admin
 
 ## ✨ Summary
 
-| Component | Status |
-|-----------|--------|
-| Fix Code | ✅ Complete |
-| Deployment | 🚀 In Progress |
-| Monitoring Docs | ✅ Created |
-| Testing Docs | ✅ Created |
-| Troubleshooting | ✅ Complete |
+| Component       | Status         |
+| --------------- | -------------- |
+| Fix Code        | ✅ Complete    |
+| Deployment      | 🚀 In Progress |
+| Monitoring Docs | ✅ Created     |
+| Testing Docs    | ✅ Created     |
+| Troubleshooting | ✅ Complete    |
 
 **Status**: Ready to test in 2-3 minutes!
 
@@ -249,14 +261,17 @@ https://YOUR_DOMAIN/admin
 ## 🔗 Key Files
 
 **Main Config File:**
+
 - `cms/strapi-v5-backend/config/server.ts` ← THE FIX
 
 **Documentation:**
+
 - `CRITICAL_COOKIE_FIX.md` ← Technical deep-dive
 - `docs/troubleshooting/QUICK_FIX_CHECKLIST.md` ← Action items
 - `docs/troubleshooting/STRAPI_COOKIE_ERROR_DIAGNOSTIC.md` ← Full guide
 
 **Validation Tool:**
+
 - `cms/strapi-v5-backend/validate-env.js` ← Check env vars
 
 ---
@@ -270,4 +285,3 @@ The fix is deployed and live. Railway is building your app right now.
 **Expected**: Login works, no cookie errors! ✅
 
 Monitor with: `railway logs -f`
-
