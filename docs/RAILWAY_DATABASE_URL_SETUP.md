@@ -71,10 +71,13 @@ When you deploy to Railway with `DATABASE_CLIENT=postgres`, Strapi automatically
 ### Check if Connection is Working
 
 1. **View Strapi logs:**
+
    ```bash
    railway logs --service strapi-production
    ```
+
    Look for messages like:
+
    ```
    [strapi]: Database connection established ✓
    ```
@@ -98,21 +101,21 @@ Some cloud providers (like Render, Heroku) charge egress for database traffic an
 
 **Railway is different:** They've designed their infrastructure so the default `DATABASE_URL` is the internal connection. No separate setup needed.
 
-| Provider | Public URL | Private URL | Cost |
-|----------|-----------|-----------|------|
-| Railway | Same as internal | Not needed | ✅ Free |
-| Render | Has egress | Special private URL | ⚠️ Charged if wrong URL |
-| Heroku | Has egress | Separate private URL | ⚠️ Charged if wrong URL |
+| Provider | Public URL       | Private URL          | Cost                    |
+| -------- | ---------------- | -------------------- | ----------------------- |
+| Railway  | Same as internal | Not needed           | ✅ Free                 |
+| Render   | Has egress       | Special private URL  | ⚠️ Charged if wrong URL |
+| Heroku   | Has egress       | Separate private URL | ⚠️ Charged if wrong URL |
 
 ---
 
 ## Environment Variables Summary
 
-| Variable | Value | Required | Purpose |
-|----------|-------|----------|---------|
-| `DATABASE_CLIENT` | `postgres` | ✅ Yes | Tell Strapi to use PostgreSQL |
-| `DATABASE_URL` | Auto-provided by Railway | ✅ Yes | Connection string (internal) |
-| `DATABASE_SSL` | `false` (for Railway) | ❌ No | Railway handles SSL internally |
+| Variable          | Value                    | Required | Purpose                        |
+| ----------------- | ------------------------ | -------- | ------------------------------ |
+| `DATABASE_CLIENT` | `postgres`               | ✅ Yes   | Tell Strapi to use PostgreSQL  |
+| `DATABASE_URL`    | Auto-provided by Railway | ✅ Yes   | Connection string (internal)   |
+| `DATABASE_SSL`    | `false` (for Railway)    | ❌ No    | Railway handles SSL internally |
 
 **That's all you need!**
 
@@ -125,6 +128,7 @@ Some cloud providers (like Render, Heroku) charge egress for database traffic an
 **Cause:** `DATABASE_CLIENT` not set to `postgres`
 
 **Fix:**
+
 1. Go to Strapi service → Variables
 2. Add: `DATABASE_CLIENT=postgres`
 3. Redeploy
@@ -134,6 +138,7 @@ Some cloud providers (like Render, Heroku) charge egress for database traffic an
 **Cause:** PostgreSQL service isn't running or `DATABASE_URL` is malformed
 
 **Fix:**
+
 1. Verify PostgreSQL service exists in your Railway project
 2. Go to PostgreSQL service → Variables
 3. Copy `DATABASE_URL` value
@@ -146,6 +151,7 @@ Some cloud providers (like Render, Heroku) charge egress for database traffic an
 **Cause:** PostgreSQL service not connected to Strapi
 
 **Fix:**
+
 1. In Railway, go to your Strapi service
 2. Click "Variables"
 3. The `DATABASE_URL` should auto-populate from your PostgreSQL plugin
@@ -159,10 +165,11 @@ Some cloud providers (like Render, Heroku) charge egress for database traffic an
 For local development, your `database.ts` defaults to SQLite (no PostgreSQL needed):
 
 ```typescript
-const client = env('DATABASE_CLIENT', 'sqlite');  // Defaults to SQLite
+const client = env('DATABASE_CLIENT', 'sqlite'); // Defaults to SQLite
 ```
 
 To switch to PostgreSQL locally, create a `.env` file:
+
 ```bash
 DATABASE_CLIENT=postgres
 DATABASE_URL=postgresql://user:password@localhost:5432/strapi_db
@@ -173,6 +180,7 @@ DATABASE_URL=postgresql://user:password@localhost:5432/strapi_db
 ## Performance Notes
 
 Railway's internal connections are:
+
 - **Fast:** Direct internal network (no internet hops)
 - **Reliable:** No bandwidth throttling
 - **Cost-effective:** No egress charges
@@ -182,6 +190,7 @@ Railway's internal connections are:
 ## Related Configuration
 
 Your Strapi setup also includes:
+
 - ✅ Connection pooling (2-10 connections)
 - ✅ SSL/TLS support for secure connections
 - ✅ Automatic fallback to SQLite for local dev
@@ -200,16 +209,19 @@ Your Strapi setup also includes:
 ## Summary
 
 ✅ **What you have:**
+
 - Railway provides `DATABASE_URL` automatically
 - It's already the internal (free) connection
 - No egress fees, no special setup needed
 
 ✅ **What you do:**
+
 1. Set `DATABASE_CLIENT=postgres` in Railway
 2. Deploy - `DATABASE_URL` is auto-configured
 3. Done! Connection is optimized and free
 
 🚀 **Cost savings:**
+
 - No egress charges (already using internal network)
 - No additional configuration overhead
 - Railway just works out of the box
