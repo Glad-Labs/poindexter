@@ -5,6 +5,7 @@
 **The Solution:** Run Strapi locally with SQLite in dev mode, create all your content types, then migrate them to production without needing to run Railway in dev mode.
 
 **Workflow:**
+
 ```
 Local Dev (SQLite)     →    Build Content Types    →    Export Config    →    Deploy to Production
 npm run develop                  via Admin UI              (JSON files)           (Automated)
@@ -16,11 +17,11 @@ This approach is **much simpler** than running Railway in dev mode and works per
 
 ## Why This Approach?
 
-| Approach | Pros | Cons |
-|----------|------|------|
-| Local SQLite Dev | ✅ Fast, easy setup | ❌ Data doesn't sync |
-| Railway Dev Mode | ✅ Real PostgreSQL | ❌ Slow, infrastructure issues |
-| **Recommended: Local + Export/Import** | ✅ Best of both worlds | ✅ Industry standard |
+| Approach                               | Pros                   | Cons                           |
+| -------------------------------------- | ---------------------- | ------------------------------ |
+| Local SQLite Dev                       | ✅ Fast, easy setup    | ❌ Data doesn't sync           |
+| Railway Dev Mode                       | ✅ Real PostgreSQL     | ❌ Slow, infrastructure issues |
+| **Recommended: Local + Export/Import** | ✅ Best of both worlds | ✅ Industry standard           |
 
 Strapi v5 has built-in **schema sync** - content type definitions migrate automatically to production. Data doesn't need to, just the schema.
 
@@ -59,18 +60,21 @@ The admin UI will open at: `http://localhost:1337/admin`
 If you want to test with PostgreSQL locally:
 
 1. **Install PostgreSQL locally** (or use Docker):
+
    ```powershell
    # Using chocolatey on Windows
    choco install postgresql
    ```
 
 2. **Update `.env`:**
+
    ```bash
    DATABASE_CLIENT=postgres
    DATABASE_URL=postgresql://postgres:postgres@localhost:5432/strapi_local
    ```
 
 3. **Create the database:**
+
    ```powershell
    # Using psql
    psql -U postgres -c "CREATE DATABASE strapi_local;"
@@ -128,6 +132,7 @@ git push origin dev
 ### Deploy to Production:
 
 1. **Push your changes:**
+
    ```powershell
    git push origin dev
    ```
@@ -143,11 +148,13 @@ git push origin dev
    - Ready to serve the API
 
 **Verify in Railway:**
+
 ```powershell
 railway logs --service strapi-production
 ```
 
 Look for:
+
 ```
 [strapi]: Content types synchronized ✓
 [strapi]: API is ready on port 1337 ✓
@@ -258,6 +265,7 @@ DATABASE_CLIENT=sqlite
 ### Production on Railway (PostgreSQL)
 
 Set in Railway Variables:
+
 ```
 DATABASE_CLIENT=postgres
 DATABASE_URL=[auto-provided by Railway PostgreSQL plugin]
@@ -270,6 +278,7 @@ The `database.ts` config automatically handles both! No changes needed.
 ## Quick Start Commands
 
 **Local development:**
+
 ```powershell
 # First time only
 cd cms/strapi-v5-backend
@@ -281,6 +290,7 @@ npm run develop
 ```
 
 **After creating content types:**
+
 ```powershell
 git add src/api/
 git commit -m "feat: add content types"
@@ -289,6 +299,7 @@ git push origin dev
 ```
 
 **Verify production:**
+
 ```powershell
 # Check logs
 railway logs --service strapi-production
@@ -304,11 +315,13 @@ curl https://strapi-production-b234.up.railway.app/api/graphql
 ### Local Development Errors
 
 **Error: "Cannot find module sqlite"**
+
 ```powershell
 npm install better-sqlite3
 ```
 
 **Error: "Port 1337 already in use"**
+
 ```powershell
 # Find what's using port 1337
 Get-Process -Id (Get-NetTCPConnection -LocalPort 1337).OwningProcess
@@ -321,6 +334,7 @@ npm run develop
 **Symptom:** Content types don't appear in production admin
 
 **Fix:**
+
 1. Verify `src/api/*/schema.json` files were pushed
 2. Check Railway logs: `railway logs --service strapi-production`
 3. Redeploy: Go to Railway → Strapi service → Click "Redeploy"
@@ -330,6 +344,7 @@ npm run develop
 **Symptom:** Browser shows blank page at `http://localhost:1337/admin`
 
 **Fix:**
+
 ```powershell
 # Stop Strapi (Ctrl+C)
 # Clear cache
@@ -344,6 +359,7 @@ npm run develop
 If you need more control, Strapi has migration APIs:
 
 **Run a migration after deployment:**
+
 ```bash
 # In Railway or locally
 strapi transfer --to https://target-strapi.com
