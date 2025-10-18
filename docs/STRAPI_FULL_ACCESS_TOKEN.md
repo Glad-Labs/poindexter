@@ -9,28 +9,32 @@ Error: Permission denied / Unauthorized
 ## Solution: Generate Full-Access Token
 
 ### Step 1: Log into Strapi Admin
+
 Go to: `https://glad-labs-strapi-v5-backend-production.up.railway.app/admin`
 
 ### Step 2: Navigate to API Tokens
+
 1. Click **Settings** (⚙️ icon, bottom left)
 2. Click **API Tokens** (left sidebar under "Administration")
 
 ### Step 3: Create New Token
+
 1. Click **Create new API token** button
 2. Fill in the form:
    - **Name:** `Vercel Production` (or similar)
    - **Description:** `For Vercel build-time data fetching`
    - **Token duration:** `Unlimited` (recommended for production)
    - **Token type:** Select **Full access** (NOT "Read-only")
-   
 3. Click **Save**
 
 ### Step 4: Copy the Token
+
 - A popup will show the full token string
 - **Copy the entire token** (it's very long)
 - ⚠️ **IMPORTANT:** You can only see this token once! Copy it now.
 
 ### Step 5: Update Vercel
+
 1. Go to: https://vercel.com/dashboard/glad-labs-website/settings/environment-variables
 2. Find the `STRAPI_API_TOKEN` variable
 3. Click the **Edit** button (pencil icon)
@@ -38,13 +42,16 @@ Go to: `https://glad-labs-strapi-v5-backend-production.up.railway.app/admin`
 5. Click **Save**
 
 ### Step 6: Delete Old Token (Optional but Recommended)
+
 Back in Strapi admin:
+
 1. Go to **Settings → API Tokens**
 2. Find your old read-only token
 3. Click the trash icon to delete it
 4. This prevents accidental use of the wrong token
 
 ### Step 7: Redeploy in Vercel
+
 1. Go to: https://vercel.com/dashboard/glad-labs-website/deployments
 2. Find the failed deployment
 3. Click the three dots (**...**)
@@ -52,12 +59,13 @@ Back in Strapi admin:
 
 ## Why Full-Access is Required
 
-| Token Type | Can Do |
-|---|---|
-| **Read-only** | View public content (if any) |
+| Token Type      | Can Do                                       |
+| --------------- | -------------------------------------------- |
+| **Read-only**   | View public content (if any)                 |
 | **Full access** | Query all content, execute GraphQL mutations |
 
 Your site needs to query:
+
 - Posts (title, slug, content, etc.)
 - Categories (name, slug, posts)
 - Tags (name, slug, posts)
@@ -91,6 +99,7 @@ After updating the token and redeploy:
 ### Can't Find API Tokens in Strapi?
 
 Make sure you're:
+
 - ✅ Logged in as admin
 - ✅ In the correct Strapi instance (Railway production)
 - ✅ Clicking Settings (⚙️ icon)
@@ -99,6 +108,7 @@ Make sure you're:
 ### Token Disappeared After Creating?
 
 This is normal - Strapi only shows new tokens once. If you missed it:
+
 1. Delete the token (trash icon)
 2. Create a new one
 3. Copy it immediately
@@ -113,6 +123,7 @@ This is normal - Strapi only shows new tokens once. If you missed it:
 ## Verification
 
 After redeploy succeeds, check:
+
 1. ✅ Homepage loads with recent posts
 2. ✅ Archive page shows paginated posts
 3. ✅ Category pages display filtered posts
