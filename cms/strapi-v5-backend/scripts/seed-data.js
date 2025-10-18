@@ -1,6 +1,7 @@
 const axios = require('axios');
 
-const STRAPI_URL = process.env.STRAPI_API_URL || 'https://strapi-production-b234.up.railway.app';
+const STRAPI_URL =
+  process.env.STRAPI_API_URL || 'https://strapi-production-b234.up.railway.app';
 const API_URL = `${STRAPI_URL}/api`;
 
 console.log('Starting Strapi content seeding...');
@@ -19,7 +20,7 @@ async function apiRequest(method, endpoint, data = null) {
       url: API_URL + endpoint,
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + apiToken,
+        Authorization: 'Bearer ' + apiToken,
       },
     };
 
@@ -28,7 +29,9 @@ async function apiRequest(method, endpoint, data = null) {
     return response.data;
   } catch (error) {
     if (error.response) {
-      console.error('API error: ' + method + ' ' + endpoint + ' ' + error.response.status);
+      console.error(
+        'API error: ' + method + ' ' + endpoint + ' ' + error.response.status
+      );
     } else {
       console.error('Error: ' + error.message);
     }
@@ -39,7 +42,7 @@ async function apiRequest(method, endpoint, data = null) {
 async function checkHealth() {
   try {
     await axios.get(API_URL + '/users/me', {
-      headers: {'Authorization': 'Bearer ' + process.env.STRAPI_API_TOKEN},
+      headers: { Authorization: 'Bearer ' + process.env.STRAPI_API_TOKEN },
     });
     console.log('Strapi is running');
     return true;
@@ -72,16 +75,30 @@ const data = {
     { name: 'Digital Transformation', slug: 'digital-transformation' },
   ],
   authors: [
-    { name: 'Matthew M. Gladding', email: 'matthew@gladlabs.com', bio: 'Founder and CEO of GLAD Labs.' },
-    { name: 'AI Research Team', email: 'research@gladlabs.com', bio: 'GLAD Labs AI research team.' },
+    {
+      name: 'Matthew M. Gladding',
+      email: 'matthew@gladlabs.com',
+      bio: 'Founder and CEO of GLAD Labs.',
+    },
+    {
+      name: 'AI Research Team',
+      email: 'research@gladlabs.com',
+      bio: 'GLAD Labs AI research team.',
+    },
   ],
 };
 
 async function findEntity(endpoint, field, value) {
   try {
-    const url = API_URL + endpoint + '?filters[' + field + '][\]=' + encodeURIComponent(value);
+    const url =
+      API_URL +
+      endpoint +
+      '?filters[' +
+      field +
+      '][\]=' +
+      encodeURIComponent(value);
     const response = await axios.get(url, {
-      headers: {'Authorization': 'Bearer ' + process.env.STRAPI_API_TOKEN},
+      headers: { Authorization: 'Bearer ' + process.env.STRAPI_API_TOKEN },
     });
     return response.data?.data?.length > 0 ? response.data.data[0] : null;
   } catch (e) {
@@ -91,7 +108,7 @@ async function findEntity(endpoint, field, value) {
 
 async function seedAll() {
   try {
-    if (!await checkHealth()) process.exit(1);
+    if (!(await checkHealth())) process.exit(1);
 
     console.log('Creating categories...');
     for (const cat of data.categories) {
