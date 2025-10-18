@@ -6,7 +6,8 @@
  * Railway.app Production:
  * - DATABASE_CLIENT=postgres (MUST be set in Railway env vars)
  * - DATABASE_URL=postgres://user:pass@host:port/db (auto-provided by Railway)
- * - Use DATABASE_PRIVATE_URL to avoid egress fees
+ *   This is the INTERNAL connection string (no egress fees) ✅
+ *   Railway provides this automatically - no need for separate PRIVATE_URL
  *
  * Local Development:
  * - Defaults to SQLite for quick setup
@@ -49,9 +50,9 @@ export default ({ env }) => {
     },
     postgres: {
       connection: {
-        // Railway PRIVATE_URL: avoids egress fees by using internal network
-        // Falls back to DATABASE_URL if PRIVATE_URL not available
-        connectionString: env('DATABASE_PRIVATE_URL', env('DATABASE_URL')),
+        // Railway provides DATABASE_URL as the internal connection
+        // This is already optimized - no egress fees charged
+        connectionString: env('DATABASE_URL'),
         ssl: env.bool('DATABASE_SSL', false) && {
           key: env('DATABASE_SSL_KEY', undefined),
           cert: env('DATABASE_SSL_CERT', undefined),
