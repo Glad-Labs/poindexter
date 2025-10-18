@@ -49,6 +49,7 @@ async function fetchAPI(query, { variables } = {}) {
 ### Step 1: Get Your Strapi Token
 
 Your token is already in `.env.local`:
+
 ```
 STRAPI_API_TOKEN="f96a8db7330483b6395666c96369a7a5b97214c734cda9ea958ce1edc97b43ea59cd46bef60a1fc82dbb38acfeb43a900b1b72010e9521978a76a6adaa302f70a2b0b67838b354785eaa8dab3c81111f21d2d2fda7c6c24d82707096e9f47aefe3b6e321b175d6a0cce19de9418eb71b0687a152c8f614b72781101ad1867c4b"
 ```
@@ -58,6 +59,7 @@ STRAPI_API_TOKEN="f96a8db7330483b6395666c96369a7a5b97214c734cda9ea958ce1edc97b43
 ### Step 2: Get Your Production Strapi URL
 
 Based on your deployment, use:
+
 ```
 https://glad-labs-strapi-v5-backend-production.up.railway.app
 ```
@@ -71,22 +73,24 @@ https://glad-labs-strapi-v5-backend-production.up.railway.app
 3. Navigate to: **Settings** → **Environment Variables**
 4. Add these two variables:
 
-   | Variable Name | Value | Visibility |
-   |---|---|---|
-   | `STRAPI_API_TOKEN` | `f96a8db7330483b6395666c96369a7a5b97214c734cda9ea958ce1edc97b43ea59cd46bef60a1fc82dbb38acfeb43a900b1b72010e9521978a76a6adaa302f70a2b0b67838b354785eaa8dab3c81111f21d2d2fda7c6c24d82707096e9f47aefe3b6e321b175d6a0cce19de9418eb71b0687a152c8f614b72781101ad1867c4b` | **Production** only |
-   | `NEXT_PUBLIC_STRAPI_API_URL` | `https://glad-labs-strapi-v5-backend-production.up.railway.app` | All Environments |
+   | Variable Name                | Value                                                                                                                                                                                                                                                              | Visibility          |
+   | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------- |
+   | `STRAPI_API_TOKEN`           | `f96a8db7330483b6395666c96369a7a5b97214c734cda9ea958ce1edc97b43ea59cd46bef60a1fc82dbb38acfeb43a900b1b72010e9521978a76a6adaa302f70a2b0b67838b354785eaa8dab3c81111f21d2d2fda7c6c24d82707096e9f47aefe3b6e321b175d6a0cce19de9418eb71b0687a152c8f614b72781101ad1867c4b` | **Production** only |
+   | `NEXT_PUBLIC_STRAPI_API_URL` | `https://glad-labs-strapi-v5-backend-production.up.railway.app`                                                                                                                                                                                                    | All Environments    |
 
 5. Click **Save**
 
 ### Step 4: Redeploy
 
 Option A: **From Vercel Dashboard**
+
 - Go to **Deployments**
 - Find the failed deployment
 - Click the three dots (**...**)
 - Select **Redeploy**
 
 Option B: **From Git**
+
 - Push any commit to the `main` branch
 - Vercel will automatically redeploy with the new env vars
 
@@ -99,7 +103,7 @@ After redeploy, check:
 3. ✅ **Pagination works** - Navigation between pages functions
 4. ✅ **No API errors** - Check browser console for fetch errors
 
-## Why STRAPI_API_TOKEN vs NEXT_PUBLIC_*
+## Why STRAPI*API_TOKEN vs NEXT_PUBLIC*\*
 
 - **`STRAPI_API_TOKEN`**: Private token (no `NEXT_PUBLIC` prefix)
   - Only available at build time
