@@ -28,6 +28,8 @@ cms/strapi-v5-backend/database/
 cms/strapi-v5-backend/export/
 cms/strapi-v5-backend/public/uploads/
 .tmp/
+cms/strapi-main/
+cms/strapi-main.zip
 
 # Environment variables
 .env
