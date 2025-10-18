@@ -3,6 +3,7 @@
 ## Problem
 
 When running `npm run develop` on Railway, Strapi fails healthcheck because:
+
 - ❌ `.env` is configured for localhost PostgreSQL
 - ❌ Railway service can't connect to `127.0.0.1:5432`
 - ❌ Strapi admin won't start
@@ -81,6 +82,7 @@ railway up
 ```
 
 Railway will:
+
 1. Build with `npm run build`
 2. Start with `npm run develop`
 3. Use the `DATABASE_URL` automatically
@@ -116,6 +118,7 @@ railway logs --service strapi
 ```
 
 Look for messages like:
+
 - ✅ `Strapi is running at http://...`
 - ✅ `Content-Type Builder enabled`
 
@@ -137,6 +140,7 @@ If you see errors about database connection, that's the issue above.
 ## Recommended: Use Strapi's Official Deployment Config
 
 Better yet, follow Strapi's official Railway guide:
+
 - https://docs.strapi.io/dev-docs/deployment/railway
 
 They provide pre-configured templates that handle this automatically.

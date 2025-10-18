@@ -49,9 +49,9 @@ export default ({ env }) => {
     },
     postgres: {
       connection: {
-        // Railway provides DATABASE_URL automatically
-        // Use DATABASE_PRIVATE_URL in env var to avoid egress fees
-        connectionString: env('DATABASE_URL'),
+        // Railway PRIVATE_URL: avoids egress fees by using internal network
+        // Falls back to DATABASE_URL if PRIVATE_URL not available
+        connectionString: env('DATABASE_PRIVATE_URL', env('DATABASE_URL')),
         ssl: env.bool('DATABASE_SSL', false) && {
           key: env('DATABASE_SSL_KEY', undefined),
           cert: env('DATABASE_SSL_CERT', undefined),
