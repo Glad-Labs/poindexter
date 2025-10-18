@@ -1,45 +1,38 @@
 /**
  * Strapi Admin Panel Configuration
  *
- * Railway.app Cookie Settings:
- * - Railway's proxy handles SSL (HTTPS → HTTP internally)
- * - Must explicitly set URLs to use HTTPS protocol
- * - External users still connect via HTTPS (Railway proxy layer)
+ * Railway proxy terminates SSL (HTTPS → HTTP internally)
+ * We set secure: false to let Railway handle SSL wrapping
+ * This works for both local HTTP and Railway HTTPS without detection
  *
  * @see https://docs.strapi.io/dev-docs/configurations/admin-panel
- * @see https://docs.railway.app/deploy/deployments#https-and-ssl
  */
 export default ({ env }) => ({
-  // Explicitly set admin URLs to use HTTPS
   url: env('ADMIN_URL', '/admin'),
   serveAdminPanel: true,
   auth: {
-    secret: env('ADMIN_JWT_SECRET'), // Used to sign admin JWT tokens
+    secret: env('ADMIN_JWT_SECRET'),
     sessions: {
-      maxSessionLifespan: 1000 * 60 * 60 * 24 * 7, // 7 days
-      maxRefreshTokenLifespan: 1000 * 60 * 60 * 24 * 30, // 30 days
-      // Admin refresh token cookie settings (Strapi v5+)
+      maxSessionLifespan: 1000 * 60 * 60 * 24 * 7,
+      maxRefreshTokenLifespan: 1000 * 60 * 60 * 24 * 30,
       cookie: {
-        secure: env.bool(
-          'STRAPI_ADMIN_COOKIE_SECURE',
-          env('NODE_ENV') === 'production'
-        ), // HTTPS only in production
-        httpOnly: true, // Prevent XSS attacks
-        sameSite: 'lax', // Allow navigation from external sites
+        secure: false, // Railway proxy handles SSL wrapping
+        httpOnly: true,
+        sameSite: 'lax',
       },
     },
   },
   apiToken: {
-    salt: env('API_TOKEN_SALT'), // Used to salt API tokens
+    salt: env('API_TOKEN_SALT'),
   },
   transfer: {
     token: {
-      salt: env('TRANSFER_TOKEN_SALT'), // Used for content transfer tokens
+      salt: env('TRANSFER_TOKEN_SALT'),
     },
   },
-  appEncryptionKey: env('APP_ENCRYPTION_KEY'), // App-level encryption key (32 bytes base64)
+  appEncryptionKey: env('APP_ENCRYPTION_KEY'),
   flags: {
-    nps: env.bool('FLAG_NPS', true), // Net Promoter Score survey
-    promoteEE: env.bool('FLAG_PROMOTE_EE', true), // Promote Enterprise Edition
+    nps: env.bool('FLAG_NPS', true),
+    promoteEE: env.bool('FLAG_PROMOTE_EE', true),
   },
 });
