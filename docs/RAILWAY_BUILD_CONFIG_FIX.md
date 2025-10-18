@@ -2,7 +2,7 @@
 
 ## The Problem
 
-Your `src/api/` schema files are in Git, but **Railway isn't building them**. 
+Your `src/api/` schema files are in Git, but **Railway isn't building them**.
 
 When you deploy to Railway, Strapi starts with `npm run start`, but the TypeScript hasn't been compiled and the build hasn't happened. The content types aren't recognized because the build process is skipped.
 
@@ -20,6 +20,7 @@ web: npm run start
 ```
 
 This tells Railway to:
+
 1. **Before starting:** Run `npm run build` (compiles TypeScript, discovers content types)
 2. **Then start:** Run `npm run start` (serves the application)
 
@@ -77,6 +78,7 @@ Railway starts → npm run build → (TypeScript compiled)
 If you can't use a `Procfile`, update Railway service directly:
 
 **In Railway UI:**
+
 1. Go to strapi-production service
 2. Click **"Variables"** tab
 3. Add new variable: `RAILWAY_RUN_SETUP_COMMANDS=true`
@@ -141,6 +143,7 @@ All 7 content types will be created in PostgreSQL automatically.
 **Symptom:** Railway still doesn't run build
 
 **Fix:**
+
 1. Delete `Procfile`
 2. Use Railway UI: Settings → "Start Command" → Change to `npm run build && npm run start`
 3. Redeploy
@@ -150,6 +153,7 @@ All 7 content types will be created in PostgreSQL automatically.
 **Symptom:** Admin shows no content types after build
 
 **Check:**
+
 1. Verify `src/api/*/content-types/*/schema.json` files are in Git
 2. Check Railway logs: `railway logs --service strapi-production`
 3. Look for errors in compile step
@@ -160,7 +164,7 @@ All 7 content types will be created in PostgreSQL automatically.
 **Symptom:** Build takes >10 minutes
 
 **Fix:**
+
 - Build is normal for first deploy (installs dependencies)
 - Clear Railway cache and retry
 - Check for dependency issues: `npm install` locally first
-

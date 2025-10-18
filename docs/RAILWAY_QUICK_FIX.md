@@ -5,7 +5,8 @@
 Your `src/api/` content types are in Git but **Railway isn't building them**. The fix is simple:
 
 ### Done ✅
-- Created `cms/strapi-v5-backend/Procfile` 
+
+- Created `cms/strapi-v5-backend/Procfile`
 - Committed to Git
 - Pushed to dev branch
 
@@ -32,6 +33,7 @@ railway logs --service strapi-production
 ```
 
 **Access your admin:**
+
 - Go to: `https://strapi-production-b234.up.railway.app/admin`
 - You should see all 7 content types:
   - Post
@@ -47,11 +49,13 @@ railway logs --service strapi-production
 ## What Just Happened
 
 **Before:** Railway ran `npm run start` directly
+
 - TypeScript wasn't compiled
 - Content types weren't loaded
 - Schema files were ignored
 
 **Now:** Railway runs `npm run build` first, then `npm run start`
+
 - Strapi compiles TypeScript
 - Discovers all schema.json files in `src/api/`
 - Creates content types in PostgreSQL
@@ -64,6 +68,7 @@ railway logs --service strapi-production
 Once content types appear in production:
 
 1. **Seed sample data** (optional):
+
    ```powershell
    cd cms/strapi-v5-backend
    node scripts/seed-data.js
@@ -87,6 +92,7 @@ Once content types appear in production:
 **Content types not appearing?**
 
 Check logs for errors:
+
 ```powershell
 railway logs --service strapi-production --tail 100
 ```
@@ -95,7 +101,8 @@ Look for any messages about schema compilation failures.
 
 **Build took too long or timed out?**
 
-This is normal for first deploy (compiling, building admin UI). 
+This is normal for first deploy (compiling, building admin UI).
+
 - Wait for it to complete
 - If it still fails, check Railway console for error messages
 

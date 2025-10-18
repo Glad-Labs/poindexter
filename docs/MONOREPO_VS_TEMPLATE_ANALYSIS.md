@@ -16,6 +16,7 @@
 ### Your Current Setup (Monorepo in `cms/strapi-v5-backend/`)
 
 **Pros:**
+
 - ✅ Single repository for entire platform (frontend + backend)
 - ✅ Unified deployment from one Git branch
 - ✅ All content types in `src/api/` under version control
@@ -25,17 +26,20 @@
 - ✅ Already working with Procfile
 
 **Cons:**
+
 - ❌ Slightly larger repo (but negligible at your scale)
 - ❌ Need to manage dependencies separately
 
 ### Railway Strapi Template (Separate Repo)
 
 **Pros:**
+
 - ✅ Opinionated setup (good for beginners)
 - ✅ Railway-optimized configuration
 - ✅ Community maintenance of template
 
 **Cons:**
+
 - ❌ **Separate repository** - now you have 2 repos to maintain
 - ❌ Harder to deploy multiple services together
 - ❌ Content types live in a different Git repo
@@ -89,16 +93,16 @@ Repo 2: glad-labs-strapi-cms (separate)
 
 ## Decision Matrix
 
-| Aspect | Your Setup | Template | Winner |
-|--------|-----------|----------|--------|
-| **Repos to maintain** | 1 | 2 | ✅ Yours |
-| **Deployment complexity** | Simple (one branch) | Complex (sync 2 repos) | ✅ Yours |
-| **Content type versioning** | In monorepo with code | Separate repo | ✅ Yours |
-| **Frontend-backend sync** | Automatic | Manual | ✅ Yours |
-| **CI/CD pipeline** | One pipeline | Two pipelines | ✅ Yours |
-| **Onboarding new devs** | Clone 1 repo | Clone 2 repos | ✅ Yours |
-| **Database migrations** | Tracked in monorepo | Separate | ✅ Yours |
-| **Documentation** | Single source | Split across 2 | ✅ Yours |
+| Aspect                      | Your Setup            | Template               | Winner   |
+| --------------------------- | --------------------- | ---------------------- | -------- |
+| **Repos to maintain**       | 1                     | 2                      | ✅ Yours |
+| **Deployment complexity**   | Simple (one branch)   | Complex (sync 2 repos) | ✅ Yours |
+| **Content type versioning** | In monorepo with code | Separate repo          | ✅ Yours |
+| **Frontend-backend sync**   | Automatic             | Manual                 | ✅ Yours |
+| **CI/CD pipeline**          | One pipeline          | Two pipelines          | ✅ Yours |
+| **Onboarding new devs**     | Clone 1 repo          | Clone 2 repos          | ✅ Yours |
+| **Database migrations**     | Tracked in monorepo   | Separate               | ✅ Yours |
+| **Documentation**           | Single source         | Split across 2         | ✅ Yours |
 
 ---
 
@@ -107,6 +111,7 @@ Repo 2: glad-labs-strapi-cms (separate)
 ### 1. **railway.json File**
 
 Template has:
+
 ```json
 {
   "name": "Strapi",
@@ -125,6 +130,7 @@ Template supports "Template Service Eject" - Railway's feature to stop using the
 ### 3. **Database Configuration**
 
 Template uses environment variables like:
+
 ```bash
 DATABASE_URL # auto-provided by Railway
 ```
@@ -134,6 +140,7 @@ DATABASE_URL # auto-provided by Railway
 ### 4. **Procfile**
 
 Template likely has:
+
 ```
 release: npm run build
 web: npm run start
@@ -150,6 +157,7 @@ Don't clone it. Instead, just review the template's `.github/workflows` and `rai
 **What to steal from the template:**
 
 1. **railway.json** (optional, nice-to-have):
+
    ```json
    {
      "name": "Strapi",
@@ -184,6 +192,7 @@ All services updated together ✅
 ### Monorepo for Complex Platforms
 
 You have:
+
 - ✅ Multiple frontend apps (public-site, oversight-hub)
 - ✅ Backend CMS (Strapi)
 - ✅ Separate Python services (agents, cloud functions)
@@ -238,6 +247,7 @@ You have:
 ### ✅ KEEP YOUR CURRENT SETUP
 
 Your monorepo is:
+
 - **Simpler to deploy** - one branch, one deployment
 - **Better for version control** - everything together
 - **Easier to maintain** - all code in one place
