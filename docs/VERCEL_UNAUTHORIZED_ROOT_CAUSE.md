@@ -10,6 +10,7 @@ Build is failing with "Unauthorized" errors from Strapi during page data collect
 ```
 
 This occurs on pages with `getStaticProps()`:
+
 - ❌ `/archive/[page]`
 - ❌ `/category/[slug]`
 - ❌ `/tag/[slug]`
@@ -22,18 +23,21 @@ This occurs on pages with `getStaticProps()`:
 **Token + API URL Mismatch**
 
 Your `.env.local` was pointing to the **OLD Strapi instance**:
+
 ```
 # ❌ WRONG - Old Strapi deployment
 NEXT_PUBLIC_STRAPI_API_URL="https://healing-appliance-9fd84df4a1.strapiapp.com/"
 ```
 
 But your token is for the **NEW Railway Strapi instance**:
+
 ```
 # ✅ CORRECT - Current Railway deployment
 NEXT_PUBLIC_STRAPI_API_URL="https://glad-labs-strapi-v5-backend-production.up.railway.app"
 ```
 
 **Why this caused "Unauthorized":**
+
 1. Token is issued for Railway Strapi instance
 2. Code tries to connect to old Strapi URL
 3. Old instance doesn't recognize the token → "Unauthorized"
@@ -41,7 +45,9 @@ NEXT_PUBLIC_STRAPI_API_URL="https://glad-labs-strapi-v5-backend-production.up.ra
 ## Solution Applied
 
 ### Local Fix
+
 ✅ Updated `.env.local`:
+
 ```bash
 # Before
 NEXT_PUBLIC_STRAPI_API_URL="https://healing-appliance-9fd84df4a1.strapiapp.com/"
@@ -51,6 +57,7 @@ NEXT_PUBLIC_STRAPI_API_URL="https://glad-labs-strapi-v5-backend-production.up.ra
 ```
 
 ### Vercel Fix (Still Required)
+
 You must set **both** environment variables in Vercel:
 
 1. Go to: https://vercel.com/dashboard → glad-labs-website → Settings → Environment Variables
@@ -92,12 +99,13 @@ After Vercel redeploys with both env vars:
 
 ## Environment Variables Summary
 
-| Variable | Purpose | Type | Location |
-|----------|---------|------|----------|
-| `NEXT_PUBLIC_STRAPI_API_URL` | GraphQL endpoint URL | Public | `.env.local` + Vercel (All) |
-| `STRAPI_API_TOKEN` | Authentication token | Private | `.env.local` + Vercel (Production) |
+| Variable                     | Purpose              | Type    | Location                           |
+| ---------------------------- | -------------------- | ------- | ---------------------------------- |
+| `NEXT_PUBLIC_STRAPI_API_URL` | GraphQL endpoint URL | Public  | `.env.local` + Vercel (All)        |
+| `STRAPI_API_TOKEN`           | Authentication token | Private | `.env.local` + Vercel (Production) |
 
 **Key Differences:**
+
 - `NEXT_PUBLIC_` prefix = sent to browser, visible in client code
 - No prefix = server-only, kept private during build
 
