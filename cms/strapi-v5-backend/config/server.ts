@@ -18,5 +18,8 @@ export default ({ env }) => ({
     populateRelations: env.bool('WEBHOOKS_POPULATE_RELATIONS', false),
   },
   url: env('URL'),
-  proxy: true,
+  proxy: {
+    enabled: true,
+    trust: ['127.0.0.1'],  // Trust Railway's internal network
+  },
 });
