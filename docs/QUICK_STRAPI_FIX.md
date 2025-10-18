@@ -1,16 +1,19 @@
 # 🔧 Quick Fix: Strapi Admin Cookie Error
 
 ## The Problem
+
 ```
 error: Failed to create admin refresh session Cannot send secure cookie over unencrypted connection
 ```
 
 ## The Root Cause
+
 Railway uses HTTPS externally but HTTP internally. Strapi needs to know it's behind an HTTPS proxy.
 
 ## The Fix (2 Steps)
 
 ### Step 1: ✅ Already Done
+
 Updated `config/admin.ts` to properly handle Railway's SSL termination.
 
 ### Step 2: Add Variables in Railway

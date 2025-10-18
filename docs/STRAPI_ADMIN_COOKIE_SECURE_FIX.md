@@ -25,15 +25,20 @@ Strapi is trying to set **secure cookies** (HTTPS only) but the connection is HT
 **File:** `cms/strapi-v5-backend/config/admin.ts`
 
 Already fixed! Changed:
+
 ```typescript
 // BEFORE (broken)
-secure: env.bool('NODE_ENV', 'development') === 'production'
+secure: env.bool('NODE_ENV', 'development') === 'production';
 
 // AFTER (fixed)
-secure: env.bool('STRAPI_ADMIN_COOKIE_SECURE', env('NODE_ENV') === 'production')
+secure: env.bool(
+  'STRAPI_ADMIN_COOKIE_SECURE',
+  env('NODE_ENV') === 'production'
+);
 ```
 
 This allows:
+
 - **Local dev:** `NODE_ENV=development` → cookies NOT secure (works with HTTP)
 - **Production:** `STRAPI_ADMIN_COOKIE_SECURE=true` → cookies ARE secure (works with Railway HTTPS)
 
@@ -77,6 +82,7 @@ Go to [railway.app](https://railway.app):
 ```
 
 With `NODE_ENV=production` and `STRAPI_ADMIN_COOKIE_SECURE=true`:
+
 - Strapi knows it's behind HTTPS proxy
 - Sets cookies with `Secure` flag (even though internal connection is HTTP)
 - Browser receives HTTPS cookies correctly
@@ -103,6 +109,7 @@ railway logs --service strapi-production --tail 20
 ```
 
 Look for:
+
 ```
 [INFO] Server is running at http://0.0.0.0:1337
 [INFO] Admin panel available at /admin
@@ -121,12 +128,14 @@ Look for:
 ## Local Development (Still Works)
 
 Your local `.env` already has:
+
 ```bash
 NODE_ENV [not set - defaults to 'development']
 DATABASE_CLIENT=sqlite
 ```
 
 This means locally:
+
 - SQLite database (no PostgreSQL needed)
 - Cookies NOT secure (HTTP only)
 - Works at `http://localhost:1337/admin` ✅
@@ -136,6 +145,7 @@ This means locally:
 ## Complete Environment Variable Summary
 
 ### Local Development (`.env`)
+
 ```bash
 DATABASE_CLIENT=sqlite
 # NODE_ENV defaults to 'development'
@@ -143,6 +153,7 @@ DATABASE_CLIENT=sqlite
 ```
 
 ### Production on Railway (Add via UI or copy from `.env.railway`)
+
 ```bash
 DATABASE_CLIENT=postgres
 DATABASE_URL=[auto-provided by Railway]
@@ -155,11 +166,13 @@ STRAPI_ADMIN_COOKIE_SECURE=true
 ## Why This Is Important
 
 Without this fix:
+
 - ❌ Admin login fails with 500 error
 - ❌ Can't access content management UI
 - ❌ Can't create posts/categories
 
 With this fix:
+
 - ✅ Admin login works
 - ✅ Full content management available
 - ✅ Cookies properly secured
@@ -176,10 +189,13 @@ With this fix:
    - Then click "Redeploy"
 
 2. **Verify variables are set:**
+
    ```powershell
    railway vars --service strapi-production
    ```
+
    Should show:
+
    ```
    NODE_ENV=production
    STRAPI_ADMIN_COOKIE_SECURE=true
@@ -210,4 +226,3 @@ With this fix:
 5. ✅ Visit admin panel and try logging in
 6. ✅ Create posts/categories
 7. ✅ Vercel build will now succeed (API has data)
-
