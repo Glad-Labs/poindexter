@@ -3,7 +3,9 @@
 ## Error: "Cannot connect to Strapi"
 
 ### What This Means
+
 The script connected to the Strapi instance, but authentication failed. This usually happens when:
+
 - ❌ `STRAPI_API_TOKEN` environment variable is not set on Railway
 - ❌ The token is invalid or expired
 - ❌ The token has insufficient permissions
@@ -11,6 +13,7 @@ The script connected to the Strapi instance, but authentication failed. This usu
 ## Solution
 
 ### Step 1: Verify Strapi is Running
+
 Test locally first to ensure the token works:
 
 ```bash
@@ -59,6 +62,7 @@ railway run node scripts/seed-data.js
 If Railway environment variables are difficult to manage, you can:
 
 1. **Run locally**:
+
    ```bash
    export STRAPI_API_TOKEN="your-token"
    cd cms/strapi-v5-backend
