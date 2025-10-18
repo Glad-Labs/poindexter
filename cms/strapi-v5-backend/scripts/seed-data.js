@@ -1,7 +1,7 @@
 const axios = require('axios');
 
 const STRAPI_URL = process.env.STRAPI_API_URL || 'https://strapi-production-b234.up.railway.app';
-const API_URL = ${STRAPI_URL}/api;
+const API_URL = `${STRAPI_URL}/api`;
 
 console.log('Starting Strapi content seeding...');
 console.log('Strapi URL: ' + STRAPI_URL);
