@@ -3,12 +3,14 @@
 ## Problem
 
 The Vercel build is failing with:
+
 ```
 TypeError: fetch failed
   Error: connect ECONNREFUSED 127.0.0.1:1337
 ```
 
 This happens because:
+
 - Next.js tries to fetch content from Strapi during the build process (`getStaticProps`)
 - The build environment doesn't have `localhost:1337` available
 - The production Strapi URL is not configured in Vercel environment variables
@@ -18,6 +20,7 @@ This happens because:
 ### Step 1: Get Your Production Strapi URL
 
 Your production Strapi is deployed at Railway:
+
 ```
 https://glad-labs-strapi-v5-backend-production.up.railway.app
 ```
@@ -52,6 +55,7 @@ After setting the environment variables:
 5. Select "Redeploy"
 
 Or manually redeploy:
+
 ```bash
 vercel --prod --force
 ```
@@ -59,16 +63,17 @@ vercel --prod --force
 ### Step 4: Verify the Build
 
 The build should now:
+
 - Successfully fetch posts from your production Strapi
 - Generate static pages for the archive
 - Complete without errors
 
 ## Environment Variables Reference
 
-| Variable | Value | Required | Purpose |
-|----------|-------|----------|---------|
-| `NEXT_PUBLIC_STRAPI_API_URL` | `https://glad-labs-strapi-v5-backend-production.up.railway.app` | ✅ Yes | Base URL for Strapi API during build and runtime |
-| `STRAPI_API_TOKEN` | Your API token | ⚠️ Optional | Needed if Strapi API requires authentication |
+| Variable                     | Value                                                           | Required    | Purpose                                          |
+| ---------------------------- | --------------------------------------------------------------- | ----------- | ------------------------------------------------ |
+| `NEXT_PUBLIC_STRAPI_API_URL` | `https://glad-labs-strapi-v5-backend-production.up.railway.app` | ✅ Yes      | Base URL for Strapi API during build and runtime |
+| `STRAPI_API_TOKEN`           | Your API token                                                  | ⚠️ Optional | Needed if Strapi API requires authentication     |
 
 ## Testing Locally Before Deploy
 
@@ -90,12 +95,15 @@ echo $?  # Should output 0 if successful
 ### If build still fails:
 
 1. **Check Strapi is running:**
+
    ```bash
    curl https://glad-labs-strapi-v5-backend-production.up.railway.app/api
    ```
+
    Should return JSON response
 
 2. **Check API token (if required):**
+
    ```bash
    curl -H "Authorization: Bearer YOUR_TOKEN" \
      https://glad-labs-strapi-v5-backend-production.up.railway.app/api/blog-posts
@@ -119,6 +127,7 @@ If you get authentication errors, you need to:
    - Set permissions to allow reading blog posts
 
 2. Add token to Vercel:
+
    ```
    STRAPI_API_TOKEN=your-token-from-step-1
    ```

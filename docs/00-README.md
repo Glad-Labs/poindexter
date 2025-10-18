@@ -165,19 +165,19 @@ Welcome to the comprehensive documentation for the GLAD Labs AI Co-Founder Syste
 
 ### Feature Documentation
 
-| Document                                                  | Description           | Status     |
-| --------------------------------------------------------- | --------------------- | ---------- |
-| [Strapi Content Setup](./STRAPI_CONTENT_TYPES_SETUP.md)   | Content types setup   | ✅ Current |
-| [E2E Pipeline Setup](./E2E_PIPELINE_SETUP.md)             | Pipeline configuration | ✅ Current |
-| [Quick Start Revenue First](./QUICK_START_REVENUE_FIRST.md) | Revenue strategy      | ✅ Current |
+| Document                                                    | Description            | Status     |
+| ----------------------------------------------------------- | ---------------------- | ---------- |
+| [Strapi Content Setup](./STRAPI_CONTENT_TYPES_SETUP.md)     | Content types setup    | ✅ Current |
+| [E2E Pipeline Setup](./E2E_PIPELINE_SETUP.md)               | Pipeline configuration | ✅ Current |
+| [Quick Start Revenue First](./QUICK_START_REVENUE_FIRST.md) | Revenue strategy       | ✅ Current |
 
 ### Setup & Operations
 
 | Document                                                     | Description          | Status     |
 | ------------------------------------------------------------ | -------------------- | ---------- |
-| [Guide: Ollama Setup](./guides/OLLAMA_SETUP.md)             | Local AI models      | ✅ Current |
-| [Guide: Docker Deployment](./guides/DOCKER_DEPLOYMENT.md)   | Container deployment | ✅ Current |
-| [Guide: Local Setup](./guides/LOCAL_SETUP_GUIDE.md)         | Development setup    | ✅ Current |
+| [Guide: Ollama Setup](./guides/OLLAMA_SETUP.md)              | Local AI models      | ✅ Current |
+| [Guide: Docker Deployment](./guides/DOCKER_DEPLOYMENT.md)    | Container deployment | ✅ Current |
+| [Guide: Local Setup](./guides/LOCAL_SETUP_GUIDE.md)          | Development setup    | ✅ Current |
 | [Production Checklist](./PRODUCTION_DEPLOYMENT_CHECKLIST.md) | Go-live checklist    | ✅ Current |
 
 ### Reference & Standards
