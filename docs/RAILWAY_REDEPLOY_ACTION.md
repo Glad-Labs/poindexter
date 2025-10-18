@@ -21,13 +21,16 @@ Railway doesn't automatically detect pushes to main branch (if you're using the 
 You should see one of these:
 
 **Option A: If you see a "Redeploy" button**
+
 - Click **"Redeploy"** button directly
 
 **Option B: If you see "Deployments" tab**
+
 - Click **"Deployments"** tab
 - Click **"Deploy"** or **"Redeploy"** button
 
 **Option C: Using Railway CLI**
+
 ```powershell
 railway up
 ```
@@ -35,6 +38,7 @@ railway up
 ### Step 3: Wait for Build
 
 Railway will:
+
 1. Pull latest code from GitHub (main branch)
 2. Run `npm run build` (via Procfile)
 3. Run `npm run start`
@@ -61,6 +65,7 @@ railway logs --service glad-labs-strapi-v5-backend --tail 30
 **No, switching to yarn won't help.** The issue is the configuration, not the package manager. Your npm setup is fine.
 
 The Railway template uses yarn, but:
+
 - ✅ npm works just as well
 - ✅ Procfile works with both
 - ✅ The real fix is `secure: false` in config, not the package manager
@@ -81,6 +86,7 @@ Solution: Manually trigger redeploy
 ```
 
 Railway redeploys automatically when you:
+
 - Click "Redeploy" button
 - Use `railway up` CLI
 - Or if auto-deploy is configured (you might not have it)
@@ -90,6 +96,7 @@ Railway redeploys automatically when you:
 ## After Redeploy
 
 Once Railway rebuilds with new code:
+
 1. ✅ Admin panel loads
 2. ✅ Login page appears
 3. ✅ No cookie error when submitting login
@@ -106,4 +113,3 @@ Once Railway rebuilds with new code:
 - [ ] Wait 3-5 minutes
 - [ ] Check logs for success
 - [ ] Try logging in to admin
-

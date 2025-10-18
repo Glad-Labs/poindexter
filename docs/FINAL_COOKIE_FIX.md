@@ -8,10 +8,13 @@ The template uses a **simpler approach** that actually works:
 
 ```typescript
 // BEFORE (overthinking it)
-secure: env.bool('STRAPI_ADMIN_COOKIE_SECURE', env('NODE_ENV') === 'production')
+secure: env.bool(
+  'STRAPI_ADMIN_COOKIE_SECURE',
+  env('NODE_ENV') === 'production'
+);
 
 // AFTER (let Railway handle it)
-secure: false
+secure: false;
 ```
 
 ## Why This Works
@@ -37,6 +40,7 @@ Setting `secure: true` on unencrypted connection = browser rejects it ❌
 ### Option A: Quick Fix (Recommended)
 
 1. **Push your code** (already committed):
+
    ```powershell
    git push origin main
    ```
@@ -89,4 +93,3 @@ This is just the simpler, proven approach from the Railway template.
 3. Final fix: Learned from template that it's simpler → just `secure: false` and let Railway proxy handle SSL
 
 The template has been battle-tested by thousands of deployments. Their approach is correct.
-
