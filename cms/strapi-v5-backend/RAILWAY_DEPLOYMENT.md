@@ -5,12 +5,14 @@
 The error happens because `DATABASE_CLIENT` environment variable is not set or is empty in Railway.
 
 ### Step 1: Add PostgreSQL Plugin to Railway
+
 1. Go to your Strapi service in Railway dashboard
 2. Click "Add Plugin"
 3. Select "PostgreSQL"
 4. Railway will automatically create a database and set `DATABASE_URL`
 
 ### Step 2: Set Environment Variables in Railway Dashboard
+
 In your Strapi service settings, go to **Variables** tab and add these:
 
 ```
@@ -28,10 +30,13 @@ STRAPI_TELEMETRY_DISABLED=true
 **IMPORTANT:** Do NOT set `DATABASE_URL` manually - Railway automatically injects it when you add the PostgreSQL plugin.
 
 ### Step 3: Deploy
+
 ```bash
 git push github main
 ```
+
 Railway will auto-redeploy and should now:
+
 1. Read `DATABASE_CLIENT=postgres` ✅
 2. Auto-detect PostgreSQL from `DATABASE_URL` ✅
 3. Start successfully ✅
@@ -84,6 +89,7 @@ STRAPI_TELEMETRY_DISABLED=true
 If it still fails, your `DATABASE_URL` might not be set by Railway. Try this workaround:
 
 In Railway Variables, manually set:
+
 ```
 DATABASE_HOST=your-postgresql-host
 DATABASE_PORT=5432
