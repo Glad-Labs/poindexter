@@ -1,11 +1,34 @@
 module.exports = ({ env }) => {
-  const client = env('DATABASE_CLIENT', 'sqlite');
   const databaseUrl = env('DATABASE_URL');
 
-  // Log for debugging (remove in production if needed)
-  if (env.bool('STRAPI_LOG_CONFIG', false)) {
-    console.log('[DATABASE CONFIG] Client:', client);
-    console.log('[DATABASE CONFIG] Has DATABASE_URL:', !!databaseUrl);
+  // Auto-detect database type from DATABASE_URL if present
+  let client = env('DATABASE_CLIENT', '');
+
+  // If DATABASE_CLIENT is not set, auto-detect from DATABASE_URL or default to sqlite
+  if (!client || client === '') {
+    if (databaseUrl) {
+      if (
+        databaseUrl.includes('postgres') ||
+        databaseUrl.includes('postgresql')
+      ) {
+        client = 'postgres';
+      } else if (databaseUrl.includes('mysql')) {
+        client = 'mysql';
+      } else {
+        client = 'sqlite';
+      }
+    } else {
+      client = 'sqlite';
+    }
+  }
+
+  // Validate client is a known dialect
+  const validDialects = ['sqlite', 'postgres', 'mysql'];
+  if (!validDialects.includes(client)) {
+    console.error(
+      `[DATABASE CONFIG ERROR] Unknown dialect: "${client}". Valid options: ${validDialects.join(', ')}`
+    );
+    client = 'sqlite'; // Fallback to sqlite
   }
 
   const connections = {
