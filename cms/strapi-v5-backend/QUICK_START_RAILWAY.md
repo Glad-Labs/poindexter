@@ -5,29 +5,35 @@
 Open PowerShell and run these commands one at a time:
 
 ### Step 1: Install Railway CLI
+
 ```powershell
 npm install -g @railway/cli
 railway --version
 ```
 
 ### Step 2: Login to Railway
+
 ```powershell
 railway login
 ```
+
 This opens your browser to authenticate.
 
 ### Step 3: Create Railway Project
+
 ```powershell
 cd "C:\Users\mattm\glad-labs-website\cms\strapi-v5-backend"
 railway init --name glad-labs-strapi
 ```
 
 ### Step 4: Add PostgreSQL Database
+
 ```powershell
 railway add --plugin postgres
 ```
 
 ### Step 5: Configure Environment Variables
+
 Copy-paste each line one at a time:
 
 ```powershell
@@ -43,16 +49,19 @@ railway variables set JWT_SECRET="u+q3dyJ0qDkmdu2Al58iWg=="
 ```
 
 Verify variables:
+
 ```powershell
 railway variables
 ```
 
 ### Step 6: Deploy!
+
 ```powershell
 railway deploy
 ```
 
 Watch the logs (Ctrl+C to stop):
+
 ```powershell
 railway logs --follow
 ```
@@ -60,6 +69,7 @@ railway logs --follow
 Wait for: `✔ Strapi started successfully`
 
 ### Step 7: Create Admin User
+
 ```powershell
 railway open
 ```
@@ -88,21 +98,25 @@ railway open
 ## 🆘 If Something Goes Wrong
 
 **View detailed logs:**
+
 ```powershell
 railway logs --follow
 ```
 
 **Check environment variables:**
+
 ```powershell
 railway variables
 ```
 
 **Redeploy:**
+
 ```powershell
 railway deploy
 ```
 
 **Connection issues? Make sure PostgreSQL is added:**
+
 ```powershell
 railway services
 ```
@@ -124,6 +138,7 @@ Should show both "Strapi" and "PostgreSQL" services.
 ## 🎉 You're Done!
 
 Your Strapi backend is now live on Railway:
+
 - Admin panel: `https://your-project.railway.app/admin`
 - API: `https://your-project.railway.app/api`
 

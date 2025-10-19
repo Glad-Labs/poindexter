@@ -15,12 +15,14 @@ Headless CMS backend for GLAD Labs content platform powered by [Strapi v5.27.0](
 ## 📦 Content Types
 
 ### Core Content
+
 - **Post** - Blog posts with categories, tags, author, and featured image
 - **Category** - Organize posts by category
 - **Tag** - Tag-based content organization
 - **Author** - Author profiles with bio and avatar
 
 ### Metadata
+
 - **About** - About page with team members
 - **Content-Metric** - Track views, likes, shares for content
 - **Privacy-Policy** - Privacy policy pages
@@ -48,13 +50,13 @@ Or for detailed setup: **[RAILWAY_CLI_SETUP.md](./RAILWAY_CLI_SETUP.md)**
 
 ## � Documentation
 
-| Document | Purpose |
-|----------|---------|
-| [QUICK_START_RAILWAY.md](./QUICK_START_RAILWAY.md) | 5-minute Railway deployment |
-| [RAILWAY_CLI_SETUP.md](./RAILWAY_CLI_SETUP.md) | Complete Railway setup guide |
+| Document                                                 | Purpose                           |
+| -------------------------------------------------------- | --------------------------------- |
+| [QUICK_START_RAILWAY.md](./QUICK_START_RAILWAY.md)       | 5-minute Railway deployment       |
+| [RAILWAY_CLI_SETUP.md](./RAILWAY_CLI_SETUP.md)           | Complete Railway setup guide      |
 | [RAILWAY_PROJECT_REVIEW.md](./RAILWAY_PROJECT_REVIEW.md) | Project analysis & best practices |
-| [RAILWAY_DEPLOYMENT.md](./RAILWAY_DEPLOYMENT.md) | Environment configuration |
-| [ADMIN_UI_BUILD_STATUS.md](./ADMIN_UI_BUILD_STATUS.md) | Admin panel information |
+| [RAILWAY_DEPLOYMENT.md](./RAILWAY_DEPLOYMENT.md)         | Environment configuration         |
+| [ADMIN_UI_BUILD_STATUS.md](./ADMIN_UI_BUILD_STATUS.md)   | Admin panel information           |
 
 ## 🏗️ Project Structure
 
@@ -84,6 +86,7 @@ config/
 ## 🔧 Environment Variables
 
 ### Required
+
 ```
 DATABASE_CLIENT=postgres      # Database type (sqlite|postgres|mysql)
 HOST=0.0.0.0                  # Server host
@@ -91,6 +94,7 @@ PORT=1337                     # Server port
 ```
 
 ### Security (Required for Production)
+
 ```
 APP_KEYS                      # Session encryption keys
 API_TOKEN_SALT                # API token salt
@@ -100,6 +104,7 @@ JWT_SECRET                    # JWT secret
 ```
 
 ### Optional
+
 ```
 DATABASE_URL                  # PostgreSQL connection string
 STRAPI_TELEMETRY_DISABLED     # Disable telemetry (true|false)
@@ -124,11 +129,13 @@ DELETE /api/posts/:id                # Delete post
 ## 🗄️ Database
 
 ### Local Development
+
 - **SQLite** - `.tmp/data.db` (automatic)
 - Persists between restarts
 - No setup needed
 
 ### Production (Railway)
+
 - **PostgreSQL** 15
 - Auto-provisioned by Railway
 - Daily automatic backups
@@ -139,6 +146,7 @@ DELETE /api/posts/:id                # Delete post
 For production deployment:
 
 1. **Generate new security keys**
+
    ```bash
    node -e "console.log(require('crypto').randomBytes(16).toString('base64'))"
    ```
@@ -155,18 +163,19 @@ For production deployment:
 
 ## 📊 Technology Stack
 
-| Technology | Version | Purpose |
-|-----------|---------|---------|
-| Node.js | 18+ | Runtime |
-| Strapi | 5.27.0 | CMS |
-| PostgreSQL | 15 | Database |
-| SQLite | 3 | Local dev |
-| Nginx | - | Web server |
-| Koa | 2.x | HTTP framework |
+| Technology | Version | Purpose        |
+| ---------- | ------- | -------------- |
+| Node.js    | 18+     | Runtime        |
+| Strapi     | 5.27.0  | CMS            |
+| PostgreSQL | 15      | Database       |
+| SQLite     | 3       | Local dev      |
+| Nginx      | -       | Web server     |
+| Koa        | 2.x     | HTTP framework |
 
 ## 🚢 Deployment
 
 ### Railway (Recommended)
+
 - **Cost**: $5-25/month depending on usage
 - **Setup**: 5 minutes with Railway CLI
 - **Auto-scaling**: Yes
@@ -175,11 +184,13 @@ For production deployment:
 See [QUICK_START_RAILWAY.md](./QUICK_START_RAILWAY.md)
 
 ### Heroku
+
 - **Cost**: $25-50+/month (standard dynos)
 - **Setup**: 10 minutes
 - **Auto-scaling**: Yes with paid tier
 
 ### Self-hosted
+
 - **Cost**: Variable (VPS)
 - **Setup**: 30+ minutes
 - **Auto-scaling**: Manual
@@ -187,16 +198,19 @@ See [QUICK_START_RAILWAY.md](./QUICK_START_RAILWAY.md)
 ## 📈 Monitoring & Logs
 
 ### Local Development
+
 ```bash
 npm run dev
 ```
 
 ### Production (Railway)
+
 ```bash
 railway logs --follow
 ```
 
 ### Monitor Resources
+
 ```bash
 railway monitor
 ```
@@ -226,8 +240,10 @@ npm run upgrade
 ## 🤝 Integration with Other Services
 
 ### Next.js Frontend
+
 ```javascript
-const STRAPI_URL = process.env.NEXT_PUBLIC_STRAPI_URL || 'http://localhost:1337';
+const STRAPI_URL =
+  process.env.NEXT_PUBLIC_STRAPI_URL || 'http://localhost:1337';
 
 async function getPosts() {
   const res = await fetch(`${STRAPI_URL}/api/posts`);
@@ -236,17 +252,19 @@ async function getPosts() {
 ```
 
 ### React App
+
 ```javascript
 const API_URL = process.env.REACT_APP_STRAPI_URL || 'http://localhost:1337';
 
 useEffect(() => {
   fetch(`${API_URL}/api/posts`)
-    .then(res => res.json())
-    .then(data => setData(data));
+    .then((res) => res.json())
+    .then((data) => setData(data));
 }, []);
 ```
 
 ### Python Backend
+
 ```python
 import requests
 
@@ -272,14 +290,15 @@ posts = response.json()
 ## 💬 Support
 
 For issues:
+
 1. Check logs: `railway logs --follow`
 2. Read [RAILWAY_PROJECT_REVIEW.md](./RAILWAY_PROJECT_REVIEW.md)
 3. Check [QUICK_START_RAILWAY.md](./QUICK_START_RAILWAY.md) troubleshooting
 
 ---
 
-**Made with ❤️ for GLAD Labs**
-    - This command will run Strapi in development mode with the service variables available locally
+**Made with ❤️ for GLAD Labs** - This command will run Strapi in development mode with the service variables available locally
+
 - Open your browser to `http://127.0.0.1:1337/admin`
 
 ## 📝 Notes

@@ -21,14 +21,14 @@
 
 ### Dependencies Analysis
 
-| Package | Version | Purpose | Status |
-|---------|---------|---------|--------|
-| @strapi/strapi | 5.27.0 | Core CMS | ✅ Current |
-| @strapi/plugin-users-permissions | 5.27.0 | Auth/Permissions | ✅ Current |
-| @strapi/provider-upload-local | 5.27.0 | File Uploads | ✅ Current |
-| pg | 8.8.0 | PostgreSQL Driver | ✅ Current |
-| axios | ^1.7.7 | HTTP Client | ✅ Current |
-| bcryptjs | ^3.0.2 | Password Hashing | ✅ Current |
+| Package                          | Version | Purpose           | Status     |
+| -------------------------------- | ------- | ----------------- | ---------- |
+| @strapi/strapi                   | 5.27.0  | Core CMS          | ✅ Current |
+| @strapi/plugin-users-permissions | 5.27.0  | Auth/Permissions  | ✅ Current |
+| @strapi/provider-upload-local    | 5.27.0  | File Uploads      | ✅ Current |
+| pg                               | 8.8.0   | PostgreSQL Driver | ✅ Current |
+| axios                            | ^1.7.7  | HTTP Client       | ✅ Current |
+| bcryptjs                         | ^3.0.2  | Password Hashing  | ✅ Current |
 
 ---
 
@@ -108,6 +108,7 @@ Invoke-WebRequest -Uri "https://your-project.railway.app/api/posts"
 ## 📊 Content Type Reference
 
 ### Post
+
 ```
 - title (string, required)
 - slug (string, unique)
@@ -122,6 +123,7 @@ Invoke-WebRequest -Uri "https://your-project.railway.app/api/posts"
 ```
 
 ### Category
+
 ```
 - name (string, required, unique)
 - slug (string)
@@ -130,6 +132,7 @@ Invoke-WebRequest -Uri "https://your-project.railway.app/api/posts"
 ```
 
 ### Tag
+
 ```
 - name (string, required, unique)
 - slug (string)
@@ -137,6 +140,7 @@ Invoke-WebRequest -Uri "https://your-project.railway.app/api/posts"
 ```
 
 ### Author
+
 ```
 - name (string, required)
 - email (string)
@@ -146,6 +150,7 @@ Invoke-WebRequest -Uri "https://your-project.railway.app/api/posts"
 ```
 
 ### About
+
 ```
 - title (string)
 - content (rich text)
@@ -153,6 +158,7 @@ Invoke-WebRequest -Uri "https://your-project.railway.app/api/posts"
 ```
 
 ### Content-Metric
+
 ```
 - post (relation: many-to-one)
 - views (integer)
@@ -162,6 +168,7 @@ Invoke-WebRequest -Uri "https://your-project.railway.app/api/posts"
 ```
 
 ### Privacy-Policy
+
 ```
 - title (string)
 - content (rich text)
@@ -173,9 +180,11 @@ Invoke-WebRequest -Uri "https://your-project.railway.app/api/posts"
 ## 🔧 Configuration Files Explained
 
 ### config/database.js
+
 **Purpose**: Database connection configuration
 
 **Features**:
+
 - Auto-detects PostgreSQL from DATABASE_URL
 - Falls back to SQLite if no database configured
 - Validates database dialect
@@ -183,25 +192,31 @@ Invoke-WebRequest -Uri "https://your-project.railway.app/api/posts"
 - SSL support for production
 
 **Environment Variables**:
+
 - `DATABASE_CLIENT` - Type: sqlite|postgres|mysql
 - `DATABASE_URL` - Full connection string (PostgreSQL)
 - `DATABASE_HOST`, `DATABASE_PORT`, etc. - Individual connection params
 
 ### railway.json
+
 **Purpose**: Railway deployment configuration
 
 **Build Step**:
+
 - Installs production dependencies
 - Runs `npm run build` to build Strapi
 
 **Deploy Step**:
+
 - Runs `npm run start` to start server
 - Auto-restarts on failure (max 10 times)
 
 ### config/server.js
+
 **Purpose**: Server configuration
 
 **Settings**:
+
 - HOST: 0.0.0.0 (listen on all interfaces)
 - PORT: 1337 (Railway assigns via PORT env var)
 - APP_KEYS: Session encryption keys (required for strapi::session middleware)
@@ -213,11 +228,12 @@ Invoke-WebRequest -Uri "https://your-project.railway.app/api/posts"
 ### Before Production Deployment
 
 1. **Generate New Security Keys**
+
    ```bash
    # Generate strong random keys
    node -e "console.log(require('crypto').randomBytes(16).toString('base64'))"
    ```
-   
+
    Update:
    - APP_KEYS (4 values)
    - API_TOKEN_SALT
@@ -227,6 +243,7 @@ Invoke-WebRequest -Uri "https://your-project.railway.app/api/posts"
 
 2. **Configure CORS**
    Edit `config/middlewares.js`:
+
    ```javascript
    {
      name: 'strapi::cors',
@@ -252,16 +269,19 @@ Invoke-WebRequest -Uri "https://your-project.railway.app/api/posts"
 ## 📈 Monitoring & Maintenance
 
 ### View Project Status
+
 ```bash
 railway status
 ```
 
 ### Monitor Resources
+
 ```bash
 railway monitor
 ```
 
 ### View Logs
+
 ```bash
 # Real-time logs
 railway logs --follow
@@ -274,6 +294,7 @@ railway logs --service postgres
 ```
 
 ### Manage Environment Variables
+
 ```bash
 # View all variables
 railway variables
@@ -311,6 +332,7 @@ git push
 ## 🐛 Troubleshooting Deployment
 
 ### Error: "Unknown dialect"
+
 ```
 Cause: DATABASE_CLIENT not set to "postgres"
 Fix: railway variables set DATABASE_CLIENT=postgres
@@ -318,6 +340,7 @@ Fix: railway variables set DATABASE_CLIENT=postgres
 ```
 
 ### Error: "Connection refused to database"
+
 ```
 Cause: PostgreSQL plugin not added
 Fix: railway add --plugin postgres
@@ -325,6 +348,7 @@ Fix: railway add --plugin postgres
 ```
 
 ### Error: "Admin panel shows white page"
+
 ```
 Cause: Strapi build errors (shouldn't happen with v5.27.0)
 Fix: railway logs --follow (check for errors)
@@ -332,6 +356,7 @@ Fix: railway logs --follow (check for errors)
 ```
 
 ### Error: "Service crashes immediately"
+
 ```
 Cause: Missing environment variables or invalid config
 Fix: railway logs --follow (read error message)
@@ -362,19 +387,19 @@ Fix: railway logs --follow (read error message)
 
 ## 📞 Quick Reference
 
-| Task | Command |
-|------|---------|
-| Login | `railway login` |
-| Create project | `railway init --name <name>` |
-| Add service | `railway add --plugin <name>` |
-| Deploy | `railway deploy` |
-| View logs | `railway logs --follow` |
-| Environment vars | `railway variables` |
-| Open in browser | `railway open` |
-| Project status | `railway status` |
-| Monitor resources | `railway monitor` |
-| SSH into container | `railway shell` |
-| View domain | `railway domain` |
+| Task               | Command                       |
+| ------------------ | ----------------------------- |
+| Login              | `railway login`               |
+| Create project     | `railway init --name <name>`  |
+| Add service        | `railway add --plugin <name>` |
+| Deploy             | `railway deploy`              |
+| View logs          | `railway logs --follow`       |
+| Environment vars   | `railway variables`           |
+| Open in browser    | `railway open`                |
+| Project status     | `railway status`              |
+| Monitor resources  | `railway monitor`             |
+| SSH into container | `railway shell`               |
+| View domain        | `railway domain`              |
 
 ---
 
@@ -403,13 +428,13 @@ Once Strapi is deployed:
 
 ## Cost Summary
 
-| Service | Cost | Notes |
-|---------|------|-------|
-| Railway Strapi | $5-10/month | Starts at $5 |
-| Railway PostgreSQL | $15/month | 1GB included, auto-backups |
-| Railway Python Agent | $5-10/month | Optional, scales as needed |
-| Vercel Next.js | $0/month | Free tier |
-| Vercel React Hub | $0/month | Free tier |
-| **Total** | **$25-35/month** | Scales to 100K+ users |
+| Service              | Cost             | Notes                      |
+| -------------------- | ---------------- | -------------------------- |
+| Railway Strapi       | $5-10/month      | Starts at $5               |
+| Railway PostgreSQL   | $15/month        | 1GB included, auto-backups |
+| Railway Python Agent | $5-10/month      | Optional, scales as needed |
+| Vercel Next.js       | $0/month         | Free tier                  |
+| Vercel React Hub     | $0/month         | Free tier                  |
+| **Total**            | **$25-35/month** | Scales to 100K+ users      |
 
 **Savings vs Heroku**: ~$50-100/month on similar setup

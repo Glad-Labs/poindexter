@@ -4,11 +4,13 @@
 
 **Project Name:** glad-labs-strapi  
 **Components:**
+
 - Strapi v5.27.0 (Headless CMS)
 - PostgreSQL (Database)
 - Node.js 18+
 
 **What's Included:**
+
 - 7 Content Types (post, category, tag, author, about, content-metric, privacy-policy)
 - Auto-generated REST API
 - User permissions management
@@ -28,16 +30,19 @@
 ## Step 1: Install Railway CLI
 
 ### Windows (PowerShell)
+
 ```powershell
 npm install -g @railway/cli
 ```
 
 ### macOS/Linux (Bash)
+
 ```bash
 npm install -g @railway/cli
 ```
 
 ### Verify Installation
+
 ```bash
 railway --version
 ```
@@ -57,11 +62,13 @@ This opens a browser to authenticate with your Railway account.
 ## Step 3: Create New Project
 
 Navigate to your Strapi project directory:
+
 ```bash
 cd cms/strapi-v5-backend
 ```
 
 Initialize a new Railway project:
+
 ```bash
 railway init --name glad-labs-strapi
 ```
@@ -106,6 +113,7 @@ railway variables set STRAPI_TELEMETRY_DISABLED=true
 ```
 
 ### View All Variables
+
 ```bash
 railway variables
 ```
@@ -115,22 +123,26 @@ railway variables
 ## Step 6: Deploy to Railway
 
 ### Initial Deployment (Production Build)
+
 ```bash
 railway deploy
 ```
 
 This will:
+
 1. Build Strapi (npm run build)
 2. Install production dependencies (npm install --omit=dev)
 3. Start Strapi server
 4. Set up PostgreSQL connection
 
 ### Monitor Deployment
+
 ```bash
 railway logs
 ```
 
 ### Watch Logs in Real-time
+
 ```bash
 railway logs --follow
 ```
@@ -140,6 +152,7 @@ railway logs --follow
 ## Step 7: Verify Deployment
 
 ### Get Service URL
+
 ```bash
 railway domain
 ```
@@ -147,6 +160,7 @@ railway domain
 This shows your Strapi URL: `https://your-project.railway.app`
 
 ### Test Admin Panel
+
 ```bash
 railway open
 ```
@@ -154,6 +168,7 @@ railway open
 Opens `https://your-project.railway.app/admin` in your browser
 
 ### Test API Endpoint
+
 ```bash
 curl https://your-project.railway.app/api/posts
 ```
@@ -165,24 +180,27 @@ curl https://your-project.railway.app/api/posts
 After deployment, you need to create your first admin user.
 
 ### Option 1: Via Admin Panel
+
 1. Visit `https://your-project.railway.app/admin`
 2. Follow the first-time setup wizard
 3. Create your admin account
 
 ### Option 2: Via SSH/Remote Console
+
 ```bash
 railway shell
 npm run console
 ```
 
 Then in the console:
+
 ```javascript
 await strapi.db.query('admin::user').create({
   username: 'admin',
   email: 'admin@example.com',
   password: 'SecurePassword123!',
   isActive: true,
-  roles: [1]
+  roles: [1],
 });
 ```
 
@@ -223,6 +241,7 @@ cms/strapi-v5-backend/
 ## Key Files Explained
 
 ### railway.json
+
 ```json
 {
   "$schema": "https://railway.app/railway.schema.json",
@@ -242,7 +261,9 @@ cms/strapi-v5-backend/
 - **restartPolicy**: Auto-restarts on failure (up to 10 times)
 
 ### config/database.js
+
 Automatically:
+
 - Detects PostgreSQL from `DATABASE_URL`
 - Falls back to SQLite if no database
 - Validates database dialect
@@ -298,31 +319,39 @@ railway monitor
 ## Troubleshooting
 
 ### "Unknown dialect" Error
+
 **Cause**: DATABASE_CLIENT not set to "postgres"  
 **Fix**:
+
 ```bash
 railway variables set DATABASE_CLIENT=postgres
 railway deploy
 ```
 
 ### Connection Refused to Database
+
 **Cause**: PostgreSQL plugin not added  
 **Fix**:
+
 ```bash
 railway add --plugin postgres
 ```
 
 ### Admin Panel Shows White Page
+
 **Cause**: Strapi build errors  
 **Fix**:
+
 ```bash
 railway logs --follow  # Check for errors
 railway deploy         # Redeploy
 ```
 
 ### "Strapi started successfully" but still can't access
+
 **Cause**: Service not ready  
 **Fix**:
+
 ```bash
 railway logs --follow  # Wait for "Server responded with 200"
 ```
@@ -347,18 +376,21 @@ railway logs --follow  # Wait for "Server responded with 200"
 ## Next Steps
 
 1. **Deploy Next.js Public Site to Vercel**
+
    ```bash
    cd web/public-site
    vercel deploy
    ```
 
 2. **Deploy React Oversight Hub to Vercel**
+
    ```bash
    cd web/oversight-hub
    vercel deploy
    ```
 
 3. **Deploy Python Cofounder to Railway**
+
    ```bash
    cd src/cofounder_agent
    railway add --name cofounder
@@ -380,13 +412,13 @@ railway logs --follow  # Wait for "Server responded with 200"
 
 ## Cost Estimate (Hybrid Strategy)
 
-| Service | Component | Monthly Cost |
-|---------|-----------|--------------|
-| Railway | Strapi Starter | $5-10 |
-| Railway | PostgreSQL 1GB | $15 |
-| Railway | Python Cofounder | $5-10 |
-| Vercel | Next.js (Free) | $0 |
-| Vercel | React Hub (Free) | $0 |
-| **TOTAL** | | **$25-35/month** |
+| Service   | Component        | Monthly Cost     |
+| --------- | ---------------- | ---------------- |
+| Railway   | Strapi Starter   | $5-10            |
+| Railway   | PostgreSQL 1GB   | $15              |
+| Railway   | Python Cofounder | $5-10            |
+| Vercel    | Next.js (Free)   | $0               |
+| Vercel    | React Hub (Free) | $0               |
+| **TOTAL** |                  | **$25-35/month** |
 
 **Scales to**: 100K+ monthly active users before needing upgrades

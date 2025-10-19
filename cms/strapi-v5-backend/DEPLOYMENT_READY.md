@@ -48,15 +48,15 @@
 
 ### ✨ Current Project Status
 
-| Component | Status | Notes |
-|-----------|--------|-------|
-| Strapi v5.27.0 | ✅ Running | Localhost:1337 |
-| Admin Panel | ✅ Working | All UI fixed |
-| SQLite (Dev) | ✅ Ready | .tmp/data.db |
-| PostgreSQL | ✅ Configured | Auto-detects from DATABASE_URL |
-| 7 Content Types | ✅ Ready | Post, Category, Tag, Author, About, Metric, Privacy |
-| REST API | ✅ Ready | Auto-generated endpoints |
-| Database Config | ✅ Enhanced | Better error handling |
+| Component       | Status        | Notes                                               |
+| --------------- | ------------- | --------------------------------------------------- |
+| Strapi v5.27.0  | ✅ Running    | Localhost:1337                                      |
+| Admin Panel     | ✅ Working    | All UI fixed                                        |
+| SQLite (Dev)    | ✅ Ready      | .tmp/data.db                                        |
+| PostgreSQL      | ✅ Configured | Auto-detects from DATABASE_URL                      |
+| 7 Content Types | ✅ Ready      | Post, Category, Tag, Author, About, Metric, Privacy |
+| REST API        | ✅ Ready      | Auto-generated endpoints                            |
+| Database Config | ✅ Enhanced   | Better error handling                               |
 
 ---
 
@@ -105,14 +105,14 @@ Follow RAILWAY_CLI_SETUP.md for complete details
 
 ### After Deployment
 
-| Service | Monthly Cost |
-|---------|-------------|
-| Railway Strapi | $5-10 |
-| Railway PostgreSQL | $15 |
-| Vercel Next.js (Free) | $0 |
-| Vercel React Hub (Free) | $0 |
-| Railway Python Cofounder (Optional) | $5-10 |
-| **Total** | **$20-35/month** |
+| Service                             | Monthly Cost     |
+| ----------------------------------- | ---------------- |
+| Railway Strapi                      | $5-10            |
+| Railway PostgreSQL                  | $15              |
+| Vercel Next.js (Free)               | $0               |
+| Vercel React Hub (Free)             | $0               |
+| Railway Python Cofounder (Optional) | $5-10            |
+| **Total**                           | **$20-35/month** |
 
 **Scales to**: 100K+ monthly active users before needing upgrades
 
@@ -174,14 +174,17 @@ strapi-v5-backend/
 ## 🔐 Security Notes
 
 ### Keys in Repository
+
 ⚠️ The security keys in `.env` are **example values**. For production:
 
 1. Generate new keys:
+
    ```powershell
    node -e "console.log(require('crypto').randomBytes(16).toString('base64'))"
    ```
 
 2. Set in Railway (not in .env):
+
    ```
    railway variables set APP_KEYS="new-generated-values"
    ```
@@ -193,16 +196,20 @@ strapi-v5-backend/
 ## 📞 Troubleshooting Reference
 
 ### "Unknown dialect" error
+
 → Set `DATABASE_CLIENT=postgres` in Railway
 
 ### "Connection refused to database"
+
 → Add PostgreSQL plugin: `railway add --plugin postgres`
 
 ### "Admin shows white page"
+
 → Check logs: `railway logs --follow`
 → Redeploy: `railway deploy`
 
 ### Service crashes immediately
+
 → Read error in logs: `railway logs --follow`
 → Check environment variables: `railway variables`
 
@@ -255,7 +262,7 @@ QUICK_START_RAILWAY.md (5 min copy-paste)
     ├→ Working? Go to next section below
     ├→ Issues? Check RAILWAY_CLI_SETUP.md troubleshooting
     └→ Want details? Read RAILWAY_PROJECT_REVIEW.md
-    
+
 After Deployment
     ↓
     ├→ Create admin user (via admin panel)
