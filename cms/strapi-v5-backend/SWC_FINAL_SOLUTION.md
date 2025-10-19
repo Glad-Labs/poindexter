@@ -3,6 +3,7 @@
 ## The Real Problem
 
 SWC v1.13.5 prebuilt binaries have **incompatibility issues in Linux containers**:
+
 - Precompiled Windows binaries don't work on Linux
 - Using `npm install --force` downloads Linux prebuilts that still fail
 - The prebuilt binaries have missing dependencies or compatibility issues
@@ -22,6 +23,7 @@ npm install --build=from-source && npm run build
 ```
 
 **What this does:**
+
 - `--build=from-source` builds SWC and other packages from source code
 - Compiles on the target platform (Linux in the container)
 - Creates platform-specific binaries that actually work
@@ -49,10 +51,10 @@ npm run build:
 
 ## Comparison
 
-| Method | Pros | Cons |
-|--------|------|------|
-| `npm rebuild` | Fast | Doesn't work for prebuilts |
-| `npm install --force` | Downloads latest | Prebuilts are broken |
+| Method                            | Pros                  | Cons                                 |
+| --------------------------------- | --------------------- | ------------------------------------ |
+| `npm rebuild`                     | Fast                  | Doesn't work for prebuilts           |
+| `npm install --force`             | Downloads latest      | Prebuilts are broken                 |
 | `npm install --build=from-source` | ✅ Builds from source | Takes slightly longer (~30-60s more) |
 
 ## Build Time Impact
@@ -64,6 +66,7 @@ npm run build:
 ## Verification
 
 ✅ Tested locally:
+
 ```
 npm install --build=from-source
   → added 73 packages (with SWC rebuilt from source)
@@ -71,13 +74,14 @@ npm install --build=from-source
 npm run build
   ✔ Building build context (29ms)
   ✔ Building admin panel (14.6s)
-  
+
 SUCCESS - No SWC binding errors
 ```
 
 ## Why This Took Multiple Attempts
 
 SWC core is **Rust-based**:
+
 1. First attempt: npm rebuild (wrong tool for prebuilts)
 2. Second attempt: npm install --force (prebuilts broken in container)
 3. Final solution: Build from source (guaranteed compatible)
