@@ -3,6 +3,7 @@
 ## Issues Fixed
 
 ### 1. ❌ Device/Resource Busy Error
+
 **Error:** `rm: cannot remove 'node_modules/.cache': Device or resource busy`
 
 **Root Cause:** Trying to forcefully remove cache files while npm processes were still accessing them
@@ -14,6 +15,7 @@
 ---
 
 ### 2. ❌ Missing Vite Alias File
+
 **Error:** Build exit code 1 - missing `admin-fix.mjs`
 
 **Root Cause:** `vite.config.js` was trying to alias `@strapi/admin/strapi-admin` to non-existent `admin-fix.mjs`
@@ -42,6 +44,7 @@
 ```
 
 **What it does:**
+
 1. Clean install of dependencies (no cache corruption)
 2. Excludes dev dependencies (smaller container)
 3. Excludes optional dependencies (avoids installation errors)
@@ -54,12 +57,14 @@
 ## Local Build Test Results
 
 ✅ Build completed successfully:
+
 ```
 ✔ Building build context (34ms)
 ✔ Building admin panel (14661ms)
 ```
 
 ⚠️ Tailwind warning (non-critical):
+
 ```
 warn - The `content` option in your Tailwind CSS configuration is missing or empty.
 warn - Configure your content sources or your generated styles will be missing.
@@ -72,17 +77,20 @@ This is just a warning - it doesn't fail the build.
 ## Next Steps
 
 ### On Railway:
+
 1. GitHub push triggers auto-deploy
 2. Build should now complete in 3-4 minutes
 3. Monitor with: `railway logs --follow`
 
 ### Expected Success Indicators:
+
 - ✅ Build completes without errors
 - ✅ Container starts successfully
 - ✅ Admin panel loads at `https://your-domain/admin`
 - ✅ REST APIs respond
 
 ### Commits:
+
 - `982ba4720` - Simplified railway build command
 - `607aff1eb` - Removed broken vite alias
 
@@ -93,6 +101,7 @@ This is just a warning - it doesn't fail the build.
 If build still fails on Railway:
 
 1. **Check the current logs:**
+
    ```bash
    railway logs --follow --service strapi-production
    ```

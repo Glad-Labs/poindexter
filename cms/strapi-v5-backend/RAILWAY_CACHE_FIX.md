@@ -10,6 +10,7 @@ npm error errno -16
 **When:** During the build step while running `npm ci --omit=dev --omit=optional`
 
 **Why it happened:** Railway's Railpack build system runs two npm commands in sequence:
+
 1. **Install step:** `npm install` (creates node_modules and cache)
 2. **Build step:** `npm ci --omit=dev --omit=optional` (tries to remove cache)
 
@@ -22,6 +23,7 @@ The problem: `npm ci` was trying to clean and rebuild the cache while the cache 
 Railway's build configuration had conflicting requirements:
 
 ### Issue 1: Duplicate npm Operations
+
 ```
 Step 1 (install): npm install                                  ← Creates cache
 Step 2 (build):   npm ci --omit=dev --omit=optional           ← Tries to clean cache
@@ -31,14 +33,17 @@ Step 2 (build):   npm ci --omit=dev --omit=optional           ← Tries to clean
 **Why this fails:** npm can't remove the cache directory it just created if it's still in use.
 
 ### Issue 2: Problematic `.npmrc` Configuration
+
 Original `.npmrc`:
+
 ```properties
 cache=/tmp/.npm-cache              ← Custom cache location
 optional=false                     ← Skip optional deps
 fetch-timeout=60000                ← Long timeouts
 ```
 
-**Why this failed:** 
+**Why this failed:**
+
 - Custom cache location conflicts with Railpack's cache management
 - Multiple cache settings cause lockfile conflicts
 - The build system was trying to manage cache in two places simultaneously
@@ -48,6 +53,7 @@ fetch-timeout=60000                ← Long timeouts
 ## The Solution
 
 ### 1. Simplified `railway.json`
+
 ```json
 {
   "build": {
@@ -59,6 +65,7 @@ fetch-timeout=60000                ← Long timeouts
 **Why:** Since `npm install` runs in the install step, the build step just needs to run `npm run build`. The node_modules are already there, so we don't need `npm ci` again.
 
 ### 2. Minimal `.npmrc`
+
 ```properties
 # Minimal npm configuration for Railway.app
 optional=false           ← Skip optional deps (safer in containers)
@@ -67,7 +74,8 @@ update-notifier=false   ← Disable update notifications
 production=true         ← Enable production mode
 ```
 
-**Why:** 
+**Why:**
+
 - Removes cache path conflicts
 - Lets Railpack manage caching automatically
 - Reduces npm configuration surface area
@@ -115,6 +123,7 @@ Step 4: npm run start
 ## Testing Locally
 
 ✅ Build tested and verified on Windows:
+
 ```
 Building build context ...................... 30ms ✔
 Building admin panel ....................... 14.9s ✔
@@ -126,12 +135,14 @@ Total build time .......................... ~15 seconds
 ## Expected Railway Deployment
 
 **Build time:** 3-4 minutes total
+
 - Node.js installation: ~1.5 min
 - npm install: ~1 min
 - npm run build: ~30 sec
 - Container startup: ~30 sec
 
 **Success indicators in logs:**
+
 ```
 ✔ Building build context
 ✔ Building admin panel
@@ -152,12 +163,14 @@ Total build time .......................... ~15 seconds
 ## Key Takeaway
 
 ❌ **Don't:**
+
 - Use `npm ci` if `npm install` already ran
 - Configure custom cache paths in containers
 - Run multiple npm install variants
 - Override Railpack's cache management
 
 ✅ **Do:**
+
 - Let Railway manage caching
 - Minimize `.npmrc` configuration
 - Use one dependency installation method
