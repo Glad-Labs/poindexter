@@ -611,8 +611,8 @@ curl -X POST http://localhost:8000/command `
 curl http://localhost:1337/api/posts
 ```
 
-3. **Check Public Site**: http://localhost:3000
-4. **Trigger rebuild** (if needed):
+1. **Check Public Site**: http://localhost:3000
+2. **Trigger rebuild** (if needed):
 
 ```powershell
 cd web/public-site

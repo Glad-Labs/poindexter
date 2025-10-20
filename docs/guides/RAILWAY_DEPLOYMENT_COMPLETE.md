@@ -245,7 +245,7 @@ Railway's proxy terminates SSL (HTTPS → HTTP internally). The connection betwe
 railway variables --set "COOKIE_SECURE=false"
 ```
 
-2. **Admin Config** (`config/admin.ts`):
+1. **Admin Config** (`config/admin.ts`):
 ```typescript
 export default ({ env }) => ({
   auth: {
@@ -258,7 +258,7 @@ export default ({ env }) => ({
 });
 ```
 
-3. **Middleware Config** (`config/middlewares.ts`):
+1. **Middleware Config** (`config/middlewares.ts`):
 ```typescript
 export default [
   // ... other middlewares
@@ -276,7 +276,7 @@ export default [
 ];
 ```
 
-4. **Server Config** (`config/server.ts`):
+1. **Server Config** (`config/server.ts`):
 ```typescript
 export default ({ env }) => ({
   host: env('HOST', '0.0.0.0'),
