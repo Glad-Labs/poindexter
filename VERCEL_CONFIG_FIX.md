@@ -12,15 +12,19 @@
 ## What Was Fixed
 
 ### ✅ Added Schema Autocomplete
+
 ```json
 {
   "$schema": "https://openapi.vercel.sh/vercel.json"
 }
 ```
+
 This enables IDE autocomplete and validation in VS Code.
 
 ### ✅ Removed Legacy `env` Configuration
+
 **OLD (deprecated):**
+
 ```json
 {
   "env": {
@@ -31,11 +35,13 @@ This enables IDE autocomplete and validation in VS Code.
 ```
 
 **WHY:** Vercel recommends managing environment variables in the Project Settings dashboard instead of in `vercel.json`. This is:
+
 - More secure (don't commit secrets)
 - Easier to manage per environment
 - Better for team collaboration
 
 ### ✅ Added Security Headers
+
 ```json
 {
   "headers": [
@@ -52,12 +58,14 @@ This enables IDE autocomplete and validation in VS Code.
 ```
 
 ### ✅ Added URL Normalization
+
 ```json
 {
   "cleanUrls": true,
   "trailingSlash": false
 }
 ```
+
 - Removes `.html` extensions from URLs
 - Redirects URLs with trailing slashes to without
 
@@ -68,19 +76,21 @@ This enables IDE autocomplete and validation in VS Code.
 **You MUST add your environment variables in the Vercel dashboard instead of `vercel.json`:**
 
 ### Step 1: Go to Vercel Dashboard
+
 1. Open https://vercel.com/dashboard
 2. Select your `glad-labs-public-site` project
 
 ### Step 2: Add Environment Variables
+
 1. Click **Settings** tab
 2. Click **Environment Variables** on the left
 3. Add these variables:
 
-| Name | Value | Type |
-|------|-------|------|
+| Name                         | Value                                 | Type       |
+| ---------------------------- | ------------------------------------- | ---------- |
 | `NEXT_PUBLIC_STRAPI_API_URL` | `https://your-strapi-url.railway.app` | Plain text |
-| `STRAPI_API_TOKEN` | Your Strapi API token | Secret |
-| `NEXT_PUBLIC_SITE_URL` | `https://gladlabs.io` | Plain text |
+| `STRAPI_API_TOKEN`           | Your Strapi API token                 | Secret     |
+| `NEXT_PUBLIC_SITE_URL`       | `https://gladlabs.io`                 | Plain text |
 
 ### Step 3: How to Get STRAPI_API_TOKEN
 
@@ -94,6 +104,7 @@ This enables IDE autocomplete and validation in VS Code.
 5. Copy the token and paste into Vercel
 
 ### Step 4: Redeploy
+
 1. After adding environment variables, redeploy on Vercel
 2. Vercel will automatically trigger a redeployment
 3. Or manually redeploy: Click **Deployments** → Click the latest one → Click **Redeploy**
@@ -123,7 +134,10 @@ This enables IDE autocomplete and validation in VS Code.
     {
       "source": "/service-worker.js",
       "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        }
       ]
     }
   ]
@@ -132,22 +146,23 @@ This enables IDE autocomplete and validation in VS Code.
 
 ### What Each Section Does:
 
-| Property | Purpose |
-|----------|---------|
-| `$schema` | Enables IDE autocomplete for vercel.json |
-| `buildCommand` | Runs `npm run build` during deployment |
-| `devCommand` | Runs `npm run dev` locally |
-| `installCommand` | Runs `npm install` during deployment |
-| `framework` | Tells Vercel this is a Next.js project |
-| `cleanUrls` | Removes `.html` from URLs |
-| `trailingSlash` | Removes trailing slashes from URLs |
-| `headers` | Adds security headers to all responses |
+| Property         | Purpose                                  |
+| ---------------- | ---------------------------------------- |
+| `$schema`        | Enables IDE autocomplete for vercel.json |
+| `buildCommand`   | Runs `npm run build` during deployment   |
+| `devCommand`     | Runs `npm run dev` locally               |
+| `installCommand` | Runs `npm install` during deployment     |
+| `framework`      | Tells Vercel this is a Next.js project   |
+| `cleanUrls`      | Removes `.html` from URLs                |
+| `trailingSlash`  | Removes trailing slashes from URLs       |
+| `headers`        | Adds security headers to all responses   |
 
 ---
 
 ## Optional Enhancements
 
 ### Add Cache Headers for Static Assets
+
 ```json
 {
   "source": "/assets/(.*)",
@@ -158,6 +173,7 @@ This enables IDE autocomplete and validation in VS Code.
 ```
 
 ### Add Redirects (if needed)
+
 ```json
 {
   "redirects": [
@@ -171,6 +187,7 @@ This enables IDE autocomplete and validation in VS Code.
 ```
 
 ### Add Rewrites for SPA Routes
+
 ```json
 {
   "rewrites": [
@@ -187,16 +204,19 @@ This enables IDE autocomplete and validation in VS Code.
 ## Troubleshooting
 
 ### "Build failed" after deployment
+
 - Check that environment variables are set in Vercel dashboard
 - Verify `NEXT_PUBLIC_STRAPI_API_URL` is correct and accessible
 - Check Vercel logs for specific errors
 
 ### "Cannot find Strapi API"
+
 - Verify `NEXT_PUBLIC_STRAPI_API_URL` is correct
 - Make sure Railway backend is running
 - Check CORS settings in Strapi
 
 ### "Deployment hangs"
+
 - Check that build command completes locally: `npm run build`
 - Verify all dependencies are in `package.json`
 - Check for circular dependencies
@@ -206,15 +226,16 @@ This enables IDE autocomplete and validation in VS Code.
 ## Summary
 
 ✅ **Fixed Configuration:**
+
 - Added schema for validation
 - Removed deprecated env format
 - Added security headers
 - Added URL normalization
 
 📋 **Next Steps:**
+
 1. Add environment variables in Vercel dashboard
 2. Redeploy the project
 3. Test that everything works
 
 ✨ **Your site is now production-ready!**
-
