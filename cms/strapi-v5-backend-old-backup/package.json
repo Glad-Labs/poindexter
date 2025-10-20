@@ -1,0 +1,48 @@
+{
+  "name": "glad-labs-strapi-v5-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Strapi v5 headless CMS backend for GLAD Labs content platform - manages posts, categories, tags, and media with automatic REST API generation",
+  "scripts": {
+    "build": "strapi build",
+    "console": "strapi console",
+    "deploy": "strapi deploy",
+    "dev": "strapi develop",
+    "develop": "strapi develop",
+    "start": "strapi start",
+    "strapi": "strapi",
+    "upgrade": "npx @strapi/upgrade latest",
+    "upgrade:dry": "npx @strapi/upgrade latest --dry"
+  },
+  "dependencies": {
+    "@strapi/plugin-cloud": "5.27.0",
+    "@strapi/plugin-users-permissions": "5.27.0",
+    "@strapi/strapi": "5.27.0",
+    "axios": "^1.7.7",
+    "bcryptjs": "^3.0.2",
+    "pg": "^8.13.1",
+    "psql": "^0.0.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.0",
+    "styled-components": "^6.1.19"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.21",
+    "@types/react": "^18.3.26",
+    "@types/react-dom": "^18.3.7",
+    "autoprefixer": "^10.4.21",
+    "better-sqlite3": "^12.4.1",
+    "postcss": "^8.0.0",
+    "tailwindcss": "^3.4.18",
+    "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=18.0.0 <=22.x.x",
+    "npm": ">=6.0.0"
+  },
+  "strapi": {
+    "uuid": "aa5b0afd-c4b6-457c-a806-dd595e053787",
+    "installId": "709790e846a6f17bc6ce580a1b3947d0295da64459f1e7670d21d944c6969ce7"
+  }
+}
