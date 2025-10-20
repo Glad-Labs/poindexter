@@ -29,7 +29,7 @@ cms/strapi-v5-backend/export/
 cms/strapi-v5-backend/public/uploads/
 cms/strapi-v5-backend-old-backup/
 .tmp/
-cms/strapi-main/
+#cms/strapi-main/
 cms/strapi-main.zip
 
 # Environment variables
