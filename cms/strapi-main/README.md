@@ -24,11 +24,11 @@ When developing locally this Strapi template will connect to the Postgres server
 - Clone that newly created repository locally
 - Install Strapi's dependencies with `yarn install` or `npm install`
 - Install the Railway CLI
-    - Instructions for that can be found [here](https://docs.railway.app/develop/cli#installation)
-    - If this is your first time using the CLI make sure to login with `railway login`
+  - Instructions for that can be found [here](https://docs.railway.app/develop/cli#installation)
+  - If this is your first time using the CLI make sure to login with `railway login`
 - Within the local repository run `railway link` to link the local repository to the Strapi service on Railway
 - Start Strapi for development with `railway run yarn run develop` or `railway run npm run develop`
-    - This command will run Strapi in development mode with the service variables available locally
+  - This command will run Strapi in development mode with the service variables available locally
 - Open your browser to `http://127.0.0.1:1337/admin`
 
 ## 📝 Notes
