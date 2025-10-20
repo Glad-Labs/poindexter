@@ -9,8 +9,9 @@
 ## 🎯 Project Overview
 
 **GLAD Labs** is an integrated platform combining:
+
 - **Next.js Public Site** - Content delivery + Strapi integration (port 3000)
-- **React Dashboard** - Oversight Hub admin interface (port 3001)  
+- **React Dashboard** - Oversight Hub admin interface (port 3001)
 - **Strapi CMS** - Headless content management on Railway (port 1337)
 - **FastAPI Co-Founder Agent** - Python multi-agent AI orchestrator (port 8000)
 
@@ -29,7 +30,7 @@ npm run dev
 # This launches:
 # - Strapi CMS (http://localhost:1337/admin)
 # - Public Site (http://localhost:3000)
-# - Oversight Hub (http://localhost:3001) 
+# - Oversight Hub (http://localhost:3001)
 # - Co-founder Agent (http://localhost:8000/docs)
 
 # Verify all services running:
@@ -52,12 +53,210 @@ npm run format && npm run lint:fix
 ### Deployment
 
 ```bash
-# Frontend deploys automatically to Vercel on push to main
+# PUSH TO MAIN TRIGGERS AUTOMATIC DEPLOYMENT
 git push origin main
+
+# This workflow:
+# 1. Push to main on GitHub (mirrored from GitLab)
+# 2. GitHub Actions triggered
+# 3. Frontend deploys to Vercel (http://public-site.vercel.app)
+# 4. Strapi backend: Railway instance updated (if changes to cms/)
 
 # Check Vercel deployment: https://vercel.com/dashboard
 
 # Monitor: `web/public-site/.vercel/README.json` after build
+```
+
+---
+
+## 🌐 Source Control & Deployment Architecture
+
+### Version Control Setup
+
+**CRITICAL:** GitLab ↔ GitHub Mirror Architecture
+
+**Structure:**
+- **GitLab** (gitlab.com) - Private repository, source of truth
+- **GitHub** (github.com) - Public mirror, triggers CI/CD
+- **Why Two Repos?** Public development showcase + Private backup + GitHub Actions automation
+
+**Push Workflow:**
+```bash
+# All work flows through GitLab first
+git push origin main  # Pushes to GitLab (primary)
+
+# GitLab → GitHub sync:
+# - Configured via GitLab mirroring settings
+# - GitHub receives push ~30 seconds later
+# - GitHub Actions then trigger deployment
+```
+
+**Key Branch:** `main`
+- Auto-deploy on push to main on GitHub
+- This is your production deployment trigger
+
+### Deployment Targets
+
+**Frontend (Next.js Public Site)**
+- **Target:** Vercel (https://vercel.com)
+- **Repository:** `web/public-site/`
+- **Trigger:** Push to main on GitHub
+- **URL:** https://glad-labs.vercel.app (or custom domain)
+- **Deployment Time:** ~3-5 minutes
+- **Auto Rollback:** On build failure
+- **Environment:** `NEXT_PUBLIC_STRAPI_API_URL`, `NEXT_PUBLIC_STRAPI_API_TOKEN` set in Vercel dashboard
+
+**Backend (Strapi CMS)**
+- **Target:** Railway.app
+- **Repository:** `cms/strapi-v5-backend/`
+- **Trigger:** Manual deployment or webhook (check Railway settings)
+- **URL:** https://strapi.railway.app (or custom domain)
+- **Port:** 1337 (Railway hosted)
+- **Database:** PostgreSQL (hosted on Railway)
+- **Environment:** Set in Railway dashboard (`DATABASE_URL`, `STRAPI_API_TOKEN`, etc.)
+
+**Local Development**
+- **Public Site:** http://localhost:3000
+- **Strapi CMS:** http://localhost:1337/admin
+- **Oversight Hub:** http://localhost:3001
+- **Co-founder Agent:** http://localhost:8000/docs
+- **All Services:** `npm run dev` from root
+
+### Push to Production Checklist
+
+Before `git push origin main`:
+
+- ✅ Run `npm run test` locally (all tests pass)
+- ✅ Run `npm run lint:fix` (code is formatted)
+- ✅ Test locally: `npm run dev` → visit http://localhost:3000
+- ✅ Verify Strapi content is accessible (if content changes)
+- ✅ Review commit messages (clear, descriptive)
+- ✅ Pull latest: `git pull origin main` (avoid conflicts)
+
+After `git push origin main`:
+
+- ✅ Check GitHub Actions in mirror repo
+- ✅ Monitor Vercel deployment: https://vercel.com/dashboard
+- ✅ Visit https://glad-labs.vercel.app (or custom domain) after ~5 min
+- ✅ Verify all pages load (check for 404s or fallback content)
+- ✅ Test Strapi integration on production: does content load? (check browser DevTools)
+
+---
+
+## 🔄 Documentation Maintenance Workflow
+
+### Philosophy
+
+**Golden Rule:** Update existing documentation, don't proliferate new files.
+
+After completing work:
+1. ✅ Update existing docs in `docs/` hierarchy
+2. ✅ Link from `docs/00-README.md` (hub)
+3. ❌ Don't create new summary files at root level (consolidation prevention)
+4. ✅ Commit changes with `docs:` prefix
+
+### Documentation Structure (Don't Create Outside These)
+
+```
+docs/
+├── 00-README.md ......................... Documentation hub (UPDATE ONLY)
+├── 01-SETUP_AND_OVERVIEW.md ............ Quick start & setup (UPDATE)
+├── 02-ARCHITECTURE_AND_DESIGN.md ....... System design (UPDATE)
+├── 03-DEPLOYMENT_AND_INFRASTRUCTURE.md  Production deployment (UPDATE)
+├── 04-DEVELOPMENT_WORKFLOW.md ......... Git workflow & dev process (UPDATE)
+├── 05-AI_AGENTS_AND_INTEGRATION.md .... Agent patterns (UPDATE)
+├── 06-OPERATIONS_AND_MONITORING.md .... Operations guide (UPDATE)
+├── guides/
+│   ├── STRAPI_BACKED_PAGES_GUIDE.md ... How to create Strapi pages (UPDATE)
+│   ├── CONTENT_POPULATION_GUIDE.md .... How to populate Strapi (UPDATE)
+│   └── [other how-tos] ................ Add new guides here
+├── reference/
+│   ├── API_REFERENCE.md ............... API documentation (UPDATE)
+│   ├── DATABASE_SCHEMA.md ............. Database structure (UPDATE)
+│   └── [other specs] .................. Add technical specs here
+├── troubleshooting/
+│   ├── COMMON_ISSUES.md ............... Problem solutions (UPDATE)
+│   └── [category-specific] ............ Add issues by category
+└── RECENT_FIXES/
+    ├── README.md ...................... Index of fixes (UPDATE)
+    └── TIMEOUT_FIX_SUMMARY.md ......... Specific fix details (UPDATE)
+```
+
+### When You Complete Work
+
+**Scenario 1: Bug fix or small feature**
+```
+✅ Update relevant doc in docs/ (e.g., docs/04-DEVELOPMENT_WORKFLOW.md)
+✅ Update docs/RECENT_FIXES/README.md with: what was fixed, why, where
+✅ Commit: git commit -m "docs: update [filename] - explain what changed"
+❌ Don't create: docs/FIX_SUMMARY_[DATE].md (causes proliferation)
+```
+
+**Scenario 2: New feature or pattern**
+```
+✅ Add to docs/02-ARCHITECTURE_AND_DESIGN.md if architectural
+✅ OR add to docs/guides/ if it's a how-to
+✅ Add section to docs/00-README.md linking to it
+✅ Commit: git commit -m "docs: add [feature] documentation to [file]"
+❌ Don't create: docs/NEW_FEATURE_GUIDE.md (causes proliferation)
+```
+
+**Scenario 3: Consolidation work**
+```
+✅ Use docs/CONSOLIDATION_GUIDE.md as the master index
+✅ Update existing files being consolidated
+✅ Update docs/00-README.md to reflect consolidated structure
+✅ Commit: git commit -m "docs: consolidate [topic] - move content from X to Y"
+❌ Don't create: docs/CONSOLIDATION_SUMMARY.md (already have CONSOLIDATION_GUIDE.md)
+```
+
+**Scenario 4: Troubleshooting content**
+```
+✅ Add to docs/troubleshooting/COMMON_ISSUES.md
+✅ OR create docs/troubleshooting/[CATEGORY]_ISSUES.md if many related issues
+✅ Cross-link from docs/02-ARCHITECTURE_AND_DESIGN.md if related to architecture
+✅ Commit: git commit -m "docs: add troubleshooting - [issue description]"
+❌ Don't create: docs/TROUBLESHOOTING_SESSION_[DATE].md (proliferation)
+```
+
+### Consolidation Strategy
+
+**Before Creating New Doc:**
+1. Check if topic fits in existing structure
+2. Check if existing file can be updated
+3. If neither, create in appropriate folder (`guides/`, `reference/`, `troubleshooting/`)
+4. Update `docs/00-README.md` to link to it
+5. Delete/merge any obsolete related files
+
+**Master Index:** `docs/CONSOLIDATION_GUIDE.md` - Reference this before creating anything new
+
+**Link Everything:** Any new content must be linked from `docs/00-README.md` so it's discoverable
+
+### Examples from Recent Work
+
+**GOOD ✅ - Updated existing docs:**
+- Updated `docs/RECENT_FIXES/README.md` with new fix entry
+- Added new content to `docs/guides/STRAPI_BACKED_PAGES_GUIDE.md`
+- Edited `docs/00-README.md` to link new guides
+
+**AVOID ❌ - Would cause proliferation:**
+- Creating `docs/SESSION_SUMMARY_[DATE].md` (instead: update `docs/00-README.md`)
+- Creating `docs/CONSOLIDATION_SUMMARY.md` (instead: update existing `docs/CONSOLIDATION_GUIDE.md`)
+- Creating `docs/ARCHITECTURE_NOTES_[DATE].md` (instead: update `docs/02-ARCHITECTURE_AND_DESIGN.md`)
+
+### Commit Message Pattern
+
+```bash
+# Use one of these prefixes:
+git commit -m "docs: update [file] - describe what changed"
+git commit -m "docs: add [topic] to [file]"
+git commit -m "docs: consolidate [topic] - explain consolidation"
+git commit -m "docs: fix [file] - clarification or error correction"
+
+# Examples from this project:
+git commit -m "docs: add Strapi-backed pages guide to docs/guides/"
+git commit -m "docs: correct architecture - pages are Strapi-backed with markdown fallbacks"
+git commit -m "docs: add comprehensive copilot instructions for AI coding agents"
 ```
 
 ---
@@ -71,15 +270,18 @@ git push origin main
 **Why:** Prevents Vercel builds from hanging if Strapi is unavailable during build time.
 
 **Implementation:**
+
 - `web/public-site/pages/about.js` → fetches `/api/about` with 10-second timeout
 - `web/public-site/pages/privacy-policy.js` → fetches `/api/privacy-policy`
 - `web/public-site/pages/terms-of-service.js` → fetches `/api/terms-of-service`
 
 **Key Files:**
+
 - `web/public-site/lib/api.js` - Contains `fetchAPI()` with **CRITICAL 10-second timeout**
 - `docs/guides/STRAPI_BACKED_PAGES_GUIDE.md` - Complete setup guide
 
 **When Adding New Pages:**
+
 1. Create page in `web/public-site/pages/[page].js`
 2. Use `getStaticProps()` to fetch from Strapi endpoint
 3. Include markdown fallback content
@@ -92,9 +294,10 @@ git push origin main
 **Why:** Without this, Vercel builds hang indefinitely if Strapi is slow/down.
 
 **Code Reference:**
+
 ```javascript
 const controller = new AbortController();
-const timeout = setTimeout(() => controller.abort(), 10000);  // 10 seconds
+const timeout = setTimeout(() => controller.abort(), 10000); // 10 seconds
 ```
 
 **Before modifying API client:** Read `docs/RECENT_FIXES/TIMEOUT_FIX_SUMMARY.md`
@@ -104,6 +307,7 @@ const timeout = setTimeout(() => controller.abort(), 10000);  // 10 seconds
 **Pattern:** Python FastAPI orchestrator routes requests to specialized agents via Model Context Protocol (MCP).
 
 **Agents Available:**
+
 - `Co-founder Agent` - Main AI decision maker (main.py)
 - `Content Agent` - Content generation
 - `Compliance Agent` - Regulatory checks
@@ -111,11 +315,13 @@ const timeout = setTimeout(() => controller.abort(), 10000);  // 10 seconds
 - `Market Insight Agent` - Market analysis
 
 **Key Files:**
+
 - `src/cofounder_agent/main.py` - FastAPI server
 - `src/cofounder_agent/orchestrator_logic.py` - Agent routing
 - `src/mcp/` - MCP server implementations
 
 **When Working with Agents:**
+
 - Config models in `.env` (ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.)
 - Test via Swagger: http://localhost:8000/docs
 - Read `docs/05-AI_AGENTS_AND_INTEGRATION.md`
@@ -125,11 +331,13 @@ const timeout = setTimeout(() => controller.abort(), 10000);  // 10 seconds
 **Pattern:** Root `package.json` orchestrates workspaces via npm-run-all.
 
 **Workspaces:**
+
 - `web/public-site/` - Next.js frontend
 - `web/oversight-hub/` - React dashboard
 - `cms/strapi-main/` - Strapi CMS
 
 **Key Scripts (from root):**
+
 ```bash
 npm run dev                  # Start all services
 npm run build               # Build all workspaces
@@ -156,12 +364,12 @@ export async function getStaticProps() {
     const data = await fetchAPI('/endpoint');
     return { props: { data }, revalidate: 60 };
   } catch (error) {
-    return { props: { data: null }, revalidate: 60 };  // Fallback
+    return { props: { data: null }, revalidate: 60 }; // Fallback
   }
 }
 
 export default function Page({ data }) {
-  const content = data || fallbackMarkdownContent;  // Always fallback
+  const content = data || fallbackMarkdownContent; // Always fallback
   return <Markdown>{content}</Markdown>;
 }
 ```
@@ -200,7 +408,7 @@ const posts = await fetchAPI('/posts', { pagination: { limit: 10 } });
 class MyAgent:
     def __init__(self, config: Dict):
         self.config = config
-    
+
     async def process(self, input: str) -> str:
         # Business logic here
         pass
@@ -213,16 +421,19 @@ class MyAgent:
 ### Common Issues
 
 **Issue:** Pages show 404 or fallback content
+
 - ✅ Check Strapi is running: `curl http://localhost:1337/admin`
 - ✅ Verify endpoints exist in Strapi
 - ✅ Check env vars: `STRAPI_API_URL`, `STRAPI_API_TOKEN`
 
 **Issue:** Build hangs on Vercel
+
 - ✅ Check for missing 10-second timeout in new API calls
 - ✅ Review `docs/RECENT_FIXES/TIMEOUT_FIX_SUMMARY.md`
 - ✅ Run `npm run services:check` to verify Strapi
 
 **Issue:** Tests failing
+
 - ✅ Frontend: `npm run test:public:ci`
 - ✅ Python: `npm run test:python`
 - ✅ Check dependencies: `npm run clean:install`
@@ -241,6 +452,7 @@ npm run test:python:smoke   # Quick smoke test
 ## 📚 Key Documentation
 
 **Must Read (In Order):**
+
 1. `docs/00-README.md` - Documentation hub
 2. `docs/01-SETUP_AND_OVERVIEW.md` - Quick start
 3. `docs/02-ARCHITECTURE_AND_DESIGN.md` - System design
@@ -248,6 +460,7 @@ npm run test:python:smoke   # Quick smoke test
 5. `docs/05-AI_AGENTS_AND_INTEGRATION.md` - Agent patterns
 
 **Reference:**
+
 - `STRAPI_ARCHITECTURE_CORRECTION.md` - Strapi-backed pages guide
 - `docs/guides/STRAPI_BACKED_PAGES_GUIDE.md` - Detailed setup
 - `docs/RECENT_FIXES/TIMEOUT_FIX_SUMMARY.md` - Timeout issue explanation
@@ -260,37 +473,41 @@ npm run test:python:smoke   # Quick smoke test
 1. **Always use 10-second timeout** in API calls → prevents Vercel hangs
 2. **Always include markdown fallbacks** in page getStaticProps → graceful degradation
 3. **Always run `npm run dev` from root** → not from workspaces
-4. **Always commit documentation** when changing architecture
+4. **Always update existing documentation** → don't create new summary files (see "Documentation Maintenance Workflow")
 5. **Always test locally first** → before pushing to main (auto-deploys to Vercel)
 6. **Always check Strapi connectivity** → before debugging frontend issues
 7. **Always configure ISR revalidation** → set `revalidate: 60` in getStaticProps
+8. **Always remember: GitLab (source) → GitHub (mirror) → Deployment** → this is the prod pipeline
+9. **Always verify environment variables** → especially `NEXT_PUBLIC_STRAPI_API_URL` on Vercel before debugging production issues
 
 ---
 
 ## 🔑 Key Files by Purpose
 
-| File | Purpose |
-|------|---------|
-| `web/public-site/lib/api.js` | Strapi API client with timeout protection (CRITICAL) |
-| `web/public-site/pages/index.js` | Homepage - shows how to fetch posts with fallback |
-| `src/cofounder_agent/main.py` | AI orchestrator entry point |
-| `src/cofounder_agent/orchestrator_logic.py` | Agent routing logic |
-| `package.json` (root) | Workspace orchestration & scripts |
-| `docs/02-ARCHITECTURE_AND_DESIGN.md` | System architecture & design patterns |
-| `docs/04-DEVELOPMENT_WORKFLOW.md` | Git workflow & development process |
-| `docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md` | Production deployment guide |
+| File                                        | Purpose                                              |
+| ------------------------------------------- | ---------------------------------------------------- |
+| `web/public-site/lib/api.js`                | Strapi API client with timeout protection (CRITICAL) |
+| `web/public-site/pages/index.js`            | Homepage - shows how to fetch posts with fallback    |
+| `src/cofounder_agent/main.py`               | AI orchestrator entry point                          |
+| `src/cofounder_agent/orchestrator_logic.py` | Agent routing logic                                  |
+| `package.json` (root)                       | Workspace orchestration & scripts                    |
+| `docs/02-ARCHITECTURE_AND_DESIGN.md`        | System architecture & design patterns                |
+| `docs/04-DEVELOPMENT_WORKFLOW.md`           | Git workflow & development process                   |
+| `docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md`  | Production deployment guide                          |
 
 ---
 
 ## ⚙️ Environment Variables
 
 **Frontend (.env.local):**
+
 ```
 NEXT_PUBLIC_STRAPI_API_URL=http://localhost:1337
 NEXT_PUBLIC_STRAPI_API_TOKEN=your-token-here
 ```
 
 **Backend (.env):**
+
 ```
 DATABASE_URL=postgresql://...
 STRAPI_API_TOKEN=your-token
