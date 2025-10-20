@@ -8,18 +8,6 @@
 
 ---
 
-## 📋 Table of Contents
-
-1. [Quick Start (5 minutes)](#quick-start)
-2. [Prerequisites](#prerequisites)
-3. [Step-by-Step Setup](#step-by-step-setup)
-4. [Environment Configuration](#environment-configuration)
-5. [Build Configuration](#build-configuration)
-6. [Troubleshooting](#troubleshooting)
-7. [Monitoring & Logs](#monitoring)
-
----
-
 ## 🚀 Quick Start
 
 If you already have a Railway project set up, deploy with one command:
@@ -28,7 +16,7 @@ If you already have a Railway project set up, deploy with one command:
 railway deploy
 ```
 
-For first-time setup, follow the **[Step-by-Step Setup](#step-by-step-setup)** section below.
+For first-time setup, scroll down to the detailed setup process below.
 
 ---
 

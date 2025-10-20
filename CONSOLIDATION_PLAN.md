@@ -217,12 +217,12 @@ After consolidation, verify:
 
 Also scan for:
 
-- [ ] Temp files (_.tmp, _.swp, \*~)
-- [ ] Log files in root (\*.log)
+- [ ] Temp files (`*.tmp`, `*.swp`, `*~`)
+- [ ] Log files in root (`*.log`)
 - [ ] Dead code branches in src/
 - [ ] Unused test files
 - [ ] Old migration scripts
-- [ ] IDE temp files (.vscode/_, .idea/_)
+- [ ] IDE temp files (`.vscode/temp`, `.idea/temp`)
 
 ---
 

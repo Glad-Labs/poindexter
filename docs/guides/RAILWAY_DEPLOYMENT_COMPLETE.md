@@ -23,6 +23,7 @@
 After **6+ hours** and **8 failed builds** on Strapi Cloud, we switched to Railway.app for the following reasons:
 
 ### ✅ Railway Advantages
+
 - **Full control** over build process
 - **Monorepo support** with configurable root directory
 - **SSH access** to containers for debugging
@@ -32,6 +33,7 @@ After **6+ hours** and **8 failed builds** on Strapi Cloud, we switched to Railw
 - **Cost-effective**: $10-20/month vs. fighting free tier limitations
 
 ### ❌ Strapi Cloud Limitations
+
 - Poor monorepo support
 - Can't customize npm install process
 - Ignores .npmrc configuration
@@ -44,6 +46,7 @@ After **6+ hours** and **8 failed builds** on Strapi Cloud, we switched to Railw
 ## Prerequisites
 
 ### Required Tools
+
 ```powershell
 # Railway CLI
 npm install -g @railway/cli
@@ -56,6 +59,7 @@ node --version
 ```
 
 ### Required Accounts
+
 1. **Railway Account**: [railway.app](https://railway.app)
 2. **GitHub Account**: (for auto-deployment)
 3. **GitLab Account**: (our primary repo host)
@@ -112,6 +116,7 @@ git push github main  # GitHub (Railway deployment)
 ```
 
 **Keep both in sync:**
+
 ```powershell
 # Add to your workflow
 git push origin main; git push github main
@@ -127,6 +132,7 @@ git push origin main; git push github main
    - **Start Command**: `npm run start`
 
 4. **Create `railway.json`** in `cms/strapi-v5-backend/`:
+
 ```json
 {
   "build": {
@@ -151,6 +157,7 @@ railway add --database postgres
 ```
 
 Railway will automatically create these variables:
+
 - `DATABASE_URL` (internal connection)
 - `DATABASE_PUBLIC_URL` (external connection - costs egress fees!)
 - `DATABASE_PRIVATE_URL` (internal connection - use this!)
@@ -194,21 +201,21 @@ railway variables --set "APP_KEYS=$key1,$key2,$key3,$key4"
 
 ### Complete List
 
-| Variable | Purpose | How to Generate |
-|----------|---------|-----------------|
-| `DATABASE_CLIENT` | Database type | `postgres` |
-| `DATABASE_URL` | Database connection | `${{DATABASE_PRIVATE_URL}}` |
-| `NODE_ENV` | Environment | `production` |
-| `HOST` | Bind address | `0.0.0.0` |
-| `PORT` | Server port | `5000` |
-| `TRUST_PROXY` | Trust Railway proxy | `true` |
-| `COOKIE_SECURE` | Disable secure cookies | `false` |
-| `APP_KEYS` | App encryption keys | 4 comma-separated base64 strings |
-| `ADMIN_JWT_SECRET` | Admin JWT secret | `openssl rand -base64 16` |
-| `API_TOKEN_SALT` | API token salt | `openssl rand -base64 16` |
-| `TRANSFER_TOKEN_SALT` | Transfer token salt | `openssl rand -base64 16` |
-| `JWT_SECRET` | JWT secret | `openssl rand -base64 16` |
-| `APP_ENCRYPTION_KEY` | Encryption key | `openssl rand -base64 32` |
+| Variable              | Purpose                | How to Generate                  |
+| --------------------- | ---------------------- | -------------------------------- |
+| `DATABASE_CLIENT`     | Database type          | `postgres`                       |
+| `DATABASE_URL`        | Database connection    | `${{DATABASE_PRIVATE_URL}}`      |
+| `NODE_ENV`            | Environment            | `production`                     |
+| `HOST`                | Bind address           | `0.0.0.0`                        |
+| `PORT`                | Server port            | `5000`                           |
+| `TRUST_PROXY`         | Trust Railway proxy    | `true`                           |
+| `COOKIE_SECURE`       | Disable secure cookies | `false`                          |
+| `APP_KEYS`            | App encryption keys    | 4 comma-separated base64 strings |
+| `ADMIN_JWT_SECRET`    | Admin JWT secret       | `openssl rand -base64 16`        |
+| `API_TOKEN_SALT`      | API token salt         | `openssl rand -base64 16`        |
+| `TRANSFER_TOKEN_SALT` | Transfer token salt    | `openssl rand -base64 16`        |
+| `JWT_SECRET`          | JWT secret             | `openssl rand -base64 16`        |
+| `APP_ENCRYPTION_KEY`  | Encryption key         | `openssl rand -base64 32`        |
 
 ### Why `COOKIE_SECURE=false`?
 
@@ -225,6 +232,7 @@ Railway's proxy terminates SSL (HTTPS → HTTP internally). The connection betwe
 **Cause:** PostgreSQL driver not installed.
 
 **Solution:**
+
 ```json
 // cms/strapi-v5-backend/package.json
 {
@@ -241,11 +249,13 @@ Railway's proxy terminates SSL (HTTPS → HTTP internally). The connection betwe
 **Solutions:**
 
 1. **Environment Variable:**
+
 ```powershell
 railway variables --set "COOKIE_SECURE=false"
 ```
 
 1. **Admin Config** (`config/admin.ts`):
+
 ```typescript
 export default ({ env }) => ({
   auth: {
@@ -259,6 +269,7 @@ export default ({ env }) => ({
 ```
 
 1. **Middleware Config** (`config/middlewares.ts`):
+
 ```typescript
 export default [
   // ... other middlewares
@@ -277,6 +288,7 @@ export default [
 ```
 
 1. **Server Config** (`config/server.ts`):
+
 ```typescript
 export default ({ env }) => ({
   host: env('HOST', '0.0.0.0'),
@@ -294,6 +306,7 @@ export default ({ env }) => ({
 **Cause:** `DATABASE_CLIENT` not set.
 
 **Solution:**
+
 ```powershell
 railway variables --set "DATABASE_CLIENT=postgres"
 ```
@@ -303,6 +316,7 @@ railway variables --set "DATABASE_CLIENT=postgres"
 **Cause:** Wrong variable name in config.
 
 **Solution:**
+
 ```typescript
 // config/admin.ts
 export default ({ env }) => ({
@@ -316,6 +330,7 @@ export default ({ env }) => ({
 **Cause:** Railway prioritizes Docker over Railpack.
 
 **Solution:**
+
 ```powershell
 # Delete or rename Dockerfile
 rm cms/strapi-v5-backend/Dockerfile
@@ -329,6 +344,7 @@ rm cms/strapi-v5-backend/Dockerfile
 **Cause:** Railway building from wrong directory.
 
 **Solution:**
+
 1. Go to Railway dashboard
 2. Service Settings > "Root Directory"
 3. Set to: `cms/strapi-v5-backend`
@@ -339,16 +355,17 @@ rm cms/strapi-v5-backend/Dockerfile
 
 ### Railway Pricing (as of October 2025)
 
-| Resource | Usage | Cost |
-|----------|-------|------|
-| Compute | ~500 hours/month | $5-10 |
-| PostgreSQL | Small instance | $5 |
-| Data Transfer | Moderate | $0-5 |
-| **Total** | | **$10-20/month** |
+| Resource      | Usage            | Cost             |
+| ------------- | ---------------- | ---------------- |
+| Compute       | ~500 hours/month | $5-10            |
+| PostgreSQL    | Small instance   | $5               |
+| Data Transfer | Moderate         | $0-5             |
+| **Total**     |                  | **$10-20/month** |
 
 ### Cost Optimization Tips
 
 1. **Use Private URLs:**
+
    ```powershell
    # Use DATABASE_PRIVATE_URL instead of DATABASE_PUBLIC_URL
    # Avoids egress fees
