@@ -39,6 +39,7 @@ Your deployment-bound applications have **critical testing and CI/CD gaps**:
 ### Public Site (`web/public-site`)
 
 **Testing Setup:**
+
 - ✅ Jest configured (`jest.config.js`, `jest.setup.js`)
 - ✅ Test files exist (4 files: Header, Footer, Layout, PostList)
 - ✅ Testing libraries installed (@testing-library/react, @testing-library/jest-dom)
@@ -46,34 +47,41 @@ Your deployment-bound applications have **critical testing and CI/CD gaps**:
 - ✅ npm script exists: `"test": "jest"`
 
 **Linting:**
+
 - ✅ ESLint configured
 - ✅ npm script exists: `"lint": "next lint"`, `"lint:fix": "next lint --fix"`
 - ❌ No linting in CI/CD
 
 **Build:**
+
 - ✅ Build passes locally
 - ❌ No pre-build validation (tests, linting)
 
 **Deployment:**
+
 - ⚠️ Vercel configured, but no pre-deployment tests
 - ❌ No staging environment validation
 
 ### Strapi Main (`cms/strapi-main`)
 
 **Testing Setup:**
+
 - ❌ No tests
 - ❌ No test scripts
 - ❌ No testing libraries
 
 **Linting:**
+
 - ❌ No ESLint configured
 - ❌ No linting in package.json
 
 **Build:**
+
 - ✅ Build works: `"build": "strapi build"`
 - ⚠️ No validation before build
 
 **Deployment:**
+
 - ⚠️ Railway configured, but no pre-deployment validation
 - ❌ No database migration checks
 - ❌ No schema validation
@@ -81,6 +89,7 @@ Your deployment-bound applications have **critical testing and CI/CD gaps**:
 ### Monorepo Root (`package.json`)
 
 **Good:**
+
 - ✅ Workspace setup configured
 - ✅ Test scripts exist at root level
 - ✅ Lint scripts exist
@@ -89,6 +98,7 @@ Your deployment-bound applications have **critical testing and CI/CD gaps**:
 - ✅ Using npm-run-all for parallel execution
 
 **Issues:**
+
 - ❌ No GitHub Actions workflows
 - ❌ Linting only includes markdown: `"lint": "npm run lint --workspaces --if-present && markdownlint *.md"`
 - ❌ No pre-commit hooks
@@ -101,27 +111,32 @@ Your deployment-bound applications have **critical testing and CI/CD gaps**:
 ### 1. 🔴 CRITICAL: Fix Jest Test Dependencies (Public Site)
 
 **Problem:**
+
 ```
 Cannot find module '@jest/environment-jsdom-abstract'
 ```
 
 **Root Cause:**
+
 - Version mismatch between Jest (30.2.0) and jest-environment-jsdom (30.2.0)
 - Incompatible versions need to be resolved
 
 **Solution:**
+
 - Update `jest-environment-jsdom` to be compatible with Jest 30.2.0
 - Reinstall node_modules
 
 ### 2. 🔴 CRITICAL: Set Up CI/CD Pipelines
 
 **Missing:**
+
 - GitHub Actions workflows for testing
 - Automated linting checks
 - Build validation
 - Test coverage reporting
 
 **Should Add:**
+
 - `test.yml` - Run tests on PR/push
 - `lint.yml` - Lint check on PR/push
 - `deploy.yml` - Deploy to Staging/Production
@@ -130,12 +145,14 @@ Cannot find module '@jest/environment-jsdom-abstract'
 ### 3. 🟡 IMPORTANT: Add Tests for Strapi Backend
 
 **Missing:**
+
 - Database schema tests
 - API endpoint tests
 - Content type validation
 - Plugin configuration tests
 
 **Should Add:**
+
 - Unit tests for custom services
 - Integration tests for APIs
 - Seed data tests
@@ -144,6 +161,7 @@ Cannot find module '@jest/environment-jsdom-abstract'
 ### 4. 🟡 IMPORTANT: Add Pre-commit Hooks
 
 **Missing:**
+
 - Husky hooks for pre-commit validation
 - Automatic linting/formatting on commit
 - Test validation before commit
@@ -151,6 +169,7 @@ Cannot find module '@jest/environment-jsdom-abstract'
 ### 5. 🟡 MEDIUM: Add Code Coverage Reporting
 
 **Missing:**
+
 - Coverage reports
 - Coverage thresholds
 - Coverage trends
@@ -169,6 +188,7 @@ Time:        0.029 s
 ```
 
 **Error:**
+
 ```
 Cannot find module '@jest/environment-jsdom-abstract'
 - jest-environment-jsdom/build/index.js
@@ -181,17 +201,17 @@ Cannot find module '@jest/environment-jsdom-abstract'
 
 ## Production Readiness Checklist
 
-| Item | Status | Impact | Action |
-|------|--------|--------|--------|
-| Unit tests running | ❌ BROKEN | HIGH | Fix Jest dependencies |
-| Component tests | ❌ CAN'T RUN | HIGH | Fix Jest dependencies |
-| Linting passes locally | ✅ YES | MEDIUM | Add to CI/CD |
-| Build validation | ✅ WORKS | MEDIUM | Add pre-commit |
-| CI/CD pipeline | ❌ MISSING | CRITICAL | Create workflows |
-| Pre-deployment tests | ❌ MISSING | CRITICAL | Add to deployment |
-| Code coverage | ❌ MISSING | LOW | Add coverage tracking |
-| Database tests | ❌ MISSING | MEDIUM | Add Strapi tests |
-| Pre-commit hooks | ❌ MISSING | MEDIUM | Install Husky |
+| Item                   | Status       | Impact   | Action                |
+| ---------------------- | ------------ | -------- | --------------------- |
+| Unit tests running     | ❌ BROKEN    | HIGH     | Fix Jest dependencies |
+| Component tests        | ❌ CAN'T RUN | HIGH     | Fix Jest dependencies |
+| Linting passes locally | ✅ YES       | MEDIUM   | Add to CI/CD          |
+| Build validation       | ✅ WORKS     | MEDIUM   | Add pre-commit        |
+| CI/CD pipeline         | ❌ MISSING   | CRITICAL | Create workflows      |
+| Pre-deployment tests   | ❌ MISSING   | CRITICAL | Add to deployment     |
+| Code coverage          | ❌ MISSING   | LOW      | Add coverage tracking |
+| Database tests         | ❌ MISSING   | MEDIUM   | Add Strapi tests      |
+| Pre-commit hooks       | ❌ MISSING   | MEDIUM   | Install Husky         |
 
 ---
 
@@ -243,7 +263,7 @@ Cannot find module '@jest/environment-jsdom-abstract'
 ## Next Steps
 
 See detailed implementation guides below:
+
 1. **TESTING_SETUP.md** - How to fix and run tests
 2. **CI_CD_SETUP.md** - How to create GitHub Actions
 3. **DEPLOYMENT_GATES.md** - How to add pre-deployment validation
-

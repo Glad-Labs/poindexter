@@ -9,6 +9,7 @@ Pre-deployment checklist and validation procedures to ensure production reliabil
 ### ✅ Public Site (`web/public-site`)
 
 **Code Quality:**
+
 - [ ] All unit tests passing (`npm test -- --watchAll=false`)
 - [ ] ESLint passes (`npm run lint`)
 - [ ] No TypeScript errors (`npm run build`)
@@ -16,10 +17,11 @@ Pre-deployment checklist and validation procedures to ensure production reliabil
 - [ ] No console errors in build output
 
 **Performance:**
+
 - [ ] Build size under 500KB (Vercel limit is 50MB)
 - [ ] Lighthouse score above 80 for:
   - [ ] Performance
-  - [ ] Accessibility  
+  - [ ] Accessibility
   - [ ] Best Practices
   - [ ] SEO
 - [ ] Page load time < 3 seconds
@@ -29,6 +31,7 @@ Pre-deployment checklist and validation procedures to ensure production reliabil
   - [ ] CLS < 0.1
 
 **Functional Testing:**
+
 - [ ] All pages render without 404 errors
 - [ ] Navigation works across all pages
 - [ ] API integration working:
@@ -40,6 +43,7 @@ Pre-deployment checklist and validation procedures to ensure production reliabil
 - [ ] Error pages handle missing content
 
 **API Validation:**
+
 - [ ] Strapi backend is running
 - [ ] All content type endpoints responding
 - [ ] CORS headers configured correctly
@@ -47,6 +51,7 @@ Pre-deployment checklist and validation procedures to ensure production reliabil
 - [ ] Error responses formatted correctly
 
 **Security:**
+
 - [ ] No hardcoded secrets in code
 - [ ] Environment variables configured
 - [ ] HTTPS enforced
@@ -54,6 +59,7 @@ Pre-deployment checklist and validation procedures to ensure production reliabil
 - [ ] XSS/CSRF protections enabled
 
 **Database:**
+
 - [ ] Backup created
 - [ ] Migration scripts tested
 - [ ] Rollback plan documented
@@ -63,6 +69,7 @@ Pre-deployment checklist and validation procedures to ensure production reliabil
 ### ✅ Strapi Backend (`cms/strapi-main`)
 
 **Code Quality:**
+
 - [ ] All API tests passing
 - [ ] Database schema validated
 - [ ] Content types configured correctly
@@ -70,12 +77,14 @@ Pre-deployment checklist and validation procedures to ensure production reliabil
 - [ ] Admin UI accessible
 
 **Performance:**
+
 - [ ] Response time < 500ms for API calls
 - [ ] Database queries optimized
 - [ ] Connection pooling configured
 - [ ] Cache strategy implemented
 
 **Functional Testing:**
+
 - [ ] All content types CRUD working
 - [ ] Permissions configured correctly
 - [ ] User roles working as expected
@@ -84,6 +93,7 @@ Pre-deployment checklist and validation procedures to ensure production reliabil
 - [ ] Draft/publish workflow operational
 
 **API Endpoints:**
+
 - [ ] GET /api/posts responding
 - [ ] GET /api/categories responding
 - [ ] GET /api/tags responding
@@ -91,6 +101,7 @@ Pre-deployment checklist and validation procedures to ensure production reliabil
 - [ ] DELETE endpoints require auth
 
 **Security:**
+
 - [ ] Admin password strong and saved
 - [ ] JWT tokens configured
 - [ ] CORS whitelist set to production domain
@@ -99,6 +110,7 @@ Pre-deployment checklist and validation procedures to ensure production reliabil
 - [ ] File upload restrictions set
 
 **Database:**
+
 - [ ] Production database created
 - [ ] Backups automated
 - [ ] Disaster recovery tested
@@ -212,27 +224,29 @@ const checks = [
   {
     name: 'Public Site',
     url: 'https://your-site.com',
-    expectedStatus: 200
+    expectedStatus: 200,
   },
   {
     name: 'Strapi API',
     url: 'https://api.your-site.com/api/posts',
-    expectedStatus: 200
-  }
+    expectedStatus: 200,
+  },
 ];
 
 async function runHealthCheck() {
   console.log(`[${new Date().toISOString()}] Running health checks...`);
-  
+
   for (const check of checks) {
     try {
       const response = await fetch(check.url);
       const status = response.status;
-      
+
       if (status === check.expectedStatus) {
         console.log(`✅ ${check.name}: OK (${status})`);
       } else {
-        console.error(`❌ ${check.name}: Expected ${check.expectedStatus}, got ${status}`);
+        console.error(
+          `❌ ${check.name}: Expected ${check.expectedStatus}, got ${status}`
+        );
         // Alert/notify team
       }
     } catch (error) {
@@ -261,11 +275,13 @@ Deploy as a scheduled Cloud Function or Cron job.
 4. **Rollback:** Revert to previous deployment:
 
 **Vercel Rollback:**
+
 ```
 Vercel Dashboard → Deployments → [Previous Version] → "Promote to Production"
 ```
 
 **Railway Rollback:**
+
 ```bash
 railway rollback --service strapi-backend --environment production
 ```
@@ -294,7 +310,7 @@ psql -U postgres -d glad_labs_prod -f rollback.sql
 
 1. **Identify:** Check monitoring dashboard
 2. **Diagnose:** Check logs for errors
-3. **Temporary Fix:** 
+3. **Temporary Fix:**
    - Scale up resources on Railway/Vercel
    - Clear CDN cache
    - Restart services
@@ -379,6 +395,7 @@ Set up monitoring for:
 - **API Latency:** < 250ms median
 
 Services:
+
 - **Vercel Analytics:** https://vercel.com/analytics
 - **Railway Monitoring:** https://railway.app/account/teams
 - **Sentry (Error Tracking):** https://sentry.io/

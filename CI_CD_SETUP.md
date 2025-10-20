@@ -5,6 +5,7 @@ Complete setup for automated testing, linting, and deployment.
 ## Overview
 
 This guide provides GitHub Actions workflows for:
+
 1. ✅ **Test Pipeline** - Run Jest tests on PR and push
 2. ✅ **Lint Pipeline** - Run ESLint on PR and push
 3. ✅ **Deploy Pipeline** - Deploy to Vercel and Railway on main branch
@@ -37,30 +38,30 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
     strategy:
       matrix:
         node-version: [18.x, 20.x]
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
-      
+
       - name: Install dependencies
         run: npm ci
-      
+
       - name: Run tests (frontend)
         run: npm run test:public:ci
-      
+
       - name: Generate coverage
         run: npm test -- --workspace=web/public-site -- --coverage --watchAll=false
         continue-on-error: true
-      
+
       - name: Upload coverage
         uses: codecov/codecov-action@v3
         if: matrix.node-version == '20.x'
@@ -70,6 +71,7 @@ jobs:
 ```
 
 **What this does:**
+
 - Runs on push to main/dev and all PRs
 - Tests Node.js 18 and 20 (ensures compatibility)
 - Installs dependencies and runs tests
@@ -94,28 +96,29 @@ on:
 jobs:
   lint:
     runs-on: ubuntu-latest
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'
           cache: 'npm'
-      
+
       - name: Install dependencies
         run: npm ci
-      
+
       - name: Lint TypeScript/JavaScript
         run: npm run lint --workspaces --if-present
-      
+
       - name: Lint Markdown
         run: npm run lint:markdown
         continue-on-error: true
 ```
 
 **What this does:**
+
 - Checks code style and quality
 - Lints all workspace projects
 - Lints markdown documentation
@@ -134,7 +137,7 @@ on:
   push:
     branches: [main]
   workflow_run:
-    workflows: ["Test Suite", "Lint Check"]
+    workflows: ['Test Suite', 'Lint Check']
     types: [completed]
     branches: [main]
 
@@ -142,22 +145,22 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'push'
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'
           cache: 'npm'
-      
+
       - name: Install dependencies
         run: npm ci
-      
+
       - name: Run tests before deploy
         run: npm run test:public:ci
-      
+
       - name: Deploy Public Site to Vercel
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
@@ -167,7 +170,7 @@ jobs:
           npm install --global vercel
           cd web/public-site
           vercel --prod --token=$VERCEL_TOKEN
-      
+
       - name: Deploy Strapi to Railway
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
@@ -178,6 +181,7 @@ jobs:
 ```
 
 **What this does:**
+
 - Runs only on push to main
 - Waits for tests and lint to pass
 - Re-runs tests before deployment
@@ -191,14 +195,17 @@ jobs:
 Go to your GitHub repository Settings → Secrets and add:
 
 ### For Vercel:
+
 1. `VERCEL_ORG_ID` - Get from Vercel dashboard
-2. `VERCEL_PROJECT_ID` - Get from Vercel dashboard  
+2. `VERCEL_PROJECT_ID` - Get from Vercel dashboard
 3. `VERCEL_TOKEN` - Create at https://vercel.com/account/tokens
 
 ### For Railway:
+
 1. `RAILWAY_TOKEN` - Get from Railway dashboard at https://railway.app/account/tokens
 
 ### Example Steps:
+
 ```
 GitHub Repo → Settings → Secrets and Variables → Actions → New repository secret
 
@@ -276,21 +283,25 @@ Add to your README.md:
 ## Troubleshooting
 
 ### Tests fail in CI but pass locally
+
 - **Cause:** Different Node.js versions
 - **Solution:** Ensure `.node-version` or `.nvmrc` file matches CI version
 - **Example:** Add `.nvmrc` with content: `20.11.0`
 
 ### Deployment fails with "token not found"
+
 - **Cause:** GitHub secret not configured
 - **Solution:** Check Settings → Secrets for correct token names
 - **Verify:** Run locally with token: `VERCEL_TOKEN=xxx npm run deploy`
 
 ### Tests timeout in CI
+
 - **Cause:** Slow GitHub Actions runners
 - **Solution:** Increase timeout in workflow: `timeout-minutes: 15`
 - **Alternative:** Run fewer test suites in parallel
 
 ### Secrets not accessible in workflow
+
 - **Cause:** Secret name mismatch
 - **Solution:** Check exact name (case-sensitive): `${{ secrets.VERCEL_TOKEN }}`
 - **Verify:** Use GitHub CLI: `gh secret list`
@@ -305,4 +316,3 @@ Add to your README.md:
 4. ✅ Verify workflows run in GitHub Actions tab
 5. ✅ Add pre-commit hooks locally (optional)
 6. ✅ Update README with status badges
-

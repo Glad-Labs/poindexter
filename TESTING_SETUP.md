@@ -79,26 +79,26 @@ describe('PostList', () => {
         slug: 'test-post-1',
         title: 'Test Post 1',
         date: '2024-01-01',
-        excerpt: 'Test excerpt'
+        excerpt: 'Test excerpt',
       },
       {
         id: '2',
-        slug: 'test-post-2', 
+        slug: 'test-post-2',
         title: 'Test Post 2',
         date: '2024-01-02',
-        excerpt: 'Test excerpt 2'
-      }
+        excerpt: 'Test excerpt 2',
+      },
     ];
-    
+
     render(<PostList posts={posts} />);
-    
+
     expect(screen.getByText('Test Post 1')).toBeInTheDocument();
     expect(screen.getByText('Test Post 2')).toBeInTheDocument();
   });
 
   it('shows no posts message when empty', () => {
     render(<PostList posts={[]} />);
-    
+
     expect(screen.getByText(/no posts/i)).toBeInTheDocument();
   });
 });
@@ -148,16 +148,14 @@ import Home from '../../pages/index';
 describe('Home Page', () => {
   it('should generate static props', async () => {
     const result = await getStaticProps();
-    
+
     expect(result).toHaveProperty('props');
     expect(result).toHaveProperty('revalidate');
   });
 
   it('renders featured posts', async () => {
-    const mockPosts = [
-      { id: '1', title: 'Featured Post', featured: true }
-    ];
-    
+    const mockPosts = [{ id: '1', title: 'Featured Post', featured: true }];
+
     render(<Home posts={mockPosts} />);
     expect(screen.getByText('Featured Post')).toBeInTheDocument();
   });
@@ -187,13 +185,11 @@ describe('API Functions', () => {
 
   describe('getPosts', () => {
     it('fetches posts from API', async () => {
-      const mockData = [
-        { id: '1', title: 'Post 1' }
-      ];
-      
+      const mockData = [{ id: '1', title: 'Post 1' }];
+
       global.fetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => mockData
+        json: async () => mockData,
       });
 
       const result = await api.getPosts();
@@ -202,9 +198,7 @@ describe('API Functions', () => {
     });
 
     it('handles API errors gracefully', async () => {
-      global.fetch.mockRejectedValueOnce(
-        new Error('API Error')
-      );
+      global.fetch.mockRejectedValueOnce(new Error('API Error'));
 
       const result = await api.getPosts();
       expect(result).toEqual([]);
@@ -214,10 +208,10 @@ describe('API Functions', () => {
   describe('getPostBySlug', () => {
     it('fetches single post by slug', async () => {
       const mockPost = { id: '1', slug: 'test-post', title: 'Test' };
-      
+
       global.fetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => mockPost
+        json: async () => mockPost,
       });
 
       const result = await api.getPostBySlug('test-post');
@@ -227,7 +221,7 @@ describe('API Functions', () => {
     it('returns null for not found posts', async () => {
       global.fetch.mockResolvedValueOnce({
         ok: false,
-        status: 404
+        status: 404,
       });
 
       const result = await api.getPostBySlug('nonexistent');
@@ -242,11 +236,11 @@ describe('API Functions', () => {
 **`jest.config.js`** (already correct):
 
 ```javascript
-const nextJest = require('next/jest')
+const nextJest = require('next/jest');
 
 const createJestConfig = nextJest({
   dir: './',
-})
+});
 
 const customJestConfig = {
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
@@ -256,9 +250,9 @@ const customJestConfig = {
     '^@/pages/(.*)$': '<rootDir>/pages/$1',
     '^@/lib/(.*)$': '<rootDir>/lib/$1',
   },
-}
+};
 
-module.exports = createJestConfig(customJestConfig)
+module.exports = createJestConfig(customJestConfig);
 ```
 
 ---
@@ -287,12 +281,9 @@ module.exports = {
     'src/**/*.js',
     '!src/index.js',
     '!src/**/*.d.ts',
-    '!src/**/index.js'
+    '!src/**/index.js',
   ],
-  coveragePathIgnorePatterns: [
-    '/node_modules/',
-    'node_modules/(?!@strapi)'
-  ]
+  coveragePathIgnorePatterns: ['/node_modules/', 'node_modules/(?!@strapi)'],
 };
 ```
 
@@ -374,7 +365,7 @@ describe('Categories API', () => {
       });
 
       expect(response.data).toBeDefined();
-      response.data.forEach(category => {
+      response.data.forEach((category) => {
         expect(category).toHaveProperty('name');
         expect(category).toHaveProperty('slug');
       });
@@ -413,8 +404,9 @@ npm test
 ```
 
 This runs:
+
 1. `npm test:public:ci` - Public site tests
-2. `npm test:oversight:ci` - Oversight hub tests  
+2. `npm test:oversight:ci` - Oversight hub tests
 3. `npm run test:python` - Python agent tests
 
 ### Workspace-Specific Tests
@@ -437,6 +429,7 @@ npm run test:frontend:ci
 ```
 
 Runs:
+
 1. `npm test:public:ci` - Public site tests (without watch)
 2. `npm test:oversight:ci` - Oversight hub tests (without watch)
 
@@ -471,7 +464,7 @@ const customJestConfig = {
       statements: 70,
     },
   },
-}
+};
 ```
 
 ### Generate Coverage Badge
@@ -511,6 +504,7 @@ Add to README.md:
 ### Writing Good Tests
 
 ✅ **DO:**
+
 - Test behavior, not implementation
 - Use descriptive test names
 - Keep tests focused and atomic
@@ -519,6 +513,7 @@ Add to README.md:
 - Use semantic queries (getByRole, getByText)
 
 ❌ **DON'T:**
+
 - Test implementation details
 - Create interdependent tests
 - Use shallow rendering without purpose
@@ -542,17 +537,17 @@ __tests__/
 ```javascript
 // ✅ Good
 describe('PostCard component', () => {
-  it('should display post title and excerpt', () => {})
-  it('should link to full post when clicked', () => {})
-  it('should show published date in correct format', () => {})
-})
+  it('should display post title and excerpt', () => {});
+  it('should link to full post when clicked', () => {});
+  it('should show published date in correct format', () => {});
+});
 
 // ❌ Avoid
 describe('PostCard', () => {
-  it('works', () => {})
-  it('renders', () => {})
-  it('test 1', () => {})
-})
+  it('works', () => {});
+  it('renders', () => {});
+  it('test 1', () => {});
+});
 ```
 
 ---
@@ -564,6 +559,7 @@ describe('PostCard', () => {
 **Problem:** Tests take too long to run
 
 **Solutions:**
+
 ```javascript
 // Increase timeout for specific test
 jest.setTimeout(10000);
@@ -581,6 +577,7 @@ testTimeout: 10000,
 **Problem:** Cannot find module in test
 
 **Solution:** Check `jest.config.js` `moduleNameMapper`:
+
 ```javascript
 moduleNameMapper: {
   '^@/components/(.*)$': '<rootDir>/components/$1',
@@ -593,15 +590,14 @@ moduleNameMapper: {
 **Problem:** React component won't render in tests
 
 **Solution:** Wrap with providers:
+
 ```javascript
 import { render } from '@testing-library/react';
 
 const renderWithProviders = (component) => {
   return render(
     <Provider>
-      <Router>
-        {component}
-      </Router>
+      <Router>{component}</Router>
     </Provider>
   );
 };
@@ -619,4 +615,3 @@ const renderWithProviders = (component) => {
 6. ✅ Set up GitHub Actions workflows
 7. ✅ Add pre-commit hooks
 8. ✅ Track coverage metrics
-
