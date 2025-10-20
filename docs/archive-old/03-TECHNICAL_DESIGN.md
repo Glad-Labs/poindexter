@@ -221,7 +221,7 @@ oversight-hub/
 
 ### 3. Strapi v5 CMS
 
-**Location:** `/cms/strapi-v5-backend/`
+**Location:** `/cms/strapi-main/`
 
 **Content Types:**
 
@@ -1338,7 +1338,7 @@ cd glad-labs-website
 
 ```powershell
 # Start individual services
-cd cms/strapi-v5-backend
+cd cms/strapi-main
 npm run develop
 
 cd web/public-site

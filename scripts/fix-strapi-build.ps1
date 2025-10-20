@@ -5,7 +5,7 @@ Write-Host "🔧 Fixing Strapi Cloud Build Issue..." -ForegroundColor Cyan
 Write-Host ""
 
 # Navigate to Strapi directory
-Set-Location "C:\Users\mattm\glad-labs-website\cms\strapi-v5-backend"
+Set-Location "C:\Users\mattm\glad-labs-website\cms\strapi-main"
 
 Write-Host "📦 Removing node_modules and package-lock.json..." -ForegroundColor Yellow
 Remove-Item -Path "node_modules" -Recurse -Force -ErrorAction SilentlyContinue
@@ -30,8 +30,8 @@ if ($LASTEXITCODE -eq 0) {
         Write-Host "📤 Ready to commit and push to trigger Strapi Cloud rebuild" -ForegroundColor Cyan
         Write-Host ""
         Write-Host "Run these commands:" -ForegroundColor White
-        Write-Host "  git add cms/strapi-v5-backend/package.json" -ForegroundColor Gray
-        Write-Host "  git add cms/strapi-v5-backend/package-lock.json" -ForegroundColor Gray
+        Write-Host "  git add cms/strapi-main/package.json" -ForegroundColor Gray
+        Write-Host "  git add cms/strapi-main/package-lock.json" -ForegroundColor Gray
         Write-Host "  git commit -m 'fix: downgrade date-fns to v3.6.0 for Strapi Cloud compatibility'" -ForegroundColor Gray
         Write-Host "  git push origin main" -ForegroundColor Gray
         Write-Host ""

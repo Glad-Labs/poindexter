@@ -73,7 +73,7 @@ glad-labs-website/
 │   ├── public-site/             # Next.js public website
 │   └── oversight-hub/           # React admin dashboard
 ├── cms/
-│   └── strapi-v5-backend/       # Headless CMS (Railway)
+│   └── strapi-main/       # Headless CMS (Railway)
 ├── src/
 │   ├── agents/                  # AI agent implementations
 │   └── cofounder_agent/         # Main AI orchestrator

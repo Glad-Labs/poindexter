@@ -339,7 +339,7 @@ const client = new Pool({ connectionString });
 
 ```bash
 # 1. Build Strapi
-cd cms/strapi-v5-backend
+cd cms/strapi-main
 npm run build
 
 # 2. Set production env vars

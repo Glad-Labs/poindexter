@@ -115,7 +115,7 @@ glad-labs-website/
 │   ├── public-site/        # Next.js public website
 │   └── oversight-hub/      # React admin dashboard
 ├── cms/
-│   └── strapi-v5-backend/  # Strapi CMS
+│   └── strapi-main/  # Strapi CMS
 ├── src/
 │   ├── agents/             # AI agents
 │   └── cofounder_agent/    # FastAPI backend
@@ -135,7 +135,7 @@ npm install --workspaces
 # Or install individually
 cd web/public-site && npm install
 cd ../oversight-hub && npm install
-cd ../../cms/strapi-v5-backend && npm install
+cd ../../cms/strapi-main && npm install
 ```
 
 ### Step 4: Install Python Dependencies
@@ -181,7 +181,7 @@ ENVIRONMENT=development
 DEBUG=True
 ```
 
-#### Strapi CMS: `cms/strapi-v5-backend/.env`
+#### Strapi CMS: `cms/strapi-main/.env`
 
 ```bash
 # Server
@@ -424,7 +424,7 @@ The easiest way to deploy Strapi to production is using the official Railway Str
 4. Copy the admin URL from Railway dashboard
 5. Create content types via admin panel
 
-**Admin Panel:** https://glad-labs-strapi-v5-backend-production.up.railway.app/admin
+**Admin Panel:** https://glad-labs-website-production.up.railway.app/admin
 
 **Complete Setup Guide:** See [RAILWAY_STRAPI_TEMPLATE_SETUP.md](./RAILWAY_STRAPI_TEMPLATE_SETUP.md)
 
@@ -615,10 +615,10 @@ ollama serve
 
 ```bash
 # Create database directory
-mkdir -p cms/strapi-v5-backend/.tmp
+mkdir -p cms/strapi-main/.tmp
 
 # Reset database
-rm cms/strapi-v5-backend/.tmp/data.db
+rm cms/strapi-main/.tmp/data.db
 npm run dev:strapi
 ```
 
@@ -652,7 +652,7 @@ curl https://api.anthropic.com/v1/messages \
 
 ```bash
 # Clear Strapi cache
-cd cms/strapi-v5-backend
+cd cms/strapi-main
 rm -rf .cache build
 
 # Rebuild

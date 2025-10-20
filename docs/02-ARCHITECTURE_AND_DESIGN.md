@@ -165,7 +165,7 @@ Next.js ──(fetch via API)──→ Strapi CMS ──→ Render Pages ──�
 
 ### 3. Strapi v5 CMS
 
-**Location**: `cms/strapi-v5-backend/`
+**Location**: `cms/strapi-main/`
 
 **Technology**:
 

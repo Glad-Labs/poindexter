@@ -326,7 +326,7 @@ export default function AgentChat() {
 #### Strapi Integration
 
 ```javascript
-// cms/strapi-v5-backend/src/api/agent/routes/agent.js
+// cms/strapi-main/src/api/agent/routes/agent.js
 module.exports = {
   routes: [
     {

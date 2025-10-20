@@ -397,7 +397,7 @@ glad-labs-website/
 │   ├── public-site/
 │   └── oversight-hub/
 ├── cms/
-│   └── strapi-v5-backend/
+│   └── strapi-main/
 ├── src/
 │   ├── agents/
 │   └── cofounder_agent/

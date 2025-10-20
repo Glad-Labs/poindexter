@@ -177,7 +177,7 @@ if (-not $PythonOnly) {
         $workspaces = @(
             @{Path="web/public-site"; Name="Public Site"}
             @{Path="web/oversight-hub"; Name="Oversight Hub"}  
-            @{Path="cms/strapi-v5-backend"; Name="Strapi CMS"}
+            @{Path="cms/strapi-main"; Name="Strapi CMS"}
         )
         
         Write-Host "Verifying workspace installations..." -ForegroundColor Yellow
@@ -207,7 +207,7 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd 'web/public-si
 Start-Sleep 2
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd 'web/oversight-hub'; npm start"  
 Start-Sleep 2
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd 'cms/strapi-v5-backend'; npm run develop"
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd 'cms/strapi-main'; npm run develop"
 
 Write-Host "✅ Services starting..." -ForegroundColor Green
 Write-Host "🌐 Access points:" -ForegroundColor Yellow

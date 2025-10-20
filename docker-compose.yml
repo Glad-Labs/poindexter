@@ -9,7 +9,7 @@ services:
   # ==================================
   strapi:
     build:
-      context: ./cms/strapi-v5-backend
+      context: ./cms/strapi-main
       dockerfile: Dockerfile
     container_name: glad-labs-strapi
     restart: unless-stopped

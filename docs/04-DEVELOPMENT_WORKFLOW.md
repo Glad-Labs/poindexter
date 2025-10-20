@@ -69,7 +69,7 @@ npm run start:all
 
 ```bash
 # Terminal 1: CMS
-cd cms/strapi-v5-backend
+cd cms/strapi-main
 npm run develop
 
 # Terminal 2: Frontend
@@ -284,7 +284,7 @@ npm install
 npm run start:all
 
 # Start individual service
-cd cms/strapi-v5-backend && npm run develop
+cd cms/strapi-main && npm run develop
 
 # Build for production
 npm run build
@@ -314,7 +314,7 @@ npm run build             # Build all services
 #### CMS (Strapi)
 
 ```bash
-cd cms/strapi-v5-backend
+cd cms/strapi-main
 
 npm run develop           # Start development server (watch mode)
 npm run build             # Build for production
@@ -552,7 +552,7 @@ console.log('Value:', myVar);
 # Look for your output
 
 # 3. Use debugger
-node --inspect cms/strapi-v5-backend/server.js
+node --inspect cms/strapi-main/server.js
 # Then open chrome://inspect in browser
 ```
 

@@ -117,7 +117,7 @@ async function createAdmin() {
     console.log(`Password: ${password}`);
     console.log('=================================');
     console.log('\n🌐 Login at:');
-    console.log('https://glad-labs-strapi-v5-backend-production.up.railway.app/admin');
+    console.log('https://glad-labs-strapi-main-production.up.railway.app/admin');
     console.log('\n⚠️  IMPORTANT: Change this password after logging in!\n');
 
   } catch (error) {

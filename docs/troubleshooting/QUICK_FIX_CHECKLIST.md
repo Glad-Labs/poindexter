@@ -2,7 +2,7 @@
 
 ## 🚀 What Just Happened
 
-✅ Fixed: `cms/strapi-v5-backend/config/server.ts`
+✅ Fixed: `cms/strapi-main/config/server.ts`
 ✅ Changed: `proxy: true` → `proxy: { enabled: true, trust: ['127.0.0.1'] }`
 ✅ Committed: Your code
 ✅ Pushed: To Railway
@@ -35,7 +35,7 @@ railway logs -f
 Once logs show "Strapi fully loaded":
 
 ```
-https://glad-labs-strapi-v5-backend-production.up.railway.app/admin
+https://glad-labs-website-production.up.railway.app/admin
 ```
 
 **Expected result:**
@@ -65,7 +65,7 @@ railway secret list | grep -E "URL|DATABASE_CLIENT"
 
 **Should show:**
 
-- `URL=https://glad-labs-strapi-v5-backend-production.up.railway.app`
+- `URL=https://glad-labs-website-production.up.railway.app`
 - `DATABASE_CLIENT=postgres`
 
 **If missing:** Go to Railway dashboard and add them
@@ -74,7 +74,7 @@ railway secret list | grep -E "URL|DATABASE_CLIENT"
 
 ```bash
 railway shell
-node cms/strapi-v5-backend/validate-env.js
+node cms/strapi-main/validate-env.js
 ```
 
 **Should show:** All ✅ checks
@@ -109,7 +109,7 @@ Delete all cookies for the domain, then try again
 
    ```bash
    railway shell
-   node cms/strapi-v5-backend/validate-env.js
+   node cms/strapi-main/validate-env.js
    ```
 
 3. **Share these logs**:

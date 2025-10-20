@@ -189,7 +189,7 @@ GLAD Labs is an **AI-powered autonomous business system** that combines:
 
 Create `.env` files in each service directory:
 
-#### `cms/strapi-v5-backend/.env`
+#### `cms/strapi-main/.env`
 
 ```bash
 # Server
@@ -370,7 +370,7 @@ pip install -r src/cofounder_agent/requirements.txt --force-reinstall
 
 ```bash
 # Clear Strapi database
-rm -rf cms/strapi-v5-backend/.tmp/data.db
+rm -rf cms/strapi-main/.tmp/data.db
 
 # Reinstall dependencies
 npm run setup:all

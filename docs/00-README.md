@@ -28,10 +28,9 @@
 - **Want**: Deploy to production, manage infrastructure
 - **Read First**: [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) (25 min)
 - **Then Choose**:
-  - [Railway Deployment](./deployment/railway-production.md)
-  - [Vercel Deployment](./deployment/vercel-production.md)
-  - [GCP Deployment](./deployment/gcp-deployment.md)
-- **Then**: [Production Checklist](./deployment/production-checklist.md)
+  - [Railway Deployment](./troubleshooting/railway-deployment-guide.md)
+  - [Production Checklist](./deployment/production-checklist.md)
+  - [Railway Environment Variables](./deployment/RAILWAY_ENV_VARIABLES.md)
 
 ### 🎨 **Frontend Developer (Next.js)**
 
@@ -68,20 +67,14 @@
 
 ### 🎯 **Core Documentation** (Start Here!)
 
-## 🚀 START HERE - Revenue-First Quick Start
+## 🚀 Core Documentation
 
-- **[QUICK START: Revenue-First Implementation](./QUICK_START_REVENUE_FIRST.md)** - Get live and earning in 2 weeks! 💰
-- **[Revenue-First Phase 1 Plan](./REVENUE_FIRST_PHASE_1.md)** - Complete 8-task implementation guide
-- **[Vercel Deployment Guide](./VERCEL_DEPLOYMENT_GUIDE.md)** - Deploy your site in 20 minutes
-
-## Core Documentation
-
-- ⚡ **[Quick Reference](./QUICK_REFERENCE.md)** - One-page system overview
-- 🚀 **[Vision & Roadmap](./VISION_AND_ROADMAP.md)** - Complete AI co-founder vision and implementation plan
-- 📋 **[Phase 1 Implementation Plan](./PHASE_1_IMPLEMENTATION_PLAN.md)** - Detailed implementation plan for the foundation phase
-- **[Setup Guide](./01-SETUP_GUIDE.md)** - Complete installation and deployment instructions
-- **[Technical Design](./03-TECHNICAL_DESIGN.md)** - System architecture, data models, and design decisions
-- **[Developer Journal](./05-DEVELOPER_JOURNAL.md)** - Chronological log of all changes, phases, and implementations
+- ⚡ **[Quick Reference](./reference/QUICK_REFERENCE.md)** - One-page system overview
+- 🚀 **[Setup & Overview](./01-SETUP_AND_OVERVIEW.md)** - Complete AI co-founder vision and implementation plan
+- 📋 **[Architecture & Design](./02-ARCHITECTURE_AND_DESIGN.md)** - Detailed architecture and design decisions
+- **[Deployment & Infrastructure](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md)** - Complete installation and deployment instructions
+- **[Development Workflow](./04-DEVELOPMENT_WORKFLOW.md)** - Development process and workflows
+- **[AI Agents & Integration](./05-AI_AGENTS_AND_INTEGRATION.md)** - AI agent implementation and integration
 
 ### 📖 **Documentation Categories**
 
@@ -215,19 +208,19 @@
 
 | Document                                       | Description               | Status     |
 | ---------------------------------------------- | ------------------------- | ---------- |
-| [Setup Guide](./01-SETUP_GUIDE.md)             | Installation & deployment | ✅ Current |
+| [Setup Guide](./01-SETUP_AND_OVERVIEW.md)      | Installation & deployment | ✅ Current |
 | [Developer Guide](./guides/DEVELOPER_GUIDE.md) | Development workflow      | ✅ Current |
-| [Technical Design](./03-TECHNICAL_DESIGN.md)   | Architecture & schemas    | ✅ Current |
-| [Architecture](./reference/ARCHITECTURE.md)    | System design & API       | ✅ Current |
-| [Developer Journal](./05-DEVELOPER_JOURNAL.md) | Change log                | ✅ Current |
+| [Architecture](./02-ARCHITECTURE_AND_DESIGN.md)| System design & API       | ✅ Current |
+| [Deployment Guide](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) | Infrastructure | ✅ Current |
+| [Workflow](./04-DEVELOPMENT_WORKFLOW.md)       | Development process       | ✅ Current |
 
 ### Feature Documentation
 
 | Document                                                    | Description            | Status     |
 | ----------------------------------------------------------- | ---------------------- | ---------- |
-| [Strapi Content Setup](./STRAPI_CONTENT_TYPES_SETUP.md)     | Content types setup    | ✅ Current |
-| [E2E Pipeline Setup](./E2E_PIPELINE_SETUP.md)               | Pipeline configuration | ✅ Current |
-| [Quick Start Revenue First](./QUICK_START_REVENUE_FIRST.md) | Revenue strategy       | ✅ Current |
+| [Strapi Content Setup](./reference/STRAPI_CONTENT_SETUP.md) | Content types setup    | ✅ Current |
+| [Production Checklist](./deployment/production-checklist.md)| Deployment checklist   | ✅ Current |
+| [Troubleshooting Guide](./troubleshooting/railway-deployment-guide.md) | Deployment help | ✅ Current |
 
 ### Setup & Operations
 
@@ -236,15 +229,15 @@
 | [Guide: Ollama Setup](./guides/OLLAMA_SETUP.md)              | Local AI models      | ✅ Current |
 | [Guide: Docker Deployment](./guides/DOCKER_DEPLOYMENT.md)    | Container deployment | ✅ Current |
 | [Guide: Local Setup](./guides/LOCAL_SETUP_GUIDE.md)          | Development setup    | ✅ Current |
-| [Production Checklist](./PRODUCTION_DEPLOYMENT_CHECKLIST.md) | Go-live checklist    | ✅ Current |
+| [Production Checklist](./deployment/production-checklist.md) | Go-live checklist    | ✅ Current |
 
 ### Reference & Standards
 
 | Document                                             | Description          | Status     |
 | ---------------------------------------------------- | -------------------- | ---------- |
-| [GLAD Labs Standards](./GLAD-LABS-STANDARDS.md)      | Coding standards     | ✅ Current |
-| [PowerShell Quick Ref](./POWERSHELL_API_QUICKREF.md) | API testing commands | ✅ Current |
-| [Data Schemas](./data_schemas.md)                    | Database models      | ✅ Current |
+| [GLAD Labs Standards](./reference/GLAD-LABS-STANDARDS.md) | Coding standards | ✅ Current |
+| [PowerShell Quick Ref](./reference/POWERSHELL_API_QUICKREF.md) | API testing | ✅ Current |
+| [Data Schemas](./reference/data_schemas.md)          | Database models      | ✅ Current |
 
 ### Archived Documents
 
@@ -346,7 +339,7 @@ OPENAI_API_KEY=your_key_here
 ANTHROPIC_API_KEY=your_key_here
 GOOGLE_API_KEY=your_key_here
 
-# Strapi: cms/strapi-v5-backend/.env
+# Strapi: cms/strapi-main/.env
 DATABASE_CLIENT=sqlite
 ```
 

@@ -8,18 +8,18 @@
   "workspaces": [
     "web/public-site",
     "web/oversight-hub",
-    "cms/strapi-v5-backend"
+    "cms/strapi-main"
   ],
   "scripts": {
     "//": "--- UTILITIES ---",
     "dev": "npm-run-all --parallel dev:*",
-    "dev:strapi": "npm run develop --workspace=cms/strapi-v5-backend",
+    "dev:strapi": "npm run develop --workspace=cms/strapi-main",
     "dev:oversight": "npm start --workspace=web/oversight-hub",
     "dev:public": "npm run dev --workspace=web/public-site",
     "dev:cofounder": "python src/cofounder_agent/start_server.py",
     "build": "npm run build --workspaces --if-present",
     "start:all": "npm-run-all --parallel start:*",
-    "start:strapi": "npm run start --workspace=cms/strapi-v5-backend",
+    "start:strapi": "npm run start --workspace=cms/strapi-main",
     "start:public": "npm run start --workspace=web/public-site",
     "start:oversight": "npm run build --workspace=web/oversight-hub && npm run start --workspace=web/oversight-hub",
     "start:cofounder": "python src/cofounder_agent/main.py",

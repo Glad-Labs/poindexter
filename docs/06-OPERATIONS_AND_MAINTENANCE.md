@@ -149,7 +149,7 @@ traces
 npm run logs:all
 
 # Strapi logs
-tail -f cms/strapi-v5-backend/logs/app.log
+tail -f cms/strapi-main/logs/app.log
 
 # Frontend logs
 tail -f web/public-site/logs/app.log

@@ -196,7 +196,7 @@ URL=https://<domain>
 **Missing any? Add them:**
 
 ```bash
-railway secret set URL="https://glad-labs-strapi-v5-backend-production.up.railway.app"
+railway secret set URL="https://glad-labs-website-production.up.railway.app"
 ```
 
 ### Check Recent Logs
@@ -287,7 +287,7 @@ export default ({ env }) => ({
 Then:
 
 ```powershell
-git add cms/strapi-v5-backend/config/server.ts
+git add cms/strapi-main/config/server.ts
 git commit -m "fix: explicit proxy trust for Railway"
 git push origin main
 # Wait for redeploy

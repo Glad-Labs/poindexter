@@ -8,7 +8,7 @@ These pages require content to be created in the Strapi admin panel. Follow thes
 
 ```bash
 # Make sure Strapi is running
-cd cms/strapi-v5-backend
+cd cms/strapi-main
 npm run develop
 ```
 

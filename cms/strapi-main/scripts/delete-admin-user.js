@@ -46,7 +46,7 @@ async function deleteAdminUser() {
     console.log('✅ Admin users cleared!');
     console.log('=================================');
     console.log('You can now register a new admin at:');
-    console.log('https://glad-labs-strapi-v5-backend-production.up.railway.app/admin');
+    console.log('https://glad-labs-strapi-main-production.up.railway.app/admin');
     console.log('=================================\n');
 
   } catch (error) {
