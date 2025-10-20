@@ -3,6 +3,7 @@
 ## 🚀 Pre-Deployment Verification
 
 ### Local Testing
+
 - [ ] Run `npm test` in `web/public-site` - confirm all 4 test suites pass (5 tests)
 - [ ] Run `npm run build` - confirm build completes with no errors
 - [ ] Run `npm run lint` - confirm no linting errors
@@ -10,6 +11,7 @@
 - [ ] Test dynamic pages: archive, categories, tags all accessible
 
 ### Environment Variables
+
 - [ ] Verify `NEXT_PUBLIC_STRAPI_API_URL` is set in Vercel dashboard
 - [ ] Value should be: `https://your-strapi-instance.railway.app`
 - [ ] Test connectivity from local machine:
@@ -18,6 +20,7 @@
   ```
 
 ### Code Review
+
 - [ ] Verify timeout is set to 10 seconds in `lib/api.js`
 - [ ] Verify error handling exists in `getStaticPaths` for:
   - `pages/archive/[page].js`
@@ -27,6 +30,7 @@
 - [ ] Verify `vercel.json` has schema and security headers
 
 ### Dependencies
+
 - [ ] Run `npm list` and confirm all packages are at correct versions
 - [ ] Specifically check: Jest 30.2.0, Next.js 15.1.0
 - [ ] No warnings or conflicts in package.json
@@ -34,11 +38,13 @@
 ## ✅ Pre-Deployment Commits
 
 ### Verify Git History
+
 ```bash
 git log --oneline -10
 ```
 
 Should show these recent commits (in reverse chronological order):
+
 1. "docs: add quick summary for 504 timeout fix"
 2. "fix: resolve Vercel 504 timeout errors by adding request timeouts and error handling"
 3. "docs: add comprehensive guide for Vercel 504 timeout resolution"
@@ -46,6 +52,7 @@ Should show these recent commits (in reverse chronological order):
 5. "docs: add VERCEL_CONFIG_FIX documentation"
 
 If any are missing, run:
+
 ```bash
 git status
 git add .
@@ -55,6 +62,7 @@ git commit -m "<message>"
 ## 🌐 Vercel Deployment
 
 ### Push to Vercel
+
 ```bash
 git push origin main  # or your deploy branch
 ```
@@ -62,6 +70,7 @@ git push origin main  # or your deploy branch
 Vercel will automatically trigger a build. Monitor the build in Vercel dashboard.
 
 ### Monitor Build Process
+
 1. Go to https://vercel.com/dashboard
 2. Click on `public-site` project
 3. Watch the build log for:
@@ -73,6 +82,7 @@ Vercel will automatically trigger a build. Monitor the build in Vercel dashboard
 ### Expected Build Output
 
 You should see:
+
 ```
 > npm run build
 
@@ -86,6 +96,7 @@ exported 7 subfolders
 ```
 
 **DO NOT see:**
+
 ```
 Code: FUNCTION_INVOCATION_TIMEOUT
 Error: Serverless Function has timed out
@@ -97,12 +108,14 @@ If you still see timeouts, proceed to **Troubleshooting** section.
 ## ✨ Post-Deployment Verification
 
 ### Immediate Checks (First 5 minutes)
+
 - [ ] Visit https://gladlabs.io - homepage loads
 - [ ] Check response time: should be <2 seconds
 - [ ] Open browser DevTools → Network tab
 - [ ] Verify no 504 errors in network requests
 
 ### Functional Testing
+
 - [ ] Navigate to archive: https://gladlabs.io/archive
 - [ ] Test pagination: navigate between pages
 - [ ] Click on a category: https://gladlabs.io/category/[name]
@@ -110,12 +123,14 @@ If you still see timeouts, proceed to **Troubleshooting** section.
 - [ ] All pages should load within 2-3 seconds
 
 ### Search Console
+
 - [ ] Log into Google Search Console
 - [ ] Verify site indexation: https://search.google.com/search-console
 - [ ] Check for any crawl errors
 - [ ] Request indexing if needed
 
 ### Monitoring Setup
+
 - [ ] Set up Vercel error notifications (if not already done)
   - Dashboard → Settings → Notifications
   - Enable "Build Failed"
@@ -129,10 +144,11 @@ If you still see timeouts, proceed to **Troubleshooting** section.
 ### If Build Still Times Out After Deployment
 
 1. **Check Strapi Status**
+
    ```powershell
    .\scripts\diagnose-timeout.ps1
    ```
-   
+
    If this fails:
    - Check Railway dashboard: https://railway.app
    - Verify Strapi deployment is "running" (not "crashed")
@@ -152,9 +168,11 @@ If you still see timeouts, proceed to **Troubleshooting** section.
    - Verify Strapi's CORS settings allow Vercel domain
 
 4. **Check Recent Code Changes**
+
    ```bash
    git diff HEAD~5 HEAD --name-only
    ```
+
    - Verify no breaking changes were introduced
    - Verify timeout values are correct (10000ms = 10 seconds)
    - Verify error handling code is syntactically correct
@@ -165,6 +183,7 @@ If you still see timeouts, proceed to **Troubleshooting** section.
    git revert HEAD
    git push origin main
    ```
+
    - Vercel will auto-redeploy
    - If this works, timeout issue is in most recent commit
 
@@ -175,6 +194,7 @@ If you still see timeouts, proceed to **Troubleshooting** section.
 **Cause:** Error handling code triggered (API failed during build)
 
 **Solution:**
+
 1. Check Strapi is running: `.\scripts\diagnose-timeout.ps1`
 2. Verify environment variables in Vercel
 3. Redeploy: `git push origin main` (triggers full rebuild)
@@ -190,6 +210,7 @@ If you still see timeouts, proceed to **Troubleshooting** section.
 **Cause:** Strapi API is slow (but not timing out)
 
 **Solution:**
+
 1. Check Railway CPU/Memory usage
 2. Optimize Strapi database queries
 3. Consider upgrading Railway tier
@@ -199,14 +220,14 @@ If you still see timeouts, proceed to **Troubleshooting** section.
 
 Expected performance after deployment:
 
-| Metric | Target | Current |
-|--------|--------|---------|
-| Homepage load time | <2s | ⏳ Measure |
-| Archive page load | <2s | ⏳ Measure |
-| Category page load | <2s | ⏳ Measure |
-| Build time | <10min | ✅ <10min |
-| Build timeout | 0 | ✅ 0 |
-| Test suite pass rate | 100% | ✅ 100% |
+| Metric               | Target | Current    |
+| -------------------- | ------ | ---------- |
+| Homepage load time   | <2s    | ⏳ Measure |
+| Archive page load    | <2s    | ⏳ Measure |
+| Category page load   | <2s    | ⏳ Measure |
+| Build time           | <10min | ✅ <10min  |
+| Build timeout        | 0      | ✅ 0       |
+| Test suite pass rate | 100%   | ✅ 100%    |
 
 After deployment, measure these and document in your monitoring.
 
@@ -216,8 +237,9 @@ After deployment, measure these and document in your monitoring.
   - `X-Content-Type-Options: nosniff`
   - `X-Frame-Options: DENY`
   - `X-XSS-Protection: 1; mode=block`
-  
+
   Check headers:
+
   ```bash
   curl -i https://gladlabs.io | grep -i "X-"
   ```
@@ -226,7 +248,6 @@ After deployment, measure these and document in your monitoring.
   - Database passwords: ❌ Never in code
   - API keys: ❌ Never in code
   - Use Vercel dashboard or Railway for secrets
-  
 - [ ] Verify Strapi API URL is HTTPS (not HTTP)
   - Should be: `https://...`
   - Not: `http://...`
@@ -286,8 +307,8 @@ If you encounter issues:
 
 ---
 
-**Deployment Date:** _______________
-**Deployed By:** _______________
-**Notes:** _______________
+**Deployment Date:** ******\_\_\_******
+**Deployed By:** ******\_\_\_******
+**Notes:** ******\_\_\_******
 
 Last updated: October 20, 2025

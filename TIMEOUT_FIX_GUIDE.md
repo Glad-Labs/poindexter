@@ -19,6 +19,7 @@ export async function getStaticPaths() {
 ```
 
 **When Strapi:**
+
 - Is offline or unreachable
 - Is slow to respond
 - Has network issues
@@ -57,13 +58,15 @@ async function fetchAPI(path, urlParamsObject = {}, options = {}) {
 ```
 
 **Benefits:**
+
 - API calls won't hang indefinitely
 - Errors are caught quickly
 - Build completes even if Strapi is slow
 
 ### 2. ✅ Added Error Handling to getStaticPaths
 
-**Files:** 
+**Files:**
+
 - `web/public-site/pages/archive/[page].js`
 - `web/public-site/pages/category/[slug].js`
 - `web/public-site/pages/tag/[slug].js`
@@ -105,8 +108,8 @@ export async function getStaticProps({ params }) {
   } catch (error) {
     console.error(`Error fetching posts:`, error);
     return {
-      notFound: true,        // Return 404 instead of crashing
-      revalidate: 10,        // Retry sooner if there's an error
+      notFound: true, // Return 404 instead of crashing
+      revalidate: 10, // Retry sooner if there's an error
     };
   }
 }
@@ -117,11 +120,13 @@ export async function getStaticProps({ params }) {
 ## How To Prevent This In The Future
 
 ### 1. Monitor Strapi Availability
+
 - Keep your Strapi backend running at all times
 - Set up uptime monitoring: https://www.pingdom.com/
 - Test Strapi before deploying to Vercel
 
 ### 2. Use Revalidation
+
 ```javascript
 return {
   props: { ... },
@@ -132,6 +137,7 @@ return {
 This way, even if generation fails, the cached page will still serve.
 
 ### 3. Test Build Locally First
+
 ```bash
 npm run build  # Test build locally
 npm start      # Test production build
@@ -142,6 +148,7 @@ If this hangs, your API calls are too slow.
 ### 4. Increase Vercel Build Timeout (If Needed)
 
 In `vercel.json`:
+
 ```json
 {
   "buildCommand": "npm run build",
@@ -154,6 +161,7 @@ For longer builds, create a custom build script with longer timeouts.
 ### 5. Use ISR (Incremental Static Regeneration)
 
 Current approach is good - pages regenerate on-demand:
+
 ```javascript
 export async function getStaticProps() {
   return {
@@ -182,12 +190,14 @@ Before deploying to Vercel:
 ## If Timeout Happens Again
 
 ### Step 1: Check Strapi Status
+
 ```bash
 # Ping your Strapi backend
 curl https://your-strapi-url.railway.app/api/health
 ```
 
 ### Step 2: Check Vercel Logs
+
 1. Go to https://vercel.com/dashboard
 2. Select your project
 3. Click **Deployments**
@@ -195,11 +205,13 @@ curl https://your-strapi-url.railway.app/api/health
 5. Click **Logs** to see what timed out
 
 ### Step 3: Temporary Fix
+
 - Roll back to previous deployment
 - Fix the underlying issue (Strapi down, slow API, etc.)
 - Redeploy
 
 ### Step 4: Notify Team
+
 - Strapi issues require operations team to fix
 - Have a backup plan (cached pages, degraded mode)
 
@@ -208,6 +220,7 @@ curl https://your-strapi-url.railway.app/api/health
 ## Performance Tips
 
 ### 1. Optimize API Queries
+
 ```javascript
 // ❌ SLOW - Fetching full posts with all data
 const postsData = await getPaginatedPosts(1, 1, null); // Could be slow
@@ -220,22 +233,26 @@ const postsData = await getPaginatedPosts(1, 1, null, {
 ```
 
 ### 2. Use CDN for Static Assets
+
 Move images and assets to CDN if Strapi is slow:
+
 ```javascript
 const IMAGE_CDN = process.env.NEXT_PUBLIC_IMAGE_CDN || '';
-const imageUrl = IMAGE_CDN 
+const imageUrl = IMAGE_CDN
   ? `${IMAGE_CDN}/image-name.jpg`
   : getStrapiURL(coverImage.url);
 ```
 
 ### 3. Enable Build Cache
+
 In `vercel.json`:
+
 ```json
 {
   "crons": [
     {
       "path": "/api/revalidate",
-      "schedule": "0 */6 * * *"  // Run every 6 hours
+      "schedule": "0 */6 * * *" // Run every 6 hours
     }
   ]
 }
@@ -246,16 +263,19 @@ In `vercel.json`:
 ## Current Status
 
 ✅ **Fixed:**
+
 - API calls have 10-second timeout
 - All pages have error handling
 - Build won't crash if Strapi is down
 - Fallback pages served on error
 
 ✅ **Deployed:**
+
 - All changes committed to git
 - Ready for next Vercel deployment
 
 📊 **Monitoring:**
+
 - Check Vercel dashboard for timeouts: https://vercel.com/dashboard
 - Check Strapi logs if API is slow
 
@@ -264,9 +284,11 @@ In `vercel.json`:
 ## Next Steps
 
 1. **Redeploy to Vercel**
+
    ```bash
    git push origin dev
    ```
+
    Vercel will automatically trigger a new deployment.
 
 2. **Verify in Vercel Dashboard**
