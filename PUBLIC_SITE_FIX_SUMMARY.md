@@ -31,12 +31,14 @@ Error: An error occurred please try again
 **File:** `lib/api.js`
 
 All API functions now have:
+
 - Try-catch blocks
 - Detailed error logging
 - Fallback empty arrays/null values
 - Graceful degradation
 
 Functions improved:
+
 - `fetchAPI()` - Better error messages
 - `getPaginatedPosts()` - Returns empty array on failure
 - `getFeaturedPost()` - Returns null on failure
@@ -46,12 +48,14 @@ Functions improved:
 
 ### 2. ✅ Fixed Static Generation
 
-**Files:** 
+**Files:**
+
 - `pages/archive/[page].js`
 - `pages/category/[slug].js`
 - `pages/tag/[slug].js`
 
 Added try-catch blocks in:
+
 - `getStaticPaths()` - Handles API errors during path generation
 - `getStaticProps()` - Handles API errors during page generation
 - Returns fallback empty data instead of crashing
@@ -68,11 +72,13 @@ Added try-catch blocks in:
 ### 4. ✅ Added Vercel Configuration
 
 **New Files:**
+
 - `vercel.json` - Vercel build configuration
 - `.vercelignore` - Files to exclude from builds
 - `VERCEL_DEPLOYMENT.md` - Complete deployment guide
 
 **Updated Files:**
+
 - `README.md` - Added deployment section
 
 ### 5. ✅ Build Now Passes
@@ -116,15 +122,15 @@ Added try-catch blocks in:
 
 ✅ **All pages build successfully:**
 
-| Page | Status | Size | Revalidate |
-|------|--------|------|-----------|
-| Homepage | ✅ SSG | 1.7 kB | 1s |
-| About | ✅ SSG | 2.28 kB | 1m |
-| Privacy | ✅ SSG | 2.6 kB | 1m |
-| Archive/[page] | ✅ SSG | 1.58 kB | 1m |
-| Posts/[slug] | ✅ Dynamic | 1.35 kB | On-demand |
-| Category/[slug] | ✅ Dynamic | 1.36 kB | On-demand |
-| Tag/[slug] | ✅ Dynamic | 1.35 kB | On-demand |
+| Page            | Status     | Size    | Revalidate |
+| --------------- | ---------- | ------- | ---------- |
+| Homepage        | ✅ SSG     | 1.7 kB  | 1s         |
+| About           | ✅ SSG     | 2.28 kB | 1m         |
+| Privacy         | ✅ SSG     | 2.6 kB  | 1m         |
+| Archive/[page]  | ✅ SSG     | 1.58 kB | 1m         |
+| Posts/[slug]    | ✅ Dynamic | 1.35 kB | On-demand  |
+| Category/[slug] | ✅ Dynamic | 1.36 kB | On-demand  |
+| Tag/[slug]      | ✅ Dynamic | 1.35 kB | On-demand  |
 
 ✅ **Sitemap:** Generated with 0 posts, 0 categories, 0 tags (fallback)
 
@@ -139,6 +145,7 @@ Build completes successfully even if Strapi API is down
 ### 🔄 ISR (Incremental Static Regeneration)
 
 Pages update automatically without full rebuilds:
+
 - Homepage: Every 1 second
 - Archive/Category/Tag pages: Every 60 seconds
 - Individual posts: Every 60 seconds
@@ -146,6 +153,7 @@ Pages update automatically without full rebuilds:
 ### 📱 Dynamic Routing
 
 Pages generate on-demand with fallback: 'blocking'
+
 - `/posts/[slug]`
 - `/category/[slug]`
 - `/tag/[slug]`
@@ -192,6 +200,7 @@ NEXT_PUBLIC_SITE_URL = https://gladlabs.io
 ```
 
 ⚠️ **Important:** Generate `STRAPI_API_TOKEN` from Strapi Admin:
+
 - Settings → API Tokens → Create new
 - Type: "Full access"
 - Copy the entire token string
@@ -243,7 +252,7 @@ See `VERCEL_DEPLOYMENT.md` for complete troubleshooting guide.
 ### 💻 Code
 
 - **lib/api.js** - All API calls with error handling
-- **pages/*.js** - All pages with graceful fallbacks
+- **pages/\*.js** - All pages with graceful fallbacks
 - **scripts/generate-sitemap.js** - Sitemap with error handling
 
 ---
@@ -289,6 +298,7 @@ Excellent performance for production!
 ---
 
 For questions, see:
+
 - **Deployment guide:** `web/public-site/VERCEL_DEPLOYMENT.md`
 - **Technical details:** `web/public-site/DEPLOYMENT_READINESS.md`
 - **API configuration:** `web/public-site/README.md`
