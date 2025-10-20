@@ -206,21 +206,21 @@
 
 ### Primary Documents
 
-| Document                                       | Description               | Status     |
-| ---------------------------------------------- | ------------------------- | ---------- |
-| [Setup Guide](./01-SETUP_AND_OVERVIEW.md)      | Installation & deployment | ✅ Current |
-| [Developer Guide](./guides/DEVELOPER_GUIDE.md) | Development workflow      | ✅ Current |
-| [Architecture](./02-ARCHITECTURE_AND_DESIGN.md)| System design & API       | ✅ Current |
-| [Deployment Guide](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) | Infrastructure | ✅ Current |
-| [Workflow](./04-DEVELOPMENT_WORKFLOW.md)       | Development process       | ✅ Current |
+| Document                                                  | Description               | Status     |
+| --------------------------------------------------------- | ------------------------- | ---------- |
+| [Setup Guide](./01-SETUP_AND_OVERVIEW.md)                 | Installation & deployment | ✅ Current |
+| [Developer Guide](./guides/DEVELOPER_GUIDE.md)            | Development workflow      | ✅ Current |
+| [Architecture](./02-ARCHITECTURE_AND_DESIGN.md)           | System design & API       | ✅ Current |
+| [Deployment Guide](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) | Infrastructure            | ✅ Current |
+| [Workflow](./04-DEVELOPMENT_WORKFLOW.md)                  | Development process       | ✅ Current |
 
 ### Feature Documentation
 
-| Document                                                    | Description            | Status     |
-| ----------------------------------------------------------- | ---------------------- | ---------- |
-| [Strapi Content Setup](./reference/STRAPI_CONTENT_SETUP.md) | Content types setup    | ✅ Current |
-| [Production Checklist](./deployment/production-checklist.md)| Deployment checklist   | ✅ Current |
-| [Troubleshooting Guide](./troubleshooting/railway-deployment-guide.md) | Deployment help | ✅ Current |
+| Document                                                               | Description          | Status     |
+| ---------------------------------------------------------------------- | -------------------- | ---------- |
+| [Strapi Content Setup](./reference/STRAPI_CONTENT_SETUP.md)            | Content types setup  | ✅ Current |
+| [Production Checklist](./deployment/production-checklist.md)           | Deployment checklist | ✅ Current |
+| [Troubleshooting Guide](./troubleshooting/railway-deployment-guide.md) | Deployment help      | ✅ Current |
 
 ### Setup & Operations
 
@@ -233,11 +233,11 @@
 
 ### Reference & Standards
 
-| Document                                             | Description          | Status     |
-| ---------------------------------------------------- | -------------------- | ---------- |
-| [GLAD Labs Standards](./reference/GLAD-LABS-STANDARDS.md) | Coding standards | ✅ Current |
-| [PowerShell Quick Ref](./reference/POWERSHELL_API_QUICKREF.md) | API testing | ✅ Current |
-| [Data Schemas](./reference/data_schemas.md)          | Database models      | ✅ Current |
+| Document                                                       | Description      | Status     |
+| -------------------------------------------------------------- | ---------------- | ---------- |
+| [GLAD Labs Standards](./reference/GLAD-LABS-STANDARDS.md)      | Coding standards | ✅ Current |
+| [PowerShell Quick Ref](./reference/POWERSHELL_API_QUICKREF.md) | API testing      | ✅ Current |
+| [Data Schemas](./reference/data_schemas.md)                    | Database models  | ✅ Current |
 
 ### Archived Documents
 
