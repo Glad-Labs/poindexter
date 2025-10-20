@@ -454,10 +454,8 @@ See [LICENSE](../LICENSE) for details.
 
 ---
 
-<div align="center">
+## 💝 Made with ❤️ by the GLAD Labs Team
 
-**Made with ❤️ by the GLAD Labs Team**
+[Documentation](./00-README.md) • [Setup Guide](./01-SETUP_AND_OVERVIEW.md) • [Architecture](./reference/ARCHITECTURE.md)
 
-[Documentation](./00-README.md) • [Setup Guide](./01-SETUP_GUIDE.md) • [Architecture](./reference/ARCHITECTURE.md) • [Support](#-support--resources)
-
-</div>
+---

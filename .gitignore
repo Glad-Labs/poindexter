@@ -24,6 +24,7 @@ __pycache__/
 # Strapi
 cms/strapi-v5-backend-archive/
 cms/strapi-v5-backend-old-backup/
+
 .tmp/
 #cms/strapi-main/
 cms/strapi-main_orig.zip
