@@ -50,6 +50,7 @@ For first-time setup, follow the **[Step-by-Step Setup](#step-by-step-setup)** s
 ### Project Status
 
 Ensure your Strapi backend is:
+
 - ✅ Running locally without errors
 - ✅ All dependencies installed (`npm install`)
 - ✅ Configuration files present:
@@ -74,6 +75,7 @@ iwr -Uri https://storage.googleapis.com/railway-io/installers/latest/railway-win
 ```
 
 Verify installation:
+
 ```bash
 railway --version
 ```
@@ -93,6 +95,7 @@ railway init
 ```
 
 Follow the prompts:
+
 - **Project Name**: `glad-labs-strapi`
 - **Use existing project**: No (select "Create a new project")
 
@@ -103,6 +106,7 @@ railway add
 ```
 
 Select `PostgreSQL` from the list. Railway automatically:
+
 - Creates a PostgreSQL 15 instance
 - Sets environment variables (`DATABASE_URL`)
 - Configures backups and monitoring
@@ -115,16 +119,17 @@ railway variables
 
 Set these variables:
 
-| Variable | Value | Notes |
-|----------|-------|-------|
-| `NODE_ENV` | `production` | Production mode |
-| `ADMIN_PATH` | `/admin` | Strapi admin path |
-| `STRAPI_ADMIN_BACKEND_URL` | `https://your-domain.railway.app` | Your Railway domain |
-| `STRAPI_TELEMETRY_DISABLED` | `true` | Disable telemetry |
-| `STRAPI_AI_URL` | `https://your-ai-backend` | (Optional) AI service URL |
-| `STRAPI_ANALYTICS_URL` | `https://your-analytics` | (Optional) Analytics URL |
+| Variable                    | Value                             | Notes                     |
+| --------------------------- | --------------------------------- | ------------------------- |
+| `NODE_ENV`                  | `production`                      | Production mode           |
+| `ADMIN_PATH`                | `/admin`                          | Strapi admin path         |
+| `STRAPI_ADMIN_BACKEND_URL`  | `https://your-domain.railway.app` | Your Railway domain       |
+| `STRAPI_TELEMETRY_DISABLED` | `true`                            | Disable telemetry         |
+| `STRAPI_AI_URL`             | `https://your-ai-backend`         | (Optional) AI service URL |
+| `STRAPI_ANALYTICS_URL`      | `https://your-analytics`          | (Optional) Analytics URL  |
 
 **Database Connection**:
+
 - `DATABASE_URL` is set automatically by PostgreSQL plugin
 - `DATABASE_PUBLIC_URL` (if needed for external connections)
 
@@ -147,6 +152,7 @@ Create/update `railway.json` in your project root:
 ```
 
 **Key Settings**:
+
 - `buildCommand`: Runs on Railway build container (includes source compilation for native modules)
 - `startCommand`: Starts Strapi server
 - `restartPolicyType`: Automatically restart on failures
@@ -166,6 +172,7 @@ build-from-source=true
 ```
 
 **Why `build-from-source=true`**:
+
 - SWC (Rust-based TypeScript compiler) needs compilation for each platform
 - Prebuilt binaries don't work in Railway containers
 - See [SWC Native Binding Fix](./swc-native-binding-fix.md) for details
@@ -177,6 +184,7 @@ railway link
 ```
 
 Select your GitHub repo. Railway now:
+
 - ✅ Automatically deploys on git push to main
 - ✅ Sets up webhooks
 - ✅ Enables preview deployments
@@ -184,12 +192,14 @@ Select your GitHub repo. Railway now:
 ### Step 9: Deploy
 
 **First Deploy**:
+
 ```bash
 railway deploy
 ```
 
 **Subsequent Deploys**:
 Just push to GitHub:
+
 ```bash
 git add .
 git commit -m "Deploy to Railway"
@@ -211,6 +221,7 @@ railway variables
 ### Database Auto-Detection
 
 Strapi configuration automatically:
+
 1. Checks for `DATABASE_URL` environment variable
 2. Parses connection string for PostgreSQL
 3. Configures connection pooling
@@ -281,12 +292,14 @@ Railway uses **Railpack** 0.9.1 which:
 ### Build Time Expectations
 
 **First Deploy**: ~5-6 minutes
+
 - Node.js install: ~1.5 min
 - npm install: ~1.5 min (with source compilation)
 - Strapi build: ~30 seconds
 - Startup: ~1 minute
 
 **Subsequent Deploys**: ~4-5 minutes
+
 - npm cache used: ~30 seconds
 - Build cache used: ~1 minute
 - Total: Faster than first
@@ -326,6 +339,7 @@ See [SWC Native Binding Fix](./swc-native-binding-fix.md) for full details.
 **Cause**: Build command failed (usually SWC or dependency issue)
 
 **Solution**:
+
 1. Test locally: `npm run build`
 2. Fix any errors locally first
 3. Then deploy
@@ -335,11 +349,13 @@ See [SWC Native Binding Fix](./swc-native-binding-fix.md) for full details.
 #### "Cannot connect to PostgreSQL"
 
 **Check**:
+
 1. Is PostgreSQL plugin added to Railway project?
 2. Is `DATABASE_URL` environment variable set?
 3. Test connection string: `psql <DATABASE_URL>`
 
 **Fix**:
+
 ```bash
 railway add  # Add PostgreSQL if missing
 railway variables  # Check DATABASE_URL is set
@@ -350,6 +366,7 @@ railway variables  # Check DATABASE_URL is set
 **Cause**: Likely SWC binding error or missing environment variables
 
 **Fix**:
+
 1. Check Railway logs: `railway logs --follow`
 2. Look for "Error: Failed to load native binding"
 3. If found, see [SWC Native Binding Fix](./swc-native-binding-fix.md)
@@ -359,11 +376,13 @@ railway variables  # Check DATABASE_URL is set
 #### Slow startup
 
 **Possible causes**:
+
 - Cold start (first request)
 - SWC compilation on first build
 - Database migration/seeding
 
 **Monitor**:
+
 ```bash
 railway logs --follow
 ```
@@ -371,6 +390,7 @@ railway logs --follow
 #### High memory usage
 
 **Check Strapi settings**:
+
 - Reduce admin plugin bundle size
 - Enable content caching
 - Check database connection pooling
@@ -382,16 +402,19 @@ railway logs --follow
 ### View Logs
 
 **Real-time logs**:
+
 ```bash
 railway logs --follow
 ```
 
 **Last 50 lines**:
+
 ```bash
 railway logs
 ```
 
 **Filter logs**:
+
 ```bash
 railway logs | grep "error"
 railway logs | grep "SWC"
@@ -400,8 +423,9 @@ railway logs | grep "SWC"
 ### Key Metrics
 
 Railway dashboard shows:
+
 - ✅ CPU usage
-- ✅ Memory usage  
+- ✅ Memory usage
 - ✅ Network I/O
 - ✅ Deployment history
 - ✅ Environment variables
@@ -409,6 +433,7 @@ Railway dashboard shows:
 ### Health Checks
 
 Strapi automatically runs health checks:
+
 - ✅ Admin panel: `/admin`
 - ✅ API: `/api`
 - ✅ Health: `GET /` (returns 200)
@@ -416,6 +441,7 @@ Strapi automatically runs health checks:
 ### Alerts & Notifications
 
 Set up in Railway dashboard:
+
 - CPU threshold alerts
 - Memory threshold alerts
 - Deployment failure notifications
@@ -435,11 +461,13 @@ Set up in Railway dashboard:
 ### Scaling
 
 Railway free tier provides:
+
 - ✅ Shared CPU/Memory
 - ✅ 100 hours/month
 - ✅ Suitable for small projects
 
 For production scale:
+
 - Upgrade to paid plan
 - Get dedicated resources
 - Auto-scaling available
@@ -447,6 +475,7 @@ For production scale:
 ### Backups
 
 PostgreSQL backups automated:
+
 - Daily backups (7-day retention)
 - Configure in PostgreSQL plugin settings
 - Restore via Railway dashboard
@@ -475,4 +504,3 @@ Before deploying, verify:
 - [Strapi Deployment Guide](https://docs.strapi.io/user-docs/latest/getting-started/deployment.html)
 - [SWC Native Binding Issues](./swc-native-binding-fix.md)
 - [PostgreSQL Configuration](../reference/database-configuration.md)
-

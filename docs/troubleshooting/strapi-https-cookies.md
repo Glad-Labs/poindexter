@@ -13,6 +13,7 @@
 When Strapi runs behind HTTPS (Railway, Vercel, etc.) or with a reverse proxy, cookie issues occur:
 
 **Symptoms**:
+
 - ❌ Admin login doesn't persist
 - ❌ Session cookies not set
 - ❌ "Cross-site cookie" warnings
@@ -28,6 +29,7 @@ When Strapi runs behind HTTPS (Railway, Vercel, etc.) or with a reverse proxy, c
 ### Core Issue
 
 Strapi needs to know:
+
 1. ✅ It's running on HTTPS (not HTTP)
 2. ✅ Real domain name (not Railway default)
 3. ✅ Whether it's behind a proxy (it is)
@@ -79,16 +81,16 @@ This is where HTTPS/proxy configuration happens:
 export default ({ env }) => ({
   host: env('HOST', '0.0.0.0'),
   port: env.int('PORT', 1337),
-  
+
   // HTTPS & Proxy Configuration
-  url: env('STRAPI_ADMIN_BACKEND_URL'),  // Public URL
-  
+  url: env('STRAPI_ADMIN_BACKEND_URL'), // Public URL
+
   // Trust proxy headers (Railway sets these)
   proxy: {
     enabled: true,
-    trust: ['127.0.0.1', 'localhost', '::1'],  // Or use env var
+    trust: ['127.0.0.1', 'localhost', '::1'], // Or use env var
   },
-  
+
   // Cookie security
   admin: {
     auth: {
@@ -111,6 +113,7 @@ export default ({ env }) => ({
 ```
 
 **Key Points**:
+
 - `url`: Public domain (e.g., `https://your-domain.railway.app`)
 - `proxy.enabled`: True for Railway/reverse proxies
 - `proxy.trust`: Proxy IPs that can be trusted
@@ -142,7 +145,7 @@ For JWT-based sessions (default), add to `config/server.ts`:
 // Add to the export:
 {
   // ... other config ...
-  
+
   // Middleware configuration
   middleware: [
     // Default middleware config
@@ -166,16 +169,16 @@ For JWT-based sessions (default), add to `config/server.ts`:
 
 Add these variables to your Railway project:
 
-| Variable | Value | Required | Notes |
-|----------|-------|----------|-------|
-| `STRAPI_ADMIN_BACKEND_URL` | `https://your-domain.railway.app` | ✅ | Public admin URL |
-| `STRAPI_ADMIN_PATH` | `/admin` | ✅ | Admin path |
-| `NODE_ENV` | `production` | ✅ | Production mode |
-| `DATABASE_URL` | *(set by PostgreSQL plugin)* | ✅ | Database connection |
-| `ADMIN_JWT_SECRET` | `your-random-secret` | ✅ | JWT signing key (generate random) |
-| `API_TOKEN_SALT` | `your-random-salt` | ✅ | Token salt (generate random) |
-| `TRANSFER_TOKEN_SALT` | `your-random-salt` | ✅ | Transfer token salt |
-| `STRAPI_TELEMETRY_DISABLED` | `true` | ⚠️ | Disable telemetry |
+| Variable                    | Value                             | Required | Notes                             |
+| --------------------------- | --------------------------------- | -------- | --------------------------------- |
+| `STRAPI_ADMIN_BACKEND_URL`  | `https://your-domain.railway.app` | ✅       | Public admin URL                  |
+| `STRAPI_ADMIN_PATH`         | `/admin`                          | ✅       | Admin path                        |
+| `NODE_ENV`                  | `production`                      | ✅       | Production mode                   |
+| `DATABASE_URL`              | _(set by PostgreSQL plugin)_      | ✅       | Database connection               |
+| `ADMIN_JWT_SECRET`          | `your-random-secret`              | ✅       | JWT signing key (generate random) |
+| `API_TOKEN_SALT`            | `your-random-salt`                | ✅       | Token salt (generate random)      |
+| `TRANSFER_TOKEN_SALT`       | `your-random-salt`                | ✅       | Transfer token salt               |
+| `STRAPI_TELEMETRY_DISABLED` | `true`                            | ⚠️       | Disable telemetry                 |
 
 ### Generate Secure Secrets
 
@@ -185,6 +188,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
 
 Run this 3 times to get 3 unique secrets for:
+
 1. `ADMIN_JWT_SECRET`
 2. `API_TOKEN_SALT`
 3. `TRANSFER_TOKEN_SALT`
@@ -196,6 +200,7 @@ Run this 3 times to get 3 unique secrets for:
 ### Automatic HTTPS
 
 Railway automatically:
+
 - ✅ Issues SSL certificate
 - ✅ Renews certificates
 - ✅ Redirects HTTP → HTTPS
@@ -204,12 +209,14 @@ Railway automatically:
 ### Custom Domain Setup
 
 1. **Point domain to Railway**:
+
    ```
    Add CNAME record:
    api.yourdomain.com CNAME your-railway-domain.railway.app
    ```
 
 2. **Update Strapi config**:
+
    ```bash
    STRAPI_ADMIN_BACKEND_URL=https://api.yourdomain.com
    ```
@@ -222,11 +229,13 @@ Railway automatically:
 ### Secure Cookies
 
 Strapi automatically sets:
+
 - ✅ `HttpOnly`: Cannot be accessed by JavaScript
 - ✅ `Secure`: Only sent over HTTPS
 - ✅ `SameSite=Strict`: CSRF protection (when appropriate)
 
 **Verify in Browser DevTools**:
+
 1. Open DevTools (F12)
 2. Go to Application → Cookies
 3. Look for `strapi` or session cookies
@@ -276,11 +285,13 @@ Before deploying to Railway:
 ### "Can't login to admin"
 
 **Check**:
+
 1. Is `STRAPI_ADMIN_BACKEND_URL` set correctly?
 2. Are JWT secrets set in environment?
 3. Check Railway logs: `railway logs --follow`
 
 **Solution**:
+
 ```bash
 # Verify environment variables
 railway variables
@@ -294,11 +305,13 @@ railway variables set ADMIN_JWT_SECRET "your-secret-key"
 **Cause**: Browser security policy blocking cookies
 
 **Check**:
+
 1. Are cookies being set? (DevTools → Application → Cookies)
 2. Do they have `Secure` flag? (for HTTPS)
 3. Do they have `HttpOnly` flag?
 
 **Verify Setup**:
+
 ```typescript
 // Ensure in config/server.ts:
 {
@@ -314,6 +327,7 @@ railway variables set ADMIN_JWT_SECRET "your-secret-key"
 **Cause**: Admin backend URL doesn't match protocol
 
 **Fix**:
+
 ```bash
 # Ensure URL starts with https:// for production
 STRAPI_ADMIN_BACKEND_URL=https://your-domain.railway.app
@@ -327,6 +341,7 @@ STRAPI_ADMIN_BACKEND_URL=https://your-domain.railway.app
 **Solution**: Configure CORS properly
 
 In `config/middleware.ts`:
+
 ```typescript
 {
   name: 'strapi::cors',
@@ -369,11 +384,11 @@ If frontend is on separate domain:
 // When making API calls from frontend
 fetch('https://api.yourdomain.com/api/posts', {
   method: 'GET',
-  credentials: 'include',  // IMPORTANT: Send cookies
+  credentials: 'include', // IMPORTANT: Send cookies
   headers: {
     'Content-Type': 'application/json',
   },
-})
+});
 ```
 
 ### 3. Configure Authentication Cookies
@@ -419,4 +434,3 @@ In Strapi config, ensure cookies work cross-domain:
 - [MDN: HTTP Cookies](https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies)
 - [Railway HTTPS Setup](https://docs.railway.app/guides/public-networking)
 - [CORS Configuration](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS)
-

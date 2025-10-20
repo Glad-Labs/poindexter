@@ -17,6 +17,7 @@ at Object.<anonymous> (/app/node_modules/@swc/core/binding.js:333:11)
 ```
 
 This occurs even though:
+
 - ✅ `npm install` succeeds
 - ✅ No errors reported
 - ✅ Same code works locally
@@ -29,6 +30,7 @@ This occurs even though:
 ### What is SWC?
 
 **SWC** (@swc/core) is a Rust-based TypeScript/JavaScript compiler. Unlike pure JavaScript tools:
+
 - Written in **Rust**, not JavaScript
 - Compiles to **native binary** (.node files)
 - Platform and Node version specific
@@ -53,25 +55,31 @@ Even downloading Linux prebuilts:
 ### Why Previous Attempts Failed
 
 **Attempt 1: `npm rebuild`**
+
 ```bash
 npm rebuild
 ```
+
 - ❌ Only works for packages with source code
 - ❌ SWC has no source to rebuild from
 - ❌ Windows binaries remained
 
 **Attempt 2: `npm install @swc/core --force`**
+
 ```bash
 npm install @swc/core --force
 ```
+
 - ✅ Downloads latest prebuilt binaries
 - ❌ Prebuilts still have incompatibility issues
 - ❌ Same error on Railway container
 
 **Attempt 3: `npm install --build=from-source`**
+
 ```bash
 npm install --build=from-source
 ```
+
 - ✅ Flag passed to npm
 - ❌ npm cache had prebuilts from Step 1
 - ❌ Cache layer ignores command-line flags
@@ -85,6 +93,7 @@ build-from-source=true
 ```
 
 **Why this works**:
+
 1. `.npmrc` read for EVERY npm command
 2. Not just current shell session
 3. npm cache respects config file as cache key
@@ -104,6 +113,7 @@ build-from-source=true
 ```
 
 **Full .npmrc Example**:
+
 ```ini
 # Minimal npm configuration for Railway
 optional=false
@@ -121,6 +131,7 @@ build-from-source=true
 Update `railway.json`:
 
 **BEFORE** (flag-based - doesn't work):
+
 ```json
 {
   "build": {
@@ -130,6 +141,7 @@ Update `railway.json`:
 ```
 
 **AFTER** (config-based - works):
+
 ```json
 {
   "build": {
@@ -201,12 +213,14 @@ npm run start
 ### Build Time Impact
 
 **First Deploy**: ~5-6 minutes
+
 - Node install: ~1.5 min
 - npm install with compilation: ~1.5-2 min (SWC from source)
 - npm run build: ~30 sec
 - Startup: ~1 min
 
 **Subsequent Deploys**: ~4-5 minutes
+
 - npm cache speeds up install
 - SWC compilation cached (only if deps unchanged)
 
@@ -242,13 +256,13 @@ npm run start
 
 ### ❌ Why Other Approaches Failed
 
-| Approach | Why Failed |
-|----------|-----------|
-| npm rebuild | No source code to rebuild |
-| force install | Prebuilts still incompatible |
-| --build flag | Cache ignored flag |
+| Approach              | Why Failed                   |
+| --------------------- | ---------------------------- |
+| npm rebuild           | No source code to rebuild    |
+| force install         | Prebuilts still incompatible |
+| --build flag          | Cache ignored flag           |
 | Different SWC version | All versions have same issue |
-| Alternative compiler | Strapi designed for SWC |
+| Alternative compiler  | Strapi designed for SWC      |
 
 ---
 
@@ -314,6 +328,7 @@ railway logs --follow
 ```
 
 **Success Indicators**:
+
 ```
 ✔ Building build context (79ms)
 ✔ Building admin panel (14.6s)
@@ -322,6 +337,7 @@ railway logs --follow
 ```
 
 **Failure Indicators**:
+
 ```
 ✖ Building admin panel
 [ERROR]  There seems to be an unexpected error
@@ -365,6 +381,7 @@ railway deploy --force
 ```
 
 This:
+
 - Clears cache
 - Downloads all packages fresh
 - Recompiles everything
@@ -386,6 +403,7 @@ If many native modules, might need different approach.
 ### Similar Problems with Other Packages
 
 This same issue affects ANY Rust-based npm package:
+
 - `esbuild` (Go-based) - similar issue
 - `native node-gyp packages` - may have similar issues
 - Database drivers with native components
@@ -416,4 +434,3 @@ Rust-based packages (SWC, esbuild) in containers:
   ✅ ALWAYS compile from source
   ✅ USE: build-from-source=true in .npmrc
 ```
-

@@ -11,8 +11,9 @@
 ### Root-Level Documentation (18 files)
 
 **Status & Cleanup Files (DELETE - no current value)**:
+
 - ❌ `CLEANUP_COMPLETE.md` - Historical marker
-- ❌ `DOCUMENTATION_COMPLETE.md` - Historical marker  
+- ❌ `DOCUMENTATION_COMPLETE.md` - Historical marker
 - ❌ `DOCUMENTATION_STATUS.md` - Outdated status
 - ❌ `FIX_DEPLOYED.md` - Historical fix marker
 - ❌ `NEXT_STEPS.md` - Outdated step list
@@ -20,6 +21,7 @@
 - ❌ `INDEX.md` - Duplicate of /docs/00-README.md
 
 **Duplicate/Overlapping Files (CONSOLIDATE)**:
+
 - 🔄 `MASTER_DOCUMENTATION.md` - Overlaps with /docs/00-README.md
 - 🔄 `RAILWAY_BUILD_FIX_DEPLOYED.md` - Move to /docs/troubleshooting/
 - 🔄 `RAILWAY_TEMPLATE_FIX.md` - Move to /docs/troubleshooting/ or /docs/guides/
@@ -32,6 +34,7 @@
 - 🔄 `VISUAL_SUMMARY.md` - Move to /docs/reference/ or archive
 
 **Keep (Primary Entry Point)**:
+
 - ✅ `README.md` - Root entry point with quick links
 
 ---
@@ -64,6 +67,7 @@ docs/
 **Goal**: Move Railway and SWC fixes to `/docs/troubleshooting/` with clear organization
 
 **Files to Consolidate**:
+
 ```
 Create: docs/troubleshooting/railway-deployment-guide.md
   ← Merge RAILWAY_BUILD_FIX_DEPLOYED.md + RAILWAY_TEMPLATE_FIX.md
@@ -80,6 +84,7 @@ Create: docs/troubleshooting/strapi-https-cookies.md
 **Goal**: Move technical reference to `/docs/reference/`
 
 **Files to Move**:
+
 ```
 Move: QUICK_REFERENCE.md → docs/reference/quick-reference.md
 ```
@@ -89,6 +94,7 @@ Move: QUICK_REFERENCE.md → docs/reference/quick-reference.md
 **Goal**: Remove or archive historical markers
 
 **Files to DELETE** (confirm first):
+
 ```
 rm CLEANUP_COMPLETE.md
 rm DOCUMENTATION_COMPLETE.md
@@ -103,6 +109,7 @@ rm INDEX.md (duplicate)
 ### Phase 4: Archive Visualization (OPTIONAL)
 
 **Files to Archive** (if keeping):
+
 ```
 mv VISUAL_SUMMARY.md → docs/archive-old/
 ```
@@ -112,6 +119,7 @@ mv VISUAL_SUMMARY.md → docs/archive-old/
 ## 🎯 Final Structure Target
 
 ### Root Level (CLEAN)
+
 ```
 glad-labs-website/
 ├── README.md                    ← Entry point + quick links to /docs
@@ -123,6 +131,7 @@ glad-labs-website/
 ```
 
 ### Documentation Hub (/docs - ORGANIZED)
+
 ```
 docs/
 ├── 00-README.md                ← Navigation hub
@@ -207,36 +216,41 @@ After consolidation, verify:
 ## 🔍 Unused Files Detection
 
 Also scan for:
-- [ ] Temp files (*.tmp, *.swp, *~)
-- [ ] Log files in root (*.log)
+
+- [ ] Temp files (_.tmp, _.swp, \*~)
+- [ ] Log files in root (\*.log)
 - [ ] Dead code branches in src/
 - [ ] Unused test files
 - [ ] Old migration scripts
-- [ ] IDE temp files (.vscode/*, .idea/*)
+- [ ] IDE temp files (.vscode/_, .idea/_)
 
 ---
 
 ## 📊 Success Criteria
 
 ✅ **Documentation is Clean**:
+
 - Single entry point (root README.md)
 - No duplicate docs in root
 - All content organized in /docs
 - Clear troubleshooting section
 
 ✅ **Findability**:
+
 - Quick links in root README
 - Role-based navigation in /docs/00-README.md
 - Search-friendly file names
 - Cross-references between docs
 
 ✅ **Maintainability**:
+
 - Single source of truth per topic
 - Consolidated related fixes
 - Version-controlled with git
 - Easy to add new docs
 
 ✅ **No Clutter**:
+
 - Root directory clean
 - No temporary/duplicate files
 - No historical markers
@@ -247,12 +261,13 @@ Also scan for:
 ## 🚀 Execution Priority
 
 **TODAY**:
+
 1. Create consolidation for Phase 1 (Railways + SWC)
 2. Delete duplicates (Phase 3)
 3. Verify root README is clean entry point
 
 **FOLLOW-UP**:
+
 1. Move reference materials (Phase 2)
 2. Final git cleanup and commit
 3. Documentation review
-
