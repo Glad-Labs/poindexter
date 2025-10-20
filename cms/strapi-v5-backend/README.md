@@ -1,257 +1,307 @@
-# 📊 **GLAD Labs Content Management System - Strapi v5**
+# GLAD Labs Strapi v5 Backend
 
-![Strapi](https://img.shields.io/badge/CMS-Strapi_v5.27.0-blue)
-![SQLite](https://img.shields.io/badge/Database-SQLite-003B57)
-![API](https://img.shields.io/badge/Architecture-Headless_CMS-4945ff)
-![Status](https://img.shields.io/badge/Status-Production_Ready-brightgreen)
+Headless CMS backend for GLAD Labs content platform powered by [Strapi v5.27.0](https://strapi.io/).
 
-> **Headless CMS backend powering the GLAD Labs content platform with API-first architecture, automatic REST endpoint generation, and comprehensive content management capabilities.**
+## ✨ Features
 
----
+- **Strapi v5.27.0** - Modern headless CMS
+- **PostgreSQL** - Production-ready database
+- **7 Content Types** - Post, Category, Tag, Author, About, Content-Metric, Privacy-Policy
+- **REST API** - Auto-generated endpoints for all content types
+- **User Permissions** - Role-based access control
+- **Local File Uploads** - Built-in media management
+- **SEO Components** - Reusable SEO fields for content
 
-## **🎯 Overview**
+## 📦 Content Types
 
-The Strapi v5 backend serves as the central content repository and API provider for the GLAD Labs platform. It manages all content types (posts, categories, tags), provides RESTful APIs for content consumption, and includes an intuitive admin interface for content management.
+### Core Content
 
-**Status:** ✅ Production Ready  
-**Version:** Strapi v5.27.0  
-**Database:** SQLite (development) / PostgreSQL (production)  
-**Last Updated:** October 13, 2025
+- **Post** - Blog posts with categories, tags, author, and featured image
+- **Category** - Organize posts by category
+- **Tag** - Tag-based content organization
+- **Author** - Author profiles with bio and avatar
 
----
+### Metadata
 
-## **🚀 Quick Start**
+- **About** - About page with team members
+- **Content-Metric** - Track views, likes, shares for content
+- **Privacy-Policy** - Privacy policy pages
 
-### **Prerequisites**
+## 🚀 Quick Start (5 minutes)
 
-- Node.js 20.11.1+
-- npm or yarn package manager
-
-### **Development Setup**
+### Local Development
 
 ```bash
-# Navigate to Strapi directory
-cd cms/strapi-v5-backend
-
 # Install dependencies
 npm install
 
-# Configure environment
-cp .env.example .env
-# Edit .env with your configuration
-
 # Start development server
-npm run develop
+npm run dev
+
+# Server runs at http://localhost:1337
+# Admin panel at http://localhost:1337/admin
 ```
 
-The admin interface will be available at [http://localhost:1337/admin](http://localhost:1337/admin)  
-The API will be available at [http://localhost:1337/api](http://localhost:1337/api)
+### Deploy to Railway (Production)
 
----
+See **[QUICK_START_RAILWAY.md](./QUICK_START_RAILWAY.md)** for 5-minute deployment guide.
 
-## **🏗️ Content Architecture**
+Or for detailed setup: **[RAILWAY_CLI_SETUP.md](./RAILWAY_CLI_SETUP.md)**
 
-### **Content Types**
+## � Documentation
 
-#### **1. Posts (`posts`)**
+| Document                                                 | Purpose                           |
+| -------------------------------------------------------- | --------------------------------- |
+| [QUICK_START_RAILWAY.md](./QUICK_START_RAILWAY.md)       | 5-minute Railway deployment       |
+| [RAILWAY_CLI_SETUP.md](./RAILWAY_CLI_SETUP.md)           | Complete Railway setup guide      |
+| [RAILWAY_PROJECT_REVIEW.md](./RAILWAY_PROJECT_REVIEW.md) | Project analysis & best practices |
+| [RAILWAY_DEPLOYMENT.md](./RAILWAY_DEPLOYMENT.md)         | Environment configuration         |
+| [ADMIN_UI_BUILD_STATUS.md](./ADMIN_UI_BUILD_STATUS.md)   | Admin panel information           |
 
-Primary content type for blog articles and content.
+## 🏗️ Project Structure
 
-**Fields:**
+```
+src/
+├── api/                    # Content type APIs
+│   ├── post/              # Post content type
+│   ├── category/          # Category content type
+│   ├── tag/               # Tag content type
+│   ├── author/            # Author content type
+│   ├── about/             # About page
+│   ├── content-metric/    # Metrics tracking
+│   └── privacy-policy/    # Privacy policy
+├── components/            # Reusable components
+│   ├── shared/seo.json    # SEO component
+│   └── team/team-member.json
+└── extensions/            # Plugin extensions
 
-- `title` (Text, Required): Post title
-- `slug` (UID, Required): URL-friendly identifier
-- `content` (Rich Text): Main post content in markdown
-- `excerpt` (Text): Short description for previews
-- `date` (DateTime): Publication date
-- `featured` (Boolean): Homepage feature flag
-- `coverImage` (Media): Featured image
-- `category` (Relation): Belongs to one category
-- `tags` (Relation): Many-to-many with tags
-- `seo` (Component): SEO metadata
+config/
+├── database.js            # Database configuration
+├── server.js              # Server settings
+├── admin.js               # Admin panel config
+├── middlewares.js         # HTTP middleware
+└── plugins.js             # Plugin settings
+```
 
-#### **2. Categories (`categories`)**
+## 🔧 Environment Variables
 
-Content organization and categorization.
+### Required
 
-**Fields:**
+```
+DATABASE_CLIENT=postgres      # Database type (sqlite|postgres|mysql)
+HOST=0.0.0.0                  # Server host
+PORT=1337                     # Server port
+```
 
-- `name` (Text, Required): Category name
-- `slug` (UID, Required): URL-friendly identifier
-- `description` (Text): Category description
-- `posts` (Relation): One-to-many with posts
+### Security (Required for Production)
 
-#### **3. Tags (`tags`)**
+```
+APP_KEYS                      # Session encryption keys
+API_TOKEN_SALT                # API token salt
+ADMIN_JWT_SECRET              # Admin JWT secret
+TRANSFER_TOKEN_SALT           # Transfer token salt
+JWT_SECRET                    # JWT secret
+```
 
-Flexible content tagging system.
+### Optional
 
-**Fields:**
+```
+DATABASE_URL                  # PostgreSQL connection string
+STRAPI_TELEMETRY_DISABLED     # Disable telemetry (true|false)
+```
 
-- `name` (Text, Required): Tag name
-- `slug` (UID, Required): URL-friendly identifier
-- `posts` (Relation): Many-to-many with posts
+See `.env` and `.env.railway` for examples.
 
-#### **4. Pages (`pages`) [Optional]**
+## 📡 API Endpoints
 
-Static pages like About, Privacy Policy, etc.
+All content types auto-generate REST endpoints:
 
-**Fields:**
+```
+GET    /api/posts                    # List posts
+POST   /api/posts                    # Create post
+GET    /api/posts/:id                # Get post
+PUT    /api/posts/:id                # Update post
+DELETE /api/posts/:id                # Delete post
 
-- `title` (Text, Required): Page title
-- `slug` (UID, Required): URL-friendly identifier
-- `content` (Rich Text): Page content
-- `seo` (Component): SEO metadata
+# Same pattern for: /categories, /tags, /authors, /about, etc.
+```
 
-### **API Endpoints**
+## 🗄️ Database
 
-Strapi automatically generates REST API endpoints for each content type:
+### Local Development
+
+- **SQLite** - `.tmp/data.db` (automatic)
+- Persists between restarts
+- No setup needed
+
+### Production (Railway)
+
+- **PostgreSQL** 15
+- Auto-provisioned by Railway
+- Daily automatic backups
+- Connection pooling configured
+
+## 🔐 Security
+
+For production deployment:
+
+1. **Generate new security keys**
+
+   ```bash
+   node -e "console.log(require('crypto').randomBytes(16).toString('base64'))"
+   ```
+
+2. **Set in Railway Variables** (Dashboard)
+   - APP_KEYS (generate 4 values)
+   - API_TOKEN_SALT
+   - ADMIN_JWT_SECRET
+   - TRANSFER_TOKEN_SALT
+   - JWT_SECRET
+
+3. **Configure CORS** (if needed)
+   Edit `config/middlewares.js` to allow frontend domains
+
+## 📊 Technology Stack
+
+| Technology | Version | Purpose        |
+| ---------- | ------- | -------------- |
+| Node.js    | 18+     | Runtime        |
+| Strapi     | 5.27.0  | CMS            |
+| PostgreSQL | 15      | Database       |
+| SQLite     | 3       | Local dev      |
+| Nginx      | -       | Web server     |
+| Koa        | 2.x     | HTTP framework |
+
+## 🚢 Deployment
+
+### Railway (Recommended)
+
+- **Cost**: $5-25/month depending on usage
+- **Setup**: 5 minutes with Railway CLI
+- **Auto-scaling**: Yes
+- **Backups**: Automatic daily
+
+See [QUICK_START_RAILWAY.md](./QUICK_START_RAILWAY.md)
+
+### Heroku
+
+- **Cost**: $25-50+/month (standard dynos)
+- **Setup**: 10 minutes
+- **Auto-scaling**: Yes with paid tier
+
+### Self-hosted
+
+- **Cost**: Variable (VPS)
+- **Setup**: 30+ minutes
+- **Auto-scaling**: Manual
+
+## 📈 Monitoring & Logs
+
+### Local Development
 
 ```bash
-# Posts
-GET    /api/posts              # List all posts
-GET    /api/posts/:id          # Get specific post
-POST   /api/posts              # Create new post
-PUT    /api/posts/:id          # Update post
-DELETE /api/posts/:id          # Delete post
-
-# Categories
-GET    /api/categories         # List all categories
-GET    /api/categories/:id     # Get specific category
-
-# Tags
-GET    /api/tags               # List all tags
-GET    /api/tags/:id           # Get specific tag
-
-# Upload
-POST   /api/upload             # Upload media files
+npm run dev
 ```
 
-### **API Query Examples**
+### Production (Railway)
 
 ```bash
-# Get all posts with relationships
-GET /api/posts?populate=*
-
-# Get featured posts
-GET /api/posts?filters[featured][$eq]=true&populate=*
-
-# Get posts by category
-GET /api/posts?filters[category][slug][$eq]=ai-machine-learning&populate=*
-
-# Get paginated posts
-GET /api/posts?pagination[page]=1&pagination[pageSize]=10&populate=*
+railway logs --follow
 ```
 
----
-
-## **🔧 Configuration**
-
-### **Environment Variables**
-
-```env
-# Database
-NODE_ENV=development
-DATABASE_FILENAME=.tmp/data.db
-
-# Security
-APP_KEYS=app-key1,app-key2,app-key3,app-key4
-API_TOKEN_SALT=your-api-token-salt
-ADMIN_JWT_SECRET=your-admin-jwt-secret
-TRANSFER_TOKEN_SALT=your-transfer-token-salt
-JWT_SECRET=your-jwt-secret
-
-# Server
-HOST=0.0.0.0
-PORT=1337
-```
-
-### **Database Configuration**
-
-**Development**: SQLite database stored in `.tmp/data.db`  
-**Production**: PostgreSQL or MySQL recommended
-
-### **Authentication & Permissions**
-
-- **Admin Users**: Full access to admin interface
-- **API Tokens**: Secure API access for external applications
-- **Public API**: Read-only access to published content
-- **Find & Create**: Permissions for content agent publishing
-
----
-
-## **🎨 Admin Interface**
-
-### **Content Management**
-
-- **Content Manager**: Create, edit, and manage all content types
-- **Media Library**: Upload and organize images and files
-- **Users & Permissions**: Manage admin users and API access
-- **Settings**: Configure content types and system settings
-
-### **Content Creation Workflow**
-
-1. **Create Content**: Use admin interface or API
-2. **Add Media**: Upload images through media library
-3. **Set Relations**: Associate posts with categories and tags
-4. **SEO Optimization**: Configure meta tags and descriptions
-5. **Publish**: Make content available via API
-
----
-
-## **🔄 Integration Points**
-
-### **Next.js Frontend**
-
-- **Static Generation**: Strapi content consumed at build time
-- **API Integration**: REST API calls for content fetching
-- **Image Handling**: Media URLs for optimized image display
-
-### **Content Agent**
-
-- **Publishing**: Automated content creation and publishing
-- **Media Upload**: Programmatic image upload and management
-- **Content Updates**: Automated content refinement and updates
-
-### **Third-Party Services**
-
-- **Image Sources**: Integration with Pexels API for content images
-- **Analytics**: Content performance tracking and metrics
-- **SEO Tools**: Sitemap generation and search engine optimization
-
----
-
-## **🚀 Production Deployment**
-
-### **Hosting Recommendations**
-
-- **Railway**: Easy Strapi deployment with database
-- **DigitalOcean**: App Platform or Droplets
-- **AWS**: EC2 with RDS PostgreSQL
-- **Google Cloud**: Cloud Run with Cloud SQL
-
-### **Database Migration**
+### Monitor Resources
 
 ```bash
-# Backup SQLite data
-npm run strapi export
-
-# Configure production database
-# Update .env with PostgreSQL connection
-
-# Import data to production
-npm run strapi import
+railway monitor
 ```
 
-### **Performance Optimization**
+## 🛠️ Development Commands
 
-- **Database Indexing**: Optimize queries for large content collections
-- **Caching**: Enable Redis caching for API responses
-- **CDN**: Use cloud storage with CDN for media delivery
-- **Monitoring**: Implement health checks and performance monitoring
+```bash
+# Start development server with hot reload
+npm run dev
+
+# Build Strapi for production
+npm run build
+
+# Start production server
+npm run start
+
+# Access Strapi console
+npm run console
+
+# Generate API types
+npm run types
+
+# Update Strapi
+npm run upgrade
+```
+
+## 🤝 Integration with Other Services
+
+### Next.js Frontend
+
+```javascript
+const STRAPI_URL =
+  process.env.NEXT_PUBLIC_STRAPI_URL || 'http://localhost:1337';
+
+async function getPosts() {
+  const res = await fetch(`${STRAPI_URL}/api/posts`);
+  return res.json();
+}
+```
+
+### React App
+
+```javascript
+const API_URL = process.env.REACT_APP_STRAPI_URL || 'http://localhost:1337';
+
+useEffect(() => {
+  fetch(`${API_URL}/api/posts`)
+    .then((res) => res.json())
+    .then((data) => setData(data));
+}, []);
+```
+
+### Python Backend
+
+```python
+import requests
+
+STRAPI_URL = os.getenv('STRAPI_URL', 'http://localhost:1337')
+response = requests.get(f'{STRAPI_URL}/api/posts')
+posts = response.json()
+```
+
+## 📝 Notes
+
+- Admin panel requires first-time setup (create admin user)
+- File uploads stored in `public/uploads/` (local) or S3 (production)
+- Database migrations run automatically on start
+- TypeScript support available for custom plugins
+
+## 🔗 Resources
+
+- [Strapi Documentation](https://docs.strapi.io)
+- [Railway Documentation](https://docs.railway.app)
+- [PostgreSQL Documentation](https://www.postgresql.org/docs/)
+- [REST API Guide](https://docs.strapi.io/dev-docs/api/rest)
+
+## 💬 Support
+
+For issues:
+
+1. Check logs: `railway logs --follow`
+2. Read [RAILWAY_PROJECT_REVIEW.md](./RAILWAY_PROJECT_REVIEW.md)
+3. Check [QUICK_START_RAILWAY.md](./QUICK_START_RAILWAY.md) troubleshooting
 
 ---
 
-**Documentation maintained by:** GLAD Labs Development Team  
-**Contact:** Matthew M. Gladding (Glad Labs, LLC)  
-**Last Review:** October 13, 2025  
-**Next Review:** November 13, 2025
+**Made with ❤️ for GLAD Labs** - This command will run Strapi in development mode with the service variables available locally
+
+- Open your browser to `http://127.0.0.1:1337/admin`
+
+## 📝 Notes
+
+- After your app is deployed, visit the `/admin` endpoint to create your admin user.
+- If you want to use npm with this project make sure you delete the `yarn.lock` file after you have ran `npm install`

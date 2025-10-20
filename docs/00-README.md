@@ -1,8 +1,66 @@
 # 📚 GLAD Labs Documentation Hub
 
-> **AI-Powered Frontier Firm Platform** | Last Updated: October 15, 2025
+> **Complete Documentation for AI-Powered Frontier Firm Platform**
+>
+> Start here. Everything you need is organized and linked below.
 
-Welcome to the comprehensive documentation for the GLAD Labs AI Co-Founder System, a cutting-edge multi-agent platform designed to revolutionize business operations through artificial intelligence.
+---
+
+## 🎯 Documentation by Role
+
+**Choose your role to see the most relevant documentation:**
+
+### 👨‍💼 **Executive / Project Manager**
+
+- **Want**: High-level overview, status, roadmap
+- **Read**: [01-SETUP_AND_OVERVIEW (Executive Summary)](./01-SETUP_AND_OVERVIEW.md#what-is-glad-labs)
+- **Then**: [Vision & Roadmap](./archive-old/VISION_AND_ROADMAP.md)
+
+### 🚀 **New Developer**
+
+- **Want**: Get running locally, understand structure
+- **Read First**: [01-SETUP_AND_OVERVIEW.md](./01-SETUP_AND_OVERVIEW.md) (15 min)
+- **Then Read**: [02-ARCHITECTURE_AND_DESIGN.md](./02-ARCHITECTURE_AND_DESIGN.md) (20 min)
+- **Then Follow**: [Local Setup Guide](./guides/local-setup-guide.md)
+
+### 🔧 **DevOps / Infrastructure**
+
+- **Want**: Deploy to production, manage infrastructure
+- **Read First**: [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) (25 min)
+- **Then Choose**:
+  - [Railway Deployment](./deployment/railway-production.md)
+  - [Vercel Deployment](./deployment/vercel-production.md)
+  - [GCP Deployment](./deployment/gcp-deployment.md)
+- **Then**: [Production Checklist](./deployment/production-checklist.md)
+
+### 🎨 **Frontend Developer (Next.js)**
+
+- **Want**: Work on public site and dashboards
+- **Read First**: [01-SETUP_AND_OVERVIEW.md](./01-SETUP_AND_OVERVIEW.md)
+- **Then**: [02-ARCHITECTURE_AND_DESIGN.md (Frontend Layer)](./02-ARCHITECTURE_AND_DESIGN.md#1-public-site-nextjs)
+- **Then**: [04-DEVELOPMENT_WORKFLOW.md](./04-DEVELOPMENT_WORKFLOW.md)
+- **Reference**: [Local Setup Guide](./guides/local-setup-guide.md)
+
+### 💾 **Backend Developer (Strapi/Python)**
+
+- **Want**: Work on CMS and API
+- **Read First**: [02-ARCHITECTURE_AND_DESIGN.md (Backend Layer)](./02-ARCHITECTURE_AND_DESIGN.md#3-strapi-v5-cms)
+- **Then**: [04-DEVELOPMENT_WORKFLOW.md](./04-DEVELOPMENT_WORKFLOW.md)
+- **Reference**: [API Reference](./reference/api-reference.md)
+- **Reference**: [Data Schemas](./reference/data-schemas.md)
+
+### 🤖 **AI/Agent Developer**
+
+- **Want**: Implement and extend agents
+- **Read First**: [05-AI_AGENTS_AND_INTEGRATION.md](./05-AI_AGENTS_AND_INTEGRATION.md)
+- **Then**: [02-ARCHITECTURE_AND_DESIGN.md (AI Co-Founder)](./02-ARCHITECTURE_AND_DESIGN.md#4-ai-co-founder-fastapi-backend)
+- **Then**: [04-DEVELOPMENT_WORKFLOW.md](./04-DEVELOPMENT_WORKFLOW.md)
+
+### 🛠️ **Support / Operations**
+
+- **Want**: Troubleshoot issues, maintain system
+- **Read First**: [06-OPERATIONS_AND_MAINTENANCE.md](./06-OPERATIONS_AND_MAINTENANCE.md)
+- **Then Use**: [Troubleshooting](./troubleshooting/) when issues arise
 
 ---
 
