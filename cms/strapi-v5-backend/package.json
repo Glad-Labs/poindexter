@@ -4,7 +4,7 @@
   "private": true,
   "description": "Strapi v5 headless CMS backend for GLAD Labs content platform - manages posts, categories, tags, and media with automatic REST API generation",
   "scripts": {
-    "build": "rm -rf node_modules/@swc && npm install @swc/core --force && strapi build",
+    "build": "strapi build",
     "console": "strapi console",
     "deploy": "strapi deploy",
     "dev": "strapi develop",
@@ -18,7 +18,7 @@
     "@strapi/plugin-users-permissions": "5.27.0",
     "@strapi/provider-upload-local": "5.27.0",
     "@strapi/strapi": "5.27.0",
-    "@swc/core": "^1.13.5",
+
     "axios": "^1.7.7",
     "bcryptjs": "^3.0.2",
     "pg": "8.8.0",
