@@ -9,6 +9,7 @@ Fixed `npm ERR! ERESOLVE` dependency conflict preventing local development.
 ## 🐛 **What Was Wrong**
 
 ### Root Cause
+
 Your monorepo had **mismatched Strapi versions** across workspaces:
 
 ```
@@ -26,6 +27,7 @@ Strapi CMS (cms/strapi-main):
 ```
 
 ### Error Message
+
 ```
 ERESOLVE could not resolve
 peer react-router-dom@"5.3.4" from @strapi/plugin-users-permissions@4.12.0
@@ -41,6 +43,7 @@ conflicting peer dependency: react-router-dom@6.30.1
 ### 1. Root `package.json` - Removed Unused Dependencies
 
 **Before:**
+
 ```json
 "dependencies": {
   "@strapi/plugin-cloud": "^5.18.0",
@@ -52,6 +55,7 @@ conflicting peer dependency: react-router-dom@6.30.1
 ```
 
 **After:**
+
 ```json
 "dependencies": {
   "@strapi/strapi": "^5.28.0"
@@ -63,6 +67,7 @@ conflicting peer dependency: react-router-dom@6.30.1
 ### 2. Web/Oversight Hub - Removed Conflicting Old Plugins
 
 **Before:**
+
 ```json
 "dependencies": {
   "@strapi/plugin-cloud": "5.18.0",           ❌ Removed
@@ -73,6 +78,7 @@ conflicting peer dependency: react-router-dom@6.30.1
 ```
 
 **After:**
+
 ```json
 "dependencies": {
   "react-router-dom": "^6.30.0",  ✅ Clean, no conflicts
@@ -94,11 +100,13 @@ npm install
 ## 📊 **Result**
 
 ✅ **npm install succeeded**
+
 ```
 added 2082 packages, removed 17 packages, and audited 2240 packages in 2m
 ```
 
 **Key Changes:**
+
 - Root: Only has `@strapi/strapi` (not the old v4 plugins)
 - Oversight Hub: No Strapi plugins (uses frontend libraries only)
 - Strapi CMS: Has all needed v5 plugins (managed separately)
@@ -164,6 +172,7 @@ npm run dev:strapi       # ✅ CMS only
 ## 🔍 **Why This Happened**
 
 The root and oversight-hub had **old Strapi v4 plugin dependencies** that probably were:
+
 1. Copy-pasted from an old template
 2. Added during early development
 3. Not removed when upgrading to Strapi v5
@@ -175,6 +184,7 @@ The root and oversight-hub had **old Strapi v4 plugin dependencies** that probab
 ## ✨ **Going Forward**
 
 **Remember:**
+
 - ✅ Strapi plugins go in `cms/strapi-main/package.json`
 - ✅ Frontend apps live in `web/*/package.json`
 - ✅ Root `package.json` only orchestrates workspaces
