@@ -79,12 +79,16 @@
 ### 📖 **Documentation Categories**
 
 - **[Guides](./guides/)** - Setup guides, quick starts, and how-to documentation
+  - 🌿 **[Branch Setup Complete](./guides/BRANCH_SETUP_COMPLETE.md)** - Branch-specific environments (feat/dev/main) with auto-selection
+  - 🔧 **[Fixes & Solutions](./guides/FIXES_AND_SOLUTIONS.md)** - All critical fixes: timeout protection, Strapi fallbacks, security headers, CI/CD automation
   - Local setup and environment configuration
   - Ollama and Docker deployment
   - Developer workflows and troubleshooting
   - Cost optimization strategies
 
 - **[Reference](./reference/)** - Technical specifications and standards
+  - 🚀 **[Deployment Complete](./reference/DEPLOYMENT_COMPLETE.md)** - Full deployment guide: Strapi architecture, Vercel config, pre-deployment checklist, post-deployment verification
+  - 🔄 **[CI/CD Complete](./reference/CI_CD_COMPLETE.md)** - Complete CI/CD reference: GitHub Actions workflows, testing, linting, npm scripts, debugging
   - Architecture and design patterns
   - Data schemas and API references
   - Coding standards and best practices

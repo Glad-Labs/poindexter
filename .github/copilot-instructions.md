@@ -334,7 +334,7 @@ const controller = new AbortController();
 const timeout = setTimeout(() => controller.abort(), 10000); // 10 seconds
 ```
 
-**Before modifying API client:** Read `docs/RECENT_FIXES/TIMEOUT_FIX_SUMMARY.md`
+**Before modifying API client:** Read `docs/guides/FIXES_AND_SOLUTIONS.md` (see "Critical Fix: Vercel Build Timeout Issue")
 
 ### 3. **Multi-Agent System with MCP**
 
@@ -463,7 +463,7 @@ class MyAgent:
 **Issue:** Build hangs on Vercel
 
 - ✅ Check for missing 10-second timeout in new API calls
-- ✅ Review `docs/RECENT_FIXES/TIMEOUT_FIX_SUMMARY.md`
+- ✅ Review `docs/guides/FIXES_AND_SOLUTIONS.md` for timeout handling
 - ✅ Run `npm run services:check` to verify Strapi
 
 **Issue:** Tests failing
@@ -496,11 +496,13 @@ npm run test:python:smoke   # Quick smoke test
 
 **Reference:**
 
-- `STRAPI_ARCHITECTURE_CORRECTION.md` - Strapi-backed pages guide
-- `docs/guides/STRAPI_BACKED_PAGES_GUIDE.md` - Detailed setup
+- `docs/guides/BRANCH_SETUP_COMPLETE.md` - Branch-specific environments (feat/dev/main) with auto-selection
+- `docs/reference/DEPLOYMENT_COMPLETE.md` - Complete deployment guide: Strapi architecture, Vercel config, pre-deployment checklist
+- `docs/reference/CI_CD_COMPLETE.md` - CI/CD pipelines, GitHub Actions workflows, testing, linting
+- `docs/guides/FIXES_AND_SOLUTIONS.md` - All critical fixes: timeout protection, Strapi fallbacks, security headers
+- `docs/guides/STRAPI_BACKED_PAGES_GUIDE.md` - Detailed Strapi page setup
 - `docs/guides/CONTENT_POPULATION_GUIDE.md` - Blog post templates
-- `docs/RECENT_FIXES/TIMEOUT_FIX_SUMMARY.md` - Timeout issue explanation
-- `docs/07-BRANCH_SPECIFIC_VARIABLES.md` - **Complete guide to branch-specific environments**
+- `docs/07-BRANCH_SPECIFIC_VARIABLES.md` - Complete guide to branch-specific environments
 
 **Environment Files:**
 
