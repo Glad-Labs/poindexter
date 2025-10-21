@@ -79,6 +79,7 @@
 ### 📖 **Documentation Categories**
 
 - **[Guides](./guides/)** - Setup guides, quick starts, and how-to documentation
+  - 💻 **[Local Setup Complete](./guides/LOCAL_SETUP_COMPLETE.md)** - Quick start: run all 4 services, troubleshooting, common commands
   - 🌿 **[Branch Setup Complete](./guides/BRANCH_SETUP_COMPLETE.md)** - Branch-specific environments (feat/dev/main) with auto-selection
   - 🔧 **[Fixes & Solutions](./guides/FIXES_AND_SOLUTIONS.md)** - All critical fixes: timeout protection, Strapi fallbacks, security headers, CI/CD automation
   - Local setup and environment configuration
