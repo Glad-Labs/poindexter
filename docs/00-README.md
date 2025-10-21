@@ -56,6 +56,7 @@
 - **Then**: [04-DEVELOPMENT_WORKFLOW.md](./04-DEVELOPMENT_WORKFLOW.md)
 - **Reference**: [API Reference](./reference/api-reference.md)
 - **Reference**: [Data Schemas](./reference/data-schemas.md)
+- **Important**: [Package Manager Strategy](./guides/PACKAGE_MANAGER_STRATEGY.md) - npm locally, yarn on Railway
 
 ### 🤖 **AI/Agent Developer**
 

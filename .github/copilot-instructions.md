@@ -440,6 +440,46 @@ npm run format              # Format code
 
 **Important:** Always run commands from workspace root, NOT from individual directories.
 
+### 5. **Package Manager Strategy (Hybrid: npm + yarn)**
+
+**Pattern:** Use npm for local development, yarn for Strapi on Railway.
+
+**Why?** Strapi is proven stable with yarn on Railway's Railpack builder.
+
+**Configuration:**
+
+| Component                 | Local           | Railway | Lockfile                    |
+| ------------------------- | --------------- | ------- | --------------------------- |
+| **Root + web workspaces** | npm             | npm     | `package-lock.json`         |
+| **Strapi CMS**            | npm (inherited) | yarn    | `cms/strapi-main/yarn.lock` |
+
+**Local Development (all use npm):**
+
+```bash
+npm run dev                     # All services use npm
+npm install                     # Updates package-lock.json
+cd cms/strapi-main && npm run dev  # Strapi uses npm locally
+```
+
+**Adding Dependencies:**
+
+```bash
+# To root or web: npm (updates package-lock.json)
+npm install express
+
+# To Strapi: yarn recommended (updates yarn.lock for Railway)
+cd cms/strapi-main
+yarn add express-session
+```
+
+**Railway Deployment:**
+
+- Detects `"packageManager": "npm@9.0.0"` in root → uses npm
+- Detects `"packageManager": "yarn@1.22.22"` in cms/strapi-main → uses yarn
+- Each uses its own lockfile for reproducible builds
+
+**Reference:** See `docs/guides/PACKAGE_MANAGER_STRATEGY.md` for complete details.
+
 ---
 
 ## 📝 Code Patterns & Conventions

@@ -76,10 +76,6 @@
     "nth-check": ">=2.1.1"
   },
   "dependencies": {
-    "@strapi/plugin-cloud": "^5.18.0",
-    "@strapi/plugin-users-permissions": "^4.12.0",
-    "@strapi/strapi": "^5.28.0",
-    "firebase": "^12.4.0",
-    "react-scripts": "0.0.0"
+    "@strapi/strapi": "^5.28.0"
   }
 }
