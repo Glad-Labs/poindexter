@@ -11,9 +11,8 @@
     "cms/strapi-main"
   ],
   "scripts": {
-    "//": "--- ENVIRONMENT SELECTION ---",
-    "env:select": "node scripts/select-env.js",
     "//": "--- UTILITIES ---",
+    "env:select": "node scripts/select-env.js",
     "dev": "npm run env:select && npm-run-all --parallel dev:*",
     "dev:strapi": "npm run develop --workspace=cms/strapi-main",
     "dev:oversight": "npm start --workspace=web/oversight-hub",
@@ -76,8 +75,10 @@
     "nth-check": ">=2.1.1"
   },
   "dependencies": {
-    "@strapi/plugin-cloud": "^5.28.0",
-    "@strapi/plugin-users-permissions": "^5.28.0",
-    "@strapi/strapi": "^5.28.0"
+    "@strapi/plugin-cloud": "^5.18.0",
+    "@strapi/plugin-users-permissions": "^4.12.0",
+    "@strapi/strapi": "^5.28.0",
+    "firebase": "^12.4.0",
+    "react-scripts": "0.0.0"
   }
 }

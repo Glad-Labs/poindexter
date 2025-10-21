@@ -6,6 +6,13 @@
 
 **Last Updated**: October 21, 2025 | **Status**: ✅ Documentation Consolidated & Optimized
 
+## 🔗 Quick Navigation
+
+- **📦 [Component Documentation](./components/)** - Public Site, Oversight Hub, Co-Founder Agent, Strapi CMS
+- **🧪 [Testing & Quality](./guides/TESTING_SUMMARY.md)** - All testing documentation
+- **� [Reference Guides](./reference/)** - API, database, deployment specifications
+- **🔧 [How-To Guides](./guides/)** - Detailed guides and setup instructions
+
 ---
 
 ## 🎯 Documentation by Role
@@ -96,20 +103,57 @@
   - Architecture and design patterns
   - Data schemas and API references
   - Coding standards and best practices
-  - Testing guidelines
 
-- **[Archive](./archive/)** - Historical documentation and legacy reports
+- **[Components](./components/)** - Individual component documentation
+  - 🌐 **[Public Site (Next.js)](./components/public-site/)** - Frontend blog & marketing site
+  - 📊 **[Oversight Hub (React)](./components/oversight-hub/)** - Admin dashboard
+  - 🤖 **[Co-Founder Agent (FastAPI)](./components/cofounder-agent/)** - AI orchestrator
+  - 💾 **[Strapi CMS](./components/strapi-cms/)** - Headless content management
+  - Component-specific documentation, architecture, and setup guides
+
+- **[Testing & Quality Assurance](./guides/)** - Test strategies, setup, and execution
+  - 📝 **[Testing Summary](./guides/TESTING_SUMMARY.md)** - Complete testing initiative results: 100 tests passing, setup guides, best practices
+  - 🐍 **[Python Tests Setup](./guides/PYTHON_TESTS_SETUP.md)** - Backend test fixture requirements and implementation guide
+  - ⚡ **[Quick Start Tests](./guides/QUICK_START_TESTS.md)** - Fast command reference for running tests locally
+  - 📚 **[Test Templates Reference](./guides/TEST_TEMPLATES_CREATED.md)** - Frontend test patterns and customization guide
+
+- **[Archive](./archive-old/)** - Historical documentation and legacy reports
   - Previous implementation logs
   - Archived analysis reports
   - Superseded technical documents
+  - Session status files (for historical reference)
 
 ### 🛠️ **Quick Links**
 
-- **[Test Suite Status](./TEST_SUITE_STATUS.md)** - ✅ Current test status (ALL PASSING)
+- 🧪 **[Test Suite Status](./TEST_SUITE_STATUS.md)** - ✅ Current test status (ALL PASSING: 100/100)
 - **[E2E Pipeline Setup](./E2E_PIPELINE_SETUP.md)** - End-to-end pipeline configuration
 - **[PowerShell Scripts](./guides/POWERSHELL_SCRIPTS.md)** - Service management scripts
 - **[NPM Scripts Health Check](./NPM_SCRIPTS_HEALTH_CHECK.md)** - npm script audit
 - **[NPM Dev Troubleshooting](./guides/NPM_DEV_TROUBLESHOOTING.md)** - Resolve dev issues
+
+---
+
+## 🔒 **Security & Vulnerability Management**
+
+**⚠️ CURRENT STATUS**: 24 npm vulnerabilities found Oct 21, 2025 - **Mitigation plan documented**
+
+### Start Here
+
+- **[SECURITY_DOCUMENTATION_INDEX.md](./SECURITY_DOCUMENTATION_INDEX.md)** - 🎯 Start here! Index of all security docs by role
+
+### Choose Your Path
+
+- **[SECURITY_EXECUTIVE_SUMMARY.md](./SECURITY_EXECUTIVE_SUMMARY.md)** - For managers & decision makers (5 min read)
+- **[SECURITY_QUICK_FIX.md](./SECURITY_QUICK_FIX.md)** - Quick verification commands (3 min read)
+- **[SECURITY_VULNERABILITY_REMEDIATION.md](./SECURITY_VULNERABILITY_REMEDIATION.md)** - Full technical guide (20 min read)
+- **[SECURITY_STATUS_REPORT_OCT21.md](./SECURITY_STATUS_REPORT_OCT21.md)** - Risk assessment & monitoring (30 min read)
+
+### Key Points
+
+- ✅ 4 vulnerabilities fixed via npm audit fix
+- ⚠️ 24 remaining (mostly Strapi core - requires major version upgrade)
+- 🟡 **Current Risk**: MODERATE (manageable with compensating controls)
+- 🟢 **Recommended Action**: Implement controls NOW, upgrade Strapi to v6 in Q1 2026
 
 ---
 

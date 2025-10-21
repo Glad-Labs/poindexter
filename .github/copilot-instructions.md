@@ -1,6 +1,6 @@
 # GLAD Labs Copilot Instructions
 
-**Last Updated:** October 20, 2025  
+**Last Updated:** October 21, 2025  
 **Project:** GLAD Labs - AI-Powered Frontier Firm Platform (Monorepo)  
 **For:** AI coding agents assisting with development
 
@@ -173,41 +173,89 @@ After `git push origin main`:
 
 ### Philosophy
 
-**Golden Rule:** Update existing documentation, don't proliferate new files.
+**Golden Rule:** Update existing documentation, don't create new unnecessary files. All docs belong in `docs/` - NEVER create docs in root or component folders (web/public-site/, cms/strapi-main/, src/cofounder_agent/, web/oversight-hub/) except for component-specific README.md files.
 
 After completing work:
 
-1. ✅ Update existing docs in `docs/` hierarchy
-2. ✅ Link from `docs/00-README.md` (hub)
-3. ❌ Don't create new summary files at root level (consolidation prevention)
-4. ✅ Commit changes with `docs:` prefix
+1. ✅ Update existing docs in `docs/` hierarchy (or new docs to appropriate folders)
+2. ✅ Link from `docs/00-README.md` (main hub) OR component README if component-specific
+3. ❌ NEVER create docs in component root directories
+4. ❌ NEVER create duplicate documentation (check `docs/` first!)
+5. ✅ Commit changes with `docs:` prefix
 
-### Documentation Structure (Don't Create Outside These)
+### Documentation Structure (Complete)
 
 ```
-docs/
+docs/                                  ← ALL PROJECT DOCUMENTATION HERE
 ├── 00-README.md ......................... Documentation hub (UPDATE ONLY)
 ├── 01-SETUP_AND_OVERVIEW.md ............ Quick start & setup (UPDATE)
 ├── 02-ARCHITECTURE_AND_DESIGN.md ....... System design (UPDATE)
 ├── 03-DEPLOYMENT_AND_INFRASTRUCTURE.md  Production deployment (UPDATE)
 ├── 04-DEVELOPMENT_WORKFLOW.md ......... Git workflow & dev process (UPDATE)
 ├── 05-AI_AGENTS_AND_INTEGRATION.md .... Agent patterns (UPDATE)
-├── 06-OPERATIONS_AND_MONITORING.md .... Operations guide (UPDATE)
-├── guides/
-│   ├── STRAPI_BACKED_PAGES_GUIDE.md ... How to create Strapi pages (UPDATE)
-│   ├── CONTENT_POPULATION_GUIDE.md .... How to populate Strapi (UPDATE)
-│   └── [other how-tos] ................ Add new guides here
-├── reference/
-│   ├── API_REFERENCE.md ............... API documentation (UPDATE)
-│   ├── DATABASE_SCHEMA.md ............. Database structure (UPDATE)
-│   └── [other specs] .................. Add technical specs here
-├── troubleshooting/
-│   ├── COMMON_ISSUES.md ............... Problem solutions (UPDATE)
-│   └── [category-specific] ............ Add issues by category
-└── RECENT_FIXES/
-    ├── README.md ...................... Index of fixes (UPDATE)
-    └── TIMEOUT_FIX_SUMMARY.md ......... Specific fix details (UPDATE)
+├── 06-OPERATIONS_AND_MAINTENANCE.md ... Operations guide (UPDATE)
+│
+├── components/                       ← COMPONENT-SPECIFIC DOCUMENTATION
+│   ├── README.md ........................ Component overview & index
+│   ├── public-site/
+│   │   ├── README.md .................. Public site overview
+│   │   ├── DEPLOYMENT_READINESS.md ... Pre-deployment checklist
+│   │   └── VERCEL_DEPLOYMENT.md ...... Vercel config guide
+│   ├── oversight-hub/
+│   │   └── README.md .................. Dashboard overview
+│   ├── cofounder-agent/
+│   │   ├── README.md .................. Agent overview
+│   │   └── INTELLIGENT_COFOUNDER.md .. Agent architecture
+│   └── strapi-cms/
+│       └── README.md .................. CMS overview
+│
+├── guides/                          ← HOW-TO GUIDES & QUICK STARTS
+│   ├── TESTING_SUMMARY.md ............. Testing initiative results
+│   ├── PYTHON_TESTS_SETUP.md ......... Python test setup
+│   ├── QUICK_START_TESTS.md .......... Test quick reference
+│   ├── TEST_TEMPLATES_CREATED.md .... Test patterns
+│   ├── STRAPI_BACKED_PAGES_GUIDE.md .. How to create Strapi pages
+│   ├── CONTENT_POPULATION_GUIDE.md ... How to populate Strapi
+│   └── [other how-tos]
+│
+├── reference/                       ← TECHNICAL SPECIFICATIONS
+│   ├── API_REFERENCE.md ............... API documentation
+│   ├── DATABASE_SCHEMA.md ............. Database structure
+│   ├── DEPLOYMENT_COMPLETE.md ........ Deployment specs
+│   ├── CI_CD_COMPLETE.md ............. CI/CD pipelines
+│   └── [other specs]
+│
+├── troubleshooting/                 ← PROBLEM SOLUTIONS
+│   ├── COMMON_ISSUES.md ............... FAQ & solutions
+│   └── [category-specific]
+│
+└── archive-old/                     ← HISTORICAL (read-only reference)
+    ├── PHASE1_SUCCESS.md
+    ├── EXECUTION_STATUS.md
+    └── [historical docs]
+
+Root-level docs ONLY:
+├── README.md                        ← Project entry point
+└── .github/copilot-instructions.md  ← This file (AI agent guidelines)
 ```
+
+### CRITICAL RULES
+
+**❌ NEVER do these:**
+
+1. Create new `.md` files in component folders (`web/public-site/`, `cms/strapi-main/`, etc.)
+2. Create duplicate docs (always search `docs/` first!)
+3. Create ANY summary files at root or in docs/ root
+4. Bypass the `docs/` folder structure
+
+**✅ ALWAYS do this:**
+
+1. Check if doc already exists in `docs/`
+2. Update existing doc instead of creating new one
+3. Add links to `docs/00-README.md` or component README
+4. Put component docs in `docs/components/[component]/`
+5. Put guides in `docs/guides/`
+6. Put specs in `docs/reference/`
 
 ### When You Complete Work
 
@@ -215,29 +263,32 @@ docs/
 
 ```
 ✅ Update relevant doc in docs/ (e.g., docs/04-DEVELOPMENT_WORKFLOW.md)
-✅ Update docs/RECENT_FIXES/README.md with: what was fixed, why, where
+✅ Add to docs/guides/ if it's a how-to
+✅ Add link to docs/00-README.md
 ✅ Commit: git commit -m "docs: update [filename] - explain what changed"
-❌ Don't create: docs/FIX_SUMMARY_[DATE].md (causes proliferation)
+❌ Never create new dated files like docs/FIX_SUMMARY_[DATE].md
 ```
 
-**Scenario 2: New feature or pattern**
+**Scenario 2: New component documentation**
 
 ```
-✅ Add to docs/02-ARCHITECTURE_AND_DESIGN.md if architectural
-✅ OR add to docs/guides/ if it's a how-to
-✅ Add section to docs/00-README.md linking to it
-✅ Commit: git commit -m "docs: add [feature] documentation to [file]"
-❌ Don't create: docs/NEW_FEATURE_GUIDE.md (causes proliferation)
+✅ Add to docs/components/[component]/
+✅ Update docs/components/README.md with overview
+✅ Add link to docs/00-README.md
+✅ Keep component README.md in source folder (for developers finding it naturally)
+✅ Commit: git commit -m "docs: add [component] documentation"
+❌ Never create docs in component root (web/public-site/, src/cofounder_agent/, etc.)
 ```
 
-**Scenario 3: Consolidation work**
+**Scenario 3: Consolidation or restructuring**
 
 ```
-✅ Use docs/CONSOLIDATION_GUIDE.md as the master index
-✅ Update existing files being consolidated
-✅ Update docs/00-README.md to reflect consolidated structure
-✅ Commit: git commit -m "docs: consolidate [topic] - move content from X to Y"
-❌ Don't create: docs/CONSOLIDATION_SUMMARY.md (already have CONSOLIDATION_GUIDE.md)
+✅ Move docs to docs/ structure
+✅ Update docs/00-README.md to link consolidated docs
+✅ Update docs/components/README.md if component-related
+✅ Archive old location in docs/archive-old/ if historical
+✅ Commit: git commit -m "docs: consolidate [topic]"
+❌ Don't leave docs scattered across component folders
 ```
 
 **Scenario 4: Troubleshooting content**
@@ -245,38 +296,44 @@ docs/
 ```
 ✅ Add to docs/troubleshooting/COMMON_ISSUES.md
 ✅ OR create docs/troubleshooting/[CATEGORY]_ISSUES.md if many related issues
-✅ Cross-link from docs/02-ARCHITECTURE_AND_DESIGN.md if related to architecture
-✅ Commit: git commit -m "docs: add troubleshooting - [issue description]"
-❌ Don't create: docs/TROUBLESHOOTING_SESSION_[DATE].md (proliferation)
+✅ Cross-link from relevant main docs
+✅ Commit: git commit -m "docs: add troubleshooting - [issue]"
+❌ Never create docs/TROUBLESHOOTING_SESSION_[DATE].md (proliferation)
 ```
 
 ### Consolidation Strategy
 
-**Before Creating New Doc:**
+**Before Creating ANY New Doc:**
 
-1. Check if topic fits in existing structure
-2. Check if existing file can be updated
-3. If neither, create in appropriate folder (`guides/`, `reference/`, `troubleshooting/`)
-4. Update `docs/00-README.md` to link to it
-5. Delete/merge any obsolete related files
+1. ✅ Search `docs/` for existing doc on topic
+2. ✅ Check if you should UPDATE existing doc instead
+3. ✅ If new doc needed, put it in appropriate folder:
+   - Component-specific → `docs/components/[component]/`
+   - How-to guide → `docs/guides/`
+   - Technical spec → `docs/reference/`
+   - Problem/solution → `docs/troubleshooting/`
+4. ✅ Add link to `docs/00-README.md` or component README
+5. ✅ Delete/archive any duplicate docs
 
-**Master Index:** `docs/CONSOLIDATION_GUIDE.md` - Reference this before creating anything new
+**Golden Rule:** Always check `docs/` first - all documentation should be organized in the structure shown above. Session notes and historical docs go to `docs/archive-old/`.
 
-**Link Everything:** Any new content must be linked from `docs/00-README.md` so it's discoverable
+**Link Everything:** All active docs must be discoverable from `docs/00-README.md`
 
 ### Examples from Recent Work
 
 **GOOD ✅ - Updated existing docs:**
 
-- Updated `docs/RECENT_FIXES/README.md` with new fix entry
-- Added new content to `docs/guides/STRAPI_BACKED_PAGES_GUIDE.md`
-- Edited `docs/00-README.md` to link new guides
+- Moved component docs to `docs/components/` structure
+- Updated `docs/00-README.md` with component links
+- Added `docs/components/README.md` with overview
+- Updated guides in `docs/guides/`
 
-**AVOID ❌ - Would cause proliferation:**
+**AVOID ❌ - Would cause problems:**
 
-- Creating `docs/SESSION_SUMMARY_[DATE].md` (instead: update `docs/00-README.md`)
-- Creating `docs/CONSOLIDATION_SUMMARY.md` (instead: update existing `docs/CONSOLIDATION_GUIDE.md`)
-- Creating `docs/ARCHITECTURE_NOTES_[DATE].md` (instead: update `docs/02-ARCHITECTURE_AND_DESIGN.md`)
+- Creating `web/public-site/DEPLOYMENT_NOTES.md` (WRONG - use docs/components/public-site/)
+- Creating `src/cofounder_agent/ARCHITECTURE.md` (WRONG - use docs/components/cofounder-agent/)
+- Creating `docs/SESSION_NOTES_[DATE].md` (WRONG - update existing docs instead)
+- Creating `cms/strapi-main/SETUP_GUIDE.md` (WRONG - use docs/components/strapi-cms/)
 
 ### Commit Message Pattern
 
@@ -284,13 +341,13 @@ docs/
 # Use one of these prefixes:
 git commit -m "docs: update [file] - describe what changed"
 git commit -m "docs: add [topic] to [file]"
-git commit -m "docs: consolidate [topic] - explain consolidation"
-git commit -m "docs: fix [file] - clarification or error correction"
+git commit -m "docs: consolidate [topic]"
+git commit -m "docs: fix [file] - clarification"
 
-# Examples from this project:
-git commit -m "docs: add Strapi-backed pages guide to docs/guides/"
-git commit -m "docs: correct architecture - pages are Strapi-backed with markdown fallbacks"
-git commit -m "docs: add comprehensive copilot instructions for AI coding agents"
+# Examples:
+git commit -m "docs: add component documentation structure"
+git commit -m "docs: consolidate all component docs to docs/components/"
+git commit -m "docs: update copilot instructions - docs consolidation policy"
 ```
 
 ---

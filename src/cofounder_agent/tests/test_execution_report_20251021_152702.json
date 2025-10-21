@@ -1,0 +1,23 @@
+{
+  "start_time": "2025-10-21 15:25:02.760653",
+  "end_time": "2025-10-21 15:27:02.242908",
+  "test_runs": [
+    {
+      "test_type": "all",
+      "command": "python -m pytest test_unit_comprehensive.py test_api_integration.py test_e2e_comprehensive.py -v --cov=../ --cov-report=html:htmlcov --cov-report=term-missing --cov-branch --tb=short -ra --junit-xml=test_results_all_20251021_152502.xml",
+      "return_code": 0,
+      "duration": 119.48125100135803,
+      "timestamp": "2025-10-21T15:27:02.242406",
+      "success": true
+    }
+  ],
+  "summary": {
+    "total_test_runs": 1,
+    "successful_runs": 1,
+    "failed_runs": 0,
+    "success_rate": 1.0,
+    "total_duration": 119.482255,
+    "average_duration": 119.48125100135803
+  },
+  "total_duration": 119.482255
+}
