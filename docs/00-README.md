@@ -4,6 +4,8 @@
 >
 > Start here. Everything you need is organized and linked below.
 
+**Last Updated**: October 21, 2025 | **Status**: ✅ Documentation Consolidated & Optimized
+
 ---
 
 ## 🎯 Documentation by Role
@@ -81,7 +83,8 @@
 - **[Guides](./guides/)** - Setup guides, quick starts, and how-to documentation
   - 💻 **[Local Setup Complete](./guides/LOCAL_SETUP_COMPLETE.md)** - Quick start: run all 4 services, troubleshooting, common commands
   - 🌿 **[Branch Setup Complete](./guides/BRANCH_SETUP_COMPLETE.md)** - Branch-specific environments (feat/dev/main) with auto-selection
-  - 🔧 **[Fixes & Solutions](./guides/FIXES_AND_SOLUTIONS.md)** - All critical fixes: timeout protection, Strapi fallbacks, security headers, CI/CD automation
+  - � **[Production Deployment Ready](./PRODUCTION_DEPLOYMENT_READY.md)** - Complete production guide: GitHub secrets, branch workflow, Ollama setup, monitoring
+  - �🔧 **[Fixes & Solutions](./guides/FIXES_AND_SOLUTIONS.md)** - All critical fixes: timeout protection, Strapi fallbacks, security headers, CI/CD automation
   - Local setup and environment configuration
   - Ollama and Docker deployment
   - Developer workflows and troubleshooting
