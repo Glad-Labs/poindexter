@@ -1,6 +1,6 @@
 # GLAD Labs Copilot Instructions
 
-**Last Updated:** October 20, 2025  
+**Last Updated:** October 21, 2025  
 **Project:** GLAD Labs - AI-Powered Frontier Firm Platform (Monorepo)  
 **For:** AI coding agents assisting with development
 
