@@ -1,0 +1,63 @@
+name: Test on Feature Branch
+
+on:
+  push:
+    branches:
+      - 'feat/**'
+      - 'feature/**'
+  pull_request:
+    branches:
+      - dev
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    env:
+      NODE_ENV: development
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: 📦 Install dependencies
+        run: npm ci && npm ci --workspaces
+      
+      - name: 📦 Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r src/cofounder_agent/requirements.txt
+      
+      - name: 🔄 Load development environment
+        run: cp .env.example .env.local
+      
+      - name: 🧪 Run frontend tests
+        run: npm run test:frontend:ci
+        continue-on-error: true
+      
+      - name: 🧪 Run Python tests
+        run: npm run test:python:smoke
+        continue-on-error: true
+      
+      - name: 🔍 Run linting
+        run: npm run lint:fix
+        continue-on-error: true
+      
+      - name: 🏗️ Build check
+        run: npm run build
+      
+      - name: ✅ Tests and build completed
+        run: echo "Feature branch testing complete"

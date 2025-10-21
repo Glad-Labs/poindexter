@@ -24,6 +24,7 @@ Deployment starts → npm install → npm run build → getStaticPaths() calls A
 ## ✅ The Solution
 
 ### 1. **Added Request Timeout (10 seconds)**
+
 ```javascript
 // In: web/public-site/lib/api.js
 const controller = new AbortController();
@@ -35,6 +36,7 @@ const response = await fetch(requestUrl, {
 ```
 
 ### 2. **Added Error Handling to Dynamic Pages**
+
 ```javascript
 // In: pages/archive/[page].js, pages/category/[slug].js, pages/tag/[slug].js
 
@@ -63,12 +65,12 @@ export async function getStaticProps() {
 
 ## 📝 Files Modified
 
-| File | Change | Impact |
-|------|--------|--------|
-| `lib/api.js` | Added AbortController timeout | All API calls now timeout after 10s |
-| `pages/archive/[page].js` | Added error handling | Archive pages won't crash build |
-| `pages/category/[slug].js` | Added error handling | Category pages won't crash build |
-| `pages/tag/[slug].js` | Added error handling | Tag pages won't crash build |
+| File                       | Change                        | Impact                              |
+| -------------------------- | ----------------------------- | ----------------------------------- |
+| `lib/api.js`               | Added AbortController timeout | All API calls now timeout after 10s |
+| `pages/archive/[page].js`  | Added error handling          | Archive pages won't crash build     |
+| `pages/category/[slug].js` | Added error handling          | Category pages won't crash build    |
+| `pages/tag/[slug].js`      | Added error handling          | Tag pages won't crash build         |
 
 ---
 
@@ -77,7 +79,7 @@ export async function getStaticProps() {
 ✅ **Build Duration**: 5-10 minutes (previously hung indefinitely)  
 ✅ **Timeout Errors**: 0 (previously blocking all deploys)  
 ✅ **Graceful Degradation**: Returns 404 on error (previously crashed)  
-✅ **Deployment Success**: 100% (previously 0% during Strapi issues)  
+✅ **Deployment Success**: 100% (previously 0% during Strapi issues)
 
 ---
 
@@ -98,11 +100,13 @@ git push origin main
 ## ✨ Impact on Users
 
 **Before Fix:**
+
 - Deployment fails with 504 error
 - Site stays offline
 - No way to deploy until Strapi is working
 
 **After Fix:**
+
 - Deployment always succeeds
 - If Strapi is down, pages return 404
 - User gets error page instead of timeout
@@ -115,6 +119,7 @@ git push origin main
 **Still getting timeouts?**
 
 1. Check Strapi status:
+
    ```powershell
    .\scripts/diagnose-timeout.ps1
    ```
@@ -122,6 +127,7 @@ git push origin main
 2. Verify Strapi is running on Railway: https://railway.app
 
 3. Check response time:
+
    ```bash
    curl -w "@curl-format.txt" https://your-strapi.railway.app/api/posts
    ```
@@ -137,6 +143,7 @@ git push origin main
 ## 📚 Full Documentation
 
 For complete technical details and prevention strategies, see:
+
 - `TIMEOUT_FIX_GUIDE.md` - Full technical guide
 - `03-DEPLOYMENT_AND_INFRASTRUCTURE.md` - Deployment overview
 - `troubleshooting/vercel-troubleshooting.md` - Common issues

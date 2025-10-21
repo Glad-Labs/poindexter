@@ -2,11 +2,12 @@
 
 **Session Date:** October 20, 2025  
 **Session Context:** Vercel outage in IAD1 region (deployment & Edge Config issues)  
-**Productive Downtime:** Used as opportunity for documentation, code enhancement, and content preparation  
+**Productive Downtime:** Used as opportunity for documentation, code enhancement, and content preparation
 
 > **Note:** Legal pages and About page follow your established Strapi-backed architecture with markdown fallbacks:
+>
 > - `about.js` - Strapi `/api/about` with fallback content
-> - `privacy-policy.js` - Strapi `/api/privacy-policy` with fallback content  
+> - `privacy-policy.js` - Strapi `/api/privacy-policy` with fallback content
 > - `terms-of-service.js` - Strapi `/api/terms-of-service` with fallback content
 
 ---
@@ -122,6 +123,7 @@ During Vercel downtime, the team productively worked on 4 major initiatives:
 **File:** `web/public-site/pages/privacy-policy.js`
 
 **Architecture:** Strapi-backed with markdown fallback
+
 - Fetches content from Strapi `/api/privacy-policy` endpoint
 - Includes authorization header for API token
 - Falls back to markdown fallback if Strapi is unavailable
@@ -129,6 +131,7 @@ During Vercel downtime, the team productively worked on 4 major initiatives:
 - Revalidates every 60 seconds (ISR)
 
 **Features:**
+
 - ✅ GDPR compliance (7 user rights documented)
 - ✅ CCPA compliance (4 user rights documented)
 - ✅ Data protection measures explained
@@ -141,7 +144,8 @@ During Vercel downtime, the team productively worked on 4 major initiatives:
 
 **Status:** Production-ready, Strapi content management enabled
 
-**What to Do:** 
+**What to Do:**
+
 1. Create `Privacy Policy` entry in Strapi admin panel
 2. Add `title`, `content` (markdown), and `seo` fields
 3. Page will automatically render from Strapi once created
@@ -153,6 +157,7 @@ During Vercel downtime, the team productively worked on 4 major initiatives:
 **File:** `web/public-site/pages/about.js`
 
 **Architecture:** Strapi-backed with markdown fallback
+
 - Fetches content from Strapi `/api/about` endpoint
 - Includes authorization header for API token
 - Falls back to markdown fallback if Strapi is unavailable
@@ -160,6 +165,7 @@ During Vercel downtime, the team productively worked on 4 major initiatives:
 - Revalidates every 60 seconds (ISR)
 
 **Features:**
+
 - ✅ Mission & vision statement
 - ✅ Company values and team info placeholder
 - ✅ Markdown rendering for rich formatting
@@ -171,6 +177,7 @@ During Vercel downtime, the team productively worked on 4 major initiatives:
 **Status:** Production-ready, Strapi content management enabled
 
 **What to Do:**
+
 1. Create `About` entry in Strapi admin panel
 2. Add `title`, `content` (markdown), and `seo` fields
 3. Page will automatically render from Strapi once created
@@ -182,6 +189,7 @@ During Vercel downtime, the team productively worked on 4 major initiatives:
 **File:** `web/public-site/pages/terms-of-service.js`
 
 **Architecture:** Strapi-backed with markdown fallback
+
 - Fetches content from Strapi `/api/terms-of-service` endpoint
 - No authorization required (public endpoint)
 - Falls back to markdown fallback if Strapi is unavailable
@@ -189,6 +197,7 @@ During Vercel downtime, the team productively worked on 4 major initiatives:
 - Revalidates every 60 seconds (ISR)
 
 **Features:**
+
 - ✅ Comprehensive legal disclaimers
 - ✅ Liability limitations documented
 - ✅ Usage restrictions clearly listed
@@ -202,6 +211,7 @@ During Vercel downtime, the team productively worked on 4 major initiatives:
 **Status:** Production-ready, Strapi content management enabled
 
 **What to Do:**
+
 1. Create `Terms of Service` entry in Strapi admin panel
 2. Add `title`, `content` (markdown), and `seo` fields
 3. Page will automatically render from Strapi once created

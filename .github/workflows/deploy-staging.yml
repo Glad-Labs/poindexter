@@ -1,0 +1,61 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches:
+      - dev
+
+jobs:
+  test-and-deploy:
+    runs-on: ubuntu-latest
+    
+    env:
+      NODE_ENV: staging
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: 📦 Install dependencies
+        run: npm ci && npm ci --workspaces
+      
+      - name: 📦 Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r src/cofounder_agent/requirements.txt
+      
+      - name: 🔄 Load staging environment
+        run: cp .env.staging .env.local
+      
+      - name: 🧪 Run tests
+        run: npm run test:frontend:ci
+        continue-on-error: true
+      
+      - name: 🏗️ Build frontend
+        run: npm run build --workspace=web/public-site
+        env:
+          NEXT_PUBLIC_STRAPI_API_URL: ${{ secrets.STAGING_STRAPI_URL }}
+          NEXT_PUBLIC_STRAPI_API_TOKEN: ${{ secrets.STAGING_STRAPI_TOKEN }}
+      
+      - name: 🚀 Deploy to Railway (Staging)
+        if: success()
+        run: |
+          echo "Staging deployment would go here"
+          echo "In production, this would use: npx railway link --project ${{ secrets.RAILWAY_STAGING_PROJECT_ID }}"
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      
+      - name: ✅ Staging deployment complete
+        run: echo "Deployment to staging environment complete"

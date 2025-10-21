@@ -11,16 +11,16 @@ Your public site uses a **Strapi-backed architecture** with **markdown fallbacks
 ✅ **Content Management** - Edit content in Strapi without code changes  
 ✅ **Fallback Safety** - Pages render markdown even if Strapi is down  
 ✅ **ISR Revalidation** - Pages update every 60 seconds automatically  
-✅ **SEO Support** - Strapi entries include SEO metadata fields  
+✅ **SEO Support** - Strapi entries include SEO metadata fields
 
 ---
 
 ## Pages Using This Architecture
 
-| Page | File | Route | Strapi Endpoint | Status |
-|------|------|-------|-----------------|--------|
-| About | `pages/about.js` | `/about` | `/api/about` | ✅ Ready |
-| Privacy Policy | `pages/privacy-policy.js` | `/privacy-policy` | `/api/privacy-policy` | ✅ Ready |
+| Page             | File                        | Route               | Strapi Endpoint         | Status   |
+| ---------------- | --------------------------- | ------------------- | ----------------------- | -------- |
+| About            | `pages/about.js`            | `/about`            | `/api/about`            | ✅ Ready |
+| Privacy Policy   | `pages/privacy-policy.js`   | `/privacy-policy`   | `/api/privacy-policy`   | ✅ Ready |
 | Terms of Service | `pages/terms-of-service.js` | `/terms-of-service` | `/api/terms-of-service` | ✅ Ready |
 
 ---
@@ -32,10 +32,8 @@ Your public site uses a **Strapi-backed architecture** with **markdown fallbacks
 ```javascript
 export default function Page({ content }) {
   const data = content || fallbackMarkdownContent;
-  
-  return (
-    <Markdown>{data}</Markdown>
-  );
+
+  return <Markdown>{data}</Markdown>;
 }
 
 export async function getStaticProps() {
@@ -43,16 +41,16 @@ export async function getStaticProps() {
     // 1. Try to fetch from Strapi
     const response = await fetch(strapiEndpoint);
     const content = response.json().data.content;
-    
+
     return {
       props: { content },
-      revalidate: 60  // ISR: Revalidate every 60 seconds
+      revalidate: 60, // ISR: Revalidate every 60 seconds
     };
   } catch (error) {
     // 2. Fall back to markdown if Strapi fails
     return {
-      props: { content: null },  // Triggers fallback
-      revalidate: 60
+      props: { content: null }, // Triggers fallback
+      revalidate: 60,
     };
   }
 }
@@ -61,18 +59,21 @@ export async function getStaticProps() {
 ### How Each Page Works
 
 **About Page** (`pages/about.js`)
+
 - Fetches from `GET /api/about` with Authorization header
 - Expects Strapi entry with fields: `title`, `content`, `seo`
 - Route: http://localhost:3000/about
 - Markdown fallback included for Strapi downtime
 
 **Privacy Policy** (`pages/privacy-policy.js`)
+
 - Fetches from `GET /api/privacy-policy` with Authorization header
 - Expects Strapi entry with fields: `title`, `content`, `seo`
 - Route: http://localhost:3000/privacy-policy
 - Markdown fallback included for Strapi downtime
 
 **Terms of Service** (`pages/terms-of-service.js`)
+
 - Fetches from `GET /api/terms-of-service` (no auth required)
 - Expects Strapi entry with fields: `title`, `content`, `seo`
 - Route: http://localhost:3000/terms-of-service
@@ -85,6 +86,7 @@ export async function getStaticProps() {
 ### Step 1: Create Content Type (if not exists)
 
 In Strapi Admin:
+
 1. Go to **Content Type Builder**
 2. Create new Collection Type or Singleton Type
 3. Add fields:
@@ -95,12 +97,13 @@ In Strapi Admin:
 ### Step 2: Create Content Entry
 
 For **About Page**:
+
 1. Go to **Content Manager** → **About**
 2. Create new entry (or edit existing)
 3. Fill in:
    - **Title:** "About GLAD Labs"
    - **Content:** (Markdown format) - See fallback content in pages/about.js for template
-   - **SEO:** 
+   - **SEO:**
      ```json
      {
        "metaTitle": "About GLAD Labs",
@@ -110,13 +113,15 @@ For **About Page**:
 4. **Publish** the entry
 
 For **Privacy Policy**:
+
 1. Go to **Content Manager** → **Privacy Policy**
 2. Create new entry
 3. Fill in similar fields
 4. **Publish**
 
 For **Terms of Service**:
-1. Go to **Content Manager** → **Terms of Service**  
+
+1. Go to **Content Manager** → **Terms of Service**
 2. Create new entry
 3. Fill in similar fields
 4. **Publish**
@@ -141,22 +146,27 @@ The `content` field should be valid Markdown:
 # Page Title
 
 ## Section 1
+
 Description text here.
 
 ## Section 2
+
 - Bullet point 1
 - Bullet point 2
 
 ### Subsection
+
 More content...
 
 ## Contact
+
 Email: hello@gladlabs.com
 ```
 
 ### Strapi API Response Format (v5)
 
 The endpoint returns:
+
 ```json
 {
   "data": {
@@ -192,17 +202,20 @@ These fallbacks ensure pages remain accessible even during Strapi downtime.
 ## Testing
 
 ### Test Strapi-Backed Rendering
+
 1. Ensure Strapi is running: `npm run develop` (cms/strapi-v5-backend)
 2. Create entries in Strapi admin
 3. Start Next.js: `npm run dev` (web/public-site)
 4. Visit page URL and verify content loads from Strapi
 
 ### Test Fallback Rendering
+
 1. Stop Strapi or don't create entries
 2. Start Next.js: `npm run dev`
 3. Visit page URL and verify fallback markdown renders
 
 ### Test ISR Revalidation
+
 1. Edit content in Strapi
 2. Save/Publish changes
 3. Wait up to 60 seconds
@@ -213,20 +226,24 @@ These fallbacks ensure pages remain accessible even during Strapi downtime.
 ## Common Issues & Solutions
 
 **Issue:** Page shows fallback content instead of Strapi content
+
 - **Solution:** Verify entry is published in Strapi
 - **Solution:** Check API endpoint in browser: http://localhost:1337/api/about
 - **Solution:** Verify `STRAPI_API_TOKEN` env var is set for auth endpoints
 
 **Issue:** "Cannot find Strapi backend"
+
 - **Solution:** Ensure Strapi is running: `npm run develop` in cms/strapi-v5-backend
 - **Solution:** Check Strapi is accessible at http://localhost:1337
 - **Solution:** Verify firewall/network connectivity
 
 **Issue:** Markdown not rendering correctly
+
 - **Solution:** Use valid Markdown syntax in Strapi `content` field
 - **Solution:** Check markdown is actually markdown, not HTML
 
 **Issue:** SEO fields not showing
+
 - **Solution:** Ensure Strapi entry has `seo` JSON field
 - **Solution:** Check page is using `seo` object: `seo.metaTitle`, `seo.metaDescription`
 

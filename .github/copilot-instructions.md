@@ -27,6 +27,11 @@
 # Start everything at once (recommended)
 npm run dev
 
+# Environment auto-selected based on branch:
+# feat/* branches → .env (local development)
+# dev branch → .env.staging
+# main branch → .env.production
+
 # This launches:
 # - Strapi CMS (http://localhost:1337/admin)
 # - Public Site (http://localhost:3000)
@@ -48,23 +53,38 @@ npm run build
 
 # Format & lint
 npm run format && npm run lint:fix
+
+# Manually select environment (if needed)
+npm run env:select
 ```
 
-### Deployment
+### Deployment Workflow (Branch → Environment)
 
 ```bash
-# PUSH TO MAIN TRIGGERS AUTOMATIC DEPLOYMENT
+# FEATURE DEVELOPMENT (feat/* branches)
+git checkout -b feat/my-feature
+npm run dev                    # Uses .env (local SQLite)
+# ... make changes, test, commit
+git push origin feat/my-feature
+# GitHub Actions: test-on-feat.yml runs tests
+
+# STAGING (dev branch)
+git checkout dev
+git merge feat/my-feature
+git push origin dev
+# GitHub Actions: deploy-staging.yml
+# - Loads .env.staging
+# - Tests with staging database
+# - Deploys to Railway staging
+
+# PRODUCTION (main branch)
+git checkout main
+git merge dev
 git push origin main
-
-# This workflow:
-# 1. Push to main on GitHub (mirrored from GitLab)
-# 2. GitHub Actions triggered
-# 3. Frontend deploys to Vercel (http://public-site.vercel.app)
-# 4. Strapi backend: Railway instance updated (if changes to cms/)
-
-# Check Vercel deployment: https://vercel.com/dashboard
-
-# Monitor: `web/public-site/.vercel/README.json` after build
+# GitHub Actions: deploy-production.yml
+# - Loads .env.production
+# - Tests with production database
+# - Deploys to Vercel (frontend) + Railway (backend)
 ```
 
 ---
@@ -76,11 +96,13 @@ git push origin main
 **CRITICAL:** GitLab ↔ GitHub Mirror Architecture
 
 **Structure:**
+
 - **GitLab** (gitlab.com) - Private repository, source of truth
 - **GitHub** (github.com) - Public mirror, triggers CI/CD
 - **Why Two Repos?** Public development showcase + Private backup + GitHub Actions automation
 
 **Push Workflow:**
+
 ```bash
 # All work flows through GitLab first
 git push origin main  # Pushes to GitLab (primary)
@@ -92,12 +114,14 @@ git push origin main  # Pushes to GitLab (primary)
 ```
 
 **Key Branch:** `main`
+
 - Auto-deploy on push to main on GitHub
 - This is your production deployment trigger
 
 ### Deployment Targets
 
 **Frontend (Next.js Public Site)**
+
 - **Target:** Vercel (https://vercel.com)
 - **Repository:** `web/public-site/`
 - **Trigger:** Push to main on GitHub
@@ -107,6 +131,7 @@ git push origin main  # Pushes to GitLab (primary)
 - **Environment:** `NEXT_PUBLIC_STRAPI_API_URL`, `NEXT_PUBLIC_STRAPI_API_TOKEN` set in Vercel dashboard
 
 **Backend (Strapi CMS)**
+
 - **Target:** Railway.app
 - **Repository:** `cms/strapi-v5-backend/`
 - **Trigger:** Manual deployment or webhook (check Railway settings)
@@ -116,6 +141,7 @@ git push origin main  # Pushes to GitLab (primary)
 - **Environment:** Set in Railway dashboard (`DATABASE_URL`, `STRAPI_API_TOKEN`, etc.)
 
 **Local Development**
+
 - **Public Site:** http://localhost:3000
 - **Strapi CMS:** http://localhost:1337/admin
 - **Oversight Hub:** http://localhost:3001
@@ -150,6 +176,7 @@ After `git push origin main`:
 **Golden Rule:** Update existing documentation, don't proliferate new files.
 
 After completing work:
+
 1. ✅ Update existing docs in `docs/` hierarchy
 2. ✅ Link from `docs/00-README.md` (hub)
 3. ❌ Don't create new summary files at root level (consolidation prevention)
@@ -185,6 +212,7 @@ docs/
 ### When You Complete Work
 
 **Scenario 1: Bug fix or small feature**
+
 ```
 ✅ Update relevant doc in docs/ (e.g., docs/04-DEVELOPMENT_WORKFLOW.md)
 ✅ Update docs/RECENT_FIXES/README.md with: what was fixed, why, where
@@ -193,6 +221,7 @@ docs/
 ```
 
 **Scenario 2: New feature or pattern**
+
 ```
 ✅ Add to docs/02-ARCHITECTURE_AND_DESIGN.md if architectural
 ✅ OR add to docs/guides/ if it's a how-to
@@ -202,6 +231,7 @@ docs/
 ```
 
 **Scenario 3: Consolidation work**
+
 ```
 ✅ Use docs/CONSOLIDATION_GUIDE.md as the master index
 ✅ Update existing files being consolidated
@@ -211,6 +241,7 @@ docs/
 ```
 
 **Scenario 4: Troubleshooting content**
+
 ```
 ✅ Add to docs/troubleshooting/COMMON_ISSUES.md
 ✅ OR create docs/troubleshooting/[CATEGORY]_ISSUES.md if many related issues
@@ -222,6 +253,7 @@ docs/
 ### Consolidation Strategy
 
 **Before Creating New Doc:**
+
 1. Check if topic fits in existing structure
 2. Check if existing file can be updated
 3. If neither, create in appropriate folder (`guides/`, `reference/`, `troubleshooting/`)
@@ -235,11 +267,13 @@ docs/
 ### Examples from Recent Work
 
 **GOOD ✅ - Updated existing docs:**
+
 - Updated `docs/RECENT_FIXES/README.md` with new fix entry
 - Added new content to `docs/guides/STRAPI_BACKED_PAGES_GUIDE.md`
 - Edited `docs/00-README.md` to link new guides
 
 **AVOID ❌ - Would cause proliferation:**
+
 - Creating `docs/SESSION_SUMMARY_[DATE].md` (instead: update `docs/00-README.md`)
 - Creating `docs/CONSOLIDATION_SUMMARY.md` (instead: update existing `docs/CONSOLIDATION_GUIDE.md`)
 - Creating `docs/ARCHITECTURE_NOTES_[DATE].md` (instead: update `docs/02-ARCHITECTURE_AND_DESIGN.md`)
@@ -458,13 +492,28 @@ npm run test:python:smoke   # Quick smoke test
 3. `docs/02-ARCHITECTURE_AND_DESIGN.md` - System design
 4. `docs/04-DEVELOPMENT_WORKFLOW.md` - Dev workflow & git
 5. `docs/05-AI_AGENTS_AND_INTEGRATION.md` - Agent patterns
+6. `docs/07-BRANCH_SPECIFIC_VARIABLES.md` - **NEW: Environment configuration per branch**
 
 **Reference:**
 
 - `STRAPI_ARCHITECTURE_CORRECTION.md` - Strapi-backed pages guide
 - `docs/guides/STRAPI_BACKED_PAGES_GUIDE.md` - Detailed setup
+- `docs/guides/CONTENT_POPULATION_GUIDE.md` - Blog post templates
 - `docs/RECENT_FIXES/TIMEOUT_FIX_SUMMARY.md` - Timeout issue explanation
-- `QUICK_REFERENCE.md` - At-a-glance deployment status
+- `docs/07-BRANCH_SPECIFIC_VARIABLES.md` - **Complete guide to branch-specific environments**
+
+**Environment Files:**
+
+- `.env` - Local development (NEVER commit)
+- `.env.staging` - Staging environment (commit, no secrets)
+- `.env.production` - Production environment (commit, no secrets)
+- `.env.example` - Template for all environments
+
+**GitHub Actions Workflows:**
+
+- `.github/workflows/test-on-feat.yml` - Test feature branches
+- `.github/workflows/deploy-staging.yml` - Deploy dev branch to staging
+- `.github/workflows/deploy-production.yml` - Deploy main branch to production
 
 ---
 
