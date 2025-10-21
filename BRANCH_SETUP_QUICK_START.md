@@ -9,21 +9,25 @@
 ## 📋 What Was Created
 
 ### 1. **Environment Configuration Files**
+
 - ✅ `.env.staging` - Staging environment variables (committed)
 - ✅ `.env.production` - Production environment variables (committed)
 - ✅ `.env` - Local development (in `.gitignore`, you create locally)
 - ✅ `.env.example` - Template with all variables
 
 ### 2. **Automatic Environment Selection**
+
 - ✅ `scripts/select-env.js` - Auto-selects .env based on git branch
 - ✅ Updated `package.json` - `npm run dev` and `npm run build` call `npm run env:select`
 
 ### 3. **GitHub Actions Workflows**
+
 - ✅ `.github/workflows/test-on-feat.yml` - Tests feature branches
 - ✅ `.github/workflows/deploy-staging.yml` - Deploys dev → staging
 - ✅ `.github/workflows/deploy-production.yml` - Deploys main → production
 
 ### 4. **Documentation**
+
 - ✅ `docs/07-BRANCH_SPECIFIC_VARIABLES.md` - Comprehensive setup guide (1,500+ lines)
 - ✅ Updated `.github/copilot-instructions.md` - Branch workflow guidance
 
@@ -119,6 +123,7 @@ git push origin main
 For CI/CD to work, add these secrets to GitHub (Settings → Secrets and variables → Actions):
 
 ### Development/Staging Secrets
+
 ```
 STAGING_STRAPI_URL=https://staging-cms.railway.app
 STAGING_STRAPI_TOKEN=your-token
@@ -129,6 +134,7 @@ RAILWAY_STAGING_PROJECT_ID=your-project-id
 ```
 
 ### Production Secrets
+
 ```
 PROD_STRAPI_URL=https://cms.railway.app
 PROD_STRAPI_TOKEN=your-token
@@ -146,11 +152,11 @@ VERCEL_ORG_ID=your-org-id
 
 ## 📊 Branch → Environment Mapping
 
-| Branch | Environment | .env File | Database | Deploy Target |
-|--------|-------------|-----------|----------|---------------|
-| `feat/*` | Local Dev | `.env` (you create) | SQLite (local) | None (local only) |
-| `dev` | Staging | `.env.staging` (committed) | Postgres (test) | Railway staging |
-| `main` | Production | `.env.production` (committed) | Postgres (prod) | Vercel + Railway |
+| Branch   | Environment | .env File                     | Database        | Deploy Target     |
+| -------- | ----------- | ----------------------------- | --------------- | ----------------- |
+| `feat/*` | Local Dev   | `.env` (you create)           | SQLite (local)  | None (local only) |
+| `dev`    | Staging     | `.env.staging` (committed)    | Postgres (test) | Railway staging   |
+| `main`   | Production  | `.env.production` (committed) | Postgres (prod) | Vercel + Railway  |
 
 ---
 
@@ -171,6 +177,7 @@ VERCEL_ORG_ID=your-org-id
 **Q: "Environment variables not loading in Next.js"**
 
 A: Ensure variables start with `NEXT_PUBLIC_` prefix:
+
 ```bash
 # ✅ Correct - exposed to browser
 NEXT_PUBLIC_STRAPI_API_URL=http://localhost:1337
@@ -182,6 +189,7 @@ STRAPI_API_URL=http://localhost:1337
 **Q: "Different environments when pushing to dev vs main"**
 
 A: Verify branch selection:
+
 ```bash
 # Check current branch
 git branch
@@ -196,6 +204,7 @@ npm run env:select
 **Q: "GitHub Actions workflows not triggering"**
 
 A: Check workflow files exist:
+
 ```bash
 ls -la .github/workflows/
 # Should show:
@@ -207,6 +216,7 @@ ls -la .github/workflows/
 **Q: "How do I override environment locally?"**
 
 A: Create `.env.local` to override `.env`:
+
 ```bash
 # .env.local takes precedence over .env
 # Use for temporary local testing of staging config

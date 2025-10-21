@@ -60,6 +60,7 @@ main branch
 ### Step 1: Create Branch-Specific .env Files
 
 **`.env.staging`** (Commit this - no secrets!)
+
 ```bash
 # STAGING ENVIRONMENT VARIABLES
 # Deploy to: dev.railway.app
@@ -100,6 +101,7 @@ RATE_LIMIT_REQUESTS_PER_MINUTE=100
 ```
 
 **`.env.production`** (Commit this - no secrets!)
+
 ```bash
 # PRODUCTION ENVIRONMENT VARIABLES
 # Deploy to: glad-labs.vercel.app (frontend) + Railway (backend)
@@ -140,6 +142,7 @@ RATE_LIMIT_REQUESTS_PER_MINUTE=1000
 ```
 
 **`.env` (Local Development - NEVER commit)**
+
 ```bash
 # LOCAL DEVELOPMENT VARIABLES
 # Branch: feat/*, dev (local only)
@@ -300,7 +303,9 @@ const path = require('path');
 // Get current branch
 let branch;
 try {
-  branch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf-8' }).trim();
+  branch = execSync('git rev-parse --abbrev-ref HEAD', {
+    encoding: 'utf-8',
+  }).trim();
 } catch (error) {
   console.error('❌ Not in a git repository');
   process.exit(1);
@@ -347,7 +352,7 @@ console.log(`✅ Loaded: ${envFile} → .env.local`);
 
 ## 🚀 GitHub Actions Workflows
 
-### Workflow 1: Test on Feature Branches (feat/*)
+### Workflow 1: Test on Feature Branches (feat/\*)
 
 **`.github/workflows/test-on-feat.yml`**
 
@@ -366,31 +371,31 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
     env:
       NODE_ENV: development
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'npm'
-      
+
       - name: Install dependencies
         run: npm ci && npm ci --workspaces
-      
+
       - name: Load local dev environment
         run: cp .env.example .env.local
-      
+
       - name: Run tests
         run: npm run test
-      
+
       - name: Run linting
         run: npm run lint:fix
-      
+
       - name: Build check
         run: npm run build
 ```
@@ -410,35 +415,35 @@ on:
 jobs:
   deploy-staging:
     runs-on: ubuntu-latest
-    
+
     env:
       NODE_ENV: staging
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'npm'
-      
+
       - name: Install dependencies
         run: npm ci && npm ci --workspaces
-      
+
       - name: Load staging environment
         run: cp .env.staging .env.local
-      
+
       - name: Run tests
         run: npm run test
-      
+
       - name: Build frontend
         run: npm run build --workspace=web/public-site
         env:
           NEXT_PUBLIC_STRAPI_API_URL: ${{ secrets.STAGING_STRAPI_URL }}
           NEXT_PUBLIC_STRAPI_API_TOKEN: ${{ secrets.STAGING_STRAPI_TOKEN }}
-      
+
       - name: Deploy to Railway (staging)
         run: |
           npx railway link --project ${{ secrets.RAILWAY_STAGING_PROJECT_ID }}
@@ -462,41 +467,41 @@ on:
 jobs:
   deploy-production:
     runs-on: ubuntu-latest
-    
+
     env:
       NODE_ENV: production
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'npm'
-      
+
       - name: Install dependencies
         run: npm ci && npm ci --workspaces
-      
+
       - name: Load production environment
         run: cp .env.production .env.local
-      
+
       - name: Run tests
         run: npm run test
-      
+
       - name: Build frontend
         run: npm run build --workspace=web/public-site
         env:
           NEXT_PUBLIC_STRAPI_API_URL: ${{ secrets.PROD_STRAPI_URL }}
           NEXT_PUBLIC_STRAPI_API_TOKEN: ${{ secrets.PROD_STRAPI_TOKEN }}
-      
+
       - name: Deploy to Vercel (frontend)
         uses: vercel/action@v5
         with:
           token: ${{ secrets.VERCEL_TOKEN }}
           projectId: ${{ secrets.VERCEL_PROJECT_ID }}
           orgId: ${{ secrets.VERCEL_ORG_ID }}
-      
+
       - name: Deploy to Railway (backend)
         run: |
           npx railway link --project ${{ secrets.RAILWAY_PROD_PROJECT_ID }}
@@ -512,6 +517,7 @@ jobs:
 Set these secrets in GitHub repository settings (Settings → Secrets and variables → Actions):
 
 **Development/Staging Secrets:**
+
 ```
 STAGING_STRAPI_URL
 STAGING_STRAPI_TOKEN
@@ -519,6 +525,7 @@ RAILWAY_STAGING_PROJECT_ID
 ```
 
 **Production Secrets:**
+
 ```
 PROD_STRAPI_URL
 PROD_STRAPI_TOKEN
@@ -533,7 +540,7 @@ VERCEL_ORG_ID
 
 ## 📋 Workflow: Local Development → Staging → Production
 
-### 1. Local Development (feat/* branch)
+### 1. Local Development (feat/\* branch)
 
 ```bash
 # Switch to feature branch
@@ -602,11 +609,11 @@ git push origin main
 
 ## 🔀 Branch Strategy Summary
 
-| Branch | Environment | Variables | Database | Deploy Target | Testing |
-|--------|-------------|-----------|----------|---------------|---------| 
-| `feat/*` | Local Dev | `.env` | SQLite (local) | None (local only) | Manual + GitHub Actions |
-| `dev` | Staging | `.env.staging` | Postgres (staging DB) | Railway staging | GitHub Actions |
-| `main` | Production | `.env.production` | Postgres (prod DB) | Vercel + Railway prod | GitHub Actions |
+| Branch   | Environment | Variables         | Database              | Deploy Target         | Testing                 |
+| -------- | ----------- | ----------------- | --------------------- | --------------------- | ----------------------- |
+| `feat/*` | Local Dev   | `.env`            | SQLite (local)        | None (local only)     | Manual + GitHub Actions |
+| `dev`    | Staging     | `.env.staging`    | Postgres (staging DB) | Railway staging       | GitHub Actions          |
+| `main`   | Production  | `.env.production` | Postgres (prod DB)    | Vercel + Railway prod | GitHub Actions          |
 
 ---
 
@@ -620,7 +627,7 @@ git push origin main
 - [ ] Update `package.json` to call `npm run env:select` before dev/build
 - [ ] Create GitHub Actions workflows: `test-on-feat.yml`, `deploy-staging.yml`, `deploy-production.yml`
 - [ ] Add secrets to GitHub repository
-- [ ] Test locally: `npm run dev` on feat/* branch
+- [ ] Test locally: `npm run dev` on feat/\* branch
 - [ ] Test staging push: `git push origin dev` and monitor GitHub Actions
 - [ ] Test production push: `git push origin main` and verify Vercel + Railway deployment
 
@@ -629,6 +636,7 @@ git push origin main
 ## 🐛 Troubleshooting
 
 **Issue: "Cannot find .env file"**
+
 ```bash
 # Solution: Create it from example
 cp .env.example .env
@@ -638,6 +646,7 @@ npm run env:select
 ```
 
 **Issue: "Environment variables not loading in Next.js"**
+
 ```bash
 # Solution: Ensure .env.local exists and has NEXT_PUBLIC_* prefix
 # Next.js only exposes variables with NEXT_PUBLIC_ prefix to browser
@@ -647,6 +656,7 @@ console.log(process.env.NEXT_PUBLIC_STRAPI_API_URL);
 ```
 
 **Issue: "Different endpoints between local, staging, and production"**
+
 ```bash
 # Verify each environment file has correct URLs:
 grep "STRAPI_API_URL" .env .env.staging .env.production
@@ -658,6 +668,7 @@ grep "STRAPI_API_URL" .env .env.staging .env.production
 ```
 
 **Issue: "API calls failing in staging/production"**
+
 ```bash
 # Check if API tokens are set in GitHub Secrets
 # Go to: Settings → Secrets and variables → Actions
@@ -671,16 +682,16 @@ grep "STRAPI_API_URL" .env .env.staging .env.production
 
 ## 📚 Key Files Reference
 
-| File | Purpose |
-|------|---------|
-| `.env` | Local dev (NEVER commit) |
-| `.env.staging` | Staging config (commit) |
-| `.env.production` | Production config (commit) |
-| `.env.example` | Template (commit) |
-| `scripts/select-env.js` | Auto-select env based on branch |
-| `.github/workflows/test-on-feat.yml` | Test feature branches |
-| `.github/workflows/deploy-staging.yml` | Deploy dev→staging |
-| `.github/workflows/deploy-production.yml` | Deploy main→production |
+| File                                      | Purpose                         |
+| ----------------------------------------- | ------------------------------- |
+| `.env`                                    | Local dev (NEVER commit)        |
+| `.env.staging`                            | Staging config (commit)         |
+| `.env.production`                         | Production config (commit)      |
+| `.env.example`                            | Template (commit)               |
+| `scripts/select-env.js`                   | Auto-select env based on branch |
+| `.github/workflows/test-on-feat.yml`      | Test feature branches           |
+| `.github/workflows/deploy-staging.yml`    | Deploy dev→staging              |
+| `.github/workflows/deploy-production.yml` | Deploy main→production          |
 
 ---
 

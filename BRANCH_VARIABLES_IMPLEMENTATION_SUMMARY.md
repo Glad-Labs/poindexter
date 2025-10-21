@@ -9,7 +9,8 @@
 ## 📦 What Was Implemented
 
 You now have a **complete branch-specific environment setup** that automatically manages configurations for:
-- **Local Development** (`feat/*` branches) 
+
+- **Local Development** (`feat/*` branches)
 - **Staging** (`dev` branch)
 - **Production** (`main` branch)
 
@@ -18,6 +19,7 @@ You now have a **complete branch-specific environment setup** that automatically
 ## 🗂️ Files Created/Modified
 
 ### Environment Configuration Files
+
 ```
 ✅ .env.staging                    Created - Staging variables (PostgreSQL, staging APIs)
 ✅ .env.production                 Created - Production variables (PostgreSQL, prod APIs)
@@ -25,19 +27,22 @@ You now have a **complete branch-specific environment setup** that automatically
 ```
 
 ### Automation & Selection
+
 ```
 ✅ scripts/select-env.js           Created - Auto-selects .env based on git branch
 ✅ package.json                    Updated - dev/build scripts call env:select
 ```
 
 ### GitHub Actions Workflows
+
 ```
 ✅ .github/workflows/test-on-feat.yml         Created - Tests feature branches
-✅ .github/workflows/deploy-staging.yml       Created - Deploys dev→staging  
+✅ .github/workflows/deploy-staging.yml       Created - Deploys dev→staging
 ✅ .github/workflows/deploy-production.yml    Created - Deploys main→production
 ```
 
 ### Documentation
+
 ```
 ✅ docs/07-BRANCH_SPECIFIC_VARIABLES.md      Created - 1,500+ line comprehensive guide
 ✅ .github/copilot-instructions.md           Updated - Branch workflow guidance
@@ -45,9 +50,10 @@ You now have a **complete branch-specific environment setup** that automatically
 ```
 
 ### Git Commits
+
 ```
 ✅ 8544566fb - feat: add branch-specific environment configuration
-✅ 6d71eeb67 - docs: allow environment config files in version control  
+✅ 6d71eeb67 - docs: allow environment config files in version control
 ✅ 775341c66 - docs: add branch-specific environment quick start guide
 ```
 
@@ -133,44 +139,49 @@ GitHub Actions: deploy-production.yml
 
 ## 📊 Environment Comparison
 
-| Aspect | Local Dev | Staging | Production |
-|--------|-----------|---------|-----------|
-| **Branch** | `feat/*` | `dev` | `main` |
-| **Env File** | `.env` | `.env.staging` | `.env.production` |
-| **Database** | SQLite (local) | PostgreSQL (test) | PostgreSQL (prod) |
-| **Strapi URL** | `http://localhost:1337` | `https://staging-cms.railway.app` | `https://cms.railway.app` |
-| **Frontend URL** | `http://localhost:3000` | Staging Railway | `https://glad-labs.vercel.app` |
-| **Debug Logs** | Enabled | Disabled | Disabled |
-| **Analytics** | Disabled | Enabled | Enabled |
-| **Payments** | Disabled | Disabled (test) | Enabled (live) |
+| Aspect           | Local Dev               | Staging                           | Production                     |
+| ---------------- | ----------------------- | --------------------------------- | ------------------------------ |
+| **Branch**       | `feat/*`                | `dev`                             | `main`                         |
+| **Env File**     | `.env`                  | `.env.staging`                    | `.env.production`              |
+| **Database**     | SQLite (local)          | PostgreSQL (test)                 | PostgreSQL (prod)              |
+| **Strapi URL**   | `http://localhost:1337` | `https://staging-cms.railway.app` | `https://cms.railway.app`      |
+| **Frontend URL** | `http://localhost:3000` | Staging Railway                   | `https://glad-labs.vercel.app` |
+| **Debug Logs**   | Enabled                 | Disabled                          | Disabled                       |
+| **Analytics**    | Disabled                | Enabled                           | Enabled                        |
+| **Payments**     | Disabled                | Disabled (test)                   | Enabled (live)                 |
 
 ---
 
 ## 🔑 Key Features
 
 ### ✅ Automatic Environment Selection
+
 - No manual switching between configs
 - Just check out different branches, `npm run dev` does the rest
 - Eliminates config mistakes
 
 ### ✅ GitHub Actions Integration
+
 - Automatic tests on feature branches
 - Automatic staging deployment on dev push
 - Automatic production deployment on main push
 - Clear separation of concerns
 
 ### ✅ Secret Management
+
 - Environment config files committed (`.env.staging`, `.env.production`)
 - Actual secrets stored in GitHub Secrets
 - Never expose real API keys in repository
 
 ### ✅ Database Separation
+
 - Local: SQLite (no setup required)
 - Staging: Separate PostgreSQL database
 - Production: Separate PostgreSQL database
 - Data isolation between environments
 
 ### ✅ ISR & Caching Strategy
+
 - Local: Short cache (ISR revalidate: 60)
 - Staging: Medium cache (10 min)
 - Production: Long cache (60 min)
@@ -183,12 +194,14 @@ GitHub Actions: deploy-production.yml
 Before you start using this system:
 
 - [ ] **Create local `.env` file**
+
   ```bash
   cp .env.example .env
   # Edit with your local values
   ```
 
 - [ ] **Test environment selection**
+
   ```bash
   git checkout -b feat/test
   npm run env:select
@@ -330,15 +343,15 @@ ls -la .github/workflows/
 
 ## 📚 Reference Documentation
 
-| Document | Purpose | Location |
-|----------|---------|----------|
+| Document                            | Purpose                                      | Location                               |
+| ----------------------------------- | -------------------------------------------- | -------------------------------------- |
 | **Branch-Specific Variables Setup** | Complete implementation guide (1,500+ lines) | `docs/07-BRANCH_SPECIFIC_VARIABLES.md` |
-| **Quick Start Guide** | 5-step setup and verification | `BRANCH_SETUP_QUICK_START.md` |
-| **Copilot Instructions** | AI agent guidance with branch workflows | `.github/copilot-instructions.md` |
-| **Environment Selection Script** | Automatic branch→env matching | `scripts/select-env.js` |
-| **Staging Config** | Staging environment variables | `.env.staging` |
-| **Production Config** | Production environment variables | `.env.production` |
-| **Workflows** | GitHub Actions automation | `.github/workflows/` |
+| **Quick Start Guide**               | 5-step setup and verification                | `BRANCH_SETUP_QUICK_START.md`          |
+| **Copilot Instructions**            | AI agent guidance with branch workflows      | `.github/copilot-instructions.md`      |
+| **Environment Selection Script**    | Automatic branch→env matching                | `scripts/select-env.js`                |
+| **Staging Config**                  | Staging environment variables                | `.env.staging`                         |
+| **Production Config**               | Production environment variables             | `.env.production`                      |
+| **Workflows**                       | GitHub Actions automation                    | `.github/workflows/`                   |
 
 ---
 
@@ -361,6 +374,7 @@ The `scripts/select-env.js` script:
 ### Next.js Integration
 
 Next.js automatically:
+
 - Reads `.env.local` on startup
 - Exposes `NEXT_PUBLIC_*` variables to browser
 - Keeps other variables server-side
@@ -370,6 +384,7 @@ Next.js automatically:
 ### GitHub Actions Integration
 
 Workflows automatically:
+
 - Trigger on branch push
 - Load appropriate `.env.*` file
 - Use GitHub Secrets for sensitive values
@@ -381,16 +396,19 @@ Workflows automatically:
 ## 🎓 Learning Resources
 
 **For Setup:**
+
 1. Read: `BRANCH_SETUP_QUICK_START.md` (5-10 min)
 2. Run: `npm run env:select` (verify it works)
 3. Test: `npm run dev` (verify services start)
 
 **For Deep Dive:**
+
 1. Read: `docs/07-BRANCH_SPECIFIC_VARIABLES.md` (30-45 min)
 2. Explore: `.env.staging` and `.env.production`
 3. Review: `.github/workflows/` (understand automation)
 
 **For Daily Use:**
+
 - Just run `npm run dev` - environment auto-selects!
 - Commit to feature branch for testing
 - Push to dev for staging
@@ -407,7 +425,7 @@ Workflows automatically:
 ✅ GitHub Actions workflows for CI/CD  
 ✅ Complete setup documentation  
 ✅ Quick start guide for getting started  
-✅ Production-ready branch strategy  
+✅ Production-ready branch strategy
 
 **Next Steps:**
 
