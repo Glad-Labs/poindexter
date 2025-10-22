@@ -5,7 +5,7 @@
 When reverting to yarn for Strapi, Railway deployment failed with:
 
 ```
-error @noble/hashes@2.0.1: The engine "node" is incompatible with this module. 
+error @noble/hashes@2.0.1: The engine "node" is incompatible with this module.
 Expected version ">= 20.19.0". Got "18.20.8"
 ```
 
@@ -55,6 +55,7 @@ After Railway redeploys (2-5 minutes), verify:
 ### 1. Check Railway Logs
 
 Look for:
+
 ```
 [97m↳ Detected Node[0m
 [96m20.x.x[0m              <- Node version (not 18.x.x)
@@ -70,6 +71,7 @@ https://glad-labs-website-production.up.railway.app/admin
 ```
 
 Should:
+
 - ✅ Load without errors
 - ✅ No "Cannot send secure cookie" error
 - ✅ Accept login credentials
@@ -77,6 +79,7 @@ Should:
 ### 3. Check Services Status
 
 All services should be running on Railway:
+
 - PostgreSQL database ✅
 - Strapi CMS on port 1337 ✅
 - Node.js runtime ✅
@@ -90,8 +93,8 @@ All services should be running on Railway:
 
 ## Files Changed
 
-| File | Change | Reason |
-|------|--------|--------|
+| File                           | Change                        | Reason                          |
+| ------------------------------ | ----------------------------- | ------------------------------- |
 | `cms/strapi-main/package.json` | `"node": ">=20.0.0 <=22.x.x"` | Fix @noble/hashes compatibility |
 
 ## Deployment Timeline
@@ -115,4 +118,3 @@ All services should be running on Railway:
 4. ⏳ Test admin login
 5. ⏳ Verify production Strapi working
 6. ⏳ Local services connect to production Strapi
-
