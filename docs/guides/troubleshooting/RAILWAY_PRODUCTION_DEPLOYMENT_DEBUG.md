@@ -45,6 +45,7 @@ Must have:
 ```
 
 **Verify:**
+
 ```bash
 cat cms/strapi-main/package.json | grep -A 5 "engines"
 ```
@@ -53,21 +54,23 @@ cat cms/strapi-main/package.json | grep -A 5 "engines"
 
 Log into Railway dashboard and set these variables for your Strapi service:
 
-| Variable | Value | Notes |
-|----------|-------|-------|
-| `NODE_ENV` | `production` | REQUIRED - controls secure cookie behavior |
-| `DATABASE_URL` | PostgreSQL connection | Railway auto-provides this ✅ |
-| `DATABASE_CLIENT` | `postgres` | Must be explicit for PostgreSQL |
-| `ADMIN_JWT_SECRET` | [random string] | Used for admin tokens - set in Railway secrets |
-| `API_TOKEN_SALT` | [random string] | Used for API tokens - set in Railway secrets |
-| `TRANSFER_TOKEN_SALT` | [random string] | Used for transfer tokens - set in Railway secrets |
+| Variable              | Value                 | Notes                                             |
+| --------------------- | --------------------- | ------------------------------------------------- |
+| `NODE_ENV`            | `production`          | REQUIRED - controls secure cookie behavior        |
+| `DATABASE_URL`        | PostgreSQL connection | Railway auto-provides this ✅                     |
+| `DATABASE_CLIENT`     | `postgres`            | Must be explicit for PostgreSQL                   |
+| `ADMIN_JWT_SECRET`    | [random string]       | Used for admin tokens - set in Railway secrets    |
+| `API_TOKEN_SALT`      | [random string]       | Used for API tokens - set in Railway secrets      |
+| `TRANSFER_TOKEN_SALT` | [random string]       | Used for transfer tokens - set in Railway secrets |
 
 **How to verify in Railway:**
+
 1. Go to railway.app → Your Project → Strapi Service → Settings
 2. Click "Environment" or "Variables"
 3. Verify all 6 variables are set and NOT empty
 
 **DO NOT leave these blank:**
+
 ```
 ❌ ADMIN_JWT_SECRET=
 ❌ API_TOKEN_SALT=
@@ -91,10 +94,12 @@ const client = env('DATABASE_CLIENT', 'sqlite');
 **File:** `config/admin.ts` - Already correct:
 
 ```typescript
-secure: env('NODE_ENV') === 'production' || env.bool('FORCE_SECURE_COOKIE', false)
+secure: env('NODE_ENV') === 'production' ||
+  env.bool('FORCE_SECURE_COOKIE', false);
 ```
 
 This means:
+
 - ✅ Production (NODE_ENV=production) → secure: true → HTTPS cookies work
 - ✅ Local (NODE_ENV=development) → secure: false → localhost works
 - ✅ Override with `FORCE_SECURE_COOKIE=true` if needed
@@ -108,6 +113,7 @@ This means:
 **Cause:** `build.sh` is not executable or not found
 
 **Fix:**
+
 ```bash
 cd cms/strapi-main
 chmod +x build.sh
@@ -121,6 +127,7 @@ git push
 **Cause:** Procfile or build script not using correct package manager
 
 **Fix:** Ensure these files are correct:
+
 - `Procfile`: `web: yarn start` (NOT `npm start`)
 - `build.sh`: Uses `yarn install` (NOT `npm install`)
 - `.nvmrc`: Set to `20.19.5`
@@ -130,6 +137,7 @@ git push
 **Cause:** Node version wrong (needs 20+, not 18)
 
 **Fix:**
+
 1. Verify `.nvmrc` contains: `20.19.5` (just version number)
 2. Verify `package.json` has: `"node": ">=20.0.0 <=22.x.x"`
 3. Verify `Procfile` is set (tells Railway to use custom start)
@@ -139,6 +147,7 @@ git push
 **Cause:** `NODE_ENV` not set to `production` in Railway
 
 **Fix:** Set in Railway dashboard:
+
 ```
 NODE_ENV=production
 ```
@@ -148,6 +157,7 @@ NODE_ENV=production
 **Cause:** Missing or blank JWT/token secrets
 
 **Fix:** Set in Railway dashboard:
+
 ```
 ADMIN_JWT_SECRET=[random-string-at-least-16-chars]
 API_TOKEN_SALT=[random-string-at-least-16-chars]
@@ -159,12 +169,14 @@ TRANSFER_TOKEN_SALT=[random-string-at-least-16-chars]
 **Cause:** Railway using npm instead of yarn
 
 **Fix:** All 4 Railway config files must exist:
+
 1. `Procfile` - Tells Railway to use yarn start
 2. `.nvmrc` - Specifies Node version
 3. `.yarnrc.yml` - Yarn configuration
 4. `yarn.lock` - Signals this is a yarn project
 
 **Verify all exist:**
+
 ```bash
 ls -la cms/strapi-main/{Procfile,.nvmrc,.yarnrc.yml,yarn.lock,build.sh}
 ```
@@ -214,6 +226,7 @@ cd cms/strapi-main && npm run develop
    - `TRANSFER_TOKEN_SALT` = [set]
 
 **If any are blank or missing:**
+
 1. Click "Edit"
 2. Add the missing variables
 3. Click "Save"
@@ -253,6 +266,7 @@ git push origin main
 5. Check "Deployment Logs" for runtime errors
 
 **Look for these success indicators:**
+
 ```
 ✅ "Using yarn package manager"
 ✅ "yarn install" completed successfully
@@ -261,6 +275,7 @@ git push origin main
 ```
 
 **Look for these failure indicators:**
+
 ```
 ❌ "npm: not found" - Wrong package manager
 ❌ "node-version:" error - Wrong .nvmrc format
@@ -310,6 +325,7 @@ git push origin main
 ```
 
 Must be EXACTLY this format:
+
 - ✅ Just the version number
 - ❌ NOT `node-version: 20.19.5`
 - ❌ NOT `node=20.19.5`
@@ -340,15 +356,15 @@ git push origin main
 
 ## 📊 Expected Railway Build Timeline
 
-| Step | Time | What's Happening |
-|------|------|------------------|
-| Detect | 10s | Railway detects push, reads railway.json |
-| Build Start | 30s | Runs `bash build.sh` |
-| yarn install | 1-2m | Downloads all dependencies with yarn |
-| yarn build | 1-2m | Compiles TypeScript, builds Strapi |
-| Deploy | 30s | Copies build to production, runs Procfile |
-| Start | 20s | `yarn start` initializes, connects to DB |
-| Ready | 5-10m total | Strapi running and accessible ✅ |
+| Step         | Time        | What's Happening                          |
+| ------------ | ----------- | ----------------------------------------- |
+| Detect       | 10s         | Railway detects push, reads railway.json  |
+| Build Start  | 30s         | Runs `bash build.sh`                      |
+| yarn install | 1-2m        | Downloads all dependencies with yarn      |
+| yarn build   | 1-2m        | Compiles TypeScript, builds Strapi        |
+| Deploy       | 30s         | Copies build to production, runs Procfile |
+| Start        | 20s         | `yarn start` initializes, connects to DB  |
+| Ready        | 5-10m total | Strapi running and accessible ✅          |
 
 If build takes longer than 10 minutes, check logs for errors.
 
@@ -378,5 +394,6 @@ curl https://your-railway-url.app/api/posts \
 **Package Manager:** yarn 1.22.22
 
 See also:
+
 - `docs/guides/troubleshooting/01-RAILWAY_YARN_FIX.md`
 - `docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md`

@@ -1,7 +1,7 @@
 # ⚡ IMMEDIATE ACTION: Railway Environment Variables Checklist
 
 **Status:** Production Strapi build failing  
-**Action Required:** Verify Railway environment variables are set  
+**Action Required:** Verify Railway environment variables are set
 
 ---
 
@@ -18,16 +18,17 @@ Railway dashboard **environment variables are missing or blank**.
 5. **Click:** "Environment" section
 6. **Verify these 6 variables are set:**
 
-| Variable | Status | Value |
-|----------|--------|-------|
-| `NODE_ENV` | [ ] Set? | `production` |
-| `DATABASE_URL` | [ ] Set? | Auto-provided by Railway ✅ |
-| `DATABASE_CLIENT` | [ ] Set? | `postgres` |
-| `ADMIN_JWT_SECRET` | [ ] Set? | (any long random string) |
-| `API_TOKEN_SALT` | [ ] Set? | (any long random string) |
-| `TRANSFER_TOKEN_SALT` | [ ] Set? | (any long random string) |
+| Variable              | Status   | Value                       |
+| --------------------- | -------- | --------------------------- |
+| `NODE_ENV`            | [ ] Set? | `production`                |
+| `DATABASE_URL`        | [ ] Set? | Auto-provided by Railway ✅ |
+| `DATABASE_CLIENT`     | [ ] Set? | `postgres`                  |
+| `ADMIN_JWT_SECRET`    | [ ] Set? | (any long random string)    |
+| `API_TOKEN_SALT`      | [ ] Set? | (any long random string)    |
+| `TRANSFER_TOKEN_SALT` | [ ] Set? | (any long random string)    |
 
 **If ANY are missing or blank:**
+
 1. Click "Edit" button
 2. Add missing variables
 3. Click "Save"
@@ -60,21 +61,27 @@ Railway dashboard **environment variables are missing or blank**.
 ## ⚡ Quick Fixes by Error Type
 
 ### If you see "Cannot send secure cookie"
+
 → Set: `NODE_ENV=production`
 
 ### If you see "@noble/hashes" or "engine" error
+
 → Check `.nvmrc` contains exactly: `20.19.5`
 
 ### If you see "yarn: command not found"
+
 → Check `Procfile` contains exactly: `web: yarn start`
 
 ### If you see "Cannot create admin session"
+
 → Set all three JWT/salt secrets:
+
 - `ADMIN_JWT_SECRET=`
 - `API_TOKEN_SALT=`
 - `TRANSFER_TOKEN_SALT=`
 
 ### If you see database errors
+
 → Verify `DATABASE_CLIENT=postgres` is set
 
 ---
