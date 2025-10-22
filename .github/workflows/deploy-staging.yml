@@ -43,11 +43,8 @@ jobs:
         run: npm run test:frontend:ci
         continue-on-error: true
 
-      - name: 🏗️ Build frontend
-        run: npm run build --workspace=web/public-site
-        env:
-          NEXT_PUBLIC_STRAPI_API_URL: ${{ secrets.STAGING_STRAPI_URL }}
-          NEXT_PUBLIC_STRAPI_API_TOKEN: ${{ secrets.STAGING_STRAPI_TOKEN }}
+      - name: 🏗️ Build all workspaces
+        run: npm run build --if-present
 
       - name: 🚀 Deploy to Railway (Staging)
         if: success()

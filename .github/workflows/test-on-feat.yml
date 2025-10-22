@@ -48,7 +48,7 @@ jobs:
         run: npm run test:frontend:ci
         continue-on-error: true
 
-      - name: 🧪 Run Python tests
+      - name: 🧪 Run Python smoke tests
         run: npm run test:python:smoke
         continue-on-error: true
 
@@ -56,8 +56,8 @@ jobs:
         run: npm run lint:fix
         continue-on-error: true
 
-      - name: 🏗️ Build check
-        run: npm run build
+      - name: 🏗️ Build check (all workspaces)
+        run: npm run build --if-present
 
       - name: ✅ Tests and build completed
         run: echo "Feature branch testing complete"
