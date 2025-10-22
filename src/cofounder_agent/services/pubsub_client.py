@@ -35,11 +35,8 @@ class PubSubClient:
     def __init__(self, project_id: Optional[str] = None):
         """Initialize Pub/Sub client with project configuration"""
         self.project_id = project_id or os.getenv('GCP_PROJECT_ID')
-        self.dev_mode = os.getenv('DEV_MODE', 'false').lower() == 'true' or os.getenv('USE_MOCK_SERVICES', 'false').lower() == 'true'
-        
         if not self.project_id:
             logger.warning("No GCP_PROJECT_ID found, using default project")
-            self.project_id = "glad-labs-dev-local"
         
         try:
             if pubsub_v1 is None:
@@ -56,29 +53,16 @@ class PubSubClient:
                 'content_pipeline': self.publisher.topic_path(self.project_id, 'content-pipeline')
             }
             
-            if self.dev_mode:
-                logger.info("Pub/Sub client initialized in DEV MODE (local/mock services)", 
-                           project_id=self.project_id,
-                           topics=list(self.topics.keys()))
-            else:
-                logger.info("Pub/Sub client initialized", 
-                           project_id=self.project_id,
-                           topics=list(self.topics.keys()))
+            logger.info("Pub/Sub client initialized", 
+                       project_id=self.project_id,
+                       topics=list(self.topics.keys()))
             
         except Exception as e:
             logger.error("Failed to initialize Pub/Sub client", error=str(e))
-            if not self.dev_mode:
-                raise
-            else:
-                logger.warning("Continuing in dev mode without Pub/Sub functionality")
+            raise
     
     async def ensure_topics_exist(self) -> bool:
         """Ensure all required topics exist, create if missing"""
-        # Skip in dev mode to avoid GCP authentication errors
-        if self.dev_mode:
-            logger.info("Skipping topic creation in dev mode")
-            return True
-            
         try:
             for topic_name, topic_path in self.topics.items():
                 try:

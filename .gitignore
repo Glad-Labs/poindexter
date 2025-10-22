@@ -30,16 +30,11 @@ cms/strapi-v5-backend-old-backup/
 cms/strapi-main_orig.zip
 
 # Environment variables
-# Local overrides (never commit)
 .env
 .env.local
 .env.*.local
-.env.secrets
-
-# Environment config files (DO commit these - they have no secrets)
-!.env.example
-!.env.staging
-!.env.production
+.env.production
+.env.development
 
 # Environment & Credentials
 credentials.json

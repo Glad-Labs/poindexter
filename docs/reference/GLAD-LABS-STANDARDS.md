@@ -44,7 +44,7 @@ The entire system is built on a monorepo structure, with a central AI Co-Founder
 
 - **/src/cofounder_agent/**: The central AI Co-Founder.
 - **/src/agents/content_agent/**: The specialized agent responsible for content generation.
-- **/cms/strapi-main/**: The Strapi v5 application, serving as the headless CMS.
+- **/cms/strapi-v5-backend/**: The Strapi v5 application, serving as the headless CMS.
 - **/web/oversight-hub/**: The React dashboard for monitoring and controlling the Co-Founder.
 - **/web/public-site/**: The public-facing Next.js website and blog.
 - **/cloud-functions/**: Lightweight, serverless functions for specific triggers.

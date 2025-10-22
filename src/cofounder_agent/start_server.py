@@ -6,40 +6,19 @@ This script bypasses the complex import issues by running directly
 
 import sys
 import os
-from pathlib import Path
-
-# Fix Unicode encoding on Windows
-if sys.platform == 'win32':
-    import io
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 # Add the src directory to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-
-# Load environment variables from .env file
-try:
-    from dotenv import load_dotenv
-    # Find .env file in project root (two levels up from this file)
-    env_path = Path(__file__).parent.parent.parent / '.env'
-    if env_path.exists():
-        load_dotenv(env_path)
-        print(f"[OK] Loaded environment variables from {env_path}")
-    else:
-        print(f"[WARN] No .env file found at {env_path}")
-except ImportError:
-    print("[WARN] python-dotenv not installed. Environment variables from .env will not be loaded.")
-    print("       Install with: pip install python-dotenv")
 
 try:
     from main import app
     import uvicorn
     
     if __name__ == "__main__":
-        print("[INFO] Starting GLAD Labs AI Co-Founder Agent Server...")
-        print("[INFO] Server will be available at http://localhost:8000")
-        print("[INFO] API documentation at http://localhost:8000/docs")
-        print("[INFO] Development mode - Google Cloud services simulated")
+        print("🚀 Starting GLAD Labs AI Co-Founder Agent Server...")
+        print("📡 Server will be available at http://localhost:8000")
+        print("📖 API documentation at http://localhost:8000/docs")
+        print("🔧 Development mode - Google Cloud services simulated")
         
         uvicorn.run(
             app,
@@ -49,8 +28,8 @@ try:
             log_level="info"
         )
 except ImportError as e:
-    print(f"[ERROR] Import error: {e}")
-    print("[INFO] Falling back to basic server...")
+    print(f"❌ Import error: {e}")
+    print("🔧 Falling back to basic server...")
     
     # Fallback implementation
     from fastapi import FastAPI

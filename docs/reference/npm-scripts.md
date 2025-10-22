@@ -111,7 +111,7 @@ All npm scripts across the GLAD Labs monorepo have been reviewed, fixed, and ver
 
 ---
 
-### Strapi Backend (`cms/strapi-main/package.json`)
+### Strapi Backend (`cms/strapi-v5-backend/package.json`)
 
 | Script                | Status     | Test Result              |
 | --------------------- | ---------- | ------------------------ |
@@ -289,7 +289,7 @@ Before running full `npm run dev`, test each service:
 
 ```powershell
 # Test Strapi
-cd cms/strapi-main
+cd cms/strapi-v5-backend
 npm run develop
 
 # Test Oversight Hub
@@ -331,20 +331,19 @@ python start_server.py
 
 ### Optional (Code Quality)
 
-1. 📋 **Run Formatter**
+4. 📋 **Run Formatter**
 
    ```powershell
    npm run format
    ```
 
-2. 📋 **Fix Lint Issues**
+5. 📋 **Fix Lint Issues**
 
    ```powershell
    npm run lint:fix
    ```
 
-3. 📋 **Run Full Test Suite**
-
+6. 📋 **Run Full Test Suite**
    ```powershell
    npm test
    ```
@@ -355,9 +354,9 @@ python start_server.py
 
 All scripts are now properly documented in:
 
-- **[01-SETUP_AND_OVERVIEW.md](../01-SETUP_AND_OVERVIEW.md)** - Installation and setup
-- **[02-ARCHITECTURE_AND_DESIGN.md](../02-ARCHITECTURE_AND_DESIGN.md)** - Development workflows
-- **[README.md](../00-README.md)** - Quick reference
+- **[01-SETUP_GUIDE.md](../docs/01-SETUP_GUIDE.md)** - Installation and setup
+- **[03-TECHNICAL_DESIGN.md](../docs/03-TECHNICAL_DESIGN.md)** - Development workflows
+- **[README.md](../README.md)** - Quick reference
 
 ---
 

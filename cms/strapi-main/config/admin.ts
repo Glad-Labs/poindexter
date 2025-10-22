@@ -9,7 +9,13 @@
  * @see https://docs.strapi.io/dev-docs/configurations/admin-panel
  * @see https://docs.railway.app/deploy/deployments#https-and-ssl
  */
-export default ({ env }) => ({
+
+interface EnvHelper {
+  (key: string, defaultValue?: string | boolean): string | boolean;
+  bool(key: string, defaultValue?: boolean): boolean;
+}
+
+export default ({ env }: { env: EnvHelper }) => ({
   // Explicitly set admin URLs to use HTTPS
   url: env('ADMIN_URL', '/admin'),
   serveAdminPanel: true,
