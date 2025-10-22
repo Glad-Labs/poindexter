@@ -7,7 +7,7 @@
 ## 📌 What's Here?
 
 - **Phase 1-3 Implementations** - Earlier architecture approaches
-- **Deprecated Guides** - Older setup and deployment guides  
+- **Deprecated Guides** - Older setup and deployment guides
 - **Status Reports** - Session notes and progress updates
 - **Experiments** - Attempted solutions that didn't ship
 - **Consolidation Planning** - Documentation reorganization files
@@ -23,6 +23,7 @@
 ## ✨ What's NOT Here
 
 Everything currently used is in the active docs:
+
 - **Core Docs** → `docs/00-README.md` and numbered files (01-07)
 - **Guides** → `docs/guides/` - How-to guides and quick starts
 - **Reference** → `docs/reference/` - Technical specifications
@@ -32,6 +33,7 @@ Everything currently used is in the active docs:
 ## � Organization
 
 Files are named to indicate their content and phase:
+
 - `PHASE*.md` - Phase-specific implementations
 - `RAILWAY_*.md` - Railway deployment explorations
 - `STRAPI_*.md` - Strapi CMS iterations
