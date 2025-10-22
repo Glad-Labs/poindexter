@@ -15,20 +15,20 @@
     "upgrade:dry": "npx @strapi/upgrade latest --dry"
   },
   "dependencies": {
-    "@strapi/plugin-users-permissions": "^5.18.1",
-    "@strapi/provider-upload-local": "^5.18.1",
-    "@strapi/strapi": "^5.18.1",
+    "@strapi/provider-upload-local": "5.18.1",
+    "@strapi/plugin-users-permissions": "5.18.1",
+    "@strapi/strapi": "5.18.1",
     "pg": "8.8.0",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
     "react-router-dom": "^6.0.0",
     "styled-components": "^6.0.0"
   },
+  "devDependencies": {},
   "engines": {
     "node": ">=18.0.0 <=22.x.x",
-    "yarn": ">=1.22.0"
+    "npm": ">=6.0.0"
   },
-  "packageManager": "yarn@1.22.22",
   "strapi": {
     "uuid": "ae97edc3-b9a5-4000-bd34-43b102ca9a04"
   }
