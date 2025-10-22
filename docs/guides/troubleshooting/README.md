@@ -1,10 +1,28 @@
-# 🆘 Troubleshooting Guide
+# 🆘 Troubleshooting & Recent Fixes
 
-This folder contains solutions to common issues encountered during development and deployment.
+> **Solutions for common GLAD Labs issues**
+>
+> This folder contains solutions for development and deployment problems, including critical fixes from October 2025 production work.
 
-## 📋 Recent Railway & Strapi Fixes
+## ⚡ Quick Fixes
 
-These are critical fixes discovered during October 2025 production deployment:
+- **[Quick Fix Checklist](./QUICK_FIX_CHECKLIST.md)** - Start here for quick solutions to common issues
+- **[Railway Yarn Fix](./01-RAILWAY_YARN_FIX.md)** - Resolve Railway package manager errors
+
+## 🔧 Strapi Issues
+
+- **[Strapi HTTPS Cookies](./strapi-https-cookies.md)** - Fix "Cannot send secure cookie" errors
+- **[Strapi Cookie Error Diagnostic](./STRAPI_COOKIE_ERROR_DIAGNOSTIC.md)** - Detailed diagnosis of cookie errors
+- **[SWC Native Binding Fix](./swc-native-binding-fix.md)** - Resolve SWC native module errors
+
+## 🚂 Railway Deployment
+
+- **[Railway Deployment Guide](./railway-deployment-guide.md)** - Complete Railway production deployment steps
+- **[Railway Production Deployment Debug](./RAILWAY_PRODUCTION_DEPLOYMENT_DEBUG.md)** - Debug production deployment issues
+
+## 📋 Related Comprehensive Resources
+
+For more detailed troubleshooting, see:
 
 ### [1️⃣ Railway Yarn Configuration](./01-RAILWAY_YARN_FIX.md)
 **When:** Strapi deployment fails with npm on Railway  

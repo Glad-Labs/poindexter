@@ -1,52 +1,74 @@
-# 📚 Archive - Historical Documentation# Documentation Archive
+# � Archived Documentation
 
-> **Archived Documentation from GLAD Labs**This directory contains archived documentation from previous development phases, legacy reports, and superseded guides. These files are preserved for historical reference but are no longer actively maintained.
-
+> **Historical and superseded documentation**
 >
+> This folder contains documentation from previous phases, experiments, and iterations that are no longer actively used but are preserved for historical reference.
 
-> These documents are historical records preserved for reference. For current information, see the main documentation.## Archive Organization
+## 📌 What's Here?
 
-**Last Archived**: October 18, 2025 ### Legacy Reports (`legacy-reports/`)
+- **Phase 1-3 Implementations** - Earlier architecture approaches
+- **Deprecated Guides** - Older setup and deployment guides  
+- **Status Reports** - Session notes and progress updates
+- **Experiments** - Attempted solutions that didn't ship
+- **Consolidation Planning** - Documentation reorganization files
 
-**Archived Docs**: 46+ files
+## 🔍 When to Look Here
 
-Historical reports, analyses, and summaries from previous development phases:
+- You're debugging an old issue and want historical context
+- You need to understand why a decision was made
+- You're reviewing project evolution
+- You're researching an archived solution
+- You need background on consolidation efforts
+
+## ✨ What's NOT Here
+
+Everything currently used is in the active docs:
+- **Core Docs** → `docs/00-README.md` and numbered files (01-07)
+- **Guides** → `docs/guides/` - How-to guides and quick starts
+- **Reference** → `docs/reference/` - Technical specifications
+- **Components** → `docs/components/` - Component-specific documentation
+- **Troubleshooting** → `docs/guides/troubleshooting/` - Problem solutions
+
+## � Organization
+
+Files are named to indicate their content and phase:
+- `PHASE*.md` - Phase-specific implementations
+- `RAILWAY_*.md` - Railway deployment explorations
+- `STRAPI_*.md` - Strapi CMS iterations
+- `SECURITY_*.md` - Security investigations
+- `TESTING_*.md` - Testing phase work
+- `*_COMPLETE.md` - Project phase completions
+- `*_SUMMARY.md` - Session summaries
+- `DOCUMENTATION_*.md` - Documentation reorganization efforts
+- `CONSOLIDATION_*.md` - Consolidation planning files
+- `REORGANIZATION_*.md` - Structure reorganization files
+
+## 🚀 Finding Specific Content
+
+**Looking for X?** Check the active documentation first:
+
+- **Getting started** → `docs/01-SETUP_AND_OVERVIEW.md`
+- **Architecture** → `docs/02-ARCHITECTURE_AND_DESIGN.md`
+- **Deployment** → `docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md`
+- **Development workflow** → `docs/04-DEVELOPMENT_WORKFLOW.md`
+- **AI agents** → `docs/05-AI_AGENTS_AND_INTEGRATION.md`
+- **Operations** → `docs/06-OPERATIONS_AND_MAINTENANCE.md`
+- **Environment config** → `docs/07-BRANCH_SPECIFIC_VARIABLES.md`
+- **How-to guides** → `docs/guides/`
+- **Technical specs** → `docs/reference/`
+- **Component docs** → `docs/components/`
+- **Troubleshooting** → `docs/guides/troubleshooting/`
+
+If not found there, search in this archive directory for historical context.
+
+## 📝 Note on This Archive
+
+This archive is preserved as-is from October 21, 2025 consolidation effort. Files here are not actively maintained. For current information, always refer to the active documentation structure listed above.
 
 ---
 
-- Codebase analysis reports
-
-## 📑 Quick Navigation- Health check reports
-
-- Code review summaries
-
-**← [Back to Main Docs](../00-README.md)** | **[Setup](../01-SETUP_AND_OVERVIEW.md)** | **[Architecture](../02-ARCHITECTURE_AND_DESIGN.md)**- Bug reports and investigations
-
-- File update logs
-
----- Master documentation indices (superseded)
-
-## 🔄 What Changed### Implementation Logs (`implementation-logs/`)
-
-Documentation has been reorganized for clarity:Historical implementation summaries and completion reports:
-
-| Old Location | New Location |- Cost optimization implementations
-
-|--------------|--------------|- Test implementation summaries
-
-| Various quick-fix docs | [troubleshooting/](../troubleshooting/) |- Phase implementation logs
-
-| Deployment guides | [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](../03-DEPLOYMENT_AND_INFRASTRUCTURE.md) |- Oversight Hub enhancement logs
-
-| Setup guides | [01-SETUP_AND_OVERVIEW.md](../01-SETUP_AND_OVERVIEW.md) |- Reorganization and setup summaries
-
-| Development workflow | [04-DEVELOPMENT_WORKFLOW.md](../04-DEVELOPMENT_WORKFLOW.md) |- Documentation consolidation logs
-
-| All other guides | [guides/](../guides/) |
-
-## What's Archived Here
-
----
+**Last Updated:** October 21, 2025  
+**Consolidation Phase:** Final documentation structure cleanup
 
 - **Production deployment guides** - Superseded by updated deployment documentation
 
