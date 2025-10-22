@@ -1,9 +1,10 @@
 {
-    "$schema": "https://backboard.railway.app/railway.schema.json",
-    "build": {
-        "builder": "RAILPACK"
-    },
-    "deploy": {
-        "restartPolicyMaxRetries": 5
-    }
+  "$schema": "https://backboard.railway.app/railway.schema.json",
+  "build": {
+    "builder": "RAILPACK",
+    "buildCommand": "bash build.sh"
+  },
+  "deploy": {
+    "restartPolicyMaxRetries": 5
+  }
 }
