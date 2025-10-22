@@ -20,7 +20,7 @@ export default ({ env }) => ({
       maxRefreshTokenLifespan: 1000 * 60 * 60 * 24 * 30, // 30 days
       // Admin refresh token cookie settings (Strapi v5+)
       cookie: {
-        secure: env.bool('NODE_ENV', 'development') === 'production', // Use secure cookies in production
+        secure: env('NODE_ENV') === 'production', // Use secure cookies in production
         httpOnly: true, // Prevent XSS attacks
         sameSite: 'lax', // Allow navigation from external sites
       },
