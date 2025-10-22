@@ -2,7 +2,8 @@
 set -e
 
 echo "Installing dependencies with yarn..."
-yarn install
+# Remove --frozen-lockfile to allow yarn to update lockfile if needed
+yarn install --non-interactive
 
 echo "Building Strapi..."
 yarn run build
