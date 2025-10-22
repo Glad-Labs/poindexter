@@ -522,6 +522,7 @@ The documentation structure is regularly reviewed and consolidated. To perform a
 **See:** [`DOCUMENTATION_CONSOLIDATION_PROMPT.md`](./DOCUMENTATION_CONSOLIDATION_PROMPT.md)
 
 This prompt can be reused with any AI assistant to:
+
 - ✅ Inventory all documentation files
 - ✅ Identify duplicates, orphaned files, and structural issues
 - ✅ Create a prioritized consolidation plan
@@ -532,6 +533,7 @@ This prompt can be reused with any AI assistant to:
 ### Recent Consolidation (October 22, 2025)
 
 Documentation was consolidated:
+
 - 🔧 Recent fixes moved to `docs/guides/troubleshooting/` (numbered 01-04)
 - 📦 Hybrid package manager strategy moved to `docs/guides/`
 - 🗂️ Outdated setup guides archived to `docs/archive-old/`
