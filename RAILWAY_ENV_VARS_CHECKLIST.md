@@ -1,13 +1,24 @@
 # ⚡ IMMEDIATE ACTION: Railway Environment Variables Checklist
 
-**Status:** Production Strapi build failing  
-**Action Required:** Verify Railway environment variables are set
+**Status:** Production Strapi deployment - Latest fixes applied (Oct 22, 2025)  
+**Action Required:** Verify Railway environment variables + trigger rebuild
 
 ---
 
-## 🚨 MOST LIKELY ISSUE
+## ✅ FIXES ALREADY APPLIED
 
-Railway dashboard **environment variables are missing or blank**.
+- ✅ Fixed Strapi package version mismatch (all 5.18.1)
+- ✅ Downgraded Node to 18.20.3 (more stable)
+- ✅ Created proper minimal yarn.lock
+- ✅ Updated .nvmrc format for Railway
+
+**Status:** Code fixes pushed to GitHub → Railway should auto-redeploy now
+
+---
+
+## 🚨 LIKELY REMAINING ISSUE
+
+Railway dashboard **environment variables are still missing or blank**.
 
 ## ✅ DO THIS NOW
 
@@ -36,24 +47,27 @@ Railway dashboard **environment variables are missing or blank**.
 
 ---
 
-## 🔍 How to Check What Error You're Getting
+## 🔍 How to Check Build Status
 
 1. Go to https://railway.app → Your Project → Strapi
 2. Click "Deployments" tab
-3. Click the latest deployment
+3. Click the latest deployment (should show recent timestamp)
 4. Scroll through logs looking for:
+   - ✅ "server has started successfully" - SUCCESS!
+   - 🟢 "Using yarn1 package manager" - expected
+   - 🟢 "yarn install --frozen-lockfile" - expected
+   - 🟢 "yarn run build" - expected
    - 🔴 "error" (in red) - note the exact message
    - 🟠 "failed" - note what failed
-   - 🔵 "warning" - may indicate issues
 
 **Common error messages to look for:**
 
 ```
 ❌ "Cannot send secure cookie" → NODE_ENV not set to production
-❌ "@noble/hashes" error → Node version wrong (need 20)
-❌ "yarn: command not found" → Procfile missing
+❌ "cannot find module" or "ENOENT" → Dependency missing
+❌ "Failed to connect to database" → DATABASE_URL not set or wrong
 ❌ "Cannot create admin" → ADMIN_JWT_SECRET blank
-❌ "Failed to connect to database" → DATABASE_URL not set
+❌ "yarn install --frozen-lockfile" error → Strapi package mismatch (already fixed)
 ```
 
 ---
@@ -64,9 +78,9 @@ Railway dashboard **environment variables are missing or blank**.
 
 → Set: `NODE_ENV=production`
 
-### If you see "@noble/hashes" or "engine" error
+### If you see dependency or module errors
 
-→ Check `.nvmrc` contains exactly: `20.19.5`
+→ Already fixed! Package.json mismatch resolved on Oct 22
 
 ### If you see "yarn: command not found"
 
@@ -76,9 +90,9 @@ Railway dashboard **environment variables are missing or blank**.
 
 → Set all three JWT/salt secrets:
 
-- `ADMIN_JWT_SECRET=`
-- `API_TOKEN_SALT=`
-- `TRANSFER_TOKEN_SALT=`
+- `ADMIN_JWT_SECRET=` (e.g., `your-secret-key-here`)
+- `API_TOKEN_SALT=` (e.g., `another-secret-here`)
+- `TRANSFER_TOKEN_SALT=` (e.g., `third-secret-here`)
 
 ### If you see database errors
 
@@ -97,7 +111,11 @@ Railway dashboard **environment variables are missing or blank**.
 
 ## 📞 If Still Not Working
 
-1. Run the pre-deployment checklist in: `docs/guides/troubleshooting/RAILWAY_PRODUCTION_DEPLOYMENT_DEBUG.md`
+1. Check: `docs/guides/troubleshooting/RAILWAY_PRODUCTION_DEPLOYMENT_DEBUG.md`
+2. Look up your error message in the error reference section
+3. Apply the corresponding fix
+
+
 2. Check all 4 Railway config files exist locally:
    - `Procfile`
    - `.nvmrc`

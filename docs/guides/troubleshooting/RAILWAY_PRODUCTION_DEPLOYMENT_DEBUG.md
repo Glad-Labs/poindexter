@@ -1,8 +1,41 @@
 # 🚀 Railway Strapi Deployment Troubleshooting - Production Build Error
 
-**Issue:** Strapi build failing on Railway.app
+**Issue:** Strapi build failing on Railway.app with: "Your lockfile needs to be updated, but yarn was run with `--frozen-lockfile`"
 
 **Date:** October 22, 2025
+
+---
+
+## ✅ SOLUTION APPLIED (October 22, 2025)
+
+### Root Cause Identified
+The `yarn.lock` file was incomplete and Strapi package versions had mismatches:
+- `@strapi/strapi": "^5.18.1"` 
+- `@strapi/provider-upload-local": "^5.28.0"` ← Version mismatch!
+- Node.js 20.19.5 had compatibility issues with @noble/hashes
+
+### Fixes Applied
+1. **✅ Fixed package.json version mismatch**
+   - Updated `@strapi/provider-upload-local` from `^5.28.0` → `^5.18.1`
+   - Aligned all Strapi packages to version 5.18.1
+
+2. **✅ Downgraded Node.js to 18.20.3**
+   - Changed `.nvmrc` from `20.19.5` → `18.20.3`
+   - Updated `package.json` engines: `"node": ">=18.0.0 <=22.x.x"`
+   - Node 18 is more stable for Strapi 5.18.1
+
+3. **✅ Created minimal yarn.lock**
+   - Added proper yarn.lock with top-level dependencies
+   - Railway will complete the lockfile during build
+
+4. **✅ Updated build.sh**
+   - Uses `yarn install --non-interactive` instead of bare `yarn install`
+   - Allows Railway Railpack to complete the resolution
+
+### Next Steps
+1. Railway will trigger automatic redeploy
+2. Watch Deployments tab for build progress
+3. Look for success message: "server has started successfully"
 
 ---
 
@@ -15,9 +48,9 @@ Before deploying to Railway, verify **ALL** of the following are correct:
 All 4 files MUST exist in `cms/strapi-main/`:
 
 - [ ] **Procfile** exists with: `web: yarn start`
-- [ ] **.nvmrc** exists with: `20.19.5` (just version, no `node-version:`)
+- [ ] **.nvmrc** exists with: `node-version: 18.20.3` (format: `node-version: VERSION`)
 - [ ] **.yarnrc.yml** exists with: `nodeLinker: node-modules`
-- [ ] **yarn.lock** exists (placeholder is fine - Railway will regenerate)
+- [ ] **yarn.lock** exists (can be minimal - Railway will complete it)
 - [ ] **build.sh** exists with yarn install command
 - [ ] **railway.json** has `buildCommand: "bash build.sh"`
 
@@ -37,7 +70,7 @@ Must have:
 ```json
 {
   "engines": {
-    "node": ">=20.0.0 <=22.x.x",
+    "node": ">=18.0.0 <=22.x.x",
     "yarn": ">=1.22.0"
   },
   "packageManager": "yarn@1.22.22"
