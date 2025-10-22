@@ -13,6 +13,7 @@ secure: env.bool('NODE_ENV', 'development') === 'production',  // ❌ WRONG
 ```
 
 This tried to convert `NODE_ENV` (a string like "production") to a boolean, which always returned `false`, causing:
+
 - ✅ Local: Works fine with `secure: false`
 - ❌ Production Railway: HTTPS connection, but cookie marked as `secure: false` → Security error
 
@@ -25,6 +26,7 @@ secure: env('NODE_ENV') === 'production',  // ✅ CORRECT
 ```
 
 Now:
+
 - Checks if `NODE_ENV` string equals `'production'`
 - Returns `true` in production (Railway) → `secure: true` → HTTPS cookies work ✅
 - Returns `false` in development (local) → `secure: false` → localhost works ✅
@@ -59,6 +61,7 @@ Now:
    - Set in Railway dashboard
 
 **How to set in Railway:**
+
 1. Go to https://railway.app → Select project → Settings tab
 2. Click "Environment" or "Variables"
 3. Add/verify these variables are set
@@ -66,6 +69,7 @@ Now:
 ## Deployment Steps
 
 1. ✅ Commit the fix:
+
    ```bash
    git add cms/strapi-main/config/admin.ts
    git commit -m "fix: correct Strapi admin cookie security logic for Railway production"
@@ -74,6 +78,7 @@ Now:
 2. ✅ Verify Railway environment variables set (NODE_ENV=production, API tokens)
 
 3. ✅ Push to main:
+
    ```bash
    git push github main
    ```
@@ -114,9 +119,9 @@ After deployment, verify with:
 ## Additional Context
 
 Railway's HTTPS/SSL setup:
+
 - Railway terminates SSL at the proxy layer
 - Internal connection (Railway → Strapi container) is HTTP
 - External connection (Browser → Railway) is HTTPS
 - Strapi must trust proxy headers (already configured with `proxy: true`)
 - Strapi must know it's in production (now fixed with `NODE_ENV=production`)
-
