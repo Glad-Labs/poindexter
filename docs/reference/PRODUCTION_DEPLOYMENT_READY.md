@@ -87,6 +87,7 @@ You need to configure these in GitHub Settings → Secrets and Variables → Act
    - Secret Value: (your org ID)
 
 3. **Get Vercel Project ID:**
+
    ```bash
    # For each project (public-site, oversight-hub):
    # vercel project inspect public-site
@@ -111,6 +112,7 @@ You need to configure these in GitHub Settings → Secrets and Variables → Act
    - Secret Value: (your token)
 
 2. **Get Railway Project ID:**
+
    ```bash
    # In Railway, go to your Strapi project
    # Look at URL: https://railway.app/project/{PROJECT_ID}
