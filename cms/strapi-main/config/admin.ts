@@ -22,7 +22,9 @@ export default ({ env }) => ({
       cookie: {
         // Railway: secure=true requires NODE_ENV=production in Railway dashboard
         // Local: secure=false for http://localhost
-        secure: env('NODE_ENV') === 'production' || env.bool('FORCE_SECURE_COOKIE', false),
+        secure:
+          env('NODE_ENV') === 'production' ||
+          env.bool('FORCE_SECURE_COOKIE', false),
         httpOnly: true, // Prevent XSS attacks
         sameSite: 'lax', // Allow navigation from external sites
       },
