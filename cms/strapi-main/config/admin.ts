@@ -19,10 +19,13 @@ export default ({ env }) => ({
       maxSessionLifespan: 1000 * 60 * 60 * 24 * 7, // 7 days
       maxRefreshTokenLifespan: 1000 * 60 * 60 * 24 * 30, // 30 days
       // Admin refresh token cookie settings (Strapi v5+)
+      // For Railway: proxy: true sends internal HTTP, but external is HTTPS
+      // The 'secure' flag should match the external connection (HTTPS in production)
       cookie: {
-        secure: env('NODE_ENV') === 'production', // Use secure cookies in production
+        secure: env('NODE_ENV') === 'production', // Use secure cookies in production (Railway HTTPS)
         httpOnly: true, // Prevent XSS attacks
         sameSite: 'lax', // Allow navigation from external sites
+        path: '/', // Ensure cookie is sent to all paths
       },
     },
   },
