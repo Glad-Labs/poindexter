@@ -9,9 +9,9 @@
 ## 🔗 Quick Navigation
 
 - **📦 [Component Documentation](./components/)** - Public Site, Oversight Hub, Co-Founder Agent, Strapi CMS
-- **🧪 [Testing & Quality](./guides/TESTING_SUMMARY.md)** - All testing documentation
-- **� [Reference Guides](./reference/)** - API, database, deployment specifications
-- **🔧 [How-To Guides](./guides/)** - Detailed guides and setup instructions
+- **🆘 [Troubleshooting & Fixes](./guides/troubleshooting/)** - Recent Railway, Strapi, and development fixes
+- **🔧 [How-To Guides](./guides/)** - Setup, deployment, and feature guides
+- **� [Reference Guides](./reference/)** - API specs, database schemas, deployment checklists
 
 ---
 
@@ -54,9 +54,9 @@
 - **Want**: Work on CMS and API
 - **Read First**: [02-ARCHITECTURE_AND_DESIGN.md (Backend Layer)](./02-ARCHITECTURE_AND_DESIGN.md#3-strapi-v5-cms)
 - **Then**: [04-DEVELOPMENT_WORKFLOW.md](./04-DEVELOPMENT_WORKFLOW.md)
-- **Reference**: [API Reference](./reference/api-reference.md)
-- **Reference**: [Data Schemas](./reference/data-schemas.md)
-- **Important**: [Package Manager Strategy](./guides/PACKAGE_MANAGER_STRATEGY.md) - npm locally, yarn on Railway
+- **Critical**: [Package Manager Strategy](./guides/HYBRID_PACKAGE_MANAGER_STRATEGY.md) - npm locally, yarn on Railway ⭐
+- **Reference**: [API Reference](./reference/API_REFERENCE.md)
+- **Reference**: [Data Schemas](./reference/data_schemas.md)
 
 ### 🤖 **AI/Agent Developer**
 
@@ -88,15 +88,21 @@
 
 ### 📖 **Documentation Categories**
 
-- **[Guides](./guides/)** - Setup guides, quick starts, and how-to documentation
-  - 💻 **[Local Setup Complete](./guides/LOCAL_SETUP_COMPLETE.md)** - Quick start: run all 4 services, troubleshooting, common commands
-  - 🌿 **[Branch Setup Complete](./guides/BRANCH_SETUP_COMPLETE.md)** - Branch-specific environments (feat/dev/main) with auto-selection
-  - � **[Production Deployment Ready](./PRODUCTION_DEPLOYMENT_READY.md)** - Complete production guide: GitHub secrets, branch workflow, Ollama setup, monitoring
-  - �🔧 **[Fixes & Solutions](./guides/FIXES_AND_SOLUTIONS.md)** - All critical fixes: timeout protection, Strapi fallbacks, security headers, CI/CD automation
-  - Local setup and environment configuration
-  - Ollama and Docker deployment
-  - Developer workflows and troubleshooting
-  - Cost optimization strategies
+- **[How-To Guides](./guides/)** - Setup guides, quick starts, and feature documentation
+  - � **[Package Manager Strategy](./guides/HYBRID_PACKAGE_MANAGER_STRATEGY.md)** - npm locally, yarn on Railway (critical for Strapi production)
+  - 📄 **[Strapi-Backed Pages Guide](./guides/STRAPI_BACKED_PAGES_GUIDE.md)** - How to create pages with Strapi content + markdown fallbacks
+  - 📝 **[Content Population Guide](./guides/CONTENT_POPULATION_GUIDE.md)** - Blog post templates and content workflows
+  - 🐍 **[Python Tests Setup](./guides/PYTHON_TESTS_SETUP.md)** - Backend testing configuration
+  - 💰 **[Cost Optimization](./guides/COST_OPTIMIZATION_GUIDE.md)** - Reduce infrastructure costs
+  - 🐳 **[Docker Deployment](./guides/DOCKER_DEPLOYMENT.md)** - Container deployment guide
+  - 🛠️ **[PowerShell Scripts](./guides/POWERSHELL_SCRIPTS.md)** - Service management utilities
+
+- **[🆘 Troubleshooting & Recent Fixes](./guides/troubleshooting/)** - Solutions for common issues
+  - � **[Railway Yarn Configuration](./guides/troubleshooting/01-RAILWAY_YARN_FIX.md)** - Force Railway to use yarn (critical for Strapi deployment)
+  - 🍪 **[Strapi Cookie Security](./guides/troubleshooting/02-STRAPI_COOKIE_SECURITY_FIX.md)** - Fix admin login "Cannot send secure cookie" error
+  - 📦 **[Node Version Requirements](./guides/troubleshooting/03-NODE_VERSION_REQUIREMENT.md)** - @noble/hashes compatibility with Node 20
+  - ⚡ **[npm run dev Issues](./guides/troubleshooting/04-NPM_DEV_ISSUES.md)** - Port conflicts and service startup problems
+  - 📖 **[All Known Issues](./guides/FIXES_AND_SOLUTIONS.md)** - Comprehensive issue and solution tracker
 
 - **[Reference](./reference/)** - Technical specifications and standards
   - 🚀 **[Deployment Complete](./reference/DEPLOYMENT_COMPLETE.md)** - Full deployment guide: Strapi architecture, Vercel config, pre-deployment checklist, post-deployment verification
@@ -504,6 +510,33 @@ See [LICENSE](../LICENSE) for details.
 - [ ] Advanced AI model fine-tuning
 - [ ] Multi-tenant support
 - [ ] Enterprise features
+
+---
+
+## 📋 Documentation Maintenance
+
+### Consolidation & Review
+
+The documentation structure is regularly reviewed and consolidated. To perform a documentation review and consolidation:
+
+**See:** [`DOCUMENTATION_CONSOLIDATION_PROMPT.md`](./DOCUMENTATION_CONSOLIDATION_PROMPT.md)
+
+This prompt can be reused with any AI assistant to:
+- ✅ Inventory all documentation files
+- ✅ Identify duplicates, orphaned files, and structural issues
+- ✅ Create a prioritized consolidation plan
+- ✅ Provide step-by-step execution instructions
+
+**Recommended Review Frequency:** Quarterly
+
+### Recent Consolidation (October 22, 2025)
+
+Documentation was consolidated:
+- 🔧 Recent fixes moved to `docs/guides/troubleshooting/` (numbered 01-04)
+- 📦 Hybrid package manager strategy moved to `docs/guides/`
+- 🗂️ Outdated setup guides archived to `docs/archive-old/`
+- ✅ All fixes linked from main hub in this README
+- 🎯 Component documentation READMEs updated
 
 ---
 
