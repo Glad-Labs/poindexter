@@ -2,13 +2,13 @@
 
 ## ✅ What's Fixed
 
-| Issue | Fix | Status |
-|-------|-----|--------|
-| **Package mismatch** | All Strapi 5.18.1 aligned | ✅ DONE |
-| **Node version conflict** | Downgraded to Node 18.20.3 | ✅ DONE |
-| **yarn.lock incomplete** | Created proper lockfile | ✅ DONE |
-| **--frozen-lockfile error** | Updated build.sh | ✅ DONE |
-| **Environment variables** | ⏳ STILL NEEDED - User must set 6 vars | ⏳ TODO |
+| Issue                       | Fix                                    | Status  |
+| --------------------------- | -------------------------------------- | ------- |
+| **Package mismatch**        | All Strapi 5.18.1 aligned              | ✅ DONE |
+| **Node version conflict**   | Downgraded to Node 18.20.3             | ✅ DONE |
+| **yarn.lock incomplete**    | Created proper lockfile                | ✅ DONE |
+| **--frozen-lockfile error** | Updated build.sh                       | ✅ DONE |
+| **Environment variables**   | ⏳ STILL NEEDED - User must set 6 vars | ⏳ TODO |
 
 ## 🎯 Next Step (DO THIS NOW)
 
@@ -27,6 +27,7 @@
 ## ✅ Success Indicators
 
 Watch Railway Deployments tab for:
+
 - ✅ Build starts (timestamp updates)
 - ✅ "Using yarn1 package manager" appears
 - ✅ "yarn install" completes without errors

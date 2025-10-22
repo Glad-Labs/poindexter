@@ -9,12 +9,15 @@
 ## ✅ SOLUTION APPLIED (October 22, 2025)
 
 ### Root Cause Identified
+
 The `yarn.lock` file was incomplete and Strapi package versions had mismatches:
-- `@strapi/strapi": "^5.18.1"` 
+
+- `@strapi/strapi": "^5.18.1"`
 - `@strapi/provider-upload-local": "^5.28.0"` ← Version mismatch!
 - Node.js 20.19.5 had compatibility issues with @noble/hashes
 
 ### Fixes Applied
+
 1. **✅ Fixed package.json version mismatch**
    - Updated `@strapi/provider-upload-local` from `^5.28.0` → `^5.18.1`
    - Aligned all Strapi packages to version 5.18.1
@@ -33,6 +36,7 @@ The `yarn.lock` file was incomplete and Strapi package versions had mismatches:
    - Allows Railway Railpack to complete the resolution
 
 ### Next Steps
+
 1. Railway will trigger automatic redeploy
 2. Watch Deployments tab for build progress
 3. Look for success message: "server has started successfully"

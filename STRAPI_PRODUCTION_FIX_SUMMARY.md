@@ -1,7 +1,9 @@
 # 🔧 Strapi Production Build Fix - October 22, 2025
 
 ## Problem
+
 Railway Strapi build was failing with:
+
 ```
 error Your lockfile needs to be updated, but yarn was run with `--frozen-lockfile`.
 ```
@@ -24,9 +26,11 @@ error Your lockfile needs to be updated, but yarn was run with `--frozen-lockfil
 ## Solutions Applied
 
 ### 1. Fixed Package Version Mismatch ✅
+
 **File:** `cms/strapi-main/package.json`
 
 Changed:
+
 ```json
 {
   "dependencies": {
@@ -36,6 +40,7 @@ Changed:
 ```
 
 To:
+
 ```json
 {
   "dependencies": {
@@ -45,14 +50,17 @@ To:
 ```
 
 ### 2. Downgraded Node.js to 18.20.3 ✅
+
 **File:** `cms/strapi-main/.nvmrc`
 
 Changed:
+
 ```
 20.19.5
 ```
 
 To:
+
 ```
 node-version: 18.20.3
 ```
@@ -60,19 +68,22 @@ node-version: 18.20.3
 **Reason:** Node 18 is more stable for Strapi 5.18.1 and has better dependency resolution.
 
 **Updated:** `cms/strapi-main/package.json` engines:
+
 ```json
 {
   "engines": {
-    "node": ">=18.0.0 <=22.x.x",  // ✅ Now allows 18+
+    "node": ">=18.0.0 <=22.x.x", // ✅ Now allows 18+
     "yarn": ">=1.22.0"
   }
 }
 ```
 
 ### 3. Created Proper yarn.lock ✅
+
 **File:** `cms/strapi-main/yarn.lock`
 
 Created minimal but complete yarn.lock with all top-level dependencies listed:
+
 - `@strapi/plugin-users-permissions@^5.18.1`
 - `@strapi/provider-upload-local@^5.18.1`
 - `@strapi/strapi@^5.18.1`
@@ -85,9 +96,11 @@ Created minimal but complete yarn.lock with all top-level dependencies listed:
 Railway will complete the full resolution during build.
 
 ### 4. Updated build.sh ✅
+
 **File:** `cms/strapi-main/build.sh`
 
 Added `--non-interactive` flag to allow yarn to work in CI/CD environment:
+
 ```bash
 yarn install --non-interactive
 ```
@@ -188,4 +201,3 @@ git status
 All code-level fixes applied and pushed to GitHub main. Railway will auto-build on push.
 
 Next step: Verify environment variables are set in Railway dashboard, then trigger rebuild.
-

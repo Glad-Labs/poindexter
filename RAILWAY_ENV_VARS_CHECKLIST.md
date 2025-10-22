@@ -115,13 +115,12 @@ Railway dashboard **environment variables are still missing or blank**.
 2. Look up your error message in the error reference section
 3. Apply the corresponding fix
 
-
-2. Check all 4 Railway config files exist locally:
+4. Check all 4 Railway config files exist locally:
    - `Procfile`
    - `.nvmrc`
    - `.yarnrc.yml`
    - `yarn.lock`
-3. Verify `package.json` has `"packageManager": "yarn@1.22.22"`
+5. Verify `package.json` has `"packageManager": "yarn@1.22.22"`
 
 ---
 
