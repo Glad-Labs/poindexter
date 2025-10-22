@@ -22,6 +22,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from orchestrator_logic import Orchestrator
 
+# Import route routers
+from routes.content import content_router
+from routes.models import models_router
+from routes.enhanced_content import enhanced_content_router
+
 # Try to import Google Cloud services (may not be available in dev)
 try:
     from services.firestore_client import FirestoreClient
@@ -143,6 +148,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include route routers
+app.include_router(content_router)
+app.include_router(models_router)
+app.include_router(enhanced_content_router)
 
 class CommandRequest(BaseModel):
     """Request model for processing a command."""
