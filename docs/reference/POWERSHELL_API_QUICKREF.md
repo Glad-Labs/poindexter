@@ -1,4 +1,4 @@
-# PowerShell Quick Reference - GLAD Labs Co-founder Agent
+# PowerShell Quick Reference - Glad Labs Co-founder Agent
 
 ## The Problem
 

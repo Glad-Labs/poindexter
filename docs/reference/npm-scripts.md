@@ -7,7 +7,7 @@
 
 ## Executive Summary
 
-All npm scripts across the GLAD Labs monorepo have been reviewed, fixed, and verified. All critical scripts are functioning correctly.
+All npm scripts across the Glad Labs monorepo have been reviewed, fixed, and verified. All critical scripts are functioning correctly.
 
 ---
 

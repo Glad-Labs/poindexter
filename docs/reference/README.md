@@ -1,6 +1,6 @@
 # Technical Reference Documentation
 
-This directory contains technical specifications, architecture documentation, schemas, and standards for the GLAD Labs platform.
+This directory contains technical specifications, architecture documentation, schemas, and standards for the Glad Labs platform.
 
 ## Architecture & Design
 
@@ -15,7 +15,7 @@ This directory contains technical specifications, architecture documentation, sc
 ## Configuration & Standards
 
 - **[Strapi Content Setup](STRAPI_CONTENT_SETUP.md)** - Strapi CMS configuration and content types
-- **[GLAD Labs Standards](GLAD-LABS-STANDARDS.md)** - Coding standards and best practices
+- **[Glad Labs Standards](GLAD-LABS-STANDARDS.md)** - Coding standards and best practices
 - **[Cofounder Agent Dev Mode](COFOUNDER_AGENT_DEV_MODE.md)** - Development mode for the AI cofounder agent
 
 ## Testing

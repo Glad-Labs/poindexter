@@ -18,13 +18,13 @@ Open your browser to: `http://localhost:1337/admin`
 
 1. In the Strapi admin sidebar, click **"About Page"** (under Single Types)
 2. Fill in the fields:
-   - **Title**: `About GLAD Labs`
+   - **Title**: `About Glad Labs`
    - **Content**: Use Markdown format, for example:
 
 ```markdown
-## About GLAD Labs
+## About Glad Labs
 
-GLAD Labs is revolutionizing the way businesses operate with our AI-powered Co-Founder system.
+Glad Labs is revolutionizing the way businesses operate with our AI-powered Co-Founder system.
 
 ### Our Mission
 
@@ -48,8 +48,8 @@ Built on cutting-edge technologies:
 ```
 
 1. (Optional) Fill in **SEO** component:
-   - **Meta Title**: `About GLAD Labs - AI Business Co-Founder`
-   - **Meta Description**: `Learn about GLAD Labs and our revolutionary AI-powered business co-founder system`
+   - **Meta Title**: `About Glad Labs - AI Business Co-Founder`
+   - **Meta Description**: `Learn about Glad Labs and our revolutionary AI-powered business co-founder system`
 
 2. Click **"Publish"** in the top right
 
@@ -71,7 +71,7 @@ Built on cutting-edge technologies:
 
 ### Introduction
 
-GLAD Labs, LLC is committed to protecting your privacy. This Privacy Policy explains how we collect, use, and safeguard your information.
+Glad Labs, LLC is committed to protecting your privacy. This Privacy Policy explains how we collect, use, and safeguard your information.
 
 ### Information We Collect
 
@@ -104,7 +104,7 @@ You have the right to:
 ### Contact Us
 
 **Email:** privacy@gladlabs.com  
-**Address:** GLAD Labs, LLC
+**Address:** Glad Labs, LLC
 
 ### Changes to This Policy
 
@@ -112,8 +112,8 @@ We may update this policy and will notify you of changes.
 ```
 
 1. (Optional) Fill in **SEO** component:
-   - **Meta Title**: `Privacy Policy | GLAD Labs`
-   - **Meta Description**: `GLAD Labs privacy policy and data protection information`
+   - **Meta Title**: `Privacy Policy | Glad Labs`
+   - **Meta Description**: `Glad Labs privacy policy and data protection information`
 
 2. Click **"Publish"** in the top right
 

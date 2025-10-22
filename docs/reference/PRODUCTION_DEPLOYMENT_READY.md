@@ -469,7 +469,7 @@ npm run dev
 curl http://localhost:8000/api/generate \
   -X POST \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "Hello, what is GLAD Labs?"}'
+  -d '{"prompt": "Hello, what is Glad Labs?"}'
 
 # 5. Should respond with local LLM output
 ```
