@@ -15,7 +15,7 @@ async function resetAdminPassword() {
     const adminEmail = 'admin@gladlabs.io';
 
     console.log(`Looking for admin user: ${adminEmail}`);
-    
+
     // Find the admin user
     const admins = await strapi.query('admin::user').findMany({
       where: { email: adminEmail },
@@ -24,10 +24,11 @@ async function resetAdminPassword() {
     if (admins.length === 0) {
       console.error(`❌ No admin user found with email: ${adminEmail}`);
       console.log('\nCreating new admin user...');
-      
+
       // Create new admin
-      const hashedPassword = await strapi.admin.services.auth.hashPassword(newPassword);
-      
+      const hashedPassword =
+        await strapi.admin.services.auth.hashPassword(newPassword);
+
       await strapi.query('admin::user').create({
         data: {
           email: adminEmail,
@@ -38,14 +39,15 @@ async function resetAdminPassword() {
           roles: [1], // Super Admin role
         },
       });
-      
+
       console.log('✅ Admin user created successfully!');
     } else {
       console.log('✅ Found admin user, updating password...');
-      
+
       const admin = admins[0];
-      const hashedPassword = await strapi.admin.services.auth.hashPassword(newPassword);
-      
+      const hashedPassword =
+        await strapi.admin.services.auth.hashPassword(newPassword);
+
       await strapi.query('admin::user').update({
         where: { id: admin.id },
         data: {
@@ -53,7 +55,7 @@ async function resetAdminPassword() {
           isActive: true,
         },
       });
-      
+
       console.log('✅ Password updated successfully!');
     }
 

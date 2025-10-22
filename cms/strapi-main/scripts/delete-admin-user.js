@@ -1,8 +1,8 @@
 /**
  * Delete Admin User from Railway PostgreSQL
- * 
+ *
  * Run this with: railway run node scripts/delete-admin-user.js
- * 
+ *
  * This removes the existing admin user so you can register a fresh one.
  */
 
@@ -46,9 +46,10 @@ async function deleteAdminUser() {
     console.log('✅ Admin users cleared!');
     console.log('=================================');
     console.log('You can now register a new admin at:');
-    console.log('https://glad-labs-strapi-main-production.up.railway.app/admin');
+    console.log(
+      'https://glad-labs-strapi-main-production.up.railway.app/admin'
+    );
     console.log('=================================\n');
-
   } catch (error) {
     console.error('❌ Error:', error.message);
     process.exit(1);

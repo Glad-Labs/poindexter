@@ -154,6 +154,7 @@ For each consolidation action, report:
 ### Step 1: Request Review
 
 **User Input:**
+
 ```
 Please review my documentation in my project at [PATH].
 I want to consolidate as much as possible and remove duplicates.
@@ -177,17 +178,20 @@ Once user confirms, the agent creates a prioritized plan:
 ## 📋 Consolidation Plan
 
 ### IMMEDIATE (This Week)
+
 - [ ] Action 1: Create guides/troubleshooting/ folder
 - [ ] Action 2: Move files X, Y, Z to guides/troubleshooting/
 - [ ] Action 3: Create guides/troubleshooting/README.md
 - [ ] Action 4: Update 00-README.md with links
 
 ### SHORT-TERM (This Sprint)
+
 - [ ] Action 5: Archive outdated files to archive-old/
 - [ ] Action 6: Create component README files
 - [ ] Action 7: Consolidate duplicate setup guides
 
 ### LONG-TERM (Next Month)
+
 - [ ] Action 8: Create maintenance guidelines
 - [ ] Action 9: Review and update all links
 - [ ] Action 10: Implement regular review schedule
@@ -225,14 +229,17 @@ Use this format for the documentation review report:
 ## 📁 Structure Assessment
 
 ### ✅ What's Good
+
 - Item 1
 - Item 2
 
 ### ⚠️ What Needs Work
+
 - Item 1
 - Item 2
 
 ### 🔴 Critical Issues
+
 1. **Issue:** [Description]
    **Impact:** [Why it matters]
    **Fix:** [Solution]
@@ -312,17 +319,20 @@ Every documentation file should:
 ### File Deletion Guidelines
 
 **Keep files if:**
+
 - Currently used by developers
 - Provide unique, irreplaceable information
 - Referenced from main hub
 
 **Archive files if:**
+
 - Marked "COMPLETE" or dated
 - Superseded by newer docs
 - Historical or session notes
 - Nice-to-have but not critical
 
 **Delete files if:**
+
 - Duplicate of existing content
 - Clearly outdated and not valuable
 - Orphaned (not linked from anywhere)
@@ -335,6 +345,7 @@ Every documentation file should:
 Consider creating these helpers:
 
 1. **Link Checker Script**
+
    ```bash
    # Find broken links in docs/
    grep -r "\[.*\](.*\.md)" docs/ | \
@@ -347,6 +358,7 @@ Consider creating these helpers:
    ```
 
 2. **Orphaned File Detector**
+
    ```bash
    # Find .md files not referenced anywhere
    for file in docs/**/*.md; do
@@ -375,6 +387,7 @@ When using this prompt:
 6. **Commit frequently** with clear messages
 
 **Example commit messages:**
+
 ```bash
 git commit -m "docs: consolidate troubleshooting guides"
 git commit -m "docs: archive outdated setup documentation"
