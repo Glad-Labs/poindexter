@@ -20,7 +20,7 @@
 
 ### Multi-Agent System
 
-```
+```text
 ┌─────────────────────────────────────────────┐
 │         Oversight Hub (UI)                  │
 └──────────────────┬──────────────────────────┘
@@ -420,10 +420,6 @@ curl http://localhost:8000/api/agents/memory/stats
 
 ---
 
-<div align="center">
-
 **[← Back to Documentation Hub](./00-README.md)**
 
 [Setup](./01-SETUP_AND_OVERVIEW.md) • [Architecture](./02-ARCHITECTURE_AND_DESIGN.md) • [Development](./04-DEVELOPMENT_WORKFLOW.md) • [Operations](./06-OPERATIONS_AND_MAINTENANCE.md)
-
-</div>

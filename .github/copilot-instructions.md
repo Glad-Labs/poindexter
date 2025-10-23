@@ -75,20 +75,19 @@ glad-labs-website/
 
 ### Primary Resources (Start Here)
 
-1. **[Docs Hub](./docs/00-README.md)** - Main navigation for all documentation
-2. **[Setup Guide](./docs/01-SETUP_AND_OVERVIEW.md)** - Getting started and dependencies
-3. **[Architecture](./docs/02-ARCHITECTURE_AND_DESIGN.md)** - System design and components
-4. **[Deployment](./docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md)** - Cloud setup and environments
-5. **[Development Workflow](./docs/04-DEVELOPMENT_WORKFLOW.md)** - Git strategy and testing
-6. **[AI Agents](./docs/05-AI_AGENTS_AND_INTEGRATION.md)** - Agent orchestration and MCP
-7. **[Operations](./docs/06-OPERATIONS_AND_MAINTENANCE.md)** - Production monitoring
-8. **[Branch Variables](./docs/07-BRANCH_SPECIFIC_VARIABLES.md)** - Environment config
+1. **[Docs Hub](../docs/00-README.md)** - Main navigation for all documentation
+2. **[Setup Guide](../docs/01-SETUP_AND_OVERVIEW.md)** - Getting started and dependencies
+3. **[Architecture](../docs/02-ARCHITECTURE_AND_DESIGN.md)** - System design and components
+4. **[Deployment](../docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md)** - Cloud setup and environments
+5. **[Development Workflow](../docs/04-DEVELOPMENT_WORKFLOW.md)** - Git strategy and testing
+6. **[AI Agents](../docs/05-AI_AGENTS_AND_INTEGRATION.md)** - Agent orchestration and MCP
+7. **[Operations](../docs/06-OPERATIONS_AND_MAINTENANCE.md)** - Production monitoring
+8. **[Branch Variables](../docs/07-BRANCH_SPECIFIC_VARIABLES.md)** - Environment config
 
 ### Quick References
 
-- **Troubleshooting:** [docs/troubleshooting/](./docs/troubleshooting/)
-- **Component Docs:** [docs/components/](./docs/components/)
-- **API Specs & References:** [docs/reference/](./docs/reference/)
+- **Component Docs:** [docs/components/](../docs/components/)
+- **API Specs & References:** [docs/reference/](../docs/reference/)
 
 ---
 
@@ -207,7 +206,7 @@ test: add test cases
 - **Strapi Collections:** Content, Media, Users, Roles, Permissions
 - **Custom Tables:** Business metrics, agent memory, transaction logs
 - **Cache Layer:** Redis for session management
-- See [Database Schema Reference](./docs/reference/DATABASE_SCHEMA.md)
+- See [Reference Documentation](../docs/reference/README.md)
 
 ---
 
@@ -258,7 +257,7 @@ vercel --prod
 - ✅ Agents communicating via MCP
 - ✅ Database migrations completed
 
-**See:** [Deployment Guide](./docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md)
+**See:** [Deployment Guide](../docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md)
 
 ---
 
@@ -455,7 +454,7 @@ echo $DATABASE_URL
 # Format: postgresql://user:password@localhost:5432/dbname
 ```
 
-**See:** [Troubleshooting Guide](./docs/troubleshooting/)
+**See:** [Documentation Hub](../docs/00-README.md)
 
 ---
 
@@ -463,10 +462,9 @@ echo $DATABASE_URL
 
 ### Documentation Resources
 
-- **Full Docs Hub:** [docs/00-README.md](./docs/00-README.md)
-- **Architecture Deep Dive:** [docs/02-ARCHITECTURE_AND_DESIGN.md](./docs/02-ARCHITECTURE_AND_DESIGN.md)
-- **Troubleshooting:** [docs/guides/troubleshooting/](./docs/guides/troubleshooting/)
-- **Components:** [docs/components/](./docs/components/)
+- **Full Docs Hub:** [docs/00-README.md](../docs/00-README.md)
+- **Architecture Deep Dive:** [docs/02-ARCHITECTURE_AND_DESIGN.md](../docs/02-ARCHITECTURE_AND_DESIGN.md)
+- **Components:** [docs/components/](../docs/components/)
 
 ### Code Assistance
 
@@ -489,39 +487,39 @@ echo $DATABASE_URL
 
 ### For New Team Members
 
-1. Start: [Setup Guide](./docs/01-SETUP_AND_OVERVIEW.md)
-2. Read: [Architecture Overview](./docs/02-ARCHITECTURE_AND_DESIGN.md)
+1. Start: [Setup Guide](../docs/01-SETUP_AND_OVERVIEW.md)
+2. Read: [Architecture Overview](../docs/02-ARCHITECTURE_AND_DESIGN.md)
 3. Try: Set up local environment
-4. Explore: [Development Workflow](./docs/04-DEVELOPMENT_WORKFLOW.md)
-5. Study: Your component's README in [docs/components/](./docs/components/)
+4. Explore: [Development Workflow](../docs/04-DEVELOPMENT_WORKFLOW.md)
+5. Study: Your component's README in [docs/components/](../docs/components/)
 
 ### For Different Roles
 
 **Frontend Developers:**
 
 - [Next.js Docs](https://nextjs.org/docs)
-- [web/oversight-hub/README.md](./web/oversight-hub/README.md)
-- [web/public-site/README.md](./web/public-site/README.md)
-- [Component Documentation](./docs/components/)
+- [web/oversight-hub/README.md](../web/oversight-hub/README.md)
+- [web/public-site/README.md](../web/public-site/README.md)
+- [Component Documentation](../docs/components/)
 
 **Backend Developers:**
 
 - [FastAPI Documentation](https://fastapi.tiangolo.com)
 - [Strapi Documentation](https://docs.strapi.io)
-- [src/cofounder_agent/README.md](./src/cofounder_agent/README.md)
-- [AI Agents Guide](./docs/05-AI_AGENTS_AND_INTEGRATION.md)
+- [src/cofounder_agent/README.md](../src/cofounder_agent/README.md)
+- [AI Agents Guide](../docs/05-AI_AGENTS_AND_INTEGRATION.md)
 
 **DevOps / Infrastructure:**
 
-- [Deployment Guide](./docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md)
-- [Operations Guide](./docs/06-OPERATIONS_AND_MAINTENANCE.md)
-- [Branch Variables](./docs/07-BRANCH_SPECIFIC_VARIABLES.md)
-- [Reference Docs](./docs/reference/)
+- [Deployment Guide](../docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md)
+- [Operations Guide](../docs/06-OPERATIONS_AND_MAINTENANCE.md)
+- [Branch Variables](../docs/07-BRANCH_SPECIFIC_VARIABLES.md)
+- [Reference Docs](../docs/reference/)
 
 **QA / Testing:**
 
-- [Testing Guide](./docs/guides/TESTING.md)
-- [Troubleshooting](./docs/guides/troubleshooting/)
+- [Testing Guide](../docs/reference/TESTING.md)
+- [Reference Docs](../docs/reference/)
 - Test files in each component
 
 ---
@@ -546,12 +544,11 @@ echo $DATABASE_URL
 
 | Resource            | Link                                                                                   |
 | ------------------- | -------------------------------------------------------------------------------------- |
-| **Main Docs Hub**   | [docs/00-README.md](./docs/00-README.md)                                               |
-| **Setup Guide**     | [docs/01-SETUP_AND_OVERVIEW.md](./docs/01-SETUP_AND_OVERVIEW.md)                       |
-| **Architecture**    | [docs/02-ARCHITECTURE_AND_DESIGN.md](./docs/02-ARCHITECTURE_AND_DESIGN.md)             |
-| **Troubleshooting** | [docs/troubleshooting/](./docs/troubleshooting/)                                       |
-| **Components**      | [docs/components/](./docs/components/)                                                 |
-| **Deployment**      | [docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md) |
+| **Main Docs Hub**   | [docs/00-README.md](../docs/00-README.md)                                               |
+| **Setup Guide**     | [docs/01-SETUP_AND_OVERVIEW.md](../docs/01-SETUP_AND_OVERVIEW.md)                       |
+| **Architecture**    | [docs/02-ARCHITECTURE_AND_DESIGN.md](../docs/02-ARCHITECTURE_AND_DESIGN.md)             |
+| **Components**      | [docs/components/](../docs/components/)                                                 |
+| **Deployment**      | [docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md](../docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md) |
 
 ---
 
@@ -568,4 +565,4 @@ echo $DATABASE_URL
 
 ---
 
-**🚀 Ready to code? Start with the [Setup Guide](./docs/01-SETUP_AND_OVERVIEW.md)!**
+**🚀 Ready to code? Start with the [Setup Guide](../docs/01-SETUP_AND_OVERVIEW.md)!**

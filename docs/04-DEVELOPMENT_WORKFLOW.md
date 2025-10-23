@@ -20,7 +20,7 @@
 
 ### Main Branches
 
-```
+```text
 main             Production releases (stable)
   ↓
 dev              Active development (staging)
@@ -81,7 +81,7 @@ git push origin --delete feature/my-feature
 
 ### Conventional Commits
 
-```
+```bash
 <type>: <subject>
 
 <body>
@@ -386,10 +386,6 @@ npm run dev                         # Start development server
 
 ---
 
-<div align="center">
-
 **[← Back to Documentation Hub](./00-README.md)**
 
 [Setup](./01-SETUP_AND_OVERVIEW.md) • [Architecture](./02-ARCHITECTURE_AND_DESIGN.md) • [Deployment](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) • [Operations](./06-OPERATIONS_AND_MAINTENANCE.md)
-
-</div>

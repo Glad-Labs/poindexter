@@ -9,11 +9,11 @@
 ## 🎯 Quick Links
 
 - **[Vision & Mission](#-vision--mission)** - What GLAD Labs does
-- **[System Architecture](#-system-architecture-1)** - High-level overview
-- **[Technology Stack](#-technology-stack-1)** - Tools and platforms
-- **[Component Design](#-component-design-1)** - Each system explained
-- **[Data Architecture](#-data-architecture-1)** - Database and storage
-- **[Roadmap](#-roadmap-1)** - Phase 1-3 implementation plan
+- **[System Architecture](#-system-architecture)** - High-level overview
+- **[Technology Stack](#-technology-stack)** - Tools and platforms
+- **[Component Design](#-component-design)** - Each system explained
+- **[Data Architecture](#-data-architecture)** - Database and storage
+- **[Roadmap](#-roadmap)** - Phase 1-3 implementation plan
 
 ---
 
@@ -350,7 +350,7 @@ Dashboard/
 
 **API Endpoints (Example):**
 
-```
+```bash
 GET  /api/posts                    # List posts
 GET  /api/posts/:id                # Get single post
 POST /api/posts                    # Create post
@@ -436,7 +436,7 @@ class ComplianceAgent(BaseAgent):
 
 **API Endpoints (Core):**
 
-```
+```bash
 POST /api/tasks              # Create task
 GET  /api/tasks/:id          # Get task status
 GET  /api/tasks              # List tasks
@@ -456,7 +456,7 @@ GET  /api/metrics            # Performance metrics
 
 ### Entity Relationship Diagram
 
-```
+```text
 ┌─────────────┐         ┌─────────────┐
 │   Posts     │────────▶│ Categories  │
 │ (many)      │  1..n   │   (1)       │
@@ -727,10 +727,6 @@ CREATE TABLE memories (
 
 ---
 
-<div align="center">
-
 **[← Back to Documentation Hub](./00-README.md)**
 
 [Setup](./01-SETUP_AND_OVERVIEW.md) • [Deployment](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) • [Development](./04-DEVELOPMENT_WORKFLOW.md) • [Guides](./guides/)
-
-</div>

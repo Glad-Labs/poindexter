@@ -8,12 +8,12 @@
 
 ## 🎯 Quick Links
 
-- **[Before You Deploy](#-before-you-deploy)** - Deployment checklist
-- **[Backend Deployment](#-backend-deployment)** - Railway setup
-- **[Frontend Deployment](#-frontend-deployment)** - Vercel setup
-- **[CMS Deployment](#-cms-deployment)** - Strapi setup
-- **[Production Environment](#-production-environment)** - Env vars and config
-- **[Monitoring & Support](#-monitoring--support)** - Health checks and logs
+- **[Before You Deploy](#before-you-deploy)** - Deployment checklist
+- **[Backend Deployment](#backend-deployment-railway)** - Railway setup
+- **[Frontend Deployment](#frontend-deployment-vercel)** - Vercel setup
+- **[CMS Deployment](#cms-deployment-strapi)** - Strapi setup
+- **[Production Environment](#production-environment)** - Env vars and config
+- **[Monitoring & Support](#monitoring--support)** - Health checks and logs
 
 ---
 
@@ -88,7 +88,7 @@ NEXT_PUBLIC_BACKEND_URL=https://api.example.com
 
 **For Strapi CMS:**
 
-1. Visit: https://railway.com/template/strapi
+1. Visit: [Railway Strapi Template](https://railway.com/template/strapi)
 2. Click "Deploy Now"
 3. Connect GitHub account
 4. Select repository branch
@@ -97,7 +97,7 @@ NEXT_PUBLIC_BACKEND_URL=https://api.example.com
 
 **For FastAPI Co-Founder:**
 
-1. Visit Railway dashboard: https://railway.app
+1. Visit [Railway Dashboard](https://railway.app)
 2. Create new project
 3. Select "Deploy from GitHub"
 4. Choose `glad-labs-website` repository
@@ -193,16 +193,18 @@ app.add_middleware(
 
 **For Public Site:**
 
-1. Visit: https://vercel.com
+1. Visit: [Vercel](https://vercel.com)
 2. Click "New Project"
 3. Import Git repository: `glad-labs-website`
 4. Select root directory: `web/public-site/`
 5. Add environment variables:
-   ```
-   NEXT_PUBLIC_STRAPI_API_URL=https://cms.example.com
-   NEXT_PUBLIC_BACKEND_URL=https://api.example.com
-   ```
-6. Click "Deploy"
+
+```bash
+NEXT_PUBLIC_STRAPI_API_URL=https://cms.example.com
+NEXT_PUBLIC_BACKEND_URL=https://api.example.com
+```
+
+1. Click "Deploy"
 
 **For Oversight Hub:**
 
@@ -335,7 +337,7 @@ certbot certonly --standalone -d api.example.com
 
 ### Environment Separation
 
-```
+```text
 Production:  main branch → Railway/Vercel
 Staging:     staging branch → Railway/Vercel
 Development: dev branch → local or dev servers
@@ -375,7 +377,7 @@ tail -f logs/application.log
 
 Configure error monitoring:
 
-- **Option 1:** Sentry (recommended): https://sentry.io
+- **Option 1:** [Sentry](https://sentry.io) (recommended)
 - **Option 2:** Railway dashboard
 - **Option 3:** Application Insights
 
@@ -528,10 +530,6 @@ Before considering deployment complete:
 
 ---
 
-<div align="center">
-
 **[← Back to Documentation Hub](./00-README.md)**
 
 [Setup](./01-SETUP_AND_OVERVIEW.md) • [Architecture](./02-ARCHITECTURE_AND_DESIGN.md) • [Development](./04-DEVELOPMENT_WORKFLOW.md) • [Operations](./06-OPERATIONS_AND_MAINTENANCE.md)
-
-</div>

@@ -551,19 +551,19 @@ curl https://[YOUR-GCP-FUNCTION-URL]/api/test \
 
 **Vercel:**
 
-- Dashboard: https://vercel.com/dashboard
+- Dashboard: [vercel.com/dashboard](https://vercel.com/dashboard)
 - Project: Watch deployment status
 - Analytics: Check traffic patterns
 
 **Railway:**
 
-- Dashboard: https://railway.app
+- Dashboard: [railway.app](https://railway.app)
 - Logs: Real-time application logs
 - Database: Check PostgreSQL status
 
 **GitHub Actions:**
 
-- Workflows: https://github.com/mattg-stack/glad-labs-website/actions
+- Workflows: [GitHub Actions](https://github.com/mattg-stack/glad-labs-website/actions)
 - Latest run: Should show green checkmarks
 
 ---
@@ -734,7 +734,7 @@ gcloud functions deploy my-function --runtime python39
 - [ ] GitHub Actions deploy-production.yml passes
 - [ ] Vercel deployment completes
 - [ ] Railway deployment completes
-- [ ] Frontend loads at https://gladlabs.io
+- [ ] Frontend loads at [https://gladlabs.io](https://gladlabs.io)
 - [ ] API responds at Railway URL
 - [ ] Strapi admin accessible
 - [ ] No production errors

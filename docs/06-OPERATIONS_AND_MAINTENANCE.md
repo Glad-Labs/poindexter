@@ -96,7 +96,7 @@ rsync -av /media/ /backups/media/
 
 ### Backup Retention Policy
 
-```
+```text
 Daily:    Keep last 7 days
 Weekly:   Keep last 4 weeks
 Monthly:  Keep last 12 months
@@ -159,7 +159,7 @@ lighthouse https://example.com
 
 ### Caching Strategy
 
-```
+```text
 Static content:    Cache for 1 year
 API responses:     Cache for 5 minutes
 User data:         Cache for 1 minute
@@ -321,7 +321,7 @@ git revert <commit-hash>
 
 ### Runbook: Deploy Hotfix
 
-```
+```bash
 1. Create hotfix branch: git checkout -b hotfix/issue-name
 2. Fix issue and test locally
 3. Commit: git commit -m "fix: issue description"
@@ -335,7 +335,7 @@ git revert <commit-hash>
 
 ### Runbook: Scale Service
 
-```
+```bash
 1. Identify bottleneck (CPU, memory, database)
 2. For vertical scaling: Increase instance size in Railway/Vercel
 3. For horizontal scaling: Add replica instances
@@ -346,7 +346,7 @@ git revert <commit-hash>
 
 ### Runbook: Emergency Rollback
 
-```
+```bash
 1. Identify last working version: git log --oneline | head -5
 2. Create rollback commit: git revert <commit-hash>
 3. Push: git push origin main
@@ -380,10 +380,6 @@ git revert <commit-hash>
 
 ---
 
-<div align="center">
-
 **[← Back to Documentation Hub](./00-README.md)**
 
 [Setup](./01-SETUP_AND_OVERVIEW.md) • [Architecture](./02-ARCHITECTURE_AND_DESIGN.md) • [Deployment](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) • [Development](./04-DEVELOPMENT_WORKFLOW.md)
-
-</div>

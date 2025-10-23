@@ -52,7 +52,7 @@ All fix guides moved from project root to `docs/guides/troubleshooting/`:
 
 ### Before Consolidation
 
-```
+```text
 Documentation Status:
 ✅ Core Docs: 8 files (excellent)
 ❌ Guides: 42 files (CHAOS!)
@@ -64,7 +64,7 @@ Documentation Status:
 
 ### After Phase 1
 
-```
+```text
 Documentation Status:
 ✅ Core Docs: 8 files (excellent)
 ✅ Guides: Organized with README index
@@ -78,7 +78,7 @@ Documentation Status:
 
 ## 📁 New Structure
 
-```
+```text
 docs/
 ├── 00-README.md ✅ FIXED LINKS - Main hub
 ├── 01-08-*.md ✅ Core numbered docs (unchanged)
@@ -145,7 +145,7 @@ docs/
 
 ## 📊 Git Commits
 
-```
+```bash
 ✅ Commit 1: docs: fix markdown errors and create consolidation plan
    - Fixed 3 markdown syntax errors
    - Created CONSOLIDATION_PLAN_ACTIONABLE.md

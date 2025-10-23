@@ -197,7 +197,7 @@ Only **00-README.md (14KB) and 07-BRANCH_SPECIFIC_VARIABLES.md (18KB)** have con
 
 ### New/Updated Files (This Session)
 
-```
+```bash
 ✅ .github/copilot-instructions.md - CREATED (600+ lines)
 ✅ .github/prompts/docs_cleanup.prompt.md - UPDATED (GLAD Labs specific)
 ✅ docs/CRITICAL_AUDIT_PHASE1_PART2_NEEDED.md - CREATED (230 lines)
@@ -205,7 +205,7 @@ Only **00-README.md (14KB) and 07-BRANCH_SPECIFIC_VARIABLES.md (18KB)** have con
 
 ### Files Analyzed (No Changes Yet)
 
-```
+```bash
 docs/00-README.md (14KB) - Hub, mostly good, will need link verification
 docs/01-SETUP_AND_OVERVIEW.md (0 KB) - EMPTY - Needs population
 docs/02-ARCHITECTURE_AND_DESIGN.md (0 KB) - EMPTY - Needs population
@@ -240,7 +240,7 @@ docs/archive-old/* - 129 files, needs organization and index
 
 ## 📝 Recommendation
 
-**PHASE 1 PART 2 IS REQUIRED BEFORE MOVING FORWARD**
+### Phase 1 Part 2 is Required Before Moving Forward
 
 The current documentation is "structurally organized but content-empty" - users cannot access foundational information. This must be fixed to make the documentation useful.
 

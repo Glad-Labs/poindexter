@@ -45,7 +45,7 @@
 
 ### Git Operations
 
-```
+```bash
 Commits made this session:
 1. Created .github/copilot-instructions.md (600+ lines)
 2. Updated .github/prompts/docs_cleanup.prompt.md
@@ -146,7 +146,7 @@ Minor formatting issues detected (30 errors):
 
 ### Session Progress
 
-```
+```text
 Start of Session:
 - 6 completely empty core docs (0 KB each)
 - All real content scattered in archive-old/
@@ -165,7 +165,7 @@ Efficiency: ~0.33 hours per doc
 
 ### Content Statistics
 
-```
+```text
 Total lines written this session: 1,396 lines
 - 01-SETUP_AND_OVERVIEW.md: 669 lines
 - 02-ARCHITECTURE_AND_DESIGN.md: 727 lines
@@ -269,21 +269,21 @@ Follow same pattern for:
 
 ### Documentation Strategy Going Forward
 
-**1. Consolidation Approach (Working Well)**
+#### 1. Consolidation Approach (Working Well)
 
 - ✅ Extract best content from archive-old/
 - ✅ Update for current project state
 - ✅ Add cross-references
 - ✅ Keep files focused (not too long)
 
-**2. Quality Standards**
+#### 2. Quality Standards
 
 - Fix markdown linting before commits
 - Update "Last Updated" dates
 - Include version numbers
 - Add navigation links
 
-**3. Future Maintenance**
+#### 3. Future Maintenance
 
 - Create archive-old/README.md explaining archive purpose
 - Consolidate duplicate guides (currently 4+ copies of deployment guide)
@@ -329,7 +329,7 @@ Follow same pattern for:
 
 ### Repository State
 
-```
+```bash
 Branch: origin/dev
 Last commit: 44ecf982a (docs: populate 02-ARCHITECTURE_AND_DESIGN.md)
 Commits this session: 8
@@ -369,8 +369,6 @@ Status: ✅ All committed and pushed
 
 ---
 
-<div align="center">
-
 ## 🎉 Session Complete
 
 **Progress:** 33% Completion (2 of 6 Core Docs Populated)  
@@ -378,7 +376,7 @@ Status: ✅ All committed and pushed
 **Commits:** 8 (all pushed)  
 **Next:** Populate 03-DEPLOYMENT_AND_INFRASTRUCTURE.md
 
-**Repository:** https://gitlab.com/glad-labs-org/glad-labs-website  
+**Repository:** [gitlab.com/glad-labs-org/glad-labs-website](https://gitlab.com/glad-labs-org/glad-labs-website)  
 **Branch:** dev  
 **Status:** Ready for next session
 

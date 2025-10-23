@@ -52,10 +52,10 @@ Welcome to GLAD Labs! This guide covers everything from initial setup through pr
 
 Choose based on your preference:
 
-- **OpenAI** (Most Popular): https://platform.openai.com/api-keys
-- **Anthropic Claude** (Best Quality): https://console.anthropic.com/
-- **Google Gemini** (Lowest Cost): https://makersuite.google.com/app/apikey
-- **Ollama** (Free, Local, No Key): https://ollama.ai (Zero cost!)
+- **OpenAI** (Most Popular): [platform.openai.com](https://platform.openai.com/api-keys)
+- **Anthropic Claude** (Best Quality): [console.anthropic.com](https://console.anthropic.com/)
+- **Google Gemini** (Lowest Cost): [makersuite.google.com](https://makersuite.google.com/app/apikey)
+- **Ollama** (Free, Local, No Key): [ollama.ai](https://ollama.ai) (Zero cost!)
 
 ---
 
@@ -97,19 +97,19 @@ cp .env.example .env
 
 ### Step 4: Start All Services
 
-**Option A: Using npm (simplest)**
+#### Option A: Using npm (simplest)
 
 ```bash
 npm run dev
 ```
 
-**Option B: Using VS Code Tasks**
+#### Option B: Using VS Code Tasks
 
 1. Press `Ctrl+Shift+P`
 2. Type "Tasks: Run Task"
 3. Select "Start All Services"
 
-**Option C: Manual (one terminal per service)**
+#### Option C: Manual (one terminal per service)
 
 ```bash
 # Terminal 1: Strapi CMS
@@ -129,10 +129,10 @@ cd web/oversight-hub && npm start
 
 Access these URLs to confirm everything is running:
 
-- **Public Site**: http://localhost:3000
-- **Oversight Hub**: http://localhost:3001
-- **Strapi CMS Admin**: http://localhost:1337/admin
-- **Backend API Docs**: http://localhost:8000/docs
+- **Public Site**: [http://localhost:3000](http://localhost:3000)
+- **Oversight Hub**: [http://localhost:3001](http://localhost:3001)
+- **Strapi CMS Admin**: [http://localhost:1337/admin](http://localhost:1337/admin)
+- **Backend API Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
 
 **✅ If all URLs work, you're ready to use GLAD Labs!**
 
@@ -142,7 +142,7 @@ Access these URLs to confirm everything is running:
 
 ### Project Structure
 
-```
+```text
 glad-labs-website/
 ├── web/
 │   ├── public-site/          # Next.js public website (port 3000)
@@ -247,7 +247,7 @@ npm run build
 npm run develop
 ```
 
-1. Open browser: http://localhost:1337/admin
+1. Open browser: [http://localhost:1337/admin](http://localhost:1337/admin)
 2. Create admin account (first-time setup)
 3. Set username: `admin`
 4. Set email and password
@@ -269,9 +269,9 @@ npm run dev
 
 Monitor each terminal for successful startup:
 
-- Strapi: "Server is running at: http://localhost:1337"
+- Strapi: "Server is running at: [http://localhost:1337](http://localhost:1337)"
 - Backend: "Application startup complete"
-- Public Site: "Local: http://localhost:3000"
+- Public Site: "Local: [http://localhost:3000](http://localhost:3000)"
 - Oversight Hub: "Compiled successfully"
 
 ---
@@ -326,7 +326,7 @@ OLLAMA_HOST=http://localhost:11434
 
 ### 5. Test in Oversight Hub
 
-1. Go to http://localhost:3001/models
+1. Go to [http://localhost:3001/models](http://localhost:3001/models)
 2. Find "Ollama" section
 3. Toggle "Active"
 4. Select a model (e.g., mistral)
@@ -394,7 +394,7 @@ vercel --prod
 
 Use the official Railway Strapi Template for one-click deployment:
 
-**https://railway.com/template/strapi**
+[Railway Strapi Template](https://railway.com/template/strapi)
 
 Features:
 
@@ -595,13 +595,13 @@ npm run type-check      # TypeScript checks
 
 ### Service URLs
 
-| Service       | URL                    | Admin                       |
-| ------------- | ---------------------- | --------------------------- |
-| Public Site   | http://localhost:3000  | N/A                         |
-| Oversight Hub | http://localhost:3001  | N/A                         |
-| Strapi CMS    | http://localhost:1337  | http://localhost:1337/admin |
-| Backend API   | http://localhost:8000  | http://localhost:8000/docs  |
-| Ollama        | http://localhost:11434 | N/A                         |
+| Service       | URL                                                  | Admin                                              |
+| ------------- | ---------------------------------------------------- | -------------------------------------------------- |
+| Public Site   | [http://localhost:3000](http://localhost:3000)       | N/A                                                |
+| Oversight Hub | [http://localhost:3001](http://localhost:3001)       | N/A                                                |
+| Strapi CMS    | [http://localhost:1337](http://localhost:1337)       | [http://localhost:1337/admin](http://localhost:1337/admin) |
+| Backend API   | [http://localhost:8000](http://localhost:8000)       | [http://localhost:8000/docs](http://localhost:8000/docs)   |
+| Ollama        | [http://localhost:11434](http://localhost:11434)     | N/A                                                |
 
 ---
 
@@ -611,11 +611,11 @@ After successful setup:
 
 1. **Test the System**
    - Run quick test: `./scripts/quick-test-api.ps1`
-   - Check Oversight Hub: http://localhost:3001
+   - Check Oversight Hub: [http://localhost:3001](http://localhost:3001)
    - Try creating a task
 
 2. **Configure AI Models**
-   - Navigate to Models page: http://localhost:3001/models
+   - Navigate to Models page: [http://localhost:3001/models](http://localhost:3001/models)
    - Toggle active providers
    - Test each model
 
@@ -652,7 +652,7 @@ After successful setup:
 
 2. **Verify Services:**
    - Run: `./scripts/quick-test-api.ps1`
-   - Check: http://localhost:8000/docs
+   - Check: [http://localhost:8000/docs](http://localhost:8000/docs)
 
 3. **Enable Debug Mode:**
    - Add to `.env`: `DEBUG=True` and `LOG_LEVEL=DEBUG`
@@ -664,10 +664,6 @@ After successful setup:
 
 ---
 
-<div align="center">
-
 **[← Back to Documentation Hub](./00-README.md)**
 
 [Architecture](./02-ARCHITECTURE_AND_DESIGN.md) • [Deployment](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) • [Development](./04-DEVELOPMENT_WORKFLOW.md) • [Guides](./guides/)
-
-</div>
