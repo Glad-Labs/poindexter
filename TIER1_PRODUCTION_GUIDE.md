@@ -12,21 +12,31 @@
 
 ### ✅ Configuration Files Created
 
-```
+**Deployment & Monitoring Scripts:**
+
+```text
 scripts/
-├── setup-tier1.js                    # Initial setup wizard
-├── deploy-tier1.sh                   # Deployment script
-├── monitor-tier1-resources.js        # Resource monitoring
-├── tier1-health-check.js            # Keep services warm
-├── backup-tier1-db.sh               # Database backups
-└── scale-to-tier2.sh                # Upgrade path
+├── setup-tier1.js                    # Node.js setup wizard (cross-platform)
+├── deploy-tier1.ps1                  # PowerShell deployment (Windows) ⭐
+├── deploy-tier1.sh                   # Bash deployment (Linux/Mac)
+├── monitor-tier1-resources.ps1       # PowerShell monitoring (Windows) ⭐
+├── monitor-tier1-resources.js        # Node.js monitoring (cross-platform)
+├── backup-tier1-db.bat               # Batch backup (Windows) ⭐
+├── backup-tier1-db.sh                # Bash backup (Linux/Mac)
+└── scale-to-tier2.sh                 # Bash upgrade script
+```
 
-Configuration:
-├── .railway.tier1.json              # Railway configuration
-├── .env.tier1.production            # Environment variables
-├── TIER1_COST_ANALYSIS.md          # Cost breakdown
-└── TIER1_DEPLOYMENT.json           # Package.json with scripts
+#### Windows-Native Scripts (⭐)
 
+PowerShell and Batch scripts for Windows deployment without requiring WSL/Git Bash.
+
+**Configuration Files:**
+
+```text
+├── .railway.tier1.json               # Railway configuration
+├── .env.tier1.production             # Environment variables
+├── TIER1_COST_ANALYSIS.md            # Cost breakdown
+└── TIER1_DEPLOYMENT.json             # Deployment config
 ```
 
 ---
@@ -123,7 +133,9 @@ npm run monitor:resources
 - API calls: $0 (self-hosted models)
 - S3 backups: ~$1/month (optional)
 
-**TRUE COST: $0-10/month for production**
+## 💰 True Production Cost: $0-10/month
+
+This is the actual cost of running GLAD Labs in Tier 1 production configuration.
 
 ---
 
@@ -344,14 +356,18 @@ npm run monitor:resources
 
 ### Railway Support
 
-- Dashboard: https://railway.app
-- Docs: https://docs.railway.app
-- Community: https://railway.app/community
+**Resources:**
+
+- [Railway Dashboard](https://railway.app)
+- [Railway Documentation](https://docs.railway.app)
+- [Railway Community](https://railway.app/community)
 
 ### Vercel Support
 
-- Dashboard: https://vercel.com/dashboard
-- Docs: https://vercel.com/docs
+**Resources:**
+
+- [Vercel Dashboard](https://vercel.com/dashboard)
+- [Vercel Documentation](https://vercel.com/docs)
 
 ### GLAD Labs Docs
 
