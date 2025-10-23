@@ -105,13 +105,13 @@ git push origin main
 
 ## 🔑 Key Files
 
-| File | Purpose | Read Time |
-|------|---------|-----------|
-| `DEV_QUICK_START.md` | Get started NOW | 5 min |
-| `WORKFLOW_SETUP_GUIDE.md` | Complete guide | 15 min |
-| `SETUP_COMPLETE_SUMMARY.md` | What changed | 5 min |
-| `SESSION_SUMMARY.md` | Session overview | 5 min |
-| `scripts/dev-troubleshoot.ps1` | Auto-diagnose issues | Run it |
+| File                           | Purpose              | Read Time |
+| ------------------------------ | -------------------- | --------- |
+| `DEV_QUICK_START.md`           | Get started NOW      | 5 min     |
+| `WORKFLOW_SETUP_GUIDE.md`      | Complete guide       | 15 min    |
+| `SETUP_COMPLETE_SUMMARY.md`    | What changed         | 5 min     |
+| `SESSION_SUMMARY.md`           | Session overview     | 5 min     |
+| `scripts/dev-troubleshoot.ps1` | Auto-diagnose issues | Run it    |
 
 ---
 
@@ -159,11 +159,11 @@ python -m uvicorn main:app --reload
 
 ## ✅ Environment Variables by Branch
 
-| Branch | File | Database | URLs | Used For |
-|--------|------|----------|------|----------|
-| `feat/*` | `.env.local` | SQLite | `localhost:*` | Local dev |
-| `dev` | `.env.staging` | PostgreSQL | `staging-*` | Staging |
-| `main` | `.env.tier1.production` | PostgreSQL | `*.railway.app` | Production |
+| Branch   | File                    | Database   | URLs            | Used For   |
+| -------- | ----------------------- | ---------- | --------------- | ---------- |
+| `feat/*` | `.env.local`            | SQLite     | `localhost:*`   | Local dev  |
+| `dev`    | `.env.staging`          | PostgreSQL | `staging-*`     | Staging    |
+| `main`   | `.env.tier1.production` | PostgreSQL | `*.railway.app` | Production |
 
 ---
 
@@ -223,12 +223,14 @@ git push origin main
 ## 💡 Pro Tips
 
 1. **Always pull before pushing:**
+
    ```bash
    git pull origin <branch>
    git push origin <branch>
    ```
 
 2. **Use descriptive commit messages:**
+
    ```bash
    git commit -m "feat: add user authentication"
    git commit -m "fix: resolve Strapi connection issue"
@@ -236,12 +238,14 @@ git push origin main
    ```
 
 3. **Check your branch before doing anything:**
+
    ```bash
    git branch  # See current branch
    git status  # See uncommitted changes
    ```
 
 4. **Test locally before pushing:**
+
    ```bash
    npm run dev  # Test locally
    npm run build  # Test production build
@@ -258,16 +262,19 @@ git push origin main
 ## 🆘 Need Help?
 
 **Quick Diagnostics:**
+
 ```powershell
 . scripts/dev-troubleshoot.ps1
 ```
 
 **Detailed Guides:**
+
 - Setup issues: Read `DEV_QUICK_START.md`
 - Workflow details: Read `WORKFLOW_SETUP_GUIDE.md`
 - What changed: Read `SESSION_SUMMARY.md`
 
 **Git Issues:**
+
 ```bash
 git log --oneline  # See commit history
 git diff  # See uncommitted changes

@@ -154,6 +154,7 @@ See the **Strapi Troubleshooting** section below.
 ### Issue: Strapi Won't Start (Dependency Error)
 
 **Error Message:**
+
 ```
 Error: Cannot find module '@strapi/strapi/package.json'
 ```

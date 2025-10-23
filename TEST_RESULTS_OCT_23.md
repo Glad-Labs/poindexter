@@ -10,12 +10,12 @@
 
 ### Services Tested
 
-| Service                | Port | Status | Result |
-| ---------------------- | ---- | ------ | ------ |
-| **Public Site (Next.js)**     | 3000 | ✅ WORKING | Dev server starts, compiles successfully |
-| **Oversight Hub (React)**     | 3001 | ✅ WORKING | Dev server starts, webpack compiles |
-| **Strapi CMS**                | 1337 | ⚠️ ISSUE  | Dependency error (see below) |
-| **Python Co-Founder Agent**   | 8000 | ✅ WORKING | Server starts, listening on port 8000 |
+| Service                     | Port | Status     | Result                                   |
+| --------------------------- | ---- | ---------- | ---------------------------------------- |
+| **Public Site (Next.js)**   | 3000 | ✅ WORKING | Dev server starts, compiles successfully |
+| **Oversight Hub (React)**   | 3001 | ✅ WORKING | Dev server starts, webpack compiles      |
+| **Strapi CMS**              | 1337 | ⚠️ ISSUE   | Dependency error (see below)             |
+| **Python Co-Founder Agent** | 8000 | ✅ WORKING | Server starts, listening on port 8000    |
 
 ---
 
@@ -126,12 +126,12 @@ npx npm-run-all --parallel "dev:public" "dev:oversight"
 
 ✅ **Test 2:** Access services in browser
 
-| URL | Status | Page Loaded |
-| --- | ------ | ----------- |
-| [`localhost:3000`](http://localhost:3000) | 200 | ✅ YES |
-| [`localhost:3001`](http://localhost:3001) | 200 | ✅ YES |
-| [`localhost:8000`](http://localhost:8000) | 200 | ✅ YES |
-| [`localhost:8000/docs`](http://localhost:8000/docs) | 200 | ✅ YES |
+| URL                                                 | Status | Page Loaded |
+| --------------------------------------------------- | ------ | ----------- |
+| [`localhost:3000`](http://localhost:3000)           | 200    | ✅ YES      |
+| [`localhost:3001`](http://localhost:3001)           | 200    | ✅ YES      |
+| [`localhost:8000`](http://localhost:8000)           | 200    | ✅ YES      |
+| [`localhost:8000/docs`](http://localhost:8000/docs) | 200    | ✅ YES      |
 
 **Status:** ✅ PASS
 
@@ -216,7 +216,8 @@ npx npm-run-all --parallel "dev:public" "dev:oversight"
 python src/cofounder_agent/start_server.py
 ```
 
-**Result:** 
+**Result:**
+
 - ✅ Public Site at http://localhost:3000
 - ✅ Oversight Hub at http://localhost:3001
 - ✅ Python API at http://localhost:8000
@@ -261,6 +262,7 @@ npm list @strapi/strapi @strapi/core
 ### For Development Purposes
 
 You can immediately start developing on:
+
 1. Public Site (Next.js/React)
 2. Oversight Hub (React)
 3. Python backend APIs
@@ -272,23 +274,24 @@ Strapi CMS can be started independently once dependency is resolved.
 
 ## 📝 Test Log
 
-| Time | Action | Result |
-| ---- | ------ | ------ |
-| 19:27 | Ran `npm run dev:full` | Services started, Strapi failed |
-| 19:28 | Killed Node processes | All stopped |
-| 19:29 | Cleared build caches | .next and build folders removed |
-| 19:30 | Ran `npm run dev` | Same Strapi error |
-| 19:31 | Ran `npm run dev:public` only | ✅ Works |
-| 19:32 | Ran `npm run dev:oversight` only | ✅ Works |
-| 19:33 | Ran both in parallel with npm-run-all | ✅ Both working |
-| 19:34 | Tested browser access | ✅ Both ports accessible |
-| 19:35 | Started Python backend separately | ✅ Port 8000 responsive |
+| Time  | Action                                | Result                          |
+| ----- | ------------------------------------- | ------------------------------- |
+| 19:27 | Ran `npm run dev:full`                | Services started, Strapi failed |
+| 19:28 | Killed Node processes                 | All stopped                     |
+| 19:29 | Cleared build caches                  | .next and build folders removed |
+| 19:30 | Ran `npm run dev`                     | Same Strapi error               |
+| 19:31 | Ran `npm run dev:public` only         | ✅ Works                        |
+| 19:32 | Ran `npm run dev:oversight` only      | ✅ Works                        |
+| 19:33 | Ran both in parallel with npm-run-all | ✅ Both working                 |
+| 19:34 | Tested browser access                 | ✅ Both ports accessible        |
+| 19:35 | Started Python backend separately     | ✅ Port 8000 responsive         |
 
 ---
 
 ## 📞 Questions?
 
 See **START_HERE.md** for:
+
 - Troubleshooting steps
 - How to fix Strapi
 - Port conflict resolution
