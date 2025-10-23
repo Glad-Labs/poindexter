@@ -120,7 +120,7 @@
 
 **Architecture & Design:**
 
-- [System Architecture](./reference/SYSTEM_ARCHITECTURE.md) - Component interactions
+- [System Architecture](./reference/ARCHITECTURE.md) - Component interactions
 - [Deployment Strategies](./reference/DEPLOYMENT_STRATEGY_COST_OPTIMIZED.md) - Production setup
 - [Standards & Best Practices](./reference/GLAD-LABS-STANDARDS.md) - Coding standards
 
@@ -132,12 +132,12 @@
 
 | Topic                  | Where to Look                                                                                             |
 | ---------------------- | --------------------------------------------------------------------------------------------------------- |
-| **Setup**              | [01-SETUP_AND_OVERVIEW.md](./01-SETUP_AND_OVERVIEW.md) or [Setup Guide](./guides/LOCAL_SETUP_COMPLETE.md) |
+| **Setup**              | [01-SETUP_AND_OVERVIEW.md](./01-SETUP_AND_OVERVIEW.md) or [Setup Guide](./guides/LOCAL_SETUP_GUIDE.md) |
 | **Architecture**       | [02-ARCHITECTURE_AND_DESIGN.md](./02-ARCHITECTURE_AND_DESIGN.md) or [Reference](./reference/)             |
 | **AI Agents**          | [05-AI_AGENTS_AND_INTEGRATION.md](./05-AI_AGENTS_AND_INTEGRATION.md)                                      |
 | **Deployment**         | [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md)                              |
 | **Vercel Deployment**  | [Vercel Strategy Guide](./guides/VERCEL_DEPLOYMENT_STRATEGY.md) - Deploy public site & oversight hub      |
-| **Source Code**        | [Source Code Analysis](./guides/SRC_CODE_ANALYSIS_COMPLETE.md) - 15K lines analyzed, cost optimization    |
+| **Source Code**        | [Source Code Analysis](./guides/SRC_CODE_ANALYSIS_COMPLETE.md) - 15K+ lines analyzed, cost insights    |
 | **Development**        | [04-DEVELOPMENT_WORKFLOW.md](./04-DEVELOPMENT_WORKFLOW.md)                                                |
 | **Content Generation** | [Content Generation Guide](./guides/CONTENT_GENERATION_GUIDE.md)                                          |
 | **API**                | [API Contract](./reference/API_CONTRACT_CONTENT_CREATION.md)                                              |
@@ -146,12 +146,11 @@
 
 ### By Problem
 
-- **"Nothing works"** → [Setup Issues](./guides/troubleshooting/01-SETUP_ISSUES.md)
-- **"Tests failing"** → [Test Failures](./guides/troubleshooting/02-TEST_FAILURES.md)
-- **"Dependencies broken"** → [Dependency Conflicts](./guides/troubleshooting/03-DEPENDENCY_CONFLICTS.md)
-- **"Deployment error"** → [Deployment Issues](./guides/troubleshooting/04-DEPLOYMENT_ISSUES.md)
-- **"Performance slow"** → [Performance Issues](./guides/troubleshooting/05-PERFORMANCE_ISSUES.md)
-- **"Unknown error"** → [Error Solutions](./guides/troubleshooting/06-ERROR_SOLUTIONS.md)
+- **"Deployment failed"** → [Deployment Fixes](./guides/troubleshooting/01-DEPLOYMENT_FIX.md)
+- **"Strapi not starting"** → [Strapi Node Fix](./guides/troubleshooting/02-STRAPI_FIX.md)
+- **"FastAPI no module"** → [FastAPI Fix](./guides/troubleshooting/03-FASTAPI_FIX.md)
+- **"Railway build error"** → [Railway Fix](./guides/troubleshooting/04-RAILWAY_FIX.md)
+- **"Need help?"** → [Troubleshooting Index](./guides/troubleshooting/README.md)
 
 ---
 
