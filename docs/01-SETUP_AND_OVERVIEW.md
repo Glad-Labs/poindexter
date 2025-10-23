@@ -595,13 +595,13 @@ npm run type-check      # TypeScript checks
 
 ### Service URLs
 
-| Service       | URL                                                  | Admin                                              |
-| ------------- | ---------------------------------------------------- | -------------------------------------------------- |
-| Public Site   | [http://localhost:3000](http://localhost:3000)       | N/A                                                |
-| Oversight Hub | [http://localhost:3001](http://localhost:3001)       | N/A                                                |
-| Strapi CMS    | [http://localhost:1337](http://localhost:1337)       | [http://localhost:1337/admin](http://localhost:1337/admin) |
-| Backend API   | [http://localhost:8000](http://localhost:8000)       | [http://localhost:8000/docs](http://localhost:8000/docs)   |
-| Ollama        | [http://localhost:11434](http://localhost:11434)     | N/A                                                |
+| Service       | URL                                              | Admin                                                      |
+| ------------- | ------------------------------------------------ | ---------------------------------------------------------- |
+| Public Site   | [http://localhost:3000](http://localhost:3000)   | N/A                                                        |
+| Oversight Hub | [http://localhost:3001](http://localhost:3001)   | N/A                                                        |
+| Strapi CMS    | [http://localhost:1337](http://localhost:1337)   | [http://localhost:1337/admin](http://localhost:1337/admin) |
+| Backend API   | [http://localhost:8000](http://localhost:8000)   | [http://localhost:8000/docs](http://localhost:8000/docs)   |
+| Ollama        | [http://localhost:11434](http://localhost:11434) | N/A                                                        |
 
 ---
 

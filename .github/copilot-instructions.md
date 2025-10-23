@@ -542,13 +542,13 @@ echo $DATABASE_URL
 
 ## 🔗 Quick Links
 
-| Resource            | Link                                                                                   |
-| ------------------- | -------------------------------------------------------------------------------------- |
-| **Main Docs Hub**   | [docs/00-README.md](../docs/00-README.md)                                               |
-| **Setup Guide**     | [docs/01-SETUP_AND_OVERVIEW.md](../docs/01-SETUP_AND_OVERVIEW.md)                       |
-| **Architecture**    | [docs/02-ARCHITECTURE_AND_DESIGN.md](../docs/02-ARCHITECTURE_AND_DESIGN.md)             |
-| **Components**      | [docs/components/](../docs/components/)                                                 |
-| **Deployment**      | [docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md](../docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md) |
+| Resource          | Link                                                                                    |
+| ----------------- | --------------------------------------------------------------------------------------- |
+| **Main Docs Hub** | [docs/00-README.md](../docs/00-README.md)                                               |
+| **Setup Guide**   | [docs/01-SETUP_AND_OVERVIEW.md](../docs/01-SETUP_AND_OVERVIEW.md)                       |
+| **Architecture**  | [docs/02-ARCHITECTURE_AND_DESIGN.md](../docs/02-ARCHITECTURE_AND_DESIGN.md)             |
+| **Components**    | [docs/components/](../docs/components/)                                                 |
+| **Deployment**    | [docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md](../docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md) |
 
 ---
 
