@@ -162,6 +162,7 @@ pytest src/ -v  # verbose
 ### Writing Tests
 
 **Frontend (Jest):**
+
 ```javascript
 describe('PostCard Component', () => {
   it('renders post title', () => {
@@ -172,6 +173,7 @@ describe('PostCard Component', () => {
 ```
 
 **Backend (pytest):**
+
 ```python
 def test_create_task():
     response = client.post("/api/tasks", json={"title": "Test"})
@@ -257,18 +259,22 @@ npm run lint:md:fix
 
 ```markdown
 ## Description
+
 Brief description of changes
 
 ## Related Issue
+
 Fixes #123
 
 ## Type of Change
+
 - [ ] New feature
 - [ ] Bug fix
 - [ ] Documentation
 - [ ] Breaking change
 
 ## Checklist
+
 - [ ] Tests pass locally
 - [ ] Code follows style guidelines
 - [ ] Documentation updated

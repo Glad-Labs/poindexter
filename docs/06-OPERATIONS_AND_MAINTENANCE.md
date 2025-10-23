@@ -37,6 +37,7 @@ curl https://example.com/
 ### Automated Monitoring
 
 **Set up monitoring for:**
+
 - API response time (target: <500ms)
 - Database connection pool
 - Memory usage (alert if >80%)
@@ -59,6 +60,7 @@ tail -f logs/*.log
 ### Alert Configuration
 
 **Send alerts for:**
+
 - Service downtime
 - High error rates (>1%)
 - Slow response times (>2s)
@@ -118,8 +120,8 @@ Monthly:  Keep last 12 months
 
 ```sql
 -- Check slow queries
-SELECT * FROM pg_stat_statements 
-WHERE mean_exec_time > 1000 
+SELECT * FROM pg_stat_statements
+WHERE mean_exec_time > 1000
 ORDER BY mean_exec_time DESC;
 
 -- Add indexes for frequently queried columns
@@ -133,11 +135,13 @@ VACUUM ANALYZE;
 ### API Response Times
 
 **Monitor:**
+
 - Average response time
 - 95th percentile response time
 - Cache hit rates
 
 **Optimize:**
+
 - Add Redis caching for frequently accessed data
 - Implement pagination for large datasets
 - Use database query optimization
@@ -355,15 +359,15 @@ git revert <commit-hash>
 
 ## 📈 Metrics to Track
 
-| Metric | Target | Alert If |
-|--------|--------|----------|
-| API Response Time (p95) | <500ms | >2s |
-| Error Rate | <0.1% | >1% |
-| Uptime | 99.9% | <99% |
-| Database Connections | <50 | >80 |
-| Memory Usage | <60% | >80% |
-| Disk Space | <70% | >90% |
-| Backup Age | <24h | >48h |
+| Metric                  | Target | Alert If |
+| ----------------------- | ------ | -------- |
+| API Response Time (p95) | <500ms | >2s      |
+| Error Rate              | <0.1%  | >1%      |
+| Uptime                  | 99.9%  | <99%     |
+| Database Connections    | <50    | >80      |
+| Memory Usage            | <60%   | >80%     |
+| Disk Space              | <70%   | >90%     |
+| Backup Age              | <24h   | >48h     |
 
 ---
 

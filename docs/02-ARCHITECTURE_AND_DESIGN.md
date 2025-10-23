@@ -42,7 +42,7 @@
 | ------------------ | --------------------------------- | ---------------------------------------------------------------------------------------------- |
 | **Core Product**   | **Intelligent Automation (SaaS)** | The marketable product is the AI Agent System itself, pivoting to scalable B2B services        |
 | **Content Engine** | **High-Fidelity Content**         | Consistently generate sophisticated, on-brand content that builds community and drives traffic |
-| **Technology**     | **Serverless Scalability**        | Utilize cost-effective, cloud-native stack with pay-per-use pricing for maximum runway        |
+| **Technology**     | **Serverless Scalability**        | Utilize cost-effective, cloud-native stack with pay-per-use pricing for maximum runway         |
 
 ### Architecture Principles
 
@@ -152,9 +152,9 @@
 
 ### Backend Architecture
 
-| Component         | Technology                       | Port | Status        |
-| ----------------- | -------------------------------- | ---- | ------------- |
-| **Strapi CMS**    | Strapi v5 + TypeScript           | 1337 | ✅ Production |
+| Component         | Technology                      | Port | Status        |
+| ----------------- | ------------------------------- | ---- | ------------- |
+| **Strapi CMS**    | Strapi v5 + TypeScript          | 1337 | ✅ Production |
 | **AI Co-Founder** | FastAPI + Python 3.12 + Uvicorn | 8000 | ✅ Production |
 
 **Backend Features:**
@@ -170,23 +170,23 @@
 
 ### Infrastructure & Services
 
-| Service                | Provider/Tech                                | Purpose                             | Status      |
-| ---------------------- | -------------------------------------------- | ----------------------------------- | ----------- |
-| **Database**           | PostgreSQL (prod) / SQLite (local)           | Content and operational data        | ✅ Active   |
-| **Cache**              | Redis                                        | Session management and caching      | ✅ Available |
-| **Storage**            | File system / Cloud Storage                  | Media files and assets              | ✅ Active   |
-| **Message Queue**      | In-memory (dev) / Cloud Pub/Sub (prod)       | Async task processing               | ✅ Available |
-| **Deployment**         | Railway (backend) / Vercel (frontend)        | Cloud hosting                       | ✅ Active   |
-| **Monitoring**         | Application Insights (optional)              | Performance monitoring              | ⏳ Optional |
+| Service           | Provider/Tech                          | Purpose                        | Status       |
+| ----------------- | -------------------------------------- | ------------------------------ | ------------ |
+| **Database**      | PostgreSQL (prod) / SQLite (local)     | Content and operational data   | ✅ Active    |
+| **Cache**         | Redis                                  | Session management and caching | ✅ Available |
+| **Storage**       | File system / Cloud Storage            | Media files and assets         | ✅ Active    |
+| **Message Queue** | In-memory (dev) / Cloud Pub/Sub (prod) | Async task processing          | ✅ Available |
+| **Deployment**    | Railway (backend) / Vercel (frontend)  | Cloud hosting                  | ✅ Active    |
+| **Monitoring**    | Application Insights (optional)        | Performance monitoring         | ⏳ Optional  |
 
 ### AI Model Providers (Multi-Provider Support)
 
-| Provider  | Models                        | Cost      | Setup      | Speed |
-| --------- | ----------------------------- | --------- | ---------- | ----- |
-| **Ollama**    | Mistral, Llama3.2, Phi, etc.  | 🟢 Free   | Easy (Local) | 🟡 Slow |
-| **OpenAI**    | GPT-4, GPT-4o, GPT-3.5        | 🟠 Paid   | Easy (API key) | 🟢 Fast |
-| **Anthropic** | Claude 3 (Opus, Sonnet, Haiku) | 🟠 Paid   | Easy (API key) | 🟢 Fast |
-| **Google**    | Gemini Pro, Gemini 2.0        | 🟡 Free+Paid | Easy (API key) | 🟢 Fast |
+| Provider      | Models                         | Cost         | Setup          | Speed   |
+| ------------- | ------------------------------ | ------------ | -------------- | ------- |
+| **Ollama**    | Mistral, Llama3.2, Phi, etc.   | 🟢 Free      | Easy (Local)   | 🟡 Slow |
+| **OpenAI**    | GPT-4, GPT-4o, GPT-3.5         | 🟠 Paid      | Easy (API key) | 🟢 Fast |
+| **Anthropic** | Claude 3 (Opus, Sonnet, Haiku) | 🟠 Paid      | Easy (API key) | 🟢 Fast |
+| **Google**    | Gemini Pro, Gemini 2.0         | 🟡 Free+Paid | Easy (API key) | 🟢 Fast |
 
 ---
 
@@ -349,6 +349,7 @@ Dashboard/
    - Result data
 
 **API Endpoints (Example):**
+
 ```
 GET  /api/posts                    # List posts
 GET  /api/posts/:id                # Get single post
@@ -369,6 +370,7 @@ GET  /api/tags                     # List tags
 **Core Components:**
 
 #### Main API (`main.py`)
+
 - FastAPI application
 - 50+ REST endpoints
 - Error handling and logging
@@ -376,6 +378,7 @@ GET  /api/tags                     # List tags
 - Request/response validation
 
 #### Model Router (`services/model_router.py`)
+
 - Multi-provider AI orchestration
 - Automatic provider fallback
 - Cost tracking and optimization
@@ -383,6 +386,7 @@ GET  /api/tags                     # List tags
 - Token counting
 
 #### Multi-Agent Orchestrator (`multi_agent_orchestrator.py`)
+
 - Agent lifecycle management
 - Task distribution and scheduling
 - Parallel execution coordination
@@ -424,12 +428,14 @@ class ComplianceAgent(BaseAgent):
 ```
 
 #### Memory System (`memory_system.py`)
+
 - Short-term context (current conversation)
 - Long-term memory (persistent storage)
 - Semantic search across memories
 - Automatic cleanup and optimization
 
 **API Endpoints (Core):**
+
 ```
 POST /api/tasks              # Create task
 GET  /api/tasks/:id          # Get task status
@@ -480,6 +486,7 @@ GET  /api/metrics            # Performance metrics
 ### Database Schema
 
 **Posts Table:**
+
 ```sql
 CREATE TABLE posts (
   id UUID PRIMARY KEY,
@@ -502,6 +509,7 @@ CREATE TABLE posts (
 ```
 
 **Tasks Table:**
+
 ```sql
 CREATE TABLE tasks (
   id UUID PRIMARY KEY,
@@ -519,6 +527,7 @@ CREATE TABLE tasks (
 ```
 
 **Memory Table:**
+
 ```sql
 CREATE TABLE memories (
   id UUID PRIMARY KEY,

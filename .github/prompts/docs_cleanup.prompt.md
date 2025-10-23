@@ -43,7 +43,7 @@ You will:
    - troubleshooting/ - focused troubleshooting only
    - NO guides/ folder, NO archive-old/, NO dated files
      Documentation Structure Template
-GLAD Labs documentation follows a HIGH-LEVEL ONLY approach to maintain quality and prevent staleness.
+     GLAD Labs documentation follows a HIGH-LEVEL ONLY approach to maintain quality and prevent staleness.
 
 ```
 docs/
@@ -68,6 +68,7 @@ docs/
 ```
 
 **DO NOT CREATE:**
+
 - docs/guides/ (no feature guides or how-to guides)
 - docs/archive-old/ (don't accumulate historical files)
 - Status update documents
@@ -76,6 +77,7 @@ docs/
 - Duplicate content that belongs in core docs
 
 **WHY High-Level Only:**
+
 - Code changes rapidly; documentation becomes stale
 - Guides duplicate what code demonstrates
 - Core architecture is stable and worth documenting
@@ -88,7 +90,7 @@ After any documentation work, verify:
 **Documentation Assessment:**
 
 - ✅ **Core Documentation:** 8 files (00-07) - COMPLETE and high-level
-- ✅ **Reference Docs:** API specs, schemas, standards - MAINTAINED  
+- ✅ **Reference Docs:** API specs, schemas, standards - MAINTAINED
 - ✅ **Troubleshooting:** Focused, common issues only - CONCISE
 - ❌ **Unnecessary Files:** Guides, status updates, duplicates - DELETED
 - 📊 **Total Files:** < 20 in docs/ (core 8 + minimal components + reference + troubleshooting)
@@ -123,8 +125,8 @@ Documentation Policy Questions
    - If no: Reconsider whether it should exist
 
 **If the answer to any question is "this is a how-to guide for developers,"** the response should be: **"This belongs in code examples/comments, not documentation. Let the code be the guide."**
-   Consolidation Checklist
-   For each consolidation action, report:
+Consolidation Checklist
+For each consolidation action, report:
 
 ### Action: [TITLE]
 

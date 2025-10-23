@@ -32,6 +32,7 @@ GLAD Labs uses a three-tier deployment architecture:
 ```
 
 **Recommended Platforms:**
+
 - **Backend:** Railway (PostgreSQL + Python/Node.js)
 - **Frontends:** Vercel (optimized for Next.js)
 - **Database:** PostgreSQL (production) / SQLite (dev)
@@ -325,6 +326,7 @@ pm2 start npm --name "strapi" -- run start
 **Railway:** Let's Encrypt (automatic)
 
 **Manual:**
+
 ```bash
 # Using Certbot
 certbot certonly --standalone -d example.com
@@ -372,6 +374,7 @@ tail -f logs/application.log
 ### Error Tracking
 
 Configure error monitoring:
+
 - **Option 1:** Sentry (recommended): https://sentry.io
 - **Option 2:** Railway dashboard
 - **Option 3:** Application Insights

@@ -59,16 +59,16 @@ class BaseAgent(ABC):
         self.name = name
         self.model = model
         self.memory = MemorySystem()
-    
+
     @abstractmethod
     async def execute(self, task: Task) -> Result:
         """Execute agent task"""
         pass
-    
+
     async def think(self, prompt: str) -> str:
         """Query LLM with context"""
         pass
-    
+
     async def remember(self, context: str) -> None:
         """Store in memory for future use"""
         pass
@@ -83,6 +83,7 @@ class BaseAgent(ABC):
 **Responsibility:** Content creation and curation
 
 **Capabilities:**
+
 - Blog post generation
 - Social media content
 - Email campaigns
@@ -90,6 +91,7 @@ class BaseAgent(ABC):
 - Content calendar planning
 
 **Example:**
+
 ```python
 class ContentAgent(BaseAgent):
     async def execute(self, task: Task) -> Result:
@@ -104,6 +106,7 @@ class ContentAgent(BaseAgent):
 **Responsibility:** Business metrics and financial management
 
 **Capabilities:**
+
 - Cost tracking (API usage, cloud services)
 - Revenue projections
 - Budget optimization
@@ -111,6 +114,7 @@ class ContentAgent(BaseAgent):
 - Financial reporting
 
 **Example:**
+
 ```python
 class FinancialAgent(BaseAgent):
     async def execute(self, task: Task) -> Result:
@@ -126,6 +130,7 @@ class FinancialAgent(BaseAgent):
 **Responsibility:** Market analysis and trend detection
 
 **Capabilities:**
+
 - Competitor analysis
 - Trend forecasting
 - Audience insights
@@ -133,6 +138,7 @@ class FinancialAgent(BaseAgent):
 - Opportunity detection
 
 **Example:**
+
 ```python
 class MarketInsightAgent(BaseAgent):
     async def execute(self, task: Task) -> Result:
@@ -147,6 +153,7 @@ class MarketInsightAgent(BaseAgent):
 **Responsibility:** Legal and regulatory compliance
 
 **Capabilities:**
+
 - GDPR/CCPA compliance checking
 - Content moderation
 - Privacy policy management
@@ -154,6 +161,7 @@ class MarketInsightAgent(BaseAgent):
 - Legal compliance validation
 
 **Example:**
+
 ```python
 class ComplianceAgent(BaseAgent):
     async def execute(self, task: Task) -> Result:
@@ -179,17 +187,17 @@ class AgentOrchestrator:
             "market": MarketInsightAgent(),
             "compliance": ComplianceAgent(),
         }
-    
+
     async def execute(self, request: Request) -> Response:
         # Route to appropriate agent(s)
         tasks = self.decompose_request(request)
-        
+
         # Execute in parallel
         results = await asyncio.gather(*[
             self.agents[task.agent_type].execute(task)
             for task in tasks
         ])
-        
+
         # Aggregate results
         return self.aggregate_results(results)
 ```
@@ -246,16 +254,16 @@ class MemorySystem:
     async def store(self, key: str, value: Any) -> None:
         """Store information"""
         await self.db.set(key, value)
-    
+
     async def retrieve(self, key: str) -> Any:
         """Retrieve information"""
         return await self.db.get(key)
-    
+
     async def semantic_search(self, query: str) -> List[Result]:
         """Find related memories"""
         embedding = await self.embed(query)
         return await self.db.vector_search(embedding)
-    
+
     async def forget(self, key: str) -> None:
         """Remove old memories"""
         await self.db.delete(key)
@@ -279,6 +287,7 @@ async def get_context_for_user(self, user_id: str) -> str:
 ### Model Context Protocol
 
 GLAD Labs uses MCP (Model Context Protocol) for:
+
 - **Tool calling:** Agents can call external tools
 - **Resource access:** Access to databases, APIs, files
 - **Standard interface:** Consistent agent communication
@@ -295,15 +304,15 @@ class GLADLabsMCPServer(Server):
         self.register_tool("create_content", self.create_content)
         self.register_tool("query_database", self.query_database)
         self.register_tool("call_api", self.call_api)
-    
+
     async def create_content(self, args: Dict) -> str:
         """Tool: Generate content"""
         pass
-    
+
     async def query_database(self, args: Dict) -> str:
         """Tool: Query database"""
         pass
-    
+
     async def call_api(self, args: Dict) -> str:
         """Tool: Call external API"""
         pass
@@ -319,12 +328,12 @@ async def generate_post(self, topic: str) -> str:
         "type": "outline",
         "topic": topic
     })
-    
+
     post = await self.call_tool("create_content", {
         "type": "full_article",
         "outline": outline
     })
-    
+
     return post
 ```
 
@@ -357,12 +366,12 @@ AGENT_CONFIG = {
 
 ### Agent Capabilities Matrix
 
-| Agent | Blog Posts | Reports | Compliance | Trend Analysis | Cost Tracking |
-|-------|-----------|---------|-----------|----------------|---------------|
-| Content | ✅ | ✅ | ⚠️ | ⚠️ | ❌ |
-| Financial | ❌ | ✅ | ❌ | ❌ | ✅ |
-| Market | ⚠️ | ⚠️ | ❌ | ✅ | ❌ |
-| Compliance | ❌ | ⚠️ | ✅ | ❌ | ❌ |
+| Agent      | Blog Posts | Reports | Compliance | Trend Analysis | Cost Tracking |
+| ---------- | ---------- | ------- | ---------- | -------------- | ------------- |
+| Content    | ✅         | ✅      | ⚠️         | ⚠️             | ❌            |
+| Financial  | ❌         | ✅      | ❌         | ❌             | ✅            |
+| Market     | ⚠️         | ⚠️      | ❌         | ✅             | ❌            |
+| Compliance | ❌         | ⚠️      | ✅         | ❌             | ❌            |
 
 ---
 

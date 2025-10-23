@@ -20,6 +20,7 @@
 Welcome to GLAD Labs! This guide covers everything from initial setup through production deployment. GLAD Labs is a comprehensive AI Co-Founder system that combines autonomous content creation, business intelligence, and multi-agent orchestration.
 
 **This document will get you:**
+
 - ✅ Local development environment running in 15 minutes
 - ✅ All services (Strapi, FastAPI, Next.js) operational
 - ✅ Ready to test the end-to-end pipeline
@@ -31,21 +32,21 @@ Welcome to GLAD Labs! This guide covers everything from initial setup through pr
 
 ### Required Software
 
-| Software | Version | Purpose | Download |
-|----------|---------|---------|----------|
-| **Node.js** | 18.x - 22.x | Frontend & Strapi | [nodejs.org](https://nodejs.org/) |
-| **Python** | 3.12+ | Backend API | [python.org](https://www.python.org/) |
-| **npm** | 10+ | Package management | (Included with Node.js) |
-| **Git** | Latest | Version control | [git-scm.com](https://git-scm.com/) |
+| Software    | Version     | Purpose            | Download                              |
+| ----------- | ----------- | ------------------ | ------------------------------------- |
+| **Node.js** | 18.x - 22.x | Frontend & Strapi  | [nodejs.org](https://nodejs.org/)     |
+| **Python**  | 3.12+       | Backend API        | [python.org](https://www.python.org/) |
+| **npm**     | 10+         | Package management | (Included with Node.js)               |
+| **Git**     | Latest      | Version control    | [git-scm.com](https://git-scm.com/)   |
 
 ### Optional Software
 
-| Software | Purpose | Download |
-|----------|---------|----------|
-| **Docker Desktop** | Container deployment | [docker.com](https://www.docker.com/) |
-| **Ollama** | Local AI models (zero-cost) | [ollama.ai](https://ollama.ai/) |
-| **VS Code** | Recommended IDE | [code.visualstudio.com](https://code.visualstudio.com/) |
-| **PostgreSQL** | Production database | [postgresql.org](https://www.postgresql.org/) |
+| Software           | Purpose                     | Download                                                |
+| ------------------ | --------------------------- | ------------------------------------------------------- |
+| **Docker Desktop** | Container deployment        | [docker.com](https://www.docker.com/)                   |
+| **Ollama**         | Local AI models (zero-cost) | [ollama.ai](https://ollama.ai/)                         |
+| **VS Code**        | Recommended IDE             | [code.visualstudio.com](https://code.visualstudio.com/) |
+| **PostgreSQL**     | Production database         | [postgresql.org](https://www.postgresql.org/)           |
 
 ### AI API Keys (At Least One Required)
 
@@ -332,6 +333,7 @@ OLLAMA_HOST=http://localhost:11434
 5. Click "Test Connectivity"
 
 **Benefits of Ollama:**
+
 - ✅ 100% free - unlimited requests
 - ✅ No API rate limits
 - ✅ No latency from API calls
@@ -345,6 +347,7 @@ OLLAMA_HOST=http://localhost:11434
 ### Before Deploying
 
 Ensure:
+
 - ✅ All services run locally without errors
 - ✅ Tests pass: `npm test && pytest src/`
 - ✅ Environment variables configured
@@ -394,6 +397,7 @@ Use the official Railway Strapi Template for one-click deployment:
 **https://railway.com/template/strapi**
 
 Features:
+
 - One-click deployment
 - PostgreSQL included
 - SSL/HTTPS automatic
@@ -408,23 +412,23 @@ See full [Deployment Guide](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md)
 
 ### Essential Variables
 
-| Variable | Required | Example | Notes |
-|----------|----------|---------|-------|
-| `OPENAI_API_KEY` | One of three | `sk-...` | If using OpenAI |
-| `ANTHROPIC_API_KEY` | One of three | `sk-ant-...` | If using Anthropic |
-| `GOOGLE_API_KEY` | One of three | `AIza...` | If using Google Gemini |
-| `USE_OLLAMA` | Optional | `true` | Use free local Ollama instead |
-| `OLLAMA_HOST` | If Ollama | `http://localhost:11434` | Local Ollama server |
+| Variable            | Required     | Example                  | Notes                         |
+| ------------------- | ------------ | ------------------------ | ----------------------------- |
+| `OPENAI_API_KEY`    | One of three | `sk-...`                 | If using OpenAI               |
+| `ANTHROPIC_API_KEY` | One of three | `sk-ant-...`             | If using Anthropic            |
+| `GOOGLE_API_KEY`    | One of three | `AIza...`                | If using Google Gemini        |
+| `USE_OLLAMA`        | Optional     | `true`                   | Use free local Ollama instead |
+| `OLLAMA_HOST`       | If Ollama    | `http://localhost:11434` | Local Ollama server           |
 
 ### Optional Variables
 
-| Variable | Default | Notes |
-|----------|---------|-------|
-| `DATABASE_URL` | SQLite | PostgreSQL for production |
-| `REDIS_URL` | None | Cache layer (recommended for production) |
-| `RATE_LIMIT_PER_MINUTE` | 60 | API rate limiting |
-| `LOG_LEVEL` | INFO | DEBUG for development |
-| `CORS_ORIGINS` | `*` | Restrict in production |
+| Variable                | Default | Notes                                    |
+| ----------------------- | ------- | ---------------------------------------- |
+| `DATABASE_URL`          | SQLite  | PostgreSQL for production                |
+| `REDIS_URL`             | None    | Cache layer (recommended for production) |
+| `RATE_LIMIT_PER_MINUTE` | 60      | API rate limiting                        |
+| `LOG_LEVEL`             | INFO    | DEBUG for development                    |
+| `CORS_ORIGINS`          | `*`     | Restrict in production                   |
 
 ### Generate Secure Secrets
 
@@ -591,13 +595,13 @@ npm run type-check      # TypeScript checks
 
 ### Service URLs
 
-| Service | URL | Admin |
-|---------|-----|-------|
-| Public Site | http://localhost:3000 | N/A |
-| Oversight Hub | http://localhost:3001 | N/A |
-| Strapi CMS | http://localhost:1337 | http://localhost:1337/admin |
-| Backend API | http://localhost:8000 | http://localhost:8000/docs |
-| Ollama | http://localhost:11434 | N/A |
+| Service       | URL                    | Admin                       |
+| ------------- | ---------------------- | --------------------------- |
+| Public Site   | http://localhost:3000  | N/A                         |
+| Oversight Hub | http://localhost:3001  | N/A                         |
+| Strapi CMS    | http://localhost:1337  | http://localhost:1337/admin |
+| Backend API   | http://localhost:8000  | http://localhost:8000/docs  |
+| Ollama        | http://localhost:11434 | N/A                         |
 
 ---
 

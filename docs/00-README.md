@@ -130,19 +130,19 @@
 
 ### By Topic
 
-| Topic                  | Where to Look                                                                                             |
-| ---------------------- | --------------------------------------------------------------------------------------------------------- |
+| Topic                  | Where to Look                                                                                          |
+| ---------------------- | ------------------------------------------------------------------------------------------------------ |
 | **Setup**              | [01-SETUP_AND_OVERVIEW.md](./01-SETUP_AND_OVERVIEW.md) or [Setup Guide](./guides/LOCAL_SETUP_GUIDE.md) |
-| **Architecture**       | [02-ARCHITECTURE_AND_DESIGN.md](./02-ARCHITECTURE_AND_DESIGN.md) or [Reference](./reference/)             |
-| **AI Agents**          | [05-AI_AGENTS_AND_INTEGRATION.md](./05-AI_AGENTS_AND_INTEGRATION.md)                                      |
-| **Deployment**         | [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md)                              |
-| **Vercel Deployment**  | [Vercel Strategy Guide](./guides/VERCEL_DEPLOYMENT_STRATEGY.md) - Deploy public site & oversight hub      |
+| **Architecture**       | [02-ARCHITECTURE_AND_DESIGN.md](./02-ARCHITECTURE_AND_DESIGN.md) or [Reference](./reference/)          |
+| **AI Agents**          | [05-AI_AGENTS_AND_INTEGRATION.md](./05-AI_AGENTS_AND_INTEGRATION.md)                                   |
+| **Deployment**         | [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md)                           |
+| **Vercel Deployment**  | [Vercel Strategy Guide](./guides/VERCEL_DEPLOYMENT_STRATEGY.md) - Deploy public site & oversight hub   |
 | **Source Code**        | [Source Code Analysis](./guides/SRC_CODE_ANALYSIS_COMPLETE.md) - 15K+ lines analyzed, cost insights    |
-| **Development**        | [04-DEVELOPMENT_WORKFLOW.md](./04-DEVELOPMENT_WORKFLOW.md)                                                |
-| **Content Generation** | [Content Generation Guide](./guides/CONTENT_GENERATION_GUIDE.md)                                          |
-| **API**                | [API Contract](./reference/API_CONTRACT_CONTENT_CREATION.md)                                              |
-| **Troubleshooting**    | [Troubleshooting Hub](./guides/troubleshooting/)                                                          |
-| **Components**         | [Components Directory](./components/)                                                                     |
+| **Development**        | [04-DEVELOPMENT_WORKFLOW.md](./04-DEVELOPMENT_WORKFLOW.md)                                             |
+| **Content Generation** | [Content Generation Guide](./guides/CONTENT_GENERATION_GUIDE.md)                                       |
+| **API**                | [API Contract](./reference/API_CONTRACT_CONTENT_CREATION.md)                                           |
+| **Troubleshooting**    | [Troubleshooting Hub](./guides/troubleshooting/)                                                       |
+| **Components**         | [Components Directory](./components/)                                                                  |
 
 ### By Problem
 

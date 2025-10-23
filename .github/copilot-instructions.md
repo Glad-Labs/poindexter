@@ -331,6 +331,7 @@ docs/
 GLAD Labs maintains a **HIGH-LEVEL ONLY** documentation approach to reduce maintenance burden and prevent documentation staleness as the codebase evolves.
 
 **DOCUMENTATION CREATED:**
+
 - ✅ Core docs (00-07): Architecture-level, high-level guidance
 - ✅ Components: Only when unique from core docs
 - ✅ Reference: Technical specs, schemas, API definitions
@@ -338,6 +339,7 @@ GLAD Labs maintains a **HIGH-LEVEL ONLY** documentation approach to reduce maint
 - ✅ README files: In component folders for local setup
 
 **DOCUMENTATION NOT CREATED:**
+
 - ❌ How-to guides for every feature (feature code is the guide)
 - ❌ Status updates or session-specific documents
 - ❌ Duplicate documentation (consolidate into core docs)
@@ -349,6 +351,7 @@ GLAD Labs maintains a **HIGH-LEVEL ONLY** documentation approach to reduce maint
 Documentation should answer "WHAT is the architecture?" and "WHERE do I look?" — NOT "HOW do I implement X?" (That changes too fast and code is self-documenting).
 
 **MAINTENANCE:**
+
 - Update core docs (00-07) only when architecture changes
 - Delete guides that become outdated
 - Archive historical documents
@@ -541,14 +544,14 @@ echo $DATABASE_URL
 
 ## 🔗 Quick Links
 
-| Resource               | Link                                                                                   |
-| ---------------------- | -------------------------------------------------------------------------------------- |
-| **Main Docs Hub**      | [docs/00-README.md](./docs/00-README.md)                                               |
-| **Setup Guide**        | [docs/01-SETUP_AND_OVERVIEW.md](./docs/01-SETUP_AND_OVERVIEW.md)                       |
-| **Architecture**       | [docs/02-ARCHITECTURE_AND_DESIGN.md](./docs/02-ARCHITECTURE_AND_DESIGN.md)             |
-| **Troubleshooting**    | [docs/troubleshooting/](./docs/troubleshooting/)                                       |
-| **Components**         | [docs/components/](./docs/components/)                                                 |
-| **Deployment**         | [docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md) |
+| Resource            | Link                                                                                   |
+| ------------------- | -------------------------------------------------------------------------------------- |
+| **Main Docs Hub**   | [docs/00-README.md](./docs/00-README.md)                                               |
+| **Setup Guide**     | [docs/01-SETUP_AND_OVERVIEW.md](./docs/01-SETUP_AND_OVERVIEW.md)                       |
+| **Architecture**    | [docs/02-ARCHITECTURE_AND_DESIGN.md](./docs/02-ARCHITECTURE_AND_DESIGN.md)             |
+| **Troubleshooting** | [docs/troubleshooting/](./docs/troubleshooting/)                                       |
+| **Components**      | [docs/components/](./docs/components/)                                                 |
+| **Deployment**      | [docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md) |
 
 ---
 
