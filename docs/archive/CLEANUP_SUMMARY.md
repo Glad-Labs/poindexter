@@ -55,13 +55,13 @@ Your documentation currently has **68+ files** scattered across:
 
 Multiple files covering the **same topic**:
 
-| Topic | Duplicate Files | Should Keep |
-|-------|-----------------|-------------|
-| Setup/Quick Start | 3 files | `01-SETUP_AND_OVERVIEW.md` |
-| Deployment | 6 files | `03-DEPLOYMENT_AND_INFRASTRUCTURE.md` |
-| Git Workflow | 3 files | `04-DEVELOPMENT_WORKFLOW.md` |
-| Strapi Setup | 2 files | `docs/reference/STRAPI_CONTENT_SETUP.md` |
-| Tier1 Production | 2 files | `03-DEPLOYMENT_AND_INFRASTRUCTURE.md` |
+| Topic             | Duplicate Files | Should Keep                              |
+| ----------------- | --------------- | ---------------------------------------- |
+| Setup/Quick Start | 3 files         | `01-SETUP_AND_OVERVIEW.md`               |
+| Deployment        | 6 files         | `03-DEPLOYMENT_AND_INFRASTRUCTURE.md`    |
+| Git Workflow      | 3 files         | `04-DEVELOPMENT_WORKFLOW.md`             |
+| Strapi Setup      | 2 files         | `docs/reference/STRAPI_CONTENT_SETUP.md` |
+| Tier1 Production  | 2 files         | `03-DEPLOYMENT_AND_INFRASTRUCTURE.md`    |
 
 **Problem:** Users don't know which is current. High maintenance burden.
 
@@ -210,15 +210,15 @@ docs/
 
 ## 📊 Benefits of Cleanup
 
-| Benefit | Current | After Cleanup |
-|---------|---------|---------------|
-| **Files to maintain** | 68+ | 20 |
-| **Root-level clutter** | 22 files | 0-2 files |
-| **Duplicate docs** | 12+ | 0 |
-| **Organization score** | 35% | 85%+ |
-| **Maintenance burden** | HIGH | LOW |
-| **Onboarding time** | Long | Short |
-| **Team confusion** | High | Low |
+| Benefit                | Current  | After Cleanup |
+| ---------------------- | -------- | ------------- |
+| **Files to maintain**  | 68+      | 20            |
+| **Root-level clutter** | 22 files | 0-2 files     |
+| **Duplicate docs**     | 12+      | 0             |
+| **Organization score** | 35%      | 85%+          |
+| **Maintenance burden** | HIGH     | LOW           |
+| **Onboarding time**    | Long     | Short         |
+| **Team confusion**     | High     | Low           |
 
 ---
 

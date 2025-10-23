@@ -605,6 +605,99 @@ npm run type-check      # TypeScript checks
 
 ---
 
+## ⚡ Quick Reference
+
+### Common Development Commands
+
+```bash
+# Development
+npm run dev                     # Start all frontend services
+npm run dev:full              # Start frontend + backend (Python)
+npm run dev:public            # Public site only
+npm run dev:oversight         # Oversight hub only
+npm run dev:cofounder         # Python backend only
+
+# Testing
+npm test                       # Run all tests
+pytest src/                    # Python tests only
+npm run test:watch            # Watch mode
+
+# Building
+npm run build                 # Build all
+npm run lint                  # Lint code
+npm run format                # Format code
+npm run type-check            # TypeScript checks
+
+# Database & Strapi
+cd cms/strapi-v5-backend
+npm run develop               # Start Strapi CMS
+npm run build                 # Build Strapi
+```
+
+### Development Workflow (Quick Start)
+
+```bash
+# 1. Clone and install (first time only)
+git clone <repo>
+cd glad-labs-website
+npm install
+
+# 2. Configure environment
+cp .env.example .env
+# Edit .env with your API keys (OpenAI, Anthropic, or Google)
+
+# 3. Start development
+npm run dev
+
+# 4. Access services
+# - Public Site: http://localhost:3000
+# - Oversight Hub: http://localhost:3001
+# - Strapi Admin: http://localhost:1337/admin
+# - Backend API: http://localhost:8000/docs
+
+# 5. Create changes on feature branch
+git checkout -b feat/my-feature
+# ... make changes ...
+git commit -m "feat: add my feature"
+git push origin feat/my-feature
+```
+
+### Environment Variables Summary
+
+**For Local Development (.env):**
+```bash
+# At minimum, choose ONE AI provider:
+OPENAI_API_KEY=sk-...              # OpenAI (most popular)
+ANTHROPIC_API_KEY=sk-ant-...       # Anthropic Claude (best quality)
+GOOGLE_API_KEY=AIza-...            # Google Gemini (lowest cost)
+# OR use free local Ollama:
+USE_OLLAMA=true
+OLLAMA_HOST=http://localhost:11434
+```
+
+**For Staging/Production:**
+- Handled by GitHub Secrets (never commit)
+- Set in GitHub → Settings → Secrets and variables → Actions
+- GitHub Actions passes them to Railway/Vercel automatically
+
+### Vercel Environment Variables (Critical!)
+
+**What NOT to add to Vercel (backend-only):**
+- `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`
+- `GCP_*`, `PUBSUB_*`, `FIRESTORE_*`
+- `DATABASE_*`, `ADMIN_JWT_SECRET`
+- `LLM_PROVIDER`, `USE_OLLAMA`, `OLLAMA_HOST`
+- `GCS_BUCKET_NAME`, `SERPER_API_KEY`, etc.
+
+**What TO add to Vercel (frontend-only):**
+- `NEXT_PUBLIC_STRAPI_API_URL` → Your Strapi endpoint
+- `NEXT_PUBLIC_STRAPI_API_TOKEN` → Your Strapi API token
+- `NODE_ENV` → `production`
+
+**Why:** Backend variables should only be in Railway, frontend variables in Vercel. GitHub Actions handles passing them during deployment.
+
+---
+
 ## 🎯 Next Steps
 
 After successful setup:

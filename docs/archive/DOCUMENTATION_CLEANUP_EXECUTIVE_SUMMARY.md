@@ -12,20 +12,20 @@ Your documentation has **exploded to 68+ files** with **massive duplication** an
 
 ### By The Numbers
 
-| Metric | Current | Target | Gap |
-|--------|---------|--------|-----|
-| **Total files** | 68+ | 20 | -48 files |
-| **Root clutter** | 22 files | 0-2 | -20 files |
-| **Reference bloat** | 18 files | 8 | -10 files |
-| **Duplicates** | 12+ | 0 | -12 files |
-| **Organization** | 35% | 80%+ | **+45%** |
+| Metric              | Current  | Target | Gap       |
+| ------------------- | -------- | ------ | --------- |
+| **Total files**     | 68+      | 20     | -48 files |
+| **Root clutter**    | 22 files | 0-2    | -20 files |
+| **Reference bloat** | 18 files | 8      | -10 files |
+| **Duplicates**      | 12+      | 0      | -12 files |
+| **Organization**    | 35%      | 80%+   | **+45%**  |
 
 ### What's Wrong
 
 ```
 📁 ROOT DIRECTORY (Should be clean!)
 ├── DEPLOYMENT_SETUP_COMPLETE.md       ❌ Deployment info #1
-├── DEPLOYMENT_WORKFLOW.md              ❌ Deployment info #2  
+├── DEPLOYMENT_WORKFLOW.md              ❌ Deployment info #2
 ├── GITHUB_SECRETS_SETUP.md             ❌ Deployment info #3
 ├── README_DEPLOYMENT_SETUP.md          ❌ Deployment info #4
 ├── YOUR_QUESTIONS_ANSWERED.md          ❌ Q&A about deployment
@@ -79,6 +79,7 @@ Result: 20 files total (vs 68+)
 ### Phase 1: IMMEDIATE (30 minutes)
 
 **What to do:**
+
 1. Merge 6 deployment files → `03-DEPLOYMENT_AND_INFRASTRUCTURE.md`
 2. Merge 3 setup files → `01-SETUP_AND_OVERVIEW.md`
 3. Merge 3 workflow files → `04-DEVELOPMENT_WORKFLOW.md`
@@ -95,6 +96,7 @@ Result: 20 files total (vs 68+)
 ### Phase 2: SHORT-TERM (1 hour)
 
 **What to do:**
+
 1. Update `00-README.md` hub with new links
 2. Verify all links work (link checker)
 3. Create `docs/guides/troubleshooting/README.md`
@@ -109,6 +111,7 @@ Result: 20 files total (vs 68+)
 ### Phase 3: LONG-TERM (Ongoing)
 
 **What to do:**
+
 1. No feature guides created (let code demonstrate)
 2. No session files kept beyond 1 week
 3. Core docs updated only for architecture changes
@@ -123,6 +126,7 @@ Result: 20 files total (vs 68+)
 ### BEFORE (Current - 68+ files, messy)
 
 **User looking for "How do I deploy?"**
+
 ```
 Where should I look?
 ├── DEPLOYMENT_SETUP_COMPLETE.md         (Which one?)
@@ -138,6 +142,7 @@ Result: Confusion, outdated guidance, maintenance nightmare
 ### AFTER (Proposed - 20 files, clean)
 
 **User looking for "How do I deploy?"**
+
 ```
 Where should I look?
 ├── docs/00-README.md → "See 03-DEPLOYMENT_AND_INFRASTRUCTURE.md"
@@ -150,14 +155,14 @@ Result: Crystal clear, single authoritative version, easy to maintain
 
 ## 💡 Why This Matters
 
-| Benefit | Impact |
-|---------|--------|
+| Benefit                    | Impact                                  |
+| -------------------------- | --------------------------------------- |
 | **Single source of truth** | No confusion about which doc is current |
-| **Easy to maintain** | 8 core docs instead of 68+ |
-| **New team members** | Can find answers fast |
-| **No duplicates** | Update once, applies everywhere |
-| **Architecture focus** | Docs stay relevant as code evolves |
-| **Low burden** | Only update when architecture changes |
+| **Easy to maintain**       | 8 core docs instead of 68+              |
+| **New team members**       | Can find answers fast                   |
+| **No duplicates**          | Update once, applies everywhere         |
+| **Architecture focus**     | Docs stay relevant as code evolves      |
+| **Low burden**             | Only update when architecture changes   |
 
 ---
 
@@ -166,12 +171,14 @@ Result: Crystal clear, single authoritative version, easy to maintain
 ### Option A: ✅ RECOMMENDED - Proceed with Cleanup
 
 **Benefits:**
+
 - ✅ Documentation stays clean and maintainable
 - ✅ Team members find answers quickly
 - ✅ Single source of truth for each topic
 - ✅ Easy onboarding for new team members
 
 **Time Required:** ~2 hours total
+
 - Phase 1 (consolidation): 30 minutes
 - Phase 2 (verification): 1 hour
 - Phase 3 (ongoing): 15 min per quarter
@@ -183,6 +190,7 @@ Result: Crystal clear, single authoritative version, easy to maintain
 ### Option B: Accept Current State
 
 **Consequences:**
+
 - ❌ 68+ files to maintain
 - ❌ Users confused about current guidance
 - ❌ Duplicates = higher chance of conflicting info
@@ -227,11 +235,11 @@ Both committed to `feat/test-branch` and ready to review.
 
 ## 🔗 Key Documents
 
-| Document | Purpose | Read Time |
-|----------|---------|-----------|
-| `docs/CLEANUP_SUMMARY.md` | This overview + quick reference | 5 min |
-| `docs/DOCUMENTATION_CLEANUP_REPORT.md` | Detailed implementation plan | 15 min |
-| `docs_cleanup.prompt.md` | Policy framework (for reference) | 10 min |
+| Document                               | Purpose                          | Read Time |
+| -------------------------------------- | -------------------------------- | --------- |
+| `docs/CLEANUP_SUMMARY.md`              | This overview + quick reference  | 5 min     |
+| `docs/DOCUMENTATION_CLEANUP_REPORT.md` | Detailed implementation plan     | 15 min    |
+| `docs_cleanup.prompt.md`               | Policy framework (for reference) | 10 min    |
 
 ---
 
@@ -254,5 +262,6 @@ Impact: Documentation becomes an asset, not a burden
 ---
 
 **Questions?** See detailed reports committed to git:
+
 - `docs/DOCUMENTATION_CLEANUP_REPORT.md` (full plan)
 - `docs/CLEANUP_SUMMARY.md` (summary version)

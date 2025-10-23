@@ -30,12 +30,12 @@
 
 ### CONSOLIDATE (Merge Into Core Docs)
 
-| Files | Merge Into | Location |
-|-------|-----------|----------|
-| 6 deployment files | `03-DEPLOYMENT_AND_INFRASTRUCTURE.md` | docs/ |
-| 3 quick start files | `01-SETUP_AND_OVERVIEW.md` | docs/ |
-| 3 workflow files | `04-DEVELOPMENT_WORKFLOW.md` | docs/ |
-| 10 reference guides | Remove to appropriate core doc | docs/reference/ |
+| Files               | Merge Into                            | Location        |
+| ------------------- | ------------------------------------- | --------------- |
+| 6 deployment files  | `03-DEPLOYMENT_AND_INFRASTRUCTURE.md` | docs/           |
+| 3 quick start files | `01-SETUP_AND_OVERVIEW.md`            | docs/           |
+| 3 workflow files    | `04-DEVELOPMENT_WORKFLOW.md`          | docs/           |
+| 10 reference guides | Remove to appropriate core doc        | docs/reference/ |
 
 ### KEEP (Already Good)
 
@@ -63,6 +63,7 @@
 3. Commit: `git commit -m "docs: consolidate to high-level policy"`
 
 **Files affected:**
+
 - `docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md` (add 6 files' content)
 - `docs/01-SETUP_AND_OVERVIEW.md` (add 3 files' content)
 - `docs/04-DEVELOPMENT_WORKFLOW.md` (add 3 files' content)
@@ -84,13 +85,13 @@
 
 ## 📊 Expected Results
 
-| Metric | Before | After |
-|--------|--------|-------|
-| Total files | 68+ | 20 |
-| Root clutter | 22 | 0-2 |
-| Duplicates | 12+ | 0 |
-| Organization | 35% | 85%+ |
-| Maintenance | HIGH | LOW |
+| Metric       | Before | After |
+| ------------ | ------ | ----- |
+| Total files  | 68+    | 20    |
+| Root clutter | 22     | 0-2   |
+| Duplicates   | 12+    | 0     |
+| Organization | 35%    | 85%+  |
+| Maintenance  | HIGH   | LOW   |
 
 ---
 

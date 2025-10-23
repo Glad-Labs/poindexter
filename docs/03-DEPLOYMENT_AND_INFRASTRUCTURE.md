@@ -389,15 +389,145 @@ Configure error monitoring:
 
 ---
 
-## 🔄 Deployment Workflow
+## 🔄 Automated Deployment Workflow (GitHub Actions)
 
-### Deploy to Staging
+GLAD Labs uses GitHub Actions to automate deployments from git branches to cloud platforms.
+
+### Branch Strategy
+
+```text
+feat/my-feature (local development)
+    ↓ git push
+Pull Request → dev branch
+    ↓ merge approved
+dev branch → GitHub Actions → Railway Staging + Vercel Staging
+    ↓ test on staging
+dev → main (create PR)
+    ↓ merge after approval
+main branch → GitHub Actions → Railway Production + Vercel Production
+```
+
+### GitHub Actions Setup
+
+**1. Configure GitHub Secrets** (Settings → Secrets and variables → Actions)
+
+```
+# Railway
+RAILWAY_TOKEN
+RAILWAY_STAGING_PROJECT_ID
+RAILWAY_PROD_PROJECT_ID
+
+# Vercel
+VERCEL_TOKEN
+VERCEL_PROJECT_ID
+VERCEL_ORG_ID
+
+# Strapi/CMS
+STAGING_STRAPI_TOKEN
+PROD_STRAPI_TOKEN
+
+# Database (if needed)
+STAGING_DATABASE_URL
+PROD_DATABASE_URL
+```
+
+**2. Workflows** (in `.github/workflows/`)
+
+- `deploy-staging.yml` - Triggers on `dev` branch push
+- `deploy-production.yml` - Triggers on `main` branch push
+
+**3. What Happens Automatically**
+
+On `dev` push:
+- Run tests
+- Build frontend with staging URLs
+- Deploy backend to Railway staging
+- Deploy frontend to Vercel staging
+- Available at: `https://staging-*.railway.app`
+
+On `main` push:
+- Run full test suite
+- Build frontend with production URLs
+- Deploy backend to Railway production
+- Deploy frontend to Vercel production
+- Available at: `https://glad-labs.vercel.app`
+
+### Manual Deployment Workflow (Dev to Staging)
 
 ```bash
-# 1. Merge to staging branch
-git checkout staging
+# 1. Create feature branch
+git checkout -b feat/my-feature
+
+# 2. Make changes and test locally
+npm run dev
+
+# 3. Commit and push
+git add .
+git commit -m "feat: add my feature"
+git push origin feat/my-feature
+
+# 4. Create Pull Request to dev
+# - Open GitHub
+# - Click "New Pull Request"
+# - Base: dev, Compare: feat/my-feature
+# - Add description
+# - Request review
+
+# 5. After approval, merge to dev
+git checkout dev
+git merge feat/my-feature
+git push origin dev
+# ← GitHub Actions automatically deploys to staging
+
+# 6. Test on staging
+# Check: https://staging-*.railway.app
+```
+
+### Manual Deployment Workflow (Staging to Production)
+
+```bash
+# 1. Create release PR (dev → main)
+git checkout main
+git pull origin main
 git merge dev
-git push origin staging
+git push origin main
+# ← GitHub Actions automatically deploys to production
+
+# 2. Monitor deployment
+# - Check GitHub Actions: Actions tab
+# - Check Railway: Services tab
+# - Check Vercel: Deployments tab
+
+# 3. Verify production
+curl https://example.com/api/health
+```
+
+### Rollback Procedure
+
+```bash
+# If deployment fails on production:
+# 1. Identify last working commit
+git log --oneline main
+
+# 2. Revert to previous commit
+git revert <commit-hash>
+git push origin main
+# ← GitHub Actions automatically deploys the revert
+
+# 3. Verify rollback
+curl https://example.com/api/health
+
+# 4. Post-mortem
+# Document what went wrong and how to prevent it
+```
+
+### Deploy to Staging (Manual)
+
+```bash
+# 1. Merge to dev branch
+git checkout dev
+git pull origin dev
+git push origin dev
 
 # 2. Verify in staging
 # Check: https://staging.example.com
@@ -407,7 +537,7 @@ git push origin staging
 npm run test:smoke
 ```
 
-### Deploy to Production
+### Deploy to Production (Manual)
 
 ```bash
 # 1. Create release tag
@@ -420,27 +550,9 @@ git merge v1.2.3
 git push origin main
 
 # 3. Monitor deployment
-railway logs  # or vercel logs
+# GitHub Actions log / Railway / Vercel dashboard
 
 # 4. Verify production
-curl https://example.com/api/health
-```
-
-### Rollback Procedure
-
-```bash
-# If deployment fails:
-# 1. Identify last working version
-git log --oneline
-
-# 2. Revert to previous commit
-git revert <commit-hash>
-git push origin main
-
-# 3. Redeploy
-# Railway/Vercel will auto-deploy latest commit
-
-# 4. Verify rollback
 curl https://example.com/api/health
 ```
 

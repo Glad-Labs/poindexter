@@ -347,6 +347,121 @@ git branch -d release/1.2.0
 
 ---
 
+## ❓ Frequently Asked Questions
+
+### Q1: How do I get automatic deployments from dev → staging and main → production?
+
+**Answer:** GitHub Actions workflows handle this automatically.
+
+**Setup:**
+1. Add GitHub Secrets (see [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md#automated-deployment-workflow-github-actions))
+2. Connect Railway to GitHub
+3. Connect Vercel to GitHub
+4. Push to dev branch → auto-deploys to staging
+5. Push to main branch → auto-deploys to production
+
+**Workflows:**
+- `.github/workflows/deploy-staging.yml` (triggers on dev push)
+- `.github/workflows/deploy-production.yml` (triggers on main push)
+
+---
+
+### Q2: How do Railway and Vercel share environment variables?
+
+**Answer:** They don't - GitHub Actions is the orchestrator.
+
+```
+GitHub Secrets (centralized, never exposed)
+    ↓
+GitHub Actions (reads all secrets)
+    ├→ Railway (gets: database, backend config)
+    └→ Vercel (gets: frontend URLs, API tokens)
+```
+
+**Key Security Points:**
+- ✅ Secrets never exposed to either platform
+- ✅ Each platform gets only what it needs
+- ✅ GitHub Secrets are the single source of truth
+- ✅ Backend variables stay in Railway only
+- ✅ Frontend variables stay in Vercel only
+
+**Why This Matters:**
+- Maximum security
+- Clear separation of concerns
+- Easy to rotate secrets
+- No cross-platform dependencies
+
+---
+
+### Q3: Does local development get affected by deployment changes?
+
+**Answer:** NO - Zero impact on local development.
+
+**Why:**
+- Local dev uses `.env` (local only, never commits)
+- Staging uses `.env.staging` (committed, no secrets)
+- Production uses `.env.production` (committed, no secrets)
+- GitHub Actions handles passing actual secrets at deploy time
+- Your local environment is completely isolated
+
+**Development Workflow:**
+```bash
+# Local (your machine)
+.env → npm run dev → localhost:3000, 3001, 8000
+
+# Staging (after merge to dev)
+.env.staging + GitHub Secrets → GitHub Actions → Railway staging
+
+# Production (after merge to main)
+.env.production + GitHub Secrets → GitHub Actions → Railway production
+```
+
+---
+
+### Q4: What if a deployment fails?
+
+**Answer:** Manual rollback is simple.
+
+```bash
+# 1. Identify the problem
+git log --oneline main | head -5
+
+# 2. Revert to previous version
+git revert <commit-hash>
+git push origin main
+# ← GitHub Actions auto-deploys the revert
+
+# 3. Verify
+curl https://example.com/api/health
+
+# 4. Document
+# Write down what went wrong and how to prevent it
+```
+
+---
+
+### Q5: Can I deploy without GitHub Actions?
+
+**Answer:** Yes - Manual deployment is always possible.
+
+```bash
+# Manual deployment to Railway
+railway login
+railway link --project <project-id>
+railway up
+
+# Manual deployment to Vercel
+vercel --prod
+
+# But GitHub Actions is recommended for:
+# ✅ Consistency
+# ✅ Testing before deploy
+# ✅ Automatic rollbacks
+# ✅ Audit trail
+```
+
+---
+
 ## 📚 Quick Command Reference
 
 ```bash

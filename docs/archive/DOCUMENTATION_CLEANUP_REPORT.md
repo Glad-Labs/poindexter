@@ -9,14 +9,14 @@
 
 ## 🎯 Executive Summary
 
-| Metric | Current | Target | Status |
-|--------|---------|--------|--------|
-| **Total Docs** | 68+ files | <20 files | 🔴 NEEDS WORK |
-| **Root-Level Files** | 22+ files | <5 files | 🔴 CRITICAL |
-| **docs/reference/** | 18 files | 8-10 files | 🟡 OVERCROWDED |
-| **Duplicates Found** | 12+ files | 0 duplicates | 🔴 CRITICAL |
-| **Organization Score** | 35% | 80%+ | 🔴 CRITICAL |
-| **Maintenance Burden** | HIGH | LOW | 🔴 CRITICAL |
+| Metric                 | Current   | Target       | Status         |
+| ---------------------- | --------- | ------------ | -------------- |
+| **Total Docs**         | 68+ files | <20 files    | 🔴 NEEDS WORK  |
+| **Root-Level Files**   | 22+ files | <5 files     | 🔴 CRITICAL    |
+| **docs/reference/**    | 18 files  | 8-10 files   | 🟡 OVERCROWDED |
+| **Duplicates Found**   | 12+ files | 0 duplicates | 🔴 CRITICAL    |
+| **Organization Score** | 35%       | 80%+         | 🔴 CRITICAL    |
+| **Maintenance Burden** | HIGH      | LOW          | 🔴 CRITICAL    |
 
 ---
 
@@ -77,16 +77,16 @@ YOUR_QUESTIONS_ANSWERED.md            (root)
 
 These files duplicate content from core docs and should be DELETED or CONSOLIDATED:
 
-| Duplicate Files | Should Consolidate To | Reason |
-|-----------------|----------------------|--------|
-| `DEV_QUICK_START.md` + `START_HERE.md` + `QUICK_REFERENCE_CARD.md` | `01-SETUP_AND_OVERVIEW.md` | All cover setup |
-| `DEPLOYMENT_WORKFLOW.md` + `DEPLOYMENT_SETUP_COMPLETE.md` + `GITHUB_SECRETS_SETUP.md` | `03-DEPLOYMENT_AND_INFRASTRUCTURE.md` | All cover deployment |
-| `WORKFLOW_SETUP_GUIDE.md` + `YOUR_QUESTIONS_ANSWERED.md` | `04-DEVELOPMENT_WORKFLOW.md` | All cover git workflow |
-| `TIER1_PRODUCTION_GUIDE.md` + `TIER1_COST_ANALYSIS.md` | `03-DEPLOYMENT_AND_INFRASTRUCTURE.md` | All cover production |
-| `FINAL_SESSION_SUMMARY.md` + `SESSION_SUMMARY.md` + `SETUP_COMPLETE_SUMMARY.md` | **DELETE** | Session notes, not permanent docs |
-| `STRAPI_CONTENT_QUICK_START.md` + `docs/reference/STRAPI_CONTENT_SETUP.md` | `docs/reference/STRAPI_CONTENT_SETUP.md` | Consolidate into one |
-| `WINDOWS_DEPLOYMENT.md` | `03-DEPLOYMENT_AND_INFRASTRUCTURE.md` (add Windows notes) | Platform-specific guide |
-| `TEST_RESULTS_OCT_23.md` | **DELETE** | Session-specific results, not permanent |
+| Duplicate Files                                                                       | Should Consolidate To                                     | Reason                                  |
+| ------------------------------------------------------------------------------------- | --------------------------------------------------------- | --------------------------------------- |
+| `DEV_QUICK_START.md` + `START_HERE.md` + `QUICK_REFERENCE_CARD.md`                    | `01-SETUP_AND_OVERVIEW.md`                                | All cover setup                         |
+| `DEPLOYMENT_WORKFLOW.md` + `DEPLOYMENT_SETUP_COMPLETE.md` + `GITHUB_SECRETS_SETUP.md` | `03-DEPLOYMENT_AND_INFRASTRUCTURE.md`                     | All cover deployment                    |
+| `WORKFLOW_SETUP_GUIDE.md` + `YOUR_QUESTIONS_ANSWERED.md`                              | `04-DEVELOPMENT_WORKFLOW.md`                              | All cover git workflow                  |
+| `TIER1_PRODUCTION_GUIDE.md` + `TIER1_COST_ANALYSIS.md`                                | `03-DEPLOYMENT_AND_INFRASTRUCTURE.md`                     | All cover production                    |
+| `FINAL_SESSION_SUMMARY.md` + `SESSION_SUMMARY.md` + `SETUP_COMPLETE_SUMMARY.md`       | **DELETE**                                                | Session notes, not permanent docs       |
+| `STRAPI_CONTENT_QUICK_START.md` + `docs/reference/STRAPI_CONTENT_SETUP.md`            | `docs/reference/STRAPI_CONTENT_SETUP.md`                  | Consolidate into one                    |
+| `WINDOWS_DEPLOYMENT.md`                                                               | `03-DEPLOYMENT_AND_INFRASTRUCTURE.md` (add Windows notes) | Platform-specific guide                 |
+| `TEST_RESULTS_OCT_23.md`                                                              | **DELETE**                                                | Session-specific results, not permanent |
 
 **Impact:** Maintenance nightmare. Users don't know which version is current.  
 **Severity:** 🔴 **CRITICAL**
@@ -164,6 +164,7 @@ mkdir -p docs/guides/troubleshooting
 **Action:** Merge deployment files into `03-DEPLOYMENT_AND_INFRASTRUCTURE.md`
 
 **Files to merge:**
+
 - `DEPLOYMENT_WORKFLOW.md` → Extract sections, merge into 03
 - `DEPLOYMENT_SETUP_COMPLETE.md` → Extract checklist, merge into 03
 - `GITHUB_SECRETS_SETUP.md` → Extract steps, merge into 03
@@ -182,6 +183,7 @@ mkdir -p docs/guides/troubleshooting
 **Action:** Merge quick-start files into `01-SETUP_AND_OVERVIEW.md`
 
 **Files to merge:**
+
 - `DEV_QUICK_START.md` → Add to 01 as "Quick Start" section
 - `START_HERE.md` → Extract getting started content, merge into 01
 - `QUICK_REFERENCE_CARD.md` → Convert to table, add to 01
@@ -197,6 +199,7 @@ mkdir -p docs/guides/troubleshooting
 **Action:** Merge workflow files into `04-DEVELOPMENT_WORKFLOW.md`
 
 **Files to merge:**
+
 - `WORKFLOW_SETUP_GUIDE.md` → Merge into 04
 - `YOUR_QUESTIONS_ANSWERED.md` → Extract Q&A, add to 04 as FAQ
 - `STRAPI_CONTENT_QUICK_START.md` → Add to docs/reference/STRAPI_CONTENT_SETUP.md (reference, not workflow)
@@ -212,6 +215,7 @@ mkdir -p docs/guides/troubleshooting
 **Action:** Clean up docs/reference/ - keep only technical specs
 
 **Move from reference/ to appropriate core docs:**
+
 - `PRODUCTION_CHECKLIST.md` → Merge into 03-DEPLOYMENT.md
 - `PRODUCTION_DEPLOYMENT_READY.md` → Merge into 03-DEPLOYMENT.md
 - `RAILWAY_ENV_VARS_CHECKLIST.md` → Merge into 07-BRANCH_VARIABLES.md
@@ -222,6 +226,7 @@ mkdir -p docs/guides/troubleshooting
 - `QUICK_REFERENCE.md` → Merge into 01-SETUP_AND_OVERVIEW.md
 
 **Keep in reference/ (technical reference only):**
+
 - ARCHITECTURE.md ✅
 - COFOUNDER_AGENT_DEV_MODE.md ✅
 - GLAD-LABS-STANDARDS.md ✅
@@ -263,6 +268,7 @@ DELETE:
 **Action:** Move remaining docs into proper locations
 
 **Move to docs/ or archive:**
+
 ```
 docs/guides/WINDOWS_DEPLOYMENT.md        ← WINDOWS_DEPLOYMENT.md
 (delete after merging into 03-DEPLOYMENT.md)
@@ -291,11 +297,13 @@ docs/guides/WINDOWS_DEPLOYMENT.md        ← WINDOWS_DEPLOYMENT.md
 #### Step 9: Create docs/guides/troubleshooting/ index
 
 Create `docs/guides/troubleshooting/README.md` with:
+
 - List of troubleshooting guides (5-10 common issues)
 - Quick lookup table
 - Link to each specific issue
 
 **Common troubleshooting topics:**
+
 - Port conflicts and process cleanup
 - npm/Python dependency issues
 - Strapi connection errors
@@ -312,6 +320,7 @@ Create `docs/guides/troubleshooting/README.md` with:
 Run link checker to ensure no broken references.
 
 **Verification checklist:**
+
 - [ ] All 8 core docs link correctly from 00-README.md
 - [ ] All reference docs link correctly from 00-README.md
 - [ ] Component docs link to relevant core docs
@@ -401,6 +410,7 @@ docs/
 ```
 
 **Result:**
+
 - ✅ Core documentation: 8 files (comprehensive, high-level)
 - ✅ Reference: 8 files (technical specs only)
 - ✅ Components: 5 files (one per component)
@@ -511,4 +521,3 @@ Documentation cleanup is complete when:
 **Policy Status:** ✅ HIGH-LEVEL DOCUMENTATION ONLY  
 **Effective Date:** October 23, 2025  
 **Next Review:** December 23, 2025 (quarterly)
-
