@@ -12,8 +12,9 @@
     "src/cofounder_agent"
   ],
   "scripts": {
-    "//": "--- CODE QUALITY ---",
-    "dev": "npx npm-run-all --parallel dev:*",
+    "//": "--- DEVELOPMENT (RECOMMENDED: Use this for local development) ---",
+    "dev": "npx npm-run-all --parallel dev:strapi dev:public dev:oversight",
+    "dev:full": "npx npm-run-all --parallel dev:*",
     "dev:strapi": "npm run develop --workspace=cms/strapi-main",
     "dev:oversight": "npm start --workspace=web/oversight-hub",
     "dev:public": "npm run dev --workspace=web/public-site",
