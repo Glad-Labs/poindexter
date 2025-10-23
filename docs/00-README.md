@@ -161,17 +161,17 @@
 
 ## 📞 Quick Help
 
-| I need...              | Go to...                                                                 |
-| ---------------------- | ------------------------------------------------------------------------ |
-| Setup instructions     | [01-SETUP_AND_OVERVIEW.md](./01-SETUP_AND_OVERVIEW.md)                   |
-| System architecture    | [02-ARCHITECTURE_AND_DESIGN.md](./02-ARCHITECTURE_AND_DESIGN.md)         |
-| Deployment steps       | [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) |
-| Git/development info   | [04-DEVELOPMENT_WORKFLOW.md](./04-DEVELOPMENT_WORKFLOW.md)               |
-| AI agent details       | [05-AI_AGENTS_AND_INTEGRATION.md](./05-AI_AGENTS_AND_INTEGRATION.md)     |
-| Operations info        | [06-OPERATIONS_AND_MAINTENANCE.md](./06-OPERATIONS_AND_MAINTENANCE.md)   |
-| Environment config     | [07-BRANCH_SPECIFIC_VARIABLES.md](./07-BRANCH_SPECIFIC_VARIABLES.md)     |
-| Technical reference    | [reference/](./reference/)                                               |
-| Troubleshooting        | [troubleshooting/](./troubleshooting/)                                   |
+| I need...            | Go to...                                                                     |
+| -------------------- | ---------------------------------------------------------------------------- |
+| Setup instructions   | [01-SETUP_AND_OVERVIEW.md](./01-SETUP_AND_OVERVIEW.md)                       |
+| System architecture  | [02-ARCHITECTURE_AND_DESIGN.md](./02-ARCHITECTURE_AND_DESIGN.md)             |
+| Deployment steps     | [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) |
+| Git/development info | [04-DEVELOPMENT_WORKFLOW.md](./04-DEVELOPMENT_WORKFLOW.md)                   |
+| AI agent details     | [05-AI_AGENTS_AND_INTEGRATION.md](./05-AI_AGENTS_AND_INTEGRATION.md)         |
+| Operations info      | [06-OPERATIONS_AND_MAINTENANCE.md](./06-OPERATIONS_AND_MAINTENANCE.md)       |
+| Environment config   | [07-BRANCH_SPECIFIC_VARIABLES.md](./07-BRANCH_SPECIFIC_VARIABLES.md)         |
+| Technical reference  | [reference/](./reference/)                                                   |
+| Troubleshooting      | [troubleshooting/](./troubleshooting/)                                       |
 
 ---
 
