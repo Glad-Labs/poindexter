@@ -240,6 +240,7 @@ File ... cannot be loaded because running scripts is disabled
 ```
 
 **Fix:**
+
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
@@ -251,6 +252,7 @@ Error: railway is not recognized as an internal or external command
 ```
 
 **Fix:**
+
 ```powershell
 npm install -g @railway/cli
 npm install -g vercel
@@ -267,6 +269,7 @@ ERROR: DATABASE_URL environment variable not set
 ```
 
 **Fix:**
+
 ```powershell
 # Get from Railway dashboard
 railway variables list
@@ -292,6 +295,7 @@ Failed to backup: pg_dump not found
 ```
 
 **Fix: Option B** - Use Railway CLI
+
 ```powershell
 railway database backup
 ```
@@ -300,14 +304,14 @@ railway database backup
 
 ## 📊 Commands Quick Reference
 
-| Command | Purpose |
-|---------|---------|
-| `.\scripts\deploy-tier1.ps1` | Deploy all services |
-| `.\scripts\deploy-tier1.ps1 -DryRun` | Preview deployment |
-| `.\scripts\monitor-tier1-resources.ps1` | Check resources |
-| `.\scripts\monitor-tier1-resources.ps1 -Watch` | Continuous monitoring |
-| `.\scripts\backup-tier1-db.bat` | Manual backup |
-| `npm run setup:tier1` | Interactive setup (cross-platform) |
+| Command                                        | Purpose                            |
+| ---------------------------------------------- | ---------------------------------- |
+| `.\scripts\deploy-tier1.ps1`                   | Deploy all services                |
+| `.\scripts\deploy-tier1.ps1 -DryRun`           | Preview deployment                 |
+| `.\scripts\monitor-tier1-resources.ps1`        | Check resources                    |
+| `.\scripts\monitor-tier1-resources.ps1 -Watch` | Continuous monitoring              |
+| `.\scripts\backup-tier1-db.bat`                | Manual backup                      |
+| `npm run setup:tier1`                          | Interactive setup (cross-platform) |
 
 ---
 
@@ -318,6 +322,7 @@ railway database backup
 **Cause:** Network latency, large initial download
 
 **Solution:**
+
 ```powershell
 # Increase timeout
 $timeout = 600  # 10 minutes
@@ -329,6 +334,7 @@ $timeout = 600  # 10 minutes
 **Cause:** Cold start, services still initializing
 
 **Solution:**
+
 ```powershell
 # Wait 5 minutes, then check status
 Start-Sleep -Seconds 300
@@ -340,6 +346,7 @@ Start-Sleep -Seconds 300
 **Cause:** Wrong connection string or firewall rules
 
 **Solution:**
+
 ```powershell
 # Verify connection string
 echo $env:DATABASE_URL
@@ -356,6 +363,7 @@ $env:DATABASE_URL = "postgresql://..."
 ## 🎯 Next Steps After Deployment
 
 1. **Verify Services Online**
+
    ```powershell
    .\scripts\monitor-tier1-resources.ps1
    ```
@@ -364,12 +372,14 @@ $env:DATABASE_URL = "postgresql://..."
    - Follow "Schedule Automated Backups" section above
 
 3. **Set Up Monitoring**
+
    ```powershell
    # Create scheduled task to run monitor every 5 minutes
    # (See Task Scheduler section for details)
    ```
 
 4. **Test Backup Recovery**
+
    ```powershell
    # Monthly: Test recovery procedure
    # Document steps in runbook
