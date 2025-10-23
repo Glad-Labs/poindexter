@@ -1,0 +1,15 @@
+{
+  "name": "glad-labs-tier1-production",
+  "version": "1.0.0",
+  "description": "Ultra-low-cost production setup for GLAD Labs using Tier 1 (Free/Starter) resources",
+  "scripts": {
+    "deploy:tier1": "npm run deploy:tier1:setup && npm run deploy:tier1:services",
+    "deploy:tier1:setup": "node scripts/setup-tier1.js",
+    "deploy:tier1:services": "bash scripts/deploy-tier1.sh",
+    "cost:check": "node scripts/check-tier1-costs.js",
+    "monitor:resources": "node scripts/monitor-tier1-resources.js",
+    "backup:database": "bash scripts/backup-tier1-db.sh",
+    "scale:to-tier2": "bash scripts/scale-to-tier2.sh",
+    "health:check": "node scripts/health-check-tier1.js"
+  }
+}
