@@ -157,7 +157,7 @@
 
 ## 📋 Complete File Structure
 
-```
+```bash
 docs/
 ├── 00-README.md ✅ THIS FILE - Main Documentation Hub
 ├── 01-SETUP_AND_OVERVIEW.md - Getting started & dependencies

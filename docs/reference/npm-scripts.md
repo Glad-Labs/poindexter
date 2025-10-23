@@ -325,25 +325,27 @@ python start_server.py
    ```
 
 3. ✅ **Test Development Environment**
+
    ```powershell
    npm run dev
    ```
 
 ### Optional (Code Quality)
 
-4. 📋 **Run Formatter**
+1. 📋 **Run Formatter**
 
    ```powershell
    npm run format
    ```
 
-5. 📋 **Fix Lint Issues**
+2. 📋 **Fix Lint Issues**
 
    ```powershell
    npm run lint:fix
    ```
 
-6. 📋 **Run Full Test Suite**
+3. 📋 **Run Full Test Suite**
+
    ```powershell
    npm test
    ```
