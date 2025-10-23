@@ -61,8 +61,11 @@ function checkThresholds(metrics) {
   const alerts = [];
 
   // Check database storage
-  const db_percent = (metrics.database.storage_used_mb / LIMITS.database_storage) * 100;
-  console.log(`\n💾 Database Storage: ${metrics.database.storage_used_mb}MB / ${LIMITS.database_storage}MB (${db_percent.toFixed(1)}%)`);
+  const db_percent =
+    (metrics.database.storage_used_mb / LIMITS.database_storage) * 100;
+  console.log(
+    `\n💾 Database Storage: ${metrics.database.storage_used_mb}MB / ${LIMITS.database_storage}MB (${db_percent.toFixed(1)}%)`
+  );
 
   if (db_percent > THRESHOLDS.database_critical * 100) {
     alerts.push({
@@ -81,8 +84,11 @@ function checkThresholds(metrics) {
   }
 
   // Check Strapi memory
-  const strapi_mem_percent = (metrics.strapi.memory_mb / LIMITS.memory_per_service) * 100;
-  console.log(`\n🛢️  Strapi Memory: ${metrics.strapi.memory_mb}MB / ${LIMITS.memory_per_service}MB (${strapi_mem_percent.toFixed(1)}%)`);
+  const strapi_mem_percent =
+    (metrics.strapi.memory_mb / LIMITS.memory_per_service) * 100;
+  console.log(
+    `\n🛢️  Strapi Memory: ${metrics.strapi.memory_mb}MB / ${LIMITS.memory_per_service}MB (${strapi_mem_percent.toFixed(1)}%)`
+  );
 
   if (strapi_mem_percent > THRESHOLDS.memory_critical * 100) {
     alerts.push({
@@ -101,8 +107,11 @@ function checkThresholds(metrics) {
   }
 
   // Check API memory
-  const api_mem_percent = (metrics.api.memory_mb / LIMITS.memory_per_service) * 100;
-  console.log(`\n🧠 Co-Founder Agent Memory: ${metrics.api.memory_mb}MB / ${LIMITS.memory_per_service}MB (${api_mem_percent.toFixed(1)}%)`);
+  const api_mem_percent =
+    (metrics.api.memory_mb / LIMITS.memory_per_service) * 100;
+  console.log(
+    `\n🧠 Co-Founder Agent Memory: ${metrics.api.memory_mb}MB / ${LIMITS.memory_per_service}MB (${api_mem_percent.toFixed(1)}%)`
+  );
 
   if (api_mem_percent > THRESHOLDS.memory_critical * 100) {
     alerts.push({
@@ -122,10 +131,17 @@ function checkThresholds(metrics) {
 
   // Check response times
   console.log(`\n⏱️  Response Times:`);
-  console.log(`   Strapi: ${metrics.strapi.response_time_ms}ms ${metrics.strapi.response_time_ms > 1000 ? '❌ SLOW' : '✅ OK'}`);
-  console.log(`   API: ${metrics.api.response_time_ms}ms ${metrics.api.response_time_ms > 1000 ? '❌ SLOW' : '✅ OK'}`);
+  console.log(
+    `   Strapi: ${metrics.strapi.response_time_ms}ms ${metrics.strapi.response_time_ms > 1000 ? '❌ SLOW' : '✅ OK'}`
+  );
+  console.log(
+    `   API: ${metrics.api.response_time_ms}ms ${metrics.api.response_time_ms > 1000 ? '❌ SLOW' : '✅ OK'}`
+  );
 
-  if (metrics.strapi.response_time_ms > 2000 || metrics.api.response_time_ms > 2000) {
+  if (
+    metrics.strapi.response_time_ms > 2000 ||
+    metrics.api.response_time_ms > 2000
+  ) {
     alerts.push({
       severity: 'WARNING',
       message: 'Response times > 2 seconds - consider Tier 2 upgrade',
@@ -133,7 +149,9 @@ function checkThresholds(metrics) {
   }
 
   // Check connections
-  console.log(`\n🔌 Database Connections: ${metrics.database.connections} / ${LIMITS.connection_pool}`);
+  console.log(
+    `\n🔌 Database Connections: ${metrics.database.connections} / ${LIMITS.connection_pool}`
+  );
   if (metrics.database.connections >= LIMITS.connection_pool) {
     alerts.push({
       severity: 'CRITICAL',
@@ -141,7 +159,9 @@ function checkThresholds(metrics) {
     });
     console.log(`   ❌ CRITICAL: Connection pool saturated!`);
   } else {
-    console.log(`   ✅ OK: ${LIMITS.connection_pool - metrics.database.connections} connections available`);
+    console.log(
+      `   ✅ OK: ${LIMITS.connection_pool - metrics.database.connections} connections available`
+    );
   }
 
   return alerts;
@@ -183,8 +203,12 @@ function printSummary(metrics, alerts) {
 
   // Cost comparison
   console.log('\n💰 UPGRADE OPTION\n');
-  console.log('   Tier 1 (Current):  $0/month  | 1GB DB | 256MB RAM | 50 users');
-  console.log('   Tier 2 (Upgrade):  $50/month | 10GB DB | 1GB RAM | 500 users');
+  console.log(
+    '   Tier 1 (Current):  $0/month  | 1GB DB | 256MB RAM | 50 users'
+  );
+  console.log(
+    '   Tier 2 (Upgrade):  $50/month | 10GB DB | 1GB RAM | 500 users'
+  );
   console.log('   Savings: Avoid downtime, 7x capacity increase');
 
   // Next steps
@@ -210,7 +234,10 @@ function printSummary(metrics, alerts) {
     metrics,
     alerts,
     summary: {
-      health: criticalCount === 0 && warningCount === 0 ? 'HEALTHY' : 'NEEDS_ATTENTION',
+      health:
+        criticalCount === 0 && warningCount === 0
+          ? 'HEALTHY'
+          : 'NEEDS_ATTENTION',
       critical: criticalCount,
       warnings: warningCount,
     },
@@ -229,7 +256,9 @@ function printSummary(metrics, alerts) {
     printSummary(metrics, alerts);
 
     // Exit with appropriate code
-    const criticalCount = alerts.filter((a) => a.severity === 'CRITICAL').length;
+    const criticalCount = alerts.filter(
+      (a) => a.severity === 'CRITICAL'
+    ).length;
     process.exit(criticalCount > 0 ? 1 : 0);
   } catch (error) {
     console.error('❌ Error during monitoring:', error);

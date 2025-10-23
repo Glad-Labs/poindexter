@@ -2,12 +2,12 @@
 
 /**
  * GLAD Labs Tier 1 (Ultra-Budget) Production Deployment Setup
- * 
+ *
  * Cost: ~$10-15/month
  * Resources: Minimal shared CPU, limited memory
  * Uptime: ~95% (services may sleep after inactivity)
  * Users: 10-50 concurrent
- * 
+ *
  * Usage: node scripts/setup-tier1.js
  */
 
@@ -66,7 +66,8 @@ const TIER1_CONFIG = {
           sleepOnInactivity: true,
           sleepTimeout: '30m',
         },
-        startCommand: 'python -m uvicorn src.cofounder_agent.main:app --host 0.0.0.0 --port $PORT',
+        startCommand:
+          'python -m uvicorn src.cofounder_agent.main:app --host 0.0.0.0 --port $PORT',
       },
     },
     env: {
@@ -281,7 +282,10 @@ async function keepServicesWarm() {
 keepServicesWarm().catch(console.error);
 `;
 
-const healthCheckPath = path.join(__dirname, '../scripts/tier1-health-check.js');
+const healthCheckPath = path.join(
+  __dirname,
+  '../scripts/tier1-health-check.js'
+);
 fs.writeFileSync(healthCheckPath, healthCheckConfig);
 console.log(`✅ Health check script created: scripts/tier1-health-check.js`);
 

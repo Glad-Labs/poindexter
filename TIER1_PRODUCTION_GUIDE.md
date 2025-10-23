@@ -4,7 +4,7 @@
 **Cost:** $0-10/month  
 **Max Users:** 50 concurrent  
 **Uptime SLA:** ~95%  
-**Database:** 1GB limit  
+**Database:** 1GB limit
 
 ---
 
@@ -108,13 +108,13 @@ npm run monitor:resources
 
 ### Monthly Costs
 
-| Service | Tier | Plan | Cost |
-|---------|------|------|------|
-| **Database** | 1 | PostgreSQL (Free) | $0 |
-| **Strapi CMS** | 1 | Node (Free) | $0 |
-| **API Agent** | 1 | Python (Free) | $0 |
-| **Frontend** | 1 | Vercel Hobby | $0 |
-| **TOTAL** | 1 | | **$0/month** |
+| Service        | Tier | Plan              | Cost         |
+| -------------- | ---- | ----------------- | ------------ |
+| **Database**   | 1    | PostgreSQL (Free) | $0           |
+| **Strapi CMS** | 1    | Node (Free)       | $0           |
+| **API Agent**  | 1    | Python (Free)     | $0           |
+| **Frontend**   | 1    | Vercel Hobby      | $0           |
+| **TOTAL**      | 1    |                   | **$0/month** |
 
 ### Additional Costs (if applicable)
 
@@ -131,11 +131,11 @@ npm run monitor:resources
 
 ### Response Times
 
-| Metric | Tier 1 | Tier 2 |
-|--------|--------|--------|
-| **Cold start** (after sleep) | 3-5 sec | <100ms |
-| **Warm response** | 200-500ms | 100-200ms |
-| **P99 response** | 1-2 sec | 200-500ms |
+| Metric                       | Tier 1    | Tier 2    |
+| ---------------------------- | --------- | --------- |
+| **Cold start** (after sleep) | 3-5 sec   | <100ms    |
+| **Warm response**            | 200-500ms | 100-200ms |
+| **P99 response**             | 1-2 sec   | 200-500ms |
 
 ### Capacity
 
@@ -230,12 +230,12 @@ npm run scale:to-tier2
 
 ### Cost Comparison
 
-| Metric | Tier 1 | Tier 2 | Tier 3 |
-|--------|--------|--------|--------|
-| **Cost** | $0 | $50 | $155+ |
-| **Users** | 50 | 500 | 2,000+ |
-| **DB Size** | 1GB | 10GB | 100GB+ |
-| **Uptime** | 95% | 99.5% | 99.9% |
+| Metric       | Tier 1    | Tier 2    | Tier 3   |
+| ------------ | --------- | --------- | -------- |
+| **Cost**     | $0        | $50       | $155+    |
+| **Users**    | 50        | 500       | 2,000+   |
+| **DB Size**  | 1GB       | 10GB      | 100GB+   |
+| **Uptime**   | 95%       | 99.5%     | 99.9%    |
 | **Response** | 200-500ms | 100-200ms | 50-100ms |
 
 ---
@@ -262,7 +262,7 @@ npm run scale:to-tier2
 railway postgresql connect
 
 # Inside psql:
-SELECT pg_database.datname, pg_size_pretty(pg_database.datsize) 
+SELECT pg_database.datname, pg_size_pretty(pg_database.datsize)
 FROM pg_database;
 
 # If approaching 1GB: npm run scale:to-tier2
@@ -388,7 +388,7 @@ npm run monitor:resources
 ✅ Health checks keeping services warm  
 ✅ Response times < 500ms (normal)  
 ✅ No OOM errors  
-✅ Cost at $0-10/month  
+✅ Cost at $0-10/month
 
 ---
 
@@ -401,4 +401,3 @@ npm run deploy:tier1
 **Questions? Check:** TIER1_COST_ANALYSIS.md
 
 **Need more power? Run:** npm run scale:to-tier2
-

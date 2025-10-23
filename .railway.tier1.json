@@ -1,0 +1,81 @@
+{
+  "name": "glad-labs-tier1-prod",
+  "railway": {
+    "services": {
+      "postgres": {
+        "type": "postgres",
+        "plan": "free",
+        "resources": {
+          "cpu": "shared",
+          "memory": "256Mi",
+          "storage": "1Gi"
+        },
+        "backup": {
+          "enabled": true,
+          "frequency": "weekly",
+          "retention": "3d"
+        }
+      },
+      "strapi": {
+        "type": "node",
+        "builder": "dockerfile",
+        "resources": {
+          "cpu": "shared",
+          "memory": "256Mi",
+          "disk": "512Mi"
+        },
+        "scaling": {
+          "minReplicas": 1,
+          "maxReplicas": 1,
+          "sleepOnInactivity": true,
+          "sleepTimeout": "30m"
+        },
+        "startCommand": "npm run start"
+      },
+      "cofounder_agent": {
+        "type": "python",
+        "builder": "dockerfile",
+        "resources": {
+          "cpu": "shared",
+          "memory": "256Mi",
+          "disk": "512Mi"
+        },
+        "scaling": {
+          "minReplicas": 1,
+          "maxReplicas": 1,
+          "sleepOnInactivity": true,
+          "sleepTimeout": "30m"
+        },
+        "startCommand": "python -m uvicorn src.cofounder_agent.main:app --host 0.0.0.0 --port $PORT"
+      }
+    },
+    "env": {
+      "NODE_ENV": "production",
+      "LOG_LEVEL": "ERROR",
+      "DATABASE_POOL_SIZE": 5,
+      "DATABASE_IDLE_TIMEOUT": 120000,
+      "CACHE_TTL": 7200,
+      "ENABLE_COMPRESSION": true,
+      "API_RATE_LIMIT": 50,
+      "CLEANUP_TEMP_FILES": true,
+      "ENABLE_PERFORMANCE_TRACING": false
+    }
+  },
+  "vercel": {
+    "frontend": {
+      "plan": "hobby",
+      "scaling": "none",
+      "regions": [
+        "us"
+      ]
+    }
+  },
+  "ollama": {
+    "enabled": true,
+    "cost": 0,
+    "models": [
+      "mistral",
+      "phi"
+    ]
+  }
+}
