@@ -1,33 +1,19 @@
 # 📚 GLAD Labs Documentation Hub
 
-**Last Updated:** October 22, 2025  
-**Organization:** Complete | **Coverage:** 185 docs | **Status:** ✅ Production Ready
+**Last Updated:** October 23, 2025  
+**Status:** ✅ Production Ready | High-Level Documentation Only
 
 ---
 
-## 🎯 Quick Navigation
+## 🎯 Quick Navigation - 8 Core Documentation Files
 
 ### 📖 Getting Started
 
-- **New to GLAD Labs?** Start here → [Detailed Setup Guide](./01-SETUP_AND_OVERVIEW.md)
-- **Want a quick start?** Jump to [Quick Start Guide](./guides/LOCAL_SETUP_COMPLETE.md)
-- **Need visual overview?** See [Feature Map](./guides/FEATURE_MAP_VISUAL_OVERVIEW.md)
+- **New to GLAD Labs?** Start here → [Setup & Overview](./01-SETUP_AND_OVERVIEW.md)
+- **Want architecture overview?** See [System Architecture](./02-ARCHITECTURE_AND_DESIGN.md)
+- **Ready to deploy?** Go to [Deployment Guide](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md)
 
-### 🏗️ Understanding the System
-
-1. **[Architecture & Design](./02-ARCHITECTURE_AND_DESIGN.md)** - System overview, component interactions
-2. **[AI Agents & Integration](./05-AI_AGENTS_AND_INTEGRATION.md)** - Agent orchestration, MCP integration
-3. **[Development Workflow](./04-DEVELOPMENT_WORKFLOW.md)** - Git strategy, testing, deployment
-4. **[API Contracts & Schemas](./reference/API_CONTRACT_CONTENT_CREATION.md)** - REST API specifications
-
-### 🚀 Deployment & Operations
-
-- **[Deployment Guide](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md)** - Cloud setup, infrastructure
-- **[Vercel Deployment Strategy](./guides/VERCEL_DEPLOYMENT_STRATEGY.md)** - Deploy to Vercel for public site & oversight hub
-- **[Cost-Optimized Strategy](./reference/DEPLOYMENT_STRATEGY_COST_OPTIMIZED.md)** - Production recommendations
-- **[Operations Guide](./06-OPERATIONS_AND_MAINTENANCE.md)** - Monitoring, maintenance, scaling
-
-### 🛠️ Core Documentation (Numbered Series)
+### 🏗️ Core Documentation (Numbered Series)
 
 | #                                           | Topic                       | Purpose                                      |
 | ------------------------------------------- | --------------------------- | -------------------------------------------- |
@@ -46,36 +32,25 @@
 
 ### 👨‍💻 Developers
 
-- Start: [Setup Guide](./01-SETUP_AND_OVERVIEW.md) → [Architecture](./02-ARCHITECTURE_AND_DESIGN.md) → [Workflow](./04-DEVELOPMENT_WORKFLOW.md)
-- Key Guides:
-  - [Content Generation](./guides/CONTENT_GENERATION_GUIDE.md)
-  - [Model Selection](./guides/MODEL_SELECTION_GUIDE.md)
-  - [Hybrid Package Manager](./guides/HYBRID_PACKAGE_MANAGER_STRATEGY.md)
-  - [Docker Deployment](./guides/DOCKER_DEPLOYMENT.md)
-- Need Help? → [Troubleshooting](./guides/troubleshooting/)
+1. **Setup:** [01-SETUP_AND_OVERVIEW.md](./01-SETUP_AND_OVERVIEW.md)
+2. **Architecture:** [02-ARCHITECTURE_AND_DESIGN.md](./02-ARCHITECTURE_AND_DESIGN.md)
+3. **Workflow:** [04-DEVELOPMENT_WORKFLOW.md](./04-DEVELOPMENT_WORKFLOW.md)
+4. **Component Docs:** [components/](./components/)
+5. **API References:** [reference/](./reference/)
 
-### 🏗️ DevOps / Infrastructure
+### 🚀 DevOps / Infrastructure
 
-- Start: [Deployment Guide](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md)
-- References:
-  - [Cost-Optimized Deployment](./reference/DEPLOYMENT_STRATEGY_COST_OPTIMIZED.md)
-  - [Infrastructure as Code](./reference/DATABASE_SCHEMA.md)
-  - [Branch Variables](./07-BRANCH_SPECIFIC_VARIABLES.md)
-- Troubleshoot: [DevOps Issues](./guides/troubleshooting/)
+1. **Deployment:** [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md)
+2. **Operations:** [06-OPERATIONS_AND_MAINTENANCE.md](./06-OPERATIONS_AND_MAINTENANCE.md)
+3. **Environment Config:** [07-BRANCH_SPECIFIC_VARIABLES.md](./07-BRANCH_SPECIFIC_VARIABLES.md)
+4. **Technical References:** [reference/](./reference/)
+5. **Troubleshooting:** [troubleshooting/](./troubleshooting/)
 
-### 📊 Project Managers / Stakeholders
+### 📊 Project Managers
 
-- Overview: [Feature Map](./guides/FEATURE_MAP_VISUAL_OVERVIEW.md)
-- Status: [System Standards](./reference/GLAD-LABS-STANDARDS.md)
-- Architecture: [2-minute Architecture Overview](./02-ARCHITECTURE_AND_DESIGN.md#quick-overview)
-
-### 🧪 QA / Testing
-
-- Start: [Testing Guide](./guides/TESTING.md)
-- Focus Areas:
-  - [Unit Tests](./guides/troubleshooting/01-TEST_EXECUTION_ISSUES.md)
-  - [Integration Tests](./guides/troubleshooting/02-TEST_INTEGRATION_ISSUES.md)
-  - [E2E Tests](./guides/troubleshooting/03-E2E_TEST_ISSUES.md)
+- **System Overview:** [02-ARCHITECTURE_AND_DESIGN.md](./02-ARCHITECTURE_AND_DESIGN.md)
+- **Deployment Status:** [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md)
+- **Standards:** [reference/GLAD-LABS-STANDARDS.md](./reference/GLAD-LABS-STANDARDS.md)
 
 ---
 
@@ -126,103 +101,43 @@
 
 ---
 
-## 🔍 Finding What You Need
+## 🔍 Documentation Structure
 
-### By Topic
+### Core Docs (Read in Order)
 
-| Topic                  | Where to Look                                                                                          |
-| ---------------------- | ------------------------------------------------------------------------------------------------------ |
-| **Setup**              | [01-SETUP_AND_OVERVIEW.md](./01-SETUP_AND_OVERVIEW.md) or [Setup Guide](./guides/LOCAL_SETUP_GUIDE.md) |
-| **Architecture**       | [02-ARCHITECTURE_AND_DESIGN.md](./02-ARCHITECTURE_AND_DESIGN.md) or [Reference](./reference/)          |
-| **AI Agents**          | [05-AI_AGENTS_AND_INTEGRATION.md](./05-AI_AGENTS_AND_INTEGRATION.md)                                   |
-| **Deployment**         | [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md)                           |
-| **Vercel Deployment**  | [Vercel Strategy Guide](./guides/VERCEL_DEPLOYMENT_STRATEGY.md) - Deploy public site & oversight hub   |
-| **Source Code**        | [Source Code Analysis](./guides/SRC_CODE_ANALYSIS_COMPLETE.md) - 15K+ lines analyzed, cost insights    |
-| **Development**        | [04-DEVELOPMENT_WORKFLOW.md](./04-DEVELOPMENT_WORKFLOW.md)                                             |
-| **Content Generation** | [Content Generation Guide](./guides/CONTENT_GENERATION_GUIDE.md)                                       |
-| **API**                | [API Contract](./reference/API_CONTRACT_CONTENT_CREATION.md)                                           |
-| **Troubleshooting**    | [Troubleshooting Hub](./guides/troubleshooting/)                                                       |
-| **Components**         | [Components Directory](./components/)                                                                  |
+1. **[01-SETUP_AND_OVERVIEW.md](./01-SETUP_AND_OVERVIEW.md)** - Prerequisites and local setup
+2. **[02-ARCHITECTURE_AND_DESIGN.md](./02-ARCHITECTURE_AND_DESIGN.md)** - System architecture and design
+3. **[03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md)** - Production deployment
+4. **[04-DEVELOPMENT_WORKFLOW.md](./04-DEVELOPMENT_WORKFLOW.md)** - Development process and git workflow
+5. **[05-AI_AGENTS_AND_INTEGRATION.md](./05-AI_AGENTS_AND_INTEGRATION.md)** - AI agent orchestration
+6. **[06-OPERATIONS_AND_MAINTENANCE.md](./06-OPERATIONS_AND_MAINTENANCE.md)** - Production operations
+7. **[07-BRANCH_SPECIFIC_VARIABLES.md](./07-BRANCH_SPECIFIC_VARIABLES.md)** - Environment configuration
 
-### By Problem
+### Additional Resources
 
-- **"Deployment failed"** → [Deployment Fixes](./guides/troubleshooting/01-DEPLOYMENT_FIX.md)
-- **"Strapi not starting"** → [Strapi Node Fix](./guides/troubleshooting/02-STRAPI_FIX.md)
-- **"FastAPI no module"** → [FastAPI Fix](./guides/troubleshooting/03-FASTAPI_FIX.md)
-- **"Railway build error"** → [Railway Fix](./guides/troubleshooting/04-RAILWAY_FIX.md)
-- **"Need help?"** → [Troubleshooting Index](./guides/troubleshooting/README.md)
-
----
-
-## 📋 Complete File Structure
-
-```bash
-docs/
-├── 00-README.md ✅ THIS FILE - Main Documentation Hub
-├── 01-SETUP_AND_OVERVIEW.md - Getting started & dependencies
-├── 02-ARCHITECTURE_AND_DESIGN.md - System design & components
-├── 03-DEPLOYMENT_AND_INFRASTRUCTURE.md - Cloud & infrastructure
-├── 04-DEVELOPMENT_WORKFLOW.md - Git, testing, CI/CD
-├── 05-AI_AGENTS_AND_INTEGRATION.md - AI orchestration & MCP
-├── 06-OPERATIONS_AND_MAINTENANCE.md - Production operations
-├── 07-BRANCH_SPECIFIC_VARIABLES.md - Environment configuration
-│
-├── components/ - Component-specific documentation
-│   ├── README.md - Component overview & index
-│   ├── cofounder-agent/ - AI Co-Founder engine
-│   ├── oversight-hub/ - Business intelligence dashboard
-│   ├── public-site/ - Marketing website
-│   └── strapi-cms/ - Content management system
-│
-├── guides/ - Implementation guides & how-tos (18 guides)
-│   ├── CONTENT_GENERATION_GUIDE.md - SEO content generation
-│   ├── VERCEL_DEPLOYMENT_STRATEGY.md - Deploy to Vercel (2 projects recommended)
-│   ├── MODEL_SELECTION_GUIDE.md - AI model selection
-│   ├── LOCAL_SETUP_COMPLETE.md - Local environment
-│   ├── DOCKER_DEPLOYMENT.md - Container deployment
-│   ├── HYBRID_PACKAGE_MANAGER_STRATEGY.md - npm + pip
-│   ├── TESTING.md - Test execution & CI/CD
-│   ├── FIXES_AND_SOLUTIONS.md - Common fixes
-│   ├── FEATURE_MAP_VISUAL_OVERVIEW.md - Feature overview
-│   │
-│   └── troubleshooting/ - Common issues & solutions (11 guides)
-│       ├── 01-SETUP_ISSUES.md
-│       ├── 02-TEST_FAILURES.md
-│       ├── 03-DEPENDENCY_CONFLICTS.md
-│       ├── 04-DEPLOYMENT_ISSUES.md
-│       ├── 05-PERFORMANCE_ISSUES.md
-│       ├── 06-ERROR_SOLUTIONS.md
-│       └── ... (5 more)
-│
-├── reference/ - Technical reference & specifications (19+ docs)
-│   ├── API_CONTRACT_CONTENT_CREATION.md - API specs
-│   ├── DATA_SCHEMAS.md - Database schema
-│   ├── DEPLOYMENT_STRATEGY_COST_OPTIMIZED.md - Deployment guide
-│   ├── CONFIG_REFERENCE.md - Environment variables
-│   ├── GLAD-LABS-STANDARDS.md - Coding standards
-│   └── ... (14 more)
-│
-└── archive-old/ - Historical documentation (96 files)
-    ├── README.md - Explains what's archived
-    └── ... (previous session docs)
-```
+- **[components/](./components/)** - Component-specific documentation
+- **[reference/](./reference/)** - Technical references, API specs, schemas
+- **[troubleshooting/](./troubleshooting/)** - Common issues and solutions
 
 ---
 
 ## 🎓 Learning Paths
 
-### 🆕 **First Time Setup (2-3 hours)**
+### 👨‍💻 For Developers (Getting Started)
 
-1. Read: [Quick Overview](#-quick-navigation)
-2. Do: [Setup Guide](./01-SETUP_AND_OVERVIEW.md)
-3. Do: [Local Setup](./guides/LOCAL_SETUP_COMPLETE.md)
-4. Reference: [Troubleshooting](./guides/troubleshooting/) if needed
+1. **Setup:** [01-SETUP_AND_OVERVIEW.md](./01-SETUP_AND_OVERVIEW.md)
+2. **Learn Architecture:** [02-ARCHITECTURE_AND_DESIGN.md](./02-ARCHITECTURE_AND_DESIGN.md)
+3. **Development Workflow:** [04-DEVELOPMENT_WORKFLOW.md](./04-DEVELOPMENT_WORKFLOW.md)
+4. **Component Details:** [components/](./components/)
+5. **Hit a problem?** Check [troubleshooting/](./troubleshooting/)
 
-### 🏗️ **Architect View (1 hour)**
+### 🚀 For DevOps/Infrastructure
 
-1. Read: [Architecture](./02-ARCHITECTURE_AND_DESIGN.md)
-2. Read: [Component Documentation](./components/)
-3. Reference: [API Contract](./reference/API_CONTRACT_CONTENT_CREATION.md)
+1. **Deployment:** [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md)
+2. **Operations:** [06-OPERATIONS_AND_MAINTENANCE.md](./06-OPERATIONS_AND_MAINTENANCE.md)
+3. **Environment Config:** [07-BRANCH_SPECIFIC_VARIABLES.md](./07-BRANCH_SPECIFIC_VARIABLES.md)
+4. **Technical Refs:** [reference/](./reference/)
+5. **Issues?** Check [troubleshooting/](./troubleshooting/)
 
 ### 👨‍💻 **Developer Workflow (30 mins)**
 
@@ -236,68 +151,51 @@ docs/
 2. Read: [Cost-Optimized Strategy](./reference/DEPLOYMENT_STRATEGY_COST_OPTIMIZED.md)
 3. Reference: [Operations Guide](./06-OPERATIONS_AND_MAINTENANCE.md)
 
-### 🧪 **Get Testing (1 hour)**
+### 🚀 For Deployment/Production
 
-1. Read: [Testing Guide](./guides/TESTING.md)
-2. Read: [Test Implementation](./guides/troubleshooting/)
-
----
-
-## 📞 Need Help?
-
-| Question                         | Answer                                                       |
-| -------------------------------- | ------------------------------------------------------------ |
-| "Where do I start?"              | → [Getting Started](#-quick-navigation)                      |
-| "How do I set up locally?"       | → [Local Setup](./guides/LOCAL_SETUP_COMPLETE.md)            |
-| "How do I deploy?"               | → [Deployment Guide](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md)  |
-| "What's the architecture?"       | → [Architecture](./02-ARCHITECTURE_AND_DESIGN.md)            |
-| "How do I run tests?"            | → [Testing Guide](./guides/TESTING.md)                       |
-| "Something's broken"             | → [Troubleshooting](./guides/troubleshooting/)               |
-| "What are the coding standards?" | → [Standards](./reference/GLAD-LABS-STANDARDS.md)            |
-| "How do I create content?"       | → [Content Generation](./guides/CONTENT_GENERATION_GUIDE.md) |
+1. **Deployment:** [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md)
+2. **Operations:** [06-OPERATIONS_AND_MAINTENANCE.md](./06-OPERATIONS_AND_MAINTENANCE.md)
+3. **Config:** [07-BRANCH_SPECIFIC_VARIABLES.md](./07-BRANCH_SPECIFIC_VARIABLES.md)
 
 ---
 
-## ✅ Documentation Standards
+## 📞 Quick Help
 
-This documentation is:
-
-- ✅ **Complete** - All major topics covered
-- ✅ **Organized** - Clear folder structure and navigation
-- ✅ **Linked** - Cross-references throughout
-- ✅ **Current** - Last updated October 22, 2025
-- ✅ **Searchable** - Descriptive filenames and headers
-- ✅ **Role-based** - Organized for different user types
+| I need...              | Go to...                                                                 |
+| ---------------------- | ------------------------------------------------------------------------ |
+| Setup instructions     | [01-SETUP_AND_OVERVIEW.md](./01-SETUP_AND_OVERVIEW.md)                   |
+| System architecture    | [02-ARCHITECTURE_AND_DESIGN.md](./02-ARCHITECTURE_AND_DESIGN.md)         |
+| Deployment steps       | [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) |
+| Git/development info   | [04-DEVELOPMENT_WORKFLOW.md](./04-DEVELOPMENT_WORKFLOW.md)               |
+| AI agent details       | [05-AI_AGENTS_AND_INTEGRATION.md](./05-AI_AGENTS_AND_INTEGRATION.md)     |
+| Operations info        | [06-OPERATIONS_AND_MAINTENANCE.md](./06-OPERATIONS_AND_MAINTENANCE.md)   |
+| Environment config     | [07-BRANCH_SPECIFIC_VARIABLES.md](./07-BRANCH_SPECIFIC_VARIABLES.md)     |
+| Technical reference    | [reference/](./reference/)                                               |
+| Troubleshooting        | [troubleshooting/](./troubleshooting/)                                   |
 
 ---
 
-## 📝 Contributing to Docs
+## 📋 Documentation Philosophy
 
-**Adding new documentation?**
+GLAD Labs uses a **HIGH-LEVEL DOCUMENTATION ONLY** approach:
 
-1. Place in appropriate folder (guides/, reference/, or components/)
-2. Link from this hub (00-README.md)
-3. Update relevant section READMEs
-4. Follow naming conventions (see archive-old/ for examples)
+- ✅ **Core docs (00-07):** Architecture-level guidance that stays relevant
+- ✅ **Technical references:** API specs, schemas, standards
+- ✅ **Focused troubleshooting:** Common issues with solutions
+- ❌ **No feature guides:** Code demonstrates how to use features
+- ❌ **No status updates:** Unnecessary maintenance burden
+- ❌ **No duplicate content:** Consolidate into core docs
 
-**Found an issue?**
-
-1. Check [Troubleshooting](./guides/troubleshooting/)
-2. Update docs if applicable
-3. Commit with clear message
-
-**Questions about organization?**
-
-- See [DOCUMENTATION_REVIEW_REPORT.md](./DOCUMENTATION_REVIEW_REPORT.md) for consolidation details
+This keeps documentation clean, maintainable, and useful.
 
 ---
 
 ## 🔄 Last Updated
 
-**Date:** October 22, 2025  
-**Version:** 2.0 (Post-Consolidation)  
-**Status:** ✅ **Complete & Organized**
+**Date:** October 23, 2025  
+**Status:** ✅ Complete | High-Level Documentation Only  
+**Core Docs:** 8 files | **Total Docs:** 34 files | **Clean & Focused**
 
 ---
 
-**👉 Ready to get started? Pick your role above and follow the learning path!**
+**👉 Pick your role above and start reading!**
