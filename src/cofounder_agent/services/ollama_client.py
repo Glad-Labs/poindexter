@@ -406,6 +406,127 @@ class OllamaClient:
         # Default to mistral (best general purpose)
         return "mistral"
     
+    async def generate_with_retry(
+        self,
+        prompt: str,
+        model: Optional[str] = None,
+        system: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        max_retries: int = 3,
+        base_delay: float = 1.0
+    ) -> Dict[str, Any]:
+        """
+        Generate completion with exponential backoff retry logic.
+        
+        Retries failed requests with exponential backoff to handle:
+        - Temporary network issues
+        - Model loading delays
+        - Ollama process restarts
+        
+        Args:
+            prompt: User prompt
+            model: Model name (default: self.model)
+            system: System prompt
+            temperature: Sampling temperature (0.0-1.0)
+            max_tokens: Maximum tokens to generate
+            max_retries: Maximum number of retry attempts
+            base_delay: Initial delay in seconds (doubles each retry)
+            
+        Returns:
+            Dictionary with response text, tokens, and timing
+        """
+        import asyncio
+        import time
+        
+        model = model or self.model
+        last_error = None
+        
+        for attempt in range(max_retries):
+            try:
+                logger.info(
+                    f"Ollama generation attempt {attempt + 1}/{max_retries}",
+                    model=model,
+                    attempt=attempt + 1
+                )
+                
+                result = await self.generate(
+                    prompt=prompt,
+                    model=model,
+                    system=system,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    stream=False
+                )
+                
+                if result and result.get('text'):
+                    logger.info(
+                        "✓ Ollama generation succeeded",
+                        model=model,
+                        attempt=attempt + 1,
+                        tokens=result.get('tokens', 0)
+                    )
+                    return result
+                
+            except httpx.ConnectError as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    logger.warning(
+                        f"Ollama connection failed (attempt {attempt + 1}), "
+                        f"retrying in {delay}s...",
+                        error=str(e)
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error(
+                        "Ollama connection failed after all retries",
+                        attempts=max_retries,
+                        error=str(e)
+                    )
+            
+            except httpx.ReadTimeout as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    logger.warning(
+                        f"Ollama request timeout (attempt {attempt + 1}), "
+                        f"retrying in {delay}s...",
+                        error=str(e)
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error(
+                        "Ollama timeout after all retries",
+                        attempts=max_retries,
+                        error=str(e)
+                    )
+            
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)
+                    logger.warning(
+                        f"Ollama generation failed (attempt {attempt + 1}), "
+                        f"retrying in {delay}s...",
+                        error=str(e)
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error(
+                        "Ollama generation failed after all retries",
+                        attempts=max_retries,
+                        error=str(e)
+                    )
+        
+        # All retries exhausted
+        logger.error(
+            "All Ollama generation attempts exhausted",
+            max_retries=max_retries,
+            last_error=str(last_error)
+        )
+        raise last_error if last_error else OllamaError("Generation failed after all retries")
+
     async def stream_generate(
         self,
         prompt: str,

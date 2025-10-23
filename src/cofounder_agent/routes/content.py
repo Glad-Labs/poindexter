@@ -19,6 +19,8 @@ import logging
 
 from services.strapi_client import StrapiClient, StrapiEnvironment
 from services.ai_content_generator import get_content_generator
+from services.pexels_client import PexelsClient
+from services.serper_client import SerperClient
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +62,14 @@ class CreateBlogPostRequest(BaseModel):
     target_length: int = Field(1500, ge=200, le=5000, description="Target word count")
     tags: List[str] = Field(default_factory=list, description="Content tags")
     categories: List[str] = Field(default_factory=list, description="Strapi categories")
-    featured_image_prompt: Optional[str] = Field(None, description="DALL-E prompt for featured image")
+    generate_featured_image: bool = Field(
+        True, 
+        description="Search and use Pexels image for featured image (free, no cost)"
+    )
+    featured_image_keywords: Optional[List[str]] = Field(
+        None, 
+        description="Keywords for Pexels image search (if None, uses topic)"
+    )
     publish_mode: PublishMode = Field(PublishMode.DRAFT, description="Draft or publish immediately")
     target_strapi_environment: str = Field("production", description="Production or staging Strapi")
 
@@ -403,10 +412,29 @@ async def _generate_and_publish_blog_post(task_id: str, request: CreateBlogPostR
         
         logger.info(f"Content generated with: {model_used} (quality score: {metrics['final_quality_score']:.1f}/10)")
         
-        task["progress"] = {"stage": "image_generation", "percentage": 50, "message": "Generating featured image..."}
+        task["progress"] = {"stage": "image_generation", "percentage": 50, "message": "Searching for featured image..."}
         
-        # TODO: Generate featured image if requested
+        # Search for featured image via Pexels (free, no cost)
         featured_image = None
+        image_source = None
+        if request.generate_featured_image:
+            try:
+                pexels = PexelsClient()
+                keywords = request.featured_image_keywords or [request.topic]
+                image = pexels.get_featured_image(request.topic, keywords=keywords)
+                
+                if image:
+                    featured_image = image["url"]
+                    image_source = f"Pexels - {image['photographer']}"
+                    logger.info(f"Found featured image: {image_source}")
+                else:
+                    logger.warning(f"No Pexels image found for: {request.topic}")
+            except Exception as e:
+                logger.warning(f"Pexels image search failed: {e}")
+                featured_image = None
+        else:
+            # Skip image generation
+            task["progress"]["percentage"] = 60
         
         # Update task with result
         task["result"] = {
@@ -415,6 +443,7 @@ async def _generate_and_publish_blog_post(task_id: str, request: CreateBlogPostR
             "summary": generated_content[:200] + "...",
             "word_count": len(generated_content.split()),
             "featured_image_url": featured_image,
+            "featured_image_source": image_source,
             "model_used": model_used,
             "quality_score": metrics["final_quality_score"],
             "generation_attempts": metrics["generation_attempts"],

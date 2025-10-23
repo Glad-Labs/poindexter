@@ -227,14 +227,6 @@ class Orchestrator:
             logging.error(f"Error getting financial summary: {e}")
             return "❌ Error retrieving financial data"
 
-    # Removed: older duplicate run_content_pipeline implementation
-
-    # Removed: older duplicate run_security_audit implementation
-
-    # Removed: older duplicate _get_system_status implementation
-
-    # Removed: older duplicate _handle_intervention implementation
-
     async def run_content_pipeline_async(self) -> str:
         """Async version of content pipeline with real Pub/Sub orchestration"""
         try:
@@ -397,7 +389,6 @@ class Orchestrator:
                 "status": "error",
                 "metadata": {"error": str(e), "protocol": "INTERVENE_FAILED"}
             }
-        # Removed: unreachable content calendar block
 
     def create_content_task_sync(self, command: str) -> str:
         """Synchronous version of content task creation for backward compatibility"""

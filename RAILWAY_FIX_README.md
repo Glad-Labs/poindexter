@@ -11,9 +11,11 @@
 ## What Was Fixed
 
 ### 1. ✅ Procfile Created
+
 **Location**: Project root (`c:\Users\mattm\glad-labs-website\Procfile`)
 
 **Contents**:
+
 ```
 web: cd src/cofounder_agent && python -m uvicorn main:app --host 0.0.0.0 --port $PORT
 ```
@@ -21,9 +23,11 @@ web: cd src/cofounder_agent && python -m uvicorn main:app --host 0.0.0.0 --port 
 This tells Railway exactly how to start your FastAPI app.
 
 ### 2. ✅ Railway Guide Updated
+
 Added critical troubleshooting section explaining the fix.
 
 ### 3. ✅ Files Committed to Git
+
 Both files are now in your repository.
 
 ---
@@ -31,18 +35,22 @@ Both files are now in your repository.
 ## What to Do Now
 
 ### Step 1: Push to GitHub (Required!)
+
 ```bash
 git push origin feat/refactor
 ```
 
 ### Step 2: Retry Railway Deployment
+
 1. Go to: https://railway.app
 2. Select your project
 3. Click "Redeploy" or trigger new build
 4. Watch logs - should now work!
 
 ### Step 3: Expected Success
+
 You should see:
+
 ```
 ✓ Found .dockerignore file
 ✓ Detected Python
@@ -59,6 +67,7 @@ You should see:
 ## How It Works
 
 **Before** (failed):
+
 ```
 Railway looks for:
 1. main.py at project root? ❌
@@ -68,6 +77,7 @@ Railway looks for:
 ```
 
 **After** (will work):
+
 ```
 Railway looks for:
 1. main.py at project root? ❌

@@ -191,23 +191,27 @@ Railway needs a `Procfile` to know how to start your FastAPI app.
 
 **File location**: Create at PROJECT ROOT: `Procfile`  
 **File contents**:
+
 ```
 web: cd src/cofounder_agent && python -m uvicorn main:app --host 0.0.0.0 --port $PORT
 ```
 
 **Important**:
+
 - ⚠️ File must be named exactly `Procfile` (no extension)
 - ⚠️ Must be at PROJECT ROOT (same level as `package.json`)
 - ⚠️ Must use `$PORT` variable (NOT hardcoded port)
 - ⚠️ Command must start with `web:`
 
 **Why**: Railway's Railpack auto-detects FastAPI ONLY if:
+
 1. `main.py` is at project root, OR
 2. A `Procfile` tells it where to start
 
 Since our `main.py` is in `src/cofounder_agent/`, the Procfile is REQUIRED.
 
 **To verify**:
+
 ```bash
 # Check file exists at project root
 ls Procfile
@@ -218,6 +222,7 @@ cat Procfile
 ```
 
 **Add to Git**:
+
 ```bash
 git add Procfile
 git commit -m "Add Procfile for Railway deployment"
@@ -379,10 +384,12 @@ If Oversight Hub is on Vercel:
 **Error**: Railpack repeatedly shows "No start command was found" and deployment fails
 
 **Root cause**: Railway can't find how to start your app because:
+
 1. `main.py` is not at project root
 2. No `Procfile` exists to tell it where to start
 
 **Solution**:
+
 ```bash
 # 1. Create Procfile at PROJECT ROOT
 # File: Procfile (not Procfile.txt, not in src/)

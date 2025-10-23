@@ -299,7 +299,173 @@ class AIResponseCache:
         logger.info("Cache metrics reset")
 
 
-# Singleton instance
+class ImageCache:
+    """
+    Cache for image search results to reduce Pexels API calls.
+    
+    Features:
+    - Caches by topic + keywords combination
+    - Automatic TTL management (30 days default)
+    - Hit/miss tracking
+    - Memory efficient
+    
+    Usage:
+        cache = ImageCache()
+        
+        # Check cache first
+        cached_image = cache.get_cached_image("AI", ["artificial", "intelligence"])
+        if cached_image:
+            return cached_image
+        
+        # If not cached, search and cache
+        image = await pexels.search_images("AI", keywords=["artificial", "intelligence"])
+        cache.cache_image("AI", ["artificial", "intelligence"], image)
+    """
+    
+    def __init__(self, ttl_days: int = 30, max_entries: int = 500):
+        """
+        Initialize image cache.
+        
+        Args:
+            ttl_days: Time-to-live in days
+            max_entries: Maximum cached entries
+        """
+        self.ttl = timedelta(days=ttl_days)
+        self.max_entries = max_entries
+        self.image_cache: Dict[str, Dict[str, Any]] = {}
+        self.metrics = {
+            'hits': 0,
+            'misses': 0,
+            'cached_entries': 0
+        }
+        
+        logger.info(
+            "Image cache initialized",
+            ttl_days=ttl_days,
+            max_entries=max_entries
+        )
+    
+    def _build_cache_key(self, topic: str, keywords: Optional[list[str]] = None) -> str:
+        """
+        Build cache key from topic and keywords.
+        
+        Args:
+            topic: Search topic
+            keywords: List of keywords
+            
+        Returns:
+            Cache key string
+        """
+        key_parts = [topic.lower().strip()[:30]]
+        if keywords:
+            key_parts.extend([kw.lower().strip()[:20] for kw in keywords[:5]])
+        
+        combined = "|".join(key_parts)
+        return hashlib.md5(combined.encode()).hexdigest()
+    
+    def get_cached_image(
+        self,
+        topic: str,
+        keywords: Optional[list[str]] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get cached image for topic + keywords.
+        
+        Args:
+            topic: Search topic
+            keywords: Search keywords
+            
+        Returns:
+            Cached image dict or None if not found/expired
+        """
+        cache_key = self._build_cache_key(topic, keywords)
+        
+        if cache_key not in self.image_cache:
+            self.metrics['misses'] += 1
+            return None
+        
+        cached_entry = self.image_cache[cache_key]
+        
+        # Check if expired
+        cached_at = datetime.fromisoformat(cached_entry['cached_at'])
+        if datetime.now() > cached_at + self.ttl:
+            logger.info(f"Image cache entry expired for: {topic}")
+            del self.image_cache[cache_key]
+            self.metrics['cached_entries'] -= 1
+            self.metrics['misses'] += 1
+            return None
+        
+        self.metrics['hits'] += 1
+        logger.info(
+            f"✓ Image cache hit for '{topic}'",
+            cache_hits=self.metrics['hits']
+        )
+        
+        return cached_entry['image']
+    
+    def cache_image(
+        self,
+        topic: str,
+        keywords: Optional[list[str]],
+        image_data: Dict[str, Any]
+    ) -> None:
+        """
+        Cache image data for topic + keywords.
+        
+        Args:
+            topic: Search topic
+            keywords: Search keywords
+            image_data: Image dictionary from Pexels
+        """
+        # Evict old entries if at capacity
+        if len(self.image_cache) >= self.max_entries:
+            # Remove oldest entry (simple FIFO)
+            oldest_key = next(iter(self.image_cache))
+            del self.image_cache[oldest_key]
+            self.metrics['cached_entries'] -= 1
+            logger.info(f"Image cache: evicted old entry (max capacity: {self.max_entries})")
+        
+        cache_key = self._build_cache_key(topic, keywords)
+        
+        self.image_cache[cache_key] = {
+            'image': image_data,
+            'cached_at': datetime.now().isoformat(),
+            'topic': topic,
+            'keywords': keywords or [],
+            'ttl_seconds': int(self.ttl.total_seconds())
+        }
+        
+        self.metrics['cached_entries'] += 1
+        logger.info(
+            f"✓ Image cached for '{topic}'",
+            cache_size=len(self.image_cache)
+        )
+    
+    def get_metrics(self) -> Dict[str, Any]:
+        """Get cache metrics."""
+        total_lookups = self.metrics['hits'] + self.metrics['misses']
+        hit_rate = (self.metrics['hits'] / total_lookups * 100) if total_lookups > 0 else 0
+        
+        return {
+            'total_hits': self.metrics['hits'],
+            'total_misses': self.metrics['misses'],
+            'hit_rate_percent': round(hit_rate, 1),
+            'cached_entries': self.metrics['cached_entries'],
+            'max_entries': self.max_entries,
+            'cache_utilization_percent': round(
+                self.metrics['cached_entries'] / self.max_entries * 100, 1
+            )
+        }
+    
+    def clear_cache(self) -> None:
+        """Clear all cached images."""
+        self.image_cache.clear()
+        self.metrics['cached_entries'] = 0
+        logger.info("Image cache cleared")
+
+
+# Singleton instances
+
 _ai_cache: Optional[AIResponseCache] = None
 
 
