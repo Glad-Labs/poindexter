@@ -3,6 +3,7 @@
 ## What Just Happened?
 
 ✅ Updated the seed script (`seed-single-types.js`) with **comprehensive, production-ready content** for:
+
 - **About Page** - Full about GLAD Labs with mission, vision, and values
 - **Privacy Policy** - 15-section policy covering CCPA, GDPR, data security, and more
 
@@ -21,6 +22,7 @@ node scripts\seed-single-types.js
 ```
 
 **You should see:**
+
 ```
 ✓ Strapi is running
 ✓ Created About page
@@ -38,6 +40,7 @@ node scripts\seed-single-types.js
 ## Content Fields
 
 ### About Page
+
 - **Title:** About GLAD Labs
 - **Subtitle:** Building the AI Co-Founder of Tomorrow
 - **Content:** Who We Are, What We Build sections
@@ -47,6 +50,7 @@ node scripts\seed-single-types.js
 - **SEO:** Meta title, description, keywords
 
 ### Privacy Policy
+
 - **Title:** Privacy Policy
 - **Content:** 15 comprehensive sections covering:
   - Information collection and usage
@@ -64,16 +68,19 @@ node scripts\seed-single-types.js
 ## Verify It Worked
 
 ### 1. Check Strapi Admin
+
 - Visit http://localhost:1337/admin
 - Look for "About Page" and "Privacy Policy" in Content Manager
 - They should show as **Published** (green status)
 
 ### 2. Check Frontend
+
 - Start public site: `cd web\public-site && npm run dev`
 - Visit **http://localhost:3000/about** - Should show your About page content
 - Visit **http://localhost:3000/privacy-policy** - Should show your Privacy Policy
 
 ### 3. Test API Directly
+
 ```powershell
 # PowerShell
 Invoke-WebRequest -Uri "http://localhost:1337/api/about" | Select-Object -ExpandProperty Content | ConvertFrom-Json | Select-Object -ExpandProperty data
@@ -84,14 +91,16 @@ Invoke-WebRequest -Uri "http://localhost:1337/api/privacy-policy" | Select-Objec
 ## What Content Is Included?
 
 ### About Page Content
+
 ✅ Who We Are - Introduction to GLAD Labs  
 ✅ Our Vision - Future-focused vision statement  
 ✅ What We Build - 5 key products/services with bullet points  
 ✅ Our Mission - Democratizing AI automation  
 ✅ Core Values - 5 values with descriptions (Innovation, Collaboration, etc.)  
-✅ SEO - Optimized meta tags for search engines  
+✅ SEO - Optimized meta tags for search engines
 
 ### Privacy Policy Content
+
 ✅ Comprehensive 15-section policy  
 ✅ Information collection practices  
 ✅ CCPA rights (California residents)  
@@ -101,16 +110,18 @@ Invoke-WebRequest -Uri "http://localhost:1337/api/privacy-policy" | Select-Objec
 ✅ Automated decision-making (AI transparency)  
 ✅ Third-party integrations  
 ✅ Children's privacy protections  
-✅ Regulatory compliance statement  
+✅ Regulatory compliance statement
 
 ## Environment Variables (Already Set)
 
 For **local development**, the frontend automatically uses:
+
 ```
 NEXT_PUBLIC_STRAPI_API_URL=http://localhost:1337
 ```
 
 For **production** (Railway), you need to set:
+
 ```
 NEXT_PUBLIC_STRAPI_API_URL=https://your-strapi-railway-url.railway.app
 NEXT_PUBLIC_STRAPI_API_TOKEN=your-api-token
@@ -119,6 +130,7 @@ NEXT_PUBLIC_STRAPI_API_TOKEN=your-api-token
 ## Customizing Content
 
 ### Edit Content in Strapi Admin
+
 1. Go to http://localhost:1337/admin
 2. Click on "About Page" or "Privacy Policy"
 3. Edit any field (title, content, etc.)
@@ -126,7 +138,9 @@ NEXT_PUBLIC_STRAPI_API_TOKEN=your-api-token
 5. Click **Publish** to make visible on website
 
 ### Edit Content in Code (Before Seeding)
+
 File: `cms/strapi-main/scripts/seed-single-types.js`
+
 - Update `aboutData` object for About page
 - Update `privacyPolicyData` object for Privacy Policy
 - Re-run: `node scripts/seed-single-types.js`
@@ -134,6 +148,7 @@ File: `cms/strapi-main/scripts/seed-single-types.js`
 ## Production Deployment
 
 ### 1. Commit Your Changes
+
 ```bash
 git add cms/strapi-main/scripts/seed-single-types.js
 git commit -m "feat: populate About and Privacy Policy content"
@@ -141,6 +156,7 @@ git push origin main
 ```
 
 ### 2. Push to Production
+
 ```bash
 # Strapi is on Railway
 # Content automatically syncs to Railway PostgreSQL database
@@ -148,6 +164,7 @@ git push origin main
 ```
 
 ### 3. Verify on Production
+
 - Visit https://your-domain.com/about
 - Visit https://your-domain.com/privacy-policy
 - Check both pages load correctly
@@ -155,20 +172,23 @@ git push origin main
 ## Troubleshooting
 
 ### Content Not Showing on Website?
+
 ✅ Make sure content is **Published** (not Draft)  
 ✅ Check `.env.local` has correct Strapi URL  
 ✅ Clear browser cache: Ctrl+Shift+Delete  
-✅ Check browser console (F12) for errors  
+✅ Check browser console (F12) for errors
 
 ### Seed Script Fails?
+
 ✅ Make sure Strapi is running: `npm run develop`  
 ✅ Check console for error messages  
-✅ Try manually creating in Strapi admin UI instead  
+✅ Try manually creating in Strapi admin UI instead
 
 ### Can't Connect to Strapi?
+
 ✅ Verify URL is http://localhost:1337 (not https)  
 ✅ Check Strapi console output  
-✅ Port 1337 not in use: Check `netstat -ano | findstr :1337`  
+✅ Port 1337 not in use: Check `netstat -ano | findstr :1337`
 
 ## Files Modified
 

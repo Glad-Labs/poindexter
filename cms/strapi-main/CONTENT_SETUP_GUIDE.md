@@ -62,18 +62,19 @@ Creating Privacy Policy page...
 1. **Content Manager** → **About Page**
 2. Edit these fields:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| **Title** | String | Main page heading (e.g., "About GLAD Labs") |
-| **Subtitle** | String | Secondary heading (e.g., "Building the AI Co-Founder of Tomorrow") |
-| **Content** | Rich Text | Main body content with sections, bullet points, formatting |
-| **Mission** | Rich Text | Mission statement with HTML formatting |
-| **Vision** | Rich Text | Vision statement and future goals |
-| **Values** | Rich Text | Core company values as formatted list |
-| **Hero Image** | Image | Optional banner image for the page |
-| **SEO** | Component | Meta title, description, keywords |
+| Field          | Type      | Description                                                        |
+| -------------- | --------- | ------------------------------------------------------------------ |
+| **Title**      | String    | Main page heading (e.g., "About GLAD Labs")                        |
+| **Subtitle**   | String    | Secondary heading (e.g., "Building the AI Co-Founder of Tomorrow") |
+| **Content**    | Rich Text | Main body content with sections, bullet points, formatting         |
+| **Mission**    | Rich Text | Mission statement with HTML formatting                             |
+| **Vision**     | Rich Text | Vision statement and future goals                                  |
+| **Values**     | Rich Text | Core company values as formatted list                              |
+| **Hero Image** | Image     | Optional banner image for the page                                 |
+| **SEO**        | Component | Meta title, description, keywords                                  |
 
 **Content Includes:**
+
 - Who We Are section
 - What We Build section
 - Our Vision statement
@@ -87,16 +88,17 @@ Creating Privacy Policy page...
 1. **Content Manager** → **Privacy Policy**
 2. Edit these fields:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| **Title** | String | "Privacy Policy" |
-| **Content** | Rich Text | Full policy text with 15 sections |
-| **Effective Date** | DateTime | When policy becomes effective |
-| **Last Updated** | DateTime | When policy was last updated |
-| **Contact Email** | Email | privacy@gladlabs.com |
-| **SEO** | Component | Meta title, description, keywords |
+| Field              | Type      | Description                       |
+| ------------------ | --------- | --------------------------------- |
+| **Title**          | String    | "Privacy Policy"                  |
+| **Content**        | Rich Text | Full policy text with 15 sections |
+| **Effective Date** | DateTime  | When policy becomes effective     |
+| **Last Updated**   | DateTime  | When policy was last updated      |
+| **Contact Email**  | Email     | privacy@gladlabs.com              |
+| **SEO**            | Component | Meta title, description, keywords |
 
 **Content Includes:**
+
 - Introduction and commitment to privacy
 - Information collection practices (personal, usage, cookies)
 - Usage purposes (service delivery, personalization, etc.)
@@ -133,6 +135,7 @@ Creating Privacy Policy page...
 ### How Frontend Fetches Content
 
 **Public Site** (`web/public-site/pages/about.js`):
+
 ```javascript
 // Fetches from Strapi during build time
 const url = `${getStrapiURL('/api/about')}?populate=*`;
@@ -176,6 +179,7 @@ npm run dev
 ### Publishing to Railway
 
 1. **Commit your content creation:**
+
    ```bash
    git add cms/strapi-main/
    git commit -m "chore: seed About and Privacy Policy content"
@@ -263,6 +267,7 @@ Example: Add "Effective Date by Region":
 ### Issue: Content Not Appearing on Website
 
 **Solution:**
+
 1. Verify content is **Published** (not Draft)
 2. Check API token has **read permission**
 3. Verify frontend `.env.local` has correct `NEXT_PUBLIC_STRAPI_API_URL`
@@ -271,6 +276,7 @@ Example: Add "Effective Date by Region":
 ### Issue: Seed Script Fails
 
 **Solution:**
+
 1. Ensure Strapi is running: `npm run develop`
 2. Check database connection: No errors in Strapi console
 3. Run manually: Check Strapi admin UI directly
@@ -278,6 +284,7 @@ Example: Add "Effective Date by Region":
 ### Issue: SEO Fields Not Saving
 
 **Solution:**
+
 1. Verify `shared.seo` component exists
 2. File: `cms/strapi-main/src/components/shared/seo.json`
 3. Should contain: `metaTitle`, `metaDescription`, `keywords`
@@ -287,19 +294,23 @@ Example: Add "Effective Date by Region":
 ## 📚 Content Files Reference
 
 ### Seed Script
+
 - **File:** `cms/strapi-main/scripts/seed-single-types.js`
 - **Purpose:** Automatically populates About and Privacy Policy
 - **Run:** `node scripts/seed-single-types.js`
 
 ### About Page Schema
+
 - **File:** `cms/strapi-main/src/api/about/content-types/about/schema.json`
 - **Fields:** title, subtitle, content, mission, vision, values, heroImage, seo
 
 ### Privacy Policy Schema
+
 - **File:** `cms/strapi-main/src/api/privacy-policy/content-types/privacy-policy/schema.json`
 - **Fields:** title, content, lastUpdated, effectiveDate, contactEmail, seo
 
 ### Frontend Pages
+
 - **About:** `web/public-site/pages/about.js` (fetches from `/api/about`)
 - **Privacy:** `web/public-site/pages/privacy-policy.js` (fetches from `/api/privacy-policy`)
 
@@ -328,7 +339,7 @@ For issues or questions about content management:
 
 1. **Check Strapi Docs:** https://docs.strapi.io
 2. **Review Schema Files:** `cms/strapi-main/src/api/*/content-types/*/schema.json`
-3. **Test API Directly:** 
+3. **Test API Directly:**
    ```bash
    curl http://localhost:1337/api/about?populate=*
    curl http://localhost:1337/api/privacy-policy?populate=*
