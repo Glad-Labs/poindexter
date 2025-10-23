@@ -13,15 +13,17 @@
 ✅ `.github/workflows/deploy-staging.yml` - Exists, triggers on `dev` branch push  
 ✅ `.github/workflows/deploy-production.yml` - Exists, triggers on `main` branch push  
 ✅ `.env.staging` - Exists with placeholder format  
-✅ `.env.tier1.production` - Exists with placeholder format  
+✅ `.env.tier1.production` - Exists with placeholder format
 
 **What you need to do:**
+
 1. **Add GitHub Secrets** (15 mins) - See `GITHUB_SECRETS_SETUP.md`
 2. **Configure Railway** (10 mins) - Link your Railway account to GitHub
 3. **Configure Vercel** (10 mins) - Link your Vercel account to GitHub
 4. **Test** (5 mins) - Push to dev, watch GitHub Actions tab
 
 **Result after setup:**
+
 ```
 git push origin dev  →  GitHub Actions  →  Auto-deploys to staging
 git push origin main  →  GitHub Actions  →  Auto-deploys to production
@@ -51,28 +53,29 @@ GitHub Actions Workflow (Reads secrets)
 ### Detailed Flow
 
 **Staging Deployment:**
+
 ```yaml
 # In .github/workflows/deploy-staging.yml:
 1. Read GitHub Secrets:
-   - STAGING_DB_PASSWORD
-   - STAGING_STRAPI_TOKEN
-   - RAILWAY_TOKEN
-   - VERCEL_TOKEN
+  - STAGING_DB_PASSWORD
+  - STAGING_STRAPI_TOKEN
+  - RAILWAY_TOKEN
+  - VERCEL_TOKEN
 
 2. Replace placeholders in .env.staging:
-   DATABASE_PASSWORD=${STAGING_DB_PASSWORD}
-   ↓
-   DATABASE_PASSWORD=my-secret-password (from GitHub Secrets)
+  DATABASE_PASSWORD=${STAGING_DB_PASSWORD}
+  ↓
+  DATABASE_PASSWORD=my-secret-password (from GitHub Secrets)
 
 3. Deploy to Railway:
-   - Passes database credentials
-   - Passes Strapi tokens
-   - Railway uses these to configure environment
+  - Passes database credentials
+  - Passes Strapi tokens
+  - Railway uses these to configure environment
 
 4. Deploy to Vercel:
-   - Passes Strapi API URLs
-   - Passes other frontend-specific variables
-   - Vercel uses these to build and deploy
+  - Passes Strapi API URLs
+  - Passes other frontend-specific variables
+  - Vercel uses these to build and deploy
 
 Result: Each platform gets ONLY the variables it needs
 ```
@@ -85,6 +88,7 @@ Result: Each platform gets ONLY the variables it needs
 ✅ **GitHub Actions is the single source of truth**
 
 **Why this is secure:**
+
 - Secrets never stored in code
 - Each platform only knows what it needs
 - GitHub keeps secrets encrypted
@@ -144,7 +148,7 @@ git push origin dev
 ✅ Run `npm run dev` as usual  
 ✅ Use `.env.local` with localhost URLs  
 ✅ When ready, `git push origin dev` to deploy to staging  
-✅ Deployment setup doesn't touch your machine  
+✅ Deployment setup doesn't touch your machine
 
 ---
 
@@ -182,6 +186,7 @@ Production Deploy:
 ### Why This Matters
 
 **Good Scenario (with package-lock.json):**
+
 ```
 Local:       react@18.3.1  ✅
 Staging:     react@18.3.1  ✅ (from lock file)
@@ -190,6 +195,7 @@ Production:  react@18.3.1  ✅ (same as staging)
 ```
 
 **Bad Scenario (without lock file):**
+
 ```
 Local:       react@18.3.1  (you installed)
 Staging:     react@18.4.0  ❌ (latest minor version available)
@@ -201,7 +207,7 @@ Production:  react@18.4.0  ❌ (different from local!)
 
 ✅ **Already committed to git**  
 ✅ **GitHub Actions will use it**  
-✅ **Ensures consistent deployments**  
+✅ **Ensures consistent deployments**
 
 ### What to Do When Updating Dependencies
 
@@ -221,12 +227,14 @@ git push origin feat/my-feature
 ### Best Practices
 
 ✅ **DO:**
+
 - Always commit package-lock.json
 - Use `npm ci` in CI/CD (not `npm install`)
 - Update lock file when changing dependencies
 - Review lock file changes in PRs
 
 ❌ **DON'T:**
+
 - Delete package-lock.json
 - Use `npm install` in GitHub Actions
 - Regenerate lock file unnecessarily
@@ -234,24 +242,24 @@ git push origin feat/my-feature
 
 ### Impact on Production
 
-| Action | Impact | Result |
-|--------|--------|--------|
-| **No changes to lock file** | ✅ None | Production uses tested versions |
+| Action                                    | Impact  | Result                             |
+| ----------------------------------------- | ------- | ---------------------------------- |
+| **No changes to lock file**               | ✅ None | Production uses tested versions    |
 | **Update dependencies, commit lock file** | ✅ Good | Production gets updates you tested |
-| **Delete lock file, rebuild** | ❌ Bad | Production gets random versions |
-| **GitHub Actions uses `npm ci`** | ✅ Good | Consistent builds |
-| **GitHub Actions uses `npm install`** | ❌ Bad | Unpredictable versions |
+| **Delete lock file, rebuild**             | ❌ Bad  | Production gets random versions    |
+| **GitHub Actions uses `npm ci`**          | ✅ Good | Consistent builds                  |
+| **GitHub Actions uses `npm install`**     | ❌ Bad  | Unpredictable versions             |
 
 ---
 
 ## 📊 Summary Table
 
-| Question | Answer | Impact on You |
-|----------|--------|---|
-| **dev→staging?** | GitHub Actions workflows (already set up) + secrets | Add secrets, test deployments |
-| **Railway/Vercel sharing?** | They don't; GitHub is orchestrator | No action needed |
-| **Local dev affected?** | NO - zero impact | Continue dev normally |
-| **package-lock.json?** | Critical for consistency | Commit lock file changes |
+| Question                    | Answer                                              | Impact on You                 |
+| --------------------------- | --------------------------------------------------- | ----------------------------- |
+| **dev→staging?**            | GitHub Actions workflows (already set up) + secrets | Add secrets, test deployments |
+| **Railway/Vercel sharing?** | They don't; GitHub is orchestrator                  | No action needed              |
+| **Local dev affected?**     | NO - zero impact                                    | Continue dev normally         |
+| **package-lock.json?**      | Critical for consistency                            | Commit lock file changes      |
 
 ---
 
@@ -273,12 +281,12 @@ git push origin feat/my-feature
 
 ### Important Files Created Today
 
-| File | Purpose |
-|------|---------|
-| `DEPLOYMENT_WORKFLOW.md` | Complete deployment guide (you're reading version) |
-| `GITHUB_SECRETS_SETUP.md` | How to configure all GitHub Secrets |
-| `.github/workflows/deploy-staging.yml` | Already exists, triggers on dev push |
-| `.github/workflows/deploy-production.yml` | Already exists, triggers on main push |
+| File                                      | Purpose                                            |
+| ----------------------------------------- | -------------------------------------------------- |
+| `DEPLOYMENT_WORKFLOW.md`                  | Complete deployment guide (you're reading version) |
+| `GITHUB_SECRETS_SETUP.md`                 | How to configure all GitHub Secrets                |
+| `.github/workflows/deploy-staging.yml`    | Already exists, triggers on dev push               |
+| `.github/workflows/deploy-production.yml` | Already exists, triggers on main push              |
 
 ---
 
@@ -287,9 +295,10 @@ git push origin feat/my-feature
 **Local Development:** ✅ Ready now (`npm run dev` works)  
 **Staging Deployment:** ⏳ Ready after GitHub Secrets setup  
 **Production Deployment:** ⏳ Ready after GitHub Secrets setup  
-**Continuous Deployment:** ⏳ Ready after first successful test  
+**Continuous Deployment:** ⏳ Ready after first successful test
 
 **Questions?** See the full guides:
+
 - `DEPLOYMENT_WORKFLOW.md` - Complete technical details
 - `GITHUB_SECRETS_SETUP.md` - Step-by-step secret configuration
 

@@ -148,6 +148,7 @@ Description: Get from Vercel project → Settings → Project ID
 ### Railway Secrets
 
 **Get Railway Token:**
+
 1. Go to Railway → Account (top right)
 2. Click **Settings**
 3. Click **API Tokens**
@@ -155,12 +156,14 @@ Description: Get from Vercel project → Settings → Project ID
 5. Copy the token
 
 **Get Railway Project IDs:**
+
 1. Go to Railway → Projects
 2. Click your staging project
 3. Click **Settings** → Copy **Project ID**
 4. Repeat for production project
 
 **Get Database Credentials:**
+
 1. Go to project → **Resources** (left sidebar)
 2. Click **PostgreSQL** plugin
 3. Click **Plugin** tab
@@ -169,6 +172,7 @@ Description: Get from Vercel project → Settings → Project ID
 ### Strapi Secrets
 
 **Get Strapi Token:**
+
 1. Go to your Strapi admin (http://localhost:1337/admin in dev)
 2. Click **Settings** (left sidebar)
 3. Click **API Tokens**
@@ -178,6 +182,7 @@ Description: Get from Vercel project → Settings → Project ID
 7. Copy the token
 
 **Get Strapi Admin Credentials:**
+
 - Use the admin account you created during Strapi setup
 - Username/Email: (your admin email)
 - Password: (your secure password)
@@ -185,6 +190,7 @@ Description: Get from Vercel project → Settings → Project ID
 ### Vercel Secrets
 
 **Get Vercel Token:**
+
 1. Go to Vercel → Account → Settings
 2. Scroll to **API Tokens**
 3. Click **Create Token**
@@ -193,11 +199,13 @@ Description: Get from Vercel project → Settings → Project ID
 6. Copy the token
 
 **Get Vercel Organization ID:**
+
 1. Go to Vercel → Team Settings
 2. Look for **Team ID** or **Org ID**
 3. Copy it
 
 **Get Vercel Project ID:**
+
 1. Go to Vercel project
 2. Click **Settings** → **General**
 3. Copy **Project ID**
@@ -222,6 +230,7 @@ When you push to `dev` or `main` branch, GitHub Actions:
 ### Example Substitution
 
 **In `.env.staging` (committed to git):**
+
 ```bash
 DATABASE_HOST=${STAGING_DB_HOST}
 DATABASE_USER=${STAGING_DB_USER}
@@ -230,6 +239,7 @@ STRAPI_TOKEN=${STAGING_STRAPI_TOKEN}
 ```
 
 **GitHub Actions replaces to (in memory, not saved):**
+
 ```bash
 DATABASE_HOST=postgres-staging.railway.app
 DATABASE_USER=postgres
@@ -301,6 +311,7 @@ git push origin dev
 ```
 
 **Expected Output:**
+
 ```
 ✅ Build successful
 ✅ Deploy to Railway (Backend) successful
@@ -311,6 +322,7 @@ git push origin dev
 ```
 
 **If it fails:**
+
 ```
 Check these things:
 1. GitHub Secrets are all configured (no typos)
@@ -337,6 +349,7 @@ git push origin main
 ```
 
 **Expected Output:**
+
 ```
 🎉 PRODUCTION DEPLOYMENT SUCCESSFUL!
 🌍 Public Site: https://glad-labs.vercel.app
@@ -352,6 +365,7 @@ git push origin main
 ### Issue: "Secret not found" in GitHub Actions logs
 
 **Solution:**
+
 1. Check spelling of secret name (case-sensitive)
 2. Verify it's created in GitHub Settings
 3. Check it uses `${{ secrets.NAME }}` syntax in workflow
@@ -359,6 +373,7 @@ git push origin main
 ### Issue: Deployment uses wrong environment variables
 
 **Solution:**
+
 1. Verify `.env.staging` or `.env.tier1.production` has `${PLACEHOLDER}` format
 2. Check GitHub Secrets match the placeholder names
 3. Look at workflow logs to see replaced values
@@ -366,6 +381,7 @@ git push origin main
 ### Issue: Railway/Vercel deployment fails with auth error
 
 **Solution:**
+
 1. Test tokens individually:
    ```bash
    railway login --token=${{ secrets.RAILWAY_TOKEN }}
@@ -377,6 +393,7 @@ git push origin main
 ### Issue: Local `.env.local` file conflicts with CI/CD
 
 **Solution:**
+
 - `.env.local` should be in `.gitignore` (it is)
 - GitHub Actions uses `.env.staging` or `.env.tier1.production`
 - Never affects CI/CD deployments
@@ -400,6 +417,7 @@ git push origin main
 ⏳ Ready to test after secrets added
 
 **Next Steps:**
+
 1. Get all secrets/tokens from Railway, Strapi, Vercel
 2. Add them to GitHub Settings → Secrets
 3. Test staging deployment (push to dev)

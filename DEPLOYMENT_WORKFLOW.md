@@ -87,28 +87,34 @@ STORED IN GITHUB SECRETS (secure):
 ### Your Current Setup
 
 **Local Development (.env.local):**
+
 ```bash
 NODE_ENV=Development
 DATABASE_CLIENT=sqlite
 NEXT_PUBLIC_STRAPI_API_URL=http://localhost:1337
 ```
+
 ✅ Good - SQLite locally, localhost URLs
 
 **Staging (.env.staging):**
+
 ```bash
 NODE_ENV=staging
 DATABASE_CLIENT=postgres
 DATABASE_HOST=${STAGING_DB_HOST}          # Comes from GitHub Secrets
 NEXT_PUBLIC_STRAPI_API_URL=https://staging-cms.railway.app
 ```
+
 ✅ Good - PostgreSQL reference, URL is committed, secrets use `${VAR}`
 
 **Production (.env.tier1.production):**
+
 ```bash
 NODE_ENV=production
 USE_OLLAMA=true
 OLLAMA_HOST=http://localhost:11434
 ```
+
 ✅ Good - Production config with cost optimization
 
 ---
@@ -156,11 +162,13 @@ VERCEL_ORG_ID                 = <vercel-org-id>
 ### Step 4: How Railway and Vercel Share These
 
 **Railway Dashboard:**
+
 1. Go to Railway → Project → Variables
 2. Add the same secrets as environment variables
 3. Railway will use them when deploying
 
 **Vercel Dashboard:**
+
 1. Go to Vercel → Project → Settings → Environment Variables
 2. Add staging and production variables separately
 3. Use `${{ secrets.PROD_* }}` in GitHub Actions to reference
@@ -184,7 +192,7 @@ on:
 jobs:
   deploy-staging:
     runs-on: ubuntu-latest
-    environment: staging  # Use GitHub environment for additional protection
+    environment: staging # Use GitHub environment for additional protection
 
     steps:
       # 1. Checkout code
@@ -207,7 +215,7 @@ jobs:
       # 5. Run tests
       - name: Run tests
         run: npm run test:frontend:ci
-        continue-on-error: true  # Don't fail if tests don't exist
+        continue-on-error: true # Don't fail if tests don't exist
 
       # 6. Build public site for staging
       - name: Build Public Site
@@ -259,7 +267,7 @@ on:
 jobs:
   deploy-production:
     runs-on: ubuntu-latest
-    environment: production  # Use GitHub environment for additional protection
+    environment: production # Use GitHub environment for additional protection
 
     steps:
       # 1. Checkout code
@@ -357,6 +365,7 @@ Production Deploy:
 ### Best Practices
 
 ✅ **DO:**
+
 ```bash
 # Always commit package-lock.json to git
 git add package-lock.json
@@ -367,6 +376,7 @@ npm ci  # In GitHub Actions and production
 ```
 
 ❌ **DON'T:**
+
 ```bash
 # Don't regenerate package-lock.json unnecessarily
 rm package-lock.json && npm install  # ❌ Bad for production
@@ -378,6 +388,7 @@ npm install  # ❌ Wrong - can cause version mismatches
 ### Why This Matters
 
 **Scenario 1: Good (with package-lock.json)**
+
 ```
 Local:       react@18.3.1  (exact)
 Staging:     react@18.3.1  (exact, from lock file)
@@ -386,6 +397,7 @@ Production:  react@18.3.1  (exact, same as staging)
 ```
 
 **Scenario 2: Bad (without lock file or with npm install)**
+
 ```
 Local:       react@18.3.1  (you installed)
 GitHub CI:   react@18.4.0  (latest minor version)
@@ -413,7 +425,7 @@ Staging .env.staging:
 ✓ Stored in GitHub Secrets
 
 Production .env.tier1.production:
-✓ Different environment  
+✓ Different environment
 ✓ Uses PostgreSQL (remote)
 ✓ Uses https://prod-*.railway.app URLs
 ✓ Stored in GitHub Secrets
@@ -422,6 +434,7 @@ Production .env.tier1.production:
 ### How Railway and Vercel Handle Env Vars
 
 **Railway:**
+
 ```
 Project Settings → Environment Variables
 → Reads from GitHub Secrets automatically
@@ -430,6 +443,7 @@ Project Settings → Environment Variables
 ```
 
 **Vercel:**
+
 ```
 Project Settings → Environment Variables
 → You add them manually in Vercel dashboard
@@ -544,16 +558,16 @@ dev merged to main → GitHub Actions runs
 
 ## 📊 Environment Summary
 
-| Aspect | Local Dev | Staging | Production |
-|--------|-----------|---------|------------|
-| **File** | `.env.local` | `.env.staging` | `.env.tier1.production` |
-| **Branch** | `feat/*` | `dev` | `main` |
-| **Database** | SQLite (file) | PostgreSQL (Railway) | PostgreSQL (Railway) |
-| **URLs** | `http://localhost:*` | `https://staging-*.railway.app` | `https://glad-labs.vercel.app` |
-| **Secrets** | In `.env.local` (local) | In GitHub Secrets | In GitHub Secrets |
-| **Deployment** | Manual (`npm run dev`) | Automatic (GitHub Actions) | Automatic (GitHub Actions) |
-| **Access** | Only you | Your team on staging | Everyone (LIVE) |
-| **package-lock.json** | Your versions | CI uses same lock file | CI uses same lock file |
+| Aspect                | Local Dev               | Staging                         | Production                     |
+| --------------------- | ----------------------- | ------------------------------- | ------------------------------ |
+| **File**              | `.env.local`            | `.env.staging`                  | `.env.tier1.production`        |
+| **Branch**            | `feat/*`                | `dev`                           | `main`                         |
+| **Database**          | SQLite (file)           | PostgreSQL (Railway)            | PostgreSQL (Railway)           |
+| **URLs**              | `http://localhost:*`    | `https://staging-*.railway.app` | `https://glad-labs.vercel.app` |
+| **Secrets**           | In `.env.local` (local) | In GitHub Secrets               | In GitHub Secrets              |
+| **Deployment**        | Manual (`npm run dev`)  | Automatic (GitHub Actions)      | Automatic (GitHub Actions)     |
+| **Access**            | Only you                | Your team on staging            | Everyone (LIVE)                |
+| **package-lock.json** | Your versions           | CI uses same lock file          | CI uses same lock file         |
 
 ---
 
@@ -561,8 +575,8 @@ dev merged to main → GitHub Actions runs
 
 - [ ] Create `.github/workflows/deploy-staging.yml`
 - [ ] Create `.github/workflows/deploy-production.yml`
-- [ ] Add staging secrets to GitHub (STAGING_*)
-- [ ] Add production secrets to GitHub (PROD_*)
+- [ ] Add staging secrets to GitHub (STAGING\_\*)
+- [ ] Add production secrets to GitHub (PROD\_\*)
 - [ ] Add Railway token to GitHub (RAILWAY_TOKEN)
 - [ ] Add Vercel tokens to GitHub (VERCEL_TOKEN, etc.)
 - [ ] Test staging deployment (push to dev branch)

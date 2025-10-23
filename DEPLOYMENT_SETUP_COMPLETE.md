@@ -2,7 +2,7 @@
 
 **Created:** October 23, 2025  
 **Status:** 🟢 Documentation Ready for Implementation  
-**Session:** npm run dev Testing + Deployment Pipeline Planning  
+**Session:** npm run dev Testing + Deployment Pipeline Planning
 
 ---
 
@@ -52,12 +52,14 @@ Push to main branch → GitHub Actions → Auto-deploys to Railway production + 
 ```
 
 **What you need:**
+
 1. Add GitHub Secrets (see `GITHUB_SECRETS_SETUP.md`)
 2. Connect Railway to GitHub
 3. Connect Vercel to GitHub
 4. Test by pushing to dev, then main
 
 **Files involved:**
+
 - `.github/workflows/deploy-staging.yml`
 - `.github/workflows/deploy-production.yml`
 - `.env.staging` (uses `${PLACEHOLDER}` syntax)
@@ -78,12 +80,14 @@ GitHub Actions (reads all secrets)
 ```
 
 **Key points:**
+
 - ✅ Railway needs database credentials → GitHub Actions passes them
 - ✅ Vercel needs API URLs → GitHub Actions passes them
 - ❌ They never communicate directly
 - ✅ Each gets only what it needs (security by design)
 
 **Why this matters:**
+
 - Secrets never exposed to either platform
 - Each platform is independent
 - GitHub Secrets are the single source of truth
@@ -109,6 +113,7 @@ GitHub Secrets & Deployments
 ```
 
 **You can keep developing exactly as you are:**
+
 ```powershell
 npx npm-run-all --parallel "dev:public" "dev:oversight"
 # Uses .env.local, SQLite, localhost
@@ -130,6 +135,7 @@ GitHub Actions (Staging & Production):
 ```
 
 **Good scenario (current):**
+
 ```
 Local:       react@18.3.1
 Staging:     react@18.3.1 (from lock file)
@@ -138,6 +144,7 @@ Production:  react@18.3.1 (from lock file)
 ```
 
 **What to do:**
+
 - Always commit package-lock.json
 - When you update dependencies: `npm install` → commit lock file
 - GitHub Actions will use it for consistent deployments
@@ -146,12 +153,12 @@ Production:  react@18.3.1 (from lock file)
 
 ## 📚 Documentation Created Today
 
-| File | Size | Purpose | Status |
-|------|------|---------|--------|
-| `DEPLOYMENT_WORKFLOW.md` | 1,200+ lines | Complete deployment guide with architecture, setup steps, environment variables | ✅ Created & Committed |
-| `GITHUB_SECRETS_SETUP.md` | 600+ lines | Step-by-step guide to configure all GitHub Secrets with examples | ✅ Created & Committed |
-| `YOUR_QUESTIONS_ANSWERED.md` | 400+ lines | Quick reference answers to your 4 key questions | ✅ Created & Committed |
-| `DEPLOYMENT_SETUP_COMPLETE.md` | This file | Summary of what's been done and next steps | ✅ Creating Now |
+| File                           | Size         | Purpose                                                                         | Status                 |
+| ------------------------------ | ------------ | ------------------------------------------------------------------------------- | ---------------------- |
+| `DEPLOYMENT_WORKFLOW.md`       | 1,200+ lines | Complete deployment guide with architecture, setup steps, environment variables | ✅ Created & Committed |
+| `GITHUB_SECRETS_SETUP.md`      | 600+ lines   | Step-by-step guide to configure all GitHub Secrets with examples                | ✅ Created & Committed |
+| `YOUR_QUESTIONS_ANSWERED.md`   | 400+ lines   | Quick reference answers to your 4 key questions                                 | ✅ Created & Committed |
+| `DEPLOYMENT_SETUP_COMPLETE.md` | This file    | Summary of what's been done and next steps                                      | ✅ Creating Now        |
 
 ---
 
@@ -162,17 +169,20 @@ Production:  react@18.3.1 (from lock file)
 Get these from your service providers:
 
 **From Railway:**
+
 - [ ] Railway API Token (Account → Settings → API Tokens)
 - [ ] Staging Project ID (Projects → Staging → Settings)
 - [ ] Production Project ID (Projects → Production → Settings)
 - [ ] Database credentials (Resources → PostgreSQL → Plugin)
 
 **From Strapi:**
+
 - [ ] Staging API Token (Settings → API Tokens)
 - [ ] Production API Token (Settings → API Tokens)
 - [ ] Admin credentials (username, email, password)
 
 **From Vercel:**
+
 - [ ] Vercel Token (Account → Settings → Tokens)
 - [ ] Organization ID (Team Settings → Team ID)
 - [ ] Project ID (Project → Settings → Project ID)
@@ -201,6 +211,7 @@ Get these from your service providers:
 ### Phase 3: Test Deployments (20 minutes)
 
 **Test Staging:**
+
 ```powershell
 git checkout dev
 git commit -m "test: trigger staging deployment" --allow-empty
@@ -212,6 +223,7 @@ git push origin dev
 ```
 
 **Test Production:**
+
 ```powershell
 git checkout main
 git merge dev
@@ -226,6 +238,7 @@ git push origin main
 ### Phase 4: Document in Team README (10 minutes)
 
 Add to your team README:
+
 ```markdown
 ## Deployment
 
@@ -243,24 +256,24 @@ Add to your team README:
 
 ### ✅ What's Ready
 
-| Component | Status | Notes |
-|-----------|--------|-------|
-| Local dev env | ✅ Ready | `npm run dev` working, frontend services running |
-| Git workflow | ✅ Ready | feat/* → dev → main strategy documented |
-| GitHub workflows | ✅ Ready | Deploy scripts exist, awaiting secrets |
+| Component         | Status   | Notes                                                 |
+| ----------------- | -------- | ----------------------------------------------------- |
+| Local dev env     | ✅ Ready | `npm run dev` working, frontend services running      |
+| Git workflow      | ✅ Ready | feat/\* → dev → main strategy documented              |
+| GitHub workflows  | ✅ Ready | Deploy scripts exist, awaiting secrets                |
 | Environment files | ✅ Ready | .env.local, .env.staging, .env.tier1.production ready |
-| Documentation | ✅ Ready | 3 comprehensive guides created today |
-| package-lock.json | ✅ Ready | Committed, will ensure consistency |
+| Documentation     | ✅ Ready | 3 comprehensive guides created today                  |
+| package-lock.json | ✅ Ready | Committed, will ensure consistency                    |
 
 ### ⏳ What Needs Setup
 
-| Item | Effort | Timeline | Status |
-|------|--------|----------|--------|
-| GitHub Secrets | 15 min | Today | ⏳ You do this |
-| Railway config | 10 min | Today | ⏳ Connect to GitHub |
-| Vercel config | 10 min | Today | ⏳ Connect to GitHub |
-| Test staging deploy | 10 min | Today | ⏳ Verify it works |
-| Test prod deploy | 10 min | Today | ⏳ Verify it works |
+| Item                | Effort | Timeline | Status               |
+| ------------------- | ------ | -------- | -------------------- |
+| GitHub Secrets      | 15 min | Today    | ⏳ You do this       |
+| Railway config      | 10 min | Today    | ⏳ Connect to GitHub |
+| Vercel config       | 10 min | Today    | ⏳ Connect to GitHub |
+| Test staging deploy | 10 min | Today    | ⏳ Verify it works   |
+| Test prod deploy    | 10 min | Today    | ⏳ Verify it works   |
 
 **Total setup time: ~1 hour**
 
@@ -269,29 +282,37 @@ Add to your team README:
 ## 💡 Key Points to Remember
 
 ### Local Development
+
 ✅ **Stays exactly the same**
+
 - Use `.env.local` (never committed)
 - Run `npx npm-run-all --parallel "dev:public" "dev:oversight"`
 - SQLite database (local file)
-- Localhost URLs (http://localhost:*)
+- Localhost URLs (http://localhost:\*)
 - No changes to your workflow
 
 ### Environment Variables
+
 ✅ **GitHub Secrets are source of truth**
+
 - Never commit `.env.*.secrets` files
 - Committed files have `${PLACEHOLDER}` syntax
 - GitHub Actions replaces placeholders at deploy time
 - Railway and Vercel get appropriate subsets
 
 ### Deployments
+
 ✅ **Fully automated after setup**
+
 - Push to dev → Staging deploys automatically
 - Push to main → Production deploys automatically
 - GitHub Actions monitors for failures
 - See logs in GitHub → Actions tab
 
 ### package-lock.json
+
 ✅ **Critical for consistency**
+
 - Always commit it
 - GitHub Actions uses it for reproducible builds
 - Ensures production = tested versions
@@ -302,19 +323,25 @@ Add to your team README:
 ## 📖 Documentation Guide
 
 ### For Quick Answers
+
 **Start here:** `YOUR_QUESTIONS_ANSWERED.md`
+
 - Fast answers to your 4 key questions
 - Visual diagrams
 - Implementation checklist
 
 ### For Implementation Details
+
 **Then read:** `GITHUB_SECRETS_SETUP.md`
+
 - Step-by-step secret configuration
 - Where to find each secret
 - Verification checklist
 
 ### For Complete Understanding
+
 **Deep dive:** `DEPLOYMENT_WORKFLOW.md`
+
 - Full architecture explanation
 - Environment configuration details
 - Troubleshooting guide
@@ -414,7 +441,7 @@ GitHub Actions (Automatic):
 ✅ **Git workflow documented** - Clear branching strategy  
 ✅ **Deployment automation ready** - GitHub Actions configured  
 ✅ **Environment strategy defined** - Secrets management in place  
-✅ **Comprehensive documentation** - 3 detailed guides  
+✅ **Comprehensive documentation** - 3 detailed guides
 
 ### What's Next
 
@@ -434,6 +461,7 @@ GitHub Actions (Automatic):
 ## 📝 Session Summary
 
 **Today we:**
+
 - ✅ Fixed `npm run dev` (frontend services working)
 - ✅ Tested deployment readiness (services verified)
 - ✅ Analyzed deployment architecture (GitHub Actions + Railway + Vercel)
