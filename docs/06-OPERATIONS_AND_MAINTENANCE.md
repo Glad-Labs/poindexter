@@ -8,11 +8,11 @@
 
 ## 🎯 Quick Links
 
-- **[Health Monitoring](#-health-monitoring)** - System health checks
-- **[Backups & Recovery](#-backups--recovery)** - Disaster recovery
-- **[Performance Optimization](#-performance-optimization)** - Speed and efficiency
-- **[Security](#-security)** - Data protection and compliance
-- **[Troubleshooting](#-troubleshooting)** - Common issues
+- **[Health Monitoring](#health-monitoring)** - System health checks
+- **[Backups & Recovery](#backups--recovery)** - Disaster recovery
+- **[Performance Optimization](#performance-optimization)** - Speed and efficiency
+- **[Security](#security)** - Data protection and compliance
+- **[Troubleshooting](#troubleshooting)** - Common issues
 
 ---
 

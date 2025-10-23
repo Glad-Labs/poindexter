@@ -8,11 +8,11 @@
 
 ## 🎯 Quick Links
 
-- **[Agent Architecture](#-agent-architecture)** - How agents work
-- **[Specialized Agents](#-specialized-agents)** - Agent capabilities
-- **[Multi-Agent Orchestration](#-multi-agent-orchestration)** - Agent coordination
-- **[Memory System](#-memory-system)** - Context and learning
-- **[MCP Integration](#-mcp-integration)** - Model Context Protocol
+- **[Agent Architecture](#agent-architecture)** - How agents work
+- **[Specialized Agents](#specialized-agents)** - Agent capabilities
+- **[Multi-Agent Orchestration](#multi-agent-orchestration)** - Agent coordination
+- **[Memory System](#memory-system)** - Context and learning
+- **[MCP Integration](#mcp-integration)** - Model Context Protocol
 
 ---
 

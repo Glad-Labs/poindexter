@@ -8,10 +8,10 @@
 
 ## 🎯 Quick Links
 
-- **Want Quick Start?** → [Quick Start (5 Minutes)](#quick-start-5-minutes)
-- **Local Development?** → [Local Development Setup](#local-development-setup)
-- **Production Deploy?** → [Production Deployment](#production-deployment)
-- **Issues?** → [Troubleshooting](#troubleshooting)
+- **Want Quick Start?** → [Quick Start (5 Minutes)](#-quick-start-5-minutes)
+- **Local Development?** → [Local Development Setup](#-local-development-setup)
+- **Production Deploy?** → [Production Deployment](#-production-deployment)
+- **Issues?** → [Troubleshooting](#-troubleshooting)
 
 ---
 

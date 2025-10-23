@@ -8,11 +8,11 @@
 
 ## 🎯 Quick Links
 
-- **[Branch Strategy](#-branch-strategy)** - Git workflow
-- **[Commit Standards](#-commit-standards)** - Conventional commits
-- **[Testing](#-testing)** - Unit and integration tests
-- **[Code Quality](#-code-quality)** - Linting and formatting
-- **[Pull Requests](#-pull-requests)** - Review process
+- **[Branch Strategy](#branch-strategy)** - Git workflow
+- **[Commit Standards](#commit-standards)** - Conventional commits
+- **[Testing](#testing)** - Unit and integration tests
+- **[Code Quality](#code-quality)** - Linting and formatting
+- **[Pull Requests](#pull-requests)** - Review process
 
 ---
 
