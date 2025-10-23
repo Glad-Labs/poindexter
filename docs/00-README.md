@@ -23,6 +23,7 @@
 ### 🚀 Deployment & Operations
 
 - **[Deployment Guide](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md)** - Cloud setup, infrastructure
+- **[Vercel Deployment Strategy](./guides/VERCEL_DEPLOYMENT_STRATEGY.md)** - Deploy to Vercel for public site & oversight hub
 - **[Cost-Optimized Strategy](./reference/DEPLOYMENT_STRATEGY_COST_OPTIMIZED.md)** - Production recommendations
 - **[Operations Guide](./06-OPERATIONS_AND_MAINTENANCE.md)** - Monitoring, maintenance, scaling
 
@@ -85,6 +86,7 @@
 **Essential Guides:**
 
 - [Content Generation](./guides/CONTENT_GENERATION_GUIDE.md) - How to generate SEO content
+- [Vercel Deployment](./guides/VERCEL_DEPLOYMENT_STRATEGY.md) - Deploy to Vercel (2 projects vs monorepo)
 - [Model Selection](./guides/MODEL_SELECTION_GUIDE.md) - Choose the right AI model
 - [Local Setup](./guides/LOCAL_SETUP_COMPLETE.md) - Full local environment setup
 - [Docker Deployment](./guides/DOCKER_DEPLOYMENT.md) - Containerized deployment
@@ -133,6 +135,7 @@
 | **Architecture**       | [02-ARCHITECTURE_AND_DESIGN.md](./02-ARCHITECTURE_AND_DESIGN.md) or [Reference](./reference/)             |
 | **AI Agents**          | [05-AI_AGENTS_AND_INTEGRATION.md](./05-AI_AGENTS_AND_INTEGRATION.md)                                      |
 | **Deployment**         | [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md)                              |
+| **Vercel Deployment**  | [Vercel Strategy Guide](./guides/VERCEL_DEPLOYMENT_STRATEGY.md) - Deploy public site & oversight hub      |
 | **Development**        | [04-DEVELOPMENT_WORKFLOW.md](./04-DEVELOPMENT_WORKFLOW.md)                                                |
 | **Content Generation** | [Content Generation Guide](./guides/CONTENT_GENERATION_GUIDE.md)                                          |
 | **API**                | [API Contract](./reference/API_CONTRACT_CONTENT_CREATION.md)                                              |
@@ -172,6 +175,7 @@ docs/
 │
 ├── guides/ - Implementation guides & how-tos (18 guides)
 │   ├── CONTENT_GENERATION_GUIDE.md - SEO content generation
+│   ├── VERCEL_DEPLOYMENT_STRATEGY.md - Deploy to Vercel (2 projects recommended)
 │   ├── MODEL_SELECTION_GUIDE.md - AI model selection
 │   ├── LOCAL_SETUP_COMPLETE.md - Local environment
 │   ├── DOCKER_DEPLOYMENT.md - Container deployment
