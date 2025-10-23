@@ -22,22 +22,42 @@ Updated `package.json` to skip Python backend in the default dev command:
 
 ### Result
 
-✅ `npm run dev` now works reliably  
-✅ Starts: Strapi (1337) + Public Site (3000) + Oversight Hub (3001)  
+✅ **Public Site (Next.js)** - Running on [`http://localhost:3000`](http://localhost:3000) ✅  
+✅ **Oversight Hub (React)** - Running on [`http://localhost:3001`](http://localhost:3001) ✅  
+⚠️ **Strapi CMS** - Requires separate setup (dependency issue - see below)  
 ✅ Python backend available separately or with `npm run dev:full`
+
+### Current Status (October 23, 2025)
+
+**WORKING:**
+
+- `npm run dev:public` - Public Site dev server ✅
+- `npm run dev:oversight` - Oversight Hub dev server ✅
+- Both run in parallel with: `npx npm-run-all --parallel "dev:public" "dev:oversight"`
+
+**NEEDS SETUP:**
+
+- Strapi CMS has a dependency resolution issue that needs fixing
+- Python backend starts successfully but needs Strapi working
+
+**NEXT STEPS:**
+
+1. Frontend services are ready to develop
+2. Follow the troubleshooting section to fix Strapi
+3. Then `npm run dev` will include all three services
 
 ---
 
 ## 📁 Documentation Created (6 Files)
 
-| # | File | Purpose | Read Time |
-|---|------|---------|-----------|
-| 1 | `QUICK_REFERENCE_CARD.md` | Desk reference for commands | 3 min |
-| 2 | `DEV_QUICK_START.md` | Get started immediately | 5 min |
-| 3 | `WORKFLOW_SETUP_GUIDE.md` | Complete technical guide | 15 min |
-| 4 | `SESSION_SUMMARY.md` | What changed and why | 10 min |
-| 5 | `SETUP_COMPLETE_SUMMARY.md` | Setup overview | 5 min |
-| 6 | `scripts/dev-troubleshoot.ps1` | Automated diagnostics | 1 min |
+| #   | File                           | Purpose                     | Read Time |
+| --- | ------------------------------ | --------------------------- | --------- |
+| 1   | `QUICK_REFERENCE_CARD.md`      | Desk reference for commands | 3 min     |
+| 2   | `DEV_QUICK_START.md`           | Get started immediately     | 5 min     |
+| 3   | `WORKFLOW_SETUP_GUIDE.md`      | Complete technical guide    | 15 min    |
+| 4   | `SESSION_SUMMARY.md`           | What changed and why        | 10 min    |
+| 5   | `SETUP_COMPLETE_SUMMARY.md`    | Setup overview              | 5 min     |
+| 6   | `scripts/dev-troubleshoot.ps1` | Automated diagnostics       | 1 min     |
 
 ---
 
@@ -99,42 +119,108 @@ Updated `package.json` to skip Python backend in the default dev command:
 
 ## ✅ Your Next Steps
 
-### Step 1: Verify Setup (1 min)
+### Step 1: Start Frontend Development (RIGHT NOW) ✅
+
+Frontend services are **ready to use immediately**:
 
 ```powershell
-. scripts/dev-troubleshoot.ps1
-```
+# Option A: Run ONLY frontend services (Recommended for now)
+npx npm-run-all --parallel "dev:public" "dev:oversight"
 
-### Step 2: Start Development (1 min)
-
-```powershell
+# Option B: Run with full npm run dev (includes Strapi)
 npm run dev
 ```
 
-### Step 3: Verify Services (2 min)
+### Step 2: Verify Services (2 min)
 
-- Strapi: <http://localhost:1337/admin>
-- Public Site: <http://localhost:3000>
-- Oversight Hub: <http://localhost:3001>
+**Currently Available:**
 
-### Step 4: Start Coding
+- ✅ **Public Site:** [`http://localhost:3000`](http://localhost:3000)
+- ✅ **Oversight Hub:** [`http://localhost:3001`](http://localhost:3001)
+- ⏳ **Strapi:** Fix needed (see troubleshooting below)
+
+### Step 3: Start Coding
+
 Make changes and see hot-reload work instantly!
+
+### Step 4: If You Need Strapi
+
+See the **Strapi Troubleshooting** section below.
+
+---
+
+## 🔧 Troubleshooting
+
+### Issue: Strapi Won't Start (Dependency Error)
+
+**Error Message:**
+```
+Error: Cannot find module '@strapi/strapi/package.json'
+```
+
+**Solution:**
+
+```powershell
+# 1. Go to Strapi directory
+cd cms/strapi-main
+
+# 2. Clear dependencies and reinstall
+rm -r node_modules -Force -ErrorAction SilentlyContinue
+npm install
+
+# 3. Try starting Strapi
+npm run develop
+
+# 4. If still failing, check config files
+ls config/  # Should show .ts files (TypeScript)
+```
+
+**Status:** This is a known issue with Strapi config files. Frontend services work fine without it.
+
+### Issue: Port Already in Use
+
+**Error:** `Something is already running on port 3001`
+
+**Solution:**
+
+```powershell
+# Kill all Node processes
+Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force
+
+# Try again
+npm run dev
+```
+
+### Issue: Next.js Cache Permission Error
+
+**Error:** `EPERM: operation not permitted, open '.next/trace'`
+
+**Solution:**
+
+```powershell
+# Clear Next.js cache
+rm -r web/public-site/.next -Force -ErrorAction SilentlyContinue
+
+# Restart
+npm run dev:public
+```
 
 ---
 
 ## 📊 Environment Files Reference
 
-| Environment | File | Branch | Database | When Used |
-|-------------|------|--------|----------|-----------|
-| Local Dev | `.env.local` | `feat/*` | SQLite | `npm run dev` |
-| Staging | `.env.staging` | `dev` | PostgreSQL | GitHub Actions |
-| Production | `.env.tier1.production` | `main` | PostgreSQL | GitHub Actions |
+| Environment | File                    | Branch   | Database   | When Used      |
+| ----------- | ----------------------- | -------- | ---------- | -------------- |
+| Local Dev   | `.env.local`            | `feat/*` | SQLite     | `npm run dev`  |
+| Staging     | `.env.staging`          | `dev`    | PostgreSQL | GitHub Actions |
+| Production  | `.env.tier1.production` | `main`   | PostgreSQL | GitHub Actions |
 
 ---
 
 ## 🔐 Key Reminders
 
 ✅ Do this:
+
 - Work on `feat/*` branches
 - Use `npm run dev` for local development
 - Push to `dev` for staging
@@ -142,6 +228,7 @@ Make changes and see hot-reload work instantly!
 - Commit secrets to GitHub Secrets (not git)
 
 ❌ Don't do this:
+
 - Don't commit `.env.local`
 - Don't work on `main` directly
 - Don't push API keys to git
@@ -180,14 +267,16 @@ git push origin main
 ✅ **Fixed:** `npm run dev` works reliably  
 ✅ **Documented:** 6 comprehensive guides created  
 ✅ **Committed:** All changes pushed to origin  
-✅ **Ready:** You can start developing right now  
+✅ **Ready:** You can start developing right now
 
 **Files you can read in order:**
+
 1. `QUICK_REFERENCE_CARD.md` (3 min) ⭐ Start here
 2. `DEV_QUICK_START.md` (5 min)
 3. `WORKFLOW_SETUP_GUIDE.md` (15 min) - For complete details
 
 **Your immediate next command:**
+
 ```powershell
 npm run dev
 ```
