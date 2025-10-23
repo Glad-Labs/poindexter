@@ -1,6 +1,7 @@
 # ✅ COFOUNDER FASTAPI - UVICORN FIX
 
 **Problem**: Railway deployment failed - "No module named uvicorn"
+
 ```
 /app/.venv/bin/python: No module named uvicorn
 ```
@@ -14,24 +15,30 @@
 ## 🔧 What Was Fixed
 
 ### The Issue
+
 The original Procfile command was:
+
 ```
 web: cd src/cofounder_agent && python -m uvicorn main:app --host 0.0.0.0 --port $PORT
 ```
 
 **Why this failed**:
+
 1. The `cd` command changed the working directory
 2. The virtual environment (`/app/.venv`) is at project root, NOT in `src/cofounder_agent`
 3. When Python tried to import uvicorn, it couldn't find it because the venv wasn't properly activated
 4. Python module imports also failed because of the wrong working directory
 
 ### The Solution
+
 Updated Procfile to:
+
 ```
 web: python -m uvicorn src.cofounder_agent.main:app --host 0.0.0.0 --port $PORT
 ```
 
 **Why this works**:
+
 1. No directory change - keeps project root as working directory
 2. Virtual environment stays activated at `/app/.venv`
 3. Python can find all dependencies (uvicorn, fastapi, etc.)
@@ -43,6 +50,7 @@ web: python -m uvicorn src.cofounder_agent.main:app --host 0.0.0.0 --port $PORT
 ## 📋 Files Changed
 
 **Modified**: `Procfile` (1 line changed)
+
 - Before: `web: cd src/cofounder_agent && python -m uvicorn main:app --host 0.0.0.0 --port $PORT`
 - After: `web: python -m uvicorn src.cofounder_agent.main:app --host 0.0.0.0 --port $PORT`
 
@@ -53,15 +61,19 @@ web: python -m uvicorn src.cofounder_agent.main:app --host 0.0.0.0 --port $PORT
 ## 🚀 Next Steps to Deploy
 
 ### Step 1: Go to Railway Dashboard
+
 - URL: https://railway.app
 - Select your Co-Founder FastAPI service
 
 ### Step 2: Redeploy
+
 1. Click the **"Redeploy"** button
 2. Wait 2-3 minutes for build
 
 ### Step 3: Watch Build Logs
+
 You should see:
+
 ```
 ✓ Detected Python
 ✓ Found Procfile
@@ -72,7 +84,9 @@ INFO: Application startup complete
 ```
 
 ### Step 4: Verify Success
-Test with: 
+
+Test with:
+
 ```bash
 curl https://your-app.railway.app/health
 # Should return: {"status": "healthy"}
@@ -83,18 +97,22 @@ curl https://your-app.railway.app/health
 ## 🎯 Key Differences Explained
 
 ### Old Approach (Failed)
+
 ```
 web: cd src/cofounder_agent && python -m uvicorn main:app
 ```
+
 - Changes directory away from project root ❌
 - Breaks virtual environment context ❌
 - Can't import sibling modules ❌
 - venv becomes inactive ❌
 
 ### New Approach (Works)
+
 ```
 web: python -m uvicorn src.cofounder_agent.main:app
 ```
+
 - Stays in project root ✅
 - Virtual environment stays active ✅
 - Can import any module in project ✅
@@ -105,6 +123,7 @@ web: python -m uvicorn src.cofounder_agent.main:app
 ## 📊 Expected Build Output
 
 **Before** (Failed):
+
 ```
 Starting Container
 /app/.venv/bin/python: No module named uvicorn
@@ -113,6 +132,7 @@ ERROR: failed to start application
 ```
 
 **After** (Success):
+
 ```
 Starting Container
 INFO: Uvicorn running on http://0.0.0.0:8000
@@ -135,6 +155,7 @@ INFO: Application startup complete
 ## 🔍 How Python Module Path Works
 
 Your project structure:
+
 ```
 /app/                          (project root - where /app/.venv lives)
 ├── src/
@@ -147,11 +168,13 @@ Your project structure:
 ```
 
 When you run:
+
 ```
 python -m uvicorn src.cofounder_agent.main:app
 ```
 
 Python resolves:
+
 - `src.cofounder_agent.main` → `/app/src/cofounder_agent/main.py`
 - `:app` → the `app` FastAPI instance in that file
 - All imports in `main.py` work because `/app/` is in the Python path
@@ -161,6 +184,7 @@ Python resolves:
 ## 📋 Deployment Checklist
 
 Before redeploy, verify:
+
 - [ ] `Procfile` contains: `web: python -m uvicorn src.cofounder_agent.main:app --host 0.0.0.0 --port $PORT`
 - [ ] Changes are pushed to `dev` branch
 - [ ] `src/cofounder_agent/__init__.py` exists (makes it a package)
@@ -179,6 +203,7 @@ A: No. Just trigger redeploy on Railway.
 
 **Q: What if it still fails?**  
 A: Check Railway logs for:
+
 - Import errors in `main.py`
 - Missing environment variables
 - Database connection issues
@@ -190,12 +215,12 @@ A: No. Only the way Railway starts the application changes.
 
 ## 🎉 Summary
 
-| Item | Before | After |
-|------|--------|-------|
+| Item         | Before                          | After                                                |
+| ------------ | ------------------------------- | ---------------------------------------------------- |
 | **Procfile** | `cd src/cofounder_agent && ...` | `python -m uvicorn src.cofounder_agent.main:app ...` |
-| **Status** | ❌ Failed | ✅ Working |
-| **Reason** | venv broken by `cd` | venv stays active |
-| **Error** | No module named uvicorn | (Fixed) |
+| **Status**   | ❌ Failed                       | ✅ Working                                           |
+| **Reason**   | venv broken by `cd`             | venv stays active                                    |
+| **Error**    | No module named uvicorn         | (Fixed)                                              |
 
 ---
 
@@ -204,6 +229,7 @@ A: No. Only the way Railway starts the application changes.
 Go to Railway dashboard and redeploy! 🚀
 
 **Next**: After this deploys, you can then:
+
 1. Deploy Strapi to Railway
 2. Deploy React frontend to Vercel
 3. Verify integration between all services
