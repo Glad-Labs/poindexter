@@ -137,18 +137,19 @@ This keeps documentation clean, maintainable, and useful.
 
 Component-specific troubleshooting guides are organized by component:
 
-| Component | Troubleshooting Guide | Common Issues |
-|-----------|----------------------|---------------|
-| **Strapi CMS** | [docs/components/strapi-cms/troubleshooting/](./components/strapi-cms/troubleshooting/) | Plugin incompatibilities, build errors, connection issues |
-| **Co-Founder Agent** | [docs/components/cofounder-agent/troubleshooting/](./components/cofounder-agent/troubleshooting/) | API errors, model routing, memory issues |
-| **Oversight Hub** | [docs/components/oversight-hub/troubleshooting/](./components/oversight-hub/troubleshooting/) | State management, API integration, UI issues |
-| **Public Site** | [docs/components/public-site/troubleshooting/](./components/public-site/troubleshooting/) | Build errors, data fetching, SEO issues |
+| Component            | Troubleshooting Guide                                                                             | Common Issues                                             |
+| -------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| **Strapi CMS**       | [docs/components/strapi-cms/troubleshooting/](./components/strapi-cms/troubleshooting/)           | Plugin incompatibilities, build errors, connection issues |
+| **Co-Founder Agent** | [docs/components/cofounder-agent/troubleshooting/](./components/cofounder-agent/troubleshooting/) | API errors, model routing, memory issues                  |
+| **Oversight Hub**    | [docs/components/oversight-hub/troubleshooting/](./components/oversight-hub/troubleshooting/)     | State management, API integration, UI issues              |
+| **Public Site**      | [docs/components/public-site/troubleshooting/](./components/public-site/troubleshooting/)         | Build errors, data fetching, SEO issues                   |
 
 **Quick Links:**
+
 - 🔴 **Strapi v5 Plugin Issue?** → [STRAPI_V5_PLUGIN_ISSUE.md](./components/strapi-cms/troubleshooting/STRAPI_V5_PLUGIN_ISSUE.md)
 - 🔴 **Frontend Build Error?** → Check [components/public-site/troubleshooting/](./components/public-site/troubleshooting/)
 - 🔴 **Backend Issues?** → Check [components/cofounder-agent/troubleshooting/](./components/cofounder-agent/troubleshooting/)
 
 ---
 
-**👉 Pick your role above and start reading!
+\*\*👉 Pick your role above and start reading!

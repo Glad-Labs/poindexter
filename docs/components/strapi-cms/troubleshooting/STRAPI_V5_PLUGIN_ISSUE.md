@@ -19,6 +19,7 @@ Cannot find module '@strapi/strapi/package.json'
 **Root Cause:** `@strapi/content-type-builder` plugin (v5.x) expects an API export from `@strapi/admin` that doesn't exist in the current version.
 
 **Impact:**
+
 - ❌ Strapi CMS admin won't build
 - ❌ Cannot access [http://localhost:1337/admin](http://localhost:1337/admin)
 - ✅ Frontend services still work fine (Next.js, React)
@@ -121,12 +122,12 @@ npm run develop
 
 ## 📊 Recommended Solution by Use Case
 
-| Use Case | Solution | Setup Time | Maintenance |
-|----------|----------|-----------|-------------|
-| **Frontend dev only** | Workaround 1 (skip Strapi) | 5 min | None ✅ |
-| **Full-stack dev** | Workaround 2 (cloud Strapi) | 10 min | Low ✅ |
-| **CMS management** | Workaround 3 (downgrade) | 20 min | Medium ⚠️ |
-| **Nuclear option** | Workaround 4 (fresh install) | 30+ min | High ⚠️ |
+| Use Case              | Solution                     | Setup Time | Maintenance |
+| --------------------- | ---------------------------- | ---------- | ----------- |
+| **Frontend dev only** | Workaround 1 (skip Strapi)   | 5 min      | None ✅     |
+| **Full-stack dev**    | Workaround 2 (cloud Strapi)  | 10 min     | Low ✅      |
+| **CMS management**    | Workaround 3 (downgrade)     | 20 min     | Medium ⚠️   |
+| **Nuclear option**    | Workaround 4 (fresh install) | 30+ min    | High ⚠️     |
 
 ---
 
@@ -152,12 +153,14 @@ npm run develop
 ## 🚀 Next Steps
 
 **Option A: Continue with frontend only** (RECOMMENDED for now)
+
 ```bash
 npm run dev:frontend
 # Frontend works great, just no local Strapi admin
 ```
 
 **Option B: Try plugin downgrade**
+
 ```bash
 cd cms/strapi-v5-backend
 npm install @strapi/content-type-builder@5.0.0
@@ -166,6 +169,7 @@ npm run develop
 ```
 
 **Option C: Use production Strapi**
+
 - Access CMS at: https://cms.railway.app/admin
 - Update .env to point to production
 - Continue frontend development
