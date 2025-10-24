@@ -439,6 +439,7 @@ PROD_DATABASE_URL
 **3. What Happens Automatically**
 
 On `dev` push:
+
 - Run tests
 - Build frontend with staging URLs
 - Deploy backend to Railway staging
@@ -446,6 +447,7 @@ On `dev` push:
 - Available at: `https://staging-*.railway.app`
 
 On `main` push:
+
 - Run full test suite
 - Build frontend with production URLs
 - Deploy backend to Railway production

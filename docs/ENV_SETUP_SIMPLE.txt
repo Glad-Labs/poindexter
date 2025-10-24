@@ -1,0 +1,231 @@
+ENV FILES - SIMPLE SETUP GUIDE
+================================
+Date: October 23, 2025
+Goal: Get your .env files production-ready
+
+YOUR SITUATION
+==============
+
+You have:
+✅ .env                    (local, has secrets, not committed)
+✅ .env.example            (template, committed)
+✅ .env.staging            (staging config, committed)
+✅ .env.production         (production config, committed)
+❌ .env.tier1.production   (DELETE - old naming)
+❌ .env.old                (DELETE - backup)
+❌ .env.local              (DELETE - not needed)
+
+
+THREE FILES YOU NEED
+====================
+
+1. .env (Local Development)
+   - Location: Root directory
+   - In Git?: NO (in .gitignore)
+   - Contains: Your real API keys
+   - Usage: npm run dev locally
+   
+   Add to .env:
+   OPENAI_API_KEY=sk-your-real-key
+   ANTHROPIC_API_KEY=sk-ant-your-real-key
+   STRAPI_API_TOKEN=your-real-token
+   DATABASE_CLIENT=sqlite
+   DATABASE_FILENAME=.tmp/data.db
+
+2. .env.staging (Staging Template)
+   - Location: Root directory
+   - In Git?: YES (safe - no secrets)
+   - Contains: References to GitHub Secrets
+   - Usage: GitHub Actions deploys dev branch
+   
+   Status: Already created and looks good ✅
+   Your file correctly uses: ${STAGING_STRAPI_TOKEN}
+   Your file correctly uses: ${STAGING_OPENAI_API_KEY}
+
+3. .env.production (Production Template)
+   - Location: Root directory
+   - In Git?: YES (safe - no secrets)
+   - Contains: References to GitHub Secrets
+   - Usage: GitHub Actions deploys main branch
+   
+   Status: Already created and looks good ✅
+   Your file correctly uses: ${PROD_STRAPI_TOKEN}
+   Your file correctly uses: ${PROD_OPENAI_API_KEY}
+
+
+QUICK ACTION PLAN
+=================
+
+Step 1: Delete old files
+  rm .env.tier1.production
+  rm .env.old
+  rm .env.local
+
+Step 2: Verify .env has your secrets
+  cat .env | head -20
+  
+  Should show your real keys like:
+  OPENAI_API_KEY=sk-xxxxx
+  STRAPI_API_TOKEN=xxxxx
+
+Step 3: Verify staging config
+  cat .env.staging | head -10
+  
+  Should show:
+  NODE_ENV=staging
+  STRAPI_API_TOKEN=${STAGING_STRAPI_TOKEN}  ← Reference, not real key
+
+Step 4: Verify production config
+  cat .env.production | head -10
+  
+  Should show:
+  NODE_ENV=production
+  STRAPI_API_TOKEN=${PROD_STRAPI_TOKEN}     ← Reference, not real key
+
+Step 5: Commit cleanup
+  git add -A
+  git commit -m "chore: clean up env files, keep only .env.staging and .env.production"
+  git push origin feat/test-branch
+
+Step 6: Set GitHub Secrets (do this in GitHub web UI)
+  Go to: GitHub → Settings → Secrets and variables → Actions
+  
+  Add for STAGING:
+    STAGING_STRAPI_TOKEN = your-actual-staging-token
+    STAGING_OPENAI_API_KEY = sk-staging-key
+    STAGING_ANTHROPIC_API_KEY = sk-ant-staging-key
+    STAGING_DB_PASSWORD = your-staging-password
+    STAGING_DB_HOST = staging-db.railway.app
+    STAGING_DB_USER = postgres
+    STAGING_ADMIN_PASSWORD = your-admin-password
+  
+  Add for PRODUCTION:
+    PROD_STRAPI_TOKEN = your-actual-prod-token
+    PROD_OPENAI_API_KEY = sk-prod-key
+    PROD_ANTHROPIC_API_KEY = sk-ant-prod-key
+    PROD_DB_PASSWORD = your-prod-password
+    PROD_DB_HOST = prod-db.railway.app
+    PROD_DB_USER = postgres
+    PROD_ADMIN_PASSWORD = your-admin-password
+    PROD_GA_ID = your-google-analytics-id
+  
+  Add for BOTH:
+    RAILWAY_TOKEN = your-railway-token
+    VERCEL_TOKEN = your-vercel-token
+    VERCEL_PROJECT_ID = your-vercel-project-id
+
+
+HOW IT WORKS
+============
+
+Local Development:
+  You use .env with YOUR real secrets
+  npm run dev → everything works locally
+
+GitHub - dev branch push:
+  GitHub Actions reads: .env.staging + GitHub Secrets
+  Injects ACTUAL secrets from GitHub
+  Deploys to Railway staging environment
+  Available at: https://staging-cms.railway.app
+
+GitHub - main branch push:
+  GitHub Actions reads: .env.production + GitHub Secrets
+  Injects ACTUAL secrets from GitHub
+  Deploys to Vercel (frontend) + Railway (backend)
+  Available at: https://glad-labs.vercel.app
+
+
+VERCEL ENVIRONMENT VARIABLES
+============================
+
+SHOULD ADD to Vercel:
+  NEXT_PUBLIC_STRAPI_API_URL = https://cms.railway.app
+  STRAPI_API_TOKEN = (from GitHub Secrets)
+
+SHOULD NOT ADD to Vercel (backend only):
+  ❌ OPENAI_API_KEY
+  ❌ ANTHROPIC_API_KEY
+  ❌ GOOGLE_API_KEY
+  ❌ DATABASE_HOST
+  ❌ DATABASE_PASSWORD
+  ❌ GCP_PROJECT_ID
+
+Why? Frontend only needs to know where the backend is!
+All backend secrets stay on Railway only.
+
+
+COMMON MISTAKES TO AVOID
+=======================
+
+❌ WRONG: Putting real API keys in .env.staging or .env.production
+  These files are in Git, everyone can see them!
+
+✅ RIGHT: Using GitHub Secret references in .env.staging/.env.production
+  ${STAGING_STRAPI_TOKEN} references the GitHub Secret
+  GitHub Actions will inject the real value at deploy time
+
+❌ WRONG: Adding backend secrets to Vercel
+  Vercel is for frontend only
+
+✅ RIGHT: Backend secrets stay in Railway or GitHub Secrets only
+  Railway can read GitHub Secrets during deployment
+
+❌ WRONG: Committing .env file
+  It has your real secrets!
+
+✅ RIGHT: Keeping .env in .gitignore, never committing it
+  Only you can see your local secrets
+
+
+CURRENT STATUS
+==============
+
+✅ .env.staging          - Correct, uses GitHub Secret references
+✅ .env.production       - Correct, uses GitHub Secret references
+❌ Old files             - Need to delete
+❌ GitHub Secrets        - Need to be created
+
+
+NEXT STEPS
+==========
+
+1. Delete old .env files (above)
+2. Make sure .env has your real API keys
+3. Create GitHub Secrets (22 variables total)
+4. Test: Push dev branch → should deploy to staging
+5. Test: Push main branch → should deploy to production
+
+
+FILES FOR REFERENCE
+===================
+
+.ENV_SETUP_GUIDE.md        - Detailed explanations
+.ENV_QUICK_REFERENCE.md    - Visual reference
+ENV_ACTION_PLAN.md         - Step-by-step actions
+docs/07-BRANCH_SPECIFIC_VARIABLES.md - Complete documentation
+
+
+QUESTIONS?
+==========
+
+"Where do I put my real API keys?"
+  Local .env for development (never commit)
+  GitHub Secrets for staging/production (GitHub manages them)
+
+"Do I commit .env.staging and .env.production?"
+  YES! They don't have real secrets, just references.
+
+"How does GitHub Actions get my secrets?"
+  GitHub reads them from Secrets
+  Passes to Railway/Vercel at deploy time
+  Never stored in files or git history
+
+"What if I accidentally committed .env?"
+  git rm --cached .env
+  git commit -m "chore: remove .env from tracking"
+  git push
+  File stays on your machine (safe)
+
+============================================
+You're all set! Questions? Ask away!
+============================================

@@ -354,6 +354,7 @@ git branch -d release/1.2.0
 **Answer:** GitHub Actions workflows handle this automatically.
 
 **Setup:**
+
 1. Add GitHub Secrets (see [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md#automated-deployment-workflow-github-actions))
 2. Connect Railway to GitHub
 3. Connect Vercel to GitHub
@@ -361,6 +362,7 @@ git branch -d release/1.2.0
 5. Push to main branch → auto-deploys to production
 
 **Workflows:**
+
 - `.github/workflows/deploy-staging.yml` (triggers on dev push)
 - `.github/workflows/deploy-production.yml` (triggers on main push)
 
@@ -379,6 +381,7 @@ GitHub Actions (reads all secrets)
 ```
 
 **Key Security Points:**
+
 - ✅ Secrets never exposed to either platform
 - ✅ Each platform gets only what it needs
 - ✅ GitHub Secrets are the single source of truth
@@ -386,6 +389,7 @@ GitHub Actions (reads all secrets)
 - ✅ Frontend variables stay in Vercel only
 
 **Why This Matters:**
+
 - Maximum security
 - Clear separation of concerns
 - Easy to rotate secrets
@@ -398,6 +402,7 @@ GitHub Actions (reads all secrets)
 **Answer:** NO - Zero impact on local development.
 
 **Why:**
+
 - Local dev uses `.env` (local only, never commits)
 - Staging uses `.env.staging` (committed, no secrets)
 - Production uses `.env.production` (committed, no secrets)
@@ -405,6 +410,7 @@ GitHub Actions (reads all secrets)
 - Your local environment is completely isolated
 
 **Development Workflow:**
+
 ```bash
 # Local (your machine)
 .env → npm run dev → localhost:3000, 3001, 8000

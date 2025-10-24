@@ -665,6 +665,7 @@ git push origin feat/my-feature
 ### Environment Variables Summary
 
 **For Local Development (.env):**
+
 ```bash
 # At minimum, choose ONE AI provider:
 OPENAI_API_KEY=sk-...              # OpenAI (most popular)
@@ -676,6 +677,7 @@ OLLAMA_HOST=http://localhost:11434
 ```
 
 **For Staging/Production:**
+
 - Handled by GitHub Secrets (never commit)
 - Set in GitHub → Settings → Secrets and variables → Actions
 - GitHub Actions passes them to Railway/Vercel automatically
@@ -683,6 +685,7 @@ OLLAMA_HOST=http://localhost:11434
 ### Vercel Environment Variables (Critical!)
 
 **What NOT to add to Vercel (backend-only):**
+
 - `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`
 - `GCP_*`, `PUBSUB_*`, `FIRESTORE_*`
 - `DATABASE_*`, `ADMIN_JWT_SECRET`
@@ -690,6 +693,7 @@ OLLAMA_HOST=http://localhost:11434
 - `GCS_BUCKET_NAME`, `SERPER_API_KEY`, etc.
 
 **What TO add to Vercel (frontend-only):**
+
 - `NEXT_PUBLIC_STRAPI_API_URL` → Your Strapi endpoint
 - `NEXT_PUBLIC_STRAPI_API_TOKEN` → Your Strapi API token
 - `NODE_ENV` → `production`
