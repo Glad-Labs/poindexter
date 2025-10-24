@@ -20,11 +20,13 @@ This is a known Strapi v5 plugin incompatibility issue where the content-type-bu
 ## ✅ Working Services
 
 **Running Successfully:**
+
 - ✅ Public Site (Next.js): http://localhost:3000
-- ✅ Oversight Hub (React): http://localhost:3001  
+- ✅ Oversight Hub (React): http://localhost:3001
 - ✅ Python Backend (FastAPI): http://localhost:8000 (ready to start)
 
 **Not Running:**
+
 - ❌ Strapi CMS (build error - see solutions below)
 
 ---
@@ -87,6 +89,7 @@ cd cms/strapi-main
 ```
 
 Then start Strapi:
+
 ```bash
 npm run develop
 ```
@@ -128,6 +131,7 @@ npm run develop
    - Or use Option 3 (patch the plugin)
 
 **Why:**
+
 - Frontend is production-ready
 - Python backend is ready for agent implementation
 - Strapi issue is isolated to the build/admin panel
@@ -163,6 +167,7 @@ This should be resolved in next Strapi update. Track the issue:
 - **Content-Type-Builder:** The culprit plugin
 
 When Strapi v5 is patched, just run:
+
 ```bash
 npm install --latest
 npm run build
