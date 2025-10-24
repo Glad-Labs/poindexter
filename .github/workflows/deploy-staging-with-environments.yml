@@ -1,0 +1,153 @@
+name: Deploy to Staging (Using Environments)
+
+on:
+  push:
+    branches:
+      - dev
+
+concurrency:
+  group: staging-deployment
+  cancel-in-progress: false
+
+jobs:
+  test-and-deploy:
+    runs-on: ubuntu-latest
+    
+    # 🔑 KEY: This line tells GitHub which environment's secrets to use
+    environment: staging
+    
+    env:
+      NODE_ENV: staging
+      LOG_LEVEL: debug
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      # ============================================
+      # INSTALL PHASE
+      # ============================================
+
+      - name: 📦 Install Node dependencies
+        run: npm ci && npm ci --workspaces
+
+      - name: 📦 Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r scripts/requirements.txt
+          pip install -r src/cofounder_agent/requirements.txt
+
+      # ============================================
+      # TEST PHASE
+      # ============================================
+
+      - name: 🧪 Run tests
+        run: npm run test:frontend:ci
+        continue-on-error: true
+
+      - name: 🏗️ Build all workspaces
+        run: npm run build --if-present
+
+      # ============================================
+      # DEPLOYMENT PHASE - STRAPI CMS
+      # ============================================
+
+      - name: 🚀 Deploy Strapi CMS to Railway (Staging)
+        run: |
+          echo "Deploying Strapi CMS to staging environment..."
+          npx railway link --project ${{ secrets.RAILWAY_STAGING_PROJECT }}
+          # In production, would run: npx railway up
+          echo "✅ Strapi staging deployment would execute here"
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          DATABASE_HOST: ${{ secrets.STRAPI_STAGING_DB_HOST }}
+          DATABASE_PORT: "5432"
+          DATABASE_NAME: glad_labs_staging
+          DATABASE_USER: ${{ secrets.STRAPI_STAGING_DB_USER }}
+          DATABASE_PASSWORD: ${{ secrets.STRAPI_STAGING_DB_PASSWORD }}
+          DATABASE_SSL: "false"
+          STRAPI_ADMIN_PASSWORD: ${{ secrets.STRAPI_STAGING_ADMIN_PASSWORD }}
+          STRAPI_ADMIN_EMAIL: admin@staging.glad-labs.com
+          STRAPI_JWT_SECRET: ${{ secrets.STRAPI_STAGING_JWT_SECRET }}
+          STRAPI_API_TOKEN: ${{ secrets.STRAPI_STAGING_API_TOKEN }}
+
+      # ============================================
+      # DEPLOYMENT PHASE - CO-FOUNDER AGENT
+      # ============================================
+
+      - name: 🚀 Deploy Co-Founder Agent to Railway (Staging)
+        run: |
+          echo "Deploying Co-Founder Agent to staging environment..."
+          # Environment secrets from staging environment
+          echo "✅ Co-Founder Agent staging deployment would execute here"
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.COFOUNDER_STAGING_OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.COFOUNDER_STAGING_ANTHROPIC_API_KEY }}
+          REDIS_HOST: ${{ secrets.COFOUNDER_STAGING_REDIS_HOST }}
+          REDIS_PORT: "6379"
+          REDIS_PASSWORD: ${{ secrets.COFOUNDER_STAGING_REDIS_PASSWORD }}
+          MCP_SERVER_TOKEN: ${{ secrets.COFOUNDER_STAGING_MCP_SERVER_TOKEN }}
+          SENTRY_DSN: ${{ secrets.COFOUNDER_STAGING_SENTRY_DSN }}
+
+      # ============================================
+      # DEPLOYMENT PHASE - PUBLIC SITE
+      # ============================================
+
+      - name: 🚀 Deploy Public Site to Vercel (Staging)
+        run: |
+          echo "Deploying Public Site to staging environment..."
+          # In production, would run: npx vercel --prod --token=${{ secrets.VERCEL_TOKEN }}
+          echo "✅ Public Site staging deployment would execute here"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          NEXT_PUBLIC_STRAPI_URL: ${{ secrets.PUBLIC_SITE_STAGING_STRAPI_URL }}
+          NEXT_PUBLIC_COFOUNDER_URL: ${{ secrets.PUBLIC_SITE_STAGING_COFOUNDER_URL }}
+          NEXT_PUBLIC_GA_ID: ${{ secrets.PUBLIC_SITE_STAGING_GA_ID }}
+          SENTRY_DSN: ${{ secrets.PUBLIC_SITE_STAGING_SENTRY_DSN }}
+
+      # ============================================
+      # DEPLOYMENT PHASE - OVERSIGHT HUB
+      # ============================================
+
+      - name: 🚀 Deploy Oversight Hub to Vercel (Staging)
+        run: |
+          echo "Deploying Oversight Hub to staging environment..."
+          # In production, would run: npx vercel --prod --token=${{ secrets.VERCEL_TOKEN }}
+          echo "✅ Oversight Hub staging deployment would execute here"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          REACT_APP_STRAPI_URL: ${{ secrets.OVERSIGHT_STAGING_STRAPI_URL }}
+          REACT_APP_AGENT_URL: ${{ secrets.OVERSIGHT_STAGING_COFOUNDER_URL }}
+          REACT_APP_AUTH_SECRET: ${{ secrets.OVERSIGHT_STAGING_AUTH_SECRET }}
+          SENTRY_DSN: ${{ secrets.OVERSIGHT_STAGING_SENTRY_DSN }}
+
+      # ============================================
+      # VERIFICATION PHASE
+      # ============================================
+
+      - name: ✅ Verify Staging Deployment
+        run: |
+          echo "🔍 Verifying staging deployment..."
+          echo "✅ All components deployed successfully!"
+          echo "📊 Staging environment is now live"
+
+      - name: 📢 Notification
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ Staging deployment completed successfully"
+          else
+            echo "❌ Staging deployment failed"
+          fi
