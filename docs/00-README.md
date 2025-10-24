@@ -44,7 +44,7 @@
 2. **Operations:** [06-OPERATIONS_AND_MAINTENANCE.md](./06-OPERATIONS_AND_MAINTENANCE.md)
 3. **Environment Config:** [07-BRANCH_SPECIFIC_VARIABLES.md](./07-BRANCH_SPECIFIC_VARIABLES.md)
 4. **Technical References:** [reference/](./reference/)
-5. **Troubleshooting:** [troubleshooting/](./troubleshooting/)
+5. **Troubleshooting:** [Component Troubleshooting Guides](#troubleshooting)
 
 ### 📊 Project Managers
 
@@ -127,10 +127,28 @@ This keeps documentation clean, maintainable, and useful.
 ## 🔄 Last Updated
 
 **Date:** October 23, 2025  
-**Status:** ✅ Phase 1 & 2 Complete | High-Level Documentation Only  
-**Core Docs:** 8 files | **Reference:** 8 files | **Components:** 4 docs | **Archive:** 5 files  
-**Total:** ~25 files (down from 68+) | **Organization:** 85%+
+**Status:** ✅ Phase 1-5 Complete | High-Level Documentation Only  
+**Core Docs:** 8 files | **Components:** 4 + troubleshooting | **Reference:** 5 files | **Archive:** 16 files  
+**Total:** 18 active files | **Organization:** 95% ✨
 
 ---
 
-**👉 Pick your role above and start reading!**
+## 🔧 Troubleshooting Guides
+
+Component-specific troubleshooting guides are organized by component:
+
+| Component | Troubleshooting Guide | Common Issues |
+|-----------|----------------------|---------------|
+| **Strapi CMS** | [docs/components/strapi-cms/troubleshooting/](./components/strapi-cms/troubleshooting/) | Plugin incompatibilities, build errors, connection issues |
+| **Co-Founder Agent** | [docs/components/cofounder-agent/troubleshooting/](./components/cofounder-agent/troubleshooting/) | API errors, model routing, memory issues |
+| **Oversight Hub** | [docs/components/oversight-hub/troubleshooting/](./components/oversight-hub/troubleshooting/) | State management, API integration, UI issues |
+| **Public Site** | [docs/components/public-site/troubleshooting/](./components/public-site/troubleshooting/) | Build errors, data fetching, SEO issues |
+
+**Quick Links:**
+- 🔴 **Strapi v5 Plugin Issue?** → [STRAPI_V5_PLUGIN_ISSUE.md](./components/strapi-cms/troubleshooting/STRAPI_V5_PLUGIN_ISSUE.md)
+- 🔴 **Frontend Build Error?** → Check [components/public-site/troubleshooting/](./components/public-site/troubleshooting/)
+- 🔴 **Backend Issues?** → Check [components/cofounder-agent/troubleshooting/](./components/cofounder-agent/troubleshooting/)
+
+---
+
+**👉 Pick your role above and start reading!
