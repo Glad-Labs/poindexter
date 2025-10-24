@@ -1,6 +1,19 @@
-# 🚀 Quick Start Guide - October 23, 2025
+# 🚀 Quick Start Guide - October 24, 2025
 
-**Status:** ✅ Frontend Services Ready | ⚠️ Strapi Temporarily Disabled
+**Status:** ✅ Frontend Services Ready | ⚠️ Strapi Temporarily Disabled | ✅ GitHub Secrets Guides Complete
+
+---
+
+## 🔐 NEW: Setting Up GitHub Secrets
+
+If you're setting up **GitHub Secrets organized by component and environment**:
+
+**→ Start here: [`GITHUB_SECRETS_FILE_INDEX.md`](./GITHUB_SECRETS_FILE_INDEX.md)**
+
+Quick links:
+- **Quick Setup (5 min):** [`GITHUB_SECRETS_QUICK_SETUP.md`](./GITHUB_SECRETS_QUICK_SETUP.md)
+- **Complete Guide:** [`GITHUB_SECRETS_SETUP.md`](./GITHUB_SECRETS_SETUP.md)
+- **Workflow Examples:** [`.github/workflows/deploy-*-with-environments.yml`](./.github/workflows/)
 
 ---
 
