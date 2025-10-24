@@ -11,6 +11,7 @@
 GitHub Environments allow you to organize secrets by component and deployment target. This guide shows how to structure GLAD Labs secrets across **4 components** and **2 environments**.
 
 ### ✅ Quick Answer
+
 **YES** - You can use GitHub Environments to automatically assign correct secrets by environment. GitHub Actions will recognize the environment and provide the correct variables.
 
 ---
@@ -18,12 +19,14 @@ GitHub Environments allow you to organize secrets by component and deployment ta
 ## 🏗️ Architecture
 
 ### Components
+
 1. **Strapi CMS** - Headless CMS backend
 2. **Co-Founder Agent** - FastAPI AI orchestrator
 3. **Public Site** - Next.js public-facing website
 4. **Oversight Hub** - React admin dashboard
 
 ### Environments
+
 - **staging** - dev branch → Railway staging
 - **production** - main branch → Railway/Vercel production
 
@@ -57,33 +60,33 @@ Follow the sections below for your component.
 
 #### Staging (Environment: `staging`)
 
-| Secret Name | Value | Notes |
-|---|---|---|
-| `STRAPI_STAGING_DB_HOST` | PostgreSQL host for staging | e.g., `db.railway.app` |
-| `STRAPI_STAGING_DB_PORT` | `5432` | Standard PostgreSQL port |
-| `STRAPI_STAGING_DB_NAME` | `glad_labs_staging` | Database name |
-| `STRAPI_STAGING_DB_USER` | PostgreSQL username | From Railway dashboard |
-| `STRAPI_STAGING_DB_PASSWORD` | PostgreSQL password | From Railway dashboard |
-| `STRAPI_STAGING_ADMIN_PASSWORD` | Strapi admin password | Generate secure password |
-| `STRAPI_STAGING_ADMIN_EMAIL` | `admin@staging.glad-labs.com` | Admin email |
-| `STRAPI_STAGING_JWT_SECRET` | Generate with: `openssl rand -base64 32` | JWT secret for tokens |
-| `STRAPI_STAGING_API_TOKEN` | Generate in Strapi admin panel | API access token |
-| `STRAPI_STAGING_TRANSFER_TOKEN` | For Strapi migrations | Generate in admin panel |
+| Secret Name                     | Value                                    | Notes                    |
+| ------------------------------- | ---------------------------------------- | ------------------------ |
+| `STRAPI_STAGING_DB_HOST`        | PostgreSQL host for staging              | e.g., `db.railway.app`   |
+| `STRAPI_STAGING_DB_PORT`        | `5432`                                   | Standard PostgreSQL port |
+| `STRAPI_STAGING_DB_NAME`        | `glad_labs_staging`                      | Database name            |
+| `STRAPI_STAGING_DB_USER`        | PostgreSQL username                      | From Railway dashboard   |
+| `STRAPI_STAGING_DB_PASSWORD`    | PostgreSQL password                      | From Railway dashboard   |
+| `STRAPI_STAGING_ADMIN_PASSWORD` | Strapi admin password                    | Generate secure password |
+| `STRAPI_STAGING_ADMIN_EMAIL`    | `admin@staging.glad-labs.com`            | Admin email              |
+| `STRAPI_STAGING_JWT_SECRET`     | Generate with: `openssl rand -base64 32` | JWT secret for tokens    |
+| `STRAPI_STAGING_API_TOKEN`      | Generate in Strapi admin panel           | API access token         |
+| `STRAPI_STAGING_TRANSFER_TOKEN` | For Strapi migrations                    | Generate in admin panel  |
 
 #### Production (Environment: `production`)
 
-| Secret Name | Value | Notes |
-|---|---|---|
-| `STRAPI_PROD_DB_HOST` | PostgreSQL host for production | Production database |
-| `STRAPI_PROD_DB_PORT` | `5432` | Standard PostgreSQL port |
-| `STRAPI_PROD_DB_NAME` | `glad_labs_production` | Database name |
-| `STRAPI_PROD_DB_USER` | PostgreSQL username | From Railway dashboard |
-| `STRAPI_PROD_DB_PASSWORD` | PostgreSQL password | From Railway dashboard |
-| `STRAPI_PROD_ADMIN_PASSWORD` | Strapi admin password | Generate secure password |
-| `STRAPI_PROD_ADMIN_EMAIL` | `admin@glad-labs.com` | Production admin email |
-| `STRAPI_PROD_JWT_SECRET` | Generate with: `openssl rand -base64 32` | JWT secret for tokens |
-| `STRAPI_PROD_API_TOKEN` | Generate in Strapi admin panel | API access token |
-| `STRAPI_PROD_TRANSFER_TOKEN` | For Strapi migrations | Generate in admin panel |
+| Secret Name                  | Value                                    | Notes                    |
+| ---------------------------- | ---------------------------------------- | ------------------------ |
+| `STRAPI_PROD_DB_HOST`        | PostgreSQL host for production           | Production database      |
+| `STRAPI_PROD_DB_PORT`        | `5432`                                   | Standard PostgreSQL port |
+| `STRAPI_PROD_DB_NAME`        | `glad_labs_production`                   | Database name            |
+| `STRAPI_PROD_DB_USER`        | PostgreSQL username                      | From Railway dashboard   |
+| `STRAPI_PROD_DB_PASSWORD`    | PostgreSQL password                      | From Railway dashboard   |
+| `STRAPI_PROD_ADMIN_PASSWORD` | Strapi admin password                    | Generate secure password |
+| `STRAPI_PROD_ADMIN_EMAIL`    | `admin@glad-labs.com`                    | Production admin email   |
+| `STRAPI_PROD_JWT_SECRET`     | Generate with: `openssl rand -base64 32` | JWT secret for tokens    |
+| `STRAPI_PROD_API_TOKEN`      | Generate in Strapi admin panel           | API access token         |
+| `STRAPI_PROD_TRANSFER_TOKEN` | For Strapi migrations                    | Generate in admin panel  |
 
 ---
 
@@ -91,31 +94,31 @@ Follow the sections below for your component.
 
 #### Staging (Environment: `staging`)
 
-| Secret Name | Value | Notes |
-|---|---|---|
-| `COFOUNDER_STAGING_OPENAI_API_KEY` | OpenAI API key | From OpenAI dashboard |
-| `COFOUNDER_STAGING_ANTHROPIC_API_KEY` | Anthropic API key | From Anthropic dashboard |
-| `COFOUNDER_STAGING_REDIS_HOST` | Redis host | e.g., `redis.railway.app` |
-| `COFOUNDER_STAGING_REDIS_PORT` | `6379` | Redis default port |
-| `COFOUNDER_STAGING_REDIS_PASSWORD` | Redis password | From Railway dashboard |
-| `COFOUNDER_STAGING_MEMORY_DB_URL` | PostgreSQL URL for memory | `postgresql://user:pass@host/db` |
-| `COFOUNDER_STAGING_MCP_SERVER_TOKEN` | MCP authentication token | Generate: `openssl rand -hex 32` |
-| `COFOUNDER_STAGING_LOG_LEVEL` | `debug` | For staging |
-| `COFOUNDER_STAGING_SENTRY_DSN` | Sentry error tracking | From Sentry dashboard (optional) |
+| Secret Name                           | Value                     | Notes                            |
+| ------------------------------------- | ------------------------- | -------------------------------- |
+| `COFOUNDER_STAGING_OPENAI_API_KEY`    | OpenAI API key            | From OpenAI dashboard            |
+| `COFOUNDER_STAGING_ANTHROPIC_API_KEY` | Anthropic API key         | From Anthropic dashboard         |
+| `COFOUNDER_STAGING_REDIS_HOST`        | Redis host                | e.g., `redis.railway.app`        |
+| `COFOUNDER_STAGING_REDIS_PORT`        | `6379`                    | Redis default port               |
+| `COFOUNDER_STAGING_REDIS_PASSWORD`    | Redis password            | From Railway dashboard           |
+| `COFOUNDER_STAGING_MEMORY_DB_URL`     | PostgreSQL URL for memory | `postgresql://user:pass@host/db` |
+| `COFOUNDER_STAGING_MCP_SERVER_TOKEN`  | MCP authentication token  | Generate: `openssl rand -hex 32` |
+| `COFOUNDER_STAGING_LOG_LEVEL`         | `debug`                   | For staging                      |
+| `COFOUNDER_STAGING_SENTRY_DSN`        | Sentry error tracking     | From Sentry dashboard (optional) |
 
 #### Production (Environment: `production`)
 
-| Secret Name | Value | Notes |
-|---|---|---|
-| `COFOUNDER_PROD_OPENAI_API_KEY` | OpenAI API key | Production key |
-| `COFOUNDER_PROD_ANTHROPIC_API_KEY` | Anthropic API key | Production key |
-| `COFOUNDER_PROD_REDIS_HOST` | Redis host | Production Redis |
-| `COFOUNDER_PROD_REDIS_PORT` | `6379` | Redis default port |
-| `COFOUNDER_PROD_REDIS_PASSWORD` | Redis password | From Railway dashboard |
-| `COFOUNDER_PROD_MEMORY_DB_URL` | PostgreSQL URL for memory | Production database |
-| `COFOUNDER_PROD_MCP_SERVER_TOKEN` | MCP authentication token | Generate: `openssl rand -hex 32` |
-| `COFOUNDER_PROD_LOG_LEVEL` | `info` | For production |
-| `COFOUNDER_PROD_SENTRY_DSN` | Sentry error tracking | From Sentry dashboard |
+| Secret Name                        | Value                     | Notes                            |
+| ---------------------------------- | ------------------------- | -------------------------------- |
+| `COFOUNDER_PROD_OPENAI_API_KEY`    | OpenAI API key            | Production key                   |
+| `COFOUNDER_PROD_ANTHROPIC_API_KEY` | Anthropic API key         | Production key                   |
+| `COFOUNDER_PROD_REDIS_HOST`        | Redis host                | Production Redis                 |
+| `COFOUNDER_PROD_REDIS_PORT`        | `6379`                    | Redis default port               |
+| `COFOUNDER_PROD_REDIS_PASSWORD`    | Redis password            | From Railway dashboard           |
+| `COFOUNDER_PROD_MEMORY_DB_URL`     | PostgreSQL URL for memory | Production database              |
+| `COFOUNDER_PROD_MCP_SERVER_TOKEN`  | MCP authentication token  | Generate: `openssl rand -hex 32` |
+| `COFOUNDER_PROD_LOG_LEVEL`         | `info`                    | For production                   |
+| `COFOUNDER_PROD_SENTRY_DSN`        | Sentry error tracking     | From Sentry dashboard            |
 
 ---
 
@@ -123,25 +126,25 @@ Follow the sections below for your component.
 
 #### Staging (Environment: `staging`)
 
-| Secret Name | Value | Notes |
-|---|---|---|
-| `PUBLIC_SITE_STAGING_STRAPI_URL` | `https://staging-cms.railway.app` | Strapi API URL |
-| `PUBLIC_SITE_STAGING_COFOUNDER_URL` | `https://staging-agent.railway.app:8000` | Co-founder Agent URL |
-| `PUBLIC_SITE_STAGING_GA_ID` | Google Analytics ID | Staging GA4 property |
-| `PUBLIC_SITE_STAGING_POSTHOG_KEY` | PostHog analytics key | Optional analytics |
-| `PUBLIC_SITE_STAGING_SENTRY_DSN` | Sentry error tracking | Optional monitoring |
-| `PUBLIC_SITE_STAGING_VERCEL_TOKEN` | Vercel API token | For Vercel deployments |
+| Secret Name                         | Value                                    | Notes                  |
+| ----------------------------------- | ---------------------------------------- | ---------------------- |
+| `PUBLIC_SITE_STAGING_STRAPI_URL`    | `https://staging-cms.railway.app`        | Strapi API URL         |
+| `PUBLIC_SITE_STAGING_COFOUNDER_URL` | `https://staging-agent.railway.app:8000` | Co-founder Agent URL   |
+| `PUBLIC_SITE_STAGING_GA_ID`         | Google Analytics ID                      | Staging GA4 property   |
+| `PUBLIC_SITE_STAGING_POSTHOG_KEY`   | PostHog analytics key                    | Optional analytics     |
+| `PUBLIC_SITE_STAGING_SENTRY_DSN`    | Sentry error tracking                    | Optional monitoring    |
+| `PUBLIC_SITE_STAGING_VERCEL_TOKEN`  | Vercel API token                         | For Vercel deployments |
 
 #### Production (Environment: `production`)
 
-| Secret Name | Value | Notes |
-|---|---|---|
-| `PUBLIC_SITE_PROD_STRAPI_URL` | `https://cms.railway.app` | Production Strapi API |
-| `PUBLIC_SITE_PROD_COFOUNDER_URL` | `https://agent.railway.app:8000` | Production Agent URL |
-| `PUBLIC_SITE_PROD_GA_ID` | Google Analytics ID | Production GA4 property |
-| `PUBLIC_SITE_PROD_POSTHOG_KEY` | PostHog analytics key | Production analytics |
-| `PUBLIC_SITE_PROD_SENTRY_DSN` | Sentry error tracking | Production monitoring |
-| `PUBLIC_SITE_PROD_VERCEL_TOKEN` | Vercel API token | For Vercel deployments |
+| Secret Name                      | Value                            | Notes                   |
+| -------------------------------- | -------------------------------- | ----------------------- |
+| `PUBLIC_SITE_PROD_STRAPI_URL`    | `https://cms.railway.app`        | Production Strapi API   |
+| `PUBLIC_SITE_PROD_COFOUNDER_URL` | `https://agent.railway.app:8000` | Production Agent URL    |
+| `PUBLIC_SITE_PROD_GA_ID`         | Google Analytics ID              | Production GA4 property |
+| `PUBLIC_SITE_PROD_POSTHOG_KEY`   | PostHog analytics key            | Production analytics    |
+| `PUBLIC_SITE_PROD_SENTRY_DSN`    | Sentry error tracking            | Production monitoring   |
+| `PUBLIC_SITE_PROD_VERCEL_TOKEN`  | Vercel API token                 | For Vercel deployments  |
 
 ---
 
@@ -149,23 +152,23 @@ Follow the sections below for your component.
 
 #### Staging (Environment: `staging`)
 
-| Secret Name | Value | Notes |
-|---|---|---|
-| `OVERSIGHT_STAGING_STRAPI_URL` | `https://staging-cms.railway.app` | Strapi API URL |
-| `OVERSIGHT_STAGING_COFOUNDER_URL` | `https://staging-agent.railway.app:8000` | Co-founder Agent URL |
-| `OVERSIGHT_STAGING_AUTH_SECRET` | Generate: `openssl rand -base64 32` | NextAuth.js secret |
-| `OVERSIGHT_STAGING_SENTRY_DSN` | Sentry error tracking | Optional |
-| `OVERSIGHT_STAGING_VERCEL_TOKEN` | Vercel API token | For Vercel deployments |
+| Secret Name                       | Value                                    | Notes                  |
+| --------------------------------- | ---------------------------------------- | ---------------------- |
+| `OVERSIGHT_STAGING_STRAPI_URL`    | `https://staging-cms.railway.app`        | Strapi API URL         |
+| `OVERSIGHT_STAGING_COFOUNDER_URL` | `https://staging-agent.railway.app:8000` | Co-founder Agent URL   |
+| `OVERSIGHT_STAGING_AUTH_SECRET`   | Generate: `openssl rand -base64 32`      | NextAuth.js secret     |
+| `OVERSIGHT_STAGING_SENTRY_DSN`    | Sentry error tracking                    | Optional               |
+| `OVERSIGHT_STAGING_VERCEL_TOKEN`  | Vercel API token                         | For Vercel deployments |
 
 #### Production (Environment: `production`)
 
-| Secret Name | Value | Notes |
-|---|---|---|
-| `OVERSIGHT_PROD_STRAPI_URL` | `https://cms.railway.app` | Production Strapi API |
-| `OVERSIGHT_PROD_COFOUNDER_URL` | `https://agent.railway.app:8000` | Production Agent URL |
-| `OVERSIGHT_PROD_AUTH_SECRET` | Generate: `openssl rand -base64 32` | NextAuth.js secret |
-| `OVERSIGHT_PROD_SENTRY_DSN` | Sentry error tracking | Production |
-| `OVERSIGHT_PROD_VERCEL_TOKEN` | Vercel API token | For Vercel deployments |
+| Secret Name                    | Value                               | Notes                  |
+| ------------------------------ | ----------------------------------- | ---------------------- |
+| `OVERSIGHT_PROD_STRAPI_URL`    | `https://cms.railway.app`           | Production Strapi API  |
+| `OVERSIGHT_PROD_COFOUNDER_URL` | `https://agent.railway.app:8000`    | Production Agent URL   |
+| `OVERSIGHT_PROD_AUTH_SECRET`   | Generate: `openssl rand -base64 32` | NextAuth.js secret     |
+| `OVERSIGHT_PROD_SENTRY_DSN`    | Sentry error tracking               | Production             |
+| `OVERSIGHT_PROD_VERCEL_TOKEN`  | Vercel API token                    | For Vercel deployments |
 
 ---
 
@@ -183,7 +186,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: staging  # 👈 THIS tells GitHub which environment's secrets to use
+    environment: staging # 👈 THIS tells GitHub which environment's secrets to use
 
     steps:
       - uses: actions/checkout@v4
@@ -217,6 +220,7 @@ jobs:
 ### In GitHub Settings → Environments
 
 #### Staging Environment
+
 - [ ] Create environment named `staging`
 - [ ] Set deployment branch to `dev`
 - [ ] Add all `STRAPI_STAGING_*` secrets
@@ -225,6 +229,7 @@ jobs:
 - [ ] Add all `OVERSIGHT_STAGING_*` secrets
 
 #### Production Environment
+
 - [ ] Create environment named `production`
 - [ ] Set deployment branch to `main`
 - [ ] **Enable: Require reviewers** ⚠️
@@ -239,13 +244,13 @@ jobs:
 
 Some secrets don't change by environment. Add these at **Settings → Secrets and variables → Actions** (repository level):
 
-| Secret Name | Value | Usage |
-|---|---|---|
-| `RAILWAY_TOKEN` | Railway CLI token | Authenticate with Railway in any workflow |
-| `VERCEL_TOKEN` | Vercel API token | Authenticate with Vercel globally |
-| `GITHUB_TOKEN` | Auto-provided by GitHub | For GitHub API calls (always available) |
-| `GCP_PROJECT_ID` | Your GCP project ID | Cloud Functions deployment |
-| `GCP_SERVICE_ACCOUNT_KEY` | GCP service account JSON | Cloud Functions authentication |
+| Secret Name               | Value                    | Usage                                     |
+| ------------------------- | ------------------------ | ----------------------------------------- |
+| `RAILWAY_TOKEN`           | Railway CLI token        | Authenticate with Railway in any workflow |
+| `VERCEL_TOKEN`            | Vercel API token         | Authenticate with Vercel globally         |
+| `GITHUB_TOKEN`            | Auto-provided by GitHub  | For GitHub API calls (always available)   |
+| `GCP_PROJECT_ID`          | Your GCP project ID      | Cloud Functions deployment                |
+| `GCP_SERVICE_ACCOUNT_KEY` | GCP service account JSON | Cloud Functions authentication            |
 
 ---
 
@@ -263,7 +268,7 @@ on:
 jobs:
   deploy-staging:
     runs-on: ubuntu-latest
-    environment: staging  # 👈 Use staging secrets
+    environment: staging # 👈 Use staging secrets
 
     steps:
       - uses: actions/checkout@v4
@@ -301,8 +306,8 @@ on:
 jobs:
   deploy-production:
     runs-on: ubuntu-latest
-    environment: production  # 👈 Use production secrets
-    
+    environment: production # 👈 Use production secrets
+
     # This will pause and require manual approval
     concurrency:
       group: production-deployment
@@ -383,23 +388,27 @@ openssl rand -hex 16 | tr -d '\n' | cut -c1-36
 ### How to reference secrets in your code:
 
 **In GitHub Actions:**
+
 ```yaml
 env:
   DATABASE_PASSWORD: ${{ secrets.STRAPI_STAGING_DB_PASSWORD }}
 ```
 
 **In Node.js:**
+
 ```javascript
 const dbPassword = process.env.DATABASE_PASSWORD;
 ```
 
 **In Python:**
+
 ```python
 import os
 db_password = os.getenv('DATABASE_PASSWORD')
 ```
 
 **In .env files (for local development):**
+
 ```bash
 DATABASE_PASSWORD=your_local_password_here
 ```
@@ -423,7 +432,8 @@ After setting up GitHub Environments and Secrets:
 
 ### Problem: "Secret not found" error in workflow
 
-**Solution:** 
+**Solution:**
+
 1. Check environment name matches in workflow: `environment: staging`
 2. Verify secret exists in that environment
 3. Check secret name spelling matches exactly
@@ -431,6 +441,7 @@ After setting up GitHub Environments and Secrets:
 ### Problem: Wrong secrets used for environment
 
 **Solution:**
+
 1. Confirm workflow specifies correct `environment:`
 2. Manually check GitHub Settings → Environments
 3. Verify branch filters match (dev → staging, main → production)
@@ -438,6 +449,7 @@ After setting up GitHub Environments and Secrets:
 ### Problem: Secret appears in logs
 
 **Solution:**
+
 1. GitHub automatically masks known secrets
 2. If custom masking needed, use: `::add-mask::{value}`
 3. Never log secret variables directly
@@ -446,13 +458,13 @@ After setting up GitHub Environments and Secrets:
 
 ## 📝 Document Control
 
-| Field | Value |
-|---|---|
-| **Version** | 1.0 |
-| **Last Updated** | October 24, 2025 |
-| **Status** | Production Ready |
-| **Author** | GitHub Copilot |
-| **Next Review** | December 24, 2025 |
+| Field            | Value             |
+| ---------------- | ----------------- |
+| **Version**      | 1.0               |
+| **Last Updated** | October 24, 2025  |
+| **Status**       | Production Ready  |
+| **Author**       | GitHub Copilot    |
+| **Next Review**  | December 24, 2025 |
 
 ---
 

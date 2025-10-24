@@ -38,7 +38,7 @@ Create: production environment
 ```yaml
 jobs:
   deploy:
-    environment: staging  # 👈 GitHub auto-loads staging secrets
+    environment: staging # 👈 GitHub auto-loads staging secrets
     runs-on: ubuntu-latest
     steps:
       - name: Deploy Strapi
@@ -113,29 +113,33 @@ GCP_SERVICE_ACCOUNT   # For GCP authentication
 ## 🔄 How It Works
 
 ### Step 1: Push Code
+
 ```bash
 git push origin dev
 ```
 
 ### Step 2: GitHub Actions Triggers
+
 ```yaml
 on:
   push:
-    branches: [dev]  # 👈 Matches staging environment deployment branch
+    branches: [dev] # 👈 Matches staging environment deployment branch
 ```
 
 ### Step 3: Workflow Uses Environment
+
 ```yaml
 jobs:
   deploy:
-    environment: staging  # 👈 GitHub loads staging secrets
+    environment: staging # 👈 GitHub loads staging secrets
 ```
 
 ### Step 4: Secrets Automatically Available
+
 ```yaml
 - name: Deploy
   env:
-    DB_PASSWORD: ${{ secrets.STRAPI_STAGING_DB_PASSWORD }}  # ✅ Works!
+    DB_PASSWORD: ${{ secrets.STRAPI_STAGING_DB_PASSWORD }} # ✅ Works!
   run: npm run deploy
 ```
 
@@ -143,17 +147,17 @@ jobs:
 
 ## ✅ Verification Checklist
 
-| Item | Status |
-|---|---|
-| GitHub Environments created (staging, production) | ☐ |
-| Branch rules set (dev→staging, main→production) | ☐ |
-| All 76 component secrets added (38 per environment) | ☐ |
-| 4 shared repository secrets added | ☐ |
-| Workflows have `environment: staging/production` line | ☐ |
-| Staging deployment tested on dev branch | ☐ |
-| Production deployment tested on main branch | ☐ |
-| Secrets properly masked in logs | ☐ |
-| No production secrets accessible from staging | ☐ |
+| Item                                                  | Status |
+| ----------------------------------------------------- | ------ |
+| GitHub Environments created (staging, production)     | ☐      |
+| Branch rules set (dev→staging, main→production)       | ☐      |
+| All 76 component secrets added (38 per environment)   | ☐      |
+| 4 shared repository secrets added                     | ☐      |
+| Workflows have `environment: staging/production` line | ☐      |
+| Staging deployment tested on dev branch               | ☐      |
+| Production deployment tested on main branch           | ☐      |
+| Secrets properly masked in logs                       | ☐      |
+| No production secrets accessible from staging         | ☐      |
 
 ---
 
@@ -193,35 +197,41 @@ jobs:
 
 ## 🔐 Security Features
 
-| Feature | Benefit |
-|---|---|
-| **Environment Isolation** | Staging & production secrets completely separate |
-| **Branch Enforcement** | Staging secrets only on dev, production only on main |
-| **Auto-Masking** | Secrets automatically hidden in workflow logs |
-| **Manual Approval** | Can require approval for production deployments |
-| **Audit Trail** | GitHub records who approved deployments |
+| Feature                   | Benefit                                              |
+| ------------------------- | ---------------------------------------------------- |
+| **Environment Isolation** | Staging & production secrets completely separate     |
+| **Branch Enforcement**    | Staging secrets only on dev, production only on main |
+| **Auto-Masking**          | Secrets automatically hidden in workflow logs        |
+| **Manual Approval**       | Can require approval for production deployments      |
+| **Audit Trail**           | GitHub records who approved deployments              |
 
 ---
 
 ## 💡 Pro Tips
 
 ### Tip 1: Organization by Component
+
 Use consistent naming: `{COMPONENT}_{ENVIRONMENT}_{SECRET}`
+
 - ✅ `STRAPI_STAGING_DB_HOST`
 - ✅ `COFOUNDER_PROD_API_KEY`
 - ❌ `DB_HOST_STAGING_STRAPI` (confusing order)
 
 ### Tip 2: Environment-Specific URLs
+
 Staging and production have different deployment targets:
+
 - Staging: `https://staging-cms.railway.app`
 - Production: `https://cms.railway.app`
 
 ### Tip 3: Use Shared Secrets for Common Tools
+
 - `RAILWAY_TOKEN` - used by ALL Railway deployments
 - `VERCEL_TOKEN` - used by ALL Vercel deployments
 - These don't change by environment, so repository-level is fine
 
 ### Tip 4: Rotate Secrets Periodically
+
 - Database passwords: quarterly
 - API keys: semi-annually
 - JWT secrets: annually or after staff changes
@@ -235,6 +245,7 @@ Staging and production have different deployment targets:
 **Symptoms:** `Error: Secret STRAPI_STAGING_DB_HOST not found`
 
 **Solution:**
+
 1. Check environment name matches: `environment: staging`
 2. Check secret exists in GitHub Settings
 3. Check secret name spelling (case-sensitive)
@@ -244,6 +255,7 @@ Staging and production have different deployment targets:
 **Symptoms:** Staging workflow uses production secrets
 
 **Solution:**
+
 1. Verify `environment:` line in workflow
 2. Verify branch triggers correct environment (dev→staging, main→production)
 3. Check GitHub Settings → Environments → deployment branches
@@ -254,11 +266,12 @@ Staging and production have different deployment targets:
 
 **Solution:**
 GitHub automatically masks known secrets. If custom logging:
+
 ```yaml
 - run: |
     # ❌ Wrong - exposes secret
     echo "Password is: ${{ secrets.MY_SECRET }}"
-    
+
     # ✅ Correct - GitHub masks it
     export PASSWORD=${{ secrets.MY_SECRET }}
     npm run deploy
@@ -268,27 +281,27 @@ GitHub automatically masks known secrets. If custom logging:
 
 ## 📋 Implementation Timeline
 
-| Phase | Time | Action |
-|---|---|---|
-| **1: Setup** | 5 min | Create environments in GitHub Settings |
-| **2: Add Secrets** | 30 min | Add all 79 secrets (38 staging + 38 prod + 3 shared) |
-| **3: Update Workflows** | 10 min | Add `environment:` line to workflows |
-| **4: Test Staging** | 10 min | Push to dev → verify staging deployment |
-| **5: Test Production** | 10 min | Push to main → verify production deployment |
-| **6: Verify Security** | 5 min | Check logs are masked, approval gates work |
-| **Total** | ~70 min | Complete implementation |
+| Phase                   | Time    | Action                                               |
+| ----------------------- | ------- | ---------------------------------------------------- |
+| **1: Setup**            | 5 min   | Create environments in GitHub Settings               |
+| **2: Add Secrets**      | 30 min  | Add all 79 secrets (38 staging + 38 prod + 3 shared) |
+| **3: Update Workflows** | 10 min  | Add `environment:` line to workflows                 |
+| **4: Test Staging**     | 10 min  | Push to dev → verify staging deployment              |
+| **5: Test Production**  | 10 min  | Push to main → verify production deployment          |
+| **6: Verify Security**  | 5 min   | Check logs are masked, approval gates work           |
+| **Total**               | ~70 min | Complete implementation                              |
 
 ---
 
 ## 📚 Related Docs
 
-| Document | Purpose |
-|---|---|
-| `GITHUB_SECRETS_SETUP.md` | Complete reference guide (40+ sections) |
-| `GITHUB_SECRETS_QUICK_SETUP.md` | 5-minute quick start |
-| `.github/workflows/deploy-staging-with-environments.yml` | Staging workflow example |
-| `.github/workflows/deploy-production-with-environments.yml` | Production workflow example |
-| `GITHUB_SECRETS_IMPLEMENTATION_SUMMARY.md` | Setup summary & checklist |
+| Document                                                    | Purpose                                 |
+| ----------------------------------------------------------- | --------------------------------------- |
+| `GITHUB_SECRETS_SETUP.md`                                   | Complete reference guide (40+ sections) |
+| `GITHUB_SECRETS_QUICK_SETUP.md`                             | 5-minute quick start                    |
+| `.github/workflows/deploy-staging-with-environments.yml`    | Staging workflow example                |
+| `.github/workflows/deploy-production-with-environments.yml` | Production workflow example             |
+| `GITHUB_SECRETS_IMPLEMENTATION_SUMMARY.md`                  | Setup summary & checklist               |
 
 ---
 
@@ -299,7 +312,7 @@ GitHub automatically masks known secrets. If custom logging:
 ✅ GitHub injects correct secrets based on branch  
 ✅ Staging and production completely isolated  
 ✅ Zero human error in secret selection  
-✅ Full audit trail of approvals  
+✅ Full audit trail of approvals
 
 **Start here:** `GITHUB_SECRETS_QUICK_SETUP.md`
 

@@ -11,6 +11,7 @@ If you're setting up **GitHub Secrets organized by component and environment**:
 **→ Start here: [`GITHUB_SECRETS_FILE_INDEX.md`](./GITHUB_SECRETS_FILE_INDEX.md)**
 
 Quick links:
+
 - **Quick Setup (5 min):** [`GITHUB_SECRETS_QUICK_SETUP.md`](./GITHUB_SECRETS_QUICK_SETUP.md)
 - **Complete Guide:** [`GITHUB_SECRETS_SETUP.md`](./GITHUB_SECRETS_SETUP.md)
 - **Workflow Examples:** [`.github/workflows/deploy-*-with-environments.yml`](./.github/workflows/)

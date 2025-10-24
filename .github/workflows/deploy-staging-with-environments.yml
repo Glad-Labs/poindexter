@@ -159,19 +159,19 @@ jobs:
                   echo "🔍 Verifying staging deployment..."
                   echo "Waiting for services to stabilize (15 seconds)..."
                   sleep 15
-                  
+
                   echo "Testing Strapi CMS..."
                   curl -f https://strapi-staging.railway.app/admin || echo "⚠️ Strapi health check pending"
-                  
+
                   echo "Testing Co-Founder Agent..."
                   curl -f https://agent-staging.railway.app/docs || echo "⚠️ Agent health check pending"
-                  
+
                   echo "Testing Public Site..."
                   curl -f https://public-site-staging.vercel.app || echo "⚠️ Public Site health check pending"
-                  
+
                   echo "Testing Oversight Hub..."
                   curl -f https://oversight-staging.vercel.app || echo "⚠️ Oversight Hub health check pending"
-                  
+
                   echo "✅ All components deployed successfully to staging!"
                   echo "📊 Staging environment is now live"
 

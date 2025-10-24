@@ -25,10 +25,11 @@
    - Production: `STRAPI_PROD_*`, `COFOUNDER_PROD_*`, etc.
 
 3. **In your workflow, specify the environment:**
+
    ```yaml
    jobs:
      deploy:
-       environment: staging  # GitHub automatically provides staging secrets
+       environment: staging # GitHub automatically provides staging secrets
    ```
 
 4. **GitHub automatically injects the correct secrets** based on which environment the workflow references.
@@ -84,20 +85,22 @@
 
 ### 4 Components × 2 Environments
 
-| Component | Staging Secrets | Production Secrets |
-|-----------|---|---|
-| **Strapi CMS** | 7 `STRAPI_STAGING_*` | 7 `STRAPI_PROD_*` |
-| **Co-Founder Agent** | 9 `COFOUNDER_STAGING_*` | 9 `COFOUNDER_PROD_*` |
-| **Public Site** | 6 `PUBLIC_SITE_STAGING_*` | 6 `PUBLIC_SITE_PROD_*` |
-| **Oversight Hub** | 5 `OVERSIGHT_STAGING_*` | 5 `OVERSIGHT_PROD_*` |
+| Component            | Staging Secrets           | Production Secrets     |
+| -------------------- | ------------------------- | ---------------------- |
+| **Strapi CMS**       | 7 `STRAPI_STAGING_*`      | 7 `STRAPI_PROD_*`      |
+| **Co-Founder Agent** | 9 `COFOUNDER_STAGING_*`   | 9 `COFOUNDER_PROD_*`   |
+| **Public Site**      | 6 `PUBLIC_SITE_STAGING_*` | 6 `PUBLIC_SITE_PROD_*` |
+| **Oversight Hub**    | 5 `OVERSIGHT_STAGING_*`   | 5 `OVERSIGHT_PROD_*`   |
 
 ### Shared Secrets (Repository Level)
+
 - `RAILWAY_TOKEN`
 - `VERCEL_TOKEN`
 - `GCP_PROJECT_ID`
 - `GCP_SERVICE_ACCOUNT_KEY`
 
 ### Total Secrets
+
 - **76** environment-specific secrets (38 staging + 38 production)
 - **3** repository-level secrets
 - **79 total secrets** documented
@@ -107,16 +110,19 @@
 ## 🚀 How to Implement
 
 ### 5-Minute Quick Start
+
 1. Open: `GITHUB_SECRETS_QUICK_SETUP.md`
 2. Follow 5 steps
 3. Done!
 
 ### Complete Implementation
+
 1. Read: `GITHUB_SECRETS_SETUP.md`
 2. Use: `.github/workflows/deploy-*-with-environments.yml` as templates
 3. Reference: `GITHUB_SECRETS_FILE_INDEX.md` for navigation
 
 ### Total Time Estimate
+
 - Setup environments: 5 minutes
 - Add secrets: 45 minutes
 - Update workflows: 10 minutes
@@ -128,22 +134,27 @@
 ## ✨ Key Features
 
 ### ✅ Automatic Secret Injection
+
 ```yaml
-environment: staging  # GitHub automatically provides all STAGING_* secrets
+environment: staging # GitHub automatically provides all STAGING_* secrets
 ```
 
 ### ✅ Branch-Based Isolation
+
 - `dev` branch → staging environment → `STAGING_*` secrets
 - `main` branch → production environment → `PROD_*` secrets
 
 ### ✅ Security Features
+
 - Secrets never visible in logs (auto-masked)
 - Staging and production secrets completely isolated
 - Manual approval gates available for production
 - Full audit trail of deployments
 
 ### ✅ Component Organization
+
 Secrets grouped logically:
+
 - Strapi CMS secrets: `STRAPI_*`
 - Agent secrets: `COFOUNDER_*`
 - Public Site secrets: `PUBLIC_SITE_*`
@@ -173,46 +184,52 @@ QUICK_START.md
 
 ## 🔐 Security Highlights
 
-| Aspect | Benefit |
-|---|---|
-| **Isolation** | Staging and production secrets never mix |
-| **Automation** | GitHub handles secret selection, no human error |
-| **Branch Enforcement** | Correct environment forced by branch rules |
-| **Masking** | Secrets automatically hidden in logs |
-| **Approvals** | Manual approval optional for production |
-| **Audit Trail** | Full history of who deployed what when |
+| Aspect                 | Benefit                                         |
+| ---------------------- | ----------------------------------------------- |
+| **Isolation**          | Staging and production secrets never mix        |
+| **Automation**         | GitHub handles secret selection, no human error |
+| **Branch Enforcement** | Correct environment forced by branch rules      |
+| **Masking**            | Secrets automatically hidden in logs            |
+| **Approvals**          | Manual approval optional for production         |
+| **Audit Trail**        | Full history of who deployed what when          |
 
 ---
 
 ## ✅ Implementation Checklist
 
 ### Phase 1: Understand (5 min)
+
 - [ ] Read the quick answer above
 - [ ] Understand GitHub Environments concept
 - [ ] Review architecture diagram in implementation summary
 
 ### Phase 2: Plan (10 min)
+
 - [ ] Read `GITHUB_SECRETS_QUICK_SETUP.md`
 - [ ] Gather secret values from all services
 - [ ] Prepare list of who has access to what
 
 ### Phase 3: Create Environments (5 min)
+
 - [ ] Go to GitHub Settings → Environments
 - [ ] Create `staging` environment
 - [ ] Create `production` environment
 - [ ] Set branch rules
 
 ### Phase 4: Add Secrets (45 min)
+
 - [ ] Add all 38 staging environment secrets
 - [ ] Add all 38 production environment secrets
 - [ ] Add 3 repository-level secrets
 
 ### Phase 5: Update Workflows (10 min)
+
 - [ ] Add `environment: staging` to staging workflow
 - [ ] Add `environment: production` to production workflow
 - [ ] Reference examples from `.github/workflows/`
 
 ### Phase 6: Test (15 min)
+
 - [ ] Push to dev branch → check staging deployment
 - [ ] Push to main branch → check production deployment
 - [ ] Verify secrets masked in logs
@@ -243,21 +260,23 @@ QUICK_START.md
 
 ## 🆘 Quick Troubleshooting
 
-| Problem | Solution |
-|---|---|
-| "Secret not found" | Check Settings → Environments, verify secret name and spelling |
-| Wrong secrets used | Verify workflow has correct `environment:` line |
-| Secret visible in logs | GitHub masks automatically; check for custom logging |
-| Approval not working | Enable "Required reviewers" in production environment settings |
+| Problem                | Solution                                                       |
+| ---------------------- | -------------------------------------------------------------- |
+| "Secret not found"     | Check Settings → Environments, verify secret name and spelling |
+| Wrong secrets used     | Verify workflow has correct `environment:` line                |
+| Secret visible in logs | GitHub masks automatically; check for custom logging           |
+| Approval not working   | Enable "Required reviewers" in production environment settings |
 
 ---
 
 ## 🎓 Learning Resources
 
 ### For Understanding GitHub Environments
+
 - **Official GitHub Docs:** https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment
 
 ### For GLAD Labs Implementation
+
 - **Complete Setup Guide:** `GITHUB_SECRETS_SETUP.md`
 - **Quick Start:** `GITHUB_SECRETS_QUICK_SETUP.md`
 - **File Index:** `GITHUB_SECRETS_FILE_INDEX.md`
@@ -267,19 +286,20 @@ QUICK_START.md
 
 ## 📞 Getting Help
 
-| Question | Resource |
-|---|---|
-| "How do I start?" | `GITHUB_SECRETS_QUICK_SETUP.md` |
-| "What secrets do I need?" | `GITHUB_SECRETS_SETUP.md` (complete list) |
-| "Where can I find X?" | `GITHUB_SECRETS_FILE_INDEX.md` |
-| "What's the workflow syntax?" | `.github/workflows/deploy-*-with-environments.yml` |
-| "What if something breaks?" | `GITHUB_SECRETS_SETUP.md` (troubleshooting section) |
+| Question                      | Resource                                            |
+| ----------------------------- | --------------------------------------------------- |
+| "How do I start?"             | `GITHUB_SECRETS_QUICK_SETUP.md`                     |
+| "What secrets do I need?"     | `GITHUB_SECRETS_SETUP.md` (complete list)           |
+| "Where can I find X?"         | `GITHUB_SECRETS_FILE_INDEX.md`                      |
+| "What's the workflow syntax?" | `.github/workflows/deploy-*-with-environments.yml`  |
+| "What if something breaks?"   | `GITHUB_SECRETS_SETUP.md` (troubleshooting section) |
 
 ---
 
 ## 📋 Deliverables Summary
 
 ### Documentation
+
 - ✅ 5 comprehensive guides
 - ✅ 79 secrets documented
 - ✅ 4 components covered
@@ -288,12 +308,14 @@ QUICK_START.md
 - ✅ Troubleshooting guide
 
 ### Examples
+
 - ✅ 2 workflow templates
 - ✅ Staging deployment workflow
 - ✅ Production deployment workflow
 - ✅ Ready-to-use code samples
 
 ### Features
+
 - ✅ Component-based organization
 - ✅ Environment-based isolation
 - ✅ Automatic secret injection
@@ -305,6 +327,7 @@ QUICK_START.md
 ## 🎉 Summary
 
 You now have a **complete, production-ready system** for managing GitHub Secrets organized by:
+
 - ✅ Component (Strapi, Agent, Public Site, Oversight Hub)
 - ✅ Environment (Staging, Production)
 - ✅ Automatic secret injection (no manual configuration)
@@ -325,4 +348,4 @@ Or for full navigation: **→ Open [`GITHUB_SECRETS_FILE_INDEX.md`](./GITHUB_SEC
 
 **Status:** ✅ Complete | **Date:** October 24, 2025 | **Version:** 1.0
 
-*All files are committed to feat/test-branch and ready for review/merge.*
+_All files are committed to feat/test-branch and ready for review/merge._

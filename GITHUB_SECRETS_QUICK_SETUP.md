@@ -76,7 +76,7 @@ In `.github/workflows/deploy-staging.yml`:
 ```yaml
 jobs:
   deploy:
-    environment: staging  # 👈 Add this line
+    environment: staging # 👈 Add this line
     runs-on: ubuntu-latest
 ```
 
@@ -85,7 +85,7 @@ In `.github/workflows/deploy-production.yml`:
 ```yaml
 jobs:
   deploy:
-    environment: production  # 👈 Add this line
+    environment: production # 👈 Add this line
     runs-on: ubuntu-latest
 ```
 
@@ -139,12 +139,12 @@ Correct secret automatically provided ✅
 
 ### 4 Components × 2 Environments = 8 Secret Groups
 
-| Component | Staging Secrets | Production Secrets |
-|-----------|---|---|
-| **Strapi CMS** | `STRAPI_STAGING_*` | `STRAPI_PROD_*` |
-| **Co-Founder Agent** | `COFOUNDER_STAGING_*` | `COFOUNDER_PROD_*` |
-| **Public Site** | `PUBLIC_SITE_STAGING_*` | `PUBLIC_SITE_PROD_*` |
-| **Oversight Hub** | `OVERSIGHT_STAGING_*` | `OVERSIGHT_PROD_*` |
+| Component            | Staging Secrets         | Production Secrets   |
+| -------------------- | ----------------------- | -------------------- |
+| **Strapi CMS**       | `STRAPI_STAGING_*`      | `STRAPI_PROD_*`      |
+| **Co-Founder Agent** | `COFOUNDER_STAGING_*`   | `COFOUNDER_PROD_*`   |
+| **Public Site**      | `PUBLIC_SITE_STAGING_*` | `PUBLIC_SITE_PROD_*` |
+| **Oversight Hub**    | `OVERSIGHT_STAGING_*`   | `OVERSIGHT_PROD_*`   |
 
 ### Repository-Level Secrets (Shared)
 
@@ -194,6 +194,7 @@ Should show:
 For complete details on all secrets, see: **[GITHUB_SECRETS_SETUP.md](./GITHUB_SECRETS_SETUP.md)**
 
 For workflow examples, see:
+
 - `.github/workflows/deploy-staging-with-environments.yml`
 - `.github/workflows/deploy-production-with-environments.yml`
 

@@ -2,7 +2,7 @@
 
 **Status:** ✅ Production Ready  
 **Date:** October 24, 2025  
-**Branch:** feat/test-branch  
+**Branch:** feat/test-branch
 
 ---
 
@@ -157,6 +157,7 @@ openssl s_client -connect glad-labs.com:443 # SSL check
 ## 📊 Deployment Flow Comparison
 
 ### Before (Placeholders)
+
 ```yaml
 - name: 🚀 Deploy Strapi
   run: |
@@ -166,6 +167,7 @@ openssl s_client -connect glad-labs.com:443 # SSL check
 ```
 
 ### After (Real Deployment)
+
 ```yaml
 - name: 🚀 Deploy Strapi CMS to Railway (Staging)
   run: |
@@ -183,8 +185,9 @@ openssl s_client -connect glad-labs.com:443 # SSL check
 ### Step 1: Add GitHub Secrets
 
 Go to GitHub Settings → Environments and add secrets:
-- **staging** environment: 38 STAGING_* secrets
-- **production** environment: 38 PROD_* secrets
+
+- **staging** environment: 38 STAGING\_\* secrets
+- **production** environment: 38 PROD\_\* secrets
 - **Repository level**: 3 shared secrets (RAILWAY_TOKEN, VERCEL_TOKEN, VERCEL_ORG_ID)
 
 See `GITHUB_SECRETS_SETUP.md` for complete list
@@ -198,6 +201,7 @@ git push origin dev
 ```
 
 Verify staging at:
+
 - Strapi: `https://strapi-staging.railway.app/admin`
 - Agent API: `https://agent-staging.railway.app/docs`
 - Public Site: `https://public-site-staging.vercel.app`
@@ -213,6 +217,7 @@ git push origin main
 ```
 
 Verify production at:
+
 - Public Site: `https://glad-labs.com`
 - Oversight Hub: `https://oversight.glad-labs.com`
 - Strapi Admin: `https://cms.railway.app/admin`
@@ -223,12 +228,14 @@ Verify production at:
 ## 📋 What's Included
 
 ### Staging Workflow
+
 - ✅ 4 component deployments (Strapi, Agent, Public Site, Oversight Hub)
 - ✅ Lenient testing (tests don't block deployment)
 - ✅ Quick health checks
 - ✅ Staging-specific configuration
 
 ### Production Workflow
+
 - ✅ 4 component deployments with production URLs
 - ✅ Manual approval gate support
 - ✅ Strict testing (tests must pass)
@@ -243,21 +250,26 @@ Verify production at:
 ## ⚠️ Important Notes
 
 ### Secret Management
+
 - Secrets are automatically injected by GitHub based on environment
 - No secrets are hardcoded in workflows
 - All secrets stored securely in GitHub Settings
 
 ### Deployment Targets
+
 - **Railway:** Backend services (Strapi, Agent)
 - **Vercel:** Frontend applications (Public Site, Oversight Hub)
 
 ### URLs to Update
+
 If your actual deployment URLs differ from defaults, update these in the workflows:
+
 - Line ~150 (staging health checks)
 - Line ~155 (production health checks)
 - Line ~285 (production success notification)
 
 ### Testing Before First Deployment
+
 1. Verify secrets are set correctly
 2. Check Railway and Vercel project IDs match
 3. Test staging deployment first (lower risk)
@@ -269,6 +281,7 @@ If your actual deployment URLs differ from defaults, update these in the workflo
 ## 📚 Documentation
 
 New file created: `docs/WORKFLOWS_DEPLOYMENT_IMPLEMENTATION.md`
+
 - Complete reference guide
 - Deployment flow diagrams
 - Troubleshooting information
@@ -289,6 +302,7 @@ a1f832f57 docs: add github secrets completion summary
 ## 🎉 You're Ready!
 
 Both workflows are now **production-ready** with:
+
 - ✅ Real deployment commands
 - ✅ Proper environment isolation
 - ✅ Security best practices

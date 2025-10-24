@@ -215,15 +215,18 @@ See `GITHUB_SECRETS_SETUP.md` for complete secret configuration (76 environment-
 ## 📊 Key Improvements
 
 ### ✅ Real Deployment Commands
+
 - **Before:** `echo "✅ Strapi staging deployment would execute here"`
 - **After:** `npx railway up` (actual Railway CLI deployment)
 
 ### ✅ Proper Environment Isolation
+
 - **Staging:** Uses `STAGING_*` secrets only
 - **Production:** Uses `PROD_*` secrets only
 - **Automatic:** GitHub handles secret injection based on environment
 
 ### ✅ Enhanced Health Checks
+
 ```bash
 # Staging verification
 curl -f https://strapi-staging.railway.app/admin
@@ -239,10 +242,12 @@ curl -f https://oversight.glad-labs.com
 ```
 
 ### ✅ Actionable Notifications
+
 - **Staging:** Lists all URLs for quick access
 - **Production:** Includes troubleshooting steps & debug resources on failure
 
 ### ✅ Security Features
+
 - **Production:** `npm audit --audit-level=moderate`
 - **Production:** SSL verification checks
 - **Production:** Manual approval gates (if configured)
@@ -255,11 +260,13 @@ curl -f https://oversight.glad-labs.com
 ### Next Steps
 
 1. **Add Secrets to GitHub**
+
    ```
    GitHub Settings → Environments → staging/production → Add secrets
    ```
 
 2. **Test Staging Deployment**
+
    ```bash
    git checkout dev
    git push origin dev
@@ -267,6 +274,7 @@ curl -f https://oversight.glad-labs.com
    ```
 
 3. **Monitor Workflow**
+
    ```
    GitHub Actions tab → Deploy to Staging (Using Environments)
    ```
@@ -294,6 +302,7 @@ curl -f https://oversight.glad-labs.com
 If your Railway projects or Vercel projects have different names, update these in the workflows:
 
 **Staging Workflow:**
+
 ```yaml
 # Line ~70: Update Railway staging project
 RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_STAGING_PROJECT_ID }}
@@ -304,6 +313,7 @@ VERCEL_PROJECT_ID: ${{ secrets.PUBLIC_SITE_STAGING_PROJECT_ID }}
 ```
 
 **Production Workflow:**
+
 ```yaml
 # Line ~75: Update Railway production project
 RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROD_PROJECT_ID }}

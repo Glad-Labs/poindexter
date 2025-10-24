@@ -13,7 +13,7 @@ Vercel was attempting to build **all workspaces** including Strapi CMS:
 ```bash
 npm run build --workspaces --if-present
   ├── web/public-site ✅ Built successfully
-  ├── web/oversight-hub ✅ Built successfully  
+  ├── web/oversight-hub ✅ Built successfully
   └── cms/strapi-main ❌ FAILED: @strapi/content-type-builder plugin error
         Error: "unstable_tours" is not exported by "@strapi/admin"
 ```
@@ -128,11 +128,11 @@ npm run build:all  # Uses old build script with all workspaces
 
 **Required for Vercel:**
 
-| Variable | Value | Example |
-|----------|-------|---------|
-| `NEXT_PUBLIC_STRAPI_API_URL` | Your Strapi instance URL | `https://cms.railway.app` |
-| `NEXT_PUBLIC_STRAPI_API_TOKEN` | Your Strapi API token | `your-strapi-token` |
-| `NODE_ENV` | `production` | (auto-set) |
+| Variable                       | Value                    | Example                   |
+| ------------------------------ | ------------------------ | ------------------------- |
+| `NEXT_PUBLIC_STRAPI_API_URL`   | Your Strapi instance URL | `https://cms.railway.app` |
+| `NEXT_PUBLIC_STRAPI_API_TOKEN` | Your Strapi API token    | `your-strapi-token`       |
+| `NODE_ENV`                     | `production`             | (auto-set)                |
 
 **How to add in Vercel:**
 
@@ -255,4 +255,3 @@ git push origin main
 **Status:** ✅ Ready for Vercel deployment  
 **Deployment Path:** main branch → GitHub → Vercel auto-deploy  
 **Expected Time:** 5-10 minutes to build
-

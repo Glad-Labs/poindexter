@@ -163,38 +163,38 @@ jobs:
             - name: 🧪 Smoke Tests
               run: |
                   echo "🔍 Running smoke tests against production..."
-                  
+
                   echo "Waiting for services to stabilize (20 seconds)..."
                   sleep 20
-                  
+
                   echo "Testing Strapi CMS health..."
                   curl -f https://cms.railway.app/admin || exit 1
-                  
+
                   echo "Testing Co-Founder Agent health..."
                   curl -f https://api.railway.app/api/health || exit 1
-                  
+
                   echo "Testing Public Site health..."
                   curl -f https://glad-labs.com || exit 1
-                  
+
                   echo "Testing Oversight Hub health..."
                   curl -f https://oversight.glad-labs.com || exit 1
-                  
+
                   echo "✅ Smoke tests passed"
 
             - name: 📊 Health Checks
               run: |
                   echo "🔍 Performing production health checks..."
-                  
+
                   echo "Checking Strapi database connection..."
                   curl -f -H "Authorization: Bearer ${{ secrets.STRAPI_PROD_API_TOKEN }}" \
                     https://cms.railway.app/api/posts?pagination[limit]=1 || echo "⚠️ Database check pending"
-                  
+
                   echo "Checking Co-Founder Agent connectivity..."
                   curl -f https://api.railway.app/api/health/detailed || echo "⚠️ Agent check pending"
-                  
+
                   echo "Checking SSL/TLS certificates..."
                   openssl s_client -connect glad-labs.com:443 -servername glad-labs.com < /dev/null | grep -o "Verify return code"
-                  
+
                   echo "✅ All systems operational"
 
             - name: ✅ Verify Production Deployment
