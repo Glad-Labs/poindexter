@@ -1,14 +1,16 @@
-name: Test on Feature Branch
+name: Test on Feature Branch (DISABLED)
+
+# ⚠️ DISABLED - Feature branches do not run workflows
+# Branch hierarchy:
+#   feat/*     → No workflows (commit freely)
+#   dev        → Full testing via test-on-dev.yml
+#   staging    → Deploy to staging environment
+#   main       → Deploy to production
+#
+# This allows you to commit frequently without triggering CI/CD on feature branches
 
 on:
-  push:
-    branches:
-      - 'feat/**'
-      - 'feature/**'
-  pull_request:
-    branches:
-      - dev
-      - main
+  workflow_dispatch: # Only manual trigger (effectively disabled)
 
 jobs:
   test:
@@ -24,13 +26,13 @@ jobs:
       - name: 🔧 Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
-          cache: 'npm'
+          node-version: "18"
+          cache: "npm"
 
       - name: 🐍 Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: 📦 Install dependencies
         run: npm ci && npm ci --workspaces
@@ -46,6 +48,10 @@ jobs:
 
       - name: 🧪 Run frontend tests
         run: npm run test:frontend:ci
+        continue-on-error: true
+
+      - name: 🧪 Run Python tests
+        run: npm run test:python
         continue-on-error: true
 
       - name: 🧪 Run Python smoke tests

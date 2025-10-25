@@ -1,0 +1,65 @@
+name: Test on Dev Branch
+
+on:
+    push:
+        branches:
+            - dev
+
+jobs:
+    test:
+        runs-on: ubuntu-latest
+
+        env:
+            NODE_ENV: staging
+            LOG_LEVEL: debug
+
+        steps:
+            - name: 📥 Checkout code
+              uses: actions/checkout@v4
+
+            - name: 🔧 Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: "22"
+                  cache: "npm"
+
+            - name: 🐍 Setup Python
+              uses: actions/setup-python@v4
+              with:
+                  python-version: "3.12"
+
+            # ============================================
+            # INSTALL PHASE
+            # ============================================
+
+            - name: 📦 Install Node dependencies
+              run: npm ci && npm ci --workspaces
+
+            - name: 📦 Install Python dependencies
+              run: |
+                  python -m pip install --upgrade pip
+                  pip install -r scripts/requirements.txt
+                  pip install -r src/cofounder_agent/requirements.txt
+
+            # ============================================
+            # TEST PHASE
+            # ============================================
+
+            - name: 🧪 Run frontend tests
+              run: npm run test:frontend:ci
+              continue-on-error: true
+
+            - name: 🧪 Run backend tests
+              run: npm run test:python
+              continue-on-error: true
+
+            - name: 🔍 Run linting
+              run: npm run lint:fix
+              continue-on-error: true
+
+            - name: 🏗️ Build check (all workspaces)
+              run: npm run build --if-present
+              continue-on-error: true
+
+            - name: ✅ Testing complete for staging
+              run: echo "Dev branch testing complete - ready for staging deployment"

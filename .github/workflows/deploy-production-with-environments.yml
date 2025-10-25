@@ -1,250 +1,253 @@
 name: Deploy to Production (Using Environments)
 
 on:
-    push:
-        branches:
-            - main
+  push:
+    branches:
+      - main
 
 concurrency:
-    group: production-deployment
-    cancel-in-progress: false
+  group: production-deployment
+  cancel-in-progress: false
 
 jobs:
-    test-and-deploy:
-        runs-on: ubuntu-latest
+  test-and-deploy:
+    runs-on: ubuntu-latest
 
-        # 🔑 KEY: This line tells GitHub which environment's secrets to use
-        # GitHub will pause here and require manual approval (if configured)
-        environment:
-            name: production
-            url: https://glad-labs.com
+    # 🔑 KEY: This line tells GitHub which environment's secrets to use
+    # GitHub will pause here and require manual approval (if configured)
+    environment:
+      name: production
+      url: https://glad-labs.com
 
+    env:
+      NODE_ENV: production
+      LOG_LEVEL: info
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      # ============================================
+      # INSTALL PHASE
+      # ============================================
+
+      - name: 📦 Install Node dependencies
+        run: npm ci && npm ci --workspaces
+
+      - name: 📦 Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r scripts/requirements.txt
+          pip install -r src/cofounder_agent/requirements.txt
+
+      # ============================================
+      # TEST PHASE (Full suite + security before production)
+      # ============================================
+
+      - name: 🧪 Run frontend tests
+        run: npm run test:frontend:ci
+
+      - name: 🧪 Run backend tests
+        run: npm run test:python
+
+      - name: 🏗️ Build all workspaces
+        run: npm run build --if-present
+
+      - name: 🔍 Run security checks
+        run: npm audit --audit-level=moderate
+        continue-on-error: true
+
+      # ============================================
+      # DEPLOYMENT PHASE - STRAPI CMS
+      # ============================================
+
+      - name: 🚀 Deploy Strapi CMS to Railway (Production)
+        run: |
+          echo "🚨 DEPLOYING STRAPI CMS TO PRODUCTION"
+          cd cms/strapi-v5-backend
+          npx railway up
+          cd ../..
+          echo "✅ Strapi production deployment completed"
         env:
-            NODE_ENV: production
-            LOG_LEVEL: info
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROD_PROJECT_ID }}
+          RAILWAY_SERVICE_ID: strapi-cms-prod
+          DATABASE_HOST: ${{ secrets.STRAPI_PROD_DB_HOST }}
+          DATABASE_PORT: "5432"
+          DATABASE_NAME: glad_labs_production
+          DATABASE_USER: ${{ secrets.STRAPI_PROD_DB_USER }}
+          DATABASE_PASSWORD: ${{ secrets.STRAPI_PROD_DB_PASSWORD }}
+          DATABASE_SSL: "true"
+          STRAPI_ADMIN_PASSWORD: ${{ secrets.STRAPI_PROD_ADMIN_PASSWORD }}
+          STRAPI_ADMIN_EMAIL: admin@glad-labs.com
+          STRAPI_JWT_SECRET: ${{ secrets.STRAPI_PROD_JWT_SECRET }}
+          STRAPI_API_TOKEN: ${{ secrets.STRAPI_PROD_API_TOKEN }}
+          NODE_ENV: production
 
-        steps:
-            - name: 📥 Checkout code
-              uses: actions/checkout@v4
+      # ============================================
+      # DEPLOYMENT PHASE - CO-FOUNDER AGENT
+      # ============================================
 
-            - name: 🔧 Setup Node.js
-              uses: actions/setup-node@v4
-              with:
-                  node-version: "22"
-                  cache: "npm"
+      - name: 🚀 Deploy Co-Founder Agent to Railway (Production)
+        run: |
+          echo "📤 Deploying Co-Founder Agent to production environment..."
+          cd src/cofounder_agent
+          npx railway up
+          cd ../..
+          echo "✅ Co-Founder Agent production deployment completed"
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROD_PROJECT_ID }}
+          RAILWAY_SERVICE_ID: cofounder-agent-prod
+          OPENAI_API_KEY: ${{ secrets.COFOUNDER_PROD_OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.COFOUNDER_PROD_ANTHROPIC_API_KEY }}
+          REDIS_HOST: ${{ secrets.COFOUNDER_PROD_REDIS_HOST }}
+          REDIS_PORT: "6379"
+          REDIS_PASSWORD: ${{ secrets.COFOUNDER_PROD_REDIS_PASSWORD }}
+          MCP_SERVER_TOKEN: ${{ secrets.COFOUNDER_PROD_MCP_SERVER_TOKEN }}
+          SENTRY_DSN: ${{ secrets.COFOUNDER_PROD_SENTRY_DSN }}
+          ENVIRONMENT: production
 
-            - name: 🐍 Setup Python
-              uses: actions/setup-python@v4
-              with:
-                  python-version: "3.12"
+      # ============================================
+      # DEPLOYMENT PHASE - PUBLIC SITE
+      # ============================================
 
-            # ============================================
-            # INSTALL PHASE
-            # ============================================
+      - name: 🚀 Deploy Public Site to Vercel (Production)
+        run: |
+          echo "📤 Deploying Public Site to production environment..."
+          cd web/public-site
+          npx vercel --prod --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_ORG_ID }}
+          cd ../..
+          echo "✅ Public Site production deployment completed"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ secrets.PUBLIC_SITE_PROD_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          NEXT_PUBLIC_STRAPI_URL: ${{ secrets.PUBLIC_SITE_PROD_STRAPI_URL }}
+          NEXT_PUBLIC_COFOUNDER_URL: ${{ secrets.PUBLIC_SITE_PROD_COFOUNDER_URL }}
+          NEXT_PUBLIC_GA_ID: ${{ secrets.PUBLIC_SITE_PROD_GA_ID }}
+          SENTRY_DSN: ${{ secrets.PUBLIC_SITE_PROD_SENTRY_DSN }}
 
-            - name: 📦 Install Node dependencies
-              run: npm ci && npm ci --workspaces
+      # ============================================
+      # DEPLOYMENT PHASE - OVERSIGHT HUB
+      # ============================================
 
-            - name: 📦 Install Python dependencies
-              run: |
-                  python -m pip install --upgrade pip
-                  pip install -r scripts/requirements.txt
-                  pip install -r src/cofounder_agent/requirements.txt
+      - name: 🚀 Deploy Oversight Hub to Vercel (Production)
+        run: |
+          echo "📤 Deploying Oversight Hub to production environment..."
+          cd web/oversight-hub
+          npx vercel --prod --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_ORG_ID }}
+          cd ../..
+          echo "✅ Oversight Hub production deployment completed"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ secrets.OVERSIGHT_PROD_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          REACT_APP_STRAPI_URL: ${{ secrets.OVERSIGHT_PROD_STRAPI_URL }}
+          REACT_APP_AGENT_URL: ${{ secrets.OVERSIGHT_PROD_COFOUNDER_URL }}
+          REACT_APP_AUTH_SECRET: ${{ secrets.OVERSIGHT_PROD_AUTH_SECRET }}
+          SENTRY_DSN: ${{ secrets.OVERSIGHT_PROD_SENTRY_DSN }}
 
-            # ============================================
-            # TEST PHASE
-            # ============================================
+      # ============================================
+      # POST-DEPLOYMENT VERIFICATION
+      # ============================================
 
-            - name: 🧪 Run tests
-              run: npm run test:frontend:ci
+      - name: 🧪 Smoke Tests
+        run: |
+          echo "🔍 Running smoke tests against production..."
 
-            - name: 🏗️ Build all workspaces
-              run: npm run build --if-present
+          echo "Waiting for services to stabilize (20 seconds)..."
+          sleep 20
 
-            - name: 🔍 Run security checks
-              run: npm audit --audit-level=moderate
-              continue-on-error: true
+          echo "Testing Strapi CMS health..."
+          curl -f https://cms.railway.app/admin || exit 1
 
-            # ============================================
-            # DEPLOYMENT PHASE - STRAPI CMS
-            # ============================================
+          echo "Testing Co-Founder Agent health..."
+          curl -f https://api.railway.app/api/health || exit 1
 
-            - name: 🚀 Deploy Strapi CMS to Railway (Production)
-              run: |
-                  echo "🚨 DEPLOYING STRAPI CMS TO PRODUCTION"
-                  cd cms/strapi-v5-backend
-                  npx railway up
-                  cd ../..
-                  echo "✅ Strapi production deployment completed"
-              env:
-                  RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-                  RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROD_PROJECT_ID }}
-                  RAILWAY_SERVICE_ID: strapi-cms-prod
-                  DATABASE_HOST: ${{ secrets.STRAPI_PROD_DB_HOST }}
-                  DATABASE_PORT: "5432"
-                  DATABASE_NAME: glad_labs_production
-                  DATABASE_USER: ${{ secrets.STRAPI_PROD_DB_USER }}
-                  DATABASE_PASSWORD: ${{ secrets.STRAPI_PROD_DB_PASSWORD }}
-                  DATABASE_SSL: "true"
-                  STRAPI_ADMIN_PASSWORD: ${{ secrets.STRAPI_PROD_ADMIN_PASSWORD }}
-                  STRAPI_ADMIN_EMAIL: admin@glad-labs.com
-                  STRAPI_JWT_SECRET: ${{ secrets.STRAPI_PROD_JWT_SECRET }}
-                  STRAPI_API_TOKEN: ${{ secrets.STRAPI_PROD_API_TOKEN }}
-                  NODE_ENV: production
+          echo "Testing Public Site health..."
+          curl -f https://glad-labs.com || exit 1
 
-            # ============================================
-            # DEPLOYMENT PHASE - CO-FOUNDER AGENT
-            # ============================================
+          echo "Testing Oversight Hub health..."
+          curl -f https://oversight.glad-labs.com || exit 1
 
-            - name: 🚀 Deploy Co-Founder Agent to Railway (Production)
-              run: |
-                  echo "📤 Deploying Co-Founder Agent to production environment..."
-                  cd src/cofounder_agent
-                  npx railway up
-                  cd ../..
-                  echo "✅ Co-Founder Agent production deployment completed"
-              env:
-                  RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-                  RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROD_PROJECT_ID }}
-                  RAILWAY_SERVICE_ID: cofounder-agent-prod
-                  OPENAI_API_KEY: ${{ secrets.COFOUNDER_PROD_OPENAI_API_KEY }}
-                  ANTHROPIC_API_KEY: ${{ secrets.COFOUNDER_PROD_ANTHROPIC_API_KEY }}
-                  REDIS_HOST: ${{ secrets.COFOUNDER_PROD_REDIS_HOST }}
-                  REDIS_PORT: "6379"
-                  REDIS_PASSWORD: ${{ secrets.COFOUNDER_PROD_REDIS_PASSWORD }}
-                  MCP_SERVER_TOKEN: ${{ secrets.COFOUNDER_PROD_MCP_SERVER_TOKEN }}
-                  SENTRY_DSN: ${{ secrets.COFOUNDER_PROD_SENTRY_DSN }}
-                  ENVIRONMENT: production
+          echo "✅ Smoke tests passed"
 
-            # ============================================
-            # DEPLOYMENT PHASE - PUBLIC SITE
-            # ============================================
+      - name: 📊 Health Checks
+        run: |
+          echo "🔍 Performing production health checks..."
 
-            - name: 🚀 Deploy Public Site to Vercel (Production)
-              run: |
-                  echo "📤 Deploying Public Site to production environment..."
-                  cd web/public-site
-                  npx vercel --prod --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_ORG_ID }}
-                  cd ../..
-                  echo "✅ Public Site production deployment completed"
-              env:
-                  VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-                  VERCEL_PROJECT_ID: ${{ secrets.PUBLIC_SITE_PROD_PROJECT_ID }}
-                  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-                  NEXT_PUBLIC_STRAPI_URL: ${{ secrets.PUBLIC_SITE_PROD_STRAPI_URL }}
-                  NEXT_PUBLIC_COFOUNDER_URL: ${{ secrets.PUBLIC_SITE_PROD_COFOUNDER_URL }}
-                  NEXT_PUBLIC_GA_ID: ${{ secrets.PUBLIC_SITE_PROD_GA_ID }}
-                  SENTRY_DSN: ${{ secrets.PUBLIC_SITE_PROD_SENTRY_DSN }}
+          echo "Checking Strapi database connection..."
+          curl -f -H "Authorization: Bearer ${{ secrets.STRAPI_PROD_API_TOKEN }}" \
+            https://cms.railway.app/api/posts?pagination[limit]=1 || echo "⚠️ Database check pending"
 
-            # ============================================
-            # DEPLOYMENT PHASE - OVERSIGHT HUB
-            # ============================================
+          echo "Checking Co-Founder Agent connectivity..."
+          curl -f https://api.railway.app/api/health/detailed || echo "⚠️ Agent check pending"
 
-            - name: 🚀 Deploy Oversight Hub to Vercel (Production)
-              run: |
-                  echo "📤 Deploying Oversight Hub to production environment..."
-                  cd web/oversight-hub
-                  npx vercel --prod --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_ORG_ID }}
-                  cd ../..
-                  echo "✅ Oversight Hub production deployment completed"
-              env:
-                  VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-                  VERCEL_PROJECT_ID: ${{ secrets.OVERSIGHT_PROD_PROJECT_ID }}
-                  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-                  REACT_APP_STRAPI_URL: ${{ secrets.OVERSIGHT_PROD_STRAPI_URL }}
-                  REACT_APP_AGENT_URL: ${{ secrets.OVERSIGHT_PROD_COFOUNDER_URL }}
-                  REACT_APP_AUTH_SECRET: ${{ secrets.OVERSIGHT_PROD_AUTH_SECRET }}
-                  SENTRY_DSN: ${{ secrets.OVERSIGHT_PROD_SENTRY_DSN }}
+          echo "Checking SSL/TLS certificates..."
+          openssl s_client -connect glad-labs.com:443 -servername glad-labs.com < /dev/null | grep -o "Verify return code"
 
-            # ============================================
-            # POST-DEPLOYMENT VERIFICATION
-            # ============================================
+          echo "✅ All systems operational"
 
-            - name: 🧪 Smoke Tests
-              run: |
-                  echo "🔍 Running smoke tests against production..."
+      - name: ✅ Verify Production Deployment
+        run: |
+          echo "🔍 Verifying production deployment..."
+          echo "✅ All components deployed successfully to production!"
+          echo "🌍 Production URLs:"
+          echo "  - Strapi CMS: https://cms.railway.app/admin"
+          echo "  - Co-Founder Agent API: https://api.railway.app/docs"
+          echo "  - Public Site: https://glad-labs.com"
+          echo "  - Oversight Hub: https://oversight.glad-labs.com"
+          echo "🎉 Production environment is live and healthy"
 
-                  echo "Waiting for services to stabilize (20 seconds)..."
-                  sleep 20
+      # ============================================
+      # NOTIFICATIONS
+      # ============================================
 
-                  echo "Testing Strapi CMS health..."
-                  curl -f https://cms.railway.app/admin || exit 1
+      - name: 📢 Success Notification
+        if: success()
+        run: |
+          echo "✅ Production deployment completed successfully"
+          echo "🎉 All systems are operational"
+          echo ""
+          echo "📋 Deployment Summary:"
+          echo "  ✅ Strapi CMS deployed"
+          echo "  ✅ Co-Founder Agent deployed"
+          echo "  ✅ Public Site deployed"
+          echo "  ✅ Oversight Hub deployed"
+          echo ""
+          echo "🔗 Production Links:"
+          echo "  https://glad-labs.com"
+          echo "  https://oversight.glad-labs.com"
+          echo "  https://cms.railway.app/admin"
+          echo "  https://api.railway.app/docs"
 
-                  echo "Testing Co-Founder Agent health..."
-                  curl -f https://api.railway.app/api/health || exit 1
-
-                  echo "Testing Public Site health..."
-                  curl -f https://glad-labs.com || exit 1
-
-                  echo "Testing Oversight Hub health..."
-                  curl -f https://oversight.glad-labs.com || exit 1
-
-                  echo "✅ Smoke tests passed"
-
-            - name: 📊 Health Checks
-              run: |
-                  echo "🔍 Performing production health checks..."
-
-                  echo "Checking Strapi database connection..."
-                  curl -f -H "Authorization: Bearer ${{ secrets.STRAPI_PROD_API_TOKEN }}" \
-                    https://cms.railway.app/api/posts?pagination[limit]=1 || echo "⚠️ Database check pending"
-
-                  echo "Checking Co-Founder Agent connectivity..."
-                  curl -f https://api.railway.app/api/health/detailed || echo "⚠️ Agent check pending"
-
-                  echo "Checking SSL/TLS certificates..."
-                  openssl s_client -connect glad-labs.com:443 -servername glad-labs.com < /dev/null | grep -o "Verify return code"
-
-                  echo "✅ All systems operational"
-
-            - name: ✅ Verify Production Deployment
-              run: |
-                  echo "🔍 Verifying production deployment..."
-                  echo "✅ All components deployed successfully to production!"
-                  echo "🌍 Production URLs:"
-                  echo "  - Strapi CMS: https://cms.railway.app/admin"
-                  echo "  - Co-Founder Agent API: https://api.railway.app/docs"
-                  echo "  - Public Site: https://glad-labs.com"
-                  echo "  - Oversight Hub: https://oversight.glad-labs.com"
-                  echo "🎉 Production environment is live and healthy"
-
-            # ============================================
-            # NOTIFICATIONS
-            # ============================================
-
-            - name: 📢 Success Notification
-              if: success()
-              run: |
-                  echo "✅ Production deployment completed successfully"
-                  echo "🎉 All systems are operational"
-                  echo ""
-                  echo "📋 Deployment Summary:"
-                  echo "  ✅ Strapi CMS deployed"
-                  echo "  ✅ Co-Founder Agent deployed"
-                  echo "  ✅ Public Site deployed"
-                  echo "  ✅ Oversight Hub deployed"
-                  echo ""
-                  echo "🔗 Production Links:"
-                  echo "  https://glad-labs.com"
-                  echo "  https://oversight.glad-labs.com"
-                  echo "  https://cms.railway.app/admin"
-                  echo "  https://api.railway.app/docs"
-
-            - name: 📢 Failure Notification
-              if: failure()
-              run: |
-                  echo "❌ Production deployment failed"
-                  echo "🚨 IMMEDIATE ACTION REQUIRED"
-                  echo ""
-                  echo "📋 Troubleshooting Steps:"
-                  echo "  1. Check GitHub Actions logs for error details"
-                  echo "  2. Verify all secrets are correctly configured"
-                  echo "  3. Check Railway and Vercel dashboards for deployment status"
-                  echo "  4. Review recent code changes for breaking issues"
-                  echo "  5. Consider rolling back to previous stable version"
-                  echo ""
-                  echo "🔗 Debug Resources:"
-                  echo "  - GitHub Actions: https://github.com/mattg-stack/glad-labs-website/actions"
-                  echo "  - Railway Dashboard: https://railway.app"
-                  echo "  - Vercel Dashboard: https://vercel.com"
-                  exit 1
+      - name: 📢 Failure Notification
+        if: failure()
+        run: |
+          echo "❌ Production deployment failed"
+          echo "🚨 IMMEDIATE ACTION REQUIRED"
+          echo ""
+          echo "📋 Troubleshooting Steps:"
+          echo "  1. Check GitHub Actions logs for error details"
+          echo "  2. Verify all secrets are correctly configured"
+          echo "  3. Check Railway and Vercel dashboards for deployment status"
+          echo "  4. Review recent code changes for breaking issues"
+          echo "  5. Consider rolling back to previous stable version"
+          echo ""
+          echo "🔗 Debug Resources:"
+          echo "  - GitHub Actions: https://github.com/mattg-stack/glad-labs-website/actions"
+          echo "  - Railway Dashboard: https://railway.app"
+          echo "  - Vercel Dashboard: https://vercel.com"
+          exit 1
