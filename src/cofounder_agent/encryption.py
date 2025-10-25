@@ -15,10 +15,9 @@ import base64
 import logging
 from typing import Tuple, Optional
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2
-from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives import hashes, constant_time
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives.constant_time import constant_time_compare
 
 logger = logging.getLogger(__name__)
 
@@ -240,7 +239,7 @@ class EncryptionService:
             salt = os.urandom(self.SALT_SIZE)
         
         # Derive key using PBKDF2
-        kdf = PBKDF2(
+        kdf = PBKDF2HMAC(
             algorithm=self.PBKDF2_HASH_ALGORITHM,
             length=self.KEY_SIZE,
             salt=salt,
@@ -280,7 +279,7 @@ class EncryptionService:
             computed_hash_bytes = base64.b64decode(computed_hash)
             
             # Constant-time comparison
-            return constant_time_compare(stored_hash, computed_hash_bytes)
+            return constant_time.bytes_eq(stored_hash, computed_hash_bytes)
         
         except Exception as e:
             logger.error(f"Password verification failed: {e}")
@@ -320,7 +319,7 @@ class EncryptionService:
         
         salt = base64.b64decode(master_salt)
         
-        kdf = PBKDF2(
+        kdf = PBKDF2HMAC(
             algorithm=self.PBKDF2_HASH_ALGORITHM,
             length=self.KEY_SIZE,
             salt=salt + context.encode('utf-8'),

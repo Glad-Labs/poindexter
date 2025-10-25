@@ -10,10 +10,10 @@ from uuid import UUID
 from typing import Optional, List, Dict, Any
 from sqlalchemy import (
     Column, String, Boolean, Integer, DateTime, ForeignKey, Text, 
-    JSON, ARRAY, INET, Index, UniqueConstraint, CheckConstraint,
+    JSON, Index, UniqueConstraint, CheckConstraint,
     func, event, create_engine
 )
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB, INET, ARRAY
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, validates
 import uuid as uuid_lib

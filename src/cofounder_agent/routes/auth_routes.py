@@ -149,7 +149,7 @@ class SetupTwoFAResponse(BaseModel):
 class VerifyTwoFASetupRequest(BaseModel):
     """Verify 2FA setup request schema"""
     secret: str = Field(..., description="TOTP secret from setup response")
-    totp_code: str = Field(..., regex="^[0-9]{6}$", description="6-digit TOTP code")
+    totp_code: str = Field(..., pattern="^[0-9]{6}$", description="6-digit TOTP code")
     backup_codes: list = Field(..., description="Backup codes from setup response")
 
 
@@ -161,7 +161,7 @@ class VerifyTwoFASetupResponse(BaseModel):
 
 class VerifyTwoFARequest(BaseModel):
     """Verify 2FA code request schema"""
-    totp_code: Optional[str] = Field(None, regex="^[0-9]{6}$", description="6-digit TOTP code")
+    totp_code: Optional[str] = Field(None, pattern="^[0-9]{6}$", description="6-digit TOTP code")
     backup_code: Optional[str] = Field(None, description="Backup code (if TOTP unavailable)")
 
 
