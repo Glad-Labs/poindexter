@@ -214,6 +214,7 @@ npm run setup:python     # Just pip install for backend
 ### DON'T:
 
 - ❌ Import from sibling workspaces directly (use published APIs/REST)
+- ❌ Create ANY documentation in the root folder EXCEPT for a single README.md and LICENSE.md
 - ❌ Hardcode API endpoints (use environment variables from `.env`)
 - ❌ Prop-drill state in React (use Zustand or URL params)
 - ❌ Mix async/sync in Python orchestrator (everything must be async)

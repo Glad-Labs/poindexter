@@ -1,119 +1,88 @@
 # 📚 GLAD Labs Documentation Hub
 
-**Last Updated:** October 24, 2025  
-**Status:** ✅ Production Ready | High-Level Documentation Only (v2.0 - Consolidated)
+**Last Updated:** October 25, 2025  
+**Status:** ✅ Production Ready  
+**Documentation Policy:** 🎯 HIGH-LEVEL ONLY (Architecture-Focused, Maintenance-Friendly)
 
-> **📋 Policy Update:** Documentation has been consolidated to HIGH-LEVEL ONLY. All implementation guides, status updates, and session-specific files have been removed or archived. This keeps docs maintainable, scalable, and architecture-focused.
-
----
-
-## 🎯 Quick Navigation - 8 Core Documentation Files
-
-### 📖 Getting Started
-
-- **New to GLAD Labs?** Start here → [Setup & Overview](./01-SETUP_AND_OVERVIEW.md)
-- **Want architecture overview?** See [System Architecture](./02-ARCHITECTURE_AND_DESIGN.md)
-- **Ready to deploy?** Go to [Deployment Guide](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md)
-
-### 🏗️ Core Documentation (Numbered Series)
-
-| #                                           | Topic                       | Purpose                                      |
-| ------------------------------------------- | --------------------------- | -------------------------------------------- |
-| [00](./00-README.md)                        | Documentation Hub           | You are here - main navigation               |
-| [01](./01-SETUP_AND_OVERVIEW.md)            | Setup & Overview            | Getting started, dependencies, initial setup |
-| [02](./02-ARCHITECTURE_AND_DESIGN.md)       | Architecture & Design       | System design, component relationships       |
-| [03](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) | Deployment & Infrastructure | Cloud deployment, environments, scaling      |
-| [04](./04-DEVELOPMENT_WORKFLOW.md)          | Development Workflow        | Git, testing, CI/CD, release process         |
-| [05](./05-AI_AGENTS_AND_INTEGRATION.md)     | AI Agents & Integration     | Agent orchestration, MCP, AI systems         |
-| [06](./06-OPERATIONS_AND_MAINTENANCE.md)    | Operations & Maintenance    | Production ops, monitoring, troubleshooting  |
-| [07](./07-BRANCH_SPECIFIC_VARIABLES.md)     | Branch Variables            | Environment-specific configuration           |
+> **Policy:** This hub contains only high-level, architecture-stable documentation. Implementation details belong in code. Feature how-tos belong in code comments. Status updates are not maintained. This keeps documentation focused on what matters: system design, deployment, operations, and AI agent orchestration.
 
 ---
 
-## 📚 By Role
+## 🎯 Core Documentation - 8 Essential Files
 
-### 👨‍💻 Developers
+## 🎯 Core Documentation - 8 Essential Files
 
-1. **Setup:** [01-SETUP_AND_OVERVIEW.md](./01-SETUP_AND_OVERVIEW.md)
-2. **Architecture:** [02-ARCHITECTURE_AND_DESIGN.md](./02-ARCHITECTURE_AND_DESIGN.md)
-3. **Workflow:** [04-DEVELOPMENT_WORKFLOW.md](./04-DEVELOPMENT_WORKFLOW.md)
-4. **Component Docs:** [components/](./components/)
-5. **API References:** [reference/](./reference/)
+Start with any doc that matches your role, then use cross-links to explore. Each doc is self-contained and high-level.
 
-### 🚀 DevOps / Infrastructure
+### 📖 Getting Started (Pick Your Entry Point)
 
-1. **Deployment:** [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md)
-2. **Operations:** [06-OPERATIONS_AND_MAINTENANCE.md](./06-OPERATIONS_AND_MAINTENANCE.md)
-3. **Environment Config:** [07-BRANCH_SPECIFIC_VARIABLES.md](./07-BRANCH_SPECIFIC_VARIABLES.md)
-4. **Technical References:** [reference/](./reference/)
-5. **Troubleshooting:** [Component Troubleshooting Guides](#troubleshooting)
+| Need                         | Start Here                                                                |
+| ---------------------------- | ------------------------------------------------------------------------- |
+| 🚀 **New Developer**         | [01 - Setup & Overview](./01-SETUP_AND_OVERVIEW.md)                       |
+| 🏗️ **Understand System**     | [02 - Architecture & Design](./02-ARCHITECTURE_AND_DESIGN.md)             |
+| 🌐 **Deploy to Cloud**       | [03 - Deployment & Infrastructure](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) |
+| 🔄 **Development Process**   | [04 - Development Workflow](./04-DEVELOPMENT_WORKFLOW.md)                 |
+| 🧠 **AI Agents**             | [05 - AI Agents & Integration](./05-AI_AGENTS_AND_INTEGRATION.md)         |
+| 📊 **Production Operations** | [06 - Operations & Maintenance](./06-OPERATIONS_AND_MAINTENANCE.md)       |
+| ⚙️ **Environment Config**    | [07 - Branch-Specific Variables](./07-BRANCH_SPECIFIC_VARIABLES.md)       |
 
-### 📊 Project Managers
+### 📋 All 8 Core Docs at a Glance
 
-- **System Overview:** [02-ARCHITECTURE_AND_DESIGN.md](./02-ARCHITECTURE_AND_DESIGN.md)
-- **Deployment Status:** [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md)
-- **Standards:** [reference/GLAD-LABS-STANDARDS.md](./reference/GLAD-LABS-STANDARDS.md)
-
----
-
-## 🗂️ Documentation Structure
-
-### Core Docs (Read in Order)
-
-1. **[01-SETUP_AND_OVERVIEW.md](./01-SETUP_AND_OVERVIEW.md)** - Prerequisites and local setup
-2. **[02-ARCHITECTURE_AND_DESIGN.md](./02-ARCHITECTURE_AND_DESIGN.md)** - System architecture and design
-3. **[03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md)** - Production deployment
-4. **[04-DEVELOPMENT_WORKFLOW.md](./04-DEVELOPMENT_WORKFLOW.md)** - Development process and git workflow
-5. **[05-AI_AGENTS_AND_INTEGRATION.md](./05-AI_AGENTS_AND_INTEGRATION.md)** - AI agent orchestration
-6. **[06-OPERATIONS_AND_MAINTENANCE.md](./06-OPERATIONS_AND_MAINTENANCE.md)** - Production operations
-7. **[07-BRANCH_SPECIFIC_VARIABLES.md](./07-BRANCH_SPECIFIC_VARIABLES.md)** - Environment configuration
-
-### Additional Resources
-
-- **[components/](./components/)** - Component-specific documentation (4 READMEs)
-- **[reference/](./reference/)** - Technical references, API specs, schemas
-  - **[GITHUB_SECRETS_SETUP.md](./reference/GITHUB_SECRETS_SETUP.md)** ⭐ Authoritative secrets configuration guide
-  - **[DEPLOYMENT_DOCS_VERIFICATION_REPORT.md](./reference/DEPLOYMENT_DOCS_VERIFICATION_REPORT.md)** - Verification findings
-  - **[TESTING.md](./reference/TESTING.md)** - Comprehensive testing guide (93+ tests)
-  - Other technical references and API specs
-- **[archive/](./archive/)** - Historical documentation and cleanup analysis
+| #      | Document                                                             | Purpose                                                       | For Whom               |
+| ------ | -------------------------------------------------------------------- | ------------------------------------------------------------- | ---------------------- |
+| **00** | [Documentation Hub](./00-README.md)                                  | Navigation (you are here)                                     | Everyone               |
+| **01** | [Setup & Overview](./01-SETUP_AND_OVERVIEW.md)                       | Prerequisites, local development, quick start                 | Developers, DevOps     |
+| **02** | [Architecture & Design](./02-ARCHITECTURE_AND_DESIGN.md)             | System design, component relationships, AI agents, tech stack | Architects, Tech Leads |
+| **03** | [Deployment & Infrastructure](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) | Cloud deployment, environments, scaling, CI/CD                | DevOps, Infrastructure |
+| **04** | [Development Workflow](./04-DEVELOPMENT_WORKFLOW.md)                 | Git strategy, testing, PR process, release procedure          | All Developers         |
+| **05** | [AI Agents & Integration](./05-AI_AGENTS_AND_INTEGRATION.md)         | Agent architecture, MCP integration, orchestration            | AI/Agent Developers    |
+| **06** | [Operations & Maintenance](./06-OPERATIONS_AND_MAINTENANCE.md)       | Production monitoring, backups, troubleshooting               | DevOps, SREs           |
+| **07** | [Branch Variables & Config](./07-BRANCH_SPECIFIC_VARIABLES.md)       | Environment-specific settings, secrets management             | DevOps, Platform Eng   |
 
 ---
 
-## 🎓 Learning Paths
+## 📚 Additional Resources
 
-### 👨‍💻 For Developers (Getting Started)
+### Components & Troubleshooting
 
-1. **Setup:** [01-SETUP_AND_OVERVIEW.md](./01-SETUP_AND_OVERVIEW.md)
-2. **Learn Architecture:** [02-ARCHITECTURE_AND_DESIGN.md](./02-ARCHITECTURE_AND_DESIGN.md)
-3. **Development Workflow:** [04-DEVELOPMENT_WORKFLOW.md](./04-DEVELOPMENT_WORKFLOW.md)
-4. **🧪 Testing Guide:** [reference/TESTING.md](./reference/TESTING.md) - Comprehensive testing documentation
-5. **Component Details:** [components/](./components/)
+- **[Component Docs](./components/)** - Architecture of individual services (Strapi, Co-founder Agent, Oversight Hub, Public Site)
+- **[Troubleshooting Guides](./components/)** - Common issues and solutions for each component
+
+### Technical References
+
+- **[API Contracts](./reference/API_CONTRACT_CONTENT_CREATION.md)** - Content creation API specification
+- **[Database Schemas](./reference/data_schemas.md)** - Data model definitions
+- **[GLAD Labs Standards](./reference/GLAD-LABS-STANDARDS.md)** - Code quality and naming conventions
+- **[GitHub Secrets Setup](./reference/GITHUB_SECRETS_SETUP.md)** - Production secrets configuration
+- **[Testing Guide](./reference/TESTING.md)** - Comprehensive testing strategies (93+ tests)
+- **[CI/CD Reference](./reference/ci-cd/)** - GitHub Actions workflows and branch strategy
+
+---
+
+## 🎓 Learning Paths by Role
+
+### 👨‍💻 For Developers (First Week)
+
+1. **Get Started:** [01-SETUP_AND_OVERVIEW.md](./01-SETUP_AND_OVERVIEW.md) - Local setup in 15 minutes
+2. **Learn System:** [02-ARCHITECTURE_AND_DESIGN.md](./02-ARCHITECTURE_AND_DESIGN.md) - Understand how components fit together
+3. **Development:** [04-DEVELOPMENT_WORKFLOW.md](./04-DEVELOPMENT_WORKFLOW.md) - Git workflow, testing, CI/CD
+4. **Your Component:** [components/](./components/) - Deep dive into your specific service
+5. **Testing:** [reference/TESTING.md](./reference/TESTING.md) - Writing tests (93+ existing tests to learn from)
 
 ### 🚀 For DevOps/Infrastructure
 
-1. **Deployment:** [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md)
-2. **Operations:** [06-OPERATIONS_AND_MAINTENANCE.md](./06-OPERATIONS_AND_MAINTENANCE.md)
-3. **Environment Config:** [07-BRANCH_SPECIFIC_VARIABLES.md](./07-BRANCH_SPECIFIC_VARIABLES.md)
-4. **Technical Refs:** [reference/](./reference/)
+1. **Architecture First:** [02-ARCHITECTURE_AND_DESIGN.md](./02-ARCHITECTURE_AND_DESIGN.md) - Know the system
+2. **Deployment:** [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) - Cloud setup (Railway + Vercel)
+3. **Environment Config:** [07-BRANCH_SPECIFIC_VARIABLES.md](./07-BRANCH_SPECIFIC_VARIABLES.md) - Secrets and variables
+4. **Operations:** [06-OPERATIONS_AND_MAINTENANCE.md](./06-OPERATIONS_AND_MAINTENANCE.md) - Monitoring, backups, scaling
+5. **CI/CD:** [reference/ci-cd/](./reference/ci-cd/) - GitHub Actions deep dive
 
----
+### 🧠 For AI/Agent Developers
 
-## 📞 Quick Help
-
-| I need...            | Go to...                                                                     |
-| -------------------- | ---------------------------------------------------------------------------- |
-| Setup instructions   | [01-SETUP_AND_OVERVIEW.md](./01-SETUP_AND_OVERVIEW.md)                       |
-| System architecture  | [02-ARCHITECTURE_AND_DESIGN.md](./02-ARCHITECTURE_AND_DESIGN.md)             |
-| Deployment steps     | [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) |
-| Git/development info | [04-DEVELOPMENT_WORKFLOW.md](./04-DEVELOPMENT_WORKFLOW.md)                   |
-| 🧪 Testing info      | [reference/TESTING.md](./reference/TESTING.md)                               |
-| AI agent details     | [05-AI_AGENTS_AND_INTEGRATION.md](./05-AI_AGENTS_AND_INTEGRATION.md)         |
-| Operations info      | [06-OPERATIONS_AND_MAINTENANCE.md](./06-OPERATIONS_AND_MAINTENANCE.md)       |
-| Environment config   | [07-BRANCH_SPECIFIC_VARIABLES.md](./07-BRANCH_SPECIFIC_VARIABLES.md)         |
-| Technical reference  | [reference/](./reference/)                                                   |
-| Component docs       | [components/](./components/)                                                 |
-| Historical docs      | [archive/](./archive/)                                                       |
+1. **Setup:** [01-SETUP_AND_OVERVIEW.md](./01-SETUP_AND_OVERVIEW.md) - Get system running locally
+2. **Agent Architecture:** [05-AI_AGENTS_AND_INTEGRATION.md](./05-AI_AGENTS_AND_INTEGRATION.md) - Agent design, MCP, orchestration
+3. **System Design:** [02-ARCHITECTURE_AND_DESIGN.md](./02-ARCHITECTURE_AND_DESIGN.md) - Integration points
+4. **Agent Code:** [components/cofounder-agent/](./components/cofounder-agent/) - Agent implementation details
 
 ---
 
