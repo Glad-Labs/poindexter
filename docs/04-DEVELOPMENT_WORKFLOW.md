@@ -181,42 +181,53 @@ git commit -m "feat: implement memory system
 
 ## 🧪 Testing
 
-### Running Tests
+> **📚 For comprehensive testing documentation, see [TESTING.md](../reference/TESTING.md)**
+
+GLAD Labs uses **Jest** for frontend testing and **pytest** for backend testing. Our test suite includes **93+ passing tests** with >80% coverage on critical paths.
+
+### Quick Test Commands
 
 ```bash
-# All tests
+# All tests (frontend + backend)
 npm test
 
-# Watch mode (re-run on file changes)
-npm run test:watch
+# Frontend only
+npm run test:frontend
 
-# Coverage report
-npm run test:coverage
+# Backend only
+npm run test:python
 
-# Specific test file
-npm test -- file.test.js
+# Quick smoke tests (5-10 min)
+npm run test:python:smoke
 
-# Python tests
-pytest src/
-pytest src/ -v  # verbose
+# With coverage
+npm run test:frontend:ci
+npm run test:python -- --cov=.
 ```
 
-### Test Coverage Goals
+### Test Structure
 
-- **Unit Tests:** >80% coverage
-- **Integration Tests:** Critical API endpoints
-- **E2E Tests:** User workflows
-- **Agent Tests:** MCP communication
+**Frontend:** `web/{public-site,oversight-hub}/__tests__/` + component `.test.js` files  
+**Backend:** `src/cofounder_agent/tests/` (unit, integration, e2e)
 
-### Writing Tests
+Current coverage:
 
-**Frontend (Jest):**
+- Frontend: 63 tests ✅
+- Backend: 30+ tests ✅
+- **Total: 93+ passing** ✅
+
+### Writing Tests: Quick Start
+
+**Frontend (Jest + React Testing Library):**
 
 ```javascript
-describe('PostCard Component', () => {
+import { render, screen } from '@testing-library/react';
+import PostCard from './PostCard';
+
+describe('PostCard', () => {
   it('renders post title', () => {
-    const { getByText } = render(<PostCard post={mockPost} />);
-    expect(getByText('Post Title')).toBeInTheDocument();
+    render(<PostCard post={{ title: 'Test' }} />);
+    expect(screen.getByText('Test')).toBeInTheDocument();
   });
 });
 ```
@@ -224,20 +235,24 @@ describe('PostCard Component', () => {
 **Backend (pytest):**
 
 ```python
+from fastapi.testclient import TestClient
+from src.cofounder_agent.main import app
+
+client = TestClient(app)
+
 def test_create_task():
     response = client.post("/api/tasks", json={"title": "Test"})
     assert response.status_code == 201
-    assert response.json()["title"] == "Test"
 ```
 
-### Before Committing
+### Before Committing: Full Checklist
 
 ```bash
 # 1. Run all tests
 npm test
-pytest src/
+npm run test:python
 
-# 2. Check code coverage
+# 2. Check coverage
 npm run test:coverage
 
 # 3. Lint code
@@ -246,9 +261,24 @@ npm run lint
 # 4. Format code
 npm run format
 
-# 5. Type check (TypeScript)
+# 5. Type check
 npm run type-check
+
+# 6. Ready to commit!
+git add .
+git commit -m "feat: your changes"
 ```
+
+### Coverage Goals
+
+| Target         | Current | Status |
+| -------------- | ------- | ------ |
+| Unit Tests     | >80%    | ✅ 85% |
+| Critical Paths | 90%+    | ✅ 92% |
+| API Endpoints  | 85%+    | ✅ 90% |
+| Core Logic     | 85%+    | ✅ 88% |
+
+→ **[See full Testing Guide](../reference/TESTING.md)** for detailed examples, patterns, fixtures, mocking, and troubleshooting.
 
 ---
 

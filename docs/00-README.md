@@ -83,7 +83,8 @@
 1. **Setup:** [01-SETUP_AND_OVERVIEW.md](./01-SETUP_AND_OVERVIEW.md)
 2. **Learn Architecture:** [02-ARCHITECTURE_AND_DESIGN.md](./02-ARCHITECTURE_AND_DESIGN.md)
 3. **Development Workflow:** [04-DEVELOPMENT_WORKFLOW.md](./04-DEVELOPMENT_WORKFLOW.md)
-4. **Component Details:** [components/](./components/)
+4. **🧪 Testing Guide:** [reference/TESTING.md](./reference/TESTING.md) - Comprehensive testing documentation
+5. **Component Details:** [components/](./components/)
 
 ### 🚀 For DevOps/Infrastructure
 
@@ -102,6 +103,7 @@
 | System architecture  | [02-ARCHITECTURE_AND_DESIGN.md](./02-ARCHITECTURE_AND_DESIGN.md)             |
 | Deployment steps     | [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) |
 | Git/development info | [04-DEVELOPMENT_WORKFLOW.md](./04-DEVELOPMENT_WORKFLOW.md)                   |
+| 🧪 Testing info      | [reference/TESTING.md](./reference/TESTING.md)                               |
 | AI agent details     | [05-AI_AGENTS_AND_INTEGRATION.md](./05-AI_AGENTS_AND_INTEGRATION.md)         |
 | Operations info      | [06-OPERATIONS_AND_MAINTENANCE.md](./06-OPERATIONS_AND_MAINTENANCE.md)       |
 | Environment config   | [07-BRANCH_SPECIFIC_VARIABLES.md](./07-BRANCH_SPECIFIC_VARIABLES.md)         |
@@ -116,7 +118,7 @@
 GLAD Labs uses a **HIGH-LEVEL DOCUMENTATION ONLY** approach:
 
 - ✅ **Core docs (00-07):** Architecture-level guidance that stays relevant
-- ✅ **Technical references:** API specs, schemas, standards
+- ✅ **Technical references:** API specs, schemas, standards, **testing**
 - ✅ **Focused troubleshooting:** Common issues with solutions
 - ❌ **No feature guides:** Code demonstrates how to use features
 - ❌ **No status updates:** Unnecessary maintenance burden
