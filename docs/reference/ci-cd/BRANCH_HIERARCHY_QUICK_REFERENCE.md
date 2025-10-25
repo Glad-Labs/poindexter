@@ -112,7 +112,7 @@ git push origin main                       # Cost: ~25 min (deploy + security) â
 
 ## âœ… Checklist
 
-- [ ] Read `BRANCH_HIERARCHY_GUIDE.md` (complete overview)
+- [ ] Read `docs/04-DEVELOPMENT_WORKFLOW.md` (complete overview)
 - [ ] Review `.github/workflows/test-on-dev.yml` (new workflow)
 - [ ] Configure GitHub Secrets for staging (see guide)
 - [ ] Configure GitHub Secrets for production (see guide)
@@ -177,8 +177,8 @@ git push origin main                       # Cost: ~25 min (deploy + security) â
 
 ## ðŸ”— Related Documents
 
-- **BRANCH_HIERARCHY_GUIDE.md** - Complete detailed guide
-- **GITHUB_ACTIONS_TESTING_ANALYSIS.md** - Cost breakdown analysis
+- **BRANCH_HIERARCHY_IMPLEMENTATION_SUMMARY.md** - Complete detailed implementation guide
+- **GITHUB_ACTIONS_REFERENCE.md** - Cost breakdown analysis
 
 ---
 

@@ -65,17 +65,12 @@
     "frontend": {
       "plan": "hobby",
       "scaling": "none",
-      "regions": [
-        "us"
-      ]
+      "regions": ["us"]
     }
   },
   "ollama": {
     "enabled": true,
     "cost": 0,
-    "models": [
-      "mistral",
-      "phi"
-    ]
+    "models": ["mistral", "phi"]
   }
 }

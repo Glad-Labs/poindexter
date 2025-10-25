@@ -18,16 +18,65 @@
 
 ## 🌳 Branch Strategy
 
+### Four-Tier Branch Hierarchy
+
+GLAD Labs uses a strategic four-tier branching model that optimizes cost, testing, and deployment efficiency:
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                      TIER 4: PRODUCTION                     │
+│ main branch → Vercel (frontend) + Railway (backend)         │
+│ Cost: ~$230/month | Testing: Full suite | Live traffic     │
+└─────────────────────────────────────────────────────────────┘
+                           ↑
+                    (PR + Approval)
+                           │
+┌─────────────────────────────────────────────────────────────┐
+│                     TIER 3: STAGING                         │
+│ dev branch → Railway staging environment                    │
+│ Cost: ~$115/month | Testing: Full suite | Pre-production  │
+└─────────────────────────────────────────────────────────────┘
+                           ↑
+                    (Automated - dev push)
+                           │
+┌─────────────────────────────────────────────────────────────┐
+│                 TIER 2: FEATURE TESTING                     │
+│ feature/*, bugfix/*, docs/* → Local environment            │
+│ Cost: $0/month | Testing: Unit + integration | Developer   │
+└─────────────────────────────────────────────────────────────┘
+                           ↑
+                     (Local development)
+                           │
+┌─────────────────────────────────────────────────────────────┐
+│                  TIER 1: LOCAL DEVELOPMENT                  │
+│ Your laptop → npm run dev (all services locally)            │
+│ Cost: $0/month | Testing: Manual + jest/pytest             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key Features:**
+
+- **Cost Optimization:** Features branches cost $0 (no CI/CD), production costs ~$230/month
+- **Automated Deployments:** dev push → staging auto-deploys, main push → production auto-deploys
+- **Zero Friction Features:** Create branches freely without triggering expensive CI/CD
+- **GitHub Actions Efficiency:** Workflows trigger only on strategic branches (dev, main)
+
+**Detailed Reference:**
+
+- See [docs/reference/ci-cd/BRANCH_HIERARCHY_IMPLEMENTATION_SUMMARY.md](../reference/ci-cd/BRANCH_HIERARCHY_IMPLEMENTATION_SUMMARY.md) for implementation details
+- See [docs/reference/ci-cd/BRANCH_HIERARCHY_QUICK_REFERENCE.md](../reference/ci-cd/BRANCH_HIERARCHY_QUICK_REFERENCE.md) for quick lookup
+- See [docs/reference/ci-cd/GITHUB_ACTIONS_REFERENCE.md](../reference/ci-cd/GITHUB_ACTIONS_REFERENCE.md) for workflow analysis
+
 ### Main Branches
 
 ```text
-main             Production releases (stable)
+main (Tier 4)        Production releases (stable, live traffic)
   ↓
-dev              Active development (staging)
+dev (Tier 3)         Active development (staging environment)
   ↓
-feature/*        New features
-bugfix/*         Bug fixes
-docs/*           Documentation updates
+feature/* (Tier 2)   New features (local + PR testing)
+bugfix/* (Tier 2)    Bug fixes (local + PR testing)
+docs/* (Tier 2)      Documentation updates (local only)
 ```
 
 ### Branch Naming

@@ -1,4 +1,3 @@
-
 /**
  * Keep services warm and prevent sleep
  * Deploy as Railway Cron Job every 25 minutes
@@ -12,7 +11,7 @@ const healthChecks = [
 
 async function keepServicesWarm() {
   console.log('[Health Check] Keeping services warm...');
-  
+
   for (const url of healthChecks) {
     try {
       const response = await fetch(url, { timeout: 5000 });

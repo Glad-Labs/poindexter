@@ -40,9 +40,9 @@ main       ↓ (Deploy to production)
 
 ### Documentation Created
 
-- ✅ `BRANCH_HIERARCHY_GUIDE.md` - Complete setup & reference guide
+- ✅ `docs/04-DEVELOPMENT_WORKFLOW.md` - Complete branch hierarchy and development workflow guide
 - ✅ `BRANCH_HIERARCHY_QUICK_REFERENCE.md` - Quick cheat sheet
-- ✅ `GITHUB_ACTIONS_TESTING_ANALYSIS.md` - Cost analysis & breakdown
+- ✅ `GITHUB_ACTIONS_REFERENCE.md` - Cost analysis & breakdown
 
 ---
 
@@ -211,7 +211,7 @@ Even if you commit 10x more frequently:
 
 ### For New Team Members
 
-→ Start with `BRANCH_HIERARCHY_GUIDE.md`
+→ Start with `docs/04-DEVELOPMENT_WORKFLOW.md`
 
 ### For Quick Reference
 
@@ -219,7 +219,7 @@ Even if you commit 10x more frequently:
 
 ### For Cost Analysis
 
-→ Read `GITHUB_ACTIONS_TESTING_ANALYSIS.md`
+→ Read `GITHUB_ACTIONS_REFERENCE.md`
 
 ---
 
@@ -344,6 +344,6 @@ No more waiting for workflows on feature branches. Enjoy rapid iteration with th
 
 **Questions?** Check the documentation files or review the workflow files in `.github/workflows/`
 
-**Questions about costs?** See `GITHUB_ACTIONS_TESTING_ANALYSIS.md` for detailed breakdown.
+**Questions about costs?** See `GITHUB_ACTIONS_REFERENCE.md` for detailed breakdown.
 
-**Need details on implementation?** See `BRANCH_HIERARCHY_GUIDE.md` for comprehensive guide.
+**Need details on implementation?** See `docs/04-DEVELOPMENT_WORKFLOW.md` for comprehensive guide.
