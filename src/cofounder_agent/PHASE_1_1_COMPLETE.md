@@ -1,4 +1,3 @@
-
 # Phase 1.1 Implementation - Database Schema & ORM Models
 
 **Date Started:** October 23, 2025  
@@ -10,6 +9,7 @@
 ## 📋 What Was Delivered
 
 ### 1. SQLAlchemy ORM Models (`models.py`)
+
 Complete object-relational mapping for all 10 database tables:
 
 - **User** - Account management with TOTP 2FA support
@@ -59,9 +59,11 @@ Complete object-relational mapping for all 10 database tables:
   - Tracking: last_used_at, created_at, expires_at, revoked_at
 
 ### 2. Database Connection Module (`database.py`)
+
 Production-ready database initialization and session management:
 
 **Engine Configuration:**
+
 - PostgreSQL with connection pooling (20 pool size, 40 overflow)
 - Connection recycling every 3600 seconds
 - Pre-ping validation for connection health
@@ -69,6 +71,7 @@ Production-ready database initialization and session management:
 - SSL support for production PostgreSQL
 
 **Environment Variables:**
+
 - `DATABASE_URL` - Full connection string (Railway format)
 - `DATABASE_CLIENT` - 'postgres' or 'sqlite' (default: postgres)
 - `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD`
@@ -78,6 +81,7 @@ Production-ready database initialization and session management:
 - `SQL_ECHO` - Enable SQL logging (default: false)
 
 **Session Management:**
+
 - `get_session()` - Get a new session
 - `get_db_context()` - Context manager for transaction safety
 - `get_db()` - FastAPI dependency injection
@@ -85,6 +89,7 @@ Production-ready database initialization and session management:
 - Clean resource cleanup
 
 **Database Initialization:**
+
 - `init_db()` - Create all tables and seed initial data
 - `seed_initial_data()` - Create 4 system roles and 13 permissions
   - ADMIN: Full access to all resources
@@ -93,13 +98,16 @@ Production-ready database initialization and session management:
   - VIEWER: read-only on settings and audit logs
 
 **Health Checking:**
+
 - `healthcheck_db()` - Verify database connectivity
 - Connection validation before use
 
 ### 3. Encryption Service (`encryption.py`)
+
 Military-grade encryption for sensitive data:
 
 **Encryption Algorithm:**
+
 - AES-256-GCM (Galois/Counter Mode)
 - 256-bit keys (32 bytes)
 - 96-bit nonce/IV (12 bytes, recommended for GCM)
@@ -107,6 +115,7 @@ Military-grade encryption for sensitive data:
 - Authenticated encryption ensures data integrity
 
 **Methods:**
+
 - `encrypt(plaintext)` - Encrypt string value
   - Returns: Base64-encoded `nonce || ciphertext || tag`
   - Deterministic for same input if same key/nonce used
@@ -116,6 +125,7 @@ Military-grade encryption for sensitive data:
   - Raises ValueError if authentication fails (tampering detected)
 
 **Password Hashing:**
+
 - PBKDF2-SHA256 with OWASP 2023 recommendations
 - 480,000 iterations (OWASP minimum)
 - Unique salt per password (16 bytes random)
@@ -123,20 +133,24 @@ Military-grade encryption for sensitive data:
 - `verify_password(password, hash, salt)` - Constant-time comparison
 
 **Additional Features:**
+
 - `generate_api_key()` - Cryptographically secure random keys
 - `derive_key(salt, context)` - Key derivation for multiple purposes
 - `is_encrypted(value)` - Heuristic check for encrypted values
 - Singleton instance: `get_encryption_service()`
 
 **Configuration:**
+
 - Master key from `DATABASE_ENCRYPTION_KEY` environment variable
 - Base64-encoded 32-byte key
 - Generation: `base64(os.urandom(32))`
 
 ### 4. Alembic Migration (`migrations/versions/001_initial_schema.py`)
+
 Complete database schema creation with full DDL:
 
 **Tables Created:**
+
 1. `users` - 19 columns, indexes on username/email/is_active
 2. `roles` - 4 columns, system role flag for protection
 3. `permissions` - 4 columns, unique resource-action pairs
@@ -149,6 +163,7 @@ Complete database schema creation with full DDL:
 10. `api_keys` - 12 columns, hashed key storage
 
 **Constraints Applied:**
+
 - 20+ unique constraints (preventing duplicates)
 - 15+ check constraints (data validation)
 - 30+ foreign key constraints (referential integrity)
@@ -156,12 +171,14 @@ Complete database schema creation with full DDL:
 - RESTRICT delete for immutable records
 
 **Indexes Created:**
+
 - 30+ indexes for query performance
 - Composite indexes for common query patterns
 - Automatic index creation for foreign keys
 - B-tree indexes for string fields (username, email, key)
 
 **Migration Commands:**
+
 ```bash
 # Apply migration
 alembic upgrade head
@@ -178,6 +195,7 @@ alembic history
 ## 🏗️ Architecture Decisions
 
 ### Single Shared Database
+
 - **Decision:** Use existing PostgreSQL instance (shared with Strapi)
 - **Rationale:** Cost optimization, no new infrastructure
 - **Implementation:** Schema isolation via separate tables and prefixes
@@ -188,6 +206,7 @@ alembic history
   - Easy to consolidate in future if needed
 
 ### Environment Variables for Encryption
+
 - **Decision:** Master encryption key stored in Railway environment variables
 - **Rationale:** No external key management service needed
 - **Implementation:** `DATABASE_ENCRYPTION_KEY` environment variable
@@ -198,6 +217,7 @@ alembic history
   - Different keys per environment (staging/production)
 
 ### AES-256-GCM Encryption
+
 - **Decision:** Use authenticated encryption (GCM mode)
 - **Rationale:**
   - NIST recommendation
@@ -207,6 +227,7 @@ alembic history
 - **Performance:** ~10,000 ops/sec per core (acceptable for settings)
 
 ### 4-Role RBAC System
+
 - **Decision:** Simple 4-role hierarchy (ADMIN > MANAGER > OPERATOR > VIEWER)
 - **Rationale:**
   - Covers most use cases
@@ -269,6 +290,7 @@ Before proceeding to Phase 1.2 (Authentication Backend):
 ## 📝 Notes for Developers
 
 ### Using Sessions
+
 ```python
 from database import get_db_context
 from models import User
@@ -281,6 +303,7 @@ with get_db_context() as db:
 ```
 
 ### Encrypting Settings
+
 ```python
 from encryption import encrypt_value, decrypt_value
 
@@ -294,6 +317,7 @@ original = decrypt_value(secret)
 ```
 
 ### Checking Permissions
+
 ```python
 # Will be implemented in Phase 2
 # Example of what it will look like:
@@ -303,6 +327,7 @@ if user.has_permission('settings', 'write'):
 ```
 
 ### Database Health Check
+
 ```python
 from database import healthcheck_db
 
@@ -316,12 +341,12 @@ else:
 
 ## 📚 Files Created
 
-| File | Size | Purpose |
-|------|------|---------|
-| `src/cofounder_agent/models.py` | 580 lines | SQLAlchemy ORM models for all 10 tables |
-| `src/cofounder_agent/database.py` | 450 lines | Database engine, sessions, initialization |
-| `src/cofounder_agent/encryption.py` | 520 lines | AES-256-GCM encryption and PBKDF2 hashing |
-| `src/cofounder_agent/migrations/versions/001_initial_schema.py` | 550 lines | Alembic migration for schema creation |
+| File                                                            | Size      | Purpose                                   |
+| --------------------------------------------------------------- | --------- | ----------------------------------------- |
+| `src/cofounder_agent/models.py`                                 | 580 lines | SQLAlchemy ORM models for all 10 tables   |
+| `src/cofounder_agent/database.py`                               | 450 lines | Database engine, sessions, initialization |
+| `src/cofounder_agent/encryption.py`                             | 520 lines | AES-256-GCM encryption and PBKDF2 hashing |
+| `src/cofounder_agent/migrations/versions/001_initial_schema.py` | 550 lines | Alembic migration for schema creation     |
 
 **Total New Code:** ~2,100 lines of production-ready Python
 

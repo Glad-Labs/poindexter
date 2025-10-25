@@ -26,6 +26,16 @@ from orchestrator_logic import Orchestrator
 from routes.content import content_router
 from routes.models import models_router
 from routes.enhanced_content import enhanced_content_router
+from routes.auth_routes import router as auth_router
+
+# Import database initialization
+try:
+    from database import init_db
+    DATABASE_AVAILABLE = True
+except ImportError:
+    init_db = None
+    DATABASE_AVAILABLE = False
+    logging.warning("Database module not available - authentication may not work")
 
 # Try to import Google Cloud services (may not be available in dev)
 try:
@@ -150,6 +160,7 @@ app.add_middleware(
 )
 
 # Include route routers
+app.include_router(auth_router)  # Authentication endpoints
 app.include_router(content_router)
 app.include_router(models_router)
 app.include_router(enhanced_content_router)
