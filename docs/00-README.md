@@ -71,7 +71,11 @@
 ### Additional Resources
 
 - **[components/](./components/)** - Component-specific documentation (4 READMEs)
-- **[reference/](./reference/)** - Technical references, API specs, schemas (8 files)
+- **[reference/](./reference/)** - Technical references, API specs, schemas
+  - **[GITHUB_SECRETS_SETUP.md](./reference/GITHUB_SECRETS_SETUP.md)** ⭐ Authoritative secrets configuration guide
+  - **[DEPLOYMENT_DOCS_VERIFICATION_REPORT.md](./reference/DEPLOYMENT_DOCS_VERIFICATION_REPORT.md)** - Verification findings
+  - **[TESTING.md](./reference/TESTING.md)** - Comprehensive testing guide (93+ tests)
+  - Other technical references and API specs
 - **[archive/](./archive/)** - Historical documentation and cleanup analysis
 
 ---

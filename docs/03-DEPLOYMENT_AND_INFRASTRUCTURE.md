@@ -411,6 +411,10 @@ main branch → GitHub Actions → Railway Production + Vercel Production
 
 **1. Configure GitHub Secrets** (Settings → Secrets and variables → Actions)
 
+For a complete, authoritative list of all secrets with examples and detailed setup instructions, see: **[GITHUB_SECRETS_SETUP.md](../reference/GITHUB_SECRETS_SETUP.md)**
+
+**Quick Summary:**
+
 ```
 # Railway
 RAILWAY_TOKEN
@@ -422,14 +426,18 @@ VERCEL_TOKEN
 VERCEL_PROJECT_ID
 VERCEL_ORG_ID
 
-# Strapi/CMS
+# Strapi/CMS (⚠️ IMPORTANT: Don't forget the URLs!)
+STAGING_STRAPI_URL
 STAGING_STRAPI_TOKEN
+PROD_STRAPI_URL
 PROD_STRAPI_TOKEN
 
 # Database (if needed)
 STAGING_DATABASE_URL
 PROD_DATABASE_URL
 ```
+
+👉 **See [GITHUB_SECRETS_SETUP.md](../reference/GITHUB_SECRETS_SETUP.md) for complete instructions with examples.**
 
 **2. Workflows** (in `.github/workflows/`)
 

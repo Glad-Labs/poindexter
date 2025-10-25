@@ -516,6 +516,8 @@ jobs:
 
 Set these secrets in GitHub repository settings (Settings → Secrets and variables → Actions):
 
+**For complete, step-by-step setup instructions with examples, see: [GITHUB_SECRETS_SETUP.md](../reference/GITHUB_SECRETS_SETUP.md)**
+
 **Development/Staging Secrets:**
 
 ```
@@ -535,6 +537,8 @@ VERCEL_TOKEN
 VERCEL_PROJECT_ID
 VERCEL_ORG_ID
 ```
+
+👉 **Use [GITHUB_SECRETS_SETUP.md](../reference/GITHUB_SECRETS_SETUP.md) as your authoritative reference for all secrets configuration.**
 
 ---
 

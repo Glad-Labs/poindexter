@@ -11,8 +11,8 @@
  *
  * Branch → Environment Mapping:
  *   main             → .env.production
- *   dev              → .env.staging
- *   feat/*, feature* → .env (local development)
+ *   staging          → .env.staging
+ *   dev*, feat/*     → .env (local development)
  *   other            → .env (local development, default)
  */
 
@@ -54,11 +54,11 @@ try {
     envFile = '.env.production';
     envLabel = 'PRODUCTION';
     nodeEnv = 'production';
-  } else if (branch === 'dev') {
+  } else if (branch === 'staging') {
     envFile = '.env.staging';
     envLabel = 'STAGING';
     nodeEnv = 'staging';
-  } else if (branch.startsWith('feat/') || branch.startsWith('feature/')) {
+  } else if (branch.startsWith('dev') || branch.startsWith('feat')) {
     envFile = '.env';
     envLabel = 'LOCAL DEVELOPMENT';
     nodeEnv = 'development';
