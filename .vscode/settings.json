@@ -28,5 +28,8 @@
   "github.copilot.instructions.file": "${workspaceFolder}/GLAD-LABS-STANDARDS.md",
   "python.testing.pytestArgs": ["."],
   "python.testing.unittestEnabled": false,
-  "python.testing.pytestEnabled": true
+  "python.testing.pytestEnabled": true,
+  "[powershell]": {
+    "editor.defaultFormatter": "ms-vscode.powershell"
+  }
 }

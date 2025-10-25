@@ -24,6 +24,9 @@ from datetime import datetime
 import json
 import logging
 
+# Type aliases for common return types
+SettingAuditLog = Dict[str, Any]  # Placeholder until models are imported
+
 # Note: These imports will be resolved when dependencies are installed
 # from sqlalchemy.orm import Session
 # from models import Setting, SettingAuditLog, User
@@ -69,9 +72,9 @@ class SettingsAuditLogger:
         user_id: int,
         user_email: str,
         setting,  # Setting
-        ip_address: str = None,
-        user_agent: str = None,
-    ) -> None:  # SettingAuditLog
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ) -> Optional[SettingAuditLog]:
         """
         Log creation of a new setting.
 
@@ -110,9 +113,9 @@ class SettingsAuditLogger:
         user_email: str,
         setting,  # Setting
         changes: Dict[str, Any],
-        ip_address: str = None,
-        user_agent: str = None,
-    ) -> None:  # SettingAuditLog
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ) -> Optional[SettingAuditLog]:
         """
         Log update to an existing setting.
 
@@ -154,9 +157,9 @@ class SettingsAuditLogger:
         user_id: int,
         user_email: str,
         setting,  # Setting
-        ip_address: str = None,
-        user_agent: str = None,
-    ) -> None:  # SettingAuditLog
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ) -> Optional[SettingAuditLog]:
         """
         Log deletion of a setting.
 
@@ -194,8 +197,8 @@ class SettingsAuditLogger:
         user_id: int,
         user_email: str,
         updates: list,  # List of (setting, changes) tuples
-        ip_address: str = None,
-        user_agent: str = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
     ) -> list:  # List[SettingAuditLog]
         """
         Log bulk update of multiple settings.
@@ -220,7 +223,7 @@ class SettingsAuditLogger:
         # 3. Commit in single transaction
         # 4. Log to application logger
         # 5. Return list of audit log entries
-        pass
+        return []
 
     @staticmethod
     def log_rollback(
@@ -229,9 +232,9 @@ class SettingsAuditLogger:
         user_email: str,
         setting,  # Setting
         previous_history_id: int,
-        ip_address: str = None,
-        user_agent: str = None,
-    ) -> None:  # SettingAuditLog
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ) -> Optional[SettingAuditLog]:
         """
         Log rollback of setting to previous value.
 
@@ -274,9 +277,9 @@ class SettingsAuditLogger:
         setting_count: int,
         include_secrets: bool,
         format: str,
-        ip_address: str = None,
-        user_agent: str = None,
-    ) -> None:  # SettingAuditLog
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ) -> Optional[SettingAuditLog]:
         """
         Log export of settings (for compliance tracking).
 
@@ -332,7 +335,7 @@ class SettingsAuditLogger:
         # 2. Sort by timestamp DESC (newest first)
         # 3. Apply skip and limit for pagination
         # 4. Return results
-        pass
+        return []
 
     @staticmethod
     def get_user_actions(
@@ -358,7 +361,7 @@ class SettingsAuditLogger:
         # 2. Sort by timestamp DESC
         # 3. Apply skip and limit for pagination
         # 4. Return results
-        pass
+        return []
 
     @staticmethod
     def get_recent_changes(
@@ -389,7 +392,7 @@ class SettingsAuditLogger:
         # 5. Sort by timestamp DESC
         # 6. Apply limit
         # 7. Return results
-        pass
+        return []
 
     @staticmethod
     def get_setting_current_value_before(
@@ -417,7 +420,7 @@ class SettingsAuditLogger:
         # 4. Get first result (most recent change before timestamp)
         # 5. Return the old_value from that entry
         # 6. If no entries found, query current Setting for current value
-        pass
+        return None
 
     @staticmethod
     def get_audit_statistics(
@@ -451,7 +454,7 @@ class SettingsAuditLogger:
         # 4. Group by setting and count (top N)
         # 5. Group by category and count
         # 6. Return aggregated statistics dict
-        pass
+        return {}
 
     @staticmethod
     def cleanup_old_logs(
@@ -475,7 +478,7 @@ class SettingsAuditLogger:
         # 4. Commit transaction
         # 5. Return count of deleted records
         # 6. Log to application logger
-        pass
+        return 0
 
 
 class AuditLoggingMiddleware:

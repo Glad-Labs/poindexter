@@ -1,173 +1,226 @@
-# 🤖 GitHub Copilot Instructions
+# 🤖 GitHub Copilot Instructions for AI Agents
 
-**Last Updated:** October 23, 2025  
-**Project:** GLAD Labs AI Co-Founder System  
-**Status:** Production Ready | High-Level Documentation Policy Active
+**Last Updated:** October 24, 2025  
+**Project:** GLAD Labs AI Co-Founder System v3.0  
+**Status:** Production Ready | Type-Safe | Documentation Policy Enforced
 
 ---
 
-## 🎯 Project Overview
+## 🎯 Essential Context for AI Agents
 
-**GLAD Labs** is an enterprise-grade AI Co-Founder system combining:
+### Architecture & Component Boundaries
 
-- **Autonomous AI Agents** - Content, Financial, Compliance, Market Insight agents
-- **Intelligent Orchestration** - Multi-agent coordination via Model Context Protocol (MCP)
-- **Business Intelligence Dashboard** - Real-time metrics and AI-powered insights
-- **Voice Interface** - Natural language interaction with the AI co-founder
-- **Content Management** - Strapi v5 headless CMS with advanced content generation
-- **Multi-Frontend Architecture** - Next.js applications (Public Site, Oversight Hub)
-
-**Monorepo Structure:**
+**GLAD Labs** is a three-tier monorepo orchestrating AI-powered business operations:
 
 ```
-glad-labs-website/
-├── cms/                 # Strapi v5 CMS backend
-├── web/                 # Frontend applications
-│   ├── oversight-hub/   # Admin/management dashboard (React/Next.js)
-│   └── public-site/     # Public-facing website (Next.js)
-├── src/                 # Python backend & AI agents
-│   ├── agents/          # Specialized AI agents
-│   ├── cofounder_agent/ # Main AI co-founder (FastAPI + orchestration)
-│   └── mcp/             # Model Context Protocol servers
-├── cloud-functions/     # GCP cloud functions (event-driven tasks)
-└── docs/                # Comprehensive documentation (Phase 1 Consolidated)
+Web Tier (React/Next.js)
+├── Oversight Hub (port 3001): React dashboard for agent control, model management, cost tracking
+├── Public Site (port 3000): Next.js SSG site consuming Strapi content
+└── Uses Zustand for state, Material-UI for components
+
+API Tier (FastAPI + Strapi)
+├── Co-Founder Agent (port 8000): Central orchestrator routing tasks to specialized agents
+├── Multi-agent system: Content, Financial, Market, Compliance agents
+├── Model router: Automatic fallback (Ollama → OpenAI → Claude → Gemini)
+├── Memory system: Persistent context + semantic search for agent context
+└── Strapi CMS (port 1337): Headless content management with TypeScript plugins
+
+Data Tier
+├── PostgreSQL: Production data (Strapi collections, audit logs)
+├── SQLite: Local development
+├── Redis: Caching (planned)
+└── Google Cloud: Firestore + Pub/Sub (production integrations)
 ```
 
----
+**Key Integration Patterns:**
 
-## 📋 Technology Stack
-
-| Layer                  | Technology                                             | Status         |
-| ---------------------- | ------------------------------------------------------ | -------------- |
-| **Frontend**           | Next.js 15, React, TypeScript, Tailwind CSS            | ✅ Running     |
-| **CMS**                | Strapi v5, TypeScript, PostgreSQL                      | ✅ Running     |
-| **Python Backend**     | FastAPI, Uvicorn, Python 3.12                          | ✅ Running     |
-| **AI Orchestration**   | Model Context Protocol (MCP), Multi-agent coordination | ✅ Active      |
-| **Database**           | PostgreSQL (Strapi), SQLite (local)                    | ✅ Configured  |
-| **Deployment**         | Railway (backend), Vercel (frontends), GCP (functions) | ✅ Ready       |
-| **Package Management** | npm (Node.js), pip (Python), hybrid strategy           | ✅ Implemented |
-| **CI/CD**              | GitLab CI/CD, GitHub Actions (optional)                | ✅ Configured  |
+- Oversight Hub → FastAPI REST endpoints to orchestrator (tasks, models, health)
+- FastAPI → Specialized agents (parallel execution via asyncio)
+- Agents → Strapi API for content CRUD operations
+- All components → Model router for LLM calls with multi-provider fallback
+- Logging → Audit middleware captures all state changes
 
 ---
 
-## 🚀 Current System Status
+## � Critical Development Commands (Reference for AI Implementation)
 
-### ✅ Running Services
-
-- **Strapi CMS** - `npm run develop` at `cms/strapi-v5-backend/` (port 1337)
-- **Oversight Hub** - `npm start` at `web/oversight-hub/` (port 3000+)
-- **Public Site** - `npm run dev` at `web/public-site/` (port 3000+)
-- **Co-Founder Agent** - `python -m uvicorn src.cofounder_agent.main:app --reload` (FastAPI on port 8000)
-- **Intervene Trigger** - Python cloud function for event processing
-
-### 📊 Project Status
-
-- **Deployment:** Production Ready v3.0
-- **Last Update:** October 22, 2025
-- **Documentation:** Phase 1 Consolidation Complete (45% → 65% organization score)
-- **Architecture:** Enterprise-grade monorepo with MCP integration
-- **Testing:** Comprehensive test suite with CI/CD automation
-- **Standards:** GLAD Labs Standards v2.0 Compliant
-
----
-
-## 📚 Key Documentation
-
-### Primary Resources (Start Here)
-
-1. **[Docs Hub](../docs/00-README.md)** - Main navigation for all documentation
-2. **[Setup Guide](../docs/01-SETUP_AND_OVERVIEW.md)** - Getting started and dependencies
-3. **[Architecture](../docs/02-ARCHITECTURE_AND_DESIGN.md)** - System design and components
-4. **[Deployment](../docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md)** - Cloud setup and environments
-5. **[Development Workflow](../docs/04-DEVELOPMENT_WORKFLOW.md)** - Git strategy and testing
-6. **[AI Agents](../docs/05-AI_AGENTS_AND_INTEGRATION.md)** - Agent orchestration and MCP
-7. **[Operations](../docs/06-OPERATIONS_AND_MAINTENANCE.md)** - Production monitoring
-8. **[Branch Variables](../docs/07-BRANCH_SPECIFIC_VARIABLES.md)** - Environment config
-
-### Quick References
-
-- **Component Docs:** [docs/components/](../docs/components/)
-- **API Specs & References:** [docs/reference/](../docs/reference/)
-
----
-
-## 🔧 Development Workflow
-
-### Prerequisites
-
-- **Node.js** 18.x - 22.x (❌ Not 25+; use .nvmrc files)
-- **Python** 3.12+ with pip and venv
-- **PostgreSQL** (for Strapi; local development can use SQLite)
-- **Git** with SSH keys configured
-
-### Quick Setup
+### Starting Services (Workspace is pre-configured)
 
 ```bash
-# Clone repository
-git clone <repo-url>
-cd glad-labs-website
-
-# Install all dependencies
-npm run setup:all
+npm run dev              # ✅ Starts Oversight Hub + Public Site (recommended for frontend work)
+npm run dev:oversight    # React admin dashboard on http://localhost:3001
+npm run dev:public       # Next.js site on http://localhost:3000
+npm run dev:cofounder    # FastAPI backend on http://localhost:8000 (port may vary)
+npm run dev:strapi       # Strapi CMS on http://localhost:1337 (currently has build issues)
 ```
 
-### Running Locally
-
-**Option 1: Run all services**
+### Code Quality (MUST run before committing)
 
 ```bash
-npm run start:all
-# Or use VS Code task: "Start All Services"
+npm run lint:fix         # Auto-fix ESLint + import sorting
+npm run format           # Prettier on all files (.js, .jsx, .tsx, .json, .md)
+npm test                 # Jest frontend + pytest Python backend
+npm run test:python:smoke # Quick backend smoke tests for rapid iteration
 ```
 
-**Option 2: Run individual services**
+### Build & Deploy
 
 ```bash
-# Terminal 1: Strapi CMS
-cd cms/strapi-v5-backend && npm run develop
-
-# Terminal 2: Oversight Hub
-cd web/oversight-hub && npm start
-
-# Terminal 3: Public Site
-cd web/public-site && npm run dev
-
-# Terminal 4: Co-Founder Agent
-cd src/cofounder_agent && python -m uvicorn main:app --reload
+npm run build            # Build Next.js + React production bundles
+npm run build:all        # Includes Strapi (will likely fail due to plugin issues)
 ```
 
-### Development Best Practices
-
-#### Code Quality
-
-- **Linting:** Run before commit: `npm run lint`
-- **Formatting:** Use Prettier: `npm run format`
-- **Tests:** Run test suite: `npm run test`
-- **Type Checking:** TypeScript in web projects, Pylint/MyPy in Python
-
-#### Git Workflow
+### Key Workspace Commands
 
 ```bash
-# Branch naming
-main              # Production releases
-dev               # Active development
-feature/[name]    # New features
-bugfix/[name]     # Bug fixes
-docs/[name]       # Documentation updates
-
-# Commit messages (conventional)
-feat: add new feature
-fix: resolve bug
-docs: update documentation
-refactor: improve code structure
-test: add test cases
+npm run setup:all        # Install all dependencies (Node + Python)
+npm run clean:install    # Full reset: rm node_modules + fresh install
+npm run install:all      # Just npm install across all workspaces
+npm run setup:python     # Just pip install for backend
 ```
 
-#### Version Pinning
+---
 
-- Node.js: Use `.nvmrc` (currently pinned to 22.11.0)
-- Python: Use `requirements.txt` with exact versions
-- npm: Use `package-lock.json` (committed to repo)
+## � Code Patterns & Conventions (NOT aspirational - these are discovered patterns)
+
+### Python Backend Patterns (src/cofounder_agent/)
+
+**FastAPI Route Structure** (`src/cofounder_agent/routes/`)
+
+- Routes are modular: `content_router`, `models_router`, `auth_router`, `enhanced_content_router`
+- All routes injected into main FastAPI app in `main.py`
+- Routes depend on orchestrator and database services
+- **PATTERN:** Routes handle HTTP validation; orchestrator handles business logic
+
+**Orchestrator Pattern** (`orchestrator_logic.py`)
+
+- Central `Orchestrator` class coordinates all agent execution
+- Async methods for parallel task processing via `asyncio.gather()`
+- Multi-provider model routing (Ollama → OpenAI → Claude → Gemini fallback)
+- **KEY FILE:** `src/cofounder_agent/main.py` shows FastAPI setup and route registration
+- **PATTERN:** Thin controllers, thick orchestrator
+
+**Database Patterns** (`database.py`)
+
+- SQLAlchemy models for local SQLite (dev) / PostgreSQL (prod)
+- Audit logging middleware wraps all CRUD operations
+- JWT token storage separate from user model
+- **PATTERN:** All DB changes logged to `audit_logging.py` middleware
+
+**Error Handling - Watch for:**
+
+- Google Cloud integrations optional: `try/except ImportError` for Firestore/Pub/Sub
+- Database optional during dev: check `DATABASE_AVAILABLE` flag before using db
+- Model provider failures trigger automatic fallback (don't wrap in try/except - router handles it)
+
+### React/Next.js Patterns (web/)
+
+**Oversight Hub State Management** (`web/oversight-hub/src/`)
+
+- **Single source of truth:** `store/useStore.js` (Zustand global state)
+- Theme management: `useStore((state) => state.theme)` pattern used throughout
+- **PATTERN:** Never prop-drill state; use Zustand selectors
+- Components subscribe to specific store slices: `useStore(state => state.singleValue)` not entire state
+
+**Next.js Public Site Patterns** (`web/public-site/`)
+
+- **SSG First:** Use `getStaticProps` and `getStaticPaths` (not SSR for performance)
+- **ISR (Incremental Static Regeneration):** `revalidate: 3600` for content updates
+- Strapi API client in `lib/api.js` (centralized, never scatter API calls)
+- **PATTERN:** All Strapi calls go through `lib/api.js` to enable caching and error handling
+
+**Component Organization:**
+
+- Lightweight presentational components in `components/`
+- Business logic in custom hooks or store selectors
+- Material-UI components preferred (already in dependencies)
+- **PATTERN:** No nested components, use composition
+
+### Testing Patterns (Already Existing)
+
+**Frontend:** Jest + React Testing Library
+
+- Test location: `__tests__/` folders parallel to source
+- Mock Strapi API responses in tests (don't hit real API)
+- Example pattern: `expect(getByText(...)).toBeInTheDocument()`
+
+**Backend:** pytest for Python
+
+- Test location: `src/cofounder_agent/tests/`
+- Mock external services (Google Cloud, Strapi, LLMs)
+- Run with: `npm run test:python` or `npm run test:python:smoke` (faster)
+
+---
+
+## ⚠️ Known Constraints & Pain Points (For AI Agent Context)
+
+**Strapi v5 Build Issues (cms/strapi-main/)**
+
+- Specific plugin incompatibility with TypeScript configuration
+- `npm run develop` fails; avoid assigning Copilot to fix without explicit request
+- Workaround: Use local SQLite development, deploy PostgreSQL to production
+- **Don't attempt:** Deep plugin debugging - this is known limitation
+
+**Async/Await Patterns in Python**
+
+- Backend uses heavy async (FastAPI + asyncio)
+- All orchestrator methods are `async`; use `await` when calling them
+- Parallel execution via `asyncio.gather()` - don't use threading
+- Google Cloud operations non-blocking (Firestore, Pub/Sub async)
+
+**Frontend Port Conflicts**
+
+- Both Oversight Hub and Public Site want port 3000
+- System auto-assigns next available (3001, 3002) - don't hardcode ports
+- Verify actual port in terminal output after `npm run dev`
+
+**Environment Variables - Critical!**
+
+- Local dev: Copy `.env.example` → `.env` (never commit .env)
+- Production secrets: GitHub Secrets + Railway/Vercel dashboards
+- No production secrets should ever appear in code or docs
+- Model provider keys (OPENAI_API_KEY, etc.) are required for backend
+
+---
+
+## � File Organization & Where to Look
+
+| Need                     | Look In                                                                 |
+| ------------------------ | ----------------------------------------------------------------------- |
+| FastAPI backend logic    | `src/cofounder_agent/main.py`, `orchestrator_logic.py`, `routes/`       |
+| AI agent implementations | `src/agents/{content,financial,market_insight,compliance}_agent/`       |
+| React admin dashboard    | `web/oversight-hub/src/components/`, `store/useStore.js`                |
+| Next.js public site      | `web/public-site/pages/`, `lib/api.js`, `components/`                   |
+| Strapi CMS setup         | `cms/strapi-main/src/` (plugin issues - use with caution)               |
+| Authentication flow      | `src/cofounder_agent/routes/auth_routes.py`, `middleware/auth.py`       |
+| Audit logging            | `src/cofounder_agent/middleware/audit_logging.py` (type-safe, 0 errors) |
+| Database models          | `src/cofounder_agent/models.py`, `database.py`                          |
+| Tests                    | `src/cofounder_agent/tests/`, `**/__tests__/` (Jest)                    |
+| NPM workspace configs    | Root `package.json` (`workspaces` array)                                |
+
+## 🤖 For AI Agent Code Generation
+
+### DO:
+
+- ✅ Follow existing async/await patterns in Python backend
+- ✅ Use Zustand selectors for React state (not Context)
+- ✅ Centralize API calls in `lib/api.js` (Next.js) or route modules (FastAPI)
+- ✅ Write tests alongside code (Jest for JS, pytest for Python)
+- ✅ Use conventional commits: `feat:`, `fix:`, `refactor:`, etc.
+- ✅ Add type hints to Python functions (all 20 previous errors now fixed)
+- ✅ Check existing code for patterns before generating new implementations
+- ✅ Reference `docs/04-DEVELOPMENT_WORKFLOW.md` for git workflow
+
+### DON'T:
+
+- ❌ Import from sibling workspaces directly (use published APIs/REST)
+- ❌ Hardcode API endpoints (use environment variables from `.env`)
+- ❌ Prop-drill state in React (use Zustand or URL params)
+- ❌ Mix async/sync in Python orchestrator (everything must be async)
+- ❌ Ignore type hints or leave Python functions untyped
+- ❌ Commit secrets, API keys, or unencrypted sensitive data
+- ❌ Modify Strapi plugins without extensive testing (known issues)
+- ❌ Write documentation that becomes stale (keep HIGH-LEVEL ONLY)
 
 ---
 
