@@ -24,6 +24,7 @@ from orchestrator_logic import Orchestrator
 
 # Import route routers
 from routes.content import content_router
+from routes.content_generation import content_router as generation_router
 from routes.models import models_router
 from routes.enhanced_content import enhanced_content_router
 from routes.auth_routes import router as auth_router
@@ -162,6 +163,7 @@ app.add_middleware(
 # Include route routers
 app.include_router(auth_router)  # Authentication endpoints
 app.include_router(content_router)
+app.include_router(generation_router)  # Content generation with Ollama
 app.include_router(models_router)
 app.include_router(enhanced_content_router)
 

@@ -23,7 +23,7 @@ from typing import List, Optional
 from datetime import datetime
 from enum import Enum
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Request, Path
 from pydantic import BaseModel, Field, validator
 from sqlalchemy.orm import Session
 
@@ -261,7 +261,7 @@ async def list_settings(
     }
 )
 async def get_setting(
-    setting_id: int = Field(..., gt=0, description="Setting ID"),
+    setting_id: int = Path(..., gt=0, description="Setting ID"),
     request: Request = None,
     # current_user: User = Depends(get_current_user),
     # db: Session = Depends(get_db),
@@ -369,7 +369,7 @@ async def create_setting(
     }
 )
 async def update_setting(
-    setting_id: int = Field(..., gt=0, description="Setting ID"),
+    setting_id: int = Path(..., gt=0, description="Setting ID"),
     update_data: SettingUpdate = None,
     request: Request = None,
     # current_user: User = Depends(get_current_user),
@@ -431,7 +431,7 @@ async def update_setting(
     }
 )
 async def delete_setting(
-    setting_id: int = Field(..., gt=0, description="Setting ID"),
+    setting_id: int = Path(..., gt=0, description="Setting ID"),
     request: Request = None,
     # current_user: User = Depends(get_current_user),
     # db: Session = Depends(get_db),
@@ -487,7 +487,7 @@ async def delete_setting(
     }
 )
 async def get_setting_history(
-    setting_id: int = Field(..., gt=0, description="Setting ID"),
+    setting_id: int = Path(..., gt=0, description="Setting ID"),
     limit: int = Query(50, ge=1, le=500, description="Number of history entries to return"),
     request: Request = None,
     # current_user: User = Depends(get_current_user),
@@ -536,8 +536,8 @@ async def get_setting_history(
     }
 )
 async def rollback_setting(
-    setting_id: int = Field(..., gt=0, description="Setting ID"),
-    history_id: int = Field(..., gt=0, description="Audit log entry ID to rollback to"),
+    setting_id: int = Path(..., gt=0, description="Setting ID"),
+    history_id: int = Path(..., gt=0, description="Audit log entry ID to rollback to"),
     request: Request = None,
     # current_user: User = Depends(get_current_user),
     # db: Session = Depends(get_db),

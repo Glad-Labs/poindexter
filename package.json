@@ -43,6 +43,7 @@
     "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,md}\" \"!**/package-lock.json\" \"!**/node_modules/**\""
   },
   "devDependencies": {
+    "@strapi/strapi": "^5.18.1",
     "concurrently": "^9.2.1",
     "cross-env": "^7.0.3",
     "markdownlint-cli": "^0.42.0",

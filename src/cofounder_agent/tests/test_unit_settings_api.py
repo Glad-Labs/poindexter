@@ -8,9 +8,14 @@ from fastapi.testclient import TestClient
 from unittest.mock import Mock, patch, MagicMock
 import json
 from datetime import datetime, timedelta
+import sys
+import os
 
-# Mock imports (adjust based on your actual structure)
-from cofounder_agent.main import app
+# Add parent directory to path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# Import app
+from main import app
 
 
 @pytest.fixture
@@ -232,7 +237,7 @@ class TestSettingsValidation:
 
     def test_validate_theme_enum(self):
         """Test theme validation - should accept valid values"""
-        from cofounder_agent.services.settings_service import validate_setting
+        from services.settings_service import validate_setting
         
         assert validate_setting("theme", "dark") is True
         assert validate_setting("theme", "light") is True
@@ -240,7 +245,7 @@ class TestSettingsValidation:
 
     def test_validate_email_frequency(self):
         """Test email frequency validation"""
-        from cofounder_agent.services.settings_service import validate_setting
+        from services.settings_service import validate_setting
         
         assert validate_setting("email_frequency", "daily") is True
         assert validate_setting("email_frequency", "weekly") is True
@@ -248,7 +253,7 @@ class TestSettingsValidation:
 
     def test_validate_timezone(self):
         """Test timezone validation"""
-        from cofounder_agent.services.settings_service import validate_setting
+        from services.settings_service import validate_setting
         
         assert validate_setting("timezone", "UTC") is True
         assert validate_setting("timezone", "America/New_York") is True
@@ -256,7 +261,7 @@ class TestSettingsValidation:
 
     def test_validate_boolean_fields(self):
         """Test boolean field validation"""
-        from cofounder_agent.services.settings_service import validate_setting
+        from services.settings_service import validate_setting
         
         assert validate_setting("notifications_enabled", True) is True
         assert validate_setting("notifications_enabled", False) is True

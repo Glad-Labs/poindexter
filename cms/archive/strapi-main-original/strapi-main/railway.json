@@ -1,6 +1,0 @@
-{
-  "$schema": "https://backboard.railway.app/railway.schema.json",
-  "build": {
-    "builder": "RAILPACK"
-  }
-}
