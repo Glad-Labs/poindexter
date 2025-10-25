@@ -28,6 +28,7 @@ from routes.content_generation import content_router as generation_router
 from routes.models import models_router
 from routes.enhanced_content import enhanced_content_router
 from routes.auth_routes import router as auth_router
+from routes.settings_routes import router as settings_router
 
 # Import database initialization
 try:
@@ -166,6 +167,7 @@ app.include_router(content_router)
 app.include_router(generation_router)  # Content generation with Ollama
 app.include_router(models_router)
 app.include_router(enhanced_content_router)
+app.include_router(settings_router)  # Settings management
 
 class CommandRequest(BaseModel):
     """Request model for processing a command."""
