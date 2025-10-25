@@ -620,18 +620,18 @@ it('should fetch data', async () => {
 
 **Problem: "Cannot find module" error**
 
-```
-Solution: Clear Jest cache
+```bash
+# Solution: Clear Jest cache
 npm test -- --clearCache
 ```
 
 **Problem: Tests timeout**
 
-```
-Solution: Increase timeout in test
-jest.setTimeout(10000);  // 10 seconds
+```bash
+# Solution: Increase timeout in test
+jest.setTimeout(10000);  # 10 seconds
 
-Or use async/await properly:
+# Or use async/await properly:
 it('should fetch data', async () => {
   const data = await fetchData();
   expect(data).toBeDefined();
@@ -640,8 +640,8 @@ it('should fetch data', async () => {
 
 **Problem: Snapshot mismatch**
 
-```
-Solution: Update snapshots (if intentional changes)
+```bash
+# Solution: Update snapshots (if intentional changes)
 npm test -- -u
 ```
 
@@ -649,41 +649,40 @@ npm test -- -u
 
 **Problem: "No module named" error**
 
-```
-Solution: Ensure PYTHONPATH is set
+```bash
+# Solution: Ensure PYTHONPATH is set
 export PYTHONPATH="${PYTHONPATH}:$(pwd)"
 
-Or run from project root:
+# Or run from project root:
 cd /path/to/project
 python -m pytest tests/ -v
 ```
 
 **Problem: Async test not working**
 
-```
-Solution: Add pytest-asyncio marker
+```python
 @pytest.mark.asyncio
 async def test_async_function():
     result = await async_function()
     assert result
 
-And install: pip install pytest-asyncio
+# And install: pip install pytest-asyncio
 ```
 
 **Problem: Fixture not found**
 
-```
-Solution: Fixtures must be in conftest.py at test root
+```python
+# Solution: Fixtures must be in conftest.py at test root
 src/cofounder_agent/tests/conftest.py  # Correct location
 ```
 
 **Problem: Database locked in tests**
 
-```
-Solution: Use in-memory SQLite for tests
+```python
+# Solution: Use in-memory SQLite for tests
 DATABASE_URL = "sqlite:///:memory:"
 
-Or in conftest.py:
+# Or in conftest.py:
 @pytest.fixture(scope="function")
 def db():
     # Create fresh DB for each test

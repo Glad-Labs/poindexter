@@ -13,6 +13,7 @@
 GLAD Labs is an **npm workspace monorepo** with interdependent packages. When root `node_modules` becomes corrupted or incomplete, downstream packages (like Strapi) fail because npm's "hoisting" mechanism depends on shared dependencies at the root level.
 
 **The Solution:**
+
 1. Run `.\scripts\setup-dev.ps1` to automate everything
 2. Or manually follow the "Manual Setup" section below
 
@@ -73,13 +74,13 @@ c:\Users\mattm\glad-labs-website\                     ← ROOT
 
 ### Why Use a Monorepo?
 
-| Benefit | Example |
-|---------|---------|
-| **Shared code** | Common utilities used by Strapi + FastAPI + React |
-| **Synchronized versions** | All packages update @strapi/core together |
-| **Single CI/CD** | One GitHub Actions workflow tests everything |
-| **Atomic commits** | Related changes in frontend + backend in one commit |
-| **Shared config** | ESLint, Prettier, TypeScript configs apply to all |
+| Benefit                   | Example                                             |
+| ------------------------- | --------------------------------------------------- |
+| **Shared code**           | Common utilities used by Strapi + FastAPI + React   |
+| **Synchronized versions** | All packages update @strapi/core together           |
+| **Single CI/CD**          | One GitHub Actions workflow tests everything        |
+| **Atomic commits**        | Related changes in frontend + backend in one commit |
+| **Shared config**         | ESLint, Prettier, TypeScript configs apply to all   |
 
 ---
 
@@ -145,7 +146,7 @@ When Strapi's internal code tries to load `@strapi/strapi`, it relies on this ho
 
 ```javascript
 // Inside @strapi/core (at root):
-const strapi = require('@strapi/strapi')
+const strapi = require('@strapi/strapi');
 
 // This ONLY works if @strapi/strapi is at ROOT node_modules
 // If root node_modules is corrupted/incomplete, this fails!
@@ -211,32 +212,38 @@ npm install --workspaces      # In all workspaces - installs workspace-specific
 ### Step-by-Step Fix (What We Applied)
 
 **Step 1: Clean root node_modules**
+
 ```bash
 rm -r node_modules package-lock.json  # Remove corrupted data
 ```
 
 **Step 2: Fresh root install** (CRITICAL)
+
 ```bash
 npm install  # Reinstall root node_modules with @strapi/strapi
 ```
 
 **Step 3: Verify module chain**
+
 ```bash
 ls -la node_modules/@strapi/strapi/  # Verify @strapi/strapi exists
 ```
 
 **Step 4: Install workspace deps**
+
 ```bash
 npm install --workspaces  # Install workspace-specific packages
 ```
 
 **Step 5: Add SQLite drivers**
+
 ```bash
 # At cms/strapi-main/:
 npm install sqlite3 better-sqlite3  # SQLite support
 ```
 
 **Step 6: Verify everything**
+
 ```bash
 npm run dev:strapi  # Should start without module errors
 ```
@@ -292,6 +299,7 @@ This script automates everything:
 ### What the Script Does
 
 **Phase 1: Validation**
+
 ```
 ✅ Checking prerequisites
   - Node.js v20.11.1
@@ -300,6 +308,7 @@ This script automates everything:
 ```
 
 **Phase 2: Cleanup (if -Clean)**
+
 ```
 ✅ Removing node_modules
 ✅ Removing package-lock.json
@@ -307,36 +316,42 @@ This script automates everything:
 ```
 
 **Phase 3: Environment Setup**
+
 ```
 ✅ Creating .env from .env.example
   (If .env already exists, skips)
 ```
 
 **Phase 4: Root Install** (CRITICAL)
+
 ```
 ✅ npm install at project root
   This installs shared dependencies
 ```
 
 **Phase 5: @strapi/strapi Explicit Fix**
+
 ```
 ✅ npm install @strapi/strapi@^5.18.1 --save-dev
   This ensures @strapi/strapi is in root node_modules
 ```
 
 **Phase 6: Workspace Installation**
+
 ```
 ✅ npm install --workspaces
   Install all workspace-specific dependencies
 ```
 
 **Phase 7: Strapi-Specific Setup**
+
 ```
 ✅ Installing sqlite3, better-sqlite3
   SQLite support for local development
 ```
 
 **Phase 8: Verification**
+
 ```
 ✅ @strapi/strapi in root node_modules
 ✅ Strapi workspace node_modules exists
@@ -455,6 +470,7 @@ npm run dev:strapi
 **Cause:** @strapi/strapi not in root node_modules
 
 **Solution:**
+
 ```powershell
 # At PROJECT ROOT:
 npm install @strapi/strapi@^5.18.1 --save-dev
@@ -468,6 +484,7 @@ ls node_modules/@strapi/strapi/package.json
 **Cause:** SQLite drivers not installed
 
 **Solution:**
+
 ```powershell
 cd cms/strapi-main
 npm install sqlite3 better-sqlite3
@@ -479,6 +496,7 @@ cd ../..
 **Cause:** Network issue or corrupted cache
 
 **Solution:**
+
 ```powershell
 # Clear npm cache
 npm cache clean --force
@@ -492,6 +510,7 @@ npm install
 **Cause:** Strapi already running
 
 **Solution:**
+
 ```powershell
 # Find process using port 1337
 netstat -ano | findstr :1337
@@ -509,6 +528,7 @@ npm run dev:strapi
 **Cause:** npm not hoisting properly, duplication
 
 **Solution:**
+
 ```powershell
 # Clean everything
 rm -r node_modules -Force
@@ -549,6 +569,7 @@ npm install --force
 ### Prevention
 
 **1. Use setup-dev.ps1 Every Time You Clone**
+
 ```powershell
 git clone <repo>
 cd glad-labs-website
@@ -556,29 +577,28 @@ cd glad-labs-website
 ```
 
 **2. Keep Root package.json in Sync**
+
 ```json
 {
-  "workspaces": [
-    "cms/strapi-main",
-    "web/oversight-hub",
-    "web/public-site"
-  ]
+  "workspaces": ["cms/strapi-main", "web/oversight-hub", "web/public-site"]
 }
 ```
 
 **3. Document Module Sources**
+
 ```javascript
 // BAD - unclear where this comes from
-const strapi = require('strapi')
+const strapi = require('strapi');
 
 // GOOD - clearly from root node_modules (hoisted)
-const strapi = require('@strapi/strapi')
+const strapi = require('@strapi/strapi');
 
 // GOOD - workspace-specific
-const config = require('../config/database')
+const config = require('../config/database');
 ```
 
 **4. Test After Adding Dependencies**
+
 ```bash
 # After: npm install new-package
 # Always verify imports work:
@@ -618,6 +638,7 @@ Use this when onboarding a new developer:
 npm workspaces use "hoisting" to share dependencies. If root `node_modules` is corrupted, everything breaks.
 
 **The Solution:**
+
 ```powershell
 .\scripts\setup-dev.ps1  # Automated
 # OR manually:

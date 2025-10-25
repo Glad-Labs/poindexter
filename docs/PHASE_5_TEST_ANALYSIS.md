@@ -56,7 +56,7 @@ These tests check for API endpoints that aren't implemented yet. **This is expec
 
 **Root Cause:**
 
-```
+```bash
 Tests expect endpoints:
   POST /api/content/create
   GET  /api/content/{id}/status

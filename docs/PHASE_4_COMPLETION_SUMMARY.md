@@ -77,20 +77,29 @@ kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=100
 - Line 20-21: Import consolidation
 - Line 282: Usage
 
-# BEFORE (Broken in 46.0+):
+# BEFORE (Broken in 46.0+)
 
+```python
 from cryptography.hazmat.primitives.constant_time import constant_time_compare
 if constant_time_compare(stored_hash, computed_hash_bytes):
+```
 
-# AFTER (Fixed):
+# AFTER (Fixed)
 
+```python
 from cryptography.hazmat.primitives import constant_time
 if constant_time.bytes_eq(stored_hash, computed_hash_bytes):
-
-````
+```
 
 **Impact:** Fixed 2 encryption-related import failures
 
+### Fix #3: Pydantic 2.0 Compatibility ✅
+
+**File:** `src/cofounder_agent/routes/auth_routes.py`
+
+**Issue:** Pydantic 2.0 renamed `regex` parameter to `pattern`
+
+````python
 ### Fix #3: Pydantic 2.0 Compatibility ✅
 
 **File:** `src/cofounder_agent/routes/auth_routes.py`
@@ -194,7 +203,7 @@ pyotp>=2.9.0
 
 ## 📝 What Changed (Commit 9dcbf026b)
 
-```
+```diff
  src/cofounder_agent/encryption.py         | 11 +++++------
  src/cofounder_agent/models.py             |  4 ++--
  src/cofounder_agent/requirements.txt      |  7 +++++++
@@ -214,14 +223,14 @@ pyotp>=2.9.0
 
 ## 🚀 Next Steps for Production Deployment
 
-### Immediate (Now):
+### Immediate (Now)
 
 1. ✅ All compatibility fixes completed
 2. ✅ Tests verified passing
 3. ✅ Changes committed and pushed
 4. ⏳ **Waiting for code review** on feat/bugs branch
 
-### Short Term (Today):
+### Short Term (Today)
 
 1. Code review approval on feat/bugs
 2. Merge feat/bugs → dev (staging deployment)

@@ -10,7 +10,7 @@
 
 **Three-Tier Deployment Strategy:**
 
-```
+```text
 feat/*** branches
     ↓
 [Local Development] ← npm run dev (localhost, SQLite, http://localhost:1337)
@@ -36,7 +36,7 @@ main branch
 
 **Recommended folder structure:**
 
-```
+```text
 .
 ├── .env                         (NEVER commit - local dev defaults)
 ├── .env.example                 (Template with all variables)
@@ -520,7 +520,7 @@ Set these secrets in GitHub repository settings (Settings → Secrets and variab
 
 **Development/Staging Secrets:**
 
-```
+```text
 STAGING_STRAPI_URL
 STAGING_STRAPI_TOKEN
 RAILWAY_STAGING_PROJECT_ID
@@ -528,7 +528,7 @@ RAILWAY_STAGING_PROJECT_ID
 
 **Production Secrets:**
 
-```
+```text
 PROD_STRAPI_URL
 PROD_STRAPI_TOKEN
 RAILWAY_TOKEN
@@ -641,13 +641,18 @@ git push origin main
 
 **Issue: "Cannot find .env file"**
 
+````bash
+## 🐛 Troubleshooting
+
+**Issue: "Cannot find .env file"**
+
 ```bash
 # Solution: Create it from example
 cp .env.example .env
 
 # Or let the script do it
 npm run env:select
-```
+````
 
 **Issue: "Environment variables not loading in Next.js"**
 
