@@ -45,11 +45,22 @@ jobs:
       - name: 📦 Install Node dependencies
         run: npm ci && npm ci --workspaces
 
-      - name: 📦 Install Python dependencies
+      - name: 📦 Install Python dependencies (Core only)
         run: |
           python -m pip install --upgrade pip
-          pip install -r scripts/requirements.txt
-          pip install -r src/cofounder_agent/requirements.txt
+          pip install --no-cache-dir -r scripts/requirements-core.txt
+        continue-on-error: false
+
+      - name: 🗑️ Clean pip cache
+        run: pip cache purge
+
+      - name: 📦 Install Python dependencies (ML packages)
+        run: |
+          pip install --no-cache-dir -r src/cofounder_agent/requirements.txt
+        continue-on-error: false
+
+      - name: 🗑️ Clean pip cache again
+        run: pip cache purge
 
       # ============================================
       # TEST PHASE (Full suite + security before production)
