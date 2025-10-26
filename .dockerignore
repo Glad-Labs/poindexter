@@ -24,6 +24,6 @@ Thumbs.db
 
 # Development
 .vscode
-README.md
 .dockerignore
 Dockerfile
+# Note: Keep README.md and LICENSE.md for production builds
