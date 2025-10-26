@@ -435,6 +435,199 @@ def receive_before_update(mapper, connection, target):
     target.version = target.version + 1 if target.version else 2
 
 
+# ============================================================================
+# OPERATIONAL MODELS (Replaced Firestore Collections with PostgreSQL)
+# ============================================================================
+# These models replace Google Cloud Firestore collections:
+# - tasks: Firestore 'tasks' collection
+# - logs: Firestore 'logs' collection
+# - financial_entries: Firestore 'financials' collection
+# - agent_status: Firestore 'agents' collection
+# - health_checks: Firestore 'health' collection
+
+class Task(Base):
+    """
+    Task model - replaces Firestore 'tasks' collection
+    
+    Represents content creation and operational tasks queued for agents
+    to process. Tracks status through pipeline: queued → running → completed/failed
+    """
+    __tablename__ = "tasks"
+    __table_args__ = (
+        Index('idx_status_created_at', 'status', 'created_at'),
+        Index('idx_agent_id_status', 'agent_id', 'status'),
+    )
+    
+    # Primary key
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid_lib.uuid4)
+    
+    # Task metadata
+    task_name = Column(String(255), nullable=False)
+    agent_id = Column(String(255), nullable=False, index=True)
+    status = Column(String(50), default='queued')  # queued, pending, running, completed, failed
+    
+    # Content details
+    topic = Column(String(255), nullable=False)
+    primary_keyword = Column(String(255))
+    target_audience = Column(String(255))
+    category = Column(String(255))
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, 
+                       nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, 
+                       onupdate=datetime.utcnow, nullable=False, server_default=func.now())
+    started_at = Column(DateTime(timezone=True))
+    completed_at = Column(DateTime(timezone=True))
+    
+    # Flexible metadata and results
+    metadata = Column(JSONB, default={})
+    result = Column(JSONB)  # Task result/output
+    
+    def __repr__(self):
+        return f"<Task(id={self.id}, topic='{self.topic}', status='{self.status}')>"
+
+
+class Log(Base):
+    """
+    Log model - replaces Firestore 'logs' collection
+    
+    Structured logging for operations, audit trail, and debugging.
+    Includes context metadata for better observability.
+    """
+    __tablename__ = "logs"
+    __table_args__ = (
+        Index('idx_level_timestamp', 'level', 'timestamp'),
+        Index('idx_timestamp_desc', 'timestamp'),
+    )
+    
+    # Primary key
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid_lib.uuid4)
+    
+    # Log details
+    level = Column(String(20), nullable=False)  # debug, info, warning, error, critical
+    message = Column(Text, nullable=False)
+    timestamp = Column(DateTime(timezone=True), default=datetime.utcnow, 
+                      nullable=False, server_default=func.now())
+    
+    # Optional task reference
+    task_id = Column(PG_UUID(as_uuid=True), ForeignKey('tasks.id'))
+    
+    # Optional agent reference
+    agent_id = Column(String(255))
+    
+    # Context metadata
+    metadata = Column(JSONB, default={})
+    
+    def __repr__(self):
+        return f"<Log(level='{self.level}', message='{self.message[:50]}...')>"
+
+
+class FinancialEntry(Base):
+    """
+    Financial Entry model - replaces Firestore 'financials' collection
+    
+    Tracks expenses, costs, and financial metrics for burn rate tracking,
+    cost optimization, and budget forecasting.
+    """
+    __tablename__ = "financial_entries"
+    __table_args__ = (
+        Index('idx_timestamp_category', 'timestamp', 'category'),
+        Index('idx_timestamp_desc', 'timestamp'),
+    )
+    
+    # Primary key
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid_lib.uuid4)
+    
+    # Financial details
+    amount = Column(Float, nullable=False)
+    category = Column(String(255), nullable=False)  # model_usage, storage, compute, etc.
+    
+    # Timestamps
+    timestamp = Column(DateTime(timezone=True), default=datetime.utcnow, 
+                      nullable=False, server_default=func.now())
+    
+    # Optional task reference
+    task_id = Column(PG_UUID(as_uuid=True), ForeignKey('tasks.id'))
+    
+    # Flexible metadata
+    metadata = Column(JSONB, default={})
+    
+    def __repr__(self):
+        return f"<FinancialEntry(amount=${self.amount}, category='{self.category}')>"
+
+
+class AgentStatus(Base):
+    """
+    Agent Status model - replaces Firestore 'agents' collection
+    
+    Tracks agent health, availability, and status for orchestration
+    and monitoring purposes.
+    """
+    __tablename__ = "agent_status"
+    __table_args__ = (
+        Index('idx_status', 'status'),
+        Index('idx_last_heartbeat', 'last_heartbeat'),
+    )
+    
+    # Primary key (agent name is unique identifier)
+    agent_name = Column(String(255), primary_key=True)
+    
+    # Status tracking
+    status = Column(String(50), nullable=False)  # online, offline, busy, error
+    
+    # Heartbeat tracking
+    last_heartbeat = Column(DateTime(timezone=True), default=datetime.utcnow, 
+                          nullable=False, server_default=func.now())
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, 
+                       nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, 
+                       onupdate=datetime.utcnow, nullable=False, server_default=func.now())
+    
+    # Service info
+    service_version = Column(String(50))
+    
+    # Flexible metadata
+    metadata = Column(JSONB, default={})
+    
+    def __repr__(self):
+        return f"<AgentStatus(agent='{self.agent_name}', status='{self.status}')>"
+
+
+class HealthCheck(Base):
+    """
+    Health Check model - replaces Firestore 'health' collection
+    
+    Periodic health check records for monitoring system availability
+    and performance metrics.
+    """
+    __tablename__ = "health_checks"
+    __table_args__ = (
+        Index('idx_timestamp_desc', 'timestamp'),
+        Index('idx_service', 'service'),
+    )
+    
+    # Primary key
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid_lib.uuid4)
+    
+    # Service and status
+    service = Column(String(255), nullable=False)  # cofounder, content-agent, etc.
+    status = Column(String(50), nullable=False)  # healthy, degraded, unhealthy
+    
+    # Timestamp
+    timestamp = Column(DateTime(timezone=True), default=datetime.utcnow, 
+                      nullable=False, server_default=func.now())
+    
+    # Response time and metadata
+    response_time_ms = Column(Float)
+    metadata = Column(JSONB, default={})
+    
+    def __repr__(self):
+        return f"<HealthCheck(service='{self.service}', status='{self.status}')>"
+
+
 __all__ = [
     'Base',
     'User',
@@ -447,4 +640,10 @@ __all__ = [
     'SettingAuditLog',
     'FeatureFlag',
     'APIKey',
+    # Operational models (PostgreSQL replacements for Firestore)
+    'Task',
+    'Log',
+    'FinancialEntry',
+    'AgentStatus',
+    'HealthCheck',
 ]

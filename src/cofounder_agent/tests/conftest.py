@@ -370,6 +370,126 @@ pytest_marks = {
     "websocket": pytest.mark.websocket
 }
 
+# FastAPI Test Client
+@pytest.fixture
+def app():
+    """FastAPI application fixture"""
+    try:
+        from cofounder_agent.main import app
+        return app
+    except ImportError:
+        # Create minimal mock app for tests that don't need the full app
+        from fastapi import FastAPI
+        mock_app = FastAPI()
+        
+        @mock_app.get("/api/health")
+        async def health():
+            return {"status": "healthy"}
+        
+        return mock_app
+
+@pytest.fixture
+def client(app):
+    """FastAPI TestClient fixture"""
+    from fastapi.testclient import TestClient
+    return TestClient(app)
+
+@pytest.fixture
+def async_client(app):
+    """Async test client fixture using httpx.AsyncClient"""
+    try:
+        import httpx
+        return httpx.AsyncClient(base_url="http://test")
+    except ImportError:
+        pytest.skip("httpx not installed")
+
+# Event loop fixture for async tests
+@pytest.fixture(scope="function")
+def event_loop():
+    """Create event loop for async tests"""
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
+
+# Mock environment variables
+@pytest.fixture
+def mock_env_vars(monkeypatch):
+    """Mock environment variables for testing"""
+    test_env_vars = {
+        "ENVIRONMENT": "test",
+        "DEBUG": "True",
+        "LOG_LEVEL": "DEBUG",
+        "DATABASE_URL": "sqlite:///:memory:",
+        "REDIS_URL": "redis://localhost:6379/1",
+        "OPENAI_API_KEY": "sk-test-key",
+        "OLLAMA_HOST": "http://localhost:11434"
+    }
+    
+    for key, value in test_env_vars.items():
+        monkeypatch.setenv(key, value)
+    
+    return test_env_vars
+
+# Mock database
+@pytest.fixture
+def mock_database():
+    """Mock database fixture"""
+    class MockDatabase:
+        def __init__(self):
+            self.data = {}
+        
+        async def get(self, key: str):
+            return self.data.get(key)
+        
+        async def set(self, key: str, value: Any):
+            self.data[key] = value
+        
+        async def delete(self, key: str):
+            if key in self.data:
+                del self.data[key]
+        
+        async def exists(self, key: str):
+            return key in self.data
+        
+        def clear(self):
+            self.data.clear()
+    
+    return MockDatabase()
+
+# Mock cache
+@pytest.fixture
+def mock_cache():
+    """Mock cache fixture"""
+    class MockCache:
+        def __init__(self):
+            self.cache = {}
+        
+        async def get(self, key: str):
+            return self.cache.get(key)
+        
+        async def set(self, key: str, value: Any, ttl: int | None = None):
+            self.cache[key] = value
+        
+        async def delete(self, key: str):
+            if key in self.cache:
+                del self.cache[key]
+        
+        def clear(self):
+            self.cache.clear()
+    
+    return MockCache()
+
+# Mock logger
+@pytest.fixture
+def mock_logger():
+    """Mock logger fixture"""
+    logger = Mock()
+    logger.info = Mock()
+    logger.warning = Mock()
+    logger.error = Mock()
+    logger.debug = Mock()
+    return logger
+
 # Export test configuration
 __all__ = [
     "TEST_CONFIG",
@@ -378,5 +498,22 @@ __all__ = [
     "TestUtils",
     "run_with_timeout",
     "MOCK_API_RESPONSES",
-    "pytest_marks"
+    "pytest_marks",
+    "app",
+    "client",
+    "async_client",
+    "event_loop",
+    "mock_env_vars",
+    "mock_database",
+    "mock_cache",
+    "mock_logger",
+    "test_data_manager",
+    "mock_business_data",
+    "mock_tasks",
+    "mock_voice_commands",
+    "temp_directory",
+    "async_mock_manager",
+    "performance_monitor",
+    "test_utils",
+    "mock_api_responses"
 ]

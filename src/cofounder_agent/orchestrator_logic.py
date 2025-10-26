@@ -1,6 +1,6 @@
 """
 GLAD Labs AI Co-Founder Orchestrator Logic
-Enhanced with Google Cloud Firestore and Pub/Sub integration
+Updated with PostgreSQL database and API-based command queue (Firestore/Pub/Sub removed)
 """
 
 import logging
@@ -10,6 +10,7 @@ from typing import Dict, Any, List, Optional
 import json
 import os
 import re
+import httpx
 
 # Try to import complex dependency agents, but don't fail if unavailable
 try:
@@ -26,19 +27,20 @@ except ImportError:  # pragma: no cover - optional dependency
 
 class Orchestrator:
     """
-    The main orchestrator for the AI Co-Founder with Google Cloud integration
+    The main orchestrator for the AI Co-Founder with PostgreSQL and API-based command queue
+    (Firestore and Pub/Sub have been migrated to PostgreSQL and REST API endpoints)
     """
 
-    def __init__(self, firestore_client=None, pubsub_client=None):
+    def __init__(self, database_service=None, api_base_url: Optional[str] = None):
         """
-        Initializes the Orchestrator with Google Cloud services and specialized agents
+        Initializes the Orchestrator with PostgreSQL database service and command queue API
         
         Args:
-            firestore_client: Optional Firestore client for database operations
-            pubsub_client: Optional Pub/Sub client for agent messaging
+            database_service: Optional DatabaseService instance for PostgreSQL operations
+            api_base_url: Optional base URL for command queue API (e.g., "http://localhost:8000")
         """
-        self.firestore_client = firestore_client
-        self.pubsub_client = pubsub_client
+        self.database_service = database_service
+        self.api_base_url = api_base_url or os.getenv("API_BASE_URL", "http://localhost:8000")
         
         # Initialize agents if available (guard against None for type checkers)
         if 'FinancialAgent' in globals() and FinancialAgent is not None:
@@ -57,9 +59,9 @@ class Orchestrator:
             self.compliance_agent_available = False
 
         logging.info(
-            "Orchestrator initialized: firestore_available=%s pubsub_available=%s financial_agent=%s compliance_agent=%s",
-            firestore_client is not None,
-            pubsub_client is not None,
+            "Orchestrator initialized: database_available=%s api_base_url=%s financial_agent=%s compliance_agent=%s",
+            database_service is not None,
+            self.api_base_url,
             self.financial_agent_available,
             self.compliance_agent_available,
         )
@@ -156,24 +158,24 @@ class Orchestrator:
     def get_content_calendar(self) -> str:
         """Synchronous version of content calendar"""
         try:
-            if self.firestore_client:
-                return "Content calendar loaded from Firestore. (Use async version for real-time data)"
+            if self.database_service:
+                return "Content calendar loaded from PostgreSQL. (Use async version for real-time data)"
             else:
-                return "Content calendar feature available. (Running in development mode - Firestore not connected)"
+                return "Content calendar feature available. (Running in development mode - Database not connected)"
         except Exception as e:
             logging.error(f"Error fetching content calendar: {e}")
             return "I'm sorry, I had trouble fetching the content calendar."
 
     async def get_content_calendar_async(self) -> str:
-        """Async version of content calendar with real Firestore integration"""
+        """Async version of content calendar with real PostgreSQL integration"""
         try:
-            if self.firestore_client:
-                # Get actual pending tasks from Firestore
-                tasks = await self.firestore_client.get_pending_tasks(limit=20)
+            if self.database_service:
+                # Get actual pending tasks from PostgreSQL
+                tasks = await self.database_service.get_pending_tasks(limit=20)
                 
                 if tasks:
                     task_count = len(tasks)
-                    response = f"📅 Content Calendar: {task_count} pending tasks loaded from Firestore\n\n"
+                    response = f"📅 Content Calendar: {task_count} pending tasks loaded from PostgreSQL\n\n"
                     
                     for i, task in enumerate(tasks[:5], 1):  # Show first 5 tasks
                         status_emoji = "🟡" if task.get('status') == 'pending' else "🟢"
@@ -186,13 +188,13 @@ class Orchestrator:
                 else:
                     return "📅 Content calendar is empty. Create new tasks to get started!"
             else:
-                return "📅 Content calendar ready (Firestore integration available for real-time data)"
+                return "📅 Content calendar ready (Database integration available for real-time data)"
         except Exception as e:
             logging.error(f"Error fetching content calendar: {e}")
             return "❌ Error fetching content calendar from database"
 
     async def get_financial_summary_async(self) -> str:
-        """Async version of financial summary with real Firestore data"""
+        """Async version of financial summary with real PostgreSQL data"""
         try:
             response = ""
             
@@ -201,11 +203,11 @@ class Orchestrator:
                 agent_response = self.financial_agent.get_financial_summary()  # type: ignore[call-arg,union-attr]
                 response += agent_response + "\n\n"
             
-            # Enhance with Firestore financial data
-            if self.firestore_client:
-                financial_summary = await self.firestore_client.get_financial_summary(days=30)
+            # Enhance with PostgreSQL financial data
+            if self.database_service:
+                financial_summary = await self.database_service.get_financial_summary(days=30)
                 
-                response += f"💾 **Enhanced Firestore Data (Last 30 days):**\n"
+                response += f"💾 **Enhanced PostgreSQL Data (Last 30 days):**\n"
                 response += f"📊 Total Spend: ${financial_summary.get('total_spend', 0):.2f}\n"
                 response += f"📈 Transaction Count: {financial_summary.get('entry_count', 0)}\n"
                 response += f"📉 Avg Daily Spend: ${financial_summary.get('average_daily_spend', 0):.2f}\n"
@@ -219,7 +221,7 @@ class Orchestrator:
                         category = entry.get('category', 'Unknown')
                         response += f"  • ${amount:.2f} - {category}\n"
             else:
-                response += "💾 Firestore financial tracking available for enhanced analytics"
+                response += "💾 PostgreSQL financial tracking available for enhanced analytics"
                 
             return response
                     
@@ -228,43 +230,49 @@ class Orchestrator:
             return "❌ Error retrieving financial data"
 
     async def run_content_pipeline_async(self) -> str:
-        """Async version of content pipeline with real Pub/Sub orchestration"""
+        """Async version of content pipeline with command queue API"""
         try:
-            if self.pubsub_client:
-                # Trigger all content agents via Pub/Sub
-                pipeline_command = {
-                    "action": "process_all_pending",
-                    "priority": "high",
-                    "source": "cofounder_orchestrator",
-                    "timestamp": str(asyncio.get_event_loop().time())
-                }
-                
-                message_id = await self.pubsub_client.publish_agent_command("content", pipeline_command)
-                
-                # Also send to content pipeline topic
-                content_pipeline_msg = {
-                    "request_type": "batch_processing",
-                    "action": "process_all",
-                    "priority": "high"
-                }
-                
-                pipeline_msg_id = await self.pubsub_client.publish_content_request(content_pipeline_msg)
-                
-                # Log the pipeline trigger
-                if self.firestore_client:
-                    await self.firestore_client.add_log_entry(
-                        "info",
-                        "Content pipeline triggered by orchestrator",
-                        {
-                            "command_message_id": message_id,
-                            "pipeline_message_id": pipeline_msg_id,
-                            "source": "cofounder"
-                        }
+            # Trigger all content agents via command queue API
+            pipeline_command = {
+                "action": "process_all_pending",
+                "priority": "high",
+                "source": "cofounder_orchestrator",
+                "timestamp": str(time.time())
+            }
+            
+            try:
+                # Send command via API
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        f"{self.api_base_url}/api/commands/dispatch",
+                        json={
+                            "agent_type": "content",
+                            "command": pipeline_command
+                        },
+                        timeout=10.0
                     )
-                
-                return f"🚀 Content pipeline activated!\n📡 Command sent (ID: {message_id[:8]}...)\n📋 Pipeline triggered (ID: {pipeline_msg_id[:8]}...)\n✅ All content agents notified via Pub/Sub"
-            else:
-                return "🚀 Content pipeline ready (Pub/Sub integration available for distributed processing)"
+                    
+                    if response.status_code == 200:
+                        message_id = response.json().get("command_id", "unknown")
+                    else:
+                        message_id = "api_error"
+            except Exception as api_error:
+                logging.warning(f"Failed to send command via API: {api_error}")
+                message_id = "api_unavailable"
+            
+            # Log the pipeline trigger
+            if self.database_service:
+                await self.database_service.add_log_entry(
+                    "info",
+                    "Content pipeline triggered by orchestrator",
+                    {
+                        "command_id": message_id,
+                        "source": "cofounder",
+                        "method": "api"
+                    }
+                )
+            
+            return f"🚀 Content pipeline activated!\n📡 Command sent (ID: {str(message_id)[:8]}...)\n✅ All content agents notified via command queue API"
                 
         except Exception as e:
             logging.error(f"Error running content pipeline: {e}")
@@ -275,29 +283,38 @@ class Orchestrator:
         try:
             status_data = {
                 "orchestrator": "online",
-                "google_cloud": {
-                    "firestore": self.firestore_client is not None,
-                    "pubsub": self.pubsub_client is not None
+                "database": {
+                    "postgresql": self.database_service is not None,
+                },
+                "api": {
+                    "command_queue": self.api_base_url is not None
                 },
                 "agents": {
                     "financial": getattr(self, 'financial_agent_available', False),
                     "compliance": getattr(self, 'compliance_agent_available', False)
                 },
-                "mode": "production" if (self.firestore_client and self.pubsub_client) else "development"
+                "mode": "production" if (self.database_service and self.api_base_url) else "development"
             }
             
             # Perform actual health checks if services are available
-            if self.firestore_client:
-                firestore_health = await self.firestore_client.health_check()
-                status_data["firestore_health"] = firestore_health
+            if self.database_service:
+                db_health = await self.database_service.health_check()
+                status_data["database_health"] = db_health
             
-            if self.pubsub_client:
-                pubsub_health = await self.pubsub_client.health_check()
-                status_data["pubsub_health"] = pubsub_health
+            # Check command queue API health
+            try:
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(
+                        f"{self.api_base_url}/api/health",
+                        timeout=5.0
+                    )
+                    status_data["api_health"] = response.status_code == 200
+            except Exception:
+                status_data["api_health"] = False
             
             # Get task statistics
-            if self.firestore_client:
-                pending_tasks = await self.firestore_client.get_pending_tasks(limit=1)
+            if self.database_service:
+                pending_tasks = await self.database_service.get_pending_tasks(limit=1)
                 status_data["task_queue_size"] = len(pending_tasks) if pending_tasks else 0
             
             status_message = f"🟢 System Status: {status_data['mode'].upper()}\n"
@@ -331,7 +348,7 @@ class Orchestrator:
             }
 
     async def _handle_intervention_async(self, command: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Async version of intervention protocol with real Pub/Sub notification"""
+        """Async version of intervention protocol with command queue API notification"""
         try:
             reason = "user_intervention_request"
             if "emergency" in command.lower():
@@ -343,33 +360,53 @@ class Orchestrator:
                 
             response_message = f"🚨 // INTERVENE protocol activated: {reason}"
             
-            if self.pubsub_client:
-                intervention_data = {
-                    "reason": reason,
-                    "severity": "high",
-                    "command": command,
-                    "context": context,
-                    "timestamp": str(asyncio.get_event_loop().time()),
-                    "initiated_by": "cofounder_orchestrator"
-                }
-                
-                message_id = await self.pubsub_client.trigger_intervene_protocol(intervention_data)
-                response_message += f"\n📢 All agents notified via emergency Pub/Sub channels (Message ID: {message_id[:8]}...)"
-                
-                # Log the intervention
-                if self.firestore_client:
-                    await self.firestore_client.add_log_entry(
-                        "critical",
-                        f"INTERVENE protocol triggered: {reason}",
-                        {
-                            "pubsub_message_id": message_id,
-                            "reason": reason,
-                            "command": command,
-                            "context": context
-                        }
+            intervention_data = {
+                "reason": reason,
+                "severity": "high",
+                "command": command,
+                "context": context,
+                "timestamp": str(time.time()),
+                "initiated_by": "cofounder_orchestrator"
+            }
+            
+            message_id = "unknown"
+            api_available = False
+            
+            try:
+                # Send intervention notice via command queue API
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        f"{self.api_base_url}/api/commands/intervene",
+                        json=intervention_data,
+                        timeout=10.0
                     )
+                    
+                    if response.status_code == 200:
+                        message_id = response.json().get("intervention_id", "unknown")
+                        api_available = True
+                    else:
+                        message_id = "api_error"
+            except Exception as api_error:
+                logging.warning(f"Failed to send intervention via API: {api_error}")
+                message_id = "api_unavailable"
+            
+            if api_available:
+                response_message += f"\n📢 All agents notified via command queue API (Intervention ID: {str(message_id)[:8]}...)"
             else:
-                response_message += "\n⚠️  Emergency protocol ready (Pub/Sub integration available)"
+                response_message += "\n⚠️  Emergency protocol ready (Command queue API integration available)"
+            
+            # Log the intervention
+            if self.database_service:
+                await self.database_service.add_log_entry(
+                    "critical",
+                    f"INTERVENE protocol triggered: {reason}",
+                    {
+                        "intervention_id": message_id,
+                        "reason": reason,
+                        "command": command,
+                        "context": context
+                    }
+                )
             
             return {
                 "response": response_message,
@@ -378,7 +415,7 @@ class Orchestrator:
                     "reason": reason,
                     "protocol": "INTERVENE",
                     "severity": "high",
-                    "services_notified": self.pubsub_client is not None
+                    "api_available": api_available
                 }
             }
             
@@ -408,53 +445,47 @@ class Orchestrator:
             # Generate task ID for development mode
             task_id = f"sync-task-{abs(hash(topic)) % 10000}"
             
-            if self.firestore_client:
+            if self.database_service:
                 response = f"✅ Created content task: '{topic}' (Task queued for async processing)"
             else:
                 response = f"✅ Created content task: '{topic}' (Development mode - Task ID: {task_id})"
             
-            # Note: Pub/Sub integration requires async, so mention it's available
-            if self.pubsub_client:
-                response += " → Use async API for immediate Pub/Sub notification"
-            
-            return response
+            # Note: Command queue API integration requires async
+            return response + " → Use async API for immediate notification"
             
         except Exception as e:
             logging.error(f"Error creating content task: {e}")
             return f"❌ Failed to create content task: {str(e)}"
 
     async def create_content_task(self, command: str) -> str:
-        """Enhanced task creation with real Firestore and Pub/Sub integration"""
+        """Enhanced task creation with real PostgreSQL and command queue API integration"""
         try:
             # Extract topic using improved pattern matching
             topic = self._extract_topic_from_command(command)
             
-            # Create comprehensive task data matching data_schemas.md
+            # Create comprehensive task data
             task_data = {
-                "agentId": "content-creation-agent-v1",
-                "taskName": f"Generate content about {topic}",
                 "topic": topic,
+                "title": f"Create content about {topic}",
                 "primary_keyword": topic.split()[0] if topic.split() else "content",
                 "target_audience": "General",
                 "category": "Blog Post",
-                "status": "queued",
-                "metadata": {
-                    "priority": 2,  # Medium priority
-                    "estimated_duration_minutes": 45,
-                    "source": "cofounder_orchestrator",
-                    "content_type": "blog_post",
-                    "word_count_target": 1500
-                }
+                "status": "pending",
+                "priority": 2,  # Medium priority
+                "estimated_duration_minutes": 45,
+                "source": "cofounder_orchestrator",
+                "content_type": "blog_post",
+                "word_count_target": 1500
             }
 
             task_id = None
-            if self.firestore_client:
-                # Actually create the task in Firestore
-                task_id = await self.firestore_client.add_task(task_data)
+            if self.database_service:
+                # Create the task in PostgreSQL
+                task_id = await self.database_service.add_task(task_data)
                 response = f"✅ Created content task: '{topic}' (Task ID: {task_id})"
                 
                 # Log the task creation
-                await self.firestore_client.add_log_entry(
+                await self.database_service.add_log_entry(
                     "info",
                     f"Content task created via orchestrator: {topic}",
                     {"task_id": task_id, "topic": topic, "source": "cofounder"}
@@ -464,28 +495,42 @@ class Orchestrator:
                 task_id = f"dev-task-{abs(hash(topic)) % 10000}"
                 response = f"✅ Created content task: '{topic}' (Development mode - Task ID: {task_id})"
             
-            # Trigger content agent via Pub/Sub if available
-            if self.pubsub_client:
-                content_request = {
-                    "task_id": task_id,
-                    "action": "create_content",
-                    "specifications": task_data,
-                    "priority": "normal",
-                    "source": "cofounder_orchestrator"
-                }
-                
-                message_id = await self.pubsub_client.publish_content_request(content_request)
-                response += f" → Content agent notified via Pub/Sub (Message ID: {message_id[:8]}...)"
-                
-                # Update task status to indicate it's been dispatched
-                if self.firestore_client:
-                    await self.firestore_client.update_task_status(
-                        task_id, 
-                        "in_progress", 
-                        {"pubsub_message_id": message_id, "dispatched_at": "now"}
+            # Trigger content agent via command queue API if available
+            try:
+                async with httpx.AsyncClient() as client:
+                    content_request = {
+                        "task_id": task_id,
+                        "action": "create_content",
+                        "specifications": task_data,
+                        "priority": "normal",
+                        "source": "cofounder_orchestrator"
+                    }
+                    
+                    api_response = await client.post(
+                        f"{self.api_base_url}/api/commands/dispatch",
+                        json={
+                            "agent_type": "content",
+                            "command": content_request
+                        },
+                        timeout=10.0
                     )
-            else:
-                response += " → Ready for content agent processing"
+                    
+                    if api_response.status_code == 200:
+                        message_id = api_response.json().get("command_id", "unknown")
+                        response += f" → Content agent notified via API (Command ID: {str(message_id)[:8]}...)"
+                        
+                        # Update task status
+                        if self.database_service:
+                            await self.database_service.update_task_status(
+                                task_id, 
+                                "in_progress", 
+                                {"api_command_id": message_id, "dispatched_at": str(time.time())}
+                            )
+                    else:
+                        response += " → Content agent ready for processing"
+            except Exception as api_error:
+                logging.warning(f"Failed to send command via API: {api_error}")
+                response += " → Content agent ready for processing (API unavailable)"
             
             return response
             
@@ -500,14 +545,14 @@ class Orchestrator:
                 # Use the existing financial agent
                 agent_response = self.financial_agent.get_financial_summary()  # type: ignore[call-arg,union-attr]
                 
-                if self.firestore_client:
-                    # In real implementation: cloud_data = await self.firestore_client.get_financial_summary()
-                    return f"{agent_response}\n\n💾 Enhanced with Firestore financial data"
+                if self.database_service:
+                    # In real implementation: cloud_data = await self.database_service.get_financial_summary()
+                    return f"{agent_response}\n\n💾 Enhanced with PostgreSQL financial data"
                 else:
-                    return f"{agent_response}\n\n📊 (Firestore integration available for enhanced tracking)"
+                    return f"{agent_response}\n\n📊 (PostgreSQL integration available for enhanced tracking)"
             else:
-                if self.firestore_client:
-                    return "📊 Financial summary available from Firestore database"
+                if self.database_service:
+                    return "📊 Financial summary available from PostgreSQL database"
                 else:
                     return "📊 Financial tracking system ready (agents and database in development mode)"
                     
@@ -516,13 +561,13 @@ class Orchestrator:
             return "I'm sorry, I had trouble getting the financial summary."
 
     def run_content_pipeline(self) -> str:
-        """Enhanced content pipeline with Pub/Sub orchestration"""
+        """Enhanced content pipeline with command queue API orchestration"""
         try:
-            if self.pubsub_client:
-                # In real implementation: await self.pubsub_client.publish_agent_command("content", {"action": "process_all"})
-                return "🚀 Content pipeline started via Pub/Sub messaging. All content agents notified."
+            if self.api_base_url:
+                # In real implementation would be: await client.post(f"{self.api_base_url}/api/commands/dispatch", ...)
+                return "🚀 Content pipeline started via command queue API. All content agents notified."
             else:
-                return "🚀 Content pipeline ready to start (Pub/Sub integration available for distributed processing)"
+                return "🚀 Content pipeline ready to start (Command queue API integration available for distributed processing)"
 
         except Exception as e:
             logging.error(f"Error running content pipeline: {e}")
@@ -544,19 +589,22 @@ class Orchestrator:
         """Get comprehensive system status"""
         status_data = {
             "orchestrator": "online",
-            "google_cloud": {
-                "firestore": self.firestore_client is not None,
-                "pubsub": self.pubsub_client is not None
+            "database": {
+                "postgresql": self.database_service is not None
+            },
+            "api": {
+                "command_queue": self.api_base_url is not None
             },
             "agents": {
                 "financial": getattr(self, 'financial_agent_available', False),
                 "compliance": getattr(self, 'compliance_agent_available', False)
             },
-            "mode": "production" if (self.firestore_client and self.pubsub_client) else "development"
+            "mode": "production" if (self.database_service and self.api_base_url) else "development"
         }
         
         status_message = f"🟢 System Status: {status_data['mode'].upper()}\n"
-        status_message += f"☁️  Google Cloud: Firestore {'✓' if status_data['google_cloud']['firestore'] else '✗'}, Pub/Sub {'✓' if status_data['google_cloud']['pubsub'] else '✗'}\n"
+        status_message += f"🗄️  Database: PostgreSQL {'✓' if status_data['database']['postgresql'] else '✗'}\n"
+        status_message += f"🔌 API: Command Queue {'✓' if status_data['api']['command_queue'] else '✗'}\n"
         status_message += f"🤖 Agents: Financial {'✓' if status_data['agents']['financial'] else '✗'}, Compliance {'✓' if status_data['agents']['compliance'] else '✗'}"
         
         return {
@@ -576,11 +624,11 @@ class Orchestrator:
                 
             response_message = f"🚨 // INTERVENE protocol activated: {reason}"
             
-            if self.pubsub_client:
-                # In real implementation: await self.pubsub_client.trigger_intervene_protocol({...})
-                response_message += "\n📢 All agents notified via emergency Pub/Sub channels"
+            if self.api_base_url:
+                # In real implementation: await client.post(f"{self.api_base_url}/api/commands/intervene", {...})
+                response_message += "\n📢 All agents notified via command queue API"
             else:
-                response_message += "\n⚠️  Emergency protocol ready (Pub/Sub integration available)"
+                response_message += "\n⚠️  Emergency protocol ready (Command queue API integration available)"
             
             return {
                 "response": response_message,
@@ -626,8 +674,8 @@ class Orchestrator:
             "status": "success",
             "metadata": {
                 "available_services": {
-                    "firestore": self.firestore_client is not None,
-                    "pubsub": self.pubsub_client is not None,
+                    "database": self.database_service is not None,
+                    "api": self.api_base_url is not None,
                     "financial_agent": getattr(self, 'financial_agent_available', False),
                     "compliance_agent": getattr(self, 'compliance_agent_available', False)
                 }

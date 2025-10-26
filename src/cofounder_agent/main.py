@@ -1,7 +1,8 @@
 """
 GLAD Labs AI Co-Founder Agent
 FastAPI application serving as the central orchestrator for the GLAD Labs ecosystem
-Implements Google-native stack with Firestore and Pub/Sub integration
+Implements PostgreSQL database with REST API command queue integration
+Replaces Google Cloud Firestore and Pub/Sub services
 """
 
 import sys
@@ -21,6 +22,7 @@ import structlog
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from orchestrator_logic import Orchestrator
+from services.database_service import DatabaseService
 
 # Import route routers
 from routes.content import content_router
@@ -29,6 +31,8 @@ from routes.models import models_router
 from routes.enhanced_content import enhanced_content_router
 from routes.auth_routes import router as auth_router
 from routes.settings_routes import router as settings_router
+from routes.command_queue_routes import router as command_queue_router
+from routes.task_routes import router as task_router
 
 # Import database initialization
 try:
@@ -39,18 +43,9 @@ except ImportError:
     DATABASE_AVAILABLE = False
     logging.warning("Database module not available - authentication may not work")
 
-# Try to import Google Cloud services (may not be available in dev)
-try:
-    from services.firestore_client import FirestoreClient
-    from services.pubsub_client import PubSubClient
-    from services.performance_monitor import PerformanceMonitor
-    GOOGLE_CLOUD_AVAILABLE = True
-except ImportError:
-    FirestoreClient = None
-    PubSubClient = None
-    PerformanceMonitor = None
-    GOOGLE_CLOUD_AVAILABLE = False
-    logging.warning("Google Cloud services not available - running in development mode")
+# PostgreSQL database service is now the primary service
+# Google Cloud services kept for backward compatibility but not initialized
+DATABASE_SERVICE_AVAILABLE = True
 
 # Configure structured logging
 try:
@@ -79,71 +74,89 @@ except ImportError:
     logger = logging.getLogger(__name__)
 
 # Global service instances
-firestore_client: Optional[object] = None
-pubsub_client: Optional[object] = None
+database_service: Optional[DatabaseService] = None
 orchestrator: Optional[Orchestrator] = None
-performance_monitor: Optional[object] = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan manager for service initialization and cleanup"""
-    global firestore_client, pubsub_client, orchestrator, performance_monitor
+    """Application lifespan manager - startup and shutdown with PostgreSQL initialization"""
+    global database_service, orchestrator
     
     try:
-        # Initialize services
-        logger.info("Initializing GLAD Labs AI Co-Founder services")
+        logger.info("🚀 Starting GLAD Labs AI Co-Founder application...")
         
-        if GOOGLE_CLOUD_AVAILABLE:
-            # Initialize Firestore client
-            firestore_client = FirestoreClient()  # type: ignore[call-arg]
-            
-            # Initialize performance monitor with Firestore
-            performance_monitor = PerformanceMonitor(firestore_client=firestore_client)  # type: ignore[call-arg]
-            
-            # Initialize Pub/Sub client
-            pubsub_client = PubSubClient()  # type: ignore[call-arg]
-            await pubsub_client.ensure_topics_exist()
-            
-            # Update agent status
-            await firestore_client.update_agent_status("cofounder", {  # type: ignore[union-attr]
-                "status": "online",
-                "service_version": "1.0.0",
-                "capabilities": ["command_processing", "agent_orchestration", "task_management", "performance_monitoring"]
-            })
-        else:
-            # Development mode - initialize performance monitor without Firestore
-            performance_monitor = PerformanceMonitor() if PerformanceMonitor else None
+        # 1. Initialize PostgreSQL database service
+        logger.info("  📦 Connecting to PostgreSQL...")
+        try:
+            database_service = await DatabaseService.connect()
+            logger.info("  ✅ PostgreSQL connection established")
+        except Exception as e:
+            logger.error(f"  ❌ Failed to connect to PostgreSQL: {e}")
+            logger.warning("  ⚠️ Continuing in development mode without database")
+            database_service = None
         
-        # Initialize orchestrator with services
-        orchestrator = Orchestrator(
-            firestore_client=firestore_client,
-            pubsub_client=pubsub_client
-        )
+        # 2. Create tables if they don't exist
+        if database_service:
+            try:
+                logger.info("  📋 Creating database tables...")
+                await database_service.create_tables()
+                logger.info("  ✅ Database tables created/verified")
+            except Exception as e:
+                logger.error(f"  ⚠️ Error during table creation: {e}")
         
-        logger.info("GLAD Labs AI Co-Founder services initialized successfully")
+        # 3. Initialize orchestrator with new database service
+        api_base_url = os.getenv("API_BASE_URL", "http://localhost:8000")
+        logger.info(f"  🤖 Initializing orchestrator (API: {api_base_url})...")
+        try:
+            orchestrator = Orchestrator(
+                database_service=database_service,
+                api_base_url=api_base_url
+            )
+            logger.info("  ✅ Orchestrator initialized successfully")
+        except Exception as e:
+            logger.error(f"  ❌ Failed to initialize orchestrator: {e}")
+            raise
         
-        yield
+        # 4. Verify connections
+        if database_service:
+            try:
+                logger.info("  🔍 Verifying database connection...")
+                health = await database_service.health_check()
+                if health.get("status") == "healthy":
+                    logger.info(f"  ✅ Database health check passed")
+                else:
+                    logger.warning(f"  ⚠️ Database health check returned: {health}")
+            except Exception as e:
+                logger.warning(f"  ⚠️ Database health check failed: {e}")
+        
+        logger.info("✅ Application started successfully!")
+        logger.info(f"  - Database Service: {database_service is not None}")
+        logger.info(f"  - Orchestrator: {orchestrator is not None}")
+        logger.info(f"  - API Base URL: {api_base_url}")
+        
+        yield  # Application runs here
         
     except Exception as e:
-        logger.error(f"Failed to initialize services: {e}")
+        logger.error(f"❌ Failed to start application: {e}")
         raise
+    
     finally:
-        # Cleanup services
-        logger.info("Shutting down GLAD Labs AI Co-Founder services")
-        
-        if GOOGLE_CLOUD_AVAILABLE and firestore_client:
-            try:
-                await firestore_client.update_agent_status("cofounder", {  # type: ignore[union-attr]
-                    "status": "offline"
-                })
-            except Exception as e:
-                logger.error(f"Error updating offline status: {e}")
-        
-        if GOOGLE_CLOUD_AVAILABLE and pubsub_client:
-            try:
-                await pubsub_client.close()  # type: ignore[union-attr]
-            except Exception as e:
-                logger.error(f"Error closing pub/sub: {e}")
+        # ===== SHUTDOWN =====
+        try:
+            logger.info("🛑 Shutting down GLAD Labs AI Co-Founder application...")
+            
+            if database_service:
+                try:
+                    logger.info("  Closing database connection...")
+                    await database_service.close()
+                    logger.info("  ✅ Database connection closed")
+                except Exception as e:
+                    logger.error(f"  ⚠️ Error closing database: {e}")
+            
+            logger.info("✅ Application shut down successfully!")
+            
+        except Exception as e:
+            logger.error(f"❌ Error during shutdown: {e}")
 
 app = FastAPI(
     title="GLAD Labs AI Co-Founder",
@@ -163,11 +176,13 @@ app.add_middleware(
 
 # Include route routers
 app.include_router(auth_router)  # Authentication endpoints
+app.include_router(task_router)  # Task management endpoints
 app.include_router(content_router)
 app.include_router(generation_router)  # Content generation with Ollama
 app.include_router(models_router)
 app.include_router(enhanced_content_router)
 app.include_router(settings_router)  # Settings management
+app.include_router(command_queue_router)  # Command queue (replaces Pub/Sub)
 
 class CommandRequest(BaseModel):
     """Request model for processing a command."""
@@ -209,12 +224,8 @@ async def process_command(request: CommandRequest, background_tasks: BackgroundT
         if orchestrator is None:
             raise HTTPException(status_code=503, detail="Orchestrator not initialized")
         
-        # Use async version if Google Cloud services are available
-        if GOOGLE_CLOUD_AVAILABLE and orchestrator.firestore_client and orchestrator.pubsub_client:
-            response = await orchestrator.process_command_async(request.command, request.context)
-        else:
-            # Fall back to synchronous version for development
-            response = orchestrator.process_command(request.command, request.context)
+        # Always use async version with new database service
+        response = await orchestrator.process_command_async(request.command, request.context)
         
         return CommandResponse(
             response=response.get("response", "Command processed"),
@@ -233,7 +244,7 @@ async def create_task(request: TaskRequest, background_tasks: BackgroundTasks):
     try:
         logger.info(f"Creating task: topic={request.topic} type={request.task_type}")
         
-        if not GOOGLE_CLOUD_AVAILABLE or not firestore_client:
+        if not database_service:
             # Development mode - simulate task creation
             task_id = f"dev-task-{hash(request.topic)}"
             return TaskResponse(
@@ -242,7 +253,7 @@ async def create_task(request: TaskRequest, background_tasks: BackgroundTasks):
                 message=f"Task created for '{request.topic}' (development mode)"
             )
         
-        # Create task in Firestore
+        # Create task in PostgreSQL database
         task_data = {
             "topic": request.topic,
             "task_type": request.task_type,
@@ -250,10 +261,10 @@ async def create_task(request: TaskRequest, background_tasks: BackgroundTasks):
             "status": "pending"
         }
         
-        task_id = await firestore_client.add_task(task_data)  # type: ignore[union-attr]
+        task_id = await database_service.add_task(task_data)
         
         # Optionally trigger content agent if it's a content task
-        if request.task_type == "content_creation" and pubsub_client:
+        if request.task_type == "content_creation":
             background_tasks.add_task(
                 trigger_content_agent,
                 task_id,
@@ -279,20 +290,28 @@ async def get_status():
     try:
         status_data = {
             "service": "online",
-            "google_cloud_available": GOOGLE_CLOUD_AVAILABLE,
+            "database_available": database_service is not None,
             "orchestrator_initialized": orchestrator is not None,
             "timestamp": str(asyncio.get_event_loop().time())
         }
         
-        if GOOGLE_CLOUD_AVAILABLE:
-            # Add Google Cloud service health checks
-            if firestore_client:
-                firestore_health = await firestore_client.health_check()  # type: ignore[union-attr]
-                status_data["firestore"] = firestore_health
-            
-            if pubsub_client:
-                pubsub_health = await pubsub_client.health_check()  # type: ignore[union-attr]
-                status_data["pubsub"] = pubsub_health
+        # Add database and API health checks
+        if database_service:
+            try:
+                db_health = await database_service.health_check()
+                status_data["database"] = db_health
+            except Exception as e:
+                logger.warning(f"Database health check failed: {e}")
+                status_data["database"] = {"status": "error", "message": str(e)}
+        
+        # Add orchestrator status
+        if orchestrator:
+            try:
+                orch_status = await orchestrator._get_system_status_async()
+                status_data["orchestrator"] = orch_status
+            except Exception as e:
+                logger.warning(f"Orchestrator status check failed: {e}")
+                status_data["orchestrator"] = {"status": "error", "message": str(e)}
         
         return StatusResponse(status="healthy", data=status_data)
         
@@ -309,10 +328,10 @@ async def get_pending_tasks(limit: int = 10):
     Get pending tasks from the task queue
     """
     try:
-        if not GOOGLE_CLOUD_AVAILABLE or not firestore_client:
+        if not database_service:
             return {"tasks": [], "message": "Running in development mode"}
         
-        tasks = await firestore_client.get_pending_tasks(limit)  # type: ignore[union-attr]
+        tasks = await database_service.get_pending_tasks(limit)
         return {"tasks": tasks, "count": len(tasks)}
         
     except Exception as e:
@@ -325,9 +344,10 @@ async def get_performance_metrics(hours: int = 24):
     Get comprehensive performance metrics and analytics
     """
     try:
-        if performance_monitor:
-            metrics = await performance_monitor.get_performance_summary(hours=hours)  # type: ignore[union-attr]
-            return {"metrics": metrics, "status": "success"}
+        if database_service:
+            # Query performance data from database
+            logs = await database_service.get_logs(limit=1000)
+            return {"logs": logs, "status": "success"}
         else:
             return {"message": "Performance monitoring not available", "status": "disabled"}
     except Exception as e:
@@ -340,14 +360,14 @@ async def get_health_metrics():
     Get current system health metrics and status
     """
     try:
-        if performance_monitor:
-            health = await performance_monitor.get_health_metrics()  # type: ignore[union-attr]
+        if database_service:
+            health = await database_service.health_check()
             return {"health": health, "status": "success"}
         else:
             return {
                 "health": {
-                    "overall_status": "unknown",
-                    "message": "Performance monitoring not available"
+                    "status": "unknown",
+                    "message": "Database not available"
                 },
                 "status": "disabled"
             }
@@ -361,11 +381,12 @@ async def reset_performance_metrics():
     Reset session-level performance metrics (admin endpoint)
     """
     try:
-        if performance_monitor:
-            performance_monitor.reset_session_metrics()  # type: ignore[union-attr]
+        # Performance metrics are now logged to database
+        if database_service:
+            await database_service.add_log_entry("info", "Performance metrics reset")
             return {"message": "Performance metrics reset successfully", "status": "success"}
         else:
-            return {"message": "Performance monitoring not available", "status": "disabled"}
+            return {"message": "Database not available", "status": "disabled"}
     except Exception as e:
         logger.error(f"Error resetting metrics: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to reset metrics: {str(e)}")
@@ -378,13 +399,13 @@ async def root():
     return {
         "message": "GLAD Labs AI Co-Founder is running",
         "version": "1.0.0",
-        "google_cloud_enabled": GOOGLE_CLOUD_AVAILABLE
+        "database_enabled": database_service is not None
     }
 
 async def trigger_content_agent(task_id: str, topic: str, metadata: Optional[Dict[str, Any]]):
-    """Background task to trigger content agent via Pub/Sub"""
+    """Background task to trigger content agent via command queue API"""
     try:
-        if pubsub_client:
+        if orchestrator:
             content_request = {
                 "task_id": task_id,
                 "topic": topic,
@@ -392,8 +413,9 @@ async def trigger_content_agent(task_id: str, topic: str, metadata: Optional[Dic
                 "metadata": metadata or {}
             }
             
-            message_id = await pubsub_client.publish_content_request(content_request)  # type: ignore[union-attr]
-            logger.info(f"Content agent triggered: task_id={task_id} topic={topic} message_id={message_id}")
+            # Dispatch via REST API instead of Pub/Sub
+            await orchestrator.run_content_pipeline_async(topic, metadata)
+            logger.info(f"Content agent triggered: task_id={task_id} topic={topic}")
             
     except Exception as e:
         logger.error(f"Failed to trigger content agent: task_id={task_id} error={e}")
