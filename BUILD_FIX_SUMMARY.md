@@ -9,7 +9,7 @@ The React build failed because `web/oversight-hub/src/services/cofounderAgentCli
 
 ```shell
 Failed to compile.
-[eslint] 
+[eslint]
 src/services/cofounderAgentClient.js
   Line 1:1:  Unexpected Unicode BOM (Byte Order Mark)  unicode-bom
 ```

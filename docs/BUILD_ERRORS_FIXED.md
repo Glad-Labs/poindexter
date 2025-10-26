@@ -12,7 +12,7 @@ The Next.js/React build failed with ESLint error:
 
 ```text
 Failed to compile.
-[eslint] 
+[eslint]
 src/services/cofounderAgentClient.js
   Line 1:1:  Unexpected Unicode BOM (Byte Order Mark)  unicode-bom
 ```
@@ -49,7 +49,7 @@ Removed the BOM from `web/oversight-hub/src/services/cofounderAgentClient.js` us
 
 ```text
 Failed to compile.
-[eslint] 
+[eslint]
 src/services/cofounderAgentClient.js
   Line 1:1:  Unexpected Unicode BOM (Byte Order Mark)  unicode-bom
 npm error code 1
@@ -69,7 +69,7 @@ src/services/cofounderAgentClient.js passes ESLint checks
 ### Warning 1: Non-standard NODE_ENV
 
 ```text
-⚠ You are using a non-standard "NODE_ENV" value in your environment. 
+⚠ You are using a non-standard "NODE_ENV" value in your environment.
 This creates inconsistencies in the project and is strongly advised against.
 ```
 
