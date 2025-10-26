@@ -10,7 +10,7 @@ from uuid import UUID
 from typing import Optional, List, Dict, Any
 from sqlalchemy import (
     Column, String, Boolean, Integer, DateTime, ForeignKey, Text, 
-    JSON, Index, UniqueConstraint, CheckConstraint,
+    JSON, Index, UniqueConstraint, CheckConstraint, Float,
     func, event, create_engine
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB, INET, ARRAY
@@ -481,7 +481,7 @@ class Task(Base):
     completed_at = Column(DateTime(timezone=True))
     
     # Flexible metadata and results
-    metadata = Column(JSONB, default={})
+    task_metadata = Column(JSONB, default={})
     result = Column(JSONB)  # Task result/output
     
     def __repr__(self):
@@ -517,7 +517,7 @@ class Log(Base):
     agent_id = Column(String(255))
     
     # Context metadata
-    metadata = Column(JSONB, default={})
+    log_metadata = Column(JSONB, default={})
     
     def __repr__(self):
         return f"<Log(level='{self.level}', message='{self.message[:50]}...')>"
@@ -551,7 +551,7 @@ class FinancialEntry(Base):
     task_id = Column(PG_UUID(as_uuid=True), ForeignKey('tasks.id'))
     
     # Flexible metadata
-    metadata = Column(JSONB, default={})
+    financial_metadata = Column(JSONB, default={})
     
     def __repr__(self):
         return f"<FinancialEntry(amount=${self.amount}, category='{self.category}')>"
@@ -590,7 +590,7 @@ class AgentStatus(Base):
     service_version = Column(String(50))
     
     # Flexible metadata
-    metadata = Column(JSONB, default={})
+    agent_metadata = Column(JSONB, default={})
     
     def __repr__(self):
         return f"<AgentStatus(agent='{self.agent_name}', status='{self.status}')>"
@@ -622,7 +622,7 @@ class HealthCheck(Base):
     
     # Response time and metadata
     response_time_ms = Column(Float)
-    metadata = Column(JSONB, default={})
+    health_metadata = Column(JSONB, default={})
     
     def __repr__(self):
         return f"<HealthCheck(service='{self.service}', status='{self.status}')>"

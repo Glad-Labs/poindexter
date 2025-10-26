@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 # Import database models and utilities
 from models import Task, User, Base
 from database import get_db
-from auth_routes import get_current_user
+from routes.auth_routes import get_current_user
 
 # Configure router with prefix and tags
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
