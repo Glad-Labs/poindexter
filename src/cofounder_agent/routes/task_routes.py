@@ -71,7 +71,7 @@ class TaskResponse(BaseModel):
     result: Optional[Dict[str, Any]] = None
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class TaskListResponse(BaseModel):
@@ -82,7 +82,7 @@ class TaskListResponse(BaseModel):
     limit: int
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class MetricsResponse(BaseModel):

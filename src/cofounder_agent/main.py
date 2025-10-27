@@ -88,7 +88,8 @@ async def lifespan(app: FastAPI):
         # 1. Initialize PostgreSQL database service
         logger.info("  📦 Connecting to PostgreSQL...")
         try:
-            database_service = await DatabaseService.connect()
+            database_service = DatabaseService()
+            await database_service.initialize()
             logger.info("  ✅ PostgreSQL connection established")
         except Exception as e:
             logger.error(f"  ❌ Failed to connect to PostgreSQL: {e}")
@@ -98,9 +99,7 @@ async def lifespan(app: FastAPI):
         # 2. Create tables if they don't exist
         if database_service:
             try:
-                logger.info("  📋 Creating database tables...")
-                await database_service.create_tables()
-                logger.info("  ✅ Database tables created/verified")
+                logger.info("  📋 Database tables initialized in previous step")
             except Exception as e:
                 logger.error(f"  ⚠️ Error during table creation: {e}")
         
