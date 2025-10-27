@@ -46,14 +46,14 @@
 
 ### Core Backend Services - ✅ 2/2 Archived
 
-5. **firestore_client.py.archive** (325 lines) - CORE VERSION
+1. **firestore_client.py.archive** (325 lines) - CORE VERSION
    - Original: `src/cofounder_agent/services/firestore_client.py`
    - Scope: Task management, financial tracking, agent status, logging, health checks
    - Methods Archived: 9 major methods (tasks, financial data, agent status, health)
    - API Replacements: POST/PUT/GET /api/tasks, /api/financial-data, /api/health
    - Status: ✅ Archived with complete re-activation procedure
 
-6. **pubsub_client.py.archive** (362 lines) - CORE VERSION
+2. **pubsub_client.py.archive** (362 lines) - CORE VERSION
    - Original: `src/cofounder_agent/services/pubsub_client.py`
    - Scope: Agent messaging, content pipeline, INTERVENE protocol, subscriptions
    - Topics Archived: agent-commands, agent-responses, intervene-protocol, content-pipeline
@@ -62,13 +62,13 @@
 
 ### Agent-Specific Services - ✅ 4/4 Archived
 
-7. **gcs_client.py.archive** (45 lines) - AGENT VERSION
+3. **gcs_client.py.archive** (45 lines) - AGENT VERSION
    - Original: `src/agents/content_agent/services/gcs_client.py`
    - Functionality: File uploads to Google Cloud Storage with signed URLs
    - Methods: upload_file() → POST /api/files/upload
    - Status: ✅ Archived with file service migration notes
 
-8. **content_agent_firestore_client.py.archive** (181 lines) - AGENT VERSION
+4. **content_agent_firestore_client.py.archive** (181 lines) - AGENT VERSION
    - Original: `src/agents/content_agent/services/firestore_client.py`
    - Functionality: Task logging, run tracking, status updates, nested collections
    - Collections: agent_runs (with logs sub-collection), tasks
@@ -76,40 +76,40 @@
    - API Replacements: POST/PUT /api/tasks/{id}/runs, GET /api/tasks?status=New
    - Status: ✅ Archived with complete re-activation procedure
 
-9. **content_agent_pubsub_client.py.archive** (82 lines) - AGENT VERSION
+5. **content_agent_pubsub_client.py.archive** (82 lines) - AGENT VERSION
    - Original: `src/agents/content_agent/services/pubsub_client.py`
    - Functionality: Command listener for PAUSE_AGENT, RESUME_AGENT
    - Integration: Controls orchestrator.paused flag
    - API Replacement: GET /api/agent-commands or WebSocket listener
    - Status: ✅ Archived with complete re-activation procedure
 
-10. **create_task.py.archive** (61 lines)
-    - Original: `src/agents/content_agent/create_task.py`
-    - Functionality: CLI utility for interactive task creation
-    - Direct Google Cloud: `from google.cloud import firestore`
-    - API Replacement: Wrapper around POST /api/tasks endpoint
-    - Status: ✅ Archived with re-activation procedure
+6. **create_task.py.archive** (61 lines)
+   - Original: `src/agents/content_agent/create_task.py`
+   - Functionality: CLI utility for interactive task creation
+   - Direct Google Cloud: `from google.cloud import firestore`
+   - API Replacement: Wrapper around POST /api/tasks endpoint
+   - Status: ✅ Archived with re-activation procedure
 
 ### Configuration & Documentation - ✅ 3/3 Complete
 
-11. **PYTHON_BACKEND_MIGRATION_SUMMARY.md** (400+ lines)
-    - Complete guide for migrating core backend services from Firestore/Pub-Sub to REST API
-    - Documents all collections, methods, and API endpoint mappings
-    - Includes error handling patterns and environment variables
-    - Status: ✅ Created and maintained
+7. **PYTHON_BACKEND_MIGRATION_SUMMARY.md** (400+ lines)
+   - Complete guide for migrating core backend services from Firestore/Pub-Sub to REST API
+   - Documents all collections, methods, and API endpoint mappings
+   - Includes error handling patterns and environment variables
+   - Status: ✅ Created and maintained
 
-12. **REACT_COMPONENTS_MIGRATION_SUMMARY.md** (500+ lines)
-    - Complete guide for migrating React components from Firebase to REST API
-    - Documents all components, state management changes, and polling patterns
-    - Includes troubleshooting and performance optimization
-    - Status: ✅ Created and maintained
+8. **REACT_COMPONENTS_MIGRATION_SUMMARY.md** (500+ lines)
+   - Complete guide for migrating React components from Firebase to REST API
+   - Documents all components, state management changes, and polling patterns
+   - Includes troubleshooting and performance optimization
+   - Status: ✅ Created and maintained
 
-13. **README.md** (THIS FILE)
-    - Archive strategy and structure
-    - File inventory and status tracking
-    - Phase 5 completion summary
-    - Future integration roadmap
-    - Status: ✅ This file - Complete
+9. **README.md** (THIS FILE)
+   - Archive strategy and structure
+   - File inventory and status tracking
+   - Phase 5 completion summary
+   - Future integration roadmap
+   - Status: ✅ This file - Complete
 
 ---
 
