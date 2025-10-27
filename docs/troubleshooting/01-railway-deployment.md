@@ -50,6 +50,7 @@ Changed from excluding documentation files to only excluding development tools:
 ```
 
 **Key Changes:**
+
 - ✅ Removed `README.md` from exclusions
 - ✅ Added comment explaining why documentation files are kept
 - ✅ Preserves important build files for production
@@ -97,6 +98,7 @@ railway logs
 ## 📋 Build Configuration Reference
 
 **Railpack detects and uses:**
+
 - Python 3.13.9 (from `.env` or auto-detected)
 - `requirements.txt` for dependencies
 - `main:app` as FastAPI entry point
@@ -177,8 +179,8 @@ pwd
 
 ## 📝 Files Modified
 
-| File | Change |
-|------|--------|
+| File            | Change                                                                                              |
+| --------------- | --------------------------------------------------------------------------------------------------- |
 | `.dockerignore` | Removed `README.md` from exclusions, added comment explaining why documentation files are preserved |
 
 ---
@@ -186,6 +188,7 @@ pwd
 ## 🔗 Next Steps
 
 1. **Commit the fix:**
+
    ```bash
    git add .dockerignore
    git commit -m "fix: update dockerignore to preserve LICENSE.md for builds"
@@ -193,6 +196,7 @@ pwd
    ```
 
 2. **Push to production when ready:**
+
    ```bash
    git checkout main
    git merge staging

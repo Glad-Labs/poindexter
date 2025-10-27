@@ -101,16 +101,69 @@ This keeps documentation clean, maintainable, and useful.
 
 ---
 
-## 🔄 Last Updated
+## � Troubleshooting & Quick Solutions
 
-**Date:** October 23, 2025  
-**Status:** ✅ Phase 1-5 Complete | High-Level Documentation Only  
-**Core Docs:** 8 files | **Components:** 4 + troubleshooting | **Reference:** 5 files | **Archive:** 16 files  
-**Total:** 18 active files | **Organization:** 95% ✨
+Quick answers to common deployment and development problems:
+
+### Deployment & Infrastructure Issues
+
+- **[Railway Deployment Failures](./troubleshooting/01-railway-deployment.md)** - Deploy errors, configuration, Docker build issues
+- **[Firestore to PostgreSQL Migration](./troubleshooting/02-firestore-migration.md)** - Migrating databases, connection issues
+- **[GitHub Actions Problems](./troubleshooting/03-github-actions.md)** - CI/CD pipeline failures
+- **[Build Errors](./troubleshooting/04-build-fixes.md)** - Node.js and Python build failures
+- **[Compilation Issues](./troubleshooting/05-compilation.md)** - TypeScript and Python compilation errors
+
+### Component-Specific Troubleshooting
+
+- **[Strapi CMS Issues](./components/strapi-cms/troubleshooting/)** - Plugin problems, setup issues
+- **[Co-Founder Agent Issues](./components/cofounder-agent/troubleshooting/)** - API, model routing, memory
+- **[Oversight Hub Issues](./components/oversight-hub/troubleshooting/)** - State, API integration
+- **[Public Site Issues](./components/public-site/troubleshooting/)** - Build, data fetching
 
 ---
 
-## 🔧 Troubleshooting Guides
+## 📚 Quick Reference Guides
+
+Quick start guides and reference materials for common tasks:
+
+### Testing & Quality
+
+- **[Testing Quick Start](./reference/TESTING_QUICK_START.md)** - Get started with tests in 5 minutes
+- **[E2E Testing Guide](./reference/E2E_TESTING.md)** - End-to-end testing strategies
+- **[Complete Testing Guide](./reference/TESTING_GUIDE.md)** - Comprehensive testing reference
+- **[Testing Standards](./reference/TESTING.md)** - Testing expectations and coverage goals
+
+### Quick Fixes & References
+
+- **[Quick Fixes Reference](./reference/QUICK_FIXES.md)** - Common solutions and workarounds
+- **[Quick Reference (Consolidated)](./reference/QUICK_REFERENCE_CONSOLIDATED.md)** - Commands, scripts, checklists
+- **[Migration Guide](./reference/FIRESTORE_POSTGRES_MIGRATION.md)** - Firestore to PostgreSQL
+
+### API & Configuration
+
+- **[API Contracts](./reference/API_CONTRACT_CONTENT_CREATION.md)** - Content creation API specification
+- **[GitHub Secrets Setup](./reference/GITHUB_SECRETS_SETUP.md)** - Production secrets configuration
+- **[NPM Scripts Reference](./reference/npm-scripts.md)** - All available npm commands
+- **[PowerShell API Quick Reference](./reference/POWERSHELL_API_QUICKREF.md)** - API testing commands
+
+### Standards & CI/CD
+
+- **[GLAD Labs Standards](./reference/GLAD-LABS-STANDARDS.md)** - Code quality and naming conventions
+- **[GitHub Actions Reference](./reference/ci-cd/GITHUB_ACTIONS_REFERENCE.md)** - Workflow deep dive
+- **[Branch Hierarchy](./reference/ci-cd/BRANCH_HIERARCHY_QUICK_REFERENCE.md)** - Git strategy reference
+
+---
+
+## �🔄 Last Updated
+
+**Date:** October 26, 2025  
+**Status:** ✅ Phase 1-5 Complete | High-Level Documentation Only | Files Consolidated  
+**Core Docs:** 8 files | **Reference:** 13 files | **Troubleshooting:** 5 + components | **Components:** 6 files | **Archive:** 28 files  
+**Total:** 50+ active files | **Organization:** 98% ✨ | **Root .md Files:** 0 (consolidated)
+
+---
+
+## 🔧 Component Troubleshooting Guides
 
 Component-specific troubleshooting guides are organized by component:
 
