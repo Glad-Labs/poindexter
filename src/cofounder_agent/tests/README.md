@@ -1,6 +1,6 @@
 # 🧪 AI Co-Founder System Testing Framework
 
-Comprehensive testing documentation for the GLAD Labs AI Co-Founder system, featuring robust unit tests, integration tests, end-to-end workflows, and performance benchmarks.
+Comprehensive testing documentation for the Glad Labs AI Co-Founder system, featuring robust unit tests, integration tests, end-to-end workflows, and performance benchmarks.
 
 ## **📋 Testing Overview**
 

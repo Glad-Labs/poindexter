@@ -1,5 +1,5 @@
 """
-Business Intelligence System for GLAD Labs AI Co-Founder
+Business Intelligence System for Glad Labs AI Co-Founder
 
 This module provides comprehensive business intelligence gathering and analysis
 capabilities, including data collection from multiple sources, trend analysis,

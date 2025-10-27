@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Simple test server for GLAD Labs AI Co-Founder
+Simple test server for Glad Labs AI Co-Founder
 This script bypasses the complex import issues by running directly
 """
 
@@ -15,7 +15,7 @@ try:
     import uvicorn
     
     if __name__ == "__main__":
-        print("🚀 Starting GLAD Labs AI Co-Founder Agent Server...")
+        print("🚀 Starting Glad Labs AI Co-Founder Agent Server...")
         print("📡 Server will be available at http://localhost:8000")
         print("📖 API documentation at http://localhost:8000/docs")
         print("🔧 Development mode - Google Cloud services simulated")
@@ -38,7 +38,7 @@ except ImportError as e:
     import uvicorn
     
     # Simple fallback app
-    app = FastAPI(title="GLAD Labs AI Co-Founder (Fallback)")
+    app = FastAPI(title="Glad Labs AI Co-Founder (Fallback)")
     
     app.add_middleware(
         CORSMiddleware,
@@ -52,7 +52,7 @@ except ImportError as e:
     
     @app.get("/")
     async def root():
-        return {"message": "GLAD Labs AI Co-Founder Fallback Server", "status": "running"}
+        return {"message": "Glad Labs AI Co-Founder Fallback Server", "status": "running"}
     
     @app.post("/command")
     async def process_command(request: CommandRequest):

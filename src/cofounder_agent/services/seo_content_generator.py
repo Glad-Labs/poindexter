@@ -200,7 +200,7 @@ Create an image that would work well for social media sharing and blog display."
             "description": blog_post.get("excerpt"),
             "author": {
                 "@type": "Organization",
-                "name": "GLAD Labs"
+                "name": "Glad Labs"
             },
             "datePublished": datetime.now().isoformat(),
             "keywords": ",".join(blog_post.get("keywords", [])),

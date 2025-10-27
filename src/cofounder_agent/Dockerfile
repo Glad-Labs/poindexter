@@ -1,5 +1,5 @@
 # ==================================
-# GLAD LABS - AI Co-Founder Agent Dockerfile
+# Glad Labs - AI Co-Founder Agent Dockerfile
 # ==================================
 # Multi-stage build for optimized production image
 

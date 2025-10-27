@@ -5,7 +5,7 @@
 # Time: ~60 minutes
 # Policy: HIGH-LEVEL DOCUMENTATION ONLY v2.0
 
-Write-Host "📋 GLAD Labs Documentation Cleanup Script" -ForegroundColor Cyan
+Write-Host "# Glad Labs Documentation Cleanup Script" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "This script will:" -ForegroundColor Yellow

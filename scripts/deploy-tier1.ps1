@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-GLAD Labs Tier 1 Production Deployment Script (PowerShell)
+Glad Labs Tier 1 Production Deployment Script (PowerShell)
 Ultra-low-cost setup: ~$10-15/month
 
 .DESCRIPTION
@@ -288,7 +288,7 @@ function Show-CompletionMessage {
 
 # Main execution
 function Main {
-    Write-Header "🚀 GLAD Labs Tier 1 Production Deployment"
+    Write-Header "🚀 Glad Labs Tier 1 Production Deployment"
     
     Test-Prerequisites
     Show-Configuration

@@ -1,10 +1,10 @@
 #!/usr/bin/env pwsh
-# Quick Test Script for GLAD Labs Co-founder Agent API
+# Glad Labs Quick API Test Script
 # Run with: .\scripts\quick-test-api.ps1
 
 $baseUrl = "http://localhost:8000"
 
-Write-Host "`n🧪 Testing GLAD Labs Co-founder Agent API...`n" -ForegroundColor Cyan
+Write-Host "`n🧪 Testing Glad Labs Co-founder Agent API...`n" -ForegroundColor Cyan
 
 # Test 1: Health Check
 Write-Host "1️⃣  Health Check..." -ForegroundColor Yellow

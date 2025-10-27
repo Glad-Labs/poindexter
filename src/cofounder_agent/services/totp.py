@@ -1,5 +1,5 @@
 """
-TOTP 2FA (Two-Factor Authentication) Service for GLAD Labs
+TOTP 2FA (Two-Factor Authentication) Service for Glad Labs
 
 Implements Time-based One-Time Password (TOTP) for multi-factor authentication.
 Uses RFC 6238 standard with SHA-1 hash algorithm.
@@ -43,7 +43,7 @@ class TOTPConfig:
     """TOTP configuration"""
     
     # TOTP parameters
-    ISSUER_NAME = os.getenv("TOTP_ISSUER_NAME", "GLAD Labs")
+    ISSUER_NAME = os.getenv("TOTP_ISSUER_NAME", "Glad Labs")
     ACCOUNT_NAME_PREFIX = "gladlabs"
     
     # Time window for TOTP verification (seconds)

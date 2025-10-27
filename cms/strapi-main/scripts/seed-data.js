@@ -78,12 +78,12 @@ const data = {
     {
       name: 'Matthew M. Gladding',
       email: 'matthew@gladlabs.com',
-      bio: 'Founder and CEO of GLAD Labs.',
+      bio: 'Founder and CEO of Glad Labs.',
     },
     {
       name: 'AI Research Team',
       email: 'research@gladlabs.com',
-      bio: 'GLAD Labs AI research team.',
+      bio: 'Glad Labs AI research team.',
     },
   ],
 };

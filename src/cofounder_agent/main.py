@@ -1,6 +1,6 @@
 """
-GLAD Labs AI Co-Founder Agent
-FastAPI application serving as the central orchestrator for the GLAD Labs ecosystem
+Glad Labs AI Co-Founder Agent
+FastAPI application serving as the central orchestrator for the Glad Labs ecosystem
 Implements PostgreSQL database with REST API command queue integration
 Replaces Google Cloud Firestore and Pub/Sub services
 """
@@ -83,7 +83,7 @@ async def lifespan(app: FastAPI):
     global database_service, orchestrator
     
     try:
-        logger.info("🚀 Starting GLAD Labs AI Co-Founder application...")
+        logger.info("🚀 Starting Glad Labs AI Co-Founder application...")
         
         # 1. Initialize PostgreSQL database service
         logger.info("  📦 Connecting to PostgreSQL...")
@@ -142,7 +142,7 @@ async def lifespan(app: FastAPI):
     finally:
         # ===== SHUTDOWN =====
         try:
-            logger.info("🛑 Shutting down GLAD Labs AI Co-Founder application...")
+            logger.info("🛑 Shutting down Glad Labs AI Co-Founder application...")
             
             if database_service:
                 try:
@@ -158,8 +158,8 @@ async def lifespan(app: FastAPI):
             logger.error(f"❌ Error during shutdown: {e}")
 
 app = FastAPI(
-    title="GLAD Labs AI Co-Founder",
-    description="Central orchestrator for GLAD Labs AI-driven business operations with Google Cloud integration",
+    title="Glad Labs AI Co-Founder",
+    description="Central orchestrator for Glad Labs AI-driven business operations with Google Cloud integration",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -396,7 +396,7 @@ async def root():
     Root endpoint to confirm the server is running.
     """
     return {
-        "message": "GLAD Labs AI Co-Founder is running",
+        "message": "Glad Labs AI Co-Founder is running",
         "version": "1.0.0",
         "database_enabled": database_service is not None
     }

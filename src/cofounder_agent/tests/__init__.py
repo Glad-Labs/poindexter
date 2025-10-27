@@ -1,1 +1,1 @@
-"""Test suite for GLAD Labs AI Co-Founder system."""
+"""Test suite for Glad Labs AI Co-Founder system."""

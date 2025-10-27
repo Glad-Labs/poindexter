@@ -12,10 +12,10 @@ const API_URL = `${STRAPI_URL}/api`;
 
 // Sample About page data
 const aboutData = {
-  title: 'About GLAD Labs',
+  title: 'About Glad Labs',
   subtitle: 'Building the AI Co-Founder of Tomorrow',
   content: `<h2>Who We Are</h2>
-<p>GLAD Labs is revolutionizing how businesses operate by creating the world's first truly autonomous AI Co-Founder system. We combine cutting-edge artificial intelligence with practical business automation to give every entrepreneur access to intelligent strategic guidance and operational excellence.</p>
+<p>Glad Labs is revolutionizing how businesses operate by creating the world's first truly autonomous AI Co-Founder system. We combine cutting-edge artificial intelligence with practical business automation to give every entrepreneur access to intelligent strategic guidance and operational excellence.</p>
 
 <h2>Our Vision</h2>
 <p>We envision a future where sophisticated AI partners work alongside human entrepreneurs, handling complex business operations, content creation, market analysis, and financial management—allowing founders to focus on vision and growth.</p>
@@ -42,9 +42,9 @@ const aboutData = {
 <li><strong>💡 Accessibility:</strong> Powerful AI shouldn't be behind paywalls or exclusive to tech giants—it should be available to all</li>
 </ul>`,
   seo: {
-    metaTitle: 'About GLAD Labs - AI Co-Founder System',
+    metaTitle: 'About Glad Labs - AI Co-Founder System',
     metaDescription:
-      'GLAD Labs is building the AI Co-Founder of tomorrow—autonomous business agents that handle content, finance, compliance, and operations so entrepreneurs can focus on growth.',
+      'Glad Labs is building the AI Co-Founder of tomorrow—autonomous business agents that handle content, finance, compliance, and operations so entrepreneurs can focus on growth.',
     keywords:
       'AI co-founder, business automation, AI agents, entrepreneurship, content automation, business intelligence',
   },
@@ -56,13 +56,13 @@ const privacyPolicyData = {
   effectiveDate: '2024-10-01',
   lastUpdated: new Date().toISOString(),
   contactEmail: 'privacy@gladlabs.com',
-  content: `<h2>Privacy Policy for GLAD Labs</h2>
+  content: `<h2>Privacy Policy for Glad Labs</h2>
 
 <p><strong>Last Updated:</strong> October 23, 2025</p>
 <p><strong>Effective Date:</strong> October 1, 2024</p>
 
 <h3>1. Introduction</h3>
-<p>GLAD Labs, LLC ("we," "us," "our," or "Company") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you visit our website, use our services, and interact with our AI Co-Founder system.</p>
+<p>Glad Labs, LLC ("we," "us," "our," or "Company") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you visit our website, use our services, and interact with our AI Co-Founder system.</p>
 
 <p>Please read this Privacy Policy carefully. If you do not agree with our policies and practices, please do not use our services.</p>
 
@@ -221,9 +221,9 @@ const privacyPolicyData = {
 <h3>14. Contact Information</h3>
 <p>If you have questions about this Privacy Policy or our privacy practices, please contact us at:</p>
 
-<p><strong>GLAD Labs Privacy Officer</strong><br />
+<p><strong>Glad Labs Privacy Officer</strong><br />
 Email: privacy@gladlabs.com<br />
-Address: GLAD Labs, LLC, San Francisco, CA<br />
+Address: Glad Labs, LLC, San Francisco, CA<br />
 Phone: Available upon request</p>
 
 <p>We will respond to privacy inquiries within 30 days.</p>
@@ -239,9 +239,9 @@ Phone: Available upon request</p>
 <li>Other applicable privacy laws</li>
 </ul>`,
   seo: {
-    metaTitle: 'Privacy Policy - GLAD Labs',
+    metaTitle: 'Privacy Policy - Glad Labs',
     metaDescription:
-      'GLAD Labs Privacy Policy: Learn how we collect, use, and protect your personal information. CCPA and GDPR compliant.',
+      'Glad Labs Privacy Policy: Learn how we collect, use, and protect your personal information. CCPA and GDPR compliant.',
     keywords:
       'privacy policy, data protection, CCPA, GDPR, personal information, AI privacy, data security',
   },

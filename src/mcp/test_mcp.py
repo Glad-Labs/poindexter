@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test script for GLAD Labs MCP implementation
+Test script for Glad Labs MCP implementation
 
 This script tests the MCP servers and integration without requiring
 full package installation.
@@ -209,7 +209,7 @@ async def main():
     """Run all MCP tests"""
     logging.basicConfig(level=logging.WARNING)  # Reduce log noise
     
-    print("🚀 GLAD Labs MCP Implementation Test Suite")
+    print("🚀 Glad Labs MCP Implementation Test Suite")
     print("=" * 50)
     
     # Test individual components

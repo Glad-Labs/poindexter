@@ -1,6 +1,13 @@
 #!/bin/bash
 
-# GLAD Labs Tier 1 Production Deployment Script
+#!/bin/bash
+# Glad Labs - Tier 1 Deployment Script
+# Deploys all services to Tier 1 (production-equivalent)
+#
+# ┌─────────────────────────────────────────┐
+# │  Glad Labs Multi-Tier Deployment        │
+# │  Tier 1: Production Environment         │
+# └─────────────────────────────────────────┘
 # Ultra-low-cost setup: ~$10-15/month
 # 
 # Requirements:
@@ -11,7 +18,7 @@
 
 set -e
 
-echo "🚀 GLAD Labs Tier 1 Production Deployment"
+echo "🚀 Glad Labs Tier 1 Production Deployment"
 echo "=========================================="
 echo ""
 echo "⚠️  WARNING: This is Tier 1 (Ultra-Budget) configuration"
@@ -149,7 +156,7 @@ echo "  🧠 API: Check https://api.your-site.railway.app/api/health"
 
 # Step 10: Create deployment summary
 cat > TIER1_DEPLOYMENT_SUMMARY.md << 'EOF'
-# ✅ GLAD Labs Tier 1 Production Deployment Complete
+# ✅ Glad Labs Tier 1 Production Deployment Complete
 
 **Date:** $(date)
 **Cost:** ~$0-10/month
@@ -271,7 +278,7 @@ cat > TIER1_DEPLOYMENT_SUMMARY.md << 'EOF'
 EOF
 
 echo ""
-echo "✅ GLAD Labs Tier 1 Production Deployment Complete!"
+echo "✅ Glad Labs Tier 1 Production Deployment Complete!"
 echo ""
 echo "📊 Deployment Summary:"
 echo "  ✅ PostgreSQL: Free tier (1GB)"

@@ -1,5 +1,5 @@
 """
-GLAD Labs AI Co-Founder Orchestrator Logic
+Glad Labs AI Co-Founder Orchestrator Logic
 Updated with PostgreSQL database and API-based command queue (Firestore/Pub/Sub removed)
 """
 
@@ -645,7 +645,7 @@ class Orchestrator:
 
     def _get_help_response(self) -> Dict[str, Any]:
         """Provide comprehensive help information"""
-        help_message = """🤖 GLAD Labs AI Co-Founder - Available Commands:
+        help_message = """🤖 Glad Labs AI Co-Founder - Available Commands:
 
 📝 **Content Creation:**
    • "Create content about [topic]" - Generate new blog post

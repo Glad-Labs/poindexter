@@ -1,9 +1,9 @@
-# Check Status of All GLAD Labs Services
+# Check Status of All Glad Labs Services
 # Displays the status of all services on their designated ports
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host " GLAD Labs Services Status" -ForegroundColor Cyan  
+Write-Host " Glad Labs Services Status" -ForegroundColor Cyan  
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 

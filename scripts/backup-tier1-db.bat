@@ -1,5 +1,5 @@
 @echo off
-REM GLAD Labs Tier 1 Database Backup Script (Windows Batch)
+REM Glad Labs Tier 1 Database Backup Script (Windows Batch)
 REM 
 REM Purpose: Automated PostgreSQL backup for Tier 1 production
 REM Schedule: Windows Task Scheduler (daily at 2 AM)
@@ -23,7 +23,7 @@ for /F %%A in ('echo prompt $H ^| cmd') do set "BS=%%A"
 
 echo.
 echo ╔════════════════════════════════════════════════════════╗
-echo ║  GLAD Labs Tier 1 Database Backup Script              ║
+echo ║  Glad Labs Tier 1 Database Backup Script              ║
 echo ║  Database: PostgreSQL ^| Schedule: Daily at 2 AM      ║
 echo ╚════════════════════════════════════════════════════════╝
 echo.

@@ -1,6 +1,6 @@
 # Test Template Guide
 
-This guide provides templates and patterns for writing tests in the GLAD Labs test suite.
+This guide provides templates and patterns for writing tests in the Glad Labs test suite.
 
 ## Table of Contents
 

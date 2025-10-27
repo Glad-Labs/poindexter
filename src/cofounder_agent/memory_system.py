@@ -1,5 +1,5 @@
 """
-AI Memory & Knowledge Management System for GLAD Labs Co-Founder
+"""AI Memory & Knowledge Management System for Glad Labs Co-Founder"""
 
 This module provides persistent memory, knowledge base management, and learning
 capabilities for the AI co-founder system. It enables the AI to remember conversations,
@@ -775,7 +775,7 @@ async def main():
     
     # Store some test memories
     await memory_system.store_memory(
-        "GLAD Labs focuses on AI content automation for small businesses",
+        "Glad Labs focuses on AI content automation for small businesses",
         MemoryType.BUSINESS_FACT,
         ImportanceLevel.HIGH,
         tags=["business_model", "target_market"]
