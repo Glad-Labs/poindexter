@@ -1,0 +1,7 @@
+{
+  "include": ["src", "web", "cms"],
+  "exclude": ["**/node_modules", "**/__pycache__", ".venv", "venv"],
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "basic",
+  "stubPath": "typings"
+}

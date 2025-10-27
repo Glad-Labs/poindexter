@@ -21,7 +21,8 @@
     "next/dist/client/link.d.ts"
   ],
   "terminal.integrated.cwd": "${workspaceFolder}",
-  "python.analysis.extraPaths": ["./src"],
+  "python.analysis.extraPaths": ["./src", "./src/cofounder_agent"],
+  "python.analysis.typeshedPath": "./typings",
   "[python]": {
     "editor.defaultFormatter": "ms-python.python"
   },
