@@ -34,10 +34,9 @@
       },
       "cofounder_agent": {
         "type": "python",
-        "builder": "dockerfile",
         "resources": {
           "cpu": "shared",
-          "memory": "256Mi",
+          "memory": "512Mi",
           "disk": "512Mi"
         },
         "scaling": {

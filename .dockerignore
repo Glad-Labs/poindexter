@@ -11,6 +11,7 @@ npm-debug.log
 **/__pycache__
 **/.venv
 **/*.pyc
+*.egg-info/
 
 # Strapi
 .tmp
@@ -26,4 +27,22 @@ Thumbs.db
 .vscode
 .dockerignore
 Dockerfile
-# Note: Keep README.md and LICENSE.md for production builds
+
+# Test & Cache
+.pytest_cache/
+test.db
+test_validation.py
+
+# Environment overrides (keep .env.example for reference)
+.env.old
+.env.local
+.continue/
+
+# Archive
+archive/
+
+# Keep critical files
+!LICENSE
+!LICENSE.md
+!README.md
+!.env.example
