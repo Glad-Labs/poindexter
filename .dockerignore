@@ -1,48 +1,83 @@
-# Git
-.git
-.gitignore
-
-# Node
-**/node_modules
-**/.next
-npm-debug.log
-
-# Python
-**/__pycache__
-**/.venv
-**/*.pyc
-*.egg-info/
-
-# Strapi
-.tmp
-.cache
-build/
-dist/
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Development
-.vscode
-.dockerignore
-Dockerfile
-
-# Test & Cache
-.pytest_cache/
-test.db
-test_validation.py
-
-# Environment overrides (keep .env.example for reference)
-.env.old
-.env.local
-.continue/
-
-# Archive
-archive/
-
-# Keep critical files
+# ====================================================
+# IMPORTANT: Whitelisted files (processed FIRST)
+# ====================================================
 !LICENSE
 !LICENSE.md
 !README.md
 !.env.example
+!requirements.txt
+!Procfile
+!package.json
+!src/**
+!cms/**
+!web/**
+
+# ====================================================
+# Git files to exclude
+# ====================================================
+.git
+.gitignore
+.gitlab-ci.yml
+
+# ====================================================
+# Node modules and build artifacts
+# ====================================================
+**/node_modules
+**/.next
+npm-debug.log
+package-lock.json
+
+# ====================================================
+# Python cache and virtual environments
+# ====================================================
+**/__pycache__
+**/.venv
+**/*.pyc
+*.egg-info/
+.pytest_cache/
+
+# ====================================================
+# Strapi build artifacts
+# ====================================================
+.tmp
+.cache
+cms/**/build
+cms/**/dist
+
+# ====================================================
+# OS-specific files
+# ====================================================
+.DS_Store
+Thumbs.db
+.continue/
+
+# ====================================================
+# Development environment files
+# ====================================================
+.vscode
+.dockerignore
+Dockerfile
+docker-compose.yml
+
+# ====================================================
+# Test files and development data
+# ====================================================
+test.db
+test_validation.py
+.pytest_cache/
+
+# ====================================================
+# Environment files (keep .env.example for reference)
+# ====================================================
+.env
+.env.old
+.env.local
+.env.staging
+.env.production
+
+# ====================================================
+# Documentation and archives
+# ====================================================
+docs/
+archive/
+logs/
