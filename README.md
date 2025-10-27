@@ -11,24 +11,30 @@
 
 ## **📚 Documentation Index**
 
-| Document                                                    | Description                               | For        |
-| ----------------------------------------------------------- | ----------------------------------------- | ---------- |
-| [� **Master Documentation Index**](./MASTER_DOCS_INDEX.md)  | Complete documentation hub with all links | Everyone   |
-| [�🚀 **Quick Start Guide**](#-quick-start)                  | Get up and running in 5 minutes           | New Users  |
-| [🏗️ **Architecture Overview**](./docs/ARCHITECTURE.md)      | System design and component interactions  | Developers |
-| [📋 **Developer Guide**](./DEVELOPER_GUIDE.md)              | Technical documentation and APIs          | Developers |
-| [⚙️ **Installation Guide**](./docs/INSTALLATION_SUMMARY.md) | Dependency setup and configuration        | DevOps     |
-| [🧪 **Testing Guide**](./TEST_IMPLEMENTATION_SUMMARY.md)    | Complete test coverage and execution      | Everyone   |
-| [🔧 **CI/CD Review**](./CI_CD_TEST_REVIEW.md)               | Pipeline analysis and recommendations     | DevOps     |
-| [📊 **System Standards**](./docs/GLAD-LABS-STANDARDS.md)    | Coding standards and best practices       | Team       |
+**Core Documentation (START HERE):**
+
+| Document                                        | Description                        | For        |
+| ----------------------------------------------- | ---------------------------------- | ---------- |
+| [📖 **01 Setup & Overview**](./docs/01-SETUP_AND_OVERVIEW.md) | Getting started guide (15 minutes) | New Users  |
+| [🏗️ **02 Architecture & Design**](./docs/02-ARCHITECTURE_AND_DESIGN.md) | System design & components | Architects |
+| [🌐 **03 Deployment & Infrastructure**](./docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md) | Production deployment | DevOps |
+| [� **04 Development Workflow**](./docs/04-DEVELOPMENT_WORKFLOW.md) | Git, testing, CI/CD | Developers |
+| [🧠 **05 AI Agents & Integration**](./docs/05-AI_AGENTS_AND_INTEGRATION.md) | Agent system & MCP | AI Engineers |
+| [📊 **06 Operations & Maintenance**](./docs/06-OPERATIONS_AND_MAINTENANCE.md) | Monitoring & backups | DevOps/SREs |
+| [⚙️ **07 Branch-Specific Variables**](./docs/07-BRANCH_SPECIFIC_VARIABLES.md) | Environment configuration | All |
+
+**Documentation Hub:**
+
+- [� **00 Documentation Hub**](./docs/00-README.md) - Complete navigation guide with reference materials, troubleshooting, and learning paths
 
 ## **🎯 Executive Summary**
 
 GLAD Labs is a comprehensive AI Co-Founder ecosystem that combines autonomous content creation with intelligent business management. The system features a sophisticated AI Co-Founder that provides strategic insights, manages business operations, orchestrates specialized agents, and delivers real-time business intelligence through advanced dashboards and voice interfaces.
 
-**Current Status:** ✅ **Production Ready v3.0** - Complete AI Co-Founder System  
-**Last Updated:** October 14, 2025  
-**Architecture:** Enterprise-grade monorepo with AI orchestration
+**Current Status:** ✅ **Production Ready v3.1** - PostgreSQL Migration in Progress  
+**Last Updated:** October 26, 2025  
+**Architecture:** Enterprise-grade monorepo with PostgreSQL + FastAPI + Next.js  
+**Phase:** 5 - Final Cleanup & Testing Integration
 
 ---
 
