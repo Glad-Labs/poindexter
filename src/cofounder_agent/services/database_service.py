@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
 )
-from sqlalchemy import select, desc, and_, or_
+from sqlalchemy import select, desc, and_, or_, text
 from sqlalchemy.exc import SQLAlchemyError
 
 # Import models
@@ -457,12 +457,13 @@ class DatabaseService:
 
             start_time = time.time()
 
+            # Simple connection test - just execute a basic query
             async with self.async_session() as session:
-                stmt = select(HealthCheck).limit(1)
-                await session.execute(stmt)
+                await session.execute(text("SELECT 1"))
 
             response_time = (time.time() - start_time) * 1000  # Convert to ms
 
+            # Log health check result
             health_entry = HealthCheck(
                 service=service,
                 status="healthy",
