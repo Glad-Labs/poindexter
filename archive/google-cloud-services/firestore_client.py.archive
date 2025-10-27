@@ -1,6 +1,41 @@
 """
-Firestore client for GLAD Labs AI Co-Founder
+ARCHIVED: October 26, 2025 (Phase 5)
+REASON: Migrated to PostgreSQL + REST API backend
+LOCATION: archive/google-cloud-services/firestore_client.py.archive
+
+This was the Firestore client for GLAD Labs AI Co-Founder
 Implements real-time database operations for tasks, logs, and financial data
+
+MIGRATION NOTES:
+- Firestore async methods → PostgreSQL synchronous API endpoints
+- Firestore collections → PostgreSQL tables
+- onSnapshot subscriptions → REST API polling
+- Server timestamps → PostgreSQL CURRENT_TIMESTAMP
+
+Classes:
+- FirestoreClient: Main client for Firestore operations
+
+Methods replaced by API endpoints:
+- add_task() → POST /api/tasks
+- get_task() → GET /api/tasks/{id}
+- update_task_status() → PUT /api/tasks/{id}
+- get_pending_tasks() → GET /api/tasks?status=pending
+- add_financial_entry() → POST /api/financials
+- get_financial_summary() → GET /api/financials/summary
+- update_agent_status() → PUT /api/agents/{name}
+- get_agent_status() → GET /api/agents/{name}
+- add_log_entry() → POST /api/logs
+- health_check() → GET /api/health
+
+RE-ACTIVATION PROCESS (if Google Cloud services needed in future):
+1. Copy this file back to src/cofounder_agent/services/firestore_client.py
+2. Install google-cloud-firestore: pip install google-cloud-firestore
+3. Set GCP_PROJECT_ID environment variable
+4. Update main.py to initialize and use FirestoreClient
+5. Create integration layer between REST API and Firestore operations
+6. Test with mock Firestore emulator first
+
+FULL ORIGINAL CODE: See lines below
 """
 
 import os
@@ -35,6 +70,8 @@ class FirestoreClient:
     - agents: Agent status and configuration
     - financials: Expense tracking and burn rate data
     - logs: Structured logging for operations
+    
+    MIGRATED TO: PostgreSQL REST API (October 26, 2025)
     """
     
     def __init__(self, project_id: Optional[str] = None):
@@ -57,6 +94,8 @@ class FirestoreClient:
         """
         Add a new task to the tasks collection
         
+        MIGRATED TO: POST /api/tasks
+        
         Args:
             task_data: Task information including topic, status, metadata
             
@@ -64,40 +103,28 @@ class FirestoreClient:
             Document ID of the created task
         """
         try:
-            # Add timestamp and ensure required fields following data_schemas.md
             enhanced_task_data = {
                 "taskName": task_data.get("taskName", f"Task: {task_data.get('topic', 'Unknown')}"),
                 "agentId": task_data.get("agentId", "content-creation-agent-v1"),
                 "status": task_data.get("status", "queued"),
                 "createdAt": FIRESTORE_STUBS.SERVER_TIMESTAMP,
                 "updatedAt": FIRESTORE_STUBS.SERVER_TIMESTAMP,
-                
-                # Core task data
                 "topic": task_data.get("topic", "Unknown topic"),
                 "primary_keyword": task_data.get("primary_keyword", "content"),
                 "target_audience": task_data.get("target_audience", "General"),
                 "category": task_data.get("category", "Blog Post"),
-                
-                # Metadata following GLAD Labs schema
                 "metadata": {
                     "priority": task_data.get("metadata", {}).get("priority", 2),
                     "estimated_duration_minutes": task_data.get("metadata", {}).get("estimated_duration_minutes", 45),
                     "source": task_data.get("metadata", {}).get("source", "cofounder_orchestrator"),
                     "content_type": task_data.get("metadata", {}).get("content_type", "blog_post"),
                     "word_count_target": task_data.get("metadata", {}).get("word_count_target", 1500),
-                    **task_data.get("metadata", {})  # Include any additional metadata
+                    **task_data.get("metadata", {})
                 }
             }
             
-            # Add the task document
             doc_ref = self.db.collection('tasks').add(enhanced_task_data)[1]
-            
-            logger.info("Task created successfully", 
-                       task_id=doc_ref.id, 
-                       topic=enhanced_task_data.get('topic', 'unknown'),
-                       agent_id=enhanced_task_data.get('agentId', 'unknown'),
-                       status=enhanced_task_data.get('status', 'unknown'))
-            
+            logger.info("Task created successfully", task_id=doc_ref.id, topic=enhanced_task_data.get('topic', 'unknown'))
             return doc_ref.id
             
         except Exception as e:
@@ -105,7 +132,7 @@ class FirestoreClient:
             raise
     
     async def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
-        """Get a specific task by ID"""
+        """MIGRATED TO: GET /api/tasks/{id}"""
         try:
             doc_ref = self.db.collection('tasks').document(task_id)
             doc = doc_ref.get()
@@ -124,7 +151,7 @@ class FirestoreClient:
     
     async def update_task_status(self, task_id: str, status: str, 
                                 metadata: Optional[Dict[str, Any]] = None) -> bool:
-        """Update task status and optional metadata"""
+        """MIGRATED TO: PUT /api/tasks/{id}"""
         try:
             update_data = {
                 'status': status,
@@ -137,21 +164,15 @@ class FirestoreClient:
             doc_ref = self.db.collection('tasks').document(task_id)
             doc_ref.update(update_data)
             
-            logger.info("Task status updated", 
-                       task_id=task_id, 
-                       status=status)
-            
+            logger.info("Task status updated", task_id=task_id, status=status)
             return True
             
         except Exception as e:
-            logger.error("Failed to update task status", 
-                        task_id=task_id, 
-                        status=status, 
-                        error=str(e))
+            logger.error("Failed to update task status", task_id=task_id, status=status, error=str(e))
             return False
     
     async def get_pending_tasks(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """Get pending tasks for processing"""
+        """MIGRATED TO: GET /api/tasks?status=pending&limit={limit}"""
         try:
             query = (self.db.collection('tasks')
                     .where('status', '==', 'pending')
@@ -173,7 +194,7 @@ class FirestoreClient:
     
     # Financial Tracking Methods
     async def add_financial_entry(self, entry_data: Dict[str, Any]) -> str:
-        """Add a financial transaction entry"""
+        """MIGRATED TO: POST /api/financials"""
         try:
             entry_data.update({
                 'created_at': FIRESTORE_STUBS.SERVER_TIMESTAMP,
@@ -181,12 +202,7 @@ class FirestoreClient:
             })
             
             doc_ref = self.db.collection('financials').add(entry_data)[1]
-            
-            logger.info("Financial entry added", 
-                       entry_id=doc_ref.id,
-                       amount=entry_data.get('amount', 0),
-                       category=entry_data.get('category', 'unknown'))
-            
+            logger.info("Financial entry added", entry_id=doc_ref.id, amount=entry_data.get('amount', 0))
             return doc_ref.id
             
         except Exception as e:
@@ -194,12 +210,11 @@ class FirestoreClient:
             raise
     
     async def get_financial_summary(self, days: int = 30) -> Dict[str, Any]:
-        """Get financial summary for the specified period"""
+        """MIGRATED TO: GET /api/financials/summary?days={days}"""
         try:
             from datetime import timedelta
             
             start_date = datetime.utcnow() - timedelta(days=days)
-            
             query = (self.db.collection('financials')
                     .where('timestamp', '>=', start_date)
                     .order_by('timestamp', direction=FIRESTORE_STUBS.Query.DESCENDING))
@@ -220,11 +235,7 @@ class FirestoreClient:
                 'entries': entries
             }
             
-            logger.info("Financial summary generated", 
-                       total_spend=total_spend,
-                       entry_count=len(entries),
-                       period_days=days)
-            
+            logger.info("Financial summary generated", total_spend=total_spend, entry_count=len(entries))
             return summary
             
         except Exception as e:
@@ -233,7 +244,7 @@ class FirestoreClient:
     
     # Agent Status Methods
     async def update_agent_status(self, agent_name: str, status_data: Dict[str, Any]) -> bool:
-        """Update agent status and heartbeat"""
+        """MIGRATED TO: PUT /api/agents/{name}"""
         try:
             status_data.update({
                 'last_heartbeat': FIRESTORE_STUBS.SERVER_TIMESTAMP,
@@ -242,21 +253,15 @@ class FirestoreClient:
             
             doc_ref = self.db.collection('agents').document(agent_name)
             doc_ref.set(status_data, merge=True)
-            
-            logger.info("Agent status updated", 
-                       agent_name=agent_name,
-                       status=status_data.get('status', 'unknown'))
-            
+            logger.info("Agent status updated", agent_name=agent_name, status=status_data.get('status', 'unknown'))
             return True
             
         except Exception as e:
-            logger.error("Failed to update agent status", 
-                        agent_name=agent_name, 
-                        error=str(e))
+            logger.error("Failed to update agent status", agent_name=agent_name, error=str(e))
             return False
     
     async def get_agent_status(self, agent_name: str) -> Optional[Dict[str, Any]]:
-        """Get current status of a specific agent"""
+        """MIGRATED TO: GET /api/agents/{name}"""
         try:
             doc_ref = self.db.collection('agents').document(agent_name)
             doc = doc_ref.get()
@@ -268,15 +273,13 @@ class FirestoreClient:
                 return None
                 
         except Exception as e:
-            logger.error("Failed to get agent status", 
-                        agent_name=agent_name, 
-                        error=str(e))
+            logger.error("Failed to get agent status", agent_name=agent_name, error=str(e))
             raise
     
     # Logging Methods
     async def add_log_entry(self, level: str, message: str, 
                            metadata: Optional[Dict[str, Any]] = None) -> str:
-        """Add a structured log entry"""
+        """MIGRATED TO: POST /api/logs"""
         try:
             log_data = {
                 'level': level,
@@ -294,16 +297,11 @@ class FirestoreClient:
     
     # Health Check Methods
     async def health_check(self) -> Dict[str, Any]:
-        """Perform a basic health check on Firestore connection"""
+        """MIGRATED TO: GET /api/health"""
         try:
-            # Try to read from a test collection
             test_doc = self.db.collection('health').document('check')
-            test_doc.set({
-                'timestamp': FIRESTORE_STUBS.SERVER_TIMESTAMP,
-                'status': 'healthy'
-            })
+            test_doc.set({'timestamp': FIRESTORE_STUBS.SERVER_TIMESTAMP, 'status': 'healthy'})
             
-            # Read it back
             doc = test_doc.get()
             if doc.exists:
                 return {
@@ -312,14 +310,8 @@ class FirestoreClient:
                     'project_id': self.project_id
                 }
             else:
-                return {
-                    'status': 'unhealthy',
-                    'error': 'Could not verify write operation'
-                }
+                return {'status': 'unhealthy', 'error': 'Could not verify write operation'}
                 
         except Exception as e:
             logger.error("Health check failed", error=str(e))
-            return {
-                'status': 'unhealthy',
-                'error': str(e)
-            }
+            return {'status': 'unhealthy', 'error': str(e)}

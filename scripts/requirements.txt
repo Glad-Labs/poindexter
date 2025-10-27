@@ -22,20 +22,6 @@ anthropic>=0.18.0
 # Local LLM support
 ollama>=0.3.0
 
-# ===== GOOGLE CLOUD PLATFORM =====
-# Comprehensive GCP integration
-google-cloud-aiplatform>=1.35.0
-google-cloud-firestore>=2.12.0
-google-cloud-storage>=2.10.0
-google-cloud-pubsub>=2.18.0
-google-api-python-client>=2.100.0
-google-auth-httplib2>=0.2.0
-google-auth-oauthlib>=1.1.0
-
-# ===== FIREBASE =====
-# Firebase backend services
-firebase-admin>=6.2.0
-
 # ===== WEB FRAMEWORKS =====
 # FastAPI for modern async web APIs
 fastapi>=0.104.0

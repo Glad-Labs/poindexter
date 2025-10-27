@@ -1,19 +1,17 @@
 import logging
 import json
 from src.agents.content_agent.services.llm_client import LLMClient
-from src.agents.content_agent.services.firestore_client import FirestoreClient
 from src.agents.content_agent.agents.research_agent import ResearchAgent
 
 class MarketInsightAgent:
     """
     A specialized agent for analyzing market trends and suggesting content topics.
     """
-    def __init__(self, llm_client: LLMClient, firestore_client: FirestoreClient):
+    def __init__(self, llm_client: LLMClient):
         """Initializes the MarketInsightAgent with required clients."""
         self.llm_client = llm_client
-        self.firestore_client = firestore_client
         self.research_agent = ResearchAgent()
-        logging.info("Market Insight Agent initialized.")
+        logging.info("Market Insight Agent initialized (REST API mode - no Firestore).")
 
     def suggest_topics(self, base_query: str) -> str:
         """
@@ -75,10 +73,10 @@ class MarketInsightAgent:
             response = self.llm_client.generate_with_tools(prompt, tools=[tool_schema])
             suggestions = response.get("ideas", [])
 
-            for task_data in suggestions:
-                self.firestore_client.add_content_task(task_data)
+            # Tasks would be created via REST API in production
+            logging.info(f"Generated {len(suggestions)} task suggestions (REST API integration needed)")
 
-            return f"I've created {len(suggestions)} new tasks based on the trend: '{trend}'. You can see them in the content calendar."
+            return f"I've generated {len(suggestions)} potential task ideas based on the trend: '{trend}'."
         except Exception as e:
             logging.error(f"Error creating tasks from trends: {e}", exc_info=True)
             return "I'm sorry, I had trouble creating new tasks from the trend."

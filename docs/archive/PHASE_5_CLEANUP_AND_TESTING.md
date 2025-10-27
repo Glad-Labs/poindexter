@@ -176,23 +176,23 @@ async def test_table_creation():
 async def test_crud_operations():
     """Verify CRUD operations work"""
     db = await DatabaseService.connect()
-    
+
     # Create
     task = await db.create_task({"title": "Test", "type": "test"})
     assert task is not None
-    
+
     # Read
     retrieved = await db.get_task(task["id"])
     assert retrieved["title"] == "Test"
-    
+
     # Update
     updated = await db.update_task(task["id"], {"title": "Updated"})
     assert updated["title"] == "Updated"
-    
+
     # Delete
     deleted = await db.delete_task(task["id"])
     assert deleted is True
-    
+
     await db.close()
 ```
 
@@ -214,16 +214,16 @@ async def test_full_content_pipeline():
     })
     assert task.status_code == 201
     task_id = task.json()["id"]
-    
+
     # 2. Check status
     status = client.get(f"/api/tasks/{task_id}")
     assert status.status_code == 200
     assert status.json()["status"] == "pending"
-    
+
     # 3. Process task
     result = client.post(f"/api/tasks/{task_id}/execute")
     assert result.status_code == 200
-    
+
     # 4. Verify results
     final = client.get(f"/api/tasks/{task_id}")
     assert final.json()["status"] == "completed"
@@ -480,16 +480,16 @@ mv docs/FIRESTORE_REMOVAL_PLAN.md docs/archive/
 
 ## 📈 Success Metrics
 
-| Metric                      | Target | Status |
-| --------------------------- | ------ | ------ |
-| Firestore imports removed   | 0      | ⏳     |
-| Test coverage               | 85%+   | ⏳     |
-| Type checking errors        | 0      | ⏳     |
-| Linting errors              | 0      | ⏳     |
-| PostgreSQL tables created   | 4      | ⏳     |
-| API health check passing    | ✅     | ⏳     |
-| Deployment scripts updated  | 100%   | ⏳     |
-| Documentation updated       | 100%   | ⏳     |
+| Metric                     | Target | Status |
+| -------------------------- | ------ | ------ |
+| Firestore imports removed  | 0      | ⏳     |
+| Test coverage              | 85%+   | ⏳     |
+| Type checking errors       | 0      | ⏳     |
+| Linting errors             | 0      | ⏳     |
+| PostgreSQL tables created  | 4      | ⏳     |
+| API health check passing   | ✅     | ⏳     |
+| Deployment scripts updated | 100%   | ⏳     |
+| Documentation updated      | 100%   | ⏳     |
 
 ---
 
@@ -563,6 +563,7 @@ python -m pytest tests/ --setup-show
 **Next Phase:**
 
 Once Phase 5 is complete, the system will be:
+
 - ✅ Production-ready with PostgreSQL
 - ✅ 100% Firestore-free
 - ✅ Fully tested (90%+ coverage)

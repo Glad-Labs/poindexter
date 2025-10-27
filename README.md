@@ -13,15 +13,15 @@
 
 **Core Documentation (START HERE):**
 
-| Document                                        | Description                        | For        |
-| ----------------------------------------------- | ---------------------------------- | ---------- |
-| [📖 **01 Setup & Overview**](./docs/01-SETUP_AND_OVERVIEW.md) | Getting started guide (15 minutes) | New Users  |
-| [🏗️ **02 Architecture & Design**](./docs/02-ARCHITECTURE_AND_DESIGN.md) | System design & components | Architects |
-| [🌐 **03 Deployment & Infrastructure**](./docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md) | Production deployment | DevOps |
-| [� **04 Development Workflow**](./docs/04-DEVELOPMENT_WORKFLOW.md) | Git, testing, CI/CD | Developers |
-| [🧠 **05 AI Agents & Integration**](./docs/05-AI_AGENTS_AND_INTEGRATION.md) | Agent system & MCP | AI Engineers |
-| [📊 **06 Operations & Maintenance**](./docs/06-OPERATIONS_AND_MAINTENANCE.md) | Monitoring & backups | DevOps/SREs |
-| [⚙️ **07 Branch-Specific Variables**](./docs/07-BRANCH_SPECIFIC_VARIABLES.md) | Environment configuration | All |
+| Document                                                                            | Description                        | For          |
+| ----------------------------------------------------------------------------------- | ---------------------------------- | ------------ |
+| [📖 **01 Setup & Overview**](./docs/01-SETUP_AND_OVERVIEW.md)                       | Getting started guide (15 minutes) | New Users    |
+| [🏗️ **02 Architecture & Design**](./docs/02-ARCHITECTURE_AND_DESIGN.md)             | System design & components         | Architects   |
+| [🌐 **03 Deployment & Infrastructure**](./docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md) | Production deployment              | DevOps       |
+| [� **04 Development Workflow**](./docs/04-DEVELOPMENT_WORKFLOW.md)                  | Git, testing, CI/CD                | Developers   |
+| [🧠 **05 AI Agents & Integration**](./docs/05-AI_AGENTS_AND_INTEGRATION.md)         | Agent system & MCP                 | AI Engineers |
+| [📊 **06 Operations & Maintenance**](./docs/06-OPERATIONS_AND_MAINTENANCE.md)       | Monitoring & backups               | DevOps/SREs  |
+| [⚙️ **07 Branch-Specific Variables**](./docs/07-BRANCH_SPECIFIC_VARIABLES.md)       | Environment configuration          | All          |
 
 **Documentation Hub:**
 

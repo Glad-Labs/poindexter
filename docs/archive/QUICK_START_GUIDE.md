@@ -9,6 +9,7 @@
 ## 🗂️ Quick Navigation
 
 ### 📖 Start Here: Main Documentation Hub
+
 **File:** `docs/00-README.md`  
 **Contains:** Links to all 8 core docs + troubleshooting + quick references
 
@@ -18,16 +19,16 @@
 
 These form the backbone of GLAD Labs documentation. Read based on your role:
 
-| # | Document | Purpose | For |
-|---|----------|---------|-----|
-| 00 | [00-README.md](docs/00-README.md) | **Navigation Hub** - You are here | Everyone |
-| 01 | [01-SETUP_AND_OVERVIEW.md](docs/01-SETUP_AND_OVERVIEW.md) | **Getting Started** - Local setup, prerequisites | Developers |
-| 02 | [02-ARCHITECTURE_AND_DESIGN.md](docs/02-ARCHITECTURE_AND_DESIGN.md) | **System Design** - Architecture, components, AI agents | Architects |
-| 03 | [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md) | **Cloud Deployment** - Railway, Vercel, production | DevOps |
-| 04 | [04-DEVELOPMENT_WORKFLOW.md](docs/04-DEVELOPMENT_WORKFLOW.md) | **Development Process** - Git, testing, CI/CD | All Devs |
-| 05 | [05-AI_AGENTS_AND_INTEGRATION.md](docs/05-AI_AGENTS_AND_INTEGRATION.md) | **AI Agents** - MCP, orchestration, agent design | AI Devs |
-| 06 | [06-OPERATIONS_AND_MAINTENANCE.md](docs/06-OPERATIONS_AND_MAINTENANCE.md) | **Production Ops** - Monitoring, backups, scaling | DevOps/SRE |
-| 07 | [07-BRANCH_SPECIFIC_VARIABLES.md](docs/07-BRANCH_SPECIFIC_VARIABLES.md) | **Environment Config** - Secrets, variables | DevOps/Platform |
+| #   | Document                                                                        | Purpose                                                 | For             |
+| --- | ------------------------------------------------------------------------------- | ------------------------------------------------------- | --------------- |
+| 00  | [00-README.md](docs/00-README.md)                                               | **Navigation Hub** - You are here                       | Everyone        |
+| 01  | [01-SETUP_AND_OVERVIEW.md](docs/01-SETUP_AND_OVERVIEW.md)                       | **Getting Started** - Local setup, prerequisites        | Developers      |
+| 02  | [02-ARCHITECTURE_AND_DESIGN.md](docs/02-ARCHITECTURE_AND_DESIGN.md)             | **System Design** - Architecture, components, AI agents | Architects      |
+| 03  | [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md) | **Cloud Deployment** - Railway, Vercel, production      | DevOps          |
+| 04  | [04-DEVELOPMENT_WORKFLOW.md](docs/04-DEVELOPMENT_WORKFLOW.md)                   | **Development Process** - Git, testing, CI/CD           | All Devs        |
+| 05  | [05-AI_AGENTS_AND_INTEGRATION.md](docs/05-AI_AGENTS_AND_INTEGRATION.md)         | **AI Agents** - MCP, orchestration, agent design        | AI Devs         |
+| 06  | [06-OPERATIONS_AND_MAINTENANCE.md](docs/06-OPERATIONS_AND_MAINTENANCE.md)       | **Production Ops** - Monitoring, backups, scaling       | DevOps/SRE      |
+| 07  | [07-BRANCH_SPECIFIC_VARIABLES.md](docs/07-BRANCH_SPECIFIC_VARIABLES.md)         | **Environment Config** - Secrets, variables             | DevOps/Platform |
 
 ---
 
@@ -37,14 +38,14 @@ These form the backbone of GLAD Labs documentation. Read based on your role:
 
 Quick solutions to common problems:
 
-| Issue | File | Solution Focus |
-|-------|------|-----------------|
-| 🚀 Railway deployment failures | [01-railway-deployment.md](docs/troubleshooting/01-railway-deployment.md) | Docker build errors, config |
-| 🔄 Database migration issues | [02-firestore-migration.md](docs/troubleshooting/02-firestore-migration.md) | Firestore → PostgreSQL |
-| ⚙️ GitHub Actions problems | [03-github-actions.md](docs/troubleshooting/03-github-actions.md) | CI/CD pipeline failures |
-| 🔨 Build errors | [04-build-fixes.md](docs/troubleshooting/04-build-fixes.md) | Node.js & Python builds |
-| 🖥️ Compilation issues | [05-compilation.md](docs/troubleshooting/05-compilation.md) | TypeScript & Python compilation |
-| 🧠 Strapi CMS issues | [strapi-cms/](docs/components/strapi-cms/troubleshooting/) | Plugin problems, setup |
+| Issue                          | File                                                                        | Solution Focus                  |
+| ------------------------------ | --------------------------------------------------------------------------- | ------------------------------- |
+| 🚀 Railway deployment failures | [01-railway-deployment.md](docs/troubleshooting/01-railway-deployment.md)   | Docker build errors, config     |
+| 🔄 Database migration issues   | [02-firestore-migration.md](docs/troubleshooting/02-firestore-migration.md) | Firestore → PostgreSQL          |
+| ⚙️ GitHub Actions problems     | [03-github-actions.md](docs/troubleshooting/03-github-actions.md)           | CI/CD pipeline failures         |
+| 🔨 Build errors                | [04-build-fixes.md](docs/troubleshooting/04-build-fixes.md)                 | Node.js & Python builds         |
+| 🖥️ Compilation issues          | [05-compilation.md](docs/troubleshooting/05-compilation.md)                 | TypeScript & Python compilation |
+| 🧠 Strapi CMS issues           | [strapi-cms/](docs/components/strapi-cms/troubleshooting/)                  | Plugin problems, setup          |
 
 ---
 
@@ -89,12 +90,12 @@ Fast lookups and quick-start guides:
 
 Service-specific architecture and troubleshooting:
 
-| Component | README | Troubleshooting |
-|-----------|--------|-----------------|
+| Component               | README                                                 | Troubleshooting                                                      |
+| ----------------------- | ------------------------------------------------------ | -------------------------------------------------------------------- |
 | 🧠 **Co-Founder Agent** | [README.md](docs/components/cofounder-agent/README.md) | [troubleshooting/](docs/components/cofounder-agent/troubleshooting/) |
-| 👀 **Oversight Hub** | [README.md](docs/components/oversight-hub/README.md) | [troubleshooting/](docs/components/oversight-hub/troubleshooting/) |
-| 🌐 **Public Site** | [README.md](docs/components/public-site/README.md) | [troubleshooting/](docs/components/public-site/troubleshooting/) |
-| 💾 **Strapi CMS** | [README.md](docs/components/strapi-cms/README.md) | [troubleshooting/](docs/components/strapi-cms/troubleshooting/) |
+| 👀 **Oversight Hub**    | [README.md](docs/components/oversight-hub/README.md)   | [troubleshooting/](docs/components/oversight-hub/troubleshooting/)   |
+| 🌐 **Public Site**      | [README.md](docs/components/public-site/README.md)     | [troubleshooting/](docs/components/public-site/troubleshooting/)     |
+| 💾 **Strapi CMS**       | [README.md](docs/components/strapi-cms/README.md)      | [troubleshooting/](docs/components/strapi-cms/troubleshooting/)      |
 
 ---
 
@@ -157,24 +158,31 @@ Code:     docs/components/cofounder-agent/       (Implementation)
 ## 🔍 How to Find Things
 
 ### ❓ "I'm getting an error in Railway"
+
 → `docs/troubleshooting/01-railway-deployment.md`
 
 ### ❓ "How do I write tests?"
+
 → `docs/reference/TESTING_QUICK_START.md`
 
 ### ❓ "What's the system architecture?"
+
 → `docs/02-ARCHITECTURE_AND_DESIGN.md`
 
 ### ❓ "How do I set up my local environment?"
+
 → `docs/01-SETUP_AND_OVERVIEW.md`
 
 ### ❓ "How do I deploy to production?"
+
 → `docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md`
 
 ### ❓ "What are the Strapi plugin issues?"
+
 → `docs/components/strapi-cms/troubleshooting/STRAPI_V5_PLUGIN_ISSUE.md`
 
 ### ❓ "What commands are available?"
+
 → `docs/reference/npm-scripts.md` or `docs/reference/QUICK_REFERENCE_CONSOLIDATED.md`
 
 ---
@@ -196,14 +204,14 @@ This keeps documentation **clean**, **maintainable**, and **useful**.
 
 ## 📈 Consolidation Stats
 
-| Metric | Before | After |
-|--------|--------|-------|
-| Root .md files | 23 | 0 ✅ |
-| Core docs | 8 | 8 |
-| Reference files | 8 | 13 |
-| Troubleshooting | 2 | 5 |
-| Total in docs/ | ~40 | ~50 (organized) |
-| Organization | 50% | 98% ✨ |
+| Metric          | Before | After           |
+| --------------- | ------ | --------------- |
+| Root .md files  | 23     | 0 ✅            |
+| Core docs       | 8      | 8               |
+| Reference files | 8      | 13              |
+| Troubleshooting | 2      | 5               |
+| Total in docs/  | ~40    | ~50 (organized) |
+| Organization    | 50%    | 98% ✨          |
 
 ---
 
@@ -211,20 +219,24 @@ This keeps documentation **clean**, **maintainable**, and **useful**.
 
 ```markdown
 # Main Entry Points
-- docs/00-README.md               (Start here)
-- docs/01-SETUP_AND_OVERVIEW.md   (Get started)
+
+- docs/00-README.md (Start here)
+- docs/01-SETUP_AND_OVERVIEW.md (Get started)
 - docs/02-ARCHITECTURE_AND_DESIGN.md (Understand system)
 
 # Quick Access
-- docs/troubleshooting/           (Common problems)
-- docs/reference/QUICK_FIXES.md   (Quick solutions)
-- docs/components/                (Service docs)
+
+- docs/troubleshooting/ (Common problems)
+- docs/reference/QUICK_FIXES.md (Quick solutions)
+- docs/components/ (Service docs)
 
 # CI/CD & Deployment
+
 - docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md
 - docs/reference/ci-cd/
 
 # Agents & Integration
+
 - docs/05-AI_AGENTS_AND_INTEGRATION.md
 - docs/components/cofounder-agent/
 ```
@@ -234,6 +246,7 @@ This keeps documentation **clean**, **maintainable**, and **useful**.
 ## ✅ Everything is organized and ready!
 
 **Next Steps:**
+
 1. Bookmark `docs/00-README.md` (your documentation hub)
 2. Choose your learning path above based on your role
 3. Click through the relevant docs
@@ -247,4 +260,3 @@ This keeps documentation **clean**, **maintainable**, and **useful**.
 **Last Updated:** October 26, 2025  
 **Status:** ✅ Complete & Production Ready  
 **Policy:** HIGH-LEVEL DOCUMENTATION ONLY Enforced
-

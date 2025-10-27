@@ -4,7 +4,6 @@ import json
 from src.agents.content_agent.config import config
 from src.agents.content_agent.services.llm_client import LLMClient
 from src.agents.content_agent.services.pexels_client import PexelsClient
-from src.agents.content_agent.services.gcs_client import GCSClient
 from src.agents.content_agent.services.strapi_client import StrapiClient
 from src.agents.content_agent.utils.data_models import BlogPost, ImageDetails
 from src.agents.content_agent.utils.helpers import load_prompts_from_file, slugify, extract_json_from_string
@@ -22,14 +21,14 @@ class ImageAgent:
         self,
         llm_client: LLMClient,
         pexels_client: PexelsClient,
-        gcs_client: GCSClient,
         strapi_client: StrapiClient,
+        api_url: str = "http://localhost:8000",
     ):
-        logging.info("Initializing Image Agent...")
+        logging.info("Initializing Image Agent (REST API mode - no GCS)...")
         self.llm_client = llm_client
         self.pexels_client = pexels_client
-        self.gcs_client = gcs_client
         self.strapi_client = strapi_client
+        self.api_url = api_url
         self.prompts = load_prompts_from_file(config.PROMPTS_PATH)
         os.makedirs(config.IMAGE_STORAGE_PATH, exist_ok=True)
 
@@ -105,12 +104,22 @@ class ImageAgent:
                 logging.warning(f"Failed to download image for query: {query}")
                 return None
 
-            # Upload to GCS and get signed URL
-            gcs_path = f"images/{local_filename}"
-            signed_url = self.gcs_client.upload_file(local_path, gcs_path)
-            if not signed_url:
-                logging.error("Failed to upload to GCS or get signed URL.")
-                return None
+            # Upload image via REST API (GCS deprecated, using REST API instead)
+            try:
+                import requests
+                with open(local_path, 'rb') as f:
+                    files = {'file': f}
+                    upload_response = requests.post(
+                        f"{self.api_url}/api/upload",
+                        files=files,
+                        timeout=30
+                    )
+                    upload_response.raise_for_status()
+                    result = upload_response.json()
+                    signed_url = result.get('url', local_path)
+            except Exception as e:
+                logging.warning(f"REST API upload failed ({e}), using local path")
+                signed_url = local_path
 
             # Create ImageDetails object
             image_details = ImageDetails(

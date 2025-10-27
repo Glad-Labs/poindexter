@@ -1,3 +1,39 @@
+"""
+ARCHIVED: October 26, 2025 (Phase 5)
+REASON: Migrated to REST API backend
+LOCATION: archive/google-cloud-services/content_agent_firestore_client.py.archive
+
+This was the Firestore client for content_agent
+Agent-specific wrapper around Firestore for task and run logging
+
+MIGRATION NOTES:
+- log_run() → POST /api/tasks/{task_id}/runs
+- update_run() → PUT /api/tasks/{task_id}/runs/{run_id}
+- update_document() → PUT /api/tasks/{task_id}
+- get_content_queue() → GET /api/tasks?status=New
+- update_task_status() → PUT /api/tasks/{task_id}
+- add_log_to_run() → POST /api/tasks/{task_id}/runs/{run_id}/logs
+- add_task() → POST /api/tasks
+
+Collections (Firestore) → Endpoints (REST API):
+- agent_runs → /api/tasks/{task_id}/runs
+- tasks → /api/tasks
+- logs (nested) → /api/tasks/{task_id}/runs/{run_id}/logs
+
+Classes:
+- FirestoreClient: Agent-specific Firestore wrapper
+
+RE-ACTIVATION PROCESS (if Firestore needed in future):
+1. Copy this file back to src/agents/content_agent/services/firestore_client.py
+2. Install google-cloud-firestore: pip install google-cloud-firestore
+3. Set GCP_PROJECT_ID environment variable
+4. Update content_agent to use FirestoreClient
+5. Create Firestore collections in GCP
+6. Test with Firestore emulator first
+
+FULL ORIGINAL CODE:
+"""
+
 import os
 import logging
 from google.cloud import firestore
@@ -9,6 +45,8 @@ from typing import Optional, Any
 class FirestoreClient:
     """
     Client for interacting with Google Cloud Firestore to log real-time agent status.
+    
+    MIGRATED TO: REST API (October 26, 2025)
     """
 
     def __init__(self):
@@ -24,6 +62,7 @@ class FirestoreClient:
     def log_run(self, task_id: str, topic: str, status: str = "Starting") -> str:
         """
         Logs the start of a new agent run and returns the Firestore document ID.
+        MIGRATED TO: POST /api/tasks/{task_id}/runs
 
         Args:
             task_id (str): The Firestore document ID of the task.
@@ -58,6 +97,7 @@ class FirestoreClient:
     ):
         """
         Updates the status and other details of an ongoing agent run.
+        MIGRATED TO: PUT /api/tasks/{task_id}/runs/{run_id}
 
         Args:
             run_id (str): The Firestore document ID of the run.
@@ -95,6 +135,7 @@ class FirestoreClient:
     def update_document(self, document_id: str, data: dict):
         """
         Creates or updates a document in the configured Firestore collection.
+        MIGRATED TO: PUT /api/tasks/{task_id}
 
         Args:
             document_id (str): The ID of the document to create or update.
@@ -113,6 +154,7 @@ class FirestoreClient:
     def get_content_queue(self) -> list[dict]:
         """
         Fetches all tasks from the 'tasks' collection with the status 'New'.
+        MIGRATED TO: GET /api/tasks?status=New
         """
         try:
             tasks_ref = self.db.collection("tasks").where("status", "==", "New")
@@ -133,6 +175,7 @@ class FirestoreClient:
     ):
         """
         Updates the status of a specific task in the 'tasks' collection.
+        MIGRATED TO: PUT /api/tasks/{task_id}
         """
         try:
             task_ref = self.db.collection("tasks").document(task_id)
@@ -149,7 +192,9 @@ class FirestoreClient:
             )
 
     def add_log_to_run(self, run_id: str, level: str, message: str):
-        """Adds a new log entry to a specific run's sub-collection."""
+        """Adds a new log entry to a specific run's sub-collection.
+        MIGRATED TO: POST /api/tasks/{task_id}/runs/{run_id}/logs
+        """
         if not run_id:
             return
         try:
@@ -167,7 +212,9 @@ class FirestoreClient:
             )
 
     def add_task(self, task_data: dict):
-        """Adds a new task to the content-tasks collection."""
+        """Adds a new task to the content-tasks collection.
+        MIGRATED TO: POST /api/tasks
+        """
         try:
             task_data["createdAt"] = datetime.utcnow()
             task_data["status"] = "Ready"
