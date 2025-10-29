@@ -50,7 +50,7 @@ INFO:     Application startup complete
 ### Terminal 2: Strapi CMS
 
 ```powershell
-cd c:\Users\mattm\glad-labs-website\cms\strapi-v5-backend
+cd c:\Users\mattm\glad-labs-website\cms\strapi-main
 npm run develop
 ```
 
@@ -614,7 +614,7 @@ While testing, monitor these in DevTools:
 cd c:\Users\mattm\glad-labs-website\src\cofounder_agent; python -m uvicorn main:app --reload --port 8000
 
 # Terminal 2: Strapi
-cd c:\Users\mattm\glad-labs-website\cms\strapi-v5-backend; npm run develop
+cd c:\Users\mattm\glad-labs-website\cms\strapi-main; npm run develop
 
 # Terminal 3: Frontend
 cd c:\Users\mattm\glad-labs-website\web\oversight-hub; npm start

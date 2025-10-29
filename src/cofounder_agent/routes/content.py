@@ -25,7 +25,7 @@ from services.serper_client import SerperClient
 logger = logging.getLogger(__name__)
 
 # Router for all content-related endpoints
-content_router = APIRouter(prefix="/api/v1/content", tags=["content"])
+content_router = APIRouter(prefix="/api/content", tags=["content"])
 
 # In-memory task storage (use Firestore in production)
 task_store: Dict[str, Dict[str, Any]] = {}
@@ -56,7 +56,7 @@ class ContentTone(str, Enum):
 
 class CreateBlogPostRequest(BaseModel):
     """Request model for creating a blog post"""
-    topic: str = Field(..., min_length=5, max_length=200, description="Blog post topic/title")
+    topic: str = Field(..., max_length=200, description="Blog post topic/title")
     style: ContentStyle = Field(ContentStyle.TECHNICAL, description="Content style")
     tone: ContentTone = Field(ContentTone.PROFESSIONAL, description="Content tone")
     target_length: int = Field(1500, ge=200, le=5000, description="Target word count")
@@ -136,6 +136,12 @@ class PublishDraftResponse(BaseModel):
 
 
 @content_router.post(
+    "/create",
+    response_model=CreateBlogPostResponse,
+    status_code=201,
+    description="Start async blog post generation"
+)
+@content_router.post(
     "/create-blog-post",
     response_model=CreateBlogPostResponse,
     status_code=201,
@@ -158,8 +164,8 @@ async def create_blog_post(
     """
     try:
         # Validate input
-        if len(request.topic.strip()) < 5:
-            raise HTTPException(status_code=400, detail="Topic must be at least 5 characters")
+        if len(request.topic.strip()) < 3:
+            raise HTTPException(status_code=400, detail="Topic must be at least 3 characters")
 
         # Create task ID
         task_id = f"blog_{datetime.now().strftime('%Y%m%d')}_{uuid.uuid4().hex[:8]}"
@@ -200,6 +206,8 @@ async def create_blog_post(
             estimated_completion=(datetime.now().isoformat())  # Current time
         )
         
+    except HTTPException:
+        raise
     except ValueError as e:
         logger.error(f"Validation error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
@@ -208,6 +216,11 @@ async def create_blog_post(
         raise HTTPException(status_code=500, detail=f"Failed to create blog post task: {str(e)}")
 
 
+@content_router.get(
+    "/status/{task_id}",
+    response_model=TaskProgressResponse,
+    description="Check blog post generation status"
+)
 @content_router.get(
     "/tasks/{task_id}",
     response_model=TaskProgressResponse,
@@ -240,6 +253,8 @@ async def get_task_status(task_id: str):
             created_at=task["created_at"]
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error getting task status: {e}")
         raise HTTPException(status_code=500, detail=f"Error getting task status: {str(e)}")

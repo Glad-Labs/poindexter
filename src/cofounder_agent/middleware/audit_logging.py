@@ -45,6 +45,20 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def log_audit(action: str, setting_id: str, user_id: str, old_value: Any = None, new_value: Any = None, **kwargs) -> None:
+    """Log audit event for settings changes"""
+    audit_entry = {
+        "action": action,
+        "setting_id": setting_id,
+        "user_id": user_id,
+        "old_value": old_value,
+        "new_value": new_value,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        **kwargs
+    }
+    logger.info(f"AUDIT: {action} on {setting_id} by {user_id}", extra=audit_entry)
+
+
 class SettingsAuditLogger:
     """Handles audit logging for all settings operations"""
 
@@ -945,3 +959,609 @@ class AuditLoggingMiddleware:
 
         else:
             return f"{action} on setting '{setting_key}'"
+
+
+# ============================================================================
+# BUSINESS EVENT AUDIT METHODS
+# Track critical business events for production debugging and compliance
+# ============================================================================
+
+
+class BusinessEventAuditLogger:
+    """Tracks business-level events for production monitoring and debugging."""
+
+    @staticmethod
+    def log_task_created(
+        task_id: str,
+        task_type: str,
+        created_by: str,
+        description: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Log task creation event.
+
+        Args:
+            task_id: Unique task identifier
+            task_type: Type of task (content_generation, analysis, etc.)
+            created_by: User who created the task
+            description: Optional task description
+
+        Returns:
+            Created log entry or None if failed
+        """
+        try:
+            if not DB_AVAILABLE:
+                logger.warning(f"Database not available for task creation logging")
+                return None
+
+            db = SessionLocal()
+            timestamp = datetime.now(timezone.utc)
+
+            log_entry = Log(
+                level="INFO",
+                message=f"Task created: {task_id} (type: {task_type})",
+                timestamp=timestamp,
+                log_metadata={
+                    "event_type": "task_created",
+                    "task_id": task_id,
+                    "task_type": task_type,
+                    "created_by": created_by,
+                    "description": description or "",
+                },
+            )
+            db.add(log_entry)
+            db.commit()
+            db.close()
+
+            logger.info(f"Task creation logged: {task_id}")
+            return {
+                "success": True,
+                "log_id": getattr(log_entry, "id", None),
+                "timestamp": timestamp.isoformat(),
+            }
+        except Exception as e:
+            logger.error(f"Error logging task creation: {str(e)}")
+            return None
+
+    @staticmethod
+    def log_task_updated(
+        task_id: str,
+        updated_by: str,
+        changes: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Log task update event.
+
+        Args:
+            task_id: Task identifier
+            updated_by: User who updated the task
+            changes: Dictionary of what changed
+
+        Returns:
+            Created log entry or None if failed
+        """
+        try:
+            if not DB_AVAILABLE:
+                return None
+
+            db = SessionLocal()
+            timestamp = datetime.now(timezone.utc)
+
+            log_entry = Log(
+                level="INFO",
+                message=f"Task updated: {task_id}",
+                timestamp=timestamp,
+                log_metadata={
+                    "event_type": "task_updated",
+                    "task_id": task_id,
+                    "updated_by": updated_by,
+                    "changes": changes,
+                },
+            )
+            db.add(log_entry)
+            db.commit()
+            db.close()
+
+            logger.info(f"Task update logged: {task_id}")
+            return {"success": True, "timestamp": timestamp.isoformat()}
+        except Exception as e:
+            logger.error(f"Error logging task update: {str(e)}")
+            return None
+
+    @staticmethod
+    def log_task_completed(
+        task_id: str,
+        result_summary: str,
+        execution_time_ms: int,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Log task completion event.
+
+        Args:
+            task_id: Task identifier
+            result_summary: Summary of task result
+            execution_time_ms: Execution time in milliseconds
+
+        Returns:
+            Created log entry or None if failed
+        """
+        try:
+            if not DB_AVAILABLE:
+                return None
+
+            db = SessionLocal()
+            timestamp = datetime.now(timezone.utc)
+
+            log_entry = Log(
+                level="INFO",
+                message=f"Task completed: {task_id} (Time: {execution_time_ms}ms)",
+                timestamp=timestamp,
+                log_metadata={
+                    "event_type": "task_completed",
+                    "task_id": task_id,
+                    "result_summary": result_summary,
+                    "execution_time_ms": execution_time_ms,
+                },
+            )
+            db.add(log_entry)
+            db.commit()
+            db.close()
+
+            logger.info(f"Task completion logged: {task_id}")
+            return {"success": True, "timestamp": timestamp.isoformat()}
+        except Exception as e:
+            logger.error(f"Error logging task completion: {str(e)}")
+            return None
+
+    @staticmethod
+    def log_task_failed(
+        task_id: str,
+        error_message: str,
+        error_type: str,
+        stack_trace: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Log task failure event.
+
+        Args:
+            task_id: Task identifier
+            error_message: Error message
+            error_type: Type of error (ValueError, TimeoutError, etc.)
+            stack_trace: Optional full stack trace
+
+        Returns:
+            Created log entry or None if failed
+        """
+        try:
+            if not DB_AVAILABLE:
+                return None
+
+            db = SessionLocal()
+            timestamp = datetime.now(timezone.utc)
+
+            log_entry = Log(
+                level="ERROR",
+                message=f"Task failed: {task_id} - {error_type}: {error_message}",
+                timestamp=timestamp,
+                log_metadata={
+                    "event_type": "task_failed",
+                    "task_id": task_id,
+                    "error_message": error_message,
+                    "error_type": error_type,
+                    "stack_trace": stack_trace or "",
+                },
+            )
+            db.add(log_entry)
+            db.commit()
+            db.close()
+
+            logger.error(f"Task failure logged: {task_id}")
+            return {"success": True, "timestamp": timestamp.isoformat()}
+        except Exception as e:
+            logger.error(f"Error logging task failure: {str(e)}")
+            return None
+
+    @staticmethod
+    def log_content_generated(
+        content_type: str,
+        content_id: str,
+        length_words: int,
+        agent_name: str,
+        model_used: str,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Log content generation event.
+
+        Args:
+            content_type: Type of content (blog_post, social_media, email, etc.)
+            content_id: ID of generated content
+            length_words: Word count of generated content
+            agent_name: Name of agent that generated content
+            model_used: AI model used for generation
+
+        Returns:
+            Created log entry or None if failed
+        """
+        try:
+            if not DB_AVAILABLE:
+                return None
+
+            db = SessionLocal()
+            timestamp = datetime.now(timezone.utc)
+
+            log_entry = Log(
+                level="INFO",
+                message=f"Content generated: {content_type} ({length_words} words)",
+                timestamp=timestamp,
+                log_metadata={
+                    "event_type": "content_generated",
+                    "content_type": content_type,
+                    "content_id": content_id,
+                    "length_words": length_words,
+                    "agent_name": agent_name,
+                    "model_used": model_used,
+                },
+            )
+            db.add(log_entry)
+            db.commit()
+            db.close()
+
+            logger.info(f"Content generation logged: {content_type}:{content_id}")
+            return {"success": True, "timestamp": timestamp.isoformat()}
+        except Exception as e:
+            logger.error(f"Error logging content generation: {str(e)}")
+            return None
+
+    @staticmethod
+    def log_model_called(
+        model_name: str,
+        provider: str,
+        tokens_used: int,
+        response_time_ms: int,
+        cost_usd: Optional[float] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Log AI model API call.
+
+        Args:
+            model_name: Name of model called (gpt-4, claude-3, etc.)
+            provider: Provider (openai, anthropic, google, etc.)
+            tokens_used: Number of tokens used
+            response_time_ms: Response time in milliseconds
+            cost_usd: Cost of API call in USD
+
+        Returns:
+            Created log entry or None if failed
+        """
+        try:
+            if not DB_AVAILABLE:
+                return None
+
+            db = SessionLocal()
+            timestamp = datetime.now(timezone.utc)
+
+            log_entry = Log(
+                level="INFO",
+                message=f"Model called: {model_name} ({provider}) - {tokens_used} tokens",
+                timestamp=timestamp,
+                log_metadata={
+                    "event_type": "model_called",
+                    "model_name": model_name,
+                    "provider": provider,
+                    "tokens_used": tokens_used,
+                    "response_time_ms": response_time_ms,
+                    "cost_usd": cost_usd or 0.0,
+                },
+            )
+            db.add(log_entry)
+            db.commit()
+            db.close()
+
+            logger.info(f"Model call logged: {model_name} from {provider}")
+            return {"success": True, "timestamp": timestamp.isoformat()}
+        except Exception as e:
+            logger.error(f"Error logging model call: {str(e)}")
+            return None
+
+    @staticmethod
+    def log_api_call(
+        endpoint: str,
+        method: str,
+        user_id: str,
+        status_code: int,
+        response_time_ms: int,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Log external API call.
+
+        Args:
+            endpoint: API endpoint called
+            method: HTTP method (GET, POST, etc.)
+            user_id: User making the call
+            status_code: HTTP response status code
+            response_time_ms: Response time in milliseconds
+
+        Returns:
+            Created log entry or None if failed
+        """
+        try:
+            if not DB_AVAILABLE:
+                return None
+
+            db = SessionLocal()
+            timestamp = datetime.now(timezone.utc)
+
+            log_entry = Log(
+                level="INFO",
+                message=f"API call: {method} {endpoint} - {status_code}",
+                timestamp=timestamp,
+                log_metadata={
+                    "event_type": "api_call",
+                    "endpoint": endpoint,
+                    "method": method,
+                    "user_id": user_id,
+                    "status_code": status_code,
+                    "response_time_ms": response_time_ms,
+                },
+            )
+            db.add(log_entry)
+            db.commit()
+            db.close()
+
+            logger.info(f"API call logged: {method} {endpoint}")
+            return {"success": True, "timestamp": timestamp.isoformat()}
+        except Exception as e:
+            logger.error(f"Error logging API call: {str(e)}")
+            return None
+
+    @staticmethod
+    def log_permission_denied(
+        user_id: str,
+        permission: str,
+        resource: str,
+        action: str,
+        reason: str,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Log permission denial event (security event).
+
+        Args:
+            user_id: User attempting access
+            permission: Permission that was denied
+            resource: Resource being accessed
+            action: Action attempted (read, write, delete, etc.)
+            reason: Reason for denial
+
+        Returns:
+            Created log entry or None if failed
+        """
+        try:
+            if not DB_AVAILABLE:
+                return None
+
+            db = SessionLocal()
+            timestamp = datetime.now(timezone.utc)
+
+            log_entry = Log(
+                level="WARNING",
+                message=f"Permission denied: {user_id} - {action} on {resource}",
+                timestamp=timestamp,
+                log_metadata={
+                    "event_type": "permission_denied",
+                    "user_id": user_id,
+                    "permission": permission,
+                    "resource": resource,
+                    "action": action,
+                    "reason": reason,
+                },
+            )
+            db.add(log_entry)
+            db.commit()
+            db.close()
+
+            logger.warning(f"Permission denied: {user_id} on {resource}")
+            return {"success": True, "timestamp": timestamp.isoformat()}
+        except Exception as e:
+            logger.error(f"Error logging permission denial: {str(e)}")
+            return None
+
+    @staticmethod
+    def log_error(
+        error_type: str,
+        error_message: str,
+        component: str,
+        user_id: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Log application error event.
+
+        Args:
+            error_type: Type of error (ValueError, TimeoutError, DatabaseError, etc.)
+            error_message: Error message
+            component: Component where error occurred
+            user_id: User ID if applicable
+            context: Additional context data
+
+        Returns:
+            Created log entry or None if failed
+        """
+        try:
+            if not DB_AVAILABLE:
+                return None
+
+            db = SessionLocal()
+            timestamp = datetime.now(timezone.utc)
+
+            log_entry = Log(
+                level="ERROR",
+                message=f"{error_type} in {component}: {error_message}",
+                timestamp=timestamp,
+                log_metadata={
+                    "event_type": "error",
+                    "error_type": error_type,
+                    "error_message": error_message,
+                    "component": component,
+                    "user_id": user_id or "",
+                    "context": context or {},
+                },
+            )
+            db.add(log_entry)
+            db.commit()
+            db.close()
+
+            logger.error(f"Error logged: {error_type} in {component}")
+            return {"success": True, "timestamp": timestamp.isoformat()}
+        except Exception as e:
+            logger.error(f"Error logging error event: {str(e)}")
+            return None
+
+    @staticmethod
+    def log_agent_executed(
+        agent_name: str,
+        task_type: str,
+        status: str,
+        execution_time_ms: int,
+        result: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Log agent execution event.
+
+        Args:
+            agent_name: Name of agent (content_agent, financial_agent, etc.)
+            task_type: Type of task executed
+            status: Execution status (success, failed, timeout, etc.)
+            execution_time_ms: Execution time in milliseconds
+            result: Optional result summary
+
+        Returns:
+            Created log entry or None if failed
+        """
+        try:
+            if not DB_AVAILABLE:
+                return None
+
+            db = SessionLocal()
+            timestamp = datetime.now(timezone.utc)
+
+            log_entry = Log(
+                level="INFO",
+                message=f"Agent executed: {agent_name} - {status}",
+                timestamp=timestamp,
+                log_metadata={
+                    "event_type": "agent_executed",
+                    "agent_name": agent_name,
+                    "task_type": task_type,
+                    "status": status,
+                    "execution_time_ms": execution_time_ms,
+                    "result": result or "",
+                },
+            )
+            db.add(log_entry)
+            db.commit()
+            db.close()
+
+            logger.info(f"Agent execution logged: {agent_name}")
+            return {"success": True, "timestamp": timestamp.isoformat()}
+        except Exception as e:
+            logger.error(f"Error logging agent execution: {str(e)}")
+            return None
+
+    @staticmethod
+    def log_database_query(
+        query_type: str,
+        table_name: str,
+        execution_time_ms: float,
+        rows_affected: int,
+        status: str,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Log database query execution (for performance monitoring).
+
+        Args:
+            query_type: Type of query (SELECT, INSERT, UPDATE, DELETE)
+            table_name: Table being queried
+            execution_time_ms: Execution time in milliseconds
+            rows_affected: Number of rows affected
+            status: Query status (success, slow, error, etc.)
+
+        Returns:
+            Created log entry or None if failed
+        """
+        try:
+            if not DB_AVAILABLE:
+                return None
+
+            db = SessionLocal()
+            timestamp = datetime.now(timezone.utc)
+
+            log_entry = Log(
+                level="DEBUG",
+                message=f"DB Query: {query_type} {table_name} - {execution_time_ms}ms",
+                timestamp=timestamp,
+                log_metadata={
+                    "event_type": "database_query",
+                    "query_type": query_type,
+                    "table_name": table_name,
+                    "execution_time_ms": execution_time_ms,
+                    "rows_affected": rows_affected,
+                    "status": status,
+                },
+            )
+            db.add(log_entry)
+            db.commit()
+            db.close()
+
+            logger.debug(f"Database query logged: {query_type} {table_name}")
+            return {"success": True, "timestamp": timestamp.isoformat()}
+        except Exception as e:
+            logger.error(f"Error logging database query: {str(e)}")
+            return None
+
+    @staticmethod
+    def log_cache_operation(
+        operation: str,
+        cache_key: str,
+        status: str,
+        hit_miss: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Log cache operation (get, set, delete, clear).
+
+        Args:
+            operation: Cache operation (get, set, delete, clear)
+            cache_key: Key being accessed
+            status: Operation status (success, failure, timeout)
+            hit_miss: For get operations: hit or miss
+
+        Returns:
+            Created log entry or None if failed
+        """
+        try:
+            if not DB_AVAILABLE:
+                return None
+
+            db = SessionLocal()
+            timestamp = datetime.now(timezone.utc)
+
+            log_entry = Log(
+                level="DEBUG",
+                message=f"Cache {operation}: {cache_key} - {status}",
+                timestamp=timestamp,
+                log_metadata={
+                    "event_type": "cache_operation",
+                    "operation": operation,
+                    "cache_key": cache_key,
+                    "status": status,
+                    "hit_miss": hit_miss or "",
+                },
+            )
+            db.add(log_entry)
+            db.commit()
+            db.close()
+
+            logger.debug(f"Cache operation logged: {operation} {cache_key}")
+            return {"success": True, "timestamp": timestamp.isoformat()}
+        except Exception as e:
+            logger.error(f"Error logging cache operation: {str(e)}")
+            return None

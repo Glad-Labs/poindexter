@@ -286,7 +286,7 @@ npm run setup:python     # Just pip install for backend
 **2. Backend Deployment (Railway)**
 
 ```bash
-cd cms/strapi-v5-backend
+cd cms/strapi-main
 # Deploy via Railway CLI or web dashboard
 railway up
 ```
@@ -344,7 +344,7 @@ npm run test -- [filename]
 
 - `web/oversight-hub/__tests__/`
 - `web/public-site/__tests__/`
-- `cms/strapi-v5-backend/tests/` (if applicable)
+- `cms/strapi-main/tests/` (if applicable)
 - `src/cofounder_agent/tests/`
 
 ---
@@ -477,7 +477,7 @@ nvm use 22
 **Solution:** Clear cache and reinstall
 
 ```bash
-cd cms/strapi-v5-backend
+cd cms/strapi-main
 rm -rf node_modules yarn.lock package-lock.json
 npm install
 npm run develop

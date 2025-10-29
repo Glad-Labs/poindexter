@@ -89,7 +89,7 @@ try {
     Write-Success "Strapi is responding at $STRAPI_URL"
 } catch {
     Write-Error-Custom "Strapi is not responding at $STRAPI_URL"
-    Write-Host "  Run: cd cms/strapi-v5-backend && npm run develop" -ForegroundColor Yellow
+    Write-Host "  Run: cd cms/strapi-main && npm run develop" -ForegroundColor Yellow
     exit 1
 }
 

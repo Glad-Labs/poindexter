@@ -32,7 +32,7 @@ python -m uvicorn main:app --reload --port 8000
 ### Terminal 3: Strapi CMS
 
 ```powershell
-cd c:\Users\mattm\glad-labs-website\cms\strapi-v5-backend
+cd c:\Users\mattm\glad-labs-website\cms\strapi-main
 npm run develop
 ```
 

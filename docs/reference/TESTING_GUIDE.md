@@ -328,7 +328,7 @@ cd $Env:USERPROFILE\glad-labs-website\web\oversight-hub
 npm start
 
 # Terminal 3: Strapi (optional, for auth/content)
-cd $Env:USERPROFILE\glad-labs-website\cms\strapi-v5-backend
+cd $Env:USERPROFILE\glad-labs-website\cms\strapi-main
 npm run develop
 
 # Then test in browser:

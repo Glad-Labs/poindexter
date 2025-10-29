@@ -113,7 +113,7 @@ npm run dev
 
 ```bash
 # Terminal 1: Strapi CMS
-cd cms/strapi-v5-backend && npm run develop
+cd cms/strapi-main && npm run develop
 
 # Terminal 2: AI Co-Founder Backend
 cd src/cofounder_agent && python -m uvicorn main:app --reload
@@ -148,7 +148,7 @@ glad-labs-website/
 │   ├── public-site/          # Next.js public website (port 3000)
 │   └── oversight-hub/        # React admin dashboard (port 3001)
 ├── cms/
-│   └── strapi-v5-backend/    # Strapi CMS (port 1337)
+│   └── strapi-main/    # Strapi CMS (port 1337)
 ├── src/
 │   ├── agents/               # Specialized AI agents
 │   └── cofounder_agent/      # FastAPI backend (port 8000)
@@ -172,7 +172,7 @@ npm install --workspaces
 # Or install individually:
 cd web/public-site && npm install
 cd ../oversight-hub && npm install
-cd ../../cms/strapi-v5-backend && npm install
+cd ../../cms/strapi-main && npm install
 ```
 
 #### 2. Install Python Dependencies
@@ -213,7 +213,7 @@ OLLAMA_HOST=http://localhost:11434
 **Strapi `.env` file:**
 
 ```bash
-cd cms/strapi-v5-backend
+cd cms/strapi-main
 cp .env.example .env
 
 # Generated secrets - replace with actual values:
@@ -238,7 +238,7 @@ DEBUG=True
 #### 4. Setup Strapi CMS (First Time)
 
 ```bash
-cd cms/strapi-v5-backend
+cd cms/strapi-main
 
 # Build Strapi
 npm run build
@@ -500,7 +500,7 @@ ollama serve
 **Solution:**
 
 ```bash
-cd cms/strapi-v5-backend
+cd cms/strapi-main
 
 # Clear cache
 rm -rf .cache build
@@ -529,13 +529,13 @@ npm run develop
 
 ```bash
 # Create database directory
-mkdir -p cms/strapi-v5-backend/.tmp
+mkdir -p cms/strapi-main/.tmp
 
 # Reset database
-rm cms/strapi-v5-backend/.tmp/data.db
+rm cms/strapi-main/.tmp/data.db
 
 # Restart Strapi
-cd cms/strapi-v5-backend
+cd cms/strapi-main
 npm run develop
 ```
 
@@ -629,7 +629,7 @@ npm run format                # Format code
 npm run type-check            # TypeScript checks
 
 # Database & Strapi
-cd cms/strapi-v5-backend
+cd cms/strapi-main
 npm run develop               # Start Strapi CMS
 npm run build                 # Build Strapi
 ```

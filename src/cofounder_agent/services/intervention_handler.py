@@ -531,6 +531,201 @@ Details: {intervention_data.get('context')}
         }
         return mapping.get(level, "info")
 
+    # ========================================================================
+    # ADDITIONAL NOTIFICATION CHANNELS
+    # ========================================================================
+
+    async def _send_discord_notification(
+        self,
+        webhook_url: str,
+        title: str,
+        message: str,
+        level: InterventionLevel,
+    ) -> bool:
+        """
+        Send notification to Discord via webhook.
+
+        Args:
+            webhook_url: Discord webhook URL
+            title: Notification title
+            message: Notification message
+            level: Intervention level (used for color coding)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            import aiohttp
+            import json
+
+            # Color mapping for Discord embeds
+            color_map = {
+                InterventionLevel.INFO: 3447003,        # Blue
+                InterventionLevel.WARNING: 15105570,    # Orange
+                InterventionLevel.URGENT: 16711680,     # Red
+                InterventionLevel.CRITICAL: 10038562,   # Dark Red
+            }
+
+            payload = {
+                "embeds": [
+                    {
+                        "title": title,
+                        "description": message,
+                        "color": color_map.get(level, 3447003),
+                        "footer": {
+                            "text": f"Intervention Level: {level.value.upper()}",
+                            "icon_url": "https://platform.slack-edge.com/img/default_application_icon.png",
+                        },
+                        "timestamp": datetime.utcnow().isoformat(),
+                    }
+                ]
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    webhook_url,
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=10),
+                ) as response:
+                    if response.status in (200, 204):
+                        logger.info(f"Discord notification sent successfully", webhook_status=response.status)
+                        return True
+                    else:
+                        logger.warning(
+                            f"Discord webhook returned status {response.status}",
+                            webhook_status=response.status,
+                        )
+                        return False
+
+        except Exception as e:
+            logger.error(f"Error sending Discord notification: {str(e)}", error=str(e))
+            return False
+
+    async def _send_enhanced_sms_notification(
+        self,
+        phone_number: str,
+        message: str,
+        twilio_account_sid: Optional[str] = None,
+        twilio_auth_token: Optional[str] = None,
+        from_number: Optional[str] = None,
+    ) -> bool:
+        """
+        Send SMS notification via Twilio with enhanced features.
+
+        Args:
+            phone_number: Recipient phone number (E.164 format)
+            message: SMS message content (max 160 characters)
+            twilio_account_sid: Twilio account SID (uses env var if not provided)
+            twilio_auth_token: Twilio auth token (uses env var if not provided)
+            from_number: Sender phone number (uses env var if not provided)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            import os
+            from twilio.rest import Client
+
+            # Use provided credentials or fall back to environment variables
+            account_sid = twilio_account_sid or os.getenv("TWILIO_ACCOUNT_SID")
+            auth_token = twilio_auth_token or os.getenv("TWILIO_AUTH_TOKEN")
+            from_num = from_number or os.getenv("TWILIO_PHONE_NUMBER")
+
+            if not all([account_sid, auth_token, from_num]):
+                logger.warning(
+                    "Twilio credentials not configured",
+                    has_account_sid=bool(account_sid),
+                    has_auth_token=bool(auth_token),
+                    has_from_number=bool(from_num),
+                )
+                return False
+
+            client = Client(account_sid, auth_token)
+
+            # Truncate message to SMS limits if needed
+            sms_message = message[:160] if len(message) > 160 else message
+
+            message_obj = client.messages.create(
+                body=sms_message,
+                from_=from_num,
+                to=phone_number,
+            )
+
+            logger.info(
+                f"SMS notification sent successfully",
+                message_sid=message_obj.sid,
+                to_number=phone_number,
+            )
+            return True
+
+        except ImportError:
+            logger.warning("Twilio library not installed. Install with: pip install twilio")
+            return False
+        except Exception as e:
+            logger.error(f"Error sending SMS notification: {str(e)}", error=str(e))
+            return False
+
+    async def _send_inapp_notification(
+        self,
+        user_id: str,
+        title: str,
+        message: str,
+        level: InterventionLevel,
+        action_url: Optional[str] = None,
+    ) -> bool:
+        """
+        Store in-app notification in database for user to see.
+
+        Args:
+            user_id: User ID to receive notification
+            title: Notification title
+            message: Notification message
+            level: Intervention level
+            action_url: Optional URL for action button
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            from database import SessionLocal
+            from models import Notification
+
+            db = SessionLocal()
+            timestamp = datetime.now()
+
+            # Create in-app notification record
+            notification = Notification(
+                user_id=user_id,
+                title=title,
+                message=message,
+                notification_type=f"intervention_{level.value}",
+                is_read=False,
+                created_at=timestamp,
+                action_url=action_url,
+                metadata={
+                    "intervention_level": level.value,
+                    "created_at": timestamp.isoformat(),
+                },
+            )
+
+            db.add(notification)
+            db.commit()
+            db.close()
+
+            logger.info(
+                f"In-app notification created",
+                user_id=user_id,
+                notification_type=f"intervention_{level.value}",
+            )
+            return True
+
+        except ImportError:
+            logger.warning("Database models not available for in-app notifications")
+            return False
+        except Exception as e:
+            logger.error(f"Error creating in-app notification: {str(e)}", error=str(e))
+            return False
+
 
 # Singleton instance for easy access
 _intervention_handler: Optional[InterventionHandler] = None

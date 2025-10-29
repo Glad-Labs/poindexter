@@ -400,7 +400,7 @@ grep -i "error\|warning" logs/*.log
 
 - `src/cofounder_agent/README.md` - Add PostgreSQL section
 - `web/public-site/README.md` - Update API integration docs
-- `cms/strapi-v5-backend/README.md` - Add PostgreSQL notes
+- `cms/strapi-main/README.md` - Add PostgreSQL notes
 
 ### 5.3 Archive Old Docs
 

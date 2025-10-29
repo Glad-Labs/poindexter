@@ -81,7 +81,7 @@ jobs:
       - name: 🚀 Deploy Strapi CMS to Railway (Staging)
         run: |
           echo "📤 Deploying Strapi CMS to staging environment..."
-          cd cms/strapi-v5-backend
+          cd cms/strapi-main
           npx railway up
           cd ../..
           echo "✅ Strapi staging deployment completed"

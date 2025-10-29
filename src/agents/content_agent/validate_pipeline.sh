@@ -78,7 +78,7 @@ if [ -n "$STRAPI_API_URL" ] && [ -n "$STRAPI_API_TOKEN" ]; then
         echo -e "${GREEN}✓${NC} Strapi API accessible at $STRAPI_API_URL"
     else
         echo -e "${RED}✗${NC} Cannot connect to Strapi at $STRAPI_API_URL"
-        echo "  Make sure Strapi is running: cd cms/strapi-v5-backend && npm run develop"
+        echo "  Make sure Strapi is running: cd cms/strapi-main && npm run develop"
         ((FAILURES++))
     fi
 else
@@ -187,7 +187,7 @@ else
     echo ""
     echo "Common fixes:"
     echo "  - Set missing environment variables in .env file"
-    echo "  - Start Strapi: cd cms/strapi-v5-backend && npm run develop"
+    echo "  - Start Strapi: cd cms/strapi-main && npm run develop"
     echo "  - Install Python deps: pip install -r requirements.txt"
     echo "  - Run from correct directory: cd src/agents/content_agent"
     exit 1

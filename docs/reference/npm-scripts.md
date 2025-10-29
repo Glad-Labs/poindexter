@@ -111,7 +111,7 @@ All npm scripts across the Glad Labs monorepo have been reviewed, fixed, and ver
 
 ---
 
-### Strapi Backend (`cms/strapi-v5-backend/package.json`)
+### Strapi Backend (`cms/strapi-main/package.json`)
 
 | Script                | Status     | Test Result              |
 | --------------------- | ---------- | ------------------------ |
@@ -289,7 +289,7 @@ Before running full `npm run dev`, test each service:
 
 ```powershell
 # Test Strapi
-cd cms/strapi-v5-backend
+cd cms/strapi-main
 npm run develop
 
 # Test Oversight Hub

@@ -77,7 +77,7 @@ if (-not [string]::IsNullOrEmpty($env:STRAPI_API_URL) -and -not [string]::IsNull
         Write-Host "✓ Strapi API accessible at $env:STRAPI_API_URL" -ForegroundColor Green
     } catch {
         Write-Host "✗ Cannot connect to Strapi at $env:STRAPI_API_URL" -ForegroundColor Red
-        Write-Host "  Make sure Strapi is running: cd cms/strapi-v5-backend; npm run develop" -ForegroundColor Yellow
+        Write-Host "  Make sure Strapi is running: cd cms/strapi-main; npm run develop" -ForegroundColor Yellow
         $Failures++
     }
 } else {
@@ -195,7 +195,7 @@ if ($Failures -eq 0) {
     Write-Host ""
     Write-Host "Common fixes:"
     Write-Host "  - Set missing environment variables in .env file"
-    Write-Host "  - Start Strapi: cd cms/strapi-v5-backend; npm run develop"
+    Write-Host "  - Start Strapi: cd cms/strapi-main; npm run develop"
     Write-Host "  - Install Python deps: pip install -r requirements.txt"
     Write-Host "  - Run from correct directory: cd src/agents/content_agent"
     exit 1

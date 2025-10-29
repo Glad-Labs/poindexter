@@ -435,7 +435,7 @@ headers['Authorization'] = `Bearer ${accessToken}`;
 cd src/cofounder_agent; python -m uvicorn main:app --reload
 
 # Terminal 2
-cd cms/strapi-v5-backend; npm run develop
+cd cms/strapi-main; npm run develop
 
 # Terminal 3
 cd web/oversight-hub; npm start

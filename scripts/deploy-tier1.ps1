@@ -170,14 +170,14 @@ function Deploy-Strapi {
     Write-Step "3" "Deploying Strapi CMS"
     
     if ($DryRun) {
-        Write-Host "  [DRY RUN] cd cms/strapi-v5-backend" -ForegroundColor DarkGray
+        Write-Host "  [DRY RUN] cd cms/strapi-main" -ForegroundColor DarkGray
         Write-Host "  [DRY RUN] npm run build" -ForegroundColor DarkGray
         Write-Host "  [DRY RUN] railway deploy" -ForegroundColor DarkGray
         return
     }
 
     try {
-        $strapiPath = Join-Path $PSScriptRoot "../cms/strapi-v5-backend"
+        $strapiPath = Join-Path $PSScriptRoot "../cms/strapi-main"
         
         if (!(Test-Path $strapiPath)) {
             Write-Warning "Strapi directory not found: $strapiPath"

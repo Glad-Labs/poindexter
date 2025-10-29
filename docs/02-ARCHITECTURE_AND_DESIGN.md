@@ -310,7 +310,7 @@ Dashboard/
 
 ### 3. Strapi v5 CMS
 
-**Location:** `cms/strapi-v5-backend/`
+**Location:** `cms/strapi-main/`
 
 **Purpose:** Headless content management system and data store
 

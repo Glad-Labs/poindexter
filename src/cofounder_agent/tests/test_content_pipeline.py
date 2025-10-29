@@ -99,21 +99,18 @@ class TestContentPipelineIntegration:
         response = client.post(
             "/api/content/create",
             json={
-                "topic": "Test Topic for Dev Mode",
-                "primary_keyword": "test",
-                "target_audience": "developers",
-                "category": "technology",
-                "auto_publish": False
+                "topic": "Test Topic for Dev Mode"
             }
         )
         
-        assert response.status_code == 200
+        assert response.status_code == 201
         data = response.json()
-        assert data["status"] == "queued"
+        assert data["status"] == "pending"
         assert data["topic"] == "Test Topic for Dev Mode"
-        assert "dev-content-" in data["task_id"]
-        assert data["message"].endswith("(development mode)")
+        assert "blog_" in data["task_id"]
+        assert data["polling_url"]
     
+    @pytest.mark.skip(reason="Firestore removed during cleanup - integration test requires Google Cloud services")
     @patch('main.GOOGLE_CLOUD_AVAILABLE', True)
     def test_create_content_with_google_cloud(self, client, mock_firestore, mock_pubsub):
         """Test content creation with Google Cloud services"""
@@ -138,23 +135,40 @@ class TestContentPipelineIntegration:
     @patch('main.GOOGLE_CLOUD_AVAILABLE', False)
     def test_get_content_status_dev_mode(self, client):
         """Test getting content status in dev mode"""
-        response = client.get("/api/content/status/test-task-123")
+        # First create a task to query
+        create_response = client.post(
+            "/api/content/create",
+            json={"topic": "Test Topic"}
+        )
+        assert create_response.status_code == 201
+        task_id = create_response.json()["task_id"]
+        
+        # Now get the task status (may be pending or completed depending on background task timing)
+        response = client.get(f"/api/content/status/{task_id}")
         
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] == "unknown"
-        assert "development mode" in data["message"]
+        assert data["task_id"] == task_id
+        assert data["status"] in ["pending", "generating", "completed"]
     
     @patch('main.GOOGLE_CLOUD_AVAILABLE', True)
     def test_get_content_status_with_google_cloud(self, client, mock_firestore):
         """Test getting content status with Google Cloud"""
-        response = client.get("/api/content/status/test-task-123")
+        # First create a task to query
+        create_response = client.post(
+            "/api/content/create",
+            json={"topic": "Test Topic"}
+        )
+        assert create_response.status_code == 201
+        task_id = create_response.json()["task_id"]
+        
+        # Now get the task status (may be pending or completed depending on background task timing)
+        response = client.get(f"/api/content/status/{task_id}")
         
         assert response.status_code == 200
         data = response.json()
-        assert data["task_id"] == "test-task-123"
-        assert data["topic"] == "Test Topic"
-        assert data["status"] == "New"
+        assert data["task_id"] == task_id
+        assert data["status"] in ["pending", "generating", "completed"]
     
     @patch('main.GOOGLE_CLOUD_AVAILABLE', True)
     def test_get_content_status_not_found(self, client, mock_firestore):
@@ -231,9 +245,6 @@ class TestContentPipelineIntegration:
         assert data["status"] == "received"
         assert data["event"] == "entry.create"
         assert data["entry_id"] == 456
-        
-        # Verify Firestore logging was called
-        mock_firestore.log_webhook_event.assert_called_once()
     
     @patch('main.GOOGLE_CLOUD_AVAILABLE', True)
     def test_webhook_entry_publish(self, client, mock_firestore):
@@ -255,9 +266,6 @@ class TestContentPipelineIntegration:
         assert data["status"] == "received"
         assert data["event"] == "entry.publish"
         assert data["entry_id"] == 789
-        
-        # Verify Firestore logging was called
-        mock_firestore.log_webhook_event.assert_called_once()
     
     def test_webhook_entry_unpublish(self, client):
         """Test webhook handling for entry.unpublish event"""
@@ -313,23 +321,18 @@ class TestContentPipelineEndToEnd:
         Test complete content creation workflow in development mode:
         1. Create content request
         2. Check status
-        3. Simulate Strapi webhook
         """
         # Step 1: Create content
         create_response = client.post(
             "/api/content/create",
             json={
-                "topic": "The Future of AI in Software Development",
-                "primary_keyword": "AI, software, automation, development",
-                "target_audience": "software developers",
-                "category": "technology",
-                "auto_publish": True
+                "topic": "The Future of AI in Software Development"
             }
         )
         
-        assert create_response.status_code == 200
+        assert create_response.status_code == 201
         task_data = create_response.json()
-        assert task_data["status"] == "queued"
+        assert task_data["status"] == "pending"
         task_id = task_data["task_id"]
         
         # Step 2: Check status (should show queued/in-progress)

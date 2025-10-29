@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
 import json
 
-from cofounder_agent.main import app
+from main import app
 
 
 @pytest.fixture
@@ -29,7 +29,7 @@ def mock_user():
 
 
 @pytest.fixture
-async def mock_db_session():
+def mock_db_session():
     """Mock database session"""
     session = MagicMock()
     session.query = MagicMock(return_value=MagicMock())

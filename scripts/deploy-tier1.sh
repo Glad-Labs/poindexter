@@ -50,7 +50,7 @@ railway variables set DATABASE_URL=$(railway variables get DATABASE_URL)
 # Step 3: Deploy Strapi CMS
 echo ""
 echo "📦 Step 3: Deploying Strapi CMS..."
-cd cms/strapi-v5-backend
+cd cms/strapi-main
 
 # Build and deploy
 npm run build || true

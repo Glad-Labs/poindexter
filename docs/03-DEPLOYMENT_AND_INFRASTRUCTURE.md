@@ -142,7 +142,7 @@ railway service create --dockerfile Dockerfile
 ### Strapi Production Configuration
 
 ```javascript
-// cms/strapi-v5-backend/config/server.ts
+// cms/strapi-main/config/server.ts
 export default ({ env }) => ({
   host: env('HOST', '0.0.0.0'),
   port: env.int('PORT', 1337),
@@ -270,7 +270,7 @@ npm run strapi migrations:run
 ### Strapi Media Upload Configuration
 
 ```javascript
-// cms/strapi-v5-backend/config/plugins.ts
+// cms/strapi-main/config/plugins.ts
 export default ({ env }) => ({
   upload: {
     config: {

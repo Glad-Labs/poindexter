@@ -327,7 +327,7 @@ cd src/cofounder_agent
 railway up
 
 # Deploy Strapi to Railway
-cd cms/strapi-v5-backend
+cd cms/strapi-main
 railway up
 ```
 

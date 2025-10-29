@@ -42,14 +42,21 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 # Authentication Dependency (Mock for testing)
 # ============================================================================
 
-async def get_current_user(authorization: Optional[str] = None):
+async def get_current_user(request: Request):
     """
     Mock authentication dependency for testing.
     In production, this would validate JWT tokens and return the authenticated user.
     For testing, this is easily mockable.
     """
-    if not authorization:
+    # Check for Authorization header
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
         raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    # For mock/testing, accept any token with Bearer prefix
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid token format")
+    
     return {
         "user_id": "test-user",
         "email": "test@example.com",
@@ -228,7 +235,7 @@ async def list_settings(
     search: Optional[str] = Query(None, description="Search in key and description"),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     per_page: int = Query(20, ge=1, le=100, description="Items per page"),
-    # current_user: User = Depends(get_current_user),
+    current_user = Depends(get_current_user),
     # db: Session = Depends(get_db),
 ):
     """
@@ -300,7 +307,8 @@ async def list_settings(
     }
 )
 async def get_setting(
-    setting_id: int = Path(..., gt=0, description="Setting ID"),
+    setting_id: str = Path(..., description="Setting ID or key name"),
+    current_user = Depends(get_current_user),
 ):
     """
     Get details of a specific setting.
@@ -316,20 +324,26 @@ async def get_setting(
     - Audit trail availability metadata
     
     **Path Parameters:**
-    - `setting_id`: ID of the setting to retrieve
+    - `setting_id`: ID or key name of the setting to retrieve
     """
     # Mock implementation for testing
-    if setting_id < 1 or setting_id > 10:
-        raise HTTPException(status_code=404, detail="Setting not found")
+    # Try to convert to int, if fails treat as key name
+    try:
+        setting_id_int = int(setting_id)
+        if setting_id_int < 1 or setting_id_int > 10:
+            raise HTTPException(status_code=404, detail="Setting not found")
+    except ValueError:
+        # Treat as key name
+        setting_id_int = hash(setting_id) % 10 + 1
     
     return SettingResponse(
-        id=setting_id,
-        key=f"setting_{setting_id}",
-        value=f"value_{setting_id}",
+        id=setting_id_int,
+        key=f"setting_{setting_id_int}",
+        value=f"value_{setting_id_int}",
         data_type=SettingDataTypeEnum.STRING,
         category=SettingCategoryEnum.DATABASE,
         environment=SettingEnvironmentEnum.DEVELOPMENT,
-        description=f"Test setting {setting_id}",
+        description=f"Test setting {setting_id_int}",
         is_encrypted=False,
         is_read_only=False,
         tags=["test"],
@@ -337,7 +351,7 @@ async def get_setting(
         updated_at=datetime.utcnow(),
         created_by_id=1,
         updated_by_id=None,
-        value_preview=f"value_{setting_id}"
+        value_preview=f"value_{setting_id_int}"
     )
 
 
@@ -356,6 +370,7 @@ async def get_setting(
 )
 async def create_setting(
     setting_data: SettingCreate,
+    current_user = Depends(get_current_user),
 ):
     """
     Create a new setting (admin only).
@@ -426,6 +441,7 @@ async def create_setting(
 async def update_setting(
     setting_id: int = Path(..., gt=0, description="Setting ID"),
     update_data: SettingUpdate = Body(...),
+    current_user = Depends(get_current_user),
 ):
     """
     Update an existing setting (admin/editor).
@@ -492,6 +508,7 @@ async def update_setting(
 )
 async def delete_setting(
     setting_id: int = Path(..., gt=0, description="Setting ID"),
+    current_user = Depends(get_current_user),
 ):
     """
     Delete a setting (admin only).
@@ -545,6 +562,7 @@ async def delete_setting(
 async def get_setting_history(
     setting_id: int = Path(..., gt=0, description="Setting ID"),
     limit: int = Query(50, ge=1, le=500, description="Number of history entries to return"),
+    current_user = Depends(get_current_user),
 ):
     """
     Get change history for a specific setting.
@@ -587,6 +605,7 @@ async def get_setting_history(
 async def rollback_setting(
     setting_id: int = Path(..., gt=0, description="Setting ID"),
     history_id: int = Query(..., gt=0, description="Audit log entry ID to rollback to"),
+    current_user = Depends(get_current_user),
 ):
     """
     Rollback a setting to a previous value (admin only).
@@ -647,6 +666,7 @@ async def rollback_setting(
 )
 async def bulk_update_settings(
     bulk_data: SettingBulkUpdateRequest,
+    current_user = Depends(get_current_user),
 ):
     """
     Update multiple settings in a single transaction (admin/editor).
@@ -691,6 +711,7 @@ async def bulk_update_settings(
 )
 async def export_settings(
     include_secrets: bool = Query(False, description="Include encrypted secrets in export"),
+    current_user = Depends(get_current_user),
     format: str = Query("json", regex="^(json|yaml|csv)$", description="Export format"),
 ):
     """
@@ -732,7 +753,9 @@ async def export_settings(
     status_code=status.HTTP_200_OK,
     summary="Settings API health check"
 )
-async def settings_health():
+async def settings_health(
+    current_user = Depends(get_current_user),
+):
     """
     Health check endpoint for settings API.
     

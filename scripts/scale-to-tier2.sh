@@ -58,7 +58,7 @@ echo ""
 echo "📦 Step 4: Redeploying services..."
 
 # Redeploy Strapi
-cd cms/strapi-v5-backend
+cd cms/strapi-main
 npm run build || true
 railway deploy
 cd ../..

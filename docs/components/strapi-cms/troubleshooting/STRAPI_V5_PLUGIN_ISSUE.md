@@ -72,7 +72,7 @@ STRAPI_API_TOKEN=your-production-token
 **Steps:**
 
 ```bash
-cd cms/strapi-v5-backend
+cd cms/strapi-main
 
 # Downgrade problematic plugin
 npm install @strapi/content-type-builder@5.0.0
@@ -97,7 +97,7 @@ npm run develop
 **Steps:**
 
 ```bash
-cd cms/strapi-v5-backend
+cd cms/strapi-main
 
 # Backup current
 cp -r node_modules node_modules.backup
@@ -162,7 +162,7 @@ npm run dev:frontend
 **Option B: Try plugin downgrade**
 
 ```bash
-cd cms/strapi-v5-backend
+cd cms/strapi-main
 npm install @strapi/content-type-builder@5.0.0
 npm run build
 npm run develop

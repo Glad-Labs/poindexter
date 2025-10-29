@@ -57,7 +57,7 @@
 Status: READY TO COMPILE ✅
 ```
 
-### Strapi CMS (`cms/strapi-v5-backend`)
+### Strapi CMS (`cms/strapi-main`)
 
 ```
 ⚠️  WARNING: unstable_tours import error

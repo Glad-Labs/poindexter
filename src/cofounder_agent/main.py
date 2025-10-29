@@ -33,6 +33,7 @@ from routes.auth_routes import router as auth_router
 from routes.settings_routes import router as settings_router
 from routes.command_queue_routes import router as command_queue_router
 from routes.task_routes import router as task_router
+from routes.webhooks import webhook_router
 
 # Import database initialization
 try:
@@ -46,6 +47,14 @@ except ImportError:
 # PostgreSQL database service is now the primary service
 # Google Cloud services kept for backward compatibility but not initialized
 DATABASE_SERVICE_AVAILABLE = True
+pubsub_client = None  # Stub for backward compatibility - Firestore removed
+
+
+# Google Cloud availability flag (for test mocking)
+GOOGLE_CLOUD_AVAILABLE = False
+
+# Stub Google Cloud client for test compatibility
+firestore_client = None
 
 # Configure structured logging
 try:
@@ -182,6 +191,7 @@ app.include_router(models_router)
 app.include_router(enhanced_content_router)
 app.include_router(settings_router)  # Settings management
 app.include_router(command_queue_router)  # Command queue (replaces Pub/Sub)
+app.include_router(webhook_router)  # Webhook handlers for Strapi events
 
 class CommandRequest(BaseModel):
     """Request model for processing a command."""

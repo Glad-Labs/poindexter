@@ -97,7 +97,7 @@ glad-labs-website/
 │ ├── public-site/ # Next.js 15 public website
 │ └── oversight-hub/ # React admin dashboard
 ├── 📁 cms/
-│ └── strapi-v5-backend/ # Strapi CMS backend
+│ └── strapi-main/ # Strapi CMS backend
 ├── 📁 src/
 │ ├── cofounder_agent/ # AI Co-Founder system
 │ └── mcp/ # Model Context Protocol
@@ -136,7 +136,7 @@ glad-labs-website/
    cd web/oversight-hub && npm install && cd ../..
 
    # Install CMS dependencies
-   cd cms/strapi-v5-backend && npm install && cd ../..
+   cd cms/strapi-main && npm install && cd ../..
 
    # Install Python dependencies for content agent
    cd src/agents/content_agent && pip install -r requirements.txt && cd ../../..
@@ -144,7 +144,7 @@ glad-labs-website/
 
 1. **Configure environment variables:**
 
-   **Strapi CMS** (`cms/strapi-v5-backend/.env`):
+   **Strapi CMS** (`cms/strapi-main/.env`):
 
    ```env
    NODE_ENV=development
@@ -175,7 +175,7 @@ glad-labs-website/
 
    ```bash
    # Terminal 1: Start Strapi CMS
-   cd cms/strapi-v5-backend
+   cd cms/strapi-main
    npm run develop
 
    # Terminal 2: Start Next.js frontend
@@ -260,7 +260,7 @@ glad-labs-website/
 ### **Component Documentation**
 
 - **[Public Site](./web/public-site/README.md)** - Next.js frontend documentation
-- **[Strapi CMS](./cms/strapi-v5-backend/README.md)** - Content management system setup
+- **[Strapi CMS](./cms/strapi-main/README.md)** - Content management system setup
 - **[Content Agent](./src/agents/content_agent/README.md)** - Autonomous content creation
 - **[Oversight Hub](./web/oversight-hub/README.md)** - Admin interface
 
