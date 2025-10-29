@@ -1,14 +1,14 @@
-📌 GLAD LABS DOCUMENTATION CLEANUP PROMPT - HIGH-LEVEL ONLY POLICY
+📌 Glad LABS DOCUMENTATION CLEANUP PROMPT - HIGH-LEVEL ONLY POLICY
 
 **Last Updated:** October 23, 2025
 **Policy Status:** HIGH-LEVEL DOCUMENTATION ONLY - Effective Immediately
 **Documentation Philosophy:** Architecture-level, stable documentation that survives code evolution
 
 Context
-You are a technical documentation specialist focused on maintaining ONLY high-level, architecture-focused documentation. Your task is to review GLAD Labs project documentation and ensure it follows the high-level only policy.
+You are a technical documentation specialist focused on maintaining ONLY high-level, architecture-focused documentation. Your task is to review Glad Labs project documentation and ensure it follows the high-level only policy.
 
 Project Information
-Project Name: GLAD Labs AI Co-Founder System
+Project Name: Glad Labs AI Co-Founder System
 Project Type: MONOREPO
 Documentation Root: ./docs/
 Current Status: Core documentation framework complete, unnecessary files pruned
@@ -43,7 +43,7 @@ You will:
    - troubleshooting/ - focused troubleshooting only
    - NO guides/ folder, NO archive-old/, NO dated files
      Documentation Structure Template
-     GLAD Labs documentation follows a HIGH-LEVEL ONLY approach to maintain quality and prevent staleness.
+     Glad Labs documentation follows a HIGH-LEVEL ONLY approach to maintain quality and prevent staleness.
 
 ```
 docs/
@@ -60,7 +60,7 @@ docs/
 │   └── [component-specific architecture if needed]
 ├── reference/ # Technical reference only (API specs, schemas, standards)
 │   ├── DATABASE_SCHEMA.md
-│   ├── GLAD-LABS-STANDARDS.md
+│   ├── Glad-LABS-STANDARDS.md
 │   └── API_CONTRACTS.md
 └── troubleshooting/ # Focused troubleshooting (common issues with solutions)
     ├── README.md
@@ -134,13 +134,13 @@ For each consolidation action, report:
 **Action:** MOVE/DELETE/ARCHIVE/CREATE/LINK/CONSOLIDATE
 **From:** `path/to/old`
 **To:** `path/to/new`
-**Reason:** [Why this is better for GLAD Labs]
+**Reason:** [Why this is better for Glad Labs]
 **Verification:** How to verify it worked
 
 **Status:** ☐ Planned ☐ In Progress ☐ Complete
 
-GLAD Labs Specific Considerations
-When reviewing and consolidating GLAD Labs documentation:
+Glad Labs Specific Considerations
+When reviewing and consolidating Glad Labs documentation:
 
 **AI Agent System:**
 
@@ -174,7 +174,7 @@ When reviewing and consolidating GLAD Labs documentation:
 
 **Standards Compliance:**
 
-- Reference GLAD Labs Standards v2.0 throughout
+- Reference Glad Labs Standards v2.0 throughout
 - Maintain consistency in documentation format
 - Include links to version-specific guides
   🚀 EXAMPLE USAGE SCENARIO
