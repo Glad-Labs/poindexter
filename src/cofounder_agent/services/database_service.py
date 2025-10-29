@@ -56,10 +56,27 @@ class DatabaseService:
             database_url: PostgreSQL connection URL
                          Default: from DATABASE_URL env var or SQLite for dev
         """
-        self.database_url = database_url or os.getenv(
-            "DATABASE_URL",
-            "sqlite+aiosqlite:///./test.db",  # Fallback for local dev
-        )
+        # Get database URL from parameter, environment variable, or use default SQLite
+        if database_url:
+            self.database_url = database_url
+        else:
+            # Try DATABASE_URL first (Railway production style)
+            database_url_env = os.getenv("DATABASE_URL")
+            if database_url_env:
+                self.database_url = database_url_env
+            else:
+                # Fall back to SQLite for local development
+                # Check for DATABASE_FILENAME env var, default to .tmp/data.db
+                database_filename = os.getenv("DATABASE_FILENAME", ".tmp/data.db")
+                
+                # Create parent directory if it doesn't exist
+                db_dir = os.path.dirname(database_filename)
+                if db_dir and not os.path.exists(db_dir):
+                    os.makedirs(db_dir, exist_ok=True)
+                
+                # Convert to absolute path for Windows compatibility
+                database_filename = os.path.abspath(database_filename)
+                self.database_url = f"sqlite+aiosqlite:///{database_filename}"
 
         # Convert standard postgres:// to async postgresql+asyncpg://
         if self.database_url.startswith("postgresql://"):

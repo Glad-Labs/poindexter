@@ -1,0 +1,107 @@
+📋 GLAD Labs Configuration - Quick Start Card
+============================================
+
+✅ WHAT WAS FIXED
+- Created .env file with database configuration
+- Fixed DatabaseService to handle SQLite paths properly
+- Created .tmp directory for SQLite database
+- Now supports Windows paths correctly
+
+🚀 HOW TO START
+
+Option 1: Using Ollama (Free - Recommended)
+────────────────────────────────────────
+1. Install Ollama:
+   winget install Ollama.Ollama
+
+2. In Terminal 1, start Ollama:
+   ollama serve
+
+3. In Terminal 2, start Co-Founder Agent:
+   cd c:\Users\mattm\glad-labs-website\src\cofounder_agent
+   python -m uvicorn main:app --reload
+
+4. Open browser:
+   http://localhost:8000/docs
+
+Option 2: Using OpenAI/Claude/Gemini
+─────────────────────────────────────
+1. Edit .env file and add your API key:
+   OPENAI_API_KEY=sk-your-key-here
+   OR
+   ANTHROPIC_API_KEY=sk-ant-your-key-here
+   OR
+   GOOGLE_API_KEY=your-key-here
+
+2. Start Co-Founder Agent:
+   cd src/cofounder_agent
+   python -m uvicorn main:app --reload
+
+3. Open browser:
+   http://localhost:8000/docs
+
+🎯 KEY FILES
+
+.env                                    Main configuration
+src/cofounder_agent/main.py             FastAPI application
+src/cofounder_agent/services/database_service.py    Database handler
+DATABASE_CONFIG_FIX.md                  Detailed documentation
+SETUP_COMPLETE.md                       Setup instructions
+
+💾 DATABASE SETUP
+
+Local Development (Default)
+- Type: SQLite
+- Location: .tmp/data.db
+- File: .env (DATABASE_FILENAME=.tmp/data.db)
+- No setup needed!
+
+Production (Railway)
+- Type: PostgreSQL
+- Env var: DATABASE_URL
+- Auto-configured by GitHub Actions
+
+🧪 VERIFY IT WORKS
+
+Check that you see in the logs:
+✅ Database connection established
+✅ Orchestrator initialized successfully
+✅ Application startup complete
+
+Test the API:
+1. Open http://localhost:8000/docs
+2. Click "Try it out" on any endpoint
+3. Execute a test
+
+🔧 TROUBLESHOOTING
+
+"Permission denied" on database file:
+  Remove-Item .tmp/data.db
+  # Restart app - file recreated with correct permissions
+
+"Cannot find Ollama":
+  ollama serve
+  # Keep this running in a terminal
+
+"Connection refused":
+  Make sure you're in: src/cofounder_agent
+  Check port 8000: netstat -ano | findstr :8000
+
+"Module not found":
+  Make sure .env file exists:
+  Get-Content .env
+
+📚 FULL DOCUMENTATION
+- DATABASE_CONFIG_FIX.md     (Detailed explanation)
+- SETUP_COMPLETE.md         (Setup instructions)
+- docs/01-SETUP_AND_OVERVIEW.md  (Full guide)
+
+🎉 YOU'RE READY!
+
+Everything is configured. Just start Ollama (if using) and run:
+  cd src/cofounder_agent
+  python -m uvicorn main:app --reload
+
+Then visit http://localhost:8000/docs
+
+Questions? Check DATABASE_CONFIG_FIX.md in the project root.
