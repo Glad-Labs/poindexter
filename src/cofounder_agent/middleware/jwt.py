@@ -15,8 +15,13 @@ import time
 from typing import Dict, Optional, Tuple
 from collections import defaultdict
 from datetime import datetime, timezone
+import logging
 
 from services.auth import validate_access_token, AuthConfig
+from models import Log
+from database import SessionLocal
+
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -331,8 +336,28 @@ class AuthenticationAuditLogger:
         if reason:
             message += f" ({reason})"
         
-        # TODO: Store in database audit_log table
-        print(message)  # Placeholder
+        # Store in database audit log
+        try:
+            db = SessionLocal()
+            audit_log = Log(
+                level="INFO" if success else "WARNING",
+                message=message,
+                timestamp=datetime.now(timezone.utc),
+                log_metadata={
+                    "event_type": "login_attempt",
+                    "email": email,
+                    "ip_address": ip_address,
+                    "success": success,
+                    "reason": reason or ""
+                }
+            )
+            db.add(audit_log)
+            db.commit()
+            db.close()
+        except Exception as e:
+            logger.error(f"Failed to log login attempt to database: {str(e)}")
+            # Fallback to console logging
+            print(f"[{timestamp}] {message}")
     
     @staticmethod
     def log_token_usage(
@@ -354,8 +379,28 @@ class AuthenticationAuditLogger:
         
         message = f"[{timestamp}] API {method} {endpoint} - User: {user_id}, Status: {status_code}"
         
-        # TODO: Store in database audit_log table
-        print(message)  # Placeholder
+        # Store in database audit log
+        try:
+            db = SessionLocal()
+            audit_log = Log(
+                level="INFO",
+                message=message,
+                timestamp=datetime.now(timezone.utc),
+                log_metadata={
+                    "event_type": "api_access",
+                    "user_id": user_id,
+                    "endpoint": endpoint,
+                    "method": method,
+                    "status_code": status_code
+                }
+            )
+            db.add(audit_log)
+            db.commit()
+            db.close()
+        except Exception as e:
+            logger.error(f"Failed to log API access to database: {str(e)}")
+            # Fallback to console logging
+            print(message)
     
     @staticmethod
     def log_permission_check(
@@ -376,8 +421,27 @@ class AuthenticationAuditLogger:
         
         message = f"[{timestamp}] PERMISSION {status}: {permission} for user {user_id}"
         
-        # TODO: Store in database audit_log table
-        print(message)  # Placeholder
+        # Store in database audit log
+        try:
+            db = SessionLocal()
+            audit_log = Log(
+                level="INFO" if allowed else "WARNING",
+                message=message,
+                timestamp=datetime.now(timezone.utc),
+                log_metadata={
+                    "event_type": "permission_check",
+                    "user_id": user_id,
+                    "permission": permission,
+                    "allowed": allowed
+                }
+            )
+            db.add(audit_log)
+            db.commit()
+            db.close()
+        except Exception as e:
+            logger.error(f"Failed to log permission check to database: {str(e)}")
+            # Fallback to console logging
+            print(message)
     
     @staticmethod
     def log_2fa_attempt(
@@ -400,8 +464,28 @@ class AuthenticationAuditLogger:
         
         message = f"[{timestamp}] 2FA {status}: {method} for user {user_id} from {ip_address}"
         
-        # TODO: Store in database audit_log table
-        print(message)  # Placeholder
+        # Store in database audit log
+        try:
+            db = SessionLocal()
+            audit_log = Log(
+                level="INFO" if success else "WARNING",
+                message=message,
+                timestamp=datetime.now(timezone.utc),
+                log_metadata={
+                    "event_type": "2fa_attempt",
+                    "user_id": user_id,
+                    "method": method,
+                    "success": success,
+                    "ip_address": ip_address
+                }
+            )
+            db.add(audit_log)
+            db.commit()
+            db.close()
+        except Exception as e:
+            logger.error(f"Failed to log 2FA attempt to database: {str(e)}")
+            # Fallback to console logging
+            print(message)
 
 
 # ============================================================================

@@ -36,7 +36,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
 from database import get_session
-from models import User
+from models import User, Role, UserRole
 from services.auth import (
     authenticate_user,
     validate_access_token,
@@ -356,13 +356,26 @@ def register(
         is_active=True,
     )
     
-    # TODO: Assign default role (VIEWER)
-    # from models import Role
-    # viewer_role = db.query(Role).filter_by(name="VIEWER").first()
-    # if viewer_role:
-    #     from models import UserRole
-    #     user_role = UserRole(user=new_user, role=viewer_role)
-    #     db.add(user_role)
+    # Assign default VIEWER role to new users
+    try:
+        viewer_role = db.query(Role).filter_by(name="VIEWER").first()
+        if viewer_role:
+            user_role = UserRole(
+                user=new_user,
+                role=viewer_role,
+                assigned_by=None  # System assignment, no user assigned this
+            )
+            db.add(user_role)
+        else:
+            # Log warning if VIEWER role doesn't exist
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"VIEWER role not found when creating user {register_req.email}")
+    except Exception as e:
+        # Don't fail registration if role assignment fails
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to assign VIEWER role to {register_req.email}: {str(e)}")
     
     db.add(new_user)
     db.commit()
