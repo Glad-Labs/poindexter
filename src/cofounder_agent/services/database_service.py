@@ -61,6 +61,16 @@ class DatabaseService:
             "sqlite+aiosqlite:///./test.db",  # Fallback for local dev
         )
 
+        # Convert standard postgres:// to async postgresql+asyncpg://
+        if self.database_url.startswith("postgresql://"):
+            self.database_url = self.database_url.replace(
+                "postgresql://", "postgresql+asyncpg://", 1
+            )
+        elif self.database_url.startswith("postgres://"):
+            self.database_url = self.database_url.replace(
+                "postgres://", "postgresql+asyncpg://", 1
+            )
+
         # Create async engine
         self.engine = create_async_engine(
             self.database_url,

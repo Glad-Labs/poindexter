@@ -33,11 +33,11 @@ sentence-transformers>=2.2.0
 
 # ===== DATABASE & STORAGE =====
 # Database connectivity and storage
-# Async PostgreSQL driver for Railway
+# Async SQLAlchemy with async PostgreSQL driver for Railway
 aiosqlite>=0.19.0
-sqlalchemy>=2.0.0
-psycopg2-binary>=2.9.0
+sqlalchemy[asyncio]>=2.0.0
 asyncpg>=0.29.0
+alembic>=1.13.0
 
 # ===== REMOVED GOOGLE CLOUD SERVICES =====
 # Migrated from Firestore/Pub/Sub to PostgreSQL + API-based commands
