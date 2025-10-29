@@ -94,8 +94,14 @@ def create_db_engine():
     
     database_url = get_database_url()
     
-    # Detect if PostgreSQL
+    # Detect if PostgreSQL and convert to asyncpg dialect if needed
     is_postgres = 'postgresql' in database_url
+    
+    # Convert postgresql:// to postgresql+asyncpg:// to use asyncpg driver
+    # This avoids psycopg2 dependency in Railway build environment
+    if is_postgres and '+' not in database_url:
+        database_url = database_url.replace('postgresql://', 'postgresql+asyncpg://')
+        logger.info("Using PostgreSQL with asyncpg driver (async support)")
     
     # Engine configuration
     engine_kwargs = {
