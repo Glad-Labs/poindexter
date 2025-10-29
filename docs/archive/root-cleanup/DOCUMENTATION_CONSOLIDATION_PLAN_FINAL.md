@@ -2,13 +2,14 @@
 
 **Date:** October 29, 2025  
 **Policy:** HIGH-LEVEL ONLY (Architecture-Focused, Maintenance-Friendly)  
-**Scope:** Consolidate 100+ scattered documentation files into organized, manageable structure  
+**Scope:** Consolidate 100+ scattered documentation files into organized, manageable structure
 
 ---
 
 ## 🎯 Executive Summary
 
 **Current State:**
+
 - Root directory: ~40 scattered documentation files ❌
 - docs/ folder: 22 files (8 core + 14 non-core session files) ⚠️
 - docs/archive/: 62 historical session files 📦
@@ -17,6 +18,7 @@
 - docs/components/: 4 subdirs (good) ✅
 
 **Target State:**
+
 - Root directory: Only `README.md` and `LICENSE.md` ✅
 - docs/ folder: 8 core + 6 minimal reference + 4 troubleshooting + 4 components ✅
 - docs/archive/: All historical files consolidated ✅
@@ -30,6 +32,7 @@
 ### PHASE 1: Audit Non-Core docs/ Files
 
 **Files to ARCHIVE (Session-Specific Status Updates):**
+
 - ACTION_SUMMARY_PHASE2_COMPLETE.md
 - CODEBASE_ANALYSIS_DETAILED.md
 - DATABASE_CONFIGURATION_ISSUE_ANALYSIS.md
@@ -43,6 +46,7 @@
 - TODO_PROGRESS_TRACKER.md
 
 **Files to CONSOLIDATE (Merge into core docs 00-07):**
+
 - CODEBASE_CHANGES_SUMMARY.md → 02-ARCHITECTURE_AND_DESIGN.md
 - COMPONENT_DOCUMENTATION_INDEX.md → Keep as reference, link from 00-README.md
 - GIT_WORKFLOW_SETUP.md → 04-DEVELOPMENT_WORKFLOW.md
@@ -50,6 +54,7 @@
 - STRAPI_v5_SETUP_COMPLETE.md → Consolidate into 01-SETUP_AND_OVERVIEW.md
 
 **Decision Matrix:**
+
 ```
 File Type                          Decision          Action
 ─────────────────────────────────────────────────────────────
@@ -70,12 +75,11 @@ Standards & conventions             KEEP              → docs/reference/
 ### PHASE 2: Clean Reference/ Folder
 
 **Duplicate Files to Consolidate:**
+
 1. `TESTING.md` + `TESTING_GUIDE.md` + `TESTING_QUICK_START.md`
    - Action: Keep `TESTING.md` as primary reference, archive other two
-   
 2. `QUICK_REFERENCE.md` + `QUICK_REFERENCE_CONSOLIDATED.md` + `QUICK_FIXES.md`
    - Action: Keep `QUICK_REFERENCE_CONSOLIDATED.md`, archive others, ensure all quick fixes migrated
-   
 3. `POWERSHELL_API_QUICKREF.md` vs general API reference
    - Action: Archive language-specific quick references, consolidate into API_CONTRACT_CONTENT_CREATION.md
 
@@ -95,11 +99,13 @@ Standards & conventions             KEEP              → docs/reference/
 ### PHASE 3: Build Troubleshooting Section
 
 **Current State:** Only 3 files
+
 - 01-railway-deployment.md
 - 04-build-fixes.md
 - 05-compilation.md
 
 **Add Missing Troubleshooting Categories:**
+
 - [ ] 02-firebase-and-database-issues.md
 - [ ] 03-strapi-plugin-issues.md
 - [ ] 06-environment-and-secrets.md
@@ -112,6 +118,7 @@ Standards & conventions             KEEP              → docs/reference/
 **docs/archive/ Current: 62 files**
 
 **Structure for Archive (Organized by Session/Phase):**
+
 ```
 docs/archive/
 ├── phases/                          # Phase completion reports
@@ -136,6 +143,7 @@ docs/archive/
 ### PHASE 5: Root Directory Cleanup
 
 **Current Root Files (Examples):**
+
 - ARCHITECTURE_DECISIONS_OCT_2025.md
 - ASYNC_POSTGRESQL_FIX_SUMMARY.md
 - BUILD_ERRORS_FIXED.md
@@ -144,6 +152,7 @@ docs/archive/
 **Action: MOVE ALL to docs/archive/ or DELETE**
 
 **Keep in Root Only:**
+
 - `README.md` (Main project readme)
 - `LICENSE.md` (MIT license)
 - `.gitignore` (Git config)
@@ -157,7 +166,7 @@ docs/archive/
 After consolidation:
 
 - [ ] Root directory contains ONLY: README.md, LICENSE.md, package.json, .env.example, .gitignore
-- [ ] docs/ contains only: 00-README.md, 01-*.md through 07-*.md, components/, reference/, troubleshooting/, archive/
+- [ ] docs/ contains only: 00-README.md, 01-_.md through 07-_.md, components/, reference/, troubleshooting/, archive/
 - [ ] 00-README.md links to all 7 core docs plus reference, troubleshooting, components
 - [ ] No broken links (run link checker)
 - [ ] All archived files in organized docs/archive/ subdirectories
@@ -169,12 +178,14 @@ After consolidation:
 ## 📊 Expected Outcomes
 
 **Before:**
+
 - Root: 40+ scattered files
 - docs/: 22 files (mostly non-core)
 - Total active: 300+ markdown files
 - Navigation: Confusing, duplicated content
 
 **After:**
+
 - Root: 5 essential files only
 - docs/: 22 files (8 core + 6 ref + 4 troubleshooting + 4 components)
 - Archive: 62 organized historical files
