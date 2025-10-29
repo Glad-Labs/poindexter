@@ -6,11 +6,13 @@
 ## What Changed
 
 ### Before
+
 - ❌ 3 integration tests always skipped
 - ❌ No real Ollama validation in test suite
 - ❌ Tests assumed Ollama always unavailable
 
 ### After
+
 - ✅ **27/27 tests passing** (up from 24/27)
 - ✅ Integration tests run when Ollama available
 - ✅ Integration tests skip gracefully when Ollama unavailable
@@ -46,7 +48,7 @@ Integration tests use the marker:
 
 ```python
 class TestIntegrationScenarios:
-    
+
     @skip_if_no_ollama
     async def test_real_health_check(self):
         """Runs ONLY if Ollama available"""
@@ -56,6 +58,7 @@ class TestIntegrationScenarios:
 ```
 
 **Result:**
+
 - **Your PC (Ollama running):** ✅ Integration tests PASS
 - **CI/CD (no Ollama):** ⏭️ Integration tests SKIP gracefully
 - **GitHub Actions:** ⏭️ Integration tests SKIP gracefully
@@ -101,11 +104,13 @@ TestErrorHandling:                 1 ✅
 ## Full Test Suite Impact
 
 ### Local (with Ollama)
+
 ```
 147 passed, 9 skipped (67.62s)  ← 3 more integration tests passing!
 ```
 
 ### CI/CD (without Ollama)
+
 ```
 144 passed, 12 skipped (~60s)  ← Integration tests gracefully skip
 ```
@@ -136,18 +141,21 @@ All are FREE ($0.00) and tested! 🎉
 ## Benefits of This Approach
 
 ### For Local Development
+
 - ✅ Validate code against real Ollama
 - ✅ Catch integration issues early
 - ✅ Full confidence in production behavior
 - ✅ Test with your exact model setup
 
 ### For CI/CD
+
 - ✅ Tests run without Ollama installed
 - ✅ No false positives
 - ✅ Fast execution (~60s)
 - ✅ Reproducible results
 
 ### For Team
+
 - ✅ Works for Windows/Mac/Linux developers
 - ✅ Works in any CI environment (GitHub, GitLab, etc)
 - ✅ No manual test skipping needed
@@ -156,6 +164,7 @@ All are FREE ($0.00) and tested! 🎉
 ## Usage Examples
 
 ### Run All Ollama Tests
+
 ```bash
 cd src/cofounder_agent
 python -m pytest tests/test_ollama_client.py -v
@@ -164,6 +173,7 @@ python -m pytest tests/test_ollama_client.py -v
 ```
 
 ### Run Only Integration Tests
+
 ```bash
 python -m pytest tests/test_ollama_client.py::TestIntegrationScenarios -v
 # Shows actual Ollama responses
@@ -171,6 +181,7 @@ python -m pytest tests/test_ollama_client.py::TestIntegrationScenarios -v
 ```
 
 ### Run Unit Tests Only (no network)
+
 ```bash
 python -m pytest tests/test_ollama_client.py -k "not Integration" -v
 # 24 tests using mocks
@@ -178,6 +189,7 @@ python -m pytest tests/test_ollama_client.py -k "not Integration" -v
 ```
 
 ### Check Ollama Availability
+
 ```bash
 python -c "import socket; s=socket.socket(); print('✅ Ollama available' if s.connect_ex(('localhost', 11434)) == 0 else '❌ Ollama not available')"
 ```
@@ -185,6 +197,7 @@ python -c "import socket; s=socket.socket(); print('✅ Ollama available' if s.c
 ## How Developers Experience This
 
 **Developer with Ollama:**
+
 ```bash
 $ pytest tests/test_ollama_client.py
 ✅ 27 passed in 5.41s
@@ -192,6 +205,7 @@ $ pytest tests/test_ollama_client.py
 ```
 
 **Developer without Ollama:**
+
 ```bash
 $ pytest tests/test_ollama_client.py
 ✅ 24 passed, 3 skipped in 3.95s
@@ -199,6 +213,7 @@ $ pytest tests/test_ollama_client.py
 ```
 
 **GitHub Actions (CI/CD):**
+
 ```bash
 $ pytest tests/test_ollama_client.py
 ✅ 24 passed, 3 skipped in 3.84s
