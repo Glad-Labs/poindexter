@@ -193,6 +193,41 @@ app.include_router(settings_router)  # Settings management
 app.include_router(command_queue_router)  # Command queue (replaces Pub/Sub)
 app.include_router(webhook_router)  # Webhook handlers for Strapi events
 
+# ===== HEALTH CHECK ENDPOINTS =====
+
+@app.get("/api/health")
+async def api_health():
+    """
+    Health check endpoint for Railway deployment and load balancers
+    Returns simple JSON indicating service status
+    """
+    try:
+        health_status = {
+            "status": "healthy",
+            "service": "cofounder-agent",
+            "version": "1.0.0"
+        }
+        
+        # Include database status if available
+        if database_service:
+            try:
+                db_health = await database_service.health_check()
+                health_status["database"] = db_health.get("status", "unknown")
+            except Exception as e:
+                logger.warning(f"Database health check failed in /api/health: {e}")
+                health_status["database"] = "degraded"
+        else:
+            health_status["database"] = "unavailable"
+        
+        return health_status
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return {
+            "status": "unhealthy",
+            "service": "cofounder-agent",
+            "error": str(e)
+        }
+
 class CommandRequest(BaseModel):
     """Request model for processing a command."""
     command: str
