@@ -85,14 +85,18 @@ except ImportError:
 # Global service instances
 database_service: Optional[DatabaseService] = None
 orchestrator: Optional[Orchestrator] = None
+startup_error: Optional[str] = None
+startup_complete: bool = False
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager - startup and shutdown with PostgreSQL initialization"""
-    global database_service, orchestrator
+    global database_service, orchestrator, startup_error, startup_complete
     
     try:
         logger.info("🚀 Starting Glad Labs AI Co-Founder application...")
+        logger.info(f"  Environment: {os.getenv('ENVIRONMENT', 'development')}")
+        logger.info(f"  Database URL: {os.getenv('DATABASE_URL', 'SQLite (local dev)')[:50]}...")
         
         # 1. Initialize PostgreSQL database service
         logger.info("  📦 Connecting to PostgreSQL...")
@@ -101,7 +105,8 @@ async def lifespan(app: FastAPI):
             await database_service.initialize()
             logger.info("  ✅ PostgreSQL connection established")
         except Exception as e:
-            logger.error(f"  ❌ Failed to connect to PostgreSQL: {e}")
+            startup_error = f"PostgreSQL connection failed: {str(e)}"
+            logger.error(f"  ❌ {startup_error}", exc_info=True)
             logger.warning("  ⚠️ Continuing in development mode without database")
             database_service = None
         
@@ -110,7 +115,9 @@ async def lifespan(app: FastAPI):
             try:
                 logger.info("  📋 Database tables initialized in previous step")
             except Exception as e:
-                logger.error(f"  ⚠️ Error during table creation: {e}")
+                error_msg = f"Table creation failed: {str(e)}"
+                logger.error(f"  ⚠️ {error_msg}", exc_info=True)
+                startup_error = error_msg
         
         # 3. Initialize orchestrator with new database service
         api_base_url = os.getenv("API_BASE_URL", "http://localhost:8000")
@@ -122,8 +129,10 @@ async def lifespan(app: FastAPI):
             )
             logger.info("  ✅ Orchestrator initialized successfully")
         except Exception as e:
-            logger.error(f"  ❌ Failed to initialize orchestrator: {e}")
-            raise
+            error_msg = f"Orchestrator initialization failed: {str(e)}"
+            logger.error(f"  ❌ {error_msg}", exc_info=True)
+            startup_error = error_msg
+            # Don't re-raise - allow app to start for health checks
         
         # 4. Verify connections
         if database_service:
@@ -135,18 +144,21 @@ async def lifespan(app: FastAPI):
                 else:
                     logger.warning(f"  ⚠️ Database health check returned: {health}")
             except Exception as e:
-                logger.warning(f"  ⚠️ Database health check failed: {e}")
+                logger.warning(f"  ⚠️ Database health check failed: {e}", exc_info=True)
         
         logger.info("✅ Application started successfully!")
         logger.info(f"  - Database Service: {database_service is not None}")
         logger.info(f"  - Orchestrator: {orchestrator is not None}")
+        logger.info(f"  - Startup Error: {startup_error}")
         logger.info(f"  - API Base URL: {api_base_url}")
         
+        startup_complete = True
         yield  # Application runs here
         
     except Exception as e:
-        logger.error(f"❌ Failed to start application: {e}")
-        raise
+        startup_error = f"Critical startup failure: {str(e)}"
+        logger.error(f"❌ {startup_error}", exc_info=True)
+        startup_complete = True  # Mark complete so /api/health works
     
     finally:
         # ===== SHUTDOWN =====
@@ -159,12 +171,12 @@ async def lifespan(app: FastAPI):
                     await database_service.close()
                     logger.info("  ✅ Database connection closed")
                 except Exception as e:
-                    logger.error(f"  ⚠️ Error closing database: {e}")
+                    logger.error(f"  ⚠️ Error closing database: {e}", exc_info=True)
             
             logger.info("✅ Application shut down successfully!")
             
         except Exception as e:
-            logger.error(f"❌ Error during shutdown: {e}")
+            logger.error(f"❌ Error during shutdown: {e}", exc_info=True)
 
 app = FastAPI(
     title="Glad Labs AI Co-Founder",
@@ -199,9 +211,32 @@ app.include_router(webhook_router)  # Webhook handlers for Strapi events
 async def api_health():
     """
     Health check endpoint for Railway deployment and load balancers
-    Returns simple JSON indicating service status
+    Returns detailed JSON indicating service status and any startup errors
     """
+    global startup_error, startup_complete
+    
     try:
+        # If startup encountered errors, report them
+        if startup_error:
+            logger.warning(f"Health check returning degraded status: {startup_error}")
+            return {
+                "status": "degraded",
+                "service": "cofounder-agent",
+                "version": "1.0.0",
+                "startup_error": startup_error,
+                "startup_complete": startup_complete
+            }
+        
+        # If startup not complete, return starting status
+        if not startup_complete:
+            return {
+                "status": "starting",
+                "service": "cofounder-agent",
+                "version": "1.0.0",
+                "startup_complete": False
+            }
+        
+        # All good - fully healthy
         health_status = {
             "status": "healthy",
             "service": "cofounder-agent",
@@ -221,12 +256,30 @@ async def api_health():
         
         return health_status
     except Exception as e:
-        logger.error(f"Health check failed: {e}")
+        logger.error(f"Health check failed: {e}", exc_info=True)
         return {
             "status": "unhealthy",
             "service": "cofounder-agent",
             "error": str(e)
         }
+
+@app.get("/api/debug/startup")
+async def debug_startup():
+    """
+    Debug endpoint showing startup status and any errors
+    Only available in development mode
+    """
+    global startup_error, startup_complete
+    
+    return {
+        "startup_complete": startup_complete,
+        "startup_error": startup_error,
+        "database_service_available": database_service is not None,
+        "orchestrator_available": orchestrator is not None,
+        "environment": os.getenv("ENVIRONMENT", "development"),
+        "database_url_configured": bool(os.getenv("DATABASE_URL")),
+        "api_base_url": os.getenv("API_BASE_URL", "http://localhost:8000"),
+    }
 
 class CommandRequest(BaseModel):
     """Request model for processing a command."""
