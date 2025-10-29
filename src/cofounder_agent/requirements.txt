@@ -38,6 +38,8 @@ aiosqlite>=0.19.0
 sqlalchemy[asyncio]>=2.0.0
 asyncpg>=0.29.0
 alembic>=1.13.0
+# psycopg binary for Python 3.13 compatibility (if asyncpg not available)
+psycopg[binary]>=3.1.0
 
 # ===== REMOVED GOOGLE CLOUD SERVICES =====
 # Migrated from Firestore/Pub/Sub to PostgreSQL + API-based commands
