@@ -33,12 +33,12 @@ REACT_APP_STRAPI_TOKEN = your-strapi-api-token
 
 **Examples for your setup:**
 
-| Environment | Variable | Value |
-|------------|----------|-------|
-| Production | `REACT_APP_API_URL` | `https://glad-labs-website-api.railway.app` |
-| Production | `REACT_APP_STRAPI_URL` | `https://glad-labs-website-cms.railway.app` |
-| Staging | `REACT_APP_API_URL` | `https://staging-api.railway.app` |
-| Local Dev | `REACT_APP_API_URL` | `http://localhost:8000` |
+| Environment | Variable               | Value                                       |
+| ----------- | ---------------------- | ------------------------------------------- |
+| Production  | `REACT_APP_API_URL`    | `https://glad-labs-website-api.railway.app` |
+| Production  | `REACT_APP_STRAPI_URL` | `https://glad-labs-website-cms.railway.app` |
+| Staging     | `REACT_APP_API_URL`    | `https://staging-api.railway.app`           |
+| Local Dev   | `REACT_APP_API_URL`    | `http://localhost:8000`                     |
 
 ### ✅ Step 3: Rebuild & Redeploy
 

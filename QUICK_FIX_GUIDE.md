@@ -44,6 +44,7 @@ Your app is trying to connect to `localhost:8000` (your local machine) instead o
 ## Verification
 
 Open https://glad-labs-website-oversight-hub.vercel.app and verify:
+
 - ✅ No errors in console (F12)
 - ✅ Can create tasks
 - ✅ Can send commands
@@ -67,6 +68,7 @@ Open https://glad-labs-website-oversight-hub.vercel.app and verify:
 **Estimated time to complete: 5 minutes**
 
 If you need more detailed instructions, see:
+
 - `PRODUCTION_FIX_CHECKLIST.md` - Detailed checklist
 - `OVERSIGHT_HUB_PRODUCTION_FIX.md` - Technical details
 - `OVERSIGHT_HUB_ERROR_ANALYSIS.md` - Full error analysis

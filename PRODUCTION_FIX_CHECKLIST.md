@@ -10,6 +10,7 @@ manifest.json:1 - 404 error                             ← ERROR!
 ```
 
 This happens because:
+
 - Environment variables not configured in Vercel
 - App uses `REACT_APP_API_URL` env var
 - Vercel doesn't have it set, so defaults to `http://localhost:8000`
@@ -27,10 +28,12 @@ STRAPI_URL = https://xxx.railway.app       (Strapi CMS)
 ```
 
 **Where to find them:**
+
 - Railway dashboard → Services → Copy the URL for each service
 - Format should be: `https://service-name.railway.app`
 
 **Questions?**
+
 - If backend is on Railway: Look for "Co-Founder Agent" service URL
 - If CMS is on Railway: Look for "Strapi" service URL
 - Don't include `/api` - just the domain
@@ -45,20 +48,22 @@ STRAPI_URL = https://xxx.railway.app       (Strapi CMS)
 4. Go to "Environment Variables"
 5. Add these 3 variables:
 
-| Name | Value | Source |
-|------|-------|--------|
-| `REACT_APP_API_URL` | `https://your-backend.railway.app` | Railway Dashboard |
-| `REACT_APP_STRAPI_URL` | `https://your-strapi.railway.app` | Railway Dashboard |
-| `REACT_APP_STRAPI_TOKEN` | Your Strapi API Token | Strapi Admin → Settings |
+| Name                     | Value                              | Source                  |
+| ------------------------ | ---------------------------------- | ----------------------- |
+| `REACT_APP_API_URL`      | `https://your-backend.railway.app` | Railway Dashboard       |
+| `REACT_APP_STRAPI_URL`   | `https://your-strapi.railway.app`  | Railway Dashboard       |
+| `REACT_APP_STRAPI_TOKEN` | Your Strapi API Token              | Strapi Admin → Settings |
 
 ### Action 3: Redeploy Vercel ⚠️ DO THIS AFTER SETTING VARS
 
 Option A (Easiest): Through Vercel UI
+
 ```
 Deployments → Click latest → Button "Redeploy"
 ```
 
 Option B: Through git push
+
 ```bash
 git add .
 git commit -m "fix: configure production API endpoints"
@@ -66,6 +71,7 @@ git push origin main
 ```
 
 Option C: Through Vercel CLI
+
 ```bash
 vercel --prod
 ```
@@ -99,13 +105,15 @@ I've already updated these:
 ## If It Still Doesn't Work
 
 **Check 1: Environment variables set?**
+
 ```javascript
 // Paste in browser console
-console.log(process.env.REACT_APP_API_URL)
+console.log(process.env.REACT_APP_API_URL);
 // Should show your backend URL, NOT http://localhost:8000
 ```
 
 **Check 2: Backend URL correct?**
+
 ```bash
 # From your terminal, test backend URL
 curl https://your-backend-url/api/health
@@ -114,6 +122,7 @@ curl https://your-backend-url/api/health
 
 **Check 3: CORS enabled on backend?**
 Backend must allow requests from Vercel domain:
+
 ```python
 # Check src/cofounder_agent/main.py has:
 allow_origins=[
@@ -126,11 +135,11 @@ allow_origins=[
 
 ## Quick Reference
 
-| Component | Local | Production |
-|-----------|-------|-------------|
-| Frontend | `http://localhost:3001` | `https://glad-labs-website-oversight-hub.vercel.app` |
-| Backend API | `http://localhost:8000` | `https://xxx.railway.app` |
-| Strapi CMS | `http://localhost:1337` | `https://xxx.railway.app` |
+| Component   | Local                   | Production                                           |
+| ----------- | ----------------------- | ---------------------------------------------------- |
+| Frontend    | `http://localhost:3001` | `https://glad-labs-website-oversight-hub.vercel.app` |
+| Backend API | `http://localhost:8000` | `https://xxx.railway.app`                            |
+| Strapi CMS  | `http://localhost:1337` | `https://xxx.railway.app`                            |
 
 ---
 

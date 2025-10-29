@@ -6,7 +6,7 @@
 
 ```
 ❌ localhost:8000/command - net::ERR_CONNECTION_REFUSED
-❌ manifest.json - 404 error  
+❌ manifest.json - 404 error
 ❌ /api/v1/models/available - 404 error
 ❌ Failed to fetch (TypeError)
 ```
@@ -36,19 +36,23 @@ Your **Oversight Hub on Vercel** is configured to talk to `localhost:8000`, whic
 ## ✅ What I Fixed
 
 ### 1. Created `web/oversight-hub/public/manifest.json`
+
 - Fixes the "manifest.json 404" error
 - Provides app metadata for PWA (Progressive Web App)
 
 ### 2. Updated `web/oversight-hub/public/index.html`
+
 - Now properly references manifest.json
 - Updated title to "Oversight Hub - Glad Labs"
 - Updated metadata
 
 ### 3. Updated `web/oversight-hub/src/services/cofounderAgentClient.js`
+
 - Added documentation about required environment variable
 - Added warning if `REACT_APP_API_URL` not configured
 
 ### 4. Updated `web/oversight-hub/.env.example`
+
 - Clarified `REACT_APP_API_URL` vs `REACT_APP_API_BASE_URL`
 - Added comments about local vs production
 
@@ -66,6 +70,7 @@ Railway → Services → [Click "Strapi"] → Copy URL
 ```
 
 You'll get URLs like:
+
 ```
 https://glad-labs-website-api.railway.app
 https://glad-labs-website-cms.railway.app
@@ -77,11 +82,11 @@ Go to: **https://vercel.com** → Your Project → Settings → Environment Vari
 
 **Add 3 variables:**
 
-| Name | Value |
-|------|-------|
-| `REACT_APP_API_URL` | `https://[your-backend-url]` |
-| `REACT_APP_STRAPI_URL` | `https://[your-strapi-url]` |
-| `REACT_APP_STRAPI_TOKEN` | Your Strapi API Token |
+| Name                     | Value                        |
+| ------------------------ | ---------------------------- |
+| `REACT_APP_API_URL`      | `https://[your-backend-url]` |
+| `REACT_APP_STRAPI_URL`   | `https://[your-strapi-url]`  |
+| `REACT_APP_STRAPI_TOKEN` | Your Strapi API Token        |
 
 ### Step 3: Redeploy
 
@@ -122,7 +127,7 @@ After Fix (with env vars set):
 **Test in Console:**
 
 ```javascript
-console.log(process.env.REACT_APP_API_URL)
+console.log(process.env.REACT_APP_API_URL);
 // Should show your backend URL, NOT http://localhost:8000!
 ```
 
@@ -166,7 +171,7 @@ app.add_middleware(
 ## 📋 Checklist
 
 - [ ] Found your backend API URL from Railway
-- [ ] Found your Strapi CMS URL from Railway  
+- [ ] Found your Strapi CMS URL from Railway
 - [ ] Logged into Vercel dashboard
 - [ ] Added `REACT_APP_API_URL` environment variable
 - [ ] Added `REACT_APP_STRAPI_URL` environment variable
@@ -202,13 +207,15 @@ A: Usually 1-2 minutes. You can watch in Vercel Deployments tab
 Check these in order:
 
 1. **Environment variable not set?**
+
    ```javascript
    // In browser console:
-   console.log(process.env.REACT_APP_API_URL)
+   console.log(process.env.REACT_APP_API_URL);
    // Should show your backend URL
    ```
 
 2. **Backend not running?**
+
    ```bash
    # From terminal, test your backend:
    curl https://[your-backend-url]/api/health
@@ -216,6 +223,7 @@ Check these in order:
    ```
 
 3. **CORS not configured?**
+
    ```
    Look for error: "Access to XMLHttpRequest blocked by CORS policy"
    Fix: Add your Vercel domain to backend's allow_origins list
