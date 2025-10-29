@@ -243,7 +243,7 @@ ls *.md  # Should show: README.md only
 
 **Updates Needed:**
 
-- Remove "PHASE_* files in root" section
+- Remove "PHASE\_\* files in root" section
 - Add note: "Phase documentation archived for historical reference"
 - Confirm total file count reduced
 - Update last updated date
@@ -386,7 +386,7 @@ After execution:
 **Documentation Maintenance Burden:** Reduced by 70%  
 **File Organization:** Clear, architectural (not chronological)  
 **Discoverability:** Easier with 00-README.md as single hub  
-**Archive:** All historical preserved for reference  
+**Archive:** All historical preserved for reference
 
 **New Documentation Policy Enforced:**
 
