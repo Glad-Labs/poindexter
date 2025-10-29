@@ -81,7 +81,7 @@ async def test_health_check_success(self, mock_async_client_class, ...):
     mock_client_instance = AsyncMock()
     mock_async_client_class.return_value.__aenter__.return_value = mock_client_instance
     mock_client_instance.get.return_value = mock_health_response
-    
+
     # Now execute - will use the mocked client
     result = await ollama_client.check_health()
 ```
@@ -89,6 +89,7 @@ async def test_health_check_success(self, mock_async_client_class, ...):
 ### 2. Mock Response Fixtures Updated
 
 All mock responses now match actual Ollama API format:
+
 - `models`: Returns list of dicts with `name`, `size`, `modified_at`
 - `generate`: Returns `response` field (not nested), with `done`, `eval_count`, `prompt_eval_count`
 - `chat`: Returns `message` object with `role` and `content` (nested), plus `done`
@@ -102,11 +103,13 @@ All mock responses now match actual Ollama API format:
 ## Integration Testing Support
 
 Three integration tests remain (marked as `@pytest.mark.skip`):
+
 - `test_real_health_check`
 - `test_real_generation`
 - `test_real_model_listing`
 
 These can be run against a live Ollama server by removing the skip decorator and running:
+
 ```bash
 pytest tests/test_ollama_client.py::TestIntegrationScenarios -v
 ```
@@ -137,14 +140,14 @@ Since you plan to primarily use Ollama for content generation:
 
 ## Advantages of This Approach
 
-| Aspect | Benefit |
-|--------|---------|
-| **Speed** | Unit tests run in <5 seconds with mocks vs 5+ minutes with real Ollama |
-| **CI/CD** | Tests pass in any environment without requiring Ollama installed |
-| **Reliability** | No flaky tests from network timeouts or Ollama restarts |
-| **Flexibility** | Can test error scenarios easily with mocked failures |
-| **Coverage** | Can test all code paths including rare errors |
-| **Real Tests** | Integration tests still available for actual Ollama validation |
+| Aspect          | Benefit                                                                |
+| --------------- | ---------------------------------------------------------------------- |
+| **Speed**       | Unit tests run in <5 seconds with mocks vs 5+ minutes with real Ollama |
+| **CI/CD**       | Tests pass in any environment without requiring Ollama installed       |
+| **Reliability** | No flaky tests from network timeouts or Ollama restarts                |
+| **Flexibility** | Can test error scenarios easily with mocked failures                   |
+| **Coverage**    | Can test all code paths including rare errors                          |
+| **Real Tests**  | Integration tests still available for actual Ollama validation         |
 
 ---
 

@@ -23,17 +23,18 @@ python -m pytest tests/test_ollama_client.py::TestIntegrationScenarios -v -m int
 
 ## 💰 Cost Comparison
 
-| Provider | Cost | Latency | Setup |
-|----------|------|---------|-------|
-| **Ollama (local)** | **$0.00** | 1-5 sec | One-time download |
-| OpenAI GPT-4 | $0.03/1K tokens | 2-3 sec | API key required |
-| Claude API | $0.01-0.03/1K tokens | 2-3 sec | API key required |
+| Provider           | Cost                 | Latency | Setup             |
+| ------------------ | -------------------- | ------- | ----------------- |
+| **Ollama (local)** | **$0.00**            | 1-5 sec | One-time download |
+| OpenAI GPT-4       | $0.03/1K tokens      | 2-3 sec | API key required  |
+| Claude API         | $0.01-0.03/1K tokens | 2-3 sec | API key required  |
 
 **💡 Recommendation:** Use Ollama locally for development & bulk content generation. You save thousands per month!
 
 ## 🎯 Models for Content Generation
 
 ### For Blog Content (SEO)
+
 ```python
 # Use mistral - excellent quality, fast
 client = OllamaClient(model="mistral")
@@ -45,6 +46,7 @@ response = await client.generate(
 ```
 
 ### For Long-form Analysis
+
 ```python
 # Use llama2:13b - better reasoning
 client = OllamaClient(model="llama2:13b")
@@ -56,6 +58,7 @@ response = await client.generate(
 ```
 
 ### For Code Generation
+
 ```python
 # Use codellama - specialized for code
 client = OllamaClient(model="codellama")
@@ -82,6 +85,7 @@ Ollama Tests: 27 total
 ## 🔧 How to Use in Your Code
 
 ### Basic Generation
+
 ```python
 from services.ollama_client import OllamaClient
 
@@ -101,6 +105,7 @@ await client.close()
 ```
 
 ### Chat with History
+
 ```python
 messages = [
     {"role": "user", "content": "What is AI?"},
@@ -113,18 +118,19 @@ print(response["content"])
 ```
 
 ### Content Pipeline Integration
+
 ```python
 # In your content generation pipeline
 async def generate_seo_blog_post(topic: str):
     client = OllamaClient(model="mistral")
-    
+
     response = await client.generate(
         prompt=f"Write an SEO-optimized blog post about {topic}",
         system="You are an expert SEO content writer",
         temperature=0.7,
         max_tokens=2000
     )
-    
+
     post = {
         "title": extract_title(response["text"]),
         "content": response["text"],
@@ -132,7 +138,7 @@ async def generate_seo_blog_post(topic: str):
         "cost": response["cost"],  # $0.00
         "duration": response["duration_seconds"]
     }
-    
+
     return post
 ```
 
@@ -148,7 +154,7 @@ async def test_content_generation(mock_async_client_class):
     # Mock Ollama response
     mock_client = AsyncMock()
     mock_async_client_class.return_value.__aenter__.return_value = mock_client
-    
+
     mock_response = Mock()
     mock_response.status_code = 200
     mock_response.json.return_value = {
@@ -158,11 +164,11 @@ async def test_content_generation(mock_async_client_class):
         "total_duration": 5000000000
     }
     mock_client.post.return_value = mock_response
-    
+
     # Test your code
     client = OllamaClient(model="mistral")
     response = await client.generate(prompt="test", model="mistral")
-    
+
     assert response["text"] == "Generated blog post content..."
     assert response["cost"] == 0.0
 ```
@@ -171,17 +177,18 @@ async def test_content_generation(mock_async_client_class):
 
 Typical response times on modern hardware:
 
-| Model | Size | Speed | Quality | Use Case |
-|-------|------|-------|---------|----------|
-| phi | 2.7B | <2s | Good | Quick responses |
-| mistral | 7B | 3-5s | Excellent | Blog content |
-| codellama | 7B | 3-5s | Excellent | Code generation |
-| llama2:13b | 13B | 5-10s | Excellent | Analysis |
-| mixtral | 56B | 10-20s | Outstanding | Complex reasoning |
+| Model      | Size | Speed  | Quality     | Use Case          |
+| ---------- | ---- | ------ | ----------- | ----------------- |
+| phi        | 2.7B | <2s    | Good        | Quick responses   |
+| mistral    | 7B   | 3-5s   | Excellent   | Blog content      |
+| codellama  | 7B   | 3-5s   | Excellent   | Code generation   |
+| llama2:13b | 13B  | 5-10s  | Excellent   | Analysis          |
+| mixtral    | 56B  | 10-20s | Outstanding | Complex reasoning |
 
 ## 🚀 Deployment Considerations
 
 ### Local Development
+
 - ✅ Fast iteration
 - ✅ No API keys needed
 - ✅ Zero cost
@@ -189,6 +196,7 @@ Typical response times on modern hardware:
 - ⚠️ GPU memory required
 
 ### Production Deployment
+
 - Option 1: Run Ollama on dedicated GPU server (~$20-50/month)
 - Option 2: Hybrid - Ollama for most tasks, Claude for edge cases
 - Option 3: Scale out multiple Ollama instances for load balancing

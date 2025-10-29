@@ -5,11 +5,13 @@ Tests zero-cost local LLM inference capabilities for desktop operation.
 
 Strategy: Mock httpx.AsyncClient at the module level using @patch decorator,
 preventing real HTTP calls during unit tests while maintaining integration test support.
+Integration tests run if Ollama is available locally, otherwise they're skipped.
 """
 
 import pytest
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 import httpx
+import asyncio
 
 from ..services.ollama_client import (
     OllamaClient,
@@ -20,6 +22,40 @@ from ..services.ollama_client import (
     MODEL_PROFILES,
     DEFAULT_BASE_URL,
     DEFAULT_MODEL
+)
+
+
+# ============================================================================
+# HELPERS
+# ============================================================================
+
+async def is_ollama_available() -> bool:
+    """Check if Ollama server is running and accessible."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(f"{DEFAULT_BASE_URL}/api/tags")
+            return response.status_code == 200
+    except Exception:
+        return False
+
+
+def ollama_available_check():
+    """Synchronous check for Ollama availability (for pytest skip condition)."""
+    try:
+        import socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        result = sock.connect_ex(("localhost", 11434))
+        sock.close()
+        return result == 0
+    except Exception:
+        return False
+
+
+# Check if Ollama is available at test collection time
+OLLAMA_AVAILABLE = ollama_available_check()
+skip_if_no_ollama = pytest.mark.skipif(
+    not OLLAMA_AVAILABLE,
+    reason="Ollama server not running on localhost:11434"
 )
 
 
@@ -482,9 +518,13 @@ class TestModelProfiles:
 @pytest.mark.asyncio
 @pytest.mark.slow
 class TestIntegrationScenarios:
-    """Integration tests requiring actual Ollama server (marked slow)."""
+    """Integration tests against actual Ollama server.
+    
+    These tests ONLY skip if Ollama is not available on localhost:11434.
+    If Ollama is running, these tests will execute and validate real functionality.
+    """
 
-    @pytest.mark.skip(reason="Requires running Ollama server")
+    @skip_if_no_ollama
     async def test_real_health_check(self):
         """Test actual health check against real Ollama server."""
         client = OllamaClient()
@@ -495,7 +535,7 @@ class TestIntegrationScenarios:
         finally:
             await client.close()
 
-    @pytest.mark.skip(reason="Requires running Ollama server with models")
+    @skip_if_no_ollama
     async def test_real_generation(self):
         """Test actual generation against real Ollama server."""
         client = OllamaClient(model="mistral")
@@ -512,7 +552,7 @@ class TestIntegrationScenarios:
         finally:
             await client.close()
 
-    @pytest.mark.skip(reason="Requires running Ollama server")
+    @skip_if_no_ollama
     async def test_real_model_listing(self):
         """Test actual model listing against real Ollama server."""
         client = OllamaClient()
@@ -520,6 +560,8 @@ class TestIntegrationScenarios:
         try:
             models = await client.list_models()
             assert isinstance(models, list)
+            # Should have at least the models we saw available
+            assert len(models) > 0
         finally:
             await client.close()
 

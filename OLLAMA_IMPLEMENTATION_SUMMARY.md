@@ -7,12 +7,14 @@ You wanted to ensure Ollama tests were working properly since you plan to primar
 ## 📊 Results
 
 ### Before
+
 - ❌ 31 failures in `test_ollama_client.py`
 - ❌ Tests making real HTTP calls to `localhost:11434`
 - ❌ Mocks not being applied
 - ❌ False failures due to response format mismatches
 
 ### After
+
 - ✅ **24/27 tests passing** (88.9% pass rate)
 - ✅ 3 integration tests intentionally skipped (require live Ollama server)
 - ✅ All HTTP calls properly mocked
@@ -22,7 +24,9 @@ You wanted to ensure Ollama tests were working properly since you plan to primar
 ## 🔧 Technical Solution
 
 ### The Problem
+
 The original tests used this approach:
+
 ```python
 mock_httpx_client.get.return_value = mock_response
 ollama_client.client = mock_httpx_client
@@ -31,7 +35,9 @@ ollama_client.client = mock_httpx_client
 **Why it failed:** `OllamaClient.check_health()` creates a NEW `httpx.AsyncClient()` instance INSIDE the method via `async with httpx.AsyncClient() as client:`, so replacing the fixture's client had zero effect.
 
 ### The Solution
+
 Used `@patch` decorator to intercept the AsyncClient class at instantiation:
+
 ```python
 @patch("src.cofounder_agent.services.ollama_client.httpx.AsyncClient")
 async def test_health_check_success(self, mock_async_client_class, ...):
@@ -49,6 +55,7 @@ This intercepts every `httpx.AsyncClient()` instantiation during the test.
 ## 📝 Changes Made
 
 ### Files Modified
+
 1. **`src/cofounder_agent/tests/test_ollama_client.py`**
    - Complete refactor with 27 tests (24 passing, 3 skipped)
    - Uses `@patch` decorators for proper mocking
@@ -65,35 +72,39 @@ This intercepts every `httpx.AsyncClient()` instantiation during the test.
 
 ### Test Coverage
 
-| Test Class | Tests | Status |
-|-----------|-------|--------|
-| TestOllamaClientInitialization | 3 | ✅ PASS |
-| TestHealthCheck | 3 | ✅ PASS |
-| TestListModels | 3 | ✅ PASS |
-| TestGenerate | 4 | ✅ PASS |
-| TestChat | 3 | ✅ PASS |
-| TestModelProfiles | 7 | ✅ PASS |
-| TestIntegrationScenarios | 3 | ⏭️ SKIP |
-| TestErrorHandling | 1 | ✅ PASS |
-| **TOTAL** | **27** | **24 ✅ / 3 ⏭️** |
+| Test Class                     | Tests  | Status           |
+| ------------------------------ | ------ | ---------------- |
+| TestOllamaClientInitialization | 3      | ✅ PASS          |
+| TestHealthCheck                | 3      | ✅ PASS          |
+| TestListModels                 | 3      | ✅ PASS          |
+| TestGenerate                   | 4      | ✅ PASS          |
+| TestChat                       | 3      | ✅ PASS          |
+| TestModelProfiles              | 7      | ✅ PASS          |
+| TestIntegrationScenarios       | 3      | ⏭️ SKIP          |
+| TestErrorHandling              | 1      | ✅ PASS          |
+| **TOTAL**                      | **27** | **24 ✅ / 3 ⏭️** |
 
 ## 🚀 What This Enables
 
 Since you're using Ollama for content generation:
 
 ### 1. Fast Unit Tests
+
 - Tests run in ~4 seconds with mocks
 - No dependency on Ollama server being running
 - Perfect for CI/CD pipelines
 
 ### 2. Error Scenario Testing
+
 You can now easily test error cases:
+
 ```python
 mock_client_instance.post.side_effect = httpx.TimeoutException("timeout")
 # Test handles timeout gracefully
 ```
 
 ### 3. Content Generation Testing
+
 ```python
 @patch("src.cofounder_agent.services.ollama_client.httpx.AsyncClient")
 async def test_content_generation_with_mistral(self, mock_async_client_class):
@@ -113,7 +124,9 @@ async def test_content_generation_with_mistral(self, mock_async_client_class):
 ```
 
 ### 4. Model Profile Testing
+
 All model profiles are verified to be FREE:
+
 ```python
 def test_all_model_profiles_have_zero_cost(self):
     for model_name, profile in MODEL_PROFILES.items():
@@ -123,6 +136,7 @@ def test_all_model_profiles_have_zero_cost(self):
 ## 📋 How to Use
 
 ### Run Ollama Tests
+
 ```bash
 # Just Ollama tests
 cd src/cofounder_agent
@@ -133,12 +147,14 @@ python -m pytest tests/ --tb=no -q
 ```
 
 ### Run Integration Tests (with live Ollama)
+
 ```bash
 # Remove skip decorator from integration tests, then:
 python -m pytest tests/test_ollama_client.py::TestIntegrationScenarios -v -m integration
 ```
 
 ### Quick Smoke Test
+
 ```bash
 # Run just model profile tests (no HTTP)
 python -m pytest tests/test_ollama_client.py::TestModelProfiles -v
@@ -156,6 +172,7 @@ python -m pytest tests/test_ollama_client.py::TestModelProfiles -v
 ### Model Options Available
 
 The tests verify these FREE Ollama models:
+
 - `llama2` (7B) - Good balance of speed/quality
 - `llama2:13b` - Excellent for complex tasks
 - `mistral` (7B) - Very fast, excellent quality
@@ -179,18 +196,21 @@ All are FREE (cost: $0.0) and validated by tests! ✅
 If you want to extend this further:
 
 1. **Add content-specific tests:**
+
    ```python
    async def test_generate_seo_blog_post():
        # Test your actual content generation pipeline
    ```
 
 2. **Load testing:**
+
    ```python
    async def test_100_concurrent_generations():
        # Verify scalability
    ```
 
 3. **Model benchmarking:**
+
    ```python
    async def test_model_quality_vs_speed():
        # Compare different Ollama models
