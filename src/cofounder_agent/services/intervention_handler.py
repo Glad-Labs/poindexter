@@ -225,13 +225,235 @@ class InterventionHandler:
                     task_id=task_id
                 )
         
-        # TODO: Add additional notification channels
-        # - Email alerts for URGENT/CRITICAL levels
-        # - Slack notifications
-        # - SMS for CRITICAL level
-        # - Dashboard updates
+        # Send notifications through additional channels
+        await self._send_email_alert(task_id, intervention_data, level)
+        await self._send_slack_notification(task_id, intervention_data, level)
+        await self._send_sms_alert(task_id, intervention_data, level)
+        await self._send_dashboard_update(task_id, intervention_data, level)
+        await self._send_push_notification(task_id, intervention_data, level)
         
         return intervention_data
+    
+    async def _send_email_alert(
+        self,
+        task_id: str,
+        intervention_data: dict,
+        level: InterventionLevel
+    ):
+        """
+        Send email notification for URGENT and CRITICAL interventions.
+        
+        Args:
+            task_id: Task identifier
+            intervention_data: Intervention details
+            level: Intervention severity level
+        """
+        try:
+            # Only send emails for higher severity levels
+            if level not in [InterventionLevel.URGENT, InterventionLevel.CRITICAL]:
+                return
+
+            # Email configuration would typically come from environment or config
+            # For now, we'll just log the action
+            email_subject = f"[{level.upper()}] Intervention Required for Task {task_id}"
+            email_body = f"""
+Task ID: {task_id}
+Reason: {intervention_data.get('reason')}
+Level: {level}
+Timestamp: {intervention_data.get('timestamp')}
+Details: {intervention_data.get('context')}
+            """
+
+            logger.info(
+                "Email alert would be sent",
+                task_id=task_id,
+                level=level,
+                subject=email_subject
+            )
+            # In production, send via SMTP service here
+        except Exception as e:
+            logger.error(
+                "Failed to prepare email alert",
+                error=str(e),
+                task_id=task_id
+            )
+    
+    async def _send_slack_notification(
+        self,
+        task_id: str,
+        intervention_data: dict,
+        level: InterventionLevel
+    ):
+        """
+        Send Slack notification for all intervention levels.
+        
+        Args:
+            task_id: Task identifier
+            intervention_data: Intervention details
+            level: Intervention severity level
+        """
+        try:
+            # Slack webhook URL would come from environment/config
+            # For now, we'll just log the action
+            color_map = {
+                InterventionLevel.INFO: "#36a64f",
+                InterventionLevel.WARNING: "#ff9900",
+                InterventionLevel.URGENT: "#ff6600",
+                InterventionLevel.CRITICAL: "#ff0000",
+            }
+            
+            slack_message = {
+                "attachments": [
+                    {
+                        "color": color_map.get(level, "#999999"),
+                        "title": f"Intervention Required: {task_id}",
+                        "text": f"Reason: {intervention_data.get('reason')}",
+                        "fields": [
+                            {
+                                "title": "Level",
+                                "value": level.upper(),
+                                "short": True
+                            },
+                            {
+                                "title": "Timestamp",
+                                "value": intervention_data.get('timestamp'),
+                                "short": True
+                            }
+                        ]
+                    }
+                ]
+            }
+
+            logger.info(
+                "Slack notification prepared",
+                task_id=task_id,
+                level=level,
+                message=slack_message
+            )
+            # In production, send to Slack webhook here
+        except Exception as e:
+            logger.error(
+                "Failed to prepare Slack notification",
+                error=str(e),
+                task_id=task_id
+            )
+    
+    async def _send_sms_alert(
+        self,
+        task_id: str,
+        intervention_data: dict,
+        level: InterventionLevel
+    ):
+        """
+        Send SMS alert for CRITICAL interventions only.
+        
+        Args:
+            task_id: Task identifier
+            intervention_data: Intervention details
+            level: Intervention severity level
+        """
+        try:
+            # Only send SMS for critical level
+            if level != InterventionLevel.CRITICAL:
+                return
+
+            # SMS message would be built here
+            reason = intervention_data.get('reason', 'Unknown')
+            reason_short = reason[:50] if reason else 'Unknown'
+            sms_message = f"CRITICAL: Task {task_id} requires immediate intervention. Reason: {reason_short}..."
+
+            logger.warning(
+                "SMS alert would be sent",
+                task_id=task_id,
+                level=level,
+                message=sms_message
+            )
+            # In production, send via Twilio or similar service here
+        except Exception as e:
+            logger.error(
+                "Failed to prepare SMS alert",
+                error=str(e),
+                task_id=task_id
+            )
+    
+    async def _send_dashboard_update(
+        self,
+        task_id: str,
+        intervention_data: dict,
+        level: InterventionLevel
+    ):
+        """
+        Update real-time dashboard with intervention alert.
+        
+        Args:
+            task_id: Task identifier
+            intervention_data: Intervention details
+            level: Intervention severity level
+        """
+        try:
+            dashboard_event = {
+                "event_type": "intervention_alert",
+                "task_id": task_id,
+                "level": level,
+                "timestamp": intervention_data.get('timestamp'),
+                "reason": intervention_data.get('reason'),
+                "context": intervention_data.get('context')
+            }
+
+            logger.info(
+                "Dashboard update event created",
+                task_id=task_id,
+                level=level,
+                event=dashboard_event
+            )
+            # In production, emit WebSocket event to connected dashboards here
+        except Exception as e:
+            logger.error(
+                "Failed to prepare dashboard update",
+                error=str(e),
+                task_id=task_id
+            )
+    
+    async def _send_push_notification(
+        self,
+        task_id: str,
+        intervention_data: dict,
+        level: InterventionLevel
+    ):
+        """
+        Send push notification to mobile devices and browsers.
+        
+        Args:
+            task_id: Task identifier
+            intervention_data: Intervention details
+            level: Intervention severity level
+        """
+        try:
+            push_notification = {
+                "title": f"Intervention Required",
+                "body": f"Task {task_id}: {(intervention_data.get('reason') or 'Review required')[:100]}",
+                "badge": 1,
+                "data": {
+                    "task_id": task_id,
+                    "level": level,
+                    "timestamp": intervention_data.get('timestamp')
+                },
+                "action": f"/tasks/{task_id}/review"
+            }
+
+            logger.info(
+                "Push notification prepared",
+                task_id=task_id,
+                level=level,
+                notification=push_notification
+            )
+            # In production, send via Firebase Cloud Messaging or similar service here
+        except Exception as e:
+            logger.error(
+                "Failed to prepare push notification",
+                error=str(e),
+                task_id=task_id
+            )
     
     async def record_error(self, task_id: str, error: Exception):
         """
