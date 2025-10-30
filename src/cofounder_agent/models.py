@@ -497,8 +497,8 @@ class Log(Base):
     """
     __tablename__ = "logs"
     __table_args__ = (
-        Index('idx_level_timestamp', 'level', 'timestamp'),
-        Index('idx_timestamp_desc', 'timestamp'),
+        Index('idx_log_level_timestamp', 'level', 'timestamp'),
+        Index('idx_log_timestamp_desc', 'timestamp'),
     )
     
     # Primary key
@@ -532,8 +532,8 @@ class FinancialEntry(Base):
     """
     __tablename__ = "financial_entries"
     __table_args__ = (
-        Index('idx_timestamp_category', 'timestamp', 'category'),
-        Index('idx_timestamp_desc', 'timestamp'),
+        Index('idx_financial_timestamp_category', 'timestamp', 'category'),
+        Index('idx_financial_timestamp_desc', 'timestamp'),
     )
     
     # Primary key
@@ -605,8 +605,8 @@ class HealthCheck(Base):
     """
     __tablename__ = "health_checks"
     __table_args__ = (
-        Index('idx_timestamp_desc', 'timestamp'),
-        Index('idx_service', 'service'),
+        Index('idx_healthcheck_timestamp_desc', 'timestamp'),
+        Index('idx_healthcheck_service', 'service'),
     )
     
     # Primary key

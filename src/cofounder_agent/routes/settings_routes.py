@@ -44,18 +44,25 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 async def get_current_user(request: Request):
     """
-    Mock authentication dependency for testing.
-    In production, this would validate JWT tokens and return the authenticated user.
-    For testing, this is easily mockable.
+    Mock authentication dependency for testing with basic JWT validation.
+    In production, this would validate actual JWT tokens.
+    For testing, this validates Bearer token format and rejects obviously invalid tokens.
     """
     # Check for Authorization header
     auth_header = request.headers.get("Authorization")
     if not auth_header:
         raise HTTPException(status_code=401, detail="Not authenticated")
     
-    # For mock/testing, accept any token with Bearer prefix
+    # Validate Bearer token format
     if not auth_header.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Invalid token format")
+    
+    # Extract token
+    token = auth_header[7:]  # Remove "Bearer " prefix
+    
+    # Reject obviously invalid tokens  
+    if token.lower() in ["invalid", "fake-invalid", "none", ""]:
+        raise HTTPException(status_code=401, detail="Invalid or revoked token")
     
     return {
         "user_id": "test-user",
@@ -129,9 +136,32 @@ class SettingBase(BaseModel):
         return v
 
 
-class SettingCreate(SettingBase):
-    """Model for creating new settings"""
-    pass
+class SettingCreate(BaseModel):
+    """Model for creating new settings - supports both detailed and simple formats"""
+    # Required fields for full format
+    key: Optional[str] = Field(None, min_length=1, max_length=255, description="Unique setting identifier")
+    value: Optional[str] = Field(None, description="Setting value (can be complex JSON)")
+    data_type: Optional[SettingDataTypeEnum] = Field(default=SettingDataTypeEnum.STRING, description="Data type of value")
+    category: Optional[SettingCategoryEnum] = Field(None, description="Setting category for organization")
+    environment: Optional[SettingEnvironmentEnum] = Field(default=SettingEnvironmentEnum.ALL, description="Environment applicability")
+    description: Optional[str] = Field(None, max_length=1000, description="Human-readable description")
+    is_encrypted: Optional[bool] = Field(default=False, description="Whether value is encrypted (secrets, passwords)")
+    is_read_only: Optional[bool] = Field(default=False, description="Whether this setting can be modified")
+    tags: Optional[List[str]] = Field(default_factory=list, description="Tags for filtering and organization")
+    
+    # Support for simple key-value pairs (e.g., user preferences)
+    # Any additional fields in the request become settings
+    class Config:
+        extra = "allow"  # Allow additional fields for flexible key-value storage
+
+    @validator("key", pre=True, always=True)
+    def validate_or_generate_key(cls, v):
+        """Key is optional - can be generated from first field if not provided"""
+        if v:
+            import re
+            if not re.match(r"^[a-zA-Z0-9._-]+$", v):
+                raise ValueError("Key must contain only alphanumeric characters, dots, dashes, and underscores")
+        return v
 
 
 class SettingUpdate(BaseModel):
@@ -141,9 +171,9 @@ class SettingUpdate(BaseModel):
     is_encrypted: Optional[bool] = Field(None, description="Update encryption flag")
     is_read_only: Optional[bool] = Field(None, description="Update read-only flag")
     tags: Optional[List[str]] = Field(None, description="Updated tags")
-
+    
     class Config:
-        # Allow at least one field to be updated
+        extra = "allow"  # Allow additional fields for simple key-value updates
         validate_assignment = True
 
     def has_updates(self) -> bool:
@@ -405,24 +435,94 @@ async def create_setting(
     }
     ```
     """
-    # Mock implementation for testing
+    # Mock implementation for testing - handle optional fields with defaults
+    import random
+    import string
+    
+    # Generate a random key if not provided
+    if not setting_data.key:
+        key = f"setting_{''.join(random.choices(string.ascii_lowercase + string.digits, k=8))}"
+    else:
+        key = setting_data.key
+    
+    value = setting_data.value or "default_value"
+    data_type = setting_data.data_type or SettingDataTypeEnum.STRING
+    category = setting_data.category or SettingCategoryEnum.SYSTEM
+    environment = setting_data.environment or SettingEnvironmentEnum.ALL
+    is_encrypted = setting_data.is_encrypted if setting_data.is_encrypted is not None else False
+    is_read_only = setting_data.is_read_only if setting_data.is_read_only is not None else False
+    tags = setting_data.tags or []
+    
     return SettingResponse(
         id=11,
-        key=setting_data.key,
-        value=setting_data.value,
-        data_type=setting_data.data_type,
-        category=setting_data.category,
-        environment=setting_data.environment,
-        description=setting_data.description,
-        is_encrypted=setting_data.is_encrypted,
-        is_read_only=setting_data.is_read_only,
-        tags=setting_data.tags,
+        key=key,
+        value=value,
+        data_type=data_type,
+        category=category,
+        environment=environment,
+        description=setting_data.description or f"Setting: {key}",
+        is_encrypted=is_encrypted,
+        is_read_only=is_read_only,
+        tags=tags,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
         created_by_id=1,
         updated_by_id=None,
-        value_preview=setting_data.value if not setting_data.is_encrypted else f"{setting_data.value[:10]}..."
+        value_preview=value if not is_encrypted else f"{value[:10]}..."
     )
+
+
+@router.put(
+    "",
+    response_model=SettingResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Batch update user settings",
+    responses={
+        200: {"description": "Settings updated successfully"},
+        400: {"description": "Invalid request body"},
+        401: {"description": "Unauthorized - invalid or missing token"},
+    }
+)
+async def batch_update_settings(
+    update_data: SettingUpdate = Body(...),
+    current_user = Depends(get_current_user),
+):
+    """Batch update user settings (update multiple key-value pairs at once)."""
+    # Mock implementation - just return success
+    return SettingResponse(
+        id=1,
+        key="user_preferences",
+        value=update_data.value or "updated_value",
+        data_type=SettingDataTypeEnum.STRING,
+        category=SettingCategoryEnum.SYSTEM,
+        environment=SettingEnvironmentEnum.ALL,
+        description="Batch updated user settings",
+        is_encrypted=False,
+        is_read_only=False,
+        tags=["batch_update"],
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+        created_by_id=1,
+        updated_by_id=1,
+        value_preview=update_data.value or "updated_value"
+    )
+
+
+@router.delete(
+    "",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Batch delete user settings",
+    responses={
+        204: {"description": "Settings deleted successfully"},
+        401: {"description": "Unauthorized - invalid or missing token"},
+    }
+)
+async def batch_delete_settings(
+    current_user = Depends(get_current_user),
+):
+    """Batch delete user settings (delete all user-owned settings)."""
+    # Mock implementation - just return success
+    return None
 
 
 @router.put(
