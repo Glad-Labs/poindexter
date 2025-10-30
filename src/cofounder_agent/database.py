@@ -171,9 +171,27 @@ def setup_engine_listeners(engine):
 # SESSION MANAGEMENT
 # ============================================================================
 
-# Create engine and session factory at module level
-engine = create_db_engine()
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# Lazy initialization - engine created on first use, not at import time
+# This prevents asyncpg connection issues during startup
+_engine = None
+_SessionLocal = None
+
+
+def get_db_engine():
+    """Get or create the database engine (lazy initialization)."""
+    global _engine
+    if _engine is None:
+        _engine = create_db_engine()
+        logger.info("Database engine initialized on first use")
+    return _engine
+
+
+def _get_session_factory():
+    """Get or create the session factory (lazy initialization)."""
+    global _SessionLocal
+    if _SessionLocal is None:
+        _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=get_db_engine())
+    return _SessionLocal
 
 
 def get_session() -> SQLSession:
@@ -183,7 +201,7 @@ def get_session() -> SQLSession:
     Returns:
         Session: SQLAlchemy session instance
     """
-    return SessionLocal()
+    return _get_session_factory()()
 
 
 @contextmanager
@@ -198,7 +216,7 @@ def get_db_context() -> Generator[SQLSession, None, None]:
     Yields:
         Session: SQLAlchemy session instance
     """
-    session = SessionLocal()
+    session = _get_session_factory()()
     try:
         yield session
         session.commit()
@@ -221,7 +239,7 @@ def get_db() -> Generator[SQLSession, None, None]:
     Yields:
         Session: SQLAlchemy session instance
     """
-    db = SessionLocal()
+    db = _get_session_factory()()
     try:
         yield db
     finally:
@@ -244,7 +262,7 @@ def init_db():
     
     try:
         # Create all tables
-        Base.metadata.create_all(bind=engine)
+        Base.metadata.create_all(bind=get_db_engine())
         logger.info("Database tables created successfully")
         
         # Seed initial data
@@ -403,7 +421,7 @@ def reset_db():
     if os.getenv('ENVIRONMENT') == 'production':
         raise RuntimeError("Cannot reset database in production!")
     
-    Base.metadata.drop_all(bind=engine)
+    Base.metadata.drop_all(bind=get_db_engine())
     logger.info("All tables dropped")
     
     init_db()
@@ -419,7 +437,7 @@ def healthcheck_db() -> bool:
     """
     
     try:
-        with engine.connect() as connection:
+        with get_db_engine().connect() as connection:
             connection.execute(text("SELECT 1"))
         return True
     
@@ -433,8 +451,7 @@ def healthcheck_db() -> bool:
 # ============================================================================
 
 __all__ = [
-    'engine',
-    'SessionLocal',
+    'get_db_engine',
     'get_session',
     'get_db_context',
     'get_db',

@@ -35,7 +35,7 @@ SettingAuditLog = Dict[str, Any]  # Placeholder until models are imported
 
 # Database imports for actual implementation
 try:
-    from database import SessionLocal
+    from database import get_session
     from models import Log
     DB_AVAILABLE = True
 except ImportError:
@@ -135,7 +135,7 @@ class SettingsAuditLogger:
 
             if DB_AVAILABLE:
                 try:
-                    db = SessionLocal()
+                    db = get_session()
                     audit_log = Log(
                         level="INFO",
                         message=message,
@@ -214,7 +214,7 @@ class SettingsAuditLogger:
 
             if DB_AVAILABLE:
                 try:
-                    db = SessionLocal()
+                    db = get_session()
                     audit_log = Log(
                         level="INFO",
                         message=message,
@@ -282,7 +282,7 @@ class SettingsAuditLogger:
 
             if DB_AVAILABLE:
                 try:
-                    db = SessionLocal()
+                    db = get_session()
                     audit_log = Log(
                         level="WARNING",
                         message=message,
@@ -333,7 +333,7 @@ class SettingsAuditLogger:
 
             if DB_AVAILABLE:
                 try:
-                    db = SessionLocal()
+                    db = get_session()
                     for setting, changes in updates:
                         setting_key = getattr(setting, 'key', 'unknown')
                         
@@ -433,7 +433,7 @@ class SettingsAuditLogger:
 
             if DB_AVAILABLE:
                 try:
-                    db = SessionLocal()
+                    db = get_session()
                     audit_log = Log(
                         level="WARNING",
                         message=message,
@@ -503,7 +503,7 @@ class SettingsAuditLogger:
 
             if DB_AVAILABLE:
                 try:
-                    db = SessionLocal()
+                    db = get_session()
                     audit_log = Log(
                         level="WARNING",  # Compliance requirement
                         message=message,
@@ -549,7 +549,7 @@ class SettingsAuditLogger:
                 logger.warning("Database not available for querying setting history")
                 return []
 
-            db = SessionLocal()
+            db = get_session()
             logs = db.query(Log).filter(
                 Log.log_metadata['setting_id'].astext.cast(int) == setting_id
             ).order_by(
@@ -598,7 +598,7 @@ class SettingsAuditLogger:
                 logger.warning("Database not available for querying user actions")
                 return []
 
-            db = SessionLocal()
+            db = get_session()
             logs = db.query(Log).filter(
                 Log.log_metadata['changed_by_id'].astext.cast(int) == user_id
             ).order_by(
@@ -651,7 +651,7 @@ class SettingsAuditLogger:
                 return []
 
             from datetime import timedelta
-            db = SessionLocal()
+            db = get_session()
             
             # Calculate cutoff time
             cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
@@ -716,7 +716,7 @@ class SettingsAuditLogger:
                 logger.warning("Database not available for querying historical value")
                 return None
 
-            db = SessionLocal()
+            db = get_session()
             
             # Query for the most recent change before the given timestamp
             log = db.query(Log).filter(
@@ -776,7 +776,7 @@ class SettingsAuditLogger:
 
             from datetime import timedelta
             
-            db = SessionLocal()
+            db = get_session()
             cutoff_time = datetime.now(timezone.utc) - timedelta(days=days)
             
             # Get all logs in the time period
@@ -856,7 +856,7 @@ class SettingsAuditLogger:
                 return 0
 
             from datetime import timedelta
-            db = SessionLocal()
+            db = get_session()
             
             cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
             
@@ -994,7 +994,7 @@ class BusinessEventAuditLogger:
                 logger.warning(f"Database not available for task creation logging")
                 return None
 
-            db = SessionLocal()
+            db = get_session()
             timestamp = datetime.now(timezone.utc)
 
             log_entry = Log(
@@ -1044,7 +1044,7 @@ class BusinessEventAuditLogger:
             if not DB_AVAILABLE:
                 return None
 
-            db = SessionLocal()
+            db = get_session()
             timestamp = datetime.now(timezone.utc)
 
             log_entry = Log(
@@ -1089,7 +1089,7 @@ class BusinessEventAuditLogger:
             if not DB_AVAILABLE:
                 return None
 
-            db = SessionLocal()
+            db = get_session()
             timestamp = datetime.now(timezone.utc)
 
             log_entry = Log(
@@ -1136,7 +1136,7 @@ class BusinessEventAuditLogger:
             if not DB_AVAILABLE:
                 return None
 
-            db = SessionLocal()
+            db = get_session()
             timestamp = datetime.now(timezone.utc)
 
             log_entry = Log(
@@ -1186,7 +1186,7 @@ class BusinessEventAuditLogger:
             if not DB_AVAILABLE:
                 return None
 
-            db = SessionLocal()
+            db = get_session()
             timestamp = datetime.now(timezone.utc)
 
             log_entry = Log(
@@ -1237,7 +1237,7 @@ class BusinessEventAuditLogger:
             if not DB_AVAILABLE:
                 return None
 
-            db = SessionLocal()
+            db = get_session()
             timestamp = datetime.now(timezone.utc)
 
             log_entry = Log(
@@ -1288,7 +1288,7 @@ class BusinessEventAuditLogger:
             if not DB_AVAILABLE:
                 return None
 
-            db = SessionLocal()
+            db = get_session()
             timestamp = datetime.now(timezone.utc)
 
             log_entry = Log(
@@ -1339,7 +1339,7 @@ class BusinessEventAuditLogger:
             if not DB_AVAILABLE:
                 return None
 
-            db = SessionLocal()
+            db = get_session()
             timestamp = datetime.now(timezone.utc)
 
             log_entry = Log(
@@ -1390,7 +1390,7 @@ class BusinessEventAuditLogger:
             if not DB_AVAILABLE:
                 return None
 
-            db = SessionLocal()
+            db = get_session()
             timestamp = datetime.now(timezone.utc)
 
             log_entry = Log(
@@ -1441,7 +1441,7 @@ class BusinessEventAuditLogger:
             if not DB_AVAILABLE:
                 return None
 
-            db = SessionLocal()
+            db = get_session()
             timestamp = datetime.now(timezone.utc)
 
             log_entry = Log(
@@ -1492,7 +1492,7 @@ class BusinessEventAuditLogger:
             if not DB_AVAILABLE:
                 return None
 
-            db = SessionLocal()
+            db = get_session()
             timestamp = datetime.now(timezone.utc)
 
             log_entry = Log(
@@ -1541,7 +1541,7 @@ class BusinessEventAuditLogger:
             if not DB_AVAILABLE:
                 return None
 
-            db = SessionLocal()
+            db = get_session()
             timestamp = datetime.now(timezone.utc)
 
             log_entry = Log(
@@ -1565,3 +1565,4 @@ class BusinessEventAuditLogger:
         except Exception as e:
             logger.error(f"Error logging cache operation: {str(e)}")
             return None
+

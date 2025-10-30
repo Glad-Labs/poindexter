@@ -687,10 +687,10 @@ Details: {intervention_data.get('context')}
             True if successful, False otherwise
         """
         try:
-            from database import SessionLocal
+            from database import get_session
             from models import Notification
 
-            db = SessionLocal()
+            db = get_session()
             timestamp = datetime.now()
 
             # Create in-app notification record

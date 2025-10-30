@@ -19,7 +19,7 @@ import logging
 
 from services.auth import validate_access_token, AuthConfig
 from models import Log
-from database import SessionLocal
+from database import get_session
 
 logger = logging.getLogger(__name__)
 
@@ -338,7 +338,7 @@ class AuthenticationAuditLogger:
         
         # Store in database audit log
         try:
-            db = SessionLocal()
+            db = get_session()
             audit_log = Log(
                 level="INFO" if success else "WARNING",
                 message=message,
@@ -381,7 +381,7 @@ class AuthenticationAuditLogger:
         
         # Store in database audit log
         try:
-            db = SessionLocal()
+            db = get_session()
             audit_log = Log(
                 level="INFO",
                 message=message,
@@ -423,7 +423,7 @@ class AuthenticationAuditLogger:
         
         # Store in database audit log
         try:
-            db = SessionLocal()
+            db = get_session()
             audit_log = Log(
                 level="INFO" if allowed else "WARNING",
                 message=message,
@@ -466,7 +466,7 @@ class AuthenticationAuditLogger:
         
         # Store in database audit log
         try:
-            db = SessionLocal()
+            db = get_session()
             audit_log = Log(
                 level="INFO" if success else "WARNING",
                 message=message,
@@ -540,3 +540,4 @@ def log_login_attempt(email: str, ip_address: str, success: bool, reason: str = 
 def log_api_access(user_id: str, endpoint: str, method: str, status_code: int) -> None:
     """Log API endpoint access to audit trail"""
     AuthenticationAuditLogger.log_token_usage(user_id, endpoint, method, status_code)
+
