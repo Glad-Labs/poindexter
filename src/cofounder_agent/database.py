@@ -112,12 +112,9 @@ def create_db_engine():
     
     if is_postgres:
         # PostgreSQL-specific configuration
+        # Use NullPool for asyncpg (async driver doesn't use connection pooling)
         engine_kwargs.update({
-            'poolclass': pool.QueuePool,
-            'pool_size': int(os.getenv('DATABASE_POOL_SIZE', '20')),
-            'max_overflow': int(os.getenv('DATABASE_MAX_OVERFLOW', '40')),
-            'pool_recycle': 3600,  # Recycle connections after 1 hour
-            'pool_timeout': 30,
+            'poolclass': pool.NullPool,  # asyncpg requires NullPool, not QueuePool
         })
         
         # SSL configuration for production
