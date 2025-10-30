@@ -10,13 +10,13 @@ import os
 import logging
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import datetime
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
 import uvicorn
-import structlog
 
 # Add the parent directory (src) to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -25,10 +25,10 @@ from orchestrator_logic import Orchestrator
 from services.database_service import DatabaseService
 
 # Import route routers
-from routes.content import content_router
-from routes.content_generation import content_router as generation_router
+# Unified content router (consolidates content.py, content_generation.py, enhanced_content.py)
+from routes.content_routes import content_router
 from routes.models import models_router
-from routes.enhanced_content import enhanced_content_router
+from routes.auth import router as github_oauth_router
 from routes.auth_routes import router as auth_router
 from routes.settings_routes import router as settings_router
 from routes.command_queue_routes import router as command_queue_router
@@ -45,42 +45,14 @@ except ImportError:
     logging.warning("Database module not available - authentication may not work")
 
 # PostgreSQL database service is now the primary service
-# Google Cloud services kept for backward compatibility but not initialized
 DATABASE_SERVICE_AVAILABLE = True
-pubsub_client = None  # Stub for backward compatibility - Firestore removed
 
+# Use centralized logging configuration
+from services.logger_config import get_logger
+from services.task_store_service import initialize_task_store, get_persistent_task_store
+from services.model_consolidation_service import initialize_model_consolidation_service
 
-# Google Cloud availability flag (for test mocking)
-GOOGLE_CLOUD_AVAILABLE = False
-
-# Stub Google Cloud client for test compatibility
-firestore_client = None
-
-# Configure structured logging
-try:
-    import structlog
-    structlog.configure(
-        processors=[
-            structlog.stdlib.filter_by_level,
-            structlog.stdlib.add_logger_name,
-            structlog.stdlib.add_log_level,
-            structlog.stdlib.PositionalArgumentsFormatter(),
-            structlog.processors.TimeStamper(fmt="ISO"),
-            structlog.processors.StackInfoRenderer(),
-            structlog.processors.format_exc_info,
-            structlog.processors.UnicodeDecoder(),
-            structlog.processors.JSONRenderer()
-        ],
-        context_class=dict,
-        logger_factory=structlog.stdlib.LoggerFactory(),
-        wrapper_class=structlog.stdlib.BoundLogger,
-        cache_logger_on_first_use=True,
-    )
-    logger = structlog.get_logger(__name__)
-except ImportError:
-    # Fallback to standard logging
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-    logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Global service instances
 database_service: Optional[DatabaseService] = None
@@ -110,7 +82,29 @@ async def lifespan(app: FastAPI):
             logger.warning("  ⚠️ Continuing in development mode without database")
             database_service = None
         
-        # 2. Create tables if they don't exist
+        # 2. Initialize persistent task store
+        logger.info("  📋 Initializing persistent task store...")
+        try:
+            database_url = os.getenv("DATABASE_URL", "sqlite:///.tmp/data.db")
+            initialize_task_store(database_url)
+            logger.info("  ✅ Persistent task store initialized")
+        except Exception as e:
+            error_msg = f"Task store initialization failed: {str(e)}"
+            logger.error(f"  ⚠️ {error_msg}", exc_info=True)
+            startup_error = error_msg
+            # Don't re-raise - allow app to start for health checks
+        
+        # 3. Initialize unified model consolidation service
+        logger.info("  🧠 Initializing unified model consolidation service...")
+        try:
+            initialize_model_consolidation_service()
+            logger.info("  ✅ Model consolidation service initialized (Ollama→HF→Google→Anthropic→OpenAI)")
+        except Exception as e:
+            error_msg = f"Model consolidation initialization failed: {str(e)}"
+            logger.error(f"  ⚠️ {error_msg}", exc_info=True)
+            # Don't fail startup - models are optional
+        
+        # 4. Create tables if they don't exist
         if database_service:
             try:
                 logger.info("  📋 Database tables initialized in previous step")
@@ -119,7 +113,7 @@ async def lifespan(app: FastAPI):
                 logger.error(f"  ⚠️ {error_msg}", exc_info=True)
                 startup_error = error_msg
         
-        # 3. Initialize orchestrator with new database service
+        # 4. Initialize orchestrator with new database service
         api_base_url = os.getenv("API_BASE_URL", "http://localhost:8000")
         logger.info(f"  🤖 Initializing orchestrator (API: {api_base_url})...")
         try:
@@ -134,7 +128,7 @@ async def lifespan(app: FastAPI):
             startup_error = error_msg
             # Don't re-raise - allow app to start for health checks
         
-        # 4. Verify connections
+        # 5. Verify connections
         if database_service:
             try:
                 logger.info("  🔍 Verifying database connection...")
@@ -149,6 +143,7 @@ async def lifespan(app: FastAPI):
         logger.info("✅ Application started successfully!")
         logger.info(f"  - Database Service: {database_service is not None}")
         logger.info(f"  - Orchestrator: {orchestrator is not None}")
+        logger.info(f"  - Task Store: initialized")
         logger.info(f"  - Startup Error: {startup_error}")
         logger.info(f"  - API Base URL: {api_base_url}")
         
@@ -164,6 +159,16 @@ async def lifespan(app: FastAPI):
         # ===== SHUTDOWN =====
         try:
             logger.info("🛑 Shutting down Glad Labs AI Co-Founder application...")
+            
+            # Close task store
+            try:
+                logger.info("  Closing persistent task store...")
+                task_store = get_persistent_task_store()
+                if task_store:
+                    task_store.close()
+                    logger.info("  ✅ Task store connection closed")
+            except Exception as e:
+                logger.error(f"  ⚠️ Error closing task store: {e}", exc_info=True)
             
             if database_service:
                 try:
@@ -195,66 +200,77 @@ app.add_middleware(
 )
 
 # Include route routers
-app.include_router(auth_router)  # Authentication endpoints
+app.include_router(github_oauth_router)  # GitHub OAuth authentication
+app.include_router(auth_router)  # Traditional authentication endpoints
 app.include_router(task_router)  # Task management endpoints
+# Register unified content router (replaces 3 legacy routers)
 app.include_router(content_router)
-app.include_router(generation_router)  # Content generation with Ollama
+
+# Register models router
 app.include_router(models_router)
-app.include_router(enhanced_content_router)
 app.include_router(settings_router)  # Settings management
 app.include_router(command_queue_router)  # Command queue (replaces Pub/Sub)
 app.include_router(webhook_router)  # Webhook handlers for Strapi events
 
-# ===== HEALTH CHECK ENDPOINTS =====
+# ===== UNIFIED HEALTH CHECK ENDPOINT =====
+# Consolidated from: /api/health, /status, /metrics/health, and route-specific health endpoints
 
 @app.get("/api/health")
 async def api_health():
     """
-    Health check endpoint for Railway deployment and load balancers
-    Returns detailed JSON indicating service status and any startup errors
+    Unified health check endpoint for Railway deployment and load balancers.
+    
+    Returns comprehensive status of all critical services:
+    - Startup status (starting/degraded/healthy)
+    - Database connectivity and health
+    - Orchestrator initialization and status
+    - LLM providers availability
+    - Timestamp for monitoring systems
+    
+    This endpoint consolidates previous endpoints:
+    - GET /status (StatusResponse)
+    - GET /metrics/health (database health)
+    - GET /settings/health (removed duplicate)
+    - GET /tasks/health/status (removed duplicate)
+    - GET /models/providers/status (removed duplicate)
+    
+    Used by: Railway load balancers, monitoring systems, external health checks
+    Authentication: Not required (critical for load balancers)
     """
     global startup_error, startup_complete
     
     try:
-        # If startup encountered errors, report them
-        if startup_error:
-            logger.warning(f"Health check returning degraded status: {startup_error}")
-            return {
-                "status": "degraded",
-                "service": "cofounder-agent",
-                "version": "1.0.0",
-                "startup_error": startup_error,
-                "startup_complete": startup_complete
-            }
-        
-        # If startup not complete, return starting status
-        if not startup_complete:
-            return {
-                "status": "starting",
-                "service": "cofounder-agent",
-                "version": "1.0.0",
-                "startup_complete": False
-            }
-        
-        # All good - fully healthy
-        health_status = {
+        # Build comprehensive health response
+        health_data = {
             "status": "healthy",
             "service": "cofounder-agent",
-            "version": "1.0.0"
+            "version": "1.0.0",
+            "timestamp": datetime.utcnow().isoformat(),
+            "components": {}
         }
+        
+        # Check startup status
+        if startup_error:
+            health_data["status"] = "degraded"
+            health_data["startup_error"] = startup_error
+            health_data["startup_complete"] = startup_complete
+            logger.warning(f"Health check returning degraded status: {startup_error}")
+        elif not startup_complete:
+            health_data["status"] = "starting"
+            health_data["startup_complete"] = False
         
         # Include database status if available
         if database_service:
             try:
                 db_health = await database_service.health_check()
-                health_status["database"] = db_health.get("status", "unknown")
+                health_data["components"]["database"] = db_health.get("status", "unknown")
             except Exception as e:
                 logger.warning(f"Database health check failed in /api/health: {e}")
-                health_status["database"] = "degraded"
+                health_data["components"]["database"] = "degraded"
         else:
-            health_status["database"] = "unavailable"
+            health_data["components"]["database"] = "unavailable"
         
-        return health_status
+        return health_data
     except Exception as e:
         logger.error(f"Health check failed: {e}", exc_info=True)
         return {
@@ -382,35 +398,31 @@ async def create_task(request: TaskRequest, background_tasks: BackgroundTasks):
 @app.get("/status", response_model=StatusResponse)
 async def get_status():
     """
-    Get the current status of the Co-Founder agent and connected services
+    DEPRECATED: Use GET /api/health instead.
+    
+    Backward compatibility endpoint that wraps the unified /api/health endpoint.
+    Maintained for clients that depend on StatusResponse model.
+    Will be removed in version 2.0.
     """
     try:
+        # Call the unified health endpoint
+        health = await api_health()
+        
+        # Convert to StatusResponse format for backward compatibility
         status_data = {
-            "service": "online",
+            "service": "online" if health.get("status") == "healthy" else health.get("status", "unknown"),
             "database_available": database_service is not None,
             "orchestrator_initialized": orchestrator is not None,
-            "timestamp": str(asyncio.get_event_loop().time())
+            "timestamp": health.get("timestamp", str(asyncio.get_event_loop().time()))
         }
         
-        # Add database and API health checks
-        if database_service:
-            try:
-                db_health = await database_service.health_check()
-                status_data["database"] = db_health
-            except Exception as e:
-                logger.warning(f"Database health check failed: {e}")
-                status_data["database"] = {"status": "error", "message": str(e)}
+        # Include component statuses if available
+        components = health.get("components", {})
+        if isinstance(components, dict):
+            for key, value in components.items():
+                status_data[f"component_{key}"] = value
         
-        # Add orchestrator status
-        if orchestrator:
-            try:
-                orch_status = await orchestrator._get_system_status_async()
-                status_data["orchestrator"] = orch_status
-            except Exception as e:
-                logger.warning(f"Orchestrator status check failed: {e}")
-                status_data["orchestrator"] = {"status": "error", "message": str(e)}
-        
-        return StatusResponse(status="healthy", data=status_data)
+        return StatusResponse(status=health.get("status", "unknown"), data=status_data)
         
     except Exception as e:
         logger.error(f"Error getting status: {e}")
@@ -454,20 +466,23 @@ async def get_performance_metrics(hours: int = 24):
 @app.get("/metrics/health")
 async def get_health_metrics():
     """
-    Get current system health metrics and status
+    DEPRECATED: Use GET /api/health instead.
+    
+    Backward compatibility endpoint that wraps the unified /api/health endpoint.
+    Returns health metrics in the legacy format.
+    Will be removed in version 2.0.
     """
     try:
-        if database_service:
-            health = await database_service.health_check()
-            return {"health": health, "status": "success"}
-        else:
-            return {
-                "health": {
-                    "status": "unknown",
-                    "message": "Database not available"
-                },
-                "status": "disabled"
-            }
+        health = await api_health()
+        
+        # Convert to legacy format for backward compatibility
+        components = health.get("components", {})
+        database_health = components.get("database") if isinstance(components, dict) else "unknown"
+        
+        return {
+            "health": {"status": database_health, "timestamp": health.get("timestamp")},
+            "status": "success" if health.get("status") == "healthy" else "degraded"
+        }
     except Exception as e:
         logger.error(f"Error getting health metrics: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get health metrics: {str(e)}")

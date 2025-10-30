@@ -364,13 +364,17 @@ async def update_task(
         raise HTTPException(status_code=500, detail=f"Failed to update task: {str(e)}")
 
 
-@router.get("/health/status", response_model=dict, summary="Task service health check")
+@router.get("/health/status", response_model=dict, summary="DEPRECATED: Task service health check (use /api/health instead)", deprecated=True)
 async def task_health(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    Health check endpoint for task service.
+    DEPRECATED: Use GET /api/health instead.
+    
+    Health check endpoint for task service (legacy).
+    This endpoint is deprecated and will be removed in version 2.0.
+    Use the unified /api/health endpoint for all health checks.
     
     **Returns:**
     - Service status (healthy/unhealthy)
@@ -379,8 +383,7 @@ async def task_health(
     
     **Example cURL:**
     ```bash
-    curl -X GET http://localhost:8000/api/tasks/health/status \
-      -H "Authorization: Bearer YOUR_JWT_TOKEN"
+    curl -X GET http://localhost:8000/api/health
     ```
     """
     try:
@@ -393,7 +396,8 @@ async def task_health(
     return {
         "status": "healthy" if db_status == "connected" else "unhealthy",
         "database": db_status,
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.utcnow().isoformat(),
+        "_deprecated": "Use GET /api/health instead"
     }
 
 

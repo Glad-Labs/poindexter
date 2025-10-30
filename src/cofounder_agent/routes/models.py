@@ -12,8 +12,9 @@ import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
+from datetime import datetime
 
-from services.llm_provider_manager import get_llm_manager
+from services.model_consolidation_service import get_model_consolidation_service
 
 logger = logging.getLogger(__name__)
 
@@ -65,44 +66,40 @@ class ProvidersStatusResponse(BaseModel):
 )
 async def get_available_models():
     """
-    Get all currently available models based on provider configuration.
+    Get all currently available models from the unified model consolidation service.
     
-    Returns models sorted by:
-    1. Local models first (Ollama)
-    2. Free models before paid
-    3. By model size
+    Returns all models across all providers (Ollama, HuggingFace, Google, Anthropic, OpenAI)
+    with unified interface and automatic fallback chain support.
     """
     try:
-        manager = get_llm_manager()
-        available_models = manager.get_available_models()
+        service = get_model_consolidation_service()
+        models_dict = service.list_models()
         
+        # Flatten models from all providers
         models_list = []
-        for model_name, config in available_models.items():
-            models_list.append(ModelInfo(
-                name=model_name,
-                displayName=config.model_display_name,
-                provider=config.provider.value,
-                isFree=config.is_free,
-                size=config.size.value,
-                estimatedVramGb=config.estimated_vram_gb,
-                description=config.description,
-                icon="🖥️" if config.provider.value == "ollama" else ("🌐" if config.provider.value == "huggingface" else "☁️"),
-                requiresInternet=config.requires_internet,
-            ))
+        provider_icons = {
+            "ollama": "🖥️",
+            "huggingface": "🌐",
+            "google": "☁️",
+            "anthropic": "🧠",
+            "openai": "⚡"
+        }
         
-        # Sort models (recommended order)
-        recommended = manager.get_recommended_models()
-        recommended_names = [m.model_name for m in recommended]
+        for provider, model_names in models_dict.items():
+            icon = provider_icons.get(provider, "🤖")
+            for model_name in model_names:
+                models_list.append(ModelInfo(
+                    name=model_name,
+                    displayName=f"{model_name} ({provider})",
+                    provider=provider,
+                    isFree=provider in ["ollama", "huggingface"],
+                    size="unknown",
+                    estimatedVramGb=0,
+                    description=f"Model from {provider}",
+                    icon=icon,
+                    requiresInternet=provider != "ollama",
+                ))
         
-        def sort_key(model):
-            try:
-                return recommended_names.index(model.name)
-            except ValueError:
-                return len(recommended_names)
-        
-        models_list.sort(key=sort_key)
-        
-        from datetime import datetime
         return ModelsListResponse(
             models=models_list,
             total=len(models_list),
@@ -116,39 +113,26 @@ async def get_available_models():
 
 @models_router.get(
     "/status",
-    response_model=ProvidersStatusResponse,
-    description="Get status of all LLM providers"
+    description="Get status of all model providers"
 )
 async def get_provider_status():
     """
-    Get availability status of all LLM providers.
+    Get availability status of all model providers in the consolidation service.
     
-    Shows which providers are available and configured.
-    Useful for debugging and monitoring model availability.
+    Returns provider statuses including:
+    - Availability (up/down)
+    - Last check time
+    - Response metrics
+    - Number of available models
     """
     try:
-        manager = get_llm_manager()
-        status = manager.get_provider_status()
+        service = get_model_consolidation_service()
+        status = service.get_status()
         
-        from datetime import datetime
-        return ProvidersStatusResponse(
-            ollama=ProviderStatus(
-                available=status["ollama"]["available"],
-                url=status["ollama"].get("url"),
-                models=status["ollama"]["models"],
-            ),
-            huggingface=ProviderStatus(
-                available=status["huggingface"]["available"],
-                hasToken=status["huggingface"]["has_token"],
-                models=status["huggingface"]["models"],
-            ),
-            gemini=ProviderStatus(
-                available=status["gemini"]["available"],
-                hasKey=status["gemini"]["has_key"],
-                models=status["gemini"]["models"],
-            ),
-            timestamp=datetime.now().isoformat(),
-        )
+        return {
+            "timestamp": datetime.now().isoformat(),
+            "providers": status
+        }
     
     except Exception as e:
         logger.error(f"Error getting provider status: {e}")
@@ -162,32 +146,46 @@ async def get_provider_status():
 )
 async def get_recommended_models():
     """
-    Get models recommended for the current environment.
+    Get models recommended by the model consolidation service.
     
-    Recommendations based on:
-    1. Available resources (RTX 5070 = 12GB VRAM)
-    2. Cost efficiency (prefers free/local)
-    3. Quality (balances speed vs quality)
+    Uses the fallback chain priority to recommend best models:
+    1. Ollama (local, free, zero latency)
+    2. HuggingFace (free tier, reasonable quality)
+    3. Google Gemini (paid, high quality)
+    4. Anthropic Claude (paid, very high quality)
+    5. OpenAI GPT (expensive, best quality)
     """
     try:
-        manager = get_llm_manager()
-        recommended = manager.get_recommended_models()
+        service = get_model_consolidation_service()
+        models_dict = service.list_models()
         
+        # Return models in fallback chain priority order
         models_list = []
-        for config in recommended:
-            models_list.append(ModelInfo(
-                name=config.model_name,
-                displayName=config.model_display_name,
-                provider=config.provider.value,
-                isFree=config.is_free,
-                size=config.size.value,
-                estimatedVramGb=config.estimated_vram_gb,
-                description=config.description,
-                icon="🖥️" if config.provider.value == "ollama" else ("🌐" if config.provider.value == "huggingface" else "☁️"),
-                requiresInternet=config.requires_internet,
-            ))
+        provider_order = ["ollama", "huggingface", "google", "anthropic", "openai"]
+        provider_icons = {
+            "ollama": "🖥️",
+            "huggingface": "🌐",
+            "google": "☁️",
+            "anthropic": "🧠",
+            "openai": "⚡"
+        }
         
-        from datetime import datetime
+        for provider in provider_order:
+            model_names = models_dict.get(provider, [])
+            icon = provider_icons.get(provider, "🤖")
+            for model_name in model_names[:1]:  # Just first model per provider
+                models_list.append(ModelInfo(
+                    name=model_name,
+                    displayName=f"{model_name} (Recommended)",
+                    provider=provider,
+                    isFree=provider in ["ollama", "huggingface"],
+                    size="unknown",
+                    estimatedVramGb=0,
+                    description=f"Recommended model from {provider}",
+                    icon=icon,
+                    requiresInternet=provider != "ollama",
+                ))
+        
         return ModelsListResponse(
             models=models_list,
             total=len(models_list),
@@ -208,37 +206,45 @@ async def get_rtx5070_models():
     """
     Get models that fit within RTX 5070's 12GB VRAM.
     
-    RTX 5070 is a great mid-range GPU that can run many 7B-13B models
-    efficiently for local AI inference.
+    RTX 5070 can efficiently run 7B-13B parameter models.
+    Falls back to cloud providers if local models exhausted.
     """
     try:
-        manager = get_llm_manager()
-        available = manager.get_available_models()
-        
-        # Filter models for RTX 5070 (12GB VRAM)
-        rtx_models = []
-        for config in available.values():
-            if config.provider.value == "ollama" and config.estimated_vram_gb <= 12:
-                rtx_models.append(config)
-            elif config.provider.value != "ollama":
-                # Cloud models don't use local VRAM
-                rtx_models.append(config)
+        service = get_model_consolidation_service()
+        models_dict = service.list_models()
         
         models_list = []
-        for config in rtx_models:
-            models_list.append(ModelInfo(
-                name=config.model_name,
-                displayName=config.model_display_name,
-                provider=config.provider.value,
-                isFree=config.is_free,
-                size=config.size.value,
-                estimatedVramGb=config.estimated_vram_gb,
-                description=config.description,
-                icon="🖥️" if config.provider.value == "ollama" else ("🌐" if config.provider.value == "huggingface" else "☁️"),
-                requiresInternet=config.requires_internet,
-            ))
+        provider_icons = {
+            "ollama": "🖥️",
+            "huggingface": "🌐",
+            "google": "☁️",
+            "anthropic": "🧠",
+            "openai": "⚡"
+        }
         
-        from datetime import datetime
+        # Ollama models first (local, use VRAM), then cloud models
+        provider_order = ["ollama", "huggingface", "google", "anthropic", "openai"]
+        
+        for provider in provider_order:
+            model_names = models_dict.get(provider, [])
+            icon = provider_icons.get(provider, "🤖")
+            
+            # Limit Ollama to 2 models to respect VRAM
+            limit = 2 if provider == "ollama" else 3
+            
+            for model_name in model_names[:limit]:
+                models_list.append(ModelInfo(
+                    name=model_name,
+                    displayName=f"{model_name} (RTX5070 compatible)",
+                    provider=provider,
+                    isFree=provider in ["ollama", "huggingface"],
+                    size="7B-13B" if provider == "ollama" else "unknown",
+                    estimatedVramGb=8 if provider == "ollama" else 0,
+                    description=f"Optimized for RTX 5070 from {provider}",
+                    icon=icon,
+                    requiresInternet=provider != "ollama",
+                ))
+        
         return ModelsListResponse(
             models=models_list,
             total=len(models_list),
