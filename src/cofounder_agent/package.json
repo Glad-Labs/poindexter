@@ -1,0 +1,32 @@
+{
+  "name": "@glad-labs/cofounder-agent",
+  "version": "3.0.0",
+  "description": "AI Co-Founder Agent - Multi-agent orchestrator for intelligent business management",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "dev": "npm run start:verbose",
+    "start": "python start_server.py",
+    "start:verbose": "python -u start_server.py",
+    "start:uvicorn": "python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000 --log-level info",
+    "start:uvicorn:verbose": "python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000 --log-level debug",
+    "lint": "echo 'Linting skipped - Python project'",
+    "test": "python -m pytest tests/ -v",
+    "test:smoke": "python -m pytest tests/test_e2e_fixed.py -v"
+  },
+  "keywords": [
+    "AI",
+    "agents",
+    "orchestration",
+    "fastapi",
+    "business-intelligence",
+    "content-generation",
+    "multi-agent"
+  ],
+  "author": "Matthew M. Gladding (Glad Labs, LLC)",
+  "engines": {
+    "node": ">=18.0.0",
+    "python": ">=3.12.0"
+  },
+  "devDependencies": {}
+}
