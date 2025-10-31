@@ -3,24 +3,25 @@
 **Date:** October 30, 2025  
 **Status:** 🟢 RESOLVED - Solution Ready for Implementation  
 **Time to Fix:** 5-10 minutes  
-**Risk Level:** 🟢 LOW  
+**Risk Level:** 🟢 LOW
 
 ---
 
 ## 📋 Issue Summary
 
 **Error Reported:**
+
 ```
 Status: degraded
 Service: cofounder-agent
-Error: PostgreSQL connection failed: 
+Error: PostgreSQL connection failed:
   DuplicateTableError: relation "idx_timestamp_desc" already exists
   [SQL: CREATE INDEX idx_timestamp_desc ON logs (timestamp)]
 ```
 
 **Severity:** 🔴 Staging startup blocked  
 **Root Cause:** Index naming mismatch between database and SQLAlchemy code  
-**Data Loss Risk:** 🟢 None (indexes are non-critical)  
+**Data Loss Risk:** 🟢 None (indexes are non-critical)
 
 ---
 
@@ -28,17 +29,17 @@ Error: PostgreSQL connection failed:
 
 ### Three Fix Documents Created
 
-| Document | Location | Purpose | Use When |
-|----------|----------|---------|----------|
-| **DUPLICATE_INDEX_FIX.md** | `/DUPLICATE_INDEX_FIX.md` | User-friendly guide with 3 options | Need overview |
-| **POSTGRES_DUPLICATE_INDEX_ERROR.md** | `docs/components/cofounder-agent/` | Complete troubleshooting guide | Need deep analysis |
-| **fix_staging_indexes.sql** | `src/cofounder_agent/migrations/` | Copy-paste SQL script | Need quick fix |
+| Document                              | Location                           | Purpose                            | Use When           |
+| ------------------------------------- | ---------------------------------- | ---------------------------------- | ------------------ |
+| **DUPLICATE_INDEX_FIX.md**            | `/DUPLICATE_INDEX_FIX.md`          | User-friendly guide with 3 options | Need overview      |
+| **POSTGRES_DUPLICATE_INDEX_ERROR.md** | `docs/components/cofounder-agent/` | Complete troubleshooting guide     | Need deep analysis |
+| **fix_staging_indexes.sql**           | `src/cofounder_agent/migrations/`  | Copy-paste SQL script              | Need quick fix     |
 
 ### Immediate Action (3 Steps)
 
 **Step 1:** Get PostgreSQL connection from Railway  
 **Step 2:** Run DROP INDEX SQL  
-**Step 3:** Restart Co-Founder Agent service  
+**Step 3:** Restart Co-Founder Agent service
 
 → **Expected result:** Health endpoint returns `{"status": "healthy"}`
 
@@ -47,16 +48,20 @@ Error: PostgreSQL connection failed:
 ## 🔍 Root Cause
 
 **Database State:**
+
 - Old indexes exist: `idx_timestamp_desc`, `idx_service`, etc.
 
 **Code Expectation (SQLAlchemy):**
+
 - New indexes: `idx_log_timestamp_desc`, `idx_log_level_timestamp`
 
 **Conflict:**
+
 - Can't create new index because old one exists on same column
 - Prevents application startup
 
 **Why It Happened:**
+
 - Previous migrations/deployments left old indexes
 - Model definitions changed but database wasn't cleaned
 - Index naming conventions shifted between versions
@@ -118,11 +123,13 @@ That's it. Then restart the service.
 ### Immediate (5-10 minutes)
 
 1. **Connect to Staging PostgreSQL**
+
    ```
    Railway → PostgreSQL → Connect tab → Copy connection string
    ```
 
 2. **Run the DROP INDEX commands**
+
    ```sql
    DROP INDEX IF EXISTS idx_timestamp_desc CASCADE;
    DROP INDEX IF EXISTS idx_service CASCADE;
@@ -131,6 +138,7 @@ That's it. Then restart the service.
    ```
 
 3. **Restart the Service**
+
    ```
    Railway → Co-Founder Agent → Deployments → Latest → Redeploy
    ```
@@ -197,14 +205,15 @@ class Log(Base):
         Index('idx_log_level_timestamp', 'level', 'timestamp'),
     )
     timestamp = Column(
-        DateTime(timezone=True), 
-        default=datetime.utcnow, 
+        DateTime(timezone=True),
+        default=datetime.utcnow,
         nullable=False,
         index=True  # Creates idx_logs_timestamp automatically
     )
 ```
 
 **Benefits:**
+
 - ✅ No redundant indexes
 - ✅ Consistent naming conventions
 - ✅ Clearer intent
@@ -242,9 +251,10 @@ All information needed to resolve this is in the created documents:
 **Solution:** Drop old indexes, restart service  
 **Time:** 5-10 minutes  
 **Risk:** Low (no data loss)  
-**Status:** ✅ Ready for immediate implementation  
+**Status:** ✅ Ready for immediate implementation
 
 **Files Created:**
+
 - ✅ DUPLICATE_INDEX_FIX.md (comprehensive guide)
 - ✅ POSTGRES_DUPLICATE_INDEX_ERROR.md (troubleshooting guide)
 - ✅ fix_staging_indexes.sql (copy-paste SQL)
