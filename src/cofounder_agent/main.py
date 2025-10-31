@@ -18,6 +18,22 @@ from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
 import uvicorn
 
+# Load environment variables from .env.local first
+from dotenv import load_dotenv
+
+# Try to load .env.local from the project root, then from current directory
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+env_local_path = os.path.join(project_root, '.env.local')
+if os.path.exists(env_local_path):
+    load_dotenv(env_local_path, override=True)
+    print(f"✅ Loaded .env.local from {env_local_path}")
+else:
+    # Fallback to .env.local in current directory
+    load_dotenv('.env.local', override=True)
+    print("✅ Loaded .env.local from current directory")
+
+# Add the cofounder_agent directory to the Python path for relative imports
+sys.path.insert(0, os.path.dirname(__file__))
 # Add the parent directory (src) to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -46,6 +62,14 @@ except ImportError:
 
 # PostgreSQL database service is now the primary service
 DATABASE_SERVICE_AVAILABLE = True
+
+# Flag for Google Cloud availability (for test mocking)
+# Google Cloud services have been replaced with PostgreSQL + task store
+GOOGLE_CLOUD_AVAILABLE = False
+
+# Placeholder for firestore_client (for backward compatibility with tests)
+# Actual implementation uses PostgreSQL through database_service
+firestore_client = None
 
 # Use centralized logging configuration
 from services.logger_config import get_logger

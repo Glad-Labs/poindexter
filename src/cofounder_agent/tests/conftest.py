@@ -371,13 +371,45 @@ pytest_marks = {
 }
 
 # FastAPI Test Client
+@pytest.fixture(scope="function", autouse=True)
+def init_task_store():
+    """Autouse fixture to re-initialize task store for each test if needed"""
+    try:
+        from services import task_store_service
+        # Use the same file-based SQLite for tests
+        db_url = f"sqlite:///{_test_db_path.replace(chr(92), '/')}"
+        # Just ensure it's initialized, don't reset it
+        if task_store_service._persistent_task_store is None:
+            task_store_service.initialize_task_store(database_url=db_url)
+    except Exception as e:
+        print(f"Warning: Task store check failed: {e}")
+    yield
+
+import tempfile
+import os as os_module
+
+# Create a temp directory for test database
+_test_db_dir = tempfile.mkdtemp(prefix="pytest_", suffix="_cofounder")
+_test_db_path = os_module.path.join(_test_db_dir, "test_tasks.db")
+
 @pytest.fixture
 def app():
-    """FastAPI application fixture"""
+    """FastAPI application fixture with task store initialization"""
     try:
-        from cofounder_agent.main import app
-        return app
-    except ImportError:
+        # Import task_store_service first to initialize
+        from services import task_store_service
+        # Use file-based SQLite for tests (more reliable than :memory:)
+        db_url = f"sqlite:///{_test_db_path.replace(chr(92), '/')}"
+        
+        # Make sure it's initialized before importing the app
+        if task_store_service._persistent_task_store is None:
+            task_store_service.initialize_task_store(database_url=db_url)
+        
+        # Now import the app (which will use the initialized task store)
+        from cofounder_agent.main import app as fastapi_app
+        return fastapi_app
+    except ImportError as e:
+        print(f"Import error: {e}")
         # Create minimal mock app for tests that don't need the full app
         from fastapi import FastAPI
         mock_app = FastAPI()

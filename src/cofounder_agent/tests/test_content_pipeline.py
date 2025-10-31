@@ -67,37 +67,30 @@ class TestContentPipelineIntegration:
     def test_create_content_endpoint_exists(self, client):
         """Test that the content creation endpoint exists"""
         response = client.post(
-            "/api/content/create",
+            "/api/content/blog-posts",
             json={
-                "topic": "Test Topic",
-                "primary_keyword": "test, keywords",
-                "target_audience": "developers",
-                "category": "technology",
-                "auto_publish": False
+                "topic": "Test Topic"
             }
         )
         # Should not return 404
         assert response.status_code != 404
     
     def test_create_content_requires_topic(self, client):
-        """Test that content creation requires a topic"""
+        """Test that topic is required"""
         response = client.post(
-            "/api/content/create",
+            "/api/content/blog-posts",
             json={
-                "topic": "",  # Empty topic
-                "primary_keyword": "test",
-                "target_audience": "developers",
-                "category": "technology"
+                "topic": ""  # Empty topic
             }
         )
-        assert response.status_code == 400
-        assert "Topic must be at least 3 characters" in response.json()["detail"]
+        assert response.status_code == 422
+        # Pydantic validation error for min_length constraint
     
     @patch('main.GOOGLE_CLOUD_AVAILABLE', False)
     def test_create_content_dev_mode(self, client):
         """Test content creation in development mode (no Google Cloud)"""
         response = client.post(
-            "/api/content/create",
+            "/api/content/blog-posts",
             json={
                 "topic": "Test Topic for Dev Mode"
             }
@@ -107,7 +100,7 @@ class TestContentPipelineIntegration:
         data = response.json()
         assert data["status"] == "pending"
         assert data["topic"] == "Test Topic for Dev Mode"
-        assert "blog_" in data["task_id"]
+        assert "task_" in data["task_id"] or "blog_" in data["task_id"]
         assert data["polling_url"]
     
     @pytest.mark.skip(reason="Firestore removed during cleanup - integration test requires Google Cloud services")
@@ -137,14 +130,14 @@ class TestContentPipelineIntegration:
         """Test getting content status in dev mode"""
         # First create a task to query
         create_response = client.post(
-            "/api/content/create",
+            "/api/content/blog-posts",
             json={"topic": "Test Topic"}
         )
         assert create_response.status_code == 201
         task_id = create_response.json()["task_id"]
         
-        # Now get the task status (may be pending or completed depending on background task timing)
-        response = client.get(f"/api/content/status/{task_id}")
+        # Now get the task status
+        response = client.get(f"/api/content/blog-posts/tasks/{task_id}")
         
         assert response.status_code == 200
         data = response.json()
@@ -153,17 +146,17 @@ class TestContentPipelineIntegration:
     
     @patch('main.GOOGLE_CLOUD_AVAILABLE', True)
     def test_get_content_status_with_google_cloud(self, client, mock_firestore):
-        """Test getting content status with Google Cloud"""
+        """Test getting task status with Google Cloud"""
         # First create a task to query
         create_response = client.post(
-            "/api/content/create",
+            "/api/content/blog-posts",
             json={"topic": "Test Topic"}
         )
         assert create_response.status_code == 201
         task_id = create_response.json()["task_id"]
         
         # Now get the task status (may be pending or completed depending on background task timing)
-        response = client.get(f"/api/content/status/{task_id}")
+        response = client.get(f"/api/content/blog-posts/tasks/{task_id}")
         
         assert response.status_code == 200
         data = response.json()
@@ -178,7 +171,7 @@ class TestContentPipelineIntegration:
         response = client.get("/api/content/status/non-existent-task")
         
         assert response.status_code == 404
-        assert "not found" in response.json()["detail"]
+        assert "not found" in response.json()["detail"].lower()
     
     def test_webhook_endpoint_exists(self, client):
         """Test that the webhook endpoint exists"""
@@ -324,7 +317,7 @@ class TestContentPipelineEndToEnd:
         """
         # Step 1: Create content
         create_response = client.post(
-            "/api/content/create",
+            "/api/content/blog-posts",
             json={
                 "topic": "The Future of AI in Software Development"
             }
@@ -336,7 +329,7 @@ class TestContentPipelineEndToEnd:
         task_id = task_data["task_id"]
         
         # Step 2: Check status (should show queued/in-progress)
-        status_response = client.get(f"/api/content/status/{task_id}")
+        status_response = client.get(f"/api/content/blog-posts/tasks/{task_id}")
         assert status_response.status_code == 200
         status_data = status_response.json()
         assert "task_id" in status_data

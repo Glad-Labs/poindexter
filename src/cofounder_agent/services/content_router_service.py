@@ -464,7 +464,7 @@ async def process_content_generation_task(task_id: str):
                     "percentage": 100,
                     "message": "Generation complete",
                 },
-                "completed_at": datetime.now().isoformat(),
+                "completed_at": datetime.now(),
                 "result": {
                     "title": task["topic"],
                     "content": content,
@@ -492,6 +492,6 @@ async def process_content_generation_task(task_id: str):
                     "type": type(e).__name__,
                     "details": "Check logs for more information",
                 },
-                "completed_at": datetime.now().isoformat(),
+                "completed_at": datetime.now(),
             },
         )
