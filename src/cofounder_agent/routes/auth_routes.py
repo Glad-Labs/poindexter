@@ -219,7 +219,35 @@ def get_current_user(
         )
     
     # Get user from database
-    user = db.query(User).filter_by(id=claims["user_id"]).first()
+    user_id = claims.get("user_id")
+    user = db.query(User).filter_by(id=user_id).first()
+    
+    # Development: Create mock user if using mock token
+    if not user and token.startswith("mock_jwt_token_"):
+        # Create or get mock development user
+        mock_user = User(
+            id=user_id,
+            email=claims.get("email", "dev@example.com"),
+            username=claims.get("username", "dev-user"),
+            password_hash="mock_dev_user",
+            is_active=True
+        )
+        db.add(mock_user)
+        try:
+            db.commit()
+            db.refresh(mock_user)
+            return mock_user
+        except Exception:
+            # If user already exists or other error, query again
+            db.rollback()
+            user = db.query(User).filter_by(id=user_id).first()
+            if user:
+                return user
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found",
+            )
+    
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

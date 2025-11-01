@@ -658,6 +658,16 @@ def validate_access_token(token: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
     Returns:
         Tuple of (is_valid, claims_dict)
     """
+    # Development: Accept mock tokens (start with "mock_jwt_token_")
+    if token.startswith("mock_jwt_token_"):
+        # Return mock claims for development
+        return (True, {
+            "user_id": "mock_user_dev_12345",
+            "email": "dev@example.com",
+            "username": "dev-user",
+            "type": "access"
+        })
+    
     try:
         claims = JWTTokenManager.verify_token(token, TokenType.ACCESS)
         return (True, claims)

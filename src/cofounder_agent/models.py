@@ -63,10 +63,10 @@ class User(Base):
     metadata_ = Column('metadata', JSONB, default={})
     
     # Relationships
-    roles = relationship("UserRole", back_populates="user", cascade="all, delete-orphan")
+    roles = relationship("UserRole", back_populates="user", cascade="all, delete-orphan", foreign_keys="UserRole.user_id")
     sessions = relationship("Session", back_populates="user", cascade="all, delete-orphan")
     api_keys = relationship("APIKey", back_populates="user", cascade="all, delete-orphan")
-    created_users = relationship("User", remote_side=[created_by])
+    created_users = relationship("User", remote_side=[created_by], foreign_keys=[created_by])
     
     @validates('email')
     def validate_email(self, key, value):
@@ -179,9 +179,10 @@ class UserRole(Base):
     assigned_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     assigned_by = Column(PG_UUID(as_uuid=True), ForeignKey('users.id'))
     
-    # Relationships
-    user = relationship("User", back_populates="roles")
+    # Relationships - explicitly specify foreign_keys to avoid ambiguity
+    user = relationship("User", back_populates="roles", foreign_keys=[user_id])
     role = relationship("Role", back_populates="users")
+    assigned_by_user = relationship("User", foreign_keys=[assigned_by])
 
 
 class Session(Base):
