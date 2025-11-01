@@ -26,11 +26,11 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 env_local_path = os.path.join(project_root, '.env.local')
 if os.path.exists(env_local_path):
     load_dotenv(env_local_path, override=True)
-    print(f"✅ Loaded .env.local from {env_local_path}")
+    print(f"[+] Loaded .env.local from {env_local_path}")
 else:
     # Fallback to .env.local in current directory
     load_dotenv('.env.local', override=True)
-    print("✅ Loaded .env.local from current directory")
+    print("[+] Loaded .env.local from current directory")
 
 # Add the cofounder_agent directory to the Python path for relative imports
 sys.path.insert(0, os.path.dirname(__file__))
@@ -48,6 +48,8 @@ from routes.auth import router as github_oauth_router
 from routes.auth_routes import router as auth_router
 from routes.settings_routes import router as settings_router
 from routes.command_queue_routes import router as command_queue_router
+from routes.chat_routes import router as chat_router
+from routes.ollama_routes import router as ollama_router
 from routes.task_routes import router as task_router
 from routes.webhooks import webhook_router
 
@@ -164,6 +166,12 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 logger.warning(f"  ⚠️ Database health check failed: {e}", exc_info=True)
         
+        # 6. Register database service with route modules
+        if database_service:
+            from routes.task_routes import set_db_service
+            set_db_service(database_service)
+            logger.info("  ✅ Database service registered with routes")
+        
         logger.info("✅ Application started successfully!")
         logger.info(f"  - Database Service: {database_service is not None}")
         logger.info(f"  - Orchestrator: {orchestrator is not None}")
@@ -234,6 +242,8 @@ app.include_router(content_router)
 app.include_router(models_router)
 app.include_router(settings_router)  # Settings management
 app.include_router(command_queue_router)  # Command queue (replaces Pub/Sub)
+app.include_router(chat_router)  # Chat and AI model integration
+app.include_router(ollama_router)  # Ollama health checks and warm-up
 app.include_router(webhook_router)  # Webhook handlers for Strapi events
 
 # ===== UNIFIED HEALTH CHECK ENDPOINT =====
@@ -300,6 +310,54 @@ async def api_health():
         return {
             "status": "unhealthy",
             "service": "cofounder-agent",
+            "error": str(e)
+        }
+
+@app.get("/api/metrics")
+async def get_metrics():
+    """
+    Aggregated task and system metrics endpoint.
+    
+    Returns comprehensive metrics for the oversight dashboard:
+    - Task statistics (total, completed, failed, pending)
+    - Success rate percentage
+    - Average execution time
+    - Estimated costs
+    
+    **Returns:**
+    - total_tasks: Total number of tasks created
+    - completed_tasks: Successfully completed tasks
+    - failed_tasks: Failed tasks
+    - pending_tasks: Queued or in-progress tasks
+    - success_rate: Success percentage (0-100)
+    - avg_execution_time: Average task duration in seconds
+    - total_cost: Estimated total cost in USD
+    """
+    try:
+        if database_service:
+            metrics = await database_service.get_metrics()
+            return metrics
+        else:
+            # Return mock metrics if database unavailable
+            return {
+                "total_tasks": 0,
+                "completed_tasks": 0,
+                "failed_tasks": 0,
+                "pending_tasks": 0,
+                "success_rate": 0.0,
+                "avg_execution_time": 0.0,
+                "total_cost": 0.0
+            }
+    except Exception as e:
+        logger.error(f"Metrics retrieval failed: {e}", exc_info=True)
+        return {
+            "total_tasks": 0,
+            "completed_tasks": 0,
+            "failed_tasks": 0,
+            "pending_tasks": 0,
+            "success_rate": 0.0,
+            "avg_execution_time": 0.0,
+            "total_cost": 0.0,
             "error": str(e)
         }
 

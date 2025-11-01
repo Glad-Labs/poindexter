@@ -29,7 +29,7 @@ Compiler can't render element of type ARRAY
 Added to `.env.local`:
 
 ```bash
-DATABASE_URL=postgresql://postgres:Glad3221@localhost:5432/glad_labs_dev
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/glad_labs_dev
 ```
 
 **What this does:**
@@ -132,7 +132,7 @@ Check your actual PostgreSQL password:
 
 ```bash
 # Update DATABASE_URL with correct password
-# Current: postgresql://postgres:Glad3221@localhost:5432/glad_labs_dev
+# Current: postgresql://postgres:postgres@localhost:5432/glad_labs_dev
 ```
 
 ### Issue: "Database 'glad_labs_dev' does not exist"
@@ -194,12 +194,12 @@ npm run dev:smartstart
 
 ## 💾 .env.local Configuration Checklist
 
-✅ `DATABASE_URL=postgresql://postgres:Glad3221@localhost:5432/glad_labs_dev`  
+✅ `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/glad_labs_dev`  
 ✅ `DATABASE_HOST=localhost`  
 ✅ `DATABASE_PORT=5432`  
 ✅ `DATABASE_NAME=glad_labs_dev`  
 ✅ `DATABASE_USER=postgres`  
-✅ `DATABASE_PASSWORD=Glad3221`  
+✅ `DATABASE_PASSWORD=postgres`  
 ✅ `COFOUNDER_AGENT_PORT=8000`  
 ✅ `STRAPI_PORT=1337`
 

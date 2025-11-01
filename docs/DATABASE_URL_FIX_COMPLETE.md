@@ -91,7 +91,7 @@ print('DATABASE_CLIENT:', os.getenv('DATABASE_CLIENT'))
 "
 
 # Output:
-DATABASE_URL: postgresql://postgres:Glad3221@localhost:5432/glad_labs_dev
+DATABASE_URL: postgresql://postgres:postgres@localhost:5432/glad_labs_dev
 DATABASE_CLIENT: postgres
 ```
 
@@ -119,7 +119,7 @@ DATABASE_CLIENT: postgres
 
 ```bash
 # Critical for Co-Founder Agent
-DATABASE_URL=postgresql://postgres:Glad3221@localhost:5432/glad_labs_dev
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/glad_labs_dev
 
 # Also configured:
 DATABASE_CLIENT=postgres
@@ -127,7 +127,7 @@ DATABASE_HOST=localhost
 DATABASE_PORT=5432
 DATABASE_NAME=glad_labs_dev
 DATABASE_USER=postgres
-DATABASE_PASSWORD=Glad3221
+DATABASE_PASSWORD=postgres
 
 # ... other settings for Strapi, ports, API tokens, etc.
 ```
@@ -240,7 +240,7 @@ The code now respects `DATABASE_URL` environment variable in all environments!
 
 ```bash
 # 1. Environment variables loaded
-✅ DATABASE_URL: postgresql://postgres:Glad3221@localhost:5432/glad_labs_dev
+✅ DATABASE_URL: postgresql://postgres:postgres@localhost:5432/glad_labs_dev
 
 # 2. Server starts
 ✅ INFO: Application startup complete
