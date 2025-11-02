@@ -25,6 +25,7 @@ The Strapi v5 CMS backend provides:
 - **Database:** PostgreSQL for production, SQLite for development
 
 **Content served to:**
+
 - Public Site (Next.js) - https://example.com
 - Oversight Hub (React) - https://admin.example.com/dashboard
 - AI Agents (FastAPI) - For content publishing and metadata

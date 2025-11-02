@@ -103,34 +103,40 @@ GLAD Labs includes both general-purpose agents (Financial, Market, Compliance) a
 **6-Agent Self-Critiquing Architecture:**
 
 #### 1. Research Agent
+
 - Gathers background information on topics
 - Identifies key points and sources
 - Provides factual foundation for content
 
 #### 2. Creative Agent
+
 - Generates initial draft content based on research
 - Creates outlines, body text, and conclusions
 - Applies brand voice and style guidelines
 
 #### 3. QA Agent (Quality Assurance & Critique)
+
 - Evaluates content quality against criteria
 - Provides specific feedback for improvement
 - Suggests edits without rewriting
 - Identifies gaps or inconsistencies
 
 #### 4. Creative Agent (Refinement Loop)
+
 - Receives feedback from QA Agent
 - Incorporates suggestions into refined content
 - Maintains voice while improving quality
 - Returns to QA Agent if needed for iteration
 
 #### 5. Image Agent
+
 - Selects or generates relevant visual assets
 - Optimizes images for web
 - Provides alt text and metadata
 - Ensures visual consistency
 
 #### 6. Publishing Agent
+
 - Formats content for Strapi CMS
 - Adds SEO metadata (title, description, keywords)
 - Creates structured frontmatter
@@ -145,7 +151,7 @@ async def generate_blog_post(topic: str):
     research_data = await research_agent.execute({
         "topic": topic
     })
-    
+
     # 2. Create initial draft
     draft = await creative_agent.execute({
         "topic": topic,
@@ -153,13 +159,13 @@ async def generate_blog_post(topic: str):
         "style": "professional",
         "length": "2000 words"
     })
-    
+
     # 3. QA critique
     feedback = await qa_agent.execute({
         "content": draft,
         "criteria": ["clarity", "accuracy", "engagement", "length"]
     })
-    
+
     # 4. Refinement (with feedback loop)
     if feedback.needs_improvement:
         refined = await creative_agent.execute({
@@ -169,14 +175,14 @@ async def generate_blog_post(topic: str):
             "revise": True
         })
         draft = refined
-    
+
     # 5. Image selection
     images = await image_agent.execute({
         "content": draft,
         "topic": topic,
         "count": 3
     })
-    
+
     # 6. Format for publishing
     published = await publishing_agent.execute({
         "content": draft,
@@ -187,7 +193,7 @@ async def generate_blog_post(topic: str):
         },
         "target": "strapi-cms"
     })
-    
+
     return published
 ```
 
@@ -472,15 +478,15 @@ AGENT_CONFIG = {
 ### Agent Capabilities Matrix
 
 | Agent      | Blog Posts | Research | QA/Critique | Publishing | Image Selection |
-| ---------- | ---------- | -------- | ----------- | ----------- | --------------- |
-| Research   | ⚠️         | ✅       | ❌          | ❌          | ❌              |
-| Creative   | ✅         | ❌       | ❌          | ❌          | ❌              |
-| QA         | ❌         | ❌       | ✅          | ❌          | ❌              |
-| Image      | ❌         | ❌       | ❌          | ❌          | ✅              |
-| Publishing | ❌         | ❌       | ❌          | ✅          | ❌              |
-| Financial  | ❌         | ❌       | ❌          | ❌          | ❌              |
-| Market     | ⚠️         | ✅       | ⚠️          | ❌          | ❌              |
-| Compliance | ❌         | ✅       | ⚠️          | ⚠️          | ❌              |
+| ---------- | ---------- | -------- | ----------- | ---------- | --------------- |
+| Research   | ⚠️         | ✅       | ❌          | ❌         | ❌              |
+| Creative   | ✅         | ❌       | ❌          | ❌         | ❌              |
+| QA         | ❌         | ❌       | ✅          | ❌         | ❌              |
+| Image      | ❌         | ❌       | ❌          | ❌         | ✅              |
+| Publishing | ❌         | ❌       | ❌          | ✅         | ❌              |
+| Financial  | ❌         | ❌       | ❌          | ❌         | ❌              |
+| Market     | ⚠️         | ✅       | ⚠️          | ❌         | ❌              |
+| Compliance | ❌         | ✅       | ⚠️          | ⚠️         | ❌              |
 
 ---
 

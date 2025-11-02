@@ -172,13 +172,13 @@ Agents are executed in parallel when possible using `asyncio.gather()`:
 async def execute_request(request):
     # Decompose request into tasks
     tasks = decompose(request)
-    
+
     # Execute in parallel
     results = await asyncio.gather(*[
         self.agents[task.type].execute(task)
         for task in tasks
     ])
-    
+
     # Aggregate results
     return aggregate(results)
 ```
@@ -190,11 +190,13 @@ async def execute_request(request):
 ### Types of Memory
 
 **Short-term (Session):**
+
 - Current conversation context
 - Recent interactions (TTL: 1 hour)
 - Contextual information for current task
 
 **Long-term (Persistent):**
+
 - Learned patterns and preferences
 - Historical data and facts
 - User preferences and settings
@@ -236,22 +238,22 @@ The model router automatically selects providers in this order:
    ├─ No latency ✅
    ├─ Full privacy ✅
    └─ GPU acceleration (CUDA/Metal) ✅
-   
+
 2. Claude 3 Opus (Anthropic)
    ├─ Best quality for writing ✅
    ├─ Superior reasoning ✅
    └─ Excellent for content generation ✅
-   
+
 3. GPT-4 (OpenAI)
    ├─ Consistent performance ✅
    ├─ Great for analysis ✅
    └─ Good cost/quality balance ✅
-   
+
 4. Gemini Pro (Google)
    ├─ Lower cost ✅
    ├─ Fast responses ✅
    └─ Good for most tasks ✅
-   
+
 5. Fallback Model
    └─ Ensures system availability ✅
 ```
@@ -608,13 +610,13 @@ curl http://localhost:8000/api/agents/logs?level=error&limit=10
 
 ### Key Metrics to Monitor
 
-| Metric | Alert Threshold | Endpoint |
-|--------|-----------------|----------|
-| API Response Time (p95) | >2s | `/api/metrics` |
-| Error Rate | >1% | `/api/metrics` |
-| Memory Usage | >500MB | `/api/memory/stats` |
-| Agent Execution Time | >5 min | `/api/tasks/{id}` |
-| Model Fallback Chain Exhausted | Any | `/api/models/status` |
+| Metric                         | Alert Threshold | Endpoint             |
+| ------------------------------ | --------------- | -------------------- |
+| API Response Time (p95)        | >2s             | `/api/metrics`       |
+| Error Rate                     | >1%             | `/api/metrics`       |
+| Memory Usage                   | >500MB          | `/api/memory/stats`  |
+| Agent Execution Time           | >5 min          | `/api/tasks/{id}`    |
+| Model Fallback Chain Exhausted | Any             | `/api/models/status` |
 
 ---
 
@@ -632,5 +634,3 @@ curl http://localhost:8000/api/agents/logs?level=error&limit=10
 **Maintained by:** GLAD Labs Development Team  
 **Last Updated:** October 26, 2025  
 **Status:** ✅ Production Ready | PostgreSQL Backend | Multi-Provider LLM Support
-
-

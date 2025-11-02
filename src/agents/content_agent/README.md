@@ -12,6 +12,7 @@
 **This is NOT dead code.** The content agent system is a **fully integrated, production-ready** component of GLAD Labs that orchestrates sophisticated AI-powered content creation through a self-critiquing pipeline.
 
 **DO NOT REMOVE** - This system is actively used for:
+
 - Blog post generation with quality feedback loops
 - Multi-format content creation (markdown, HTML, JSON)
 - SEO-optimized content with metadata
@@ -29,6 +30,7 @@ Research → Creative → QA Critique → Creative Refinement → Image → Publ
 ```
 
 **Key Features:**
+
 - ✅ Self-evaluating: QA Agent provides feedback for continuous improvement
 - ✅ Modular: Use full pipeline OR individual agents
 - ✅ Multi-provider: Automatic LLM fallback (Ollama → Claude → GPT → Gemini)
@@ -240,16 +242,16 @@ AGENT_MODELS = {
 
 ## 📈 Performance Metrics
 
-| Stage | Target Time | Note |
-|-------|-------------|------|
-| Research | <30s | Varies by topic |
-| Creative (initial) | <60s | Writing takes time |
-| QA Evaluation | <15s | Typically quick |
-| Creative (refinement) | <30s | With feedback |
-| Image Selection | <10s | Pre-vetted pool |
-| Publishing | <5s | Direct API call |
-| **Total (no refinement)** | ~2 min 30s | Linear execution |
-| **Total (1 refinement)** | ~3 min | Feedback loop |
+| Stage                     | Target Time | Note               |
+| ------------------------- | ----------- | ------------------ |
+| Research                  | <30s        | Varies by topic    |
+| Creative (initial)        | <60s        | Writing takes time |
+| QA Evaluation             | <15s        | Typically quick    |
+| Creative (refinement)     | <30s        | With feedback      |
+| Image Selection           | <10s        | Pre-vetted pool    |
+| Publishing                | <5s         | Direct API call    |
+| **Total (no refinement)** | ~2 min 30s  | Linear execution   |
+| **Total (1 refinement)**  | ~3 min      | Feedback loop      |
 
 ---
 
@@ -289,6 +291,7 @@ curl http://localhost:11434/api/tags
 **Status:** ✅ ACTIVE & PRODUCTION-READY  
 **Maintained by:** GLAD Labs Development Team  
 **Last Updated:** October 26, 2025
+
 - **Output**: Approved content or specific improvement feedback
 
 #### **4. Image Agent**

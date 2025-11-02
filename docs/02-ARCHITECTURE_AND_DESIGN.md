@@ -170,23 +170,23 @@
 
 ### Infrastructure & Services
 
-| Service           | Provider/Tech                          | Purpose                        | Status       |
-| ----------------- | -------------------------------------- | ------------------------------ | ------------ |
-| **Database**      | PostgreSQL (prod) / SQLite (local)     | Content and operational data   | ✅ Active    |
-| **Cache**         | Redis                                  | Session management and caching | ✅ Available |
-| **Storage**       | File system / Cloud Storage            | Media files and assets         | ✅ Active    |
-| **Task Queue**    | REST API + async workers (dev/prod)    | Async task processing          | ✅ Active    |
-| **Deployment**    | Railway (backend) / Vercel (frontend)  | Cloud hosting                  | ✅ Active    |
-| **Monitoring**    | Application Insights (optional)        | Performance monitoring         | ⏳ Optional  |
+| Service        | Provider/Tech                         | Purpose                        | Status       |
+| -------------- | ------------------------------------- | ------------------------------ | ------------ |
+| **Database**   | PostgreSQL (prod) / SQLite (local)    | Content and operational data   | ✅ Active    |
+| **Cache**      | Redis                                 | Session management and caching | ✅ Available |
+| **Storage**    | File system / Cloud Storage           | Media files and assets         | ✅ Active    |
+| **Task Queue** | REST API + async workers (dev/prod)   | Async task processing          | ✅ Active    |
+| **Deployment** | Railway (backend) / Vercel (frontend) | Cloud hosting                  | ✅ Active    |
+| **Monitoring** | Application Insights (optional)       | Performance monitoring         | ⏳ Optional  |
 
 ### AI Model Providers (Multi-Provider Support)
 
-| Provider      | Models                         | Cost         | Setup          | Speed      | Priority |
-| ------------- | ------------------------------ | ------------ | -------------- | ---------- | -------- |
-| **Ollama**    | Mistral, Llama3.2, Phi, etc.   | 🟢 Free      | Easy (Local)   | 🟡 Vary    | 🥇 #1    |
-| **Anthropic** | Claude 3 (Opus, Sonnet, Haiku) | 🟠 Paid      | Easy (API key) | 🟢 Fast    | 🥈 #2    |
-| **OpenAI**    | GPT-4, GPT-4o, GPT-3.5         | 🟠 Paid      | Easy (API key) | 🟢 Fast    | 🥉 #3    |
-| **Google**    | Gemini Pro, Gemini 2.0         | 🟡 Free+Paid | Easy (API key) | 🟢 Fast    | #4       |
+| Provider      | Models                         | Cost         | Setup          | Speed   | Priority |
+| ------------- | ------------------------------ | ------------ | -------------- | ------- | -------- |
+| **Ollama**    | Mistral, Llama3.2, Phi, etc.   | 🟢 Free      | Easy (Local)   | 🟡 Vary | 🥇 #1    |
+| **Anthropic** | Claude 3 (Opus, Sonnet, Haiku) | 🟠 Paid      | Easy (API key) | 🟢 Fast | 🥈 #2    |
+| **OpenAI**    | GPT-4, GPT-4o, GPT-3.5         | 🟠 Paid      | Easy (API key) | 🟢 Fast | 🥉 #3    |
+| **Google**    | Gemini Pro, Gemini 2.0         | 🟡 Free+Paid | Easy (API key) | 🟢 Fast | #4       |
 
 **Fallback Chain (Automatic):** Ollama (local) → Claude 3 Opus → GPT-4 → Gemini → Fallback model
 

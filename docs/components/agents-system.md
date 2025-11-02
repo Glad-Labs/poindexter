@@ -11,6 +11,7 @@
 The GLAD Labs agent system is an **active, production-ready** component orchestrating sophisticated AI-powered business operations through a self-critiquing pipeline architecture. This guide explains how agents integrate with the Co-Founder orchestrator and Strapi CMS.
 
 **Key Points:**
+
 - ✅ **Active System:** Not legacy code - fully integrated and in active use
 - ✅ **Self-Critiquing:** Agents evaluate each other's work and provide feedback
 - ✅ **Modular Design:** Use entire pipeline OR individual agents independently
@@ -146,6 +147,7 @@ POST /api/content/generate-blog-post
 ```
 
 **Flow:**
+
 1. Research Agent gathers industry data
 2. Creative Agent writes initial draft
 3. QA Agent evaluates and provides feedback
@@ -155,6 +157,7 @@ POST /api/content/generate-blog-post
 7. Content automatically published to CMS
 
 **Response:**
+
 ```json
 {
   "status": "published",
@@ -304,15 +307,15 @@ const { tasks, setTasks } = useStore();
 // Poll agent status
 useEffect(() => {
   const interval = setInterval(async () => {
-    const status = await fetch('/api/agents/status').then(r => r.json());
+    const status = await fetch('/api/agents/status').then((r) => r.json());
     setAgentStatus(status);
   }, 2000);
-  
+
   return () => clearInterval(interval);
 }, []);
 
 // Display in UI
-<AgentMonitorPanel agents={agentStatus} />
+<AgentMonitorPanel agents={agentStatus} />;
 ```
 
 ---
@@ -320,17 +323,18 @@ useEffect(() => {
 ## 📊 Agent Capabilities Matrix
 
 | Agent          | Blog Posts | Research | QA/Critique | Image Selection | Publishing | Financial | Market Analysis |
-| -------------- | ---------- | -------- | ----------- | --------------- | ----------- | --------- | --------------- |
-| **Research**   | ⚠️         | ✅       | ❌          | ❌              | ❌          | ❌        | ✅              |
-| **Creative**   | ✅         | ❌       | ❌          | ❌              | ❌          | ❌        | ⚠️              |
-| **QA**         | ❌         | ❌       | ✅          | ❌              | ❌          | ❌        | ❌              |
-| **Image**      | ❌         | ❌       | ❌          | ✅              | ❌          | ❌        | ❌              |
-| **Publishing** | ❌         | ❌       | ❌          | ❌              | ✅          | ❌        | ❌              |
-| **Financial**  | ❌         | ⚠️       | ❌          | ❌              | ⚠️          | ✅        | ⚠️              |
-| **Market**     | ⚠️         | ✅       | ⚠️          | ❌              | ❌          | ⚠️        | ✅              |
-| **Compliance** | ⚠️         | ✅       | ⚠️          | ❌              | ⚠️          | ❌        | ❌              |
+| -------------- | ---------- | -------- | ----------- | --------------- | ---------- | --------- | --------------- |
+| **Research**   | ⚠️         | ✅       | ❌          | ❌              | ❌         | ❌        | ✅              |
+| **Creative**   | ✅         | ❌       | ❌          | ❌              | ❌         | ❌        | ⚠️              |
+| **QA**         | ❌         | ❌       | ✅          | ❌              | ❌         | ❌        | ❌              |
+| **Image**      | ❌         | ❌       | ❌          | ✅              | ❌         | ❌        | ❌              |
+| **Publishing** | ❌         | ❌       | ❌          | ❌              | ✅         | ❌        | ❌              |
+| **Financial**  | ❌         | ⚠️       | ❌          | ❌              | ⚠️         | ✅        | ⚠️              |
+| **Market**     | ⚠️         | ✅       | ⚠️          | ❌              | ❌         | ⚠️        | ✅              |
+| **Compliance** | ⚠️         | ✅       | ⚠️          | ❌              | ⚠️         | ❌        | ❌              |
 
 **Legend:**
+
 - ✅ Primary capability
 - ⚠️ Secondary or supporting capability
 - ❌ Not applicable
@@ -439,13 +443,13 @@ curl -X POST http://localhost:8000/api/content/generate-blog-post \
 
 ### Key Metrics
 
-| Metric | Target | Monitor |
-| ------ | ------ | ------- |
-| Research Time | <30s | Agent logs |
-| Creative Writing | <60s | Agent logs |
-| QA Evaluation | <15s | Agent logs |
-| Image Selection | <10s | Agent logs |
-| Publishing | <5s | Agent logs |
+| Metric             | Target | Monitor           |
+| ------------------ | ------ | ----------------- |
+| Research Time      | <30s   | Agent logs        |
+| Creative Writing   | <60s   | Agent logs        |
+| QA Evaluation      | <15s   | Agent logs        |
+| Image Selection    | <10s   | Agent logs        |
+| Publishing         | <5s    | Agent logs        |
 | **Total Pipeline** | <2 min | `/api/tasks/{id}` |
 
 ### Monitoring Commands
@@ -473,6 +477,7 @@ curl http://localhost:8000/api/models/status
 **Symptom:** "Agent timeout" or "Connection refused"
 
 **Solution:**
+
 ```bash
 # 1. Check agent is running
 curl http://localhost:8000/api/agents/status
@@ -489,6 +494,7 @@ npm run dev:cofounder
 **Symptom:** "All models in fallback chain failed"
 
 **Solution:**
+
 ```bash
 # 1. Check which models are available
 curl http://localhost:8000/api/models/test-all
@@ -508,6 +514,7 @@ ollama pull mistral
 **Symptom:** "QA rejection rate >30%" or feedback loops >3
 
 **Solution:**
+
 ```bash
 # 1. Check agent logs
 curl http://localhost:8000/api/agents/logs?agent=qa&limit=50
