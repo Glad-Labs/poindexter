@@ -175,18 +175,20 @@
 | **Database**      | PostgreSQL (prod) / SQLite (local)     | Content and operational data   | ✅ Active    |
 | **Cache**         | Redis                                  | Session management and caching | ✅ Available |
 | **Storage**       | File system / Cloud Storage            | Media files and assets         | ✅ Active    |
-| **Message Queue** | In-memory (dev) / Cloud Pub/Sub (prod) | Async task processing          | ✅ Available |
+| **Task Queue**    | REST API + async workers (dev/prod)    | Async task processing          | ✅ Active    |
 | **Deployment**    | Railway (backend) / Vercel (frontend)  | Cloud hosting                  | ✅ Active    |
 | **Monitoring**    | Application Insights (optional)        | Performance monitoring         | ⏳ Optional  |
 
 ### AI Model Providers (Multi-Provider Support)
 
-| Provider      | Models                         | Cost         | Setup          | Speed   |
-| ------------- | ------------------------------ | ------------ | -------------- | ------- |
-| **Ollama**    | Mistral, Llama3.2, Phi, etc.   | 🟢 Free      | Easy (Local)   | 🟡 Slow |
-| **OpenAI**    | GPT-4, GPT-4o, GPT-3.5         | 🟠 Paid      | Easy (API key) | 🟢 Fast |
-| **Anthropic** | Claude 3 (Opus, Sonnet, Haiku) | 🟠 Paid      | Easy (API key) | 🟢 Fast |
-| **Google**    | Gemini Pro, Gemini 2.0         | 🟡 Free+Paid | Easy (API key) | 🟢 Fast |
+| Provider      | Models                         | Cost         | Setup          | Speed      | Priority |
+| ------------- | ------------------------------ | ------------ | -------------- | ---------- | -------- |
+| **Ollama**    | Mistral, Llama3.2, Phi, etc.   | 🟢 Free      | Easy (Local)   | 🟡 Vary    | 🥇 #1    |
+| **Anthropic** | Claude 3 (Opus, Sonnet, Haiku) | 🟠 Paid      | Easy (API key) | 🟢 Fast    | 🥈 #2    |
+| **OpenAI**    | GPT-4, GPT-4o, GPT-3.5         | 🟠 Paid      | Easy (API key) | 🟢 Fast    | 🥉 #3    |
+| **Google**    | Gemini Pro, Gemini 2.0         | 🟡 Free+Paid | Easy (API key) | 🟢 Fast    | #4       |
+
+**Fallback Chain (Automatic):** Ollama (local) → Claude 3 Opus → GPT-4 → Gemini → Fallback model
 
 ---
 
@@ -361,7 +363,59 @@ GET  /api/categories               # List categories
 GET  /api/tags                     # List tags
 ```
 
-### 4. AI Co-Founder (FastAPI Backend)
+### 4. Agent System Architecture (Self-Critiquing Pipeline)
+
+**Location:** `src/agents/content_agent/`
+
+**Purpose:** Modular AI agents for specialized tasks with self-critique feedback loops
+
+**Key Features:**
+
+- Self-critiquing pipeline: Creative generation → QA evaluation → Feedback → Refinement
+- Individual agent capabilities: Research, Creative, Images, Publishing, QA, Summarizer
+- Model fallback chain: Claude 3 Opus → GPT-4 → Gemini → Ollama (local, zero-cost)
+- Modular usage: End-to-end blog generation OR individual agent access
+- Output formatting: Markdown + SEO assets + Strapi CMS compatible
+
+**Core Agents:**
+
+```python
+# Agent roles and responsibilities
+- CreativeAgent: Content generation with style consistency
+- ResearchAgent: Topic research and fact gathering
+- ImageAgent: Image selection and optimization
+- PublishingAgent: Strapi CMS formatting and publishing
+- QAAgent: Quality evaluation and improvement suggestions
+- SummarizerAgent: Extract key points and outline creation
+```
+
+**Self-Critiquing Pipeline Flow:**
+
+```text
+1. Input: Topic/Request
+   ↓
+2. ResearchAgent → Research data
+   ↓
+3. CreativeAgent → Draft content
+   ↓
+4. QAAgent → Evaluate & critique
+   ↓
+5. CreativeAgent (with feedback) → Refined content
+   ↓
+6. ImageAgent → Select visual assets
+   ↓
+7. PublishingAgent → Format for CMS
+   ↓
+8. Output: Publication-ready content
+```
+
+**Usage Patterns:**
+
+- **End-to-end:** POST `/api/content/generate-blog-post` → Full pipeline
+- **Individual agents:** POST `/api/agents/{agent-name}` → Specific capability
+- **Custom workflows:** Combine agents in any order for flexible pipelines
+
+### 5. AI Co-Founder (FastAPI Backend)
 
 **Location:** `src/cofounder_agent/`
 
@@ -380,7 +434,7 @@ GET  /api/tags                     # List tags
 #### Model Router (`services/model_router.py`)
 
 - Multi-provider AI orchestration
-- Automatic provider fallback
+- Automatic provider fallback (Claude → GPT → Gemini → Ollama)
 - Cost tracking and optimization
 - Rate limiting
 - Token counting

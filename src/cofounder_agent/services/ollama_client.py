@@ -286,9 +286,20 @@ class OllamaClient:
         """
         model = model or self.model
         
+        # Convert messages to prompt string format for Ollama
+        prompt = ""
+        for msg in messages:
+            role = msg.get('role', 'user')
+            content = msg.get('content', '')
+            if role == 'user':
+                prompt += f"User: {content}\n"
+            elif role == 'assistant':
+                prompt += f"Assistant: {content}\n"
+        prompt += "Assistant: "
+        
         payload = {
             "model": model,
-            "messages": messages,
+            "prompt": prompt,
             "stream": False,
             "options": {
                 "temperature": temperature,
@@ -301,14 +312,24 @@ class OllamaClient:
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    f"{self.base_url}/api/chat",
+                    f"{self.base_url}/api/generate",
                     json=payload,
                     timeout=self.timeout
                 )
                 response.raise_for_status()
                 
                 result = response.json()
-                message = result.get('message', {})
+                
+                # Extract only the assistant response (remove the prompt we sent)
+                full_response = result.get('response', '')
+                
+                # Extract just the assistant's response (after "Assistant: ")
+                if "Assistant: " in full_response:
+                    # Get everything after the last "Assistant: "
+                    parts = full_response.split("Assistant: ")
+                    assistant_response = parts[-1].strip()
+                else:
+                    assistant_response = full_response.strip()
                 
                 logger.info(
                     "Ollama chat complete",
@@ -318,8 +339,8 @@ class OllamaClient:
                 )
                 
                 return {
-                    "role": message.get('role', 'assistant'),
-                    "content": message.get('content', ''),
+                    "role": "assistant",
+                    "content": assistant_response,
                     "model": model,
                     "tokens": result.get('eval_count', 0),
                     "prompt_tokens": result.get('prompt_eval_count', 0),

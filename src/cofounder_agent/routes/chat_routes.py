@@ -12,7 +12,7 @@ from typing import Optional, Dict, Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from datetime import datetime
-from src.cofounder_agent.services.ollama_client import OllamaClient
+from services.ollama_client import OllamaClient
 
 logger = logging.getLogger(__name__)
 
@@ -105,13 +105,16 @@ async def chat(request: ChatRequest) -> ChatResponse:
         if request.model == "ollama":
             # Use local Ollama
             try:
+                # Map generic "ollama" to actual Ollama model
+                actual_ollama_model = "llama2"
                 chat_result = await ollama_client.chat(
                     messages=conversations[request.conversationId],
-                    model=request.model,  # Use the selected model
-                    temperature=request.temperature,
-                    max_tokens=request.max_tokens
+                    model=actual_ollama_model,
+                    temperature=request.temperature or 0.7,
+                    max_tokens=request.max_tokens or 500
                 )
-                response_text = chat_result.get("response", "No response generated")
+                # ollama_client.chat returns {"content": "...", "tokens": ...}
+                response_text = chat_result.get("content", chat_result.get("response", "No response generated"))
                 tokens_used = chat_result.get("tokens", len(response_text.split()))
             except Exception as e:
                 logger.error(f"[Chat] Ollama error: {str(e)}")

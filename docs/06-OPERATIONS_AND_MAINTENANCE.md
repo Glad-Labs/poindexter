@@ -67,6 +67,62 @@ tail -f logs/*.log
 - Resource exhaustion (>90%)
 - Failed deployments
 
+### Agent Execution Monitoring
+
+**Monitor AI agent performance and health:**
+
+```bash
+# Check all agent status
+curl https://api.example.com/api/agents/status
+# Expected: {"status": "healthy", "agents": [...], "timestamp": "..."}
+
+# Check specific agent execution
+curl https://api.example.com/api/agents/{agent-name}/status
+# Example: /api/agents/content/status
+
+# View agent memory usage
+curl https://api.example.com/api/agents/memory/stats
+
+# Check agent error logs
+curl https://api.example.com/api/agents/logs?level=error&limit=50
+
+# Monitor model router status
+curl https://api.example.com/api/models/status
+# Shows: Active providers, fallback chain, current provider usage
+```
+
+**Agent-Specific Metrics to Monitor:**
+
+- **Content Agent:** Generation speed, quality score, self-critique feedback loop time
+- **Financial Agent:** Calculation accuracy, cost tracking updates
+- **Market Agent:** Trend detection latency, accuracy score
+- **Compliance Agent:** Violation detection rate, false positive percentage
+
+**Alert Conditions for Agents:**
+
+- Any agent execution time >5 minutes (slow)
+- Model router fallback chain exhausted (all models failing)
+- Agent memory exceeding 500MB (leak detection)
+- QA agent rejection rate >30% (content quality issue)
+- Self-critique loop iterations >3 (stuck refining)
+
+**Troubleshooting Agent Issues:**
+
+```bash
+# Restart agent system
+railway redeploy --service=cofounder-agent
+
+# Check model provider connectivity
+curl https://api.example.com/api/models/test-all
+
+# View real-time agent logs
+railway logs --service=cofounder-agent --follow
+
+# Check Ollama status (if using)
+curl http://localhost:11434/api/tags
+curl http://localhost:11434/api/status
+```
+
 ---
 
 ## 💾 Backups & Recovery

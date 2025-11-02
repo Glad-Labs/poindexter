@@ -18,7 +18,9 @@
 
 ## 🏗️ Agent Architecture
 
-### Multi-Agent System
+### Self-Critiquing Pipeline System
+
+GLAD Labs implements a sophisticated self-critiquing content generation pipeline where agents evaluate each other's work and provide feedback for continuous improvement. This ensures high-quality, publication-ready content.
 
 ```text
 ┌─────────────────────────────────────────────┐
@@ -26,26 +28,35 @@
 └──────────────────┬──────────────────────────┘
                    │ REST API
 ┌──────────────────▼──────────────────────────┐
-│  AI Co-Founder Orchestrator (FastAPI)       │
+│  Co-Founder Orchestrator (FastAPI)          │
 │  - Request routing                          │
 │  - Agent coordination                       │
 │  - Task distribution                        │
 │  - Result aggregation                       │
 └──────────────────┬──────────────────────────┘
                    │
-        ┌──────────┼──────────┐
-        │          │          │
-    ┌───▼──┐  ┌───▼──┐  ┌───▼──┐
-    │Content│  │Finance│  │Market │
-    │Agent  │  │Agent  │  │Agent  │ etc.
-    └───────┘  └───────┘  └───────┘
-        │          │          │
-        └──────────┼──────────┘
-                   │
-        ┌──────────▼──────────┐
-        │ Model Router        │
-        │ (Ollama/OpenAI/etc) │
-        └─────────────────────┘
+        ┌──────────┴──────────────────────────┐
+        │                                     │
+    ┌───▼──────────────────────┐     ┌───────▼──────┐
+    │  Content Agent Pipeline  │     │  Other Agents│
+    │ (Self-Critiquing Loop)   │     │ (Financial,  │
+    │                          │     │  Market, etc)│
+    │ 1. Research Agent        │     └──────────────┘
+    │ 2. Creative Agent        │
+    │ 3. QA Agent (critique)   │
+    │ 4. Creative Agent refined│
+    │ 5. Image Agent           │
+    │ 6. Publishing Agent      │
+    │                          │
+    └───┬──────────────────────┘
+        │
+        └──────────────────────────┐
+                                   │
+        ┌──────────────────────────▼──────────┐
+        │ Model Router (Multi-Provider)       │
+        │ Ollama → Claude → GPT → Gemini      │
+        │ (Prioritized fallback chain)        │
+        └─────────────────────────────────────┘
 ```
 
 ### Agent Base Class
@@ -55,10 +66,11 @@
 from abc import ABC, abstractmethod
 
 class BaseAgent(ABC):
-    def __init__(self, name: str, model: str):
+    def __init__(self, name: str, model: str = None):
         self.name = name
-        self.model = model
+        self.model = model  # Can be overridden per agent
         self.memory = MemorySystem()
+        self.llm_client = LLMClient()  # Handles model routing
 
     @abstractmethod
     async def execute(self, task: Task) -> Result:
@@ -66,7 +78,11 @@ class BaseAgent(ABC):
         pass
 
     async def think(self, prompt: str) -> str:
-        """Query LLM with context"""
+        """Query LLM with model fallback (Ollama first)"""
+        return await self.llm_client.query(prompt, self.model)
+
+    async def critique(self, content: str, criteria: str) -> str:
+        """Provide constructive feedback"""
         pass
 
     async def remember(self, context: str) -> None:
@@ -76,32 +92,114 @@ class BaseAgent(ABC):
 
 ---
 
-## 👥 Specialized Agents
+## 👥 Specialized Agents (Content Creation Focus)
 
-### 1. Content Agent
+GLAD Labs includes both general-purpose agents (Financial, Market, Compliance) and a specialized self-critiquing content generation pipeline:
 
-**Responsibility:** Content creation and curation
+### Content Agent System (Self-Critiquing Pipeline)
 
-**Capabilities:**
+**Location:** `src/agents/content_agent/`
 
-- Blog post generation
-- Social media content
-- Email campaigns
-- SEO optimization
-- Content calendar planning
+**6-Agent Self-Critiquing Architecture:**
 
-**Example:**
+#### 1. Research Agent
+- Gathers background information on topics
+- Identifies key points and sources
+- Provides factual foundation for content
+
+#### 2. Creative Agent
+- Generates initial draft content based on research
+- Creates outlines, body text, and conclusions
+- Applies brand voice and style guidelines
+
+#### 3. QA Agent (Quality Assurance & Critique)
+- Evaluates content quality against criteria
+- Provides specific feedback for improvement
+- Suggests edits without rewriting
+- Identifies gaps or inconsistencies
+
+#### 4. Creative Agent (Refinement Loop)
+- Receives feedback from QA Agent
+- Incorporates suggestions into refined content
+- Maintains voice while improving quality
+- Returns to QA Agent if needed for iteration
+
+#### 5. Image Agent
+- Selects or generates relevant visual assets
+- Optimizes images for web
+- Provides alt text and metadata
+- Ensures visual consistency
+
+#### 6. Publishing Agent
+- Formats content for Strapi CMS
+- Adds SEO metadata (title, description, keywords)
+- Creates structured frontmatter
+- Handles markdown/rich text conversion
+
+**Self-Critiquing Pipeline Example:**
 
 ```python
-class ContentAgent(BaseAgent):
-    async def execute(self, task: Task) -> Result:
-        if task.type == "generate_blog":
-            outline = await self.think(f"Create outline for: {task.topic}")
-            content = await self.think(f"Write detailed article: {outline}")
-            return Result(content=content)
+# Execution flow
+async def generate_blog_post(topic: str):
+    # 1. Research
+    research_data = await research_agent.execute({
+        "topic": topic
+    })
+    
+    # 2. Create initial draft
+    draft = await creative_agent.execute({
+        "topic": topic,
+        "research": research_data,
+        "style": "professional",
+        "length": "2000 words"
+    })
+    
+    # 3. QA critique
+    feedback = await qa_agent.execute({
+        "content": draft,
+        "criteria": ["clarity", "accuracy", "engagement", "length"]
+    })
+    
+    # 4. Refinement (with feedback loop)
+    if feedback.needs_improvement:
+        refined = await creative_agent.execute({
+            "topic": topic,
+            "previous_draft": draft,
+            "feedback": feedback,
+            "revise": True
+        })
+        draft = refined
+    
+    # 5. Image selection
+    images = await image_agent.execute({
+        "content": draft,
+        "topic": topic,
+        "count": 3
+    })
+    
+    # 6. Format for publishing
+    published = await publishing_agent.execute({
+        "content": draft,
+        "images": images,
+        "metadata": {
+            "title": topic,
+            "seo_keywords": ["key", "words"]
+        },
+        "target": "strapi-cms"
+    })
+    
+    return published
 ```
 
-### 2. Financial Agent
+**Usage Patterns:**
+
+- **End-to-end generation:** POST `/api/content/generate-blog-post` → Full 6-agent pipeline with self-critique
+- **Individual agents:** POST `/api/agents/{research|create|qa|image|publish}` → Use specific agent
+- **Custom workflows:** Combine agents in any order for flexible content workflows
+
+### Other Specialized Agents
+
+#### 1. Financial Agent
 
 **Responsibility:** Business metrics and financial management
 
@@ -113,19 +211,7 @@ class ContentAgent(BaseAgent):
 - ROI calculations
 - Financial reporting
 
-**Example:**
-
-```python
-class FinancialAgent(BaseAgent):
-    async def execute(self, task: Task) -> Result:
-        if task.type == "calculate_roi":
-            costs = await self.query_database("SELECT * FROM costs")
-            revenue = await self.query_database("SELECT * FROM revenue")
-            roi = self.calculate_roi(revenue, costs)
-            return Result(roi=roi)
-```
-
-### 3. Market Insight Agent
+#### 2. Market Insight Agent
 
 **Responsibility:** Market analysis and trend detection
 
@@ -137,18 +223,7 @@ class FinancialAgent(BaseAgent):
 - Market gap identification
 - Opportunity detection
 
-**Example:**
-
-```python
-class MarketInsightAgent(BaseAgent):
-    async def execute(self, task: Task) -> Result:
-        if task.type == "analyze_trends":
-            trends = await self.think("Analyze current market trends in AI")
-            opportunities = await self.identify_opportunities(trends)
-            return Result(trends=trends, opportunities=opportunities)
-```
-
-### 4. Compliance Agent
+#### 3. Compliance Agent
 
 **Responsibility:** Legal and regulatory compliance
 
@@ -159,17 +234,6 @@ class MarketInsightAgent(BaseAgent):
 - Privacy policy management
 - Risk assessment
 - Legal compliance validation
-
-**Example:**
-
-```python
-class ComplianceAgent(BaseAgent):
-    async def execute(self, task: Task) -> Result:
-        if task.type == "check_gdpr":
-            content = task.data
-            violations = await self.think(f"Check for GDPR violations: {content}")
-            return Result(violations=violations)
-```
 
 ---
 
@@ -341,37 +405,82 @@ async def generate_post(self, topic: str) -> str:
 
 ## 📊 Agent Configuration
 
-### Model Selection
+### Model Fallback Chain (Prioritizes Ollama)
+
+Agents automatically route requests through this prioritized fallback chain:
+
+```text
+1. Ollama (Local, Zero-Cost)
+   ↓ [If unavailable or model not found]
+2. Claude 3 Opus (Anthropic, Best Quality)
+   ↓ [If quota exceeded or error]
+3. GPT-4 (OpenAI, Fast & Capable)
+   ↓ [If rate limited or expensive]
+4. Gemini Pro (Google, Lower Cost)
+   ↓ [If all else fails]
+5. Fallback Model (Gemini Flash or equivalent)
+```
+
+**Benefits of Ollama-First Approach:**
+
+- ✅ 100% free local inference
+- ✅ No API rate limits
+- ✅ No network latency
+- ✅ Full privacy (no data leaves your machine)
+- ✅ GPU acceleration (CUDA/Metal auto-detected)
+- ✅ Perfect for development and high-volume deployments
+
+### Model Selection per Agent
 
 ```python
 # Configure which AI model each agent uses
+# Agents inherit from LLMClient which handles fallback chain
 AGENT_CONFIG = {
-    "content": {
-        "primary_model": "gpt-4",
-        "fallback_model": "claude-3-sonnet",
-        "temperature": 0.7,
+    "research": {
+        "preferred_model": "gpt-4",  # Use search capability
+        "fallback_chain": ["claude-opus", "gpt-4", "gemini-pro", "ollama"],
+        "temperature": 0.3,  # Factual, precise
+        "max_tokens": 2000,
     },
-    "financial": {
-        "primary_model": "gpt-4",
-        "fallback_model": "gemini-pro",
-        "temperature": 0.2,  # More deterministic
+    "creative": {
+        "preferred_model": "claude-opus",  # Best for writing
+        "fallback_chain": ["gpt-4", "gemini-pro", "ollama"],
+        "temperature": 0.7,  # Creative, varied
+        "max_tokens": 3000,
     },
-    "market": {
-        "primary_model": "claude-3-opus",
-        "fallback_model": "gpt-4",
-        "temperature": 0.6,
+    "qa": {
+        "preferred_model": "gpt-4",  # Good at evaluation
+        "fallback_chain": ["claude-opus", "gemini-pro", "ollama"],
+        "temperature": 0.2,  # Analytical, precise
+        "max_tokens": 1000,
+    },
+    "image": {
+        "preferred_model": "gpt-4-vision",  # Image understanding
+        "fallback_chain": ["claude-opus", "ollama"],
+        "temperature": 0.5,
+        "max_tokens": 500,
+    },
+    "publishing": {
+        "preferred_model": "gpt-3.5",  # Fast formatting
+        "fallback_chain": ["gemini-pro", "ollama"],
+        "temperature": 0.1,  # Precise formatting
+        "max_tokens": 500,
     },
 }
 ```
 
 ### Agent Capabilities Matrix
 
-| Agent      | Blog Posts | Reports | Compliance | Trend Analysis | Cost Tracking |
-| ---------- | ---------- | ------- | ---------- | -------------- | ------------- |
-| Content    | ✅         | ✅      | ⚠️         | ⚠️             | ❌            |
-| Financial  | ❌         | ✅      | ❌         | ❌             | ✅            |
-| Market     | ⚠️         | ⚠️      | ❌         | ✅             | ❌            |
-| Compliance | ❌         | ⚠️      | ✅         | ❌             | ❌            |
+| Agent      | Blog Posts | Research | QA/Critique | Publishing | Image Selection |
+| ---------- | ---------- | -------- | ----------- | ----------- | --------------- |
+| Research   | ⚠️         | ✅       | ❌          | ❌          | ❌              |
+| Creative   | ✅         | ❌       | ❌          | ❌          | ❌              |
+| QA         | ❌         | ❌       | ✅          | ❌          | ❌              |
+| Image      | ❌         | ❌       | ❌          | ❌          | ✅              |
+| Publishing | ❌         | ❌       | ❌          | ✅          | ❌              |
+| Financial  | ❌         | ❌       | ❌          | ❌          | ❌              |
+| Market     | ⚠️         | ✅       | ⚠️          | ❌          | ❌              |
+| Compliance | ❌         | ✅       | ⚠️          | ⚠️          | ❌              |
 
 ---
 
