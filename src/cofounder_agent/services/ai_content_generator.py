@@ -248,7 +248,8 @@ Improved version:"""
                 ollama = OllamaClient()
                 
                 # Try best model for RTX 5070 first
-                for model_name in ["neural-chat:13b", "mistral:13b", "neural-chat:7b", "mistral:7b"]:
+                # Use available models: neural-chat:latest, mistral:latest, llama2:latest, etc.
+                for model_name in ["neural-chat:latest", "mistral:latest", "llama2:latest", "qwen2.5:14b"]:
                     try:
                         logger.debug(f"Trying Ollama model: {model_name}")
                         metrics["generation_attempts"] += 1
@@ -322,7 +323,7 @@ Improved version:"""
                                     generated_content = refined_content  # Use refined for next check
                             
                             # If still not passing after refinement, return best attempt
-                            if metrics["generation_attempts"] == len(["neural-chat:13b", "mistral:13b", "neural-chat:7b", "mistral:7b"]):
+                            if metrics["generation_attempts"] == len(["neural-chat:latest", "mistral:latest", "llama2:latest", "qwen2.5:14b"]):
                                 metrics["model_used"] = f"Ollama - {model_name} (below threshold)"
                                 metrics["final_quality_score"] = validation.quality_score
                                 metrics["generation_time_seconds"] = time.time() - start_time

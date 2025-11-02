@@ -140,7 +140,7 @@ class OllamaAdapter(ProviderAdapter):
         **kwargs
     ) -> ModelResponse:
         """Generate text using Ollama"""
-        model = model or "mistral"
+        model = model or "mistral:latest"
         start_time = datetime.utcnow()
         
         try:
@@ -171,13 +171,13 @@ class OllamaAdapter(ProviderAdapter):
     def list_models(self) -> List[str]:
         """List available Ollama models"""
         return [
-            "mistral",
-            "llama2",
-            "llama2:13b",
-            "neural-chat",
-            "mixtral",
-            "phi",
-            "codellama",
+            "mistral:latest",
+            "llama2:latest",
+            "neural-chat:latest",
+            "qwen2.5:14b",
+            "mixtral:latest",
+            "deepseek-r1:14b",
+            "llama3:70b-instruct",
         ]
 
 

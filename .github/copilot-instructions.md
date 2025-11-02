@@ -1,8 +1,8 @@
 # 🤖 GitHub Copilot Instructions for AI Agents
 
-**Last Updated:** October 24, 2025  
+**Last Updated:** November 2, 2025  
 **Project:** Glad Labs AI Co-Founder System v3.0  
-**Status:** Production Ready | Type-Safe | Documentation Policy Enforced
+**Status:** Production Ready | PostgreSQL Backend | Ollama AI Integration | Windows PowerShell Required
 
 ---
 
@@ -39,6 +39,112 @@ Data Tier
 - Agents → Strapi API for content CRUD operations
 - All components → Model router for LLM calls with multi-provider fallback
 - Logging → Audit middleware captures all state changes
+
+---
+
+## ⚡ Critical Development Commands (Windows PowerShell Required)
+
+### ⚠️ TERMINAL REQUIREMENTS (IMPORTANT!)
+
+**This project runs on Windows with PowerShell (5.1 or higher).**
+
+- ✅ **ALL terminal commands MUST be formatted for PowerShell** (not bash/sh)
+- ✅ **Use `;` to chain commands** (PowerShell syntax, not `&&`)
+- ✅ **Each service should run in a SEPARATE terminal window**
+- ✅ **DO NOT run multiple long-running processes in the same terminal** (causes conflicts and kills services)
+- ✅ **Background tasks can use `-Background` flag in tool calls**
+
+**Example PowerShell Commands:**
+
+```powershell
+# Correct - PowerShell syntax with semicolon
+cd c:\Users\mattm\glad-labs-website; python -m uvicorn src.cofounder_agent.main:app --host 127.0.0.1 --port 8000
+
+# Correct - Multiple commands chained
+dir; ls -la; Get-Process
+
+# Correct - Using Windows paths with backslashes
+cd c:\Users\mattm\glad-labs-website\src\cofounder_agent
+
+# Wrong - bash/sh syntax (won't work in PowerShell)
+cd ~/glad-labs-website && npm run dev
+```
+
+### Starting Services (Each in Separate Terminal Window)
+
+**Window 1 - Backend API (FastAPI)**
+
+```powershell
+cd c:\Users\mattm\glad-labs-website
+python -m uvicorn src.cofounder_agent.main:app --host 127.0.0.1 --port 8000
+```
+
+Runs on: `http://127.0.0.1:8000` (Health check: `/api/health`)
+
+**Window 2 - Strapi CMS**
+
+```powershell
+cd c:\Users\mattm\glad-labs-website\cms\strapi-v5-backend
+npm run develop
+```
+
+Runs on: `http://localhost:1337/admin`
+
+**Window 3 - React Oversight Hub**
+
+```powershell
+cd c:\Users\mattm\glad-labs-website\web\oversight-hub
+npm start
+```
+
+Runs on: `http://localhost:3001` (or next available port)
+
+**Window 4 - Next.js Public Site**
+
+```powershell
+cd c:\Users\mattm\glad-labs-website\web\public-site
+npm run dev
+```
+
+Runs on: `http://localhost:3000` (or next available port)
+
+### Alternative: Start All Services via npm workspace commands
+
+```powershell
+cd c:\Users\mattm\glad-labs-website
+npm run dev              # ✅ Starts multiple services (check port assignments)
+npm run dev:oversight    # React admin dashboard on http://localhost:3001
+npm run dev:public       # Next.js site on http://localhost:3000
+npm run dev:backend      # FastAPI backend on http://localhost:8000
+```
+
+**Note:** Using npm workspace commands starts services in same process. For independent operation, use separate terminal windows.
+
+### Code Quality (MUST run before committing)
+
+```powershell
+cd c:\Users\mattm\glad-labs-website
+npm run lint:fix         # Auto-fix ESLint + import sorting
+npm run format           # Prettier on all files (.js, .jsx, .tsx, .json, .md)
+npm test                 # Jest frontend + pytest Python backend
+npm run test:python:smoke # Quick backend smoke tests (5-10 min)
+```
+
+### Build & Deploy
+
+```powershell
+npm run build            # Build Next.js + React production bundles
+npm run build:all        # Includes Strapi (may fail due to plugin issues)
+```
+
+### Key Workspace Commands
+
+```powershell
+npm run setup:all        # Install all dependencies (Node + Python)
+npm run clean:install    # Full reset: rm node_modules + fresh install
+npm run install:all      # Just npm install across all workspaces
+npm run setup:python     # Just pip install for backend
+```
 
 ---
 
@@ -609,12 +715,12 @@ echo $DATABASE_URL
 ## 📋 Document Control
 
 | Field            | Value                                          |
-| ---------------- | ---------------------------------------------- |
-| **Version**      | 1.0                                            |
-| **Last Updated** | October 22, 2025                               |
-| **Next Review**  | December 22, 2025 (quarterly)                  |
+| ---------------- | ---------------------------------------------- | ---------------- |
+| **Version**      | 2.0                                            |
+| **Last Updated** | November 2, 2025                               |
+| **Next Review**  | February 2, 2026 (quarterly)                   |
 | **Author**       | GitHub Copilot & Glad Labs Team                |
-| **Status**       | Active & Maintained                            |
+| **Status**       | Active & Maintained                            | Production Ready |
 | **Audience**     | All team members (developers, DevOps, QA, PMs) |
 
 ---

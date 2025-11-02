@@ -178,10 +178,10 @@ async def get_available_models():
         
         if provider_manager.ollama_available:
             available_models["local"] = [
-                "neural-chat:13b",
-                "mistral:13b",
-                "neural-chat:7b",
-                "mistral:7b"
+                "neural-chat:latest",
+                "mistral:latest",
+                "llama2:latest",
+                "qwen2.5:14b"
             ]
         
         if provider_manager.hf_token:

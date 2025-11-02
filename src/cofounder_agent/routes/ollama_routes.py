@@ -135,7 +135,7 @@ async def check_ollama_health() -> OllamaHealthResponse:
 
 
 @router.post("/warmup", response_model=OllamaWarmupResponse)
-async def warmup_ollama(model: str = "mistral") -> OllamaWarmupResponse:
+async def warmup_ollama(model: str = "mistral:latest") -> OllamaWarmupResponse:
     """
     Warm up an Ollama model by running a simple prompt
     
