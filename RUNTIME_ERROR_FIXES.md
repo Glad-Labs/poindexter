@@ -12,11 +12,13 @@
 **Root Cause:** The component received `undefined` for the `config` prop because the `/api/models` endpoint response structure didn't match expected format.
 
 **Solution:**
+
 - Added safe default config object: `const safeConfig = config || { configured: false, models: [], active: false };`
 - Replaced all `config.*` references with `safeConfig.*` throughout the component
 - Now handles undefined gracefully instead of crashing
 
 **Files Modified:**
+
 - `SystemHealthDashboard.jsx` (lines 316-368)
 
 ---
@@ -29,10 +31,12 @@
 **Root Cause:** Wrong endpoint path (missing `/api` prefix)
 
 **Solution:**
+
 - Updated fetch URL from `http://localhost:8000/metrics/costs` to `http://localhost:8000/api/metrics/costs`
 - Backend endpoint is already implemented and working (confirmed 200 OK in logs)
 
 **Files Modified:**
+
 - `CostMetricsDashboard.jsx` (line 45)
 
 ---
@@ -44,12 +48,14 @@
 **Root Cause:** Backend `/api/models` endpoint returns `{ models: [...], total: ..., timestamp: ... }` structure, but component expected `{ ollama: {...}, openai: {...}, ... }`
 
 **Solution:**
+
 - Transformed API response into provider-based configuration structure
 - Groups models by provider name
 - Marks providers as "configured" when they have available models
 - Gracefully handles missing or malformed responses
 
 **Response Transformation Logic:**
+
 ```javascript
 // API Response: { models: [...], total: N, timestamp: ... }
 // Component Expected: { ollama: {...}, openai: {...}, ... }
@@ -57,6 +63,7 @@
 ```
 
 **Files Modified:**
+
 - `SystemHealthDashboard.jsx` (lines 124-161)
 
 ---
@@ -64,6 +71,7 @@
 ## Backend Verification
 
 ✅ All backend endpoints working:
+
 - `GET /api/models` → 200 OK (returns models list)
 - `GET /api/metrics` → 200 OK (returns metrics)
 - `GET /api/metrics/costs` → 200 OK (returns cost data)
@@ -75,6 +83,7 @@
 ## Frontend Status After Fixes
 
 **Issues Resolved:**
+
 - ✅ No more `Cannot read properties of undefined` errors
 - ✅ `/metrics/costs` now correctly calls `/api/metrics/costs`
 - ✅ Model configuration properly displays (or shows "Not Configured" safely)
@@ -92,6 +101,7 @@
 ## Testing Recommendations
 
 1. **Restart Oversight Hub:**
+
    ```powershell
    cd c:\Users\mattm\glad-labs-website\web\oversight-hub
    npm start
@@ -129,6 +139,7 @@
 ## Summary
 
 Three critical issues resolved:
+
 1. **Null Safety:** ModelConfigCard now handles undefined config gracefully
 2. **Endpoint Path:** Fixed `/metrics/costs` → `/api/metrics/costs`
 3. **Response Parsing:** Properly transform models list into provider configuration
