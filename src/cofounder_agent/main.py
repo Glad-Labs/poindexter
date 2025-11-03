@@ -1,5 +1,5 @@
 """
-Glad Labs AI Co-Founder Agent
+Glad Labs AI Agent - Poindexter
 FastAPI application serving as the central orchestrator for the Glad Labs ecosystem
 Implements PostgreSQL database with REST API command queue integration
 Replaces Google Cloud Firestore and Pub/Sub services
@@ -43,7 +43,7 @@ from services.database_service import DatabaseService
 # Import route routers
 # Unified content router (consolidates content.py, content_generation.py, enhanced_content.py)
 from routes.content_routes import content_router
-from routes.models import models_router
+from routes.models import models_router, models_list_router
 from routes.auth import router as github_oauth_router
 from routes.auth_routes import router as auth_router
 from routes.settings_routes import router as settings_router
@@ -52,6 +52,8 @@ from routes.chat_routes import router as chat_router
 from routes.ollama_routes import router as ollama_router
 from routes.task_routes import router as task_router
 from routes.webhooks import webhook_router
+from routes.social_routes import social_router
+from routes.metrics_routes import metrics_router
 
 # Import database initialization
 try:
@@ -240,11 +242,14 @@ app.include_router(content_router)
 
 # Register models router
 app.include_router(models_router)
+app.include_router(models_list_router)  # Legacy /api/models endpoint support
 app.include_router(settings_router)  # Settings management
 app.include_router(command_queue_router)  # Command queue (replaces Pub/Sub)
 app.include_router(chat_router)  # Chat and AI model integration
 app.include_router(ollama_router)  # Ollama health checks and warm-up
 app.include_router(webhook_router)  # Webhook handlers for Strapi events
+app.include_router(social_router)  # Social media management
+app.include_router(metrics_router)  # Metrics and analytics
 
 # ===== UNIFIED HEALTH CHECK ENDPOINT =====
 # Consolidated from: /api/health, /status, /metrics/health, and route-specific health endpoints

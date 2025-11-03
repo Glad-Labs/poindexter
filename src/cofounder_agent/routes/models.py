@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 # Router for all model-related endpoints
 models_router = APIRouter(prefix="/api/v1/models", tags=["models"])
 
+# Additional router for /api/models endpoint (legacy support)
+models_list_router = APIRouter(prefix="/api/models", tags=["models"])
+
 
 class ModelInfo(BaseModel):
     """Model information for frontend"""
@@ -254,3 +257,54 @@ async def get_rtx5070_models():
     except Exception as e:
         logger.error(f"Error getting RTX5070 models: {e}")
         raise HTTPException(status_code=500, detail=f"Error getting RTX5070 models: {str(e)}")
+
+
+# ========== ADDITIONAL ENDPOINTS FOR /api/models (legacy support) ==========
+
+@models_list_router.get(
+    "",
+    description="Get list of available AI models (legacy endpoint)"
+)
+async def get_models_list():
+    """
+    Get all currently available models - legacy endpoint for /api/models.
+    Redirects to the new /api/v1/models/available endpoint logic.
+    """
+    try:
+        service = get_model_consolidation_service()
+        models_dict = service.list_models()
+        
+        # Flatten models from all providers
+        models_list = []
+        provider_icons = {
+            "ollama": "🖥️",
+            "huggingface": "🌐",
+            "google": "☁️",
+            "anthropic": "🧠",
+            "openai": "⚡"
+        }
+        
+        for provider, model_names in models_dict.items():
+            icon = provider_icons.get(provider, "🤖")
+            for model_name in model_names:
+                models_list.append({
+                    "name": model_name,
+                    "displayName": f"{model_name} ({provider})",
+                    "provider": provider,
+                    "isFree": provider in ["ollama", "huggingface"],
+                    "size": "unknown",
+                    "estimatedVramGb": 0,
+                    "description": f"Model from {provider}",
+                    "icon": icon,
+                    "requiresInternet": provider != "ollama",
+                })
+        
+        return {
+            "models": models_list,
+            "total": len(models_list),
+            "timestamp": datetime.now().isoformat(),
+        }
+    
+    except Exception as e:
+        logger.error(f"Error getting models: {e}")
+        raise HTTPException(status_code=500, detail=f"Error getting models: {str(e)}")

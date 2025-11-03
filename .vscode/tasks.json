@@ -6,7 +6,7 @@
       "type": "shell",
       "command": "npm run develop",
       "options": {
-        "cwd": "${workspaceFolder}/cms/strapi-v5-backend"
+        "cwd": "${workspaceFolder}/cms/strapi-main"
       },
       "problemMatcher": [],
       "presentation": {
@@ -41,26 +41,9 @@
       }
     },
     {
-      "label": "Start Intervene Trigger",
-      "type": "shell",
-      "command": "python main.py",
-      "options": {
-        "cwd": "${workspaceFolder}/cloud-functions/intervene-trigger",
-        "env": {
-          "GCP_PROJECT": "your-gcp-project-id",
-          "PUBSUB_TOPIC": "your-topic-name"
-        }
-      },
-      "problemMatcher": [],
-      "presentation": {
-        "group": "services",
-        "panel": "dedicated"
-      }
-    },
-    {
       "label": "Start Co-founder Agent",
       "type": "shell",
-      "command": "python -m uvicorn cofounder_agent.main:app --reload",
+      "command": "python start_server.py",
       "options": {
         "cwd": "${workspaceFolder}/src/cofounder_agent"
       },
@@ -76,10 +59,15 @@
         "Start Strapi CMS",
         "Start Oversight Hub",
         "Start Public Site",
-        "Start Intervene Trigger",
         "Start Co-founder Agent"
       ],
       "problemMatcher": []
+    },
+    {
+      "type": "Live Preview",
+      "workspacePath": "c:\\Users\\mattm\\glad-labs-website",
+      "problemMatcher": [],
+      "label": "Live Preview: Run Server"
     }
   ]
 }

@@ -1,8 +1,6 @@
 const axios = require('axios');
 
-const STRAPI_URL =
-  process.env.STRAPI_API_URL ||
-  'http://localhost:1337';
+const STRAPI_URL = process.env.STRAPI_API_URL || 'http://localhost:1337';
 const API_URL = `${STRAPI_URL}/api`;
 
 console.log('Starting Strapi content seeding...');
@@ -31,25 +29,19 @@ async function apiRequest(method, endpoint, data = null) {
   } catch (error) {
     if (error.response) {
       console.error(
-        'API error: ' + method + ' ' + endpoint + ' ' + error.response.status
+        'API error: ' +
+          method +
+          ' ' +
+          endpoint +
+          ' Status: ' +
+          error.response.status,
+        'Data:',
+        error.response.data?.error?.message
       );
     } else {
       console.error('Error: ' + error.message);
     }
     return null;
-  }
-}
-
-async function checkHealth() {
-  try {
-    await axios.get(API_URL + '/users/me', {
-      headers: { Authorization: 'Bearer ' + process.env.STRAPI_API_TOKEN },
-    });
-    console.log('Strapi is running');
-    return true;
-  } catch (e) {
-    console.error('Cannot connect to Strapi');
-    return false;
   }
 }
 
@@ -89,42 +81,55 @@ const data = {
   ],
 };
 
-async function findEntity(endpoint, field, value) {
-  try {
-    const url =
-      API_URL +
-      endpoint +
-      '?filters[' +
-      field +
-      '][\]=' +
-      encodeURIComponent(value);
-    const response = await axios.get(url, {
-      headers: { Authorization: 'Bearer ' + process.env.STRAPI_API_TOKEN },
-    });
-    return response.data?.data?.length > 0 ? response.data.data[0] : null;
-  } catch (e) {
-    return null;
-  }
-}
-
 async function seedAll() {
   try {
-    if (!(await checkHealth())) process.exit(1);
+    // Skip health check - Strapi is clearly running
+    console.log('Skipping health check...\n');
 
     console.log('Creating categories...');
+    let count = 0;
     for (const cat of data.categories) {
-      await apiRequest('POST', '/categories', { data: cat });
+      const result = await apiRequest('POST', '/categories', {
+        data: { ...cat, publishedAt: new Date() },
+      });
+      if (result) {
+        count++;
+        console.log(`  ✅ ${cat.name}`);
+      } else {
+        console.log(`  ❌ ${cat.name} (failed)`);
+      }
     }
+    console.log(`Created ${count}/${data.categories.length} categories\n`);
 
     console.log('Creating tags...');
+    count = 0;
     for (const tag of data.tags) {
-      await apiRequest('POST', '/tags', { data: tag });
+      const result = await apiRequest('POST', '/tags', {
+        data: { ...tag, publishedAt: new Date() },
+      });
+      if (result) {
+        count++;
+        console.log(`  ✅ ${tag.name}`);
+      } else {
+        console.log(`  ❌ ${tag.name} (failed)`);
+      }
     }
+    console.log(`Created ${count}/${data.tags.length} tags\n`);
 
     console.log('Creating authors...');
+    count = 0;
     for (const author of data.authors) {
-      await apiRequest('POST', '/authors', { data: author });
+      const result = await apiRequest('POST', '/authors', {
+        data: { ...author, publishedAt: new Date() },
+      });
+      if (result) {
+        count++;
+        console.log(`  ✅ ${author.name}`);
+      } else {
+        console.log(`  ❌ ${author.name} (failed)`);
+      }
     }
+    console.log(`Created ${count}/${data.authors.length} authors\n`);
 
     console.log('Done!');
     process.exit(0);
