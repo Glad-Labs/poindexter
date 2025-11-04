@@ -22,11 +22,10 @@ from conftest import (
 
 # Import components to test
 try:
-    from intelligent_cofounder import IntelligentCoFounder, BusinessContext, BusinessInsight
-    from business_intelligence import BusinessIntelligenceSystem
+    # Note: advanced_dashboard.py was deleted in cleanup (duplicate of Oversight Hub)
+    # Note: intelligent_cofounder and business_intelligence not found - legacy modules
     from memory_system import AIMemorySystem, MemoryType, ImportanceLevel
     from notification_system import SmartNotificationSystem
-    from advanced_dashboard import AdvancedBusinessDashboard
     from multi_agent_orchestrator import MultiAgentOrchestrator, TaskPriority, OrchestrationTask
     from voice_interface import VoiceInterfaceSystem, VoiceCommand
 except ImportError as e:

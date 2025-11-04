@@ -1,5 +1,4 @@
-"""
-"""AI Memory & Knowledge Management System for Glad Labs Co-Founder"""
+"""AI Memory & Knowledge Management System for Glad Labs Co-Founder
 
 This module provides persistent memory, knowledge base management, and learning
 capabilities for the AI co-founder system. It enables the AI to remember conversations,

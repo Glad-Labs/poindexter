@@ -37,7 +37,10 @@ sys.path.insert(0, os.path.dirname(__file__))
 # Add the parent directory (src) to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from orchestrator_logic import Orchestrator
+# Import core modules
+from multi_agent_orchestrator import MultiAgentOrchestrator
+
+# Import database_service
 from services.database_service import DatabaseService
 
 # Import route routers
@@ -85,7 +88,7 @@ logger = get_logger(__name__)
 
 # Global service instances
 database_service: Optional[DatabaseService] = None
-orchestrator: Optional[Orchestrator] = None
+orchestrator: Optional[MultiAgentOrchestrator] = None
 startup_error: Optional[str] = None
 startup_complete: bool = False
 
@@ -143,13 +146,9 @@ async def lifespan(app: FastAPI):
                 startup_error = error_msg
         
         # 4. Initialize orchestrator with new database service
-        api_base_url = os.getenv("API_BASE_URL", "http://localhost:8000")
-        logger.info(f"  🤖 Initializing orchestrator (API: {api_base_url})...")
+        logger.info(f"  🤖 Initializing orchestrator...")
         try:
-            orchestrator = Orchestrator(
-                database_service=database_service,
-                api_base_url=api_base_url
-            )
+            orchestrator = MultiAgentOrchestrator()
             logger.info("  ✅ Orchestrator initialized successfully")
         except Exception as e:
             error_msg = f"Orchestrator initialization failed: {str(e)}"

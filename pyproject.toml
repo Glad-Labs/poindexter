@@ -45,4 +45,5 @@ markers = [
     "slow: slow tests",
     "voice: voice interface tests",
     "websocket: websocket tests",
+    "smoke: smoke tests - quick sanity checks",
 ]
