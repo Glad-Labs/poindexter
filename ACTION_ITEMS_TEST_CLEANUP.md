@@ -13,6 +13,7 @@
 **Why:** These files will never pass without significant refactoring. Removing them cleans the test collection and allows focus on real tests.
 
 **Action:**
+
 ```powershell
 cd c:\Users\mattm\glad-labs-website
 
@@ -52,6 +53,7 @@ Remaining tests: 5 smoke tests (100% passing)"
 ```
 
 **Result:**
+
 - ✅ Test collection becomes clean (no errors)
 - ✅ 5 smoke tests still pass
 - ✅ Clear foundation for building new focused tests
@@ -101,19 +103,19 @@ from services.database_service import DatabaseService
 
 class TestDatabaseServiceUnit:
     """Test DatabaseService in isolation"""
-    
+
     @pytest.fixture
     def service(self):
         """Create DatabaseService for testing"""
         # Use in-memory SQLite
         return DatabaseService(database_url="sqlite:///:memory:")
-    
+
     @pytest.mark.asyncio
     async def test_initialization(self, service):
         """Test database initialization"""
         await service.initialize()
         assert service is not None
-    
+
     @pytest.mark.asyncio
     async def test_connection_pool(self, service):
         """Test connection pool creation"""
@@ -143,22 +145,22 @@ from services.model_router import ModelRouter
 
 class TestModelRouterUnit:
     """Test model router and provider fallback"""
-    
+
     @pytest.fixture
     def router(self):
         """Create ModelRouter for testing"""
         return ModelRouter()
-    
+
     def test_provider_priority_order(self, router):
         """Test that providers are prioritized correctly"""
         # Ollama > Claude > GPT > Gemini
         assert router.priority_order == [
             "ollama",
-            "anthropic", 
+            "anthropic",
             "openai",
             "google"
         ]
-    
+
     @pytest.mark.asyncio
     async def test_fallback_on_provider_failure(self, router):
         """Test automatic fallback when primary provider fails"""
@@ -192,7 +194,7 @@ from routes.content_routes import content_router
 
 class TestContentRoutesIntegration:
     """Test content routes without full FastAPI app"""
-    
+
     @pytest.fixture
     def mock_app(self):
         """Create minimal FastAPI app with just content router"""
@@ -200,12 +202,12 @@ class TestContentRoutesIntegration:
         app = FastAPI()
         app.include_router(content_router)
         return app
-    
+
     @pytest.fixture
     def client(self, mock_app):
         """Create test client"""
         return TestClient(mock_app)
-    
+
     def test_content_generation_endpoint(self, client):
         """Test POST /api/content/generate"""
         response = client.post("/api/content/generate", json={
@@ -234,13 +236,13 @@ After completing Phase 2 actions:
 
 ## 📊 Effort Estimation
 
-| Task | Effort | Priority | Owner |
-|------|--------|----------|-------|
-| Delete legacy tests | 15 min | 🔴 High | Anyone |
-| Create DB service tests | 30 min | 🟠 Medium | Backend |
-| Create model router tests | 45 min | 🟠 Medium | Backend |
-| Create routes tests | 1 hr | 🟠 Medium | Backend |
-| **Total Phase 2** | 2-3 hrs | 🟡 Low | Backend |
+| Task                      | Effort  | Priority  | Owner   |
+| ------------------------- | ------- | --------- | ------- |
+| Delete legacy tests       | 15 min  | 🔴 High   | Anyone  |
+| Create DB service tests   | 30 min  | 🟠 Medium | Backend |
+| Create model router tests | 45 min  | 🟠 Medium | Backend |
+| Create routes tests       | 1 hr    | 🟠 Medium | Backend |
+| **Total Phase 2**         | 2-3 hrs | 🟡 Low    | Backend |
 
 ---
 
@@ -262,6 +264,7 @@ python -m pytest src/cofounder_agent/tests/ -v --tb=short
 ### Progress Tracking
 
 **Current Status (Stage 1):**
+
 ```
 ✅ 5 smoke tests passing
 ⏭️ 2 tests skipped (intentional)
@@ -269,6 +272,7 @@ python -m pytest src/cofounder_agent/tests/ -v --tb=short
 ```
 
 **Target Status (Stage 2 - Delete Legacy):**
+
 ```
 ✅ 5 smoke tests passing
 ⏭️ 2 tests skipped
@@ -276,6 +280,7 @@ python -m pytest src/cofounder_agent/tests/ -v --tb=short
 ```
 
 **Future Status (Stage 3 - Add New Tests):**
+
 ```
 ✅ 15-20 focused unit tests passing
 ✅ 100% passing rate
@@ -287,6 +292,7 @@ python -m pytest src/cofounder_agent/tests/ -v --tb=short
 ## 📚 Reference Documents
 
 **For implementation details, see:**
+
 - `TEST_CLEANUP_SESSION_SUMMARY.md` - Executive summary
 - `docs/reference/TEST_AUDIT_AND_CLEANUP_REPORT.md` - Detailed audit
 - `docs/reference/TESTING.md` - Comprehensive testing guide
@@ -297,6 +303,7 @@ python -m pytest src/cofounder_agent/tests/ -v --tb=short
 ## 💾 Commit Messages Template
 
 ### For deletion:
+
 ```
 refactor: delete 7 legacy test files with import errors
 
@@ -307,6 +314,7 @@ See TEST_CLEANUP_SESSION_SUMMARY.md for details.
 ```
 
 ### For new tests:
+
 ```
 test: add focused unit tests for [component]
 
@@ -330,5 +338,5 @@ See docs/reference/TESTING.md for test patterns.
 
 ---
 
-*Prepared: November 4, 2025 02:15 UTC*  
-*Status: Ready for Implementation*
+_Prepared: November 4, 2025 02:15 UTC_  
+_Status: Ready for Implementation_
