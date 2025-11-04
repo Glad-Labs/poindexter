@@ -54,6 +54,7 @@ from routes.task_routes import router as task_router
 from routes.webhooks import webhook_router
 from routes.social_routes import social_router
 from routes.metrics_routes import metrics_router
+from routes.agents_routes import router as agents_router
 
 # Import database initialization
 try:
@@ -250,6 +251,7 @@ app.include_router(ollama_router)  # Ollama health checks and warm-up
 app.include_router(webhook_router)  # Webhook handlers for Strapi events
 app.include_router(social_router)  # Social media management
 app.include_router(metrics_router)  # Metrics and analytics
+app.include_router(agents_router)  # AI agent management and monitoring
 
 # ===== UNIFIED HEALTH CHECK ENDPOINT =====
 # Consolidated from: /api/health, /status, /metrics/health, and route-specific health endpoints

@@ -18,6 +18,51 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
 from uuid import UUID
 import uuid as uuid_lib
+import json
+
+
+def convert_db_row_to_dict(row):
+    """
+    Convert asyncpg database row to proper types for TaskResponse.
+    Handles UUID → str, datetime → ISO string, JSONB string → dict conversions.
+    """
+    if row is None:
+        return None
+    
+    # Convert asyncpg Record to dict
+    if hasattr(row, 'keys'):
+        data = dict(row)
+    else:
+        data = row
+    
+    # Convert UUID to string
+    if 'id' in data and data['id'] is not None:
+        data['id'] = str(data['id'])
+    
+    # Convert datetimes to ISO format strings
+    for dt_field in ['created_at', 'updated_at', 'started_at', 'completed_at']:
+        if dt_field in data and data[dt_field] is not None:
+            if isinstance(data[dt_field], datetime):
+                data[dt_field] = data[dt_field].isoformat()
+            # else already a string
+    
+    # Convert metadata JSONB string to dict
+    if 'metadata' in data and isinstance(data['metadata'], str):
+        try:
+            data['metadata'] = json.loads(data['metadata'])
+        except (json.JSONDecodeError, TypeError):
+            data['metadata'] = {}
+    elif 'metadata' not in data:
+        data['metadata'] = {}
+    
+    # Handle result JSONB similarly
+    if 'result' in data and isinstance(data['result'], str):
+        try:
+            data['result'] = json.loads(data['result'])
+        except (json.JSONDecodeError, TypeError):
+            data['result'] = None
+    
+    return data
 
 # Import async database service
 from services.database_service import DatabaseService
@@ -260,9 +305,9 @@ async def list_tasks(
         # Apply pagination
         tasks = all_tasks[offset:offset + limit]
         
-        # Convert to response schema
+        # Convert to response schema with proper type conversions
         task_responses = [
-            TaskResponse(**task)
+            TaskResponse(**convert_db_row_to_dict(task))
             for task in tasks
         ]
         
@@ -310,7 +355,8 @@ async def get_task(
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
         
-        return TaskResponse(**task)
+        # Convert to response schema with proper type conversions
+        return TaskResponse(**convert_db_row_to_dict(task))
         
     except HTTPException:
         raise
@@ -386,7 +432,8 @@ async def update_task(
         # Fetch updated task
         updated_task = await db_service.get_task(task_id)
         
-        return TaskResponse(**updated_task)
+        # Convert to response schema with proper type conversions
+        return TaskResponse(**convert_db_row_to_dict(updated_task))
         
     except HTTPException:
         raise

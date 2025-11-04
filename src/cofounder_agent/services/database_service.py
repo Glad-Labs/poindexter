@@ -138,25 +138,38 @@ class DatabaseService:
 
     async def add_task(self, task_data: Dict[str, Any]) -> str:
         """Create new task"""
+        import json
         task_id = task_data.get("id") or str(uuid4())
         
+        # PostgreSQL path (with connection pooling)
         async with self.pool.acquire() as conn:
+            # Convert metadata dict to JSON string for JSONB storage
+            metadata = task_data.get("metadata", {})
+            if isinstance(metadata, dict):
+                metadata = json.dumps(metadata)
+            
+            # Insert task with new schema (content generation fields)
             await conn.execute(
                 """
                 INSERT INTO tasks (
-                    id, title, description, status, priority, assigned_to,
-                    created_at, updated_at
+                    id, task_name, topic, primary_keyword, target_audience,
+                    category, status, agent_id, user_id, metadata, created_at, updated_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
                 """,
                 task_id,
-                task_data.get("title"),
-                task_data.get("description"),
+                task_data.get("task_name", "Untitled Task"),
+                task_data.get("topic", ""),
+                task_data.get("primary_keyword", ""),
+                task_data.get("target_audience", ""),
+                task_data.get("category", "general"),
                 task_data.get("status", "pending"),
-                task_data.get("priority", "medium"),
-                task_data.get("assigned_to"),
+                task_data.get("agent_id", "content-agent"),
+                task_data.get("user_id", "system"),
+                metadata,
             )
-        return task_id
+            logger.info(f"✅ Task created: {task_id}")
+            return task_id
 
     async def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
         """Get task by ID"""
