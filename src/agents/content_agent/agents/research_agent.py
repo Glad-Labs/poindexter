@@ -2,6 +2,7 @@ import logging
 import requests
 import json
 from src.agents.content_agent.config import config
+from src.agents.content_agent.utils.tools import CrewAIToolsFactory
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ class ResearchAgent:
         if not config.SERPER_API_KEY:
             raise ValueError("SERPER_API_KEY is not set in the environment.")
         self.serper_api_key = config.SERPER_API_KEY
+        self.tools = CrewAIToolsFactory.get_research_agent_tools()
 
     def run(self, topic: str, keywords: list[str]) -> str:
         """

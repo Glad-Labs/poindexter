@@ -4,6 +4,7 @@ from src.agents.content_agent.config import config
 from src.agents.content_agent.services.llm_client import LLMClient
 from src.agents.content_agent.utils.data_models import BlogPost
 from src.agents.content_agent.utils.helpers import load_prompts_from_file
+from src.agents.content_agent.utils.tools import CrewAIToolsFactory
 
 logger = logging.getLogger(__name__)
 
@@ -12,6 +13,7 @@ class QAAgent:
     def __init__(self, llm_client: LLMClient):
         self.llm_client = llm_client
         self.prompts = load_prompts_from_file(config.PROMPTS_PATH)
+        self.tools = CrewAIToolsFactory.get_content_agent_tools()
 
     def run(self, post: BlogPost, previous_content: str) -> tuple[bool, str]:
         """

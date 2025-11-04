@@ -1,4 +1,5 @@
 import logging
+from src.agents.content_agent.utils.tools import CrewAIToolsFactory
 
 class FinancialAgent:
     """
@@ -7,6 +8,10 @@ class FinancialAgent:
     def __init__(self):
         """Initializes the FinancialAgent."""
         logging.info("Financial Agent initialized.")
+        self.tools = [
+            CrewAIToolsFactory.get_web_search_tool(),
+            CrewAIToolsFactory.get_data_processing_tool(),
+        ]
 
     def get_financial_summary(self) -> str:
         """

@@ -1,5 +1,6 @@
 import logging
 from src.agents.content_agent.services.llm_client import LLMClient
+from src.agents.content_agent.utils.tools import CrewAIToolsFactory
 
 logger = logging.getLogger(__name__)
 
@@ -9,6 +10,7 @@ class SummarizerAgent:
     def __init__(self, llm_client: LLMClient):
         """Initializes the SummarizerAgent with an LLM client."""
         self.llm_client = llm_client
+        self.tools = CrewAIToolsFactory.get_content_agent_tools()
 
     def run(self, text_to_summarize: str, prompt_template: str) -> str:
         """

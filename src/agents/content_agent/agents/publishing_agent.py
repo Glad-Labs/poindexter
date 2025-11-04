@@ -3,6 +3,7 @@ import re
 from src.agents.content_agent.services.strapi_client import StrapiClient
 from src.agents.content_agent.utils.data_models import BlogPost
 from src.agents.content_agent.utils.markdown_utils import markdown_to_strapi_blocks
+from src.agents.content_agent.utils.tools import CrewAIToolsFactory
 
 
 class PublishingAgent:
@@ -17,6 +18,7 @@ class PublishingAgent:
         """
         logging.info("Initializing Publishing Agent...")
         self.strapi_client = strapi_client
+        self.tools = CrewAIToolsFactory.get_content_agent_tools()
 
     def run(self, post: BlogPost) -> BlogPost:
         """

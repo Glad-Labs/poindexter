@@ -7,6 +7,7 @@ from src.agents.content_agent.services.pexels_client import PexelsClient
 from src.agents.content_agent.services.strapi_client import StrapiClient
 from src.agents.content_agent.utils.data_models import BlogPost, ImageDetails
 from src.agents.content_agent.utils.helpers import load_prompts_from_file, slugify, extract_json_from_string
+from src.agents.content_agent.utils.tools import CrewAIToolsFactory
 
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,7 @@ class ImageAgent:
         self.llm_client = llm_client
         self.pexels_client = pexels_client
         self.strapi_client = strapi_client
+        self.tools = CrewAIToolsFactory.get_content_agent_tools()
         self.api_url = api_url
         self.prompts = load_prompts_from_file(config.PROMPTS_PATH)
         os.makedirs(config.IMAGE_STORAGE_PATH, exist_ok=True)

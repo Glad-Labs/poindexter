@@ -2,6 +2,7 @@ import logging
 import json
 from src.agents.content_agent.services.llm_client import LLMClient
 from src.agents.content_agent.agents.research_agent import ResearchAgent
+from src.agents.content_agent.utils.tools import CrewAIToolsFactory
 
 class MarketInsightAgent:
     """
@@ -11,6 +12,7 @@ class MarketInsightAgent:
         """Initializes the MarketInsightAgent with required clients."""
         self.llm_client = llm_client
         self.research_agent = ResearchAgent()
+        self.tools = CrewAIToolsFactory.get_market_agent_tools()
         logging.info("Market Insight Agent initialized (REST API mode - no Firestore).")
 
     def suggest_topics(self, base_query: str) -> str:

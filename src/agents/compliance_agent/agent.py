@@ -1,6 +1,7 @@
 import logging
 import subprocess
 import os
+from src.agents.content_agent.utils.tools import CrewAIToolsFactory
 
 class ComplianceAgent:
     """
@@ -9,6 +10,10 @@ class ComplianceAgent:
     """
     def __init__(self, workspace_root: str):
         self.workspace_root = workspace_root
+        self.tools = [
+            CrewAIToolsFactory.get_document_tool(),
+            CrewAIToolsFactory.get_web_search_tool(),
+        ]
         logging.info("Compliance Agent initialized.")
 
     def run_security_audit(self) -> str:
