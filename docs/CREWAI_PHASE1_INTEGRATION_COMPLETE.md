@@ -8,7 +8,7 @@
 
 ## 🎯 Mission Accomplished
 
-All Phase 1 CrewAI tools have been successfully integrated into all 8 agents across the GLAD Labs ecosystem.
+All Phase 1 CrewAI tools have been successfully integrated into all 8 agents across the Glad Labs ecosystem.
 
 ### Files Modified (8 agents)
 

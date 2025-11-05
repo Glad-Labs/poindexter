@@ -17,7 +17,7 @@
 
 ## 🎯 Core Documentation (8 Files)
 
-These form the backbone of GLAD Labs documentation. Read based on your role:
+These form the backbone of Glad Labs documentation. Read based on your role:
 
 | #   | Document                                                                        | Purpose                                                 | For             |
 | --- | ------------------------------------------------------------------------------- | ------------------------------------------------------- | --------------- |

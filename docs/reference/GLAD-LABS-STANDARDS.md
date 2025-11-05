@@ -79,5 +79,5 @@ This section outlines the current capabilities of the system and a roadmap for f
 - **[ ] Compliance & Security Agent:** Develop an agent that can perform automated security audits on the codebase and infrastructure, flagging potential vulnerabilities.
 - **[ ] Self-Healing Infrastructure:** Implement logic that allows agents to detect and respond to infrastructure issues, such as restarting a failed service.
 - **[ ] Automated A/B Testing:** Create a system where the agents can automatically test different headlines or content variations and report on their performance.
-- **[ ] SaaS Packaging:** Package the entire agent system into a marketable SaaS product, allowing other businesses to leverage the GLAD Labs automation platform.
+- **[ ] SaaS Packaging:** Package the entire agent system into a marketable SaaS product, allowing other businesses to leverage the Glad Labs automation platform.
 - **[ ] Advanced AI Co-Founder Capabilities:** Enhance the Co-Founder with more complex decision-making abilities, such as budget allocation, strategic planning, and automated hiring of freelance talent for specialized tasks.

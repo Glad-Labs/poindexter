@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-The GLAD Labs test suite contains **93+ tests** with **51 tests collected successfully** and **5 smoke tests consistently passing**. However, 7 legacy test files depend on deleted/refactored modules and have import errors. This document provides a comprehensive audit and remediation plan.
+The Glad Labs test suite contains **93+ tests** with **51 tests collected successfully** and **5 smoke tests consistently passing**. However, 7 legacy test files depend on deleted/refactored modules and have import errors. This document provides a comprehensive audit and remediation plan.
 
 ### Current Test Status
 

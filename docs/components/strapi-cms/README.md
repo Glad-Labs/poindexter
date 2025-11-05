@@ -1,6 +1,6 @@
 # 💾 Strapi CMS (Headless)
 
-> Headless content management system powering the GLAD Labs platform
+> Headless content management system powering the Glad Labs platform
 
 ## 📍 Location
 

@@ -1,6 +1,6 @@
 # MCP Server Implementation Guide
 
-Complete implementation of the MCP (Model Context Protocol) server for GLAD Labs.
+Complete implementation of the MCP (Model Context Protocol) server for Glad Labs.
 The MCP server is the central nervous system enabling all agent communication.
 
 ## Files in This Package

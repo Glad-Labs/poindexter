@@ -17,7 +17,7 @@
 
 ## 📖 Overview
 
-Welcome to GLAD Labs! This guide covers everything from initial setup through production deployment. GLAD Labs is a comprehensive AI Co-Founder system that combines autonomous content creation, business intelligence, and multi-agent orchestration.
+Welcome to Glad Labs! This guide covers everything from initial setup through production deployment. Glad Labs is a comprehensive AI Co-Founder system that combines autonomous content creation, business intelligence, and multi-agent orchestration.
 
 **This document will get you:**
 
@@ -134,7 +134,7 @@ Access these URLs to confirm everything is running:
 - **Strapi CMS Admin**: [http://localhost:1337/admin](http://localhost:1337/admin)
 - **Backend API Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
 
-**✅ If all URLs work, you're ready to use GLAD Labs!**
+**✅ If all URLs work, you're ready to use Glad Labs!**
 
 ---
 
@@ -315,7 +315,7 @@ ollama serve
 curl http://localhost:11434/api/tags
 ```
 
-### 4. Configure GLAD Labs to Use Ollama
+### 4. Configure Glad Labs to Use Ollama
 
 In `.env` file:
 

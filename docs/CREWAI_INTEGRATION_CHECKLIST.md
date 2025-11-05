@@ -1,6 +1,6 @@
 # CrewAI Phase 1 Integration Checklist
 
-**Target:** Integrate Phase 1 CrewAI tools into existing GLAD Labs agents  
+**Target:** Integrate Phase 1 CrewAI tools into existing Glad Labs agents  
 **Timeline:** 2-3 hours  
 **Current Status:** ✅ Ready to Start (28/36 tests passing)
 

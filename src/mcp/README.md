@@ -2,7 +2,7 @@
 
 ## Overview
 
-This implementation adds Model Context Protocol (MCP) integration to your GLAD Labs platform, providing:
+This implementation adds Model Context Protocol (MCP) integration to your Glad Labs platform, providing:
 
 1. **Flexible AI Model Selection** - Choose between OpenAI, Google Gemini, and local Ollama models
 2. **Cost Optimization** - Automatic model selection based on cost tiers

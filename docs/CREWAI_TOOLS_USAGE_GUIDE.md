@@ -1,4 +1,4 @@
-# CrewAI Tools Usage Guide for GLAD Labs
+# CrewAI Tools Usage Guide for Glad Labs
 
 **Updated:** November 4, 2025  
 **Phase:** Phase 1 - Core Tools Integration  

@@ -200,7 +200,7 @@ async def lifespan(app: FastAPI):
 
 # Update app initialization to use lifespan
 app = FastAPI(
-    title="GLAD Labs AI Co-Founder",
+    title="Glad Labs AI Co-Founder",
     version="1.0.0",
     lifespan=lifespan
 )

@@ -20,7 +20,7 @@
 
 ### Self-Critiquing Pipeline System
 
-GLAD Labs implements a sophisticated self-critiquing content generation pipeline where agents evaluate each other's work and provide feedback for continuous improvement. This ensures high-quality, publication-ready content.
+Glad Labs implements a sophisticated self-critiquing content generation pipeline where agents evaluate each other's work and provide feedback for continuous improvement. This ensures high-quality, publication-ready content.
 
 ```text
 ┌─────────────────────────────────────────────┐
@@ -94,7 +94,7 @@ class BaseAgent(ABC):
 
 ## 👥 Specialized Agents (Content Creation Focus)
 
-GLAD Labs includes both general-purpose agents (Financial, Market, Compliance) and a specialized self-critiquing content generation pipeline:
+Glad Labs includes both general-purpose agents (Financial, Market, Compliance) and a specialized self-critiquing content generation pipeline:
 
 ### Content Agent System (Self-Critiquing Pipeline)
 
@@ -356,7 +356,7 @@ async def get_context_for_user(self, user_id: str) -> str:
 
 ### Model Context Protocol
 
-GLAD Labs uses MCP (Model Context Protocol) for:
+Glad Labs uses MCP (Model Context Protocol) for:
 
 - **Tool calling:** Agents can call external tools
 - **Resource access:** Access to databases, APIs, files
@@ -368,9 +368,9 @@ GLAD Labs uses MCP (Model Context Protocol) for:
 # src/mcp/base_server.py
 from mcp.server import Server
 
-class GLADLabsMCPServer(Server):
+class GladLabsMCPServer(Server):
     def __init__(self):
-        super().__init__("GLAD Labs")
+        super().__init__("Glad Labs")
         self.register_tool("create_content", self.create_content)
         self.register_tool("query_database", self.query_database)
         self.register_tool("call_api", self.call_api)

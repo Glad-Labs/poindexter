@@ -16,7 +16,7 @@ from mcp.types import Resource, Tool
 
 class BaseMCPServer:
     """
-    Base class for all GLAD Labs MCP servers.
+    Base class for all Glad Labs MCP servers.
     
     Provides standardized server setup, tool registration,
     and common functionality for all MCP servers.

@@ -105,7 +105,7 @@ class AgentContext:
 
 class BaseAgent(ABC):
     """
-    Abstract base class for all GLAD Labs agents.
+    Abstract base class for all Glad Labs agents.
 
     Features:
     - MCP tool access

@@ -1,7 +1,7 @@
 # Branch-Specific Variables & Deployment Environments
 
 **Last Updated:** October 20, 2025  
-**Purpose:** Configure GLAD Labs to run different environments (local dev, staging, production) based on git branch  
+**Purpose:** Configure Glad Labs to run different environments (local dev, staging, production) based on git branch  
 **Scope:** Environment variables, deployment targets, API endpoints, database connections
 
 ---

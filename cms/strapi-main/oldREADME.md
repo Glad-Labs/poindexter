@@ -4,7 +4,7 @@
 ![PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL-336791)
 ![TypeScript](https://img.shields.io/badge/Language-TypeScript-3178c6)
 
-Headless content management system serving GLAD Labs content and data infrastructure.
+Headless content management system serving Glad Labs content and data infrastructure.
 
 **Status:** ✅ Production Ready  
 **Version:** 5.0  
@@ -609,6 +609,6 @@ const config = {
 
 ---
 
-**Maintained by:** GLAD Labs Development Team  
+**Maintained by:** Glad Labs Development Team  
 **Last Updated:** October 26, 2025  
 **Status:** ✅ Production Ready

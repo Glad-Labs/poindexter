@@ -142,7 +142,7 @@ Updated `docs/00-README.md` with new sections:
 - **Testing & Quality:** Testing Quick Start, E2E Testing, Complete Testing Guide
 - **Quick Fixes & References:** Quick Fixes, Consolidated Quick Reference, Migration Guide
 - **API & Configuration:** API Contracts, GitHub Secrets, NPM Scripts
-- **Standards & CI/CD:** GLAD Labs Standards, GitHub Actions, Branch Hierarchy
+- **Standards & CI/CD:** Glad Labs Standards, GitHub Actions, Branch Hierarchy
 
 ---
 

@@ -101,7 +101,7 @@ from typing import Optional
 # ============================================================================
 
 class AgentType(str, Enum):
-    """Agent types in GLAD Labs system"""
+    """Agent types in Glad Labs system"""
     CONTENT = "content"
     FINANCIAL = "financial"
     MARKET_INSIGHT = "market_insight"

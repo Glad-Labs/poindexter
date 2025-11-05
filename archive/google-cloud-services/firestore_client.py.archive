@@ -3,7 +3,7 @@ ARCHIVED: October 26, 2025 (Phase 5)
 REASON: Migrated to PostgreSQL + REST API backend
 LOCATION: archive/google-cloud-services/firestore_client.py.archive
 
-This was the Firestore client for GLAD Labs AI Co-Founder
+This was the Firestore client for Glad Labs AI Co-Founder
 Implements real-time database operations for tasks, logs, and financial data
 
 MIGRATION NOTES:
@@ -63,7 +63,7 @@ logger = structlog.get_logger(__name__)
 
 class FirestoreClient:
     """
-    Firestore client for managing GLAD Labs operational data
+    Firestore client for managing Glad Labs operational data
     
     Collections:
     - tasks: Content creation and operational tasks

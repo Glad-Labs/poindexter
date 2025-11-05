@@ -8,7 +8,7 @@
 
 ## 📋 Overview
 
-The GLAD Labs agent system is an **active, production-ready** component orchestrating sophisticated AI-powered business operations through a self-critiquing pipeline architecture. This guide explains how agents integrate with the Co-Founder orchestrator and Strapi CMS.
+The Glad Labs agent system is an **active, production-ready** component orchestrating sophisticated AI-powered business operations through a self-critiquing pipeline architecture. This guide explains how agents integrate with the Co-Founder orchestrator and Strapi CMS.
 
 **Key Points:**
 
@@ -554,6 +554,6 @@ curl http://localhost:8000/api/tasks/{task_id}
 
 ---
 
-**Maintained by:** GLAD Labs Development Team  
+**Maintained by:** Glad Labs Development Team  
 **Last Updated:** October 26, 2025  
 **Status:** ✅ Production Ready | Fully Integrated | Self-Critiquing Pipeline

@@ -382,4 +382,4 @@ Before starting Day 1:
 
 **Phase 3 is officially kickoff!** 🚀
 
-All planning complete. Implementation ready. Let's build intelligent model selection for GLAD Labs!
+All planning complete. Implementation ready. Let's build intelligent model selection for Glad Labs!

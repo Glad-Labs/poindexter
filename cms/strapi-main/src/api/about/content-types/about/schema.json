@@ -5,7 +5,7 @@
     "singularName": "about",
     "pluralName": "abouts",
     "displayName": "About Page",
-    "description": "About page content for GLAD Labs"
+    "description": "About page content for Glad Labs"
   },
   "options": {
     "draftAndPublish": true

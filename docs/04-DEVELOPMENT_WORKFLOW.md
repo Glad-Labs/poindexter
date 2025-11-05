@@ -20,7 +20,7 @@
 
 ### Four-Tier Branch Hierarchy
 
-GLAD Labs uses a strategic four-tier branching model that optimizes cost, testing, and deployment efficiency:
+Glad Labs uses a strategic four-tier branching model that optimizes cost, testing, and deployment efficiency:
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
@@ -183,7 +183,7 @@ git commit -m "feat: implement memory system
 
 > **📚 For comprehensive testing documentation, see [TESTING.md](../reference/TESTING.md)**
 
-GLAD Labs uses **Jest** for frontend testing and **pytest** for backend testing. Our test suite includes **93+ passing tests** with >80% coverage on critical paths.
+Glad Labs uses **Jest** for frontend testing and **pytest** for backend testing. Our test suite includes **93+ passing tests** with >80% coverage on critical paths.
 
 ### Quick Test Commands
 

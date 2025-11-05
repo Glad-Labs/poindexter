@@ -1,4 +1,4 @@
-# 📚 GLAD Labs Documentation Hub
+# 📚 Glad Labs Documentation Hub
 
 **Last Updated:** October 26, 2025  
 **Status:** ✅ Phase 5 - Final Cleanup & Testing Integration  
@@ -52,7 +52,7 @@ Start with any doc that matches your role, then use cross-links to explore. Each
 
 - **[API Contracts](./reference/API_CONTRACT_CONTENT_CREATION.md)** - Content creation API specification
 - **[Database Schemas](./reference/data_schemas.md)** - Data model definitions
-- **[GLAD Labs Standards](./reference/GLAD-LABS-STANDARDS.md)** - Code quality and naming conventions
+- **[Glad Labs Standards](./reference/Glad-LABS-STANDARDS.md)** - Code quality and naming conventions
 - **[GitHub Secrets Setup](./reference/GITHUB_SECRETS_SETUP.md)** - Production secrets configuration
 - **[Testing Guide](./reference/TESTING.md)** - Comprehensive testing strategies (93+ tests)
 - **[CI/CD Reference](./reference/ci-cd/)** - GitHub Actions workflows and branch strategy
@@ -88,7 +88,7 @@ Start with any doc that matches your role, then use cross-links to explore. Each
 
 ## 📋 Documentation Philosophy
 
-GLAD Labs uses a **HIGH-LEVEL DOCUMENTATION ONLY** approach:
+Glad Labs uses a **HIGH-LEVEL DOCUMENTATION ONLY** approach:
 
 - ✅ **Core docs (00-07):** Architecture-level guidance that stays relevant
 - ✅ **Technical references:** API specs, schemas, standards, **testing**
@@ -148,7 +148,7 @@ Quick start guides and reference materials for common tasks:
 
 ### Standards & CI/CD
 
-- **[GLAD Labs Standards](./reference/GLAD-LABS-STANDARDS.md)** - Code quality and naming conventions
+- **[Glad Labs Standards](./reference/Glad-LABS-STANDARDS.md)** - Code quality and naming conventions
 - **[GitHub Actions Reference](./reference/ci-cd/GITHUB_ACTIONS_REFERENCE.md)** - Workflow deep dive
 - **[Branch Hierarchy](./reference/ci-cd/BRANCH_HIERARCHY_QUICK_REFERENCE.md)** - Git strategy reference
 
