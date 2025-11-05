@@ -8,8 +8,7 @@
   "workspaces": [
     "web/public-site",
     "web/oversight-hub",
-    "cms/strapi-main",
-    "src/cofounder_agent"
+    "cms/strapi-main"
   ],
   "scripts": {
     "//": "=== DEVELOPMENT ===",
@@ -22,7 +21,7 @@
     "//": "=== BUILD ===",
     "build": "npm run build --workspaces --if-present",
     "//": "=== UTILITIES ===",
-    "clean": "rimraf node_modules package-lock.json **/node_modules **/dist **/.next **/build .venv __pycache__ **/__pycache__",
+    "clean": "rimraf node_modules package-lock.json web/public-site/node_modules web/oversight-hub/node_modules cms/strapi-main/node_modules src/cofounder_agent/node_modules web/public-site/.next web/public-site/dist web/oversight-hub/build cms/strapi-main/build src/cofounder_agent/build .venv src/cofounder_agent/__pycache__",
     "clean:install": "npm run clean && npm install && npm install --workspaces",
     "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md}\" \"!**/package-lock.json\" \"!**/node_modules/**\"",
     "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,md}\" \"!**/package-lock.json\" \"!**/node_modules/**\"",

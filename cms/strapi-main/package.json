@@ -1,8 +1,8 @@
 {
-  "name": "strapi",
-  "version": "0.1.0",
+  "name": "strapi-cms",
+  "version": "3.0.0",
   "private": true,
-  "description": "A Strapi application",
+  "description": "Strapi v5 CMS for Glad Labs - headless content management with PostgreSQL backend",
   "scripts": {
     "build": "strapi build",
     "console": "strapi console",
