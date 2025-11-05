@@ -19,7 +19,7 @@
         "background": {
           "activeOnStart": true,
           "beginsPattern": "^.*npm.*develop.*",
-          "endsPattern": "(Server is running|listening on|Ready on)"
+          "endsPattern": "(Server is running|Strapi has started|Listening|✨ Server started)"
         }
       },
       "presentation": {
@@ -30,14 +30,43 @@
       }
     },
     {
-      "label": "2️⃣ Start Public Site (Port 3000)",
+      "label": "2️⃣ Start Co-founder Agent (Port 8000)",
+      "type": "shell",
+      "command": "python start_server.py",
+      "options": {
+        "cwd": "${workspaceFolder}/src/cofounder_agent"
+      },
+      "isBackground": true,
+      "dependsOn": ["1️⃣ Start Strapi CMS (Port 1337)"],
+      "problemMatcher": {
+        "pattern": {
+          "regexp": "^.*$",
+          "file": 1,
+          "location": 2,
+          "message": 3
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^.*python.*start_server.*",
+          "endsPattern": "(Application startup complete|Uvicorn running on|listening on|Started server)"
+        }
+      },
+      "presentation": {
+        "group": "services",
+        "panel": "shared",
+        "showReuseMessage": false,
+        "clear": false
+      }
+    },
+    {
+      "label": "3️⃣ Start Public Site (Port 3000)",
       "type": "shell",
       "command": "npm run dev",
       "options": {
         "cwd": "${workspaceFolder}/web/public-site"
       },
       "isBackground": true,
-      "dependsOn": ["1️⃣ Start Strapi CMS (Port 1337)"],
+      "dependsOn": ["2️⃣ Start Co-founder Agent (Port 8000)"],
       "problemMatcher": {
         "pattern": {
           "regexp": "^.*$",
@@ -59,14 +88,14 @@
       }
     },
     {
-      "label": "3️⃣ Start Oversight Hub (Port 3001)",
+      "label": "4️⃣ Start Oversight Hub (Port 3001)",
       "type": "shell",
       "command": "npm start",
       "options": {
         "cwd": "${workspaceFolder}/web/oversight-hub"
       },
       "isBackground": true,
-      "dependsOn": ["2️⃣ Start Public Site (Port 3000)"],
+      "dependsOn": ["3️⃣ Start Public Site (Port 3000)"],
       "problemMatcher": {
         "pattern": {
           "regexp": "^.*$",
@@ -87,42 +116,14 @@
         "clear": false
       }
     },
-    {
-      "label": "4️⃣ Start Co-founder Agent (Port 8000)",
-      "type": "shell",
-      "command": "python start_server.py",
-      "options": {
-        "cwd": "${workspaceFolder}/src/cofounder_agent"
-      },
-      "isBackground": true,
-      "dependsOn": ["3️⃣ Start Oversight Hub (Port 3001)"],
-      "problemMatcher": {
-        "pattern": {
-          "regexp": "^.*$",
-          "file": 1,
-          "location": 2,
-          "message": 3
-        },
-        "background": {
-          "activeOnStart": true,
-          "beginsPattern": "^.*python.*start_server.*",
-          "endsPattern": "(Application startup complete|Uvicorn running on|listening on)"
-        }
-      },
-      "presentation": {
-        "group": "services",
-        "panel": "shared",
-        "showReuseMessage": false,
-        "clear": false
-      }
-    },
+
     {
       "label": "🚀 Start All Services (Sequential)",
       "dependsOn": [
         "1️⃣ Start Strapi CMS (Port 1337)",
-        "2️⃣ Start Public Site (Port 3000)",
-        "3️⃣ Start Oversight Hub (Port 3001)",
-        "4️⃣ Start Co-founder Agent (Port 8000)"
+        "2️⃣ Start Co-founder Agent (Port 8000)",
+        "3️⃣ Start Public Site (Port 3000)",
+        "4️⃣ Start Oversight Hub (Port 3001)"
       ],
       "problemMatcher": [],
       "group": {
@@ -133,7 +134,7 @@
         "group": "services",
         "panel": "shared",
         "showReuseMessage": true,
-        "clear": false
+        "clear": true
       }
     },
     {
