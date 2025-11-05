@@ -1,0 +1,43 @@
+# Glad Labs ML/AI Requirements
+# Large machine learning packages for local development
+# Install Size: ~6-8 GB
+# WARNING: Only install if needed! Use for:
+#   - Local development with ML features
+#   - Semantic search and embeddings
+#   - Advanced content processing
+#
+# USAGE:
+#   pip install -r scripts/requirements-ml.txt
+#   
+# NOT recommended for:
+#   - CI/CD pipelines (use requirements-ci.txt instead)
+#   - Production servers (use requirements-core.txt instead)
+#   - GitHub Actions (disk space limited)
+
+# ===== EMBEDDINGS & SEMANTIC SEARCH =====
+# Sentence transformers for semantic similarity
+sentence-transformers>=2.2.0    # ~1.5 GB
+
+# ===== TRANSFORMERS & NLP =====
+# Hugging Face transformers (includes PyTorch)
+transformers>=4.53.0            # ~3-4 GB
+torch>=2.0.0                    # PyTorch (included by transformers)
+
+# ===== DATA SCIENCE STACK =====
+# Scientific computing libraries
+numpy>=1.24.0
+pandas>=2.0.0
+scipy>=1.11.0
+
+# ===== INFERENCE & ML OPS =====
+# ONNX runtime for model inference
+onnxruntime>=1.14.1             # ~800 MB
+
+# ===== VECTOR DATABASE =====
+# ChromaDB for vector search (optional)
+chromadb~=1.1.0                 # ~300 MB
+
+# ===== ADVANCED CONTENT PROCESSING =====
+# Document and content handling
+python-magic>=0.4.27
+Pillow>=10.0.0                  # Image processing

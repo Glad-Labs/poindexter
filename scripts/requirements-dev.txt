@@ -1,0 +1,41 @@
+# Glad Labs Development Requirements
+# For local development environment
+# Install Size: ~1 GB (includes core)
+# Purpose: Development, testing, debugging
+
+# ===== INCLUDE CORE REQUIREMENTS =====
+-r requirements-core.txt
+
+# ===== TESTING FRAMEWORK =====
+# Comprehensive testing suite
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+pytest-timeout>=2.1.0
+pytest-mock>=3.12.0
+
+# ===== CODE QUALITY & LINTING =====
+# Code formatting and quality tools
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.0.0
+isort>=5.12.0                   # Import sorting
+pylint>=3.0.0
+
+# ===== DEVELOPMENT TOOLS =====
+# Interactive development and debugging
+ipython>=8.0.0
+ipdb>=0.13.0                    # Interactive debugger
+
+# ===== OPTIONAL: LIGHTWEIGHT ML TESTING =====
+# For testing ML features without full transformers
+# Uncomment if needed:
+# sentence-transformers>=2.2.0  # For semantic search testing
+
+# ===== API DOCUMENTATION =====
+# Auto API docs
+# Note: FastAPI includes this via uvicorn
+
+# ===== MONITORING IN DEVELOPMENT =====
+# Development-time monitoring
+prometheus-client>=0.19.0       # Optional metrics

@@ -59,6 +59,35 @@ npm run setup:all
 npm run dev
 ```
 
+### **Python Installation Options**
+
+Glad Labs provides tiered Python installation files optimized for different scenarios. Choose based on your use case:
+
+| Scenario                      | Command             | Size   | Purpose                            |
+| ----------------------------- | ------------------- | ------ | ---------------------------------- |
+| **Production / Deployments**  | `npm run setup`     | 500 MB | Lean production setup              |
+| **GitHub Actions / CI/CD**    | `npm run setup:ci`  | 600 MB | Optimized for testing (fast)       |
+| **Local Development**         | `npm run setup:dev` | 1 GB   | Full dev tools + testing           |
+| **Local Dev + ML/Embeddings** | `npm run setup:ml`  | 9 GB   | Optional: semantic search features |
+
+**Recommendation:** Use `npm run setup` for production and `npm run setup:ci` for CI/CD. This saves 8+ GB of disk space by excluding large ML packages that aren't needed for testing.
+
+To manually use specific requirement files:
+
+```bash
+# Core only (production)
+pip install -r scripts/requirements-core.txt
+
+# CI/CD optimized
+pip install -r scripts/requirements-ci.txt
+
+# Development tools
+pip install -r scripts/requirements-dev.txt
+
+# Optional ML packages (semantic search, embeddings)
+pip install -r scripts/requirements-ml.txt
+```
+
 ### **Access Points**
 
 | Service           | URL                     | Purpose               |

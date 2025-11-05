@@ -1,0 +1,28 @@
+# Glad Labs CI/CD Requirements
+# For GitHub Actions and automated testing
+# Install Size: ~600 MB (core + tests only)
+# Purpose: GitHub Actions workflows, CI/CD pipelines
+# NOTE: Optimized to avoid hitting 14 GB GitHub Actions disk limit
+
+# ===== INCLUDE CORE REQUIREMENTS =====
+-r requirements-core.txt
+
+# ===== TESTING FRAMEWORK =====
+# Testing and coverage for CI
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+pytest-timeout>=2.1.0
+pytest-mock>=3.12.0
+
+# ===== CODE QUALITY =====
+# Linting for CI pipeline (minimal)
+black>=23.0.0                   # Code formatting check
+flake8>=6.0.0                   # Linting
+
+# DO NOT INCLUDE:
+# - transformers (6 GB+)
+# - sentence-transformers (2 GB+)
+# - torch/tensorflow (5+ GB)
+# - chromadb with full dependencies
+# These should only be tested locally or in separate ML test jobs
