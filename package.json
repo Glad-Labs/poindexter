@@ -30,7 +30,7 @@
     "lint:fix": "npm run lint:fix --workspaces --if-present",
     "setup": "npm run install:all && pip install -r requirements.txt && pip install -r src/cofounder_agent/requirements.txt",
     "//": "=== TESTING ===",
-    "test": "npm run test --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present && npm run test:python",
     "test:ci": "npm run test --workspaces --if-present -- --ci --coverage --watchAll=false",
     "test:python": "cd src/cofounder_agent && python -m pytest tests/ -v",
     "test:python:smoke": "cd src/cofounder_agent && python -m pytest tests/test_e2e_fixed.py -v"
