@@ -53,12 +53,14 @@
 **Goal:** Verify all 5 GitHub Secrets work correctly in GitHub Actions
 
 **Why:** Before we can deploy to staging/production, we need proof that:
+
 - Secrets are accessible to workflows
 - No "missing secret" errors occur
 - Authentication succeeds
 - Secrets are properly injected into build environment
 
-**How:** 
+**How:**
+
 1. Push to dev branch (or manually trigger workflow)
 2. GitHub Actions runs test suite with secrets
 3. Monitor workflow logs for success or errors
@@ -73,6 +75,7 @@
 ### Step 1: Verify Secrets (2 minutes)
 
 **In browser:**
+
 - Go to: https://github.com/Glad-Labs/glad-labs-codebase/settings/secrets/actions
 - Verify all 5 secrets are listed
 - Verify each shows a value (not blank)
@@ -80,6 +83,7 @@
 ### Step 2: Trigger Workflow (2 minutes)
 
 **Option A (Recommended):** Push to dev
+
 ```powershell
 cd c:\Users\mattm\glad-labs-website
 git checkout dev
@@ -90,6 +94,7 @@ git push origin dev
 ```
 
 **Option B (Alternative):** Manual trigger in GitHub
+
 - Go to: GitHub Actions tab
 - Find: "Test on Dev Branch"
 - Click: "Run workflow" → Select "dev" → "Run workflow"
@@ -97,6 +102,7 @@ git push origin dev
 ### Step 3: Monitor (8 minutes)
 
 **In GitHub Actions tab:**
+
 - Watch for workflow to appear (should be within 1 minute)
 - Click workflow to see detailed logs
 - Look for status: 🟢 GREEN (success) or 🔴 RED (failure)
@@ -105,6 +111,7 @@ git push origin dev
 ### Step 4: Verify Success (3 minutes)
 
 **Check these boxes:**
+
 - ✅ Workflow status is GREEN (not red)
 - ✅ No "missing secret" errors in logs
 - ✅ No "401 Unauthorized" errors
@@ -177,14 +184,17 @@ Phase 4: ⏰ PENDING
 ## 🔗 Resources
 
 **Execute Now:**
+
 - **PHASE_2_5_EXECUTION_GUIDE.md** ← Start here
 - Step-by-step instructions with screenshots
 
 **If Issues Occur:**
+
 - **PHASE_2_5_TROUBLESHOOTING.md** ← Check here
 - 7 common issues with detailed fixes
 
 **Reference:**
+
 - **PRODUCTION_ACTION_PLAN.md** - Master timeline
 - **PRODUCTION_STATUS_NOVEMBER_5.md** - Status report
 - **LOCK_FILE_FIX.md** - Lock file details
@@ -193,15 +203,15 @@ Phase 4: ⏰ PENDING
 
 ## ⏱️ Timeline
 
-| Phase | Duration | Status |
-|-------|----------|--------|
-| Phase 1 | 1 hr | ✅ Complete |
-| Phase 1.5 | 30 min | ✅ Complete |
-| Phase 2 | 30 min | ✅ Complete |
-| **Phase 2.5** | **15 min** | **⏳ You are here** |
-| Phase 3 | 2-3 hrs | ⏰ Pending |
-| Phase 4 | 4-6 hrs | ⏰ Pending |
-| **Total to Production** | **~8-11 hrs** | **Starting now** |
+| Phase                   | Duration      | Status              |
+| ----------------------- | ------------- | ------------------- |
+| Phase 1                 | 1 hr          | ✅ Complete         |
+| Phase 1.5               | 30 min        | ✅ Complete         |
+| Phase 2                 | 30 min        | ✅ Complete         |
+| **Phase 2.5**           | **15 min**    | **⏳ You are here** |
+| Phase 3                 | 2-3 hrs       | ⏰ Pending          |
+| Phase 4                 | 4-6 hrs       | ⏰ Pending          |
+| **Total to Production** | **~8-11 hrs** | **Starting now**    |
 
 ---
 

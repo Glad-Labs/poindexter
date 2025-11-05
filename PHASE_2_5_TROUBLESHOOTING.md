@@ -24,6 +24,7 @@ git branch
 **Fixes (try in order):**
 
 1. **Verify branch is exactly "dev"** (not "develop", not "dev-fix", etc.)
+
    ```powershell
    git branch -v
    git checkout dev
@@ -31,6 +32,7 @@ git branch
    ```
 
 2. **Check `.github/workflows/` directory exists**
+
    ```powershell
    ls -Path ".github/workflows"
    # Should show: test-on-dev.yml, deploy-staging.yml, deploy-production.yml
@@ -53,6 +55,7 @@ git branch
 ### 2. "Missing Secret" Error in Workflow Logs
 
 **Symptom:**
+
 ```
 Error: RAILWAY_TOKEN is not defined
 Error: VERCEL_TOKEN: undefined
@@ -60,6 +63,7 @@ Error: Process.env.OPENAI_API_KEY is null
 ```
 
 **Root Causes:**
+
 - Secret not added to GitHub
 - Secret name has typo (spacing, capitalization)
 - Secret value is empty or blank
@@ -68,6 +72,7 @@ Error: Process.env.OPENAI_API_KEY is null
 **Fixes (try in order):**
 
 1. **Verify secret exists in GitHub**
+
    ```
    Go to: Repository → Settings → Secrets and variables → Actions
    Look for: Exact secret name listed
@@ -104,6 +109,7 @@ Error: Process.env.OPENAI_API_KEY is null
 ### 3. "401 Unauthorized" Error
 
 **Symptom:**
+
 ```
 Error: 401 Unauthorized
 Error: Authentication failed
@@ -112,6 +118,7 @@ Error: Token expired
 ```
 
 **Root Causes:**
+
 - API key/token is invalid or expired
 - API key/token has wrong permissions
 - API key/token is for wrong service
@@ -119,6 +126,7 @@ Error: Token expired
 **Fixes (try in order):**
 
 1. **For RAILWAY_TOKEN:**
+
    ```
    Go to: https://railway.app/account/tokens
    Verify: Token exists and shows "Last used: recently"
@@ -127,6 +135,7 @@ Error: Token expired
    ```
 
 2. **For VERCEL_TOKEN:**
+
    ```
    Go to: https://vercel.com/account/tokens
    Verify: Token exists and is "Active"
@@ -135,6 +144,7 @@ Error: Token expired
    ```
 
 3. **For OPENAI_API_KEY (or Anthropic/Google):**
+
    ```
    Go to: Provider dashboard (openai.com, anthropic.com, etc.)
    Verify: API key exists and is active
@@ -143,6 +153,7 @@ Error: Token expired
    ```
 
 4. **Test token manually:**
+
    ```powershell
    # Test Railway (replace with your actual token)
    $token = "your_railway_token_here"
@@ -150,7 +161,7 @@ Error: Token expired
        "Authorization" = "Bearer $token"
        "Content-Type" = "application/json"
    }
-   
+
    try {
        $response = Invoke-WebRequest `
            -Uri "https://api.railway.app/" `
@@ -167,6 +178,7 @@ Error: Token expired
 ### 4. "403 Forbidden" Error
 
 **Symptom:**
+
 ```
 Error: 403 Forbidden
 Error: Permission denied
@@ -174,6 +186,7 @@ Error: Access denied
 ```
 
 **Root Causes:**
+
 - Token exists but doesn't have required permissions
 - Token is restricted to specific projects/teams
 - Account doesn't have permission for resource
@@ -195,11 +208,12 @@ Error: Access denied
    - Fix: Generate new token with full scope
 
 3. **Check Project IDs match:**
+
    ```powershell
    # Find your actual project ID
    # Railway: https://railway.app/project/[PROJECT_ID]
    # Vercel: https://vercel.com/[ORG]/[PROJECT_ID]
-   
+
    # Verify GitHub secret matches:
    # RAILWAY_PROD_PROJECT_ID should match Railway project
    # VERCEL_PROJECT_ID should match Vercel project
@@ -210,12 +224,14 @@ Error: Access denied
 ### 5. Tests Pass But Build Fails
 
 **Symptom:**
+
 - ✅ Frontend tests pass (11 tests)
 - ✅ Backend tests pass
 - ✅ Linting passes
 - ❌ Build fails with cryptic error
 
 **Root Causes:**
+
 - Dependencies missing or outdated
 - Node/Python version mismatch
 - Build configuration issue
@@ -224,6 +240,7 @@ Error: Access denied
 **Fixes:**
 
 1. **Run build locally first:**
+
    ```powershell
    # From project root
    npm run build
@@ -231,6 +248,7 @@ Error: Access denied
    ```
 
 2. **Check Node/Python versions:**
+
    ```powershell
    node --version      # Should be 18.x or 20.x
    npm --version       # Should be 10.x
@@ -238,6 +256,7 @@ Error: Access denied
    ```
 
 3. **Clean install and retry:**
+
    ```powershell
    npm run clean:install
    npm run build
@@ -252,11 +271,13 @@ Error: Access denied
 ### 6. Workflow Hangs / Timeout
 
 **Symptom:**
+
 - Workflow shows as running for 30+ minutes
 - No output/progress for 15+ minutes
 - Workflow eventually times out
 
 **Root Causes:**
+
 - Network issue downloading dependencies
 - Build process stuck
 - Infinite loop or deadlock
@@ -270,6 +291,7 @@ Error: Access denied
    - Wait: 1-2 minutes for cancellation
 
 2. **Check for network issues:**
+
    ```powershell
    # Test connectivity
    Test-NetConnection -ComputerName "registry.npmjs.org" -Port 443
@@ -277,6 +299,7 @@ Error: Access denied
    ```
 
 3. **Run locally to identify bottleneck:**
+
    ```powershell
    npm ci --workspaces
    npm run build --workspaces
@@ -293,11 +316,13 @@ Error: Access denied
 ### 7. Secret Appears But Still Gets "Not Found"
 
 **Symptom:**
+
 - ✅ Secret shows in GitHub Settings
 - ❌ Workflow still says "secret not found"
 - ✅ Other secrets work fine
 
 **Root Causes:**
+
 - Workflow file references wrong secret name
 - Secret name in workflow has different capitalization
 - Workflow file not yet reloaded
@@ -305,11 +330,12 @@ Error: Access denied
 **Fixes:**
 
 1. **Check workflow file references exact secret name:**
+
    ```yaml
    # In .github/workflows/test-on-dev.yml, should match exactly:
    env:
-     RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}  # ← exact match required
-     VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}    # ← exact match required
+     RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }} # ← exact match required
+     VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }} # ← exact match required
    ```
 
 2. **Force workflow reload:**
@@ -366,6 +392,7 @@ Final:
 **Last Resort Troubleshooting:**
 
 1. **Delete and recreate all secrets:**
+
    ```powershell
    # Delete all 5 secrets from GitHub UI
    # Wait 2 minutes
