@@ -1,5 +1,5 @@
 """
-End-to-End (E2E) Scenario Tests for GLAD Labs Co-Founder Agent
+End-to-End (E2E) Scenario Tests for Glad Labs Co-Founder Agent
 
 Tests complete user journeys and realistic workflows that span multiple services
 and demonstrate production-ready behavior.
