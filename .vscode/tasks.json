@@ -2,65 +2,168 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Start Strapi CMS",
+      "label": "1️⃣ Start Strapi CMS (Port 1337)",
       "type": "shell",
       "command": "npm run develop",
       "options": {
         "cwd": "${workspaceFolder}/cms/strapi-main"
       },
-      "problemMatcher": [],
-      "presentation": {
-        "group": "services",
-        "panel": "dedicated"
-      }
-    },
-    {
-      "label": "Start Oversight Hub",
-      "type": "shell",
-      "command": "npm start",
-      "options": {
-        "cwd": "${workspaceFolder}/web/oversight-hub"
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": {
+          "regexp": "^.*$",
+          "file": 1,
+          "location": 2,
+          "message": 3
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^.*npm.*develop.*",
+          "endsPattern": "(Server is running|listening on|Ready on)"
+        }
       },
-      "problemMatcher": [],
       "presentation": {
         "group": "services",
-        "panel": "dedicated"
+        "panel": "shared",
+        "showReuseMessage": false,
+        "clear": false
       }
     },
     {
-      "label": "Start Public Site",
+      "label": "2️⃣ Start Public Site (Port 3000)",
       "type": "shell",
       "command": "npm run dev",
       "options": {
         "cwd": "${workspaceFolder}/web/public-site"
       },
-      "problemMatcher": [],
+      "isBackground": true,
+      "dependsOn": ["1️⃣ Start Strapi CMS (Port 1337)"],
+      "problemMatcher": {
+        "pattern": {
+          "regexp": "^.*$",
+          "file": 1,
+          "location": 2,
+          "message": 3
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^.*npm.*dev.*",
+          "endsPattern": "(ready|compiled|Local:)"
+        }
+      },
       "presentation": {
         "group": "services",
-        "panel": "dedicated"
+        "panel": "shared",
+        "showReuseMessage": false,
+        "clear": false
       }
     },
     {
-      "label": "Start Co-founder Agent",
+      "label": "3️⃣ Start Oversight Hub (Port 3001)",
+      "type": "shell",
+      "command": "npm start",
+      "options": {
+        "cwd": "${workspaceFolder}/web/oversight-hub"
+      },
+      "isBackground": true,
+      "dependsOn": ["2️⃣ Start Public Site (Port 3000)"],
+      "problemMatcher": {
+        "pattern": {
+          "regexp": "^.*$",
+          "file": 1,
+          "location": 2,
+          "message": 3
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^.*npm.*start.*",
+          "endsPattern": "(started|Compiled|started successfully)"
+        }
+      },
+      "presentation": {
+        "group": "services",
+        "panel": "shared",
+        "showReuseMessage": false,
+        "clear": false
+      }
+    },
+    {
+      "label": "4️⃣ Start Co-founder Agent (Port 8000)",
       "type": "shell",
       "command": "python start_server.py",
       "options": {
         "cwd": "${workspaceFolder}/src/cofounder_agent"
       },
-      "problemMatcher": [],
+      "isBackground": true,
+      "dependsOn": ["3️⃣ Start Oversight Hub (Port 3001)"],
+      "problemMatcher": {
+        "pattern": {
+          "regexp": "^.*$",
+          "file": 1,
+          "location": 2,
+          "message": 3
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^.*python.*start_server.*",
+          "endsPattern": "(Application startup complete|Uvicorn running on|listening on)"
+        }
+      },
       "presentation": {
         "group": "services",
-        "panel": "dedicated"
+        "panel": "shared",
+        "showReuseMessage": false,
+        "clear": false
       }
     },
     {
-      "label": "Start All Services",
+      "label": "🚀 Start All Services (Sequential)",
       "dependsOn": [
-        "Start Strapi CMS",
-        "Start Oversight Hub",
-        "Start Public Site",
-        "Start Co-founder Agent"
+        "1️⃣ Start Strapi CMS (Port 1337)",
+        "2️⃣ Start Public Site (Port 3000)",
+        "3️⃣ Start Oversight Hub (Port 3001)",
+        "4️⃣ Start Co-founder Agent (Port 8000)"
       ],
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "group": "services",
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+      }
+    },
+    {
+      "label": "🛑 Kill All Services",
+      "type": "shell",
+      "command": "Write-Host 'Killing all Node.js and Python processes...'; Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; Write-Host 'All services stopped.'",
+      "presentation": {
+        "echo": true,
+        "reveal": "silent"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "✅ Check All Services Status",
+      "type": "shell",
+      "command": "Write-Host '=== SERVICE STATUS ===' ; Write-Host 'Strapi CMS (1337):' ; curl -s http://localhost:1337 > $null && Write-Host '✅ Running' -ForegroundColor Green || Write-Host '❌ Stopped' -ForegroundColor Red ; Write-Host 'Public Site (3000):' ; curl -s http://localhost:3000 > $null && Write-Host '✅ Running' -ForegroundColor Green || Write-Host '❌ Stopped' -ForegroundColor Red ; Write-Host 'Oversight Hub (3001):' ; curl -s http://localhost:3001 > $null && Write-Host '✅ Running' -ForegroundColor Green || Write-Host '❌ Stopped' -ForegroundColor Red ; Write-Host 'Co-founder Agent (8000):' ; curl -s http://localhost:8000/api/health > $null && Write-Host '✅ Running' -ForegroundColor Green || Write-Host '❌ Stopped' -ForegroundColor Red",
+      "presentation": {
+        "echo": true,
+        "reveal": "silent"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "🔄 Restart All Services",
+      "type": "shell",
+      "command": "echo 'Stopping all services...' ; Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue ; Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue ; Start-Sleep -Seconds 2 ; echo 'Starting all services...' ; echo 'Restarting complete. Run task: Start All Services (Sequential)'",
+      "presentation": {
+        "echo": true,
+        "reveal": "silent"
+      },
       "problemMatcher": []
     },
     {
