@@ -1,10 +1,10 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-GLAD Labs Tier 1 Resource Monitor (PowerShell)
+Glad Labs Production Resource Monitor (PowerShell)
 
 .DESCRIPTION
-Monitor Tier 1 production resources and alert when approaching limits.
+Monitor Production production resources and alert when approaching limits.
 Checks CPU, memory, database size, and provides scaling recommendations.
 
 .EXAMPLE
@@ -47,7 +47,7 @@ function Write-Color {
 function Show-Banner {
     Write-Color ""
     Write-Color "╔════════════════════════════════════════════════════════╗" "Cyan"
-    Write-Color "║     GLAD Labs Tier 1 Resource Monitor (PowerShell)     ║" "Cyan"
+    Write-Color "║     Glad Labs Production Resource Monitor (PowerShell)     ║" "Cyan"
     Write-Color "╚════════════════════════════════════════════════════════╝" "Cyan"
     Write-Color ""
 }
@@ -174,12 +174,12 @@ function Show-ScalingRecommendations {
 
 function Show-OperationsCosts {
     Write-Color ""
-    Write-Color "💰 Current Tier 1 Costs" "Cyan"
+    Write-Color "💰 Current Production Costs" "Cyan"
     Write-Color "─" * 56 "Cyan"
     
     Write-Color "  Monthly Budget: ~$0-10" "Green"
     Write-Color "  Services:" "White"
-    Write-Color "    • PostgreSQL: FREE (included in Tier 1)" "Green"
+    Write-Color "    • PostgreSQL: FREE (included in Production)" "Green"
     Write-Color "    • Strapi CMS: FREE (shared CPU)" "Green"
     Write-Color "    • Co-Founder Agent: FREE (shared CPU)" "Green"
     Write-Color "    • Frontend (Vercel): FREE (Pro plan available)" "Green"
@@ -244,3 +244,5 @@ function Main {
 
 # Run main
 Main
+
+

@@ -1,7 +1,7 @@
 @echo off
-REM Glad Labs Tier 1 Database Backup Script (Windows Batch)
+REM Glad Labs Production Database Backup Script (Windows Batch)
 REM 
-REM Purpose: Automated PostgreSQL backup for Tier 1 production
+REM Purpose: Automated PostgreSQL backup for Production production
 REM Schedule: Windows Task Scheduler (daily at 2 AM)
 REM Retention: 7-day rolling backup
 REM
@@ -23,7 +23,7 @@ for /F %%A in ('echo prompt $H ^| cmd') do set "BS=%%A"
 
 echo.
 echo ╔════════════════════════════════════════════════════════╗
-echo ║  Glad Labs Tier 1 Database Backup Script              ║
+echo ║  Glad Labs Production Database Backup Script              ║
 echo ║  Database: PostgreSQL ^| Schedule: Daily at 2 AM      ║
 echo ╚════════════════════════════════════════════════════════╝
 echo.
@@ -37,7 +37,7 @@ if not exist "%BACKUP_DIR%" (
 REM Log backup start
 echo. >> "%LOG_FILE%"
 echo [%date% %time%] ========================================== >> "%LOG_FILE%"
-echo [%date% %time%] Starting Tier 1 Database Backup >> "%LOG_FILE%"
+echo [%date% %time%] Starting Production Database Backup >> "%LOG_FILE%"
 echo [%date% %time%] ========================================== >> "%LOG_FILE%"
 
 REM Check if DATABASE_URL is set
@@ -162,3 +162,5 @@ echo    4. Monitor backup log for errors
 echo.
 
 endlocal
+
+

@@ -1,4 +1,4 @@
-# GLAD Labs AI Co-Founder Monorepo Requirements
+# Glad Labs AI Co-Founder Monorepo Requirements
 # Complete Python dependencies for all agents and services
 
 # ===== CORE AI & AGENT FRAMEWORKS =====
@@ -165,3 +165,4 @@ email-validator>=2.1.0
 # ===== COMPLIANCE & LEGAL =====
 # Document analysis for compliance
 # spacy>=3.7.0  # Uncomment for NLP compliance checking
+

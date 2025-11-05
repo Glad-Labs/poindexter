@@ -179,7 +179,7 @@ async def lifespan(app: FastAPI):
         logger.info(f"  - Orchestrator: {orchestrator is not None}")
         logger.info(f"  - Task Store: initialized")
         logger.info(f"  - Startup Error: {startup_error}")
-        logger.info(f"  - API Base URL: {api_base_url}")
+        logger.info(f"  - API Base URL: {os.getenv('API_BASE_URL', 'http://localhost:8000')}")
         
         startup_complete = True
         yield  # Application runs here

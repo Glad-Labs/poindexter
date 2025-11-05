@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Backup Tier 1 Database to Local/Remote Storage
+# Backup Production Database to Local/Remote Storage
 # Schedule: Weekly (e.g., 0 0 * * 0 /path/to/backup-tier1-db.sh)
 # 
 # Backups location:
@@ -17,7 +17,7 @@ BACKUP_FILE="$BACKUP_DIR/glad_labs_tier1_$DATE.sql.gz"
 # Create backup directory
 mkdir -p "$BACKUP_DIR"
 
-echo "💾 Starting Tier 1 Database Backup"
+echo "💾 Starting Production Database Backup"
 echo "═══════════════════════════════════"
 echo "Time: $(date)"
 echo "Destination: $BACKUP_FILE"
@@ -130,3 +130,4 @@ echo "   - Store in multiple locations"
 echo "   - Test restore monthly"
 echo "   - Keep 4+ weeks of backups"
 echo ""
+

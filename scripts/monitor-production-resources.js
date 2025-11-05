@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Monitor Tier 1 Resources and Alert When Approaching Limits
+ * Monitor Production Resources and Alert When Approaching Limits
  * Run: npm run monitor:resources
  */
 
@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-console.log('📊 GLAD Labs Tier 1 Resource Monitor');
+console.log('📊 Glad Labs Production Resource Monitor');
 console.log('═'.repeat(60));
 
 const LIMITS = {
@@ -204,7 +204,7 @@ function printSummary(metrics, alerts) {
   // Cost comparison
   console.log('\n💰 UPGRADE OPTION\n');
   console.log(
-    '   Tier 1 (Current):  $0/month  | 1GB DB | 256MB RAM | 50 users'
+    '   Production (Current):  $0/month  | 1GB DB | 256MB RAM | 50 users'
   );
   console.log(
     '   Tier 2 (Upgrade):  $50/month | 10GB DB | 1GB RAM | 500 users'
@@ -265,3 +265,5 @@ function printSummary(metrics, alerts) {
     process.exit(1);
   }
 })();
+
+

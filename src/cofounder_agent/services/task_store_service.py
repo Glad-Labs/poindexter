@@ -144,9 +144,18 @@ class SyncTaskStoreDatabase:
                     connect_args={"check_same_thread": False},
                 )
             else:
-                # PostgreSQL with connection pooling
+                # PostgreSQL with asyncpg driver (NOT psycopg2)
+                # Convert connection string to asyncpg format if needed
+                db_url = self.database_url
+                
+                # If using PostgreSQL, ensure we use asyncpg instead of psycopg2
+                if "postgresql://" in db_url:
+                    db_url = db_url.replace("postgresql://", "postgresql+asyncpg://")
+                elif "postgres://" in db_url:
+                    db_url = db_url.replace("postgres://", "postgresql+asyncpg://")
+                
                 self.engine = create_engine(
-                    self.database_url,
+                    db_url,
                     echo=False,
                     poolclass=QueuePool,
                     pool_size=20,

@@ -1,7 +1,7 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-    Automated development environment setup for GLAD Labs monorepo.
+    Automated development environment setup for Glad Labs monorepo.
     
 .DESCRIPTION
     Installs all dependencies and fixes common monorepo issues:
@@ -27,7 +27,7 @@
     .\scripts\setup-dev.ps1 -Clean -Verbose     # Clean + debug output
     
 .NOTES
-    Author: GLAD Labs Development Team
+    Author: Glad Labs Development Team
     Date: October 25, 2025
     This script must be run from the project root directory.
 #>
@@ -106,7 +106,7 @@ function Test-DirectoryExists {
 # VALIDATION
 # ============================================================================
 
-Write-Header "GLAD Labs Development Environment Setup"
+Write-Header "Glad Labs Development Environment Setup"
 Write-Info "Project Root: $projectRoot"
 Write-Info "PowerShell Version: $($PSVersionTable.PSVersion.Major).$($PSVersionTable.PSVersion.Minor)"
 
@@ -380,3 +380,4 @@ else {
 
 Write-Info "For more information, see: docs/MONOREPO_SETUP.md"
 Write-Host "`n"
+

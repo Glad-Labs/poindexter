@@ -64,3 +64,4 @@ echo "  • Co-Founder Agent: http://localhost:8000"
 echo "  • Oversight Hub: http://localhost:3001"
 echo "  • Public Site: http://localhost:3000"
 echo ""
+

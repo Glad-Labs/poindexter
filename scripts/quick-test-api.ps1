@@ -68,3 +68,4 @@ try {
 Write-Host ""
 Write-Host "✨ All tests complete!`n" -ForegroundColor Cyan
 Write-Host "📖 Visit http://localhost:8000/docs for interactive API documentation`n" -ForegroundColor White
+

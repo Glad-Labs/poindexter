@@ -16,6 +16,7 @@ The current production documentation is in [`docs/00-README.md`](../00-README.md
 ## Why Archive?
 
 Per the HIGH-LEVEL ONLY documentation policy:
+
 - ✅ Session-specific artifacts are archived after project completion
 - ✅ Historical reference materials are preserved for context
 - ✅ Active documentation stays focused and maintainable

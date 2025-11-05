@@ -73,3 +73,4 @@ Write-Host ""
 Write-Host "Verify connection:" -ForegroundColor Yellow
 Write-Host "  psql -U postgres -d glad_labs_dev" -ForegroundColor White
 Write-Host ""
+

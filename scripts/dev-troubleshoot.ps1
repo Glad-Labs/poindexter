@@ -1,7 +1,7 @@
 # Quick Dev Startup Troubleshooting Script
 # Usage: . scripts/dev-troubleshoot.ps1
 
-Write-Host "`n🔍 GLAD Labs Dev Troubleshooting`n" -ForegroundColor Cyan
+Write-Host "`n🔍 Glad Labs Dev Troubleshooting`n" -ForegroundColor Cyan
 
 # Check 1: Git branch
 Write-Host "1️⃣  Checking git branch..." -ForegroundColor Yellow
@@ -79,3 +79,4 @@ Write-Host "  Strapi Admin: http://localhost:1337/admin" -ForegroundColor Green
 Write-Host "  Public Site: http://localhost:3000" -ForegroundColor Green
 Write-Host "  Oversight Hub: http://localhost:3001" -ForegroundColor Green
 Write-Host "  Co-Founder Agent: http://localhost:8000/docs" -ForegroundColor Green
+

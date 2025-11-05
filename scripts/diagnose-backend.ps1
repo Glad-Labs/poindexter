@@ -5,7 +5,7 @@ $ErrorActionPreference = "Continue"
 
 Write-Host ""
 Write-Host "=========================================" -ForegroundColor Cyan
-Write-Host "GLAD LABS - BACKEND DIAGNOSTICS" -ForegroundColor Cyan
+Write-Host "Glad Labs - BACKEND DIAGNOSTICS" -ForegroundColor Cyan
 Write-Host "=========================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -87,3 +87,4 @@ Write-Host "`n=========================================" -ForegroundColor Cyan
 Write-Host "Next: Start backend server if not running" -ForegroundColor Cyan
 Write-Host "=========================================" -ForegroundColor Cyan
 Write-Host ""
+
