@@ -230,14 +230,35 @@ async def create_task(
     ```
     """
     try:
+        # Validate required fields with detailed error messages
+        if not request.task_name or not str(request.task_name).strip():
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "field": "task_name",
+                    "message": "task_name is required and cannot be empty",
+                    "type": "validation_error"
+                }
+            )
+        
+        if not request.topic or not str(request.topic).strip():
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "field": "topic",
+                    "message": "topic is required and cannot be empty",
+                    "type": "validation_error"
+                }
+            )
+        
         # Create task data
         task_data = {
             "id": str(uuid_lib.uuid4()),
-            "task_name": request.task_name,
-            "topic": request.topic,
-            "primary_keyword": request.primary_keyword or "",
-            "target_audience": request.target_audience or "",
-            "category": request.category,
+            "task_name": request.task_name.strip(),
+            "topic": request.topic.strip(),
+            "primary_keyword": (request.primary_keyword or "").strip(),
+            "target_audience": (request.target_audience or "").strip(),
+            "category": (request.category or "general").strip(),
             "status": "pending",
             "agent_id": "content-agent",
             "user_id": current_user.get("id", "system"),
@@ -255,8 +276,16 @@ async def create_task(
             "message": "Task created successfully"
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create task: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": f"Failed to create task: {str(e)}",
+                "type": "internal_error"
+            }
+        )
 
 
 @router.get("", response_model=TaskListResponse, summary="List tasks")

@@ -39,6 +39,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from orchestrator_logic import Orchestrator
 from services.database_service import DatabaseService
+from services.task_executor import TaskExecutor
+from services.content_critique_loop import ContentCritiqueLoop
+from services.strapi_publisher import StrapiPublisher
 
 # Import route routers
 # Unified content router (consolidates content.py, content_generation.py, enhanced_content.py)
@@ -86,13 +89,14 @@ logger = get_logger(__name__)
 # Global service instances
 database_service: Optional[DatabaseService] = None
 orchestrator: Optional[Orchestrator] = None
+task_executor: Optional[TaskExecutor] = None
 startup_error: Optional[str] = None
 startup_complete: bool = False
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager - startup and shutdown with PostgreSQL initialization"""
-    global database_service, orchestrator, startup_error, startup_complete
+    global database_service, orchestrator, task_executor, startup_error, startup_complete
     
     try:
         logger.info("🚀 Starting Glad Labs AI Co-Founder application...")
@@ -157,7 +161,51 @@ async def lifespan(app: FastAPI):
             startup_error = error_msg
             # Don't re-raise - allow app to start for health checks
         
-        # 5. Verify connections
+        # 5. Initialize content critique loop and Strapi publisher
+        logger.info("  🔍 Initializing content critique loop...")
+        try:
+            critique_loop = ContentCritiqueLoop()
+            logger.info("  ✅ Content critique loop initialized")
+        except Exception as e:
+            logger.warning(f"  ⚠️ Content critique loop initialization failed: {e}")
+            critique_loop = None
+        
+        logger.info("  🌐 Initializing Strapi publisher...")
+        try:
+            strapi_url = os.getenv("STRAPI_URL", "http://localhost:1337")
+            strapi_token = os.getenv("STRAPI_API_TOKEN", "")
+            strapi_publisher = StrapiPublisher(strapi_url=strapi_url, api_token=strapi_token)
+            
+            # Test connection
+            if strapi_publisher.test_connection():
+                logger.info(f"  ✅ Strapi publisher initialized ({strapi_url})")
+            else:
+                logger.warning(f"  ⚠️ Could not connect to Strapi at {strapi_url}")
+                strapi_publisher = None
+        except Exception as e:
+            logger.warning(f"  ⚠️ Strapi publisher initialization failed: {e}")
+            strapi_publisher = None
+        
+        # 6. Initialize background task executor (UPDATED WITH PRODUCTION PIPELINE)
+        logger.info("  ⏳ Starting background task executor (with production pipeline)...")
+        try:
+            task_executor = TaskExecutor(
+                database_service=database_service,
+                orchestrator=orchestrator,
+                critique_loop=critique_loop,
+                strapi_client=strapi_publisher,
+                poll_interval=5  # Poll every 5 seconds
+            )
+            await task_executor.start()
+            logger.info("  ✅ Background task executor started successfully")
+            logger.info(f"     🔗 Pipeline: Orchestrator→Critique→Strapi")
+        except Exception as e:
+            error_msg = f"Task executor startup failed: {str(e)}"
+            logger.error(f"  ⚠️ {error_msg}", exc_info=True)
+            # Don't fail startup - task processing is optional
+            task_executor = None
+        
+        # 6. Verify connections
         if database_service:
             try:
                 logger.info("  🔍 Verifying database connection...")
@@ -178,6 +226,7 @@ async def lifespan(app: FastAPI):
         logger.info("✅ Application started successfully!")
         logger.info(f"  - Database Service: {database_service is not None}")
         logger.info(f"  - Orchestrator: {orchestrator is not None}")
+        logger.info(f"  - Task Executor: {task_executor is not None and task_executor.running}")
         logger.info(f"  - Task Store: initialized")
         logger.info(f"  - Startup Error: {startup_error}")
         logger.info(f"  - API Base URL: {api_base_url}")
@@ -194,6 +243,17 @@ async def lifespan(app: FastAPI):
         # ===== SHUTDOWN =====
         try:
             logger.info("🛑 Shutting down Glad Labs AI Co-Founder application...")
+            
+            # Stop background task executor
+            try:
+                if task_executor and task_executor.running:
+                    logger.info("  Stopping background task executor...")
+                    await task_executor.stop()
+                    logger.info("  ✅ Task executor stopped")
+                    stats = task_executor.get_stats()
+                    logger.info(f"     Tasks processed: {stats['total_processed']}, Success: {stats['successful']}, Failed: {stats['failed']}")
+            except Exception as e:
+                logger.error(f"  ⚠️ Error stopping task executor: {e}", exc_info=True)
             
             # Close task store
             try:

@@ -43,15 +43,18 @@
     {
       "label": "Start Co-founder Agent",
       "type": "shell",
-      "command": "python start_server.py",
+      "command": "python start_backend.py",
       "options": {
         "cwd": "${workspaceFolder}/src/cofounder_agent"
       },
-      "problemMatcher": [],
+      "problemMatcher": ["$python"],
       "presentation": {
         "group": "services",
-        "panel": "dedicated"
-      }
+        "panel": "dedicated",
+        "reveal": "always",
+        "clear": false
+      },
+      "isBackground": false
     },
     {
       "label": "Start All Services",
