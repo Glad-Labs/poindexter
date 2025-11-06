@@ -7,9 +7,18 @@ module.exports = ({ env }) => {
         client: 'postgres',
         connection: {
           connectionString: databaseUrl,
+          ssl:
+            env('NODE_ENV') === 'production'
+              ? { rejectUnauthorized: false }
+              : false,
         },
         debug: false,
-        pool: { min: 0, max: 7 },
+        pool: {
+          min: 0,
+          max: 5,
+          acquireTimeoutMillis: 30000,
+          idleTimeoutMillis: 30000,
+        },
       },
     };
   }
@@ -23,9 +32,18 @@ module.exports = ({ env }) => {
         client: 'postgres',
         connection: {
           connectionString: env('DATABASE_URL'),
+          ssl:
+            env('NODE_ENV') === 'production'
+              ? { rejectUnauthorized: false }
+              : false,
         },
         debug: false,
-        pool: { min: 0, max: 7 },
+        pool: {
+          min: 0,
+          max: 5,
+          acquireTimeoutMillis: 30000,
+          idleTimeoutMillis: 30000,
+        },
       },
     };
   }
