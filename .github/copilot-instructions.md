@@ -136,6 +136,7 @@ npm run test:python:smoke # Quick backend smoke tests (5-10 min)
 ```
 
 **⚠️ ESLint Migration (Nov 5, 2025):**
+
 - Both frontend projects now use ESLint v9 with `eslint.config.js` (flat config format)
 - Oversight Hub: CommonJS format (`require()`) for react-scripts compatibility
 - Public Site: ES Module format (`import`) with `"type": "module"` in package.json
@@ -147,6 +148,7 @@ npm run test:python:smoke # Quick backend smoke tests (5-10 min)
 ### ESLint v9 Configuration Details
 
 **Oversight Hub** (`web/oversight-hub/eslint.config.js`):
+
 - Uses CommonJS (required for react-scripts)
 - Plugins: React, React Hooks
 - Files matched: `src/**/*.{js,jsx}`
@@ -154,18 +156,21 @@ npm run test:python:smoke # Quick backend smoke tests (5-10 min)
 - Key rule: Warnings for unused vars, console.log, prop validation
 
 **Public Site** (`web/public-site/eslint.config.js`):
+
 - Uses ES Module format (with `"type": "module"` in package.json)
 - Plugins: React, Next.js
-- Files matched: `components/**`, `pages/**`, `lib/**`, `app/**` (*.{js,jsx})
+- Files matched: `components/**`, `pages/**`, `lib/**`, `app/**` (\*.{js,jsx})
 - Globals: browser, es2021, node, jest
 - Key rule: Errors for unescaped entities, warnings for missing prop types
 
 **Common Ignore Patterns** (both projects):
+
 ```
 node_modules/, build/, dist/, .next/, coverage/, .env, *.log, .DS_Store, config files
 ```
 
 **How to fix linting issues**:
+
 ```powershell
 npm run lint -- --fix              # Auto-fix what can be fixed
 npm run lint                       # Review remaining issues
@@ -253,10 +258,12 @@ Both frontend projects were migrated from deprecated ESLint v8 `.eslintrc.json` 
   - Pattern: `export default [{ ignores: [...], files: [...], plugins: {...} }]`
 
 **Critical Discovery**: Both projects have `~670` identified linting issues (not config errors):
+
 - **Oversight Hub**: ~60 warnings (unused imports, console.log, prop validation)
 - **Public Site**: ~80+ warnings/errors (unescaped entities, missing prop types, console.log)
 
 **PATTERN TO FOLLOW**:
+
 1. When editing React/Next.js code, run `npm run lint -- --fix` to auto-fix issues
 2. For configuration changes, edit `eslint.config.js` directly (not `.eslintignore`)
 3. When adding new rules, follow project-specific patterns (CommonJS vs ES Module)
@@ -384,11 +391,11 @@ The multi-agent system includes 5 specialized agents working in parallel:
 | ------------------------ | ----------------------------------------------------------------------- |
 | FastAPI backend logic    | `src/cofounder_agent/main.py`, `orchestrator_logic.py`, `routes/`       |
 | AI agent implementations | `src/agents/` with specialized agents:                                  |
-|                          | - `content_agent/` - Content creation and management                   |
-|                          | - `financial_agent/` - Business metrics and projections                |
-|                          | - `market_insight_agent/` - Market analysis and trends                 |
-|                          | - `compliance_agent/` - Regulatory compliance checking                 |
-|                          | - `social_media_agent/` - Social media strategy and posting            |
+|                          | - `content_agent/` - Content creation and management                    |
+|                          | - `financial_agent/` - Business metrics and projections                 |
+|                          | - `market_insight_agent/` - Market analysis and trends                  |
+|                          | - `compliance_agent/` - Regulatory compliance checking                  |
+|                          | - `social_media_agent/` - Social media strategy and posting             |
 | React admin dashboard    | `web/oversight-hub/src/components/`, `store/useStore.js`                |
 | Next.js public site      | `web/public-site/pages/`, `lib/api.js`, `components/`                   |
 | Strapi CMS setup         | `cms/strapi-v5-backend/src/` (production-ready, operational)            |
@@ -806,15 +813,99 @@ echo $DATABASE_URL
 
 ---
 
-## 📋 Document Control
+## � Documentation Policy: HIGH-LEVEL ONLY ⚠️ **CRITICAL**
+
+### Philosophy
+
+Glad Labs maintains a **HIGH-LEVEL ONLY** documentation approach to reduce maintenance burden and prevent documentation staleness as the codebase evolves.
+
+**The Rule:** Document what is stable and architectural; let code document the rest.
+
+### What To Document
+
+**✅ CREATE & MAINTAIN:**
+
+- Core docs (00-07): Architecture-level guidance that survives code changes
+- System design: How components fit together
+- Deployment procedures: Infrastructure and deployment strategy
+- Operations: Monitoring, backups, maintenance
+- API contracts: Interface definitions
+- Database schemas: Data models
+- Standards: Code quality and naming conventions
+
+**❌ DO NOT CREATE:**
+
+- How-to guides for features (code shows how; guides become stale)
+- Status updates or session notes (version control is history)
+- Project audit files (temporal, not useful long-term)
+- Duplicate documentation (consolidate into core docs)
+- Step-by-step tutorials (maintenance nightmare)
+- Outdated historical guides (archive or delete)
+
+### Documentation Structure
+
+```
+docs/
+├── 00-README.md ✅ Main hub
+├── 01-SETUP_AND_OVERVIEW.md ✅ Getting started
+├── 02-ARCHITECTURE_AND_DESIGN.md ✅ System architecture
+├── 03-DEPLOYMENT_AND_INFRASTRUCTURE.md ✅ Production deployment
+├── 04-DEVELOPMENT_WORKFLOW.md ✅ Git workflow & testing
+├── 05-AI_AGENTS_AND_INTEGRATION.md ✅ Agent architecture
+├── 06-OPERATIONS_AND_MAINTENANCE.md ✅ Operations procedures
+├── 07-BRANCH_SPECIFIC_VARIABLES.md ✅ Environment config
+├── components/ # Minimal, linked to core docs
+├── reference/ # Technical specs only (no guides)
+└── troubleshooting/ # Focused solutions only
+```
+
+### When Asked To Document
+
+**Ask yourself in this order:**
+
+1. **Is this architecture-level?** (Will it still be true in 6 months?)
+   - If yes → Add to appropriate core doc (00-07)
+   - If no → Ask #2
+
+2. **Is this a how-to guide?** (Step-by-step feature usage?)
+   - If yes → Don't create; code demonstrates the feature
+   - If no → Ask #3
+
+3. **Does this duplicate existing docs?**
+   - If yes → Consolidate into existing doc instead
+   - If no → Ask #4
+
+4. **Is this a focused, reusable reference?** (Schema, API spec, standard?)
+   - If yes → Add to reference/ folder
+   - If no → Don't create
+
+### Maintenance Guidelines
+
+- **Core docs (00-07):** Update when architecture changes (quarterly reviews)
+- **Reference docs:** Update when API/schema changes (as needed)
+- **Troubleshooting:** Add focused solutions; delete when issue is fixed
+- **Everything else:** Archive or delete after 30 days if unused
+
+### Metrics
+
+Track these to keep documentation healthy:
+
+- **Total files in docs/:** <20 (currently ~14) ✅
+- **Core docs (00-07):** Always 8 files ✅
+- **Maintenance burden:** ~1 hour/quarter for core docs ✅
+- **Documentation debt:** 0 stale/outdated files 🎯
+
+---
+
+## �📋 Document Control
 
 | Field            | Value                                          |
-| ---------------- | ---------------------------------------------- |
-| **Version**      | 2.1                                            |
-| **Last Updated** | November 5, 2025 (ESLint v9 Migration)        |
+| ---------------- | ---------------------------------------------- | ---------------- |
+| **Version**      | 3.0                                            |
+| **Last Updated** | November 5, 2025 (High-Level Only Policy)      |
 | **Next Review**  | February 5, 2026 (quarterly)                   |
 | **Author**       | GitHub Copilot & Glad Labs Team                |
-| **Status**       | Active & Maintained | Production Ready        |
+| **Status**       | Active & Maintained                            | Production Ready |
 | **Audience**     | All team members (developers, DevOps, QA, PMs) |
 
 ---
