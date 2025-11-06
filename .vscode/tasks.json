@@ -56,10 +56,10 @@
     {
       "label": "Start All Services",
       "dependsOn": [
+        "Start Co-founder Agent",
         "Start Strapi CMS",
         "Start Oversight Hub",
-        "Start Public Site",
-        "Start Co-founder Agent"
+        "Start Public Site"
       ],
       "problemMatcher": []
     },

@@ -13,7 +13,7 @@
   ],
   "scripts": {
     "//": "=== DEVELOPMENT ===",
-    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev": "npm run env:select && concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:backend": "concurrently \"npm run dev --workspace=src/cofounder_agent\" \"npm run develop --workspace=cms/strapi-main\"",
     "dev:cofounder": "npm run dev --workspace=src/cofounder_agent",
     "dev:frontend": "concurrently \"npm run dev --workspace=web/public-site\" \"npm start --workspace=web/oversight-hub\"",
@@ -24,6 +24,7 @@
     "//": "=== UTILITIES ===",
     "clean": "rimraf node_modules package-lock.json **/node_modules **/dist **/.next **/build .venv __pycache__ **/__pycache__",
     "clean:install": "npm run clean && npm install && npm install --workspaces",
+    "env:select": "node scripts/select-env.js",
     "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md}\" \"!**/package-lock.json\" \"!**/node_modules/**\"",
     "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,md}\" \"!**/package-lock.json\" \"!**/node_modules/**\"",
     "install:all": "npm install && npm install --workspaces",
