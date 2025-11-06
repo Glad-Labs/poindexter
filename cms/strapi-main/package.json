@@ -12,7 +12,13 @@
     "start": "strapi start",
     "strapi": "strapi",
     "upgrade": "npx @strapi/upgrade latest",
-    "upgrade:dry": "npx @strapi/upgrade latest --dry"
+    "upgrade:dry": "npx @strapi/upgrade latest --dry",
+    "register-types": "node scripts/register-content-types.js",
+    "register-types:improved": "node scripts/register-content-types-v2.js",
+    "seed": "node scripts/seed-data-fixed.js",
+    "seed:single": "node scripts/seed-single-types.js",
+    "setup": "node scripts/setup-complete.js",
+    "fix-401": "echo 'Fix 401 errors:' && echo '1. Generate token: Go to http://localhost:1337/admin' && echo '2. Set env: $env:STRAPI_API_TOKEN=\"token\"' && echo '3. Run: npm run register-types:improved'"
   },
   "dependencies": {
     "@strapi/plugin-users-permissions": "^5.18.1",

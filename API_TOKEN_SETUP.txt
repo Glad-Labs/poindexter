@@ -1,0 +1,172 @@
+#!/usr/bin/env node
+
+/**
+ * IMPORTANT: API Token Setup Guide
+ * 
+ * The register-content-types.js script needs a valid API token.
+ * 
+ * OPTION 1: Create Token via Strapi Admin UI (Easiest)
+ * ═════════════════════════════════════════════════════
+ * 
+ * 1. Go to: http://localhost:1337/admin
+ * 2. Settings → API Tokens → Create new API Token
+ * 3. Name: "Content Type Registration"
+ * 4. Type: Full access (or select custom permissions)
+ * 5. Copy the token
+ * 6. Set environment variable:
+ *    
+ *    PowerShell:
+ *      $env:STRAPI_API_TOKEN = "your-token-here"
+ *      npm run setup
+ *    
+ *    Bash:
+ *      export STRAPI_API_TOKEN="your-token-here"
+ *      npm run setup
+ * 
+ * ───────────────────────────────────────────────────────
+ * 
+ * OPTION 2: Bypass Registration (Use Strapi UI)
+ * ═════════════════════════════════════════════
+ * 
+ * If you don't have an admin account yet:
+ * 
+ * 1. Go to: http://localhost:1337/admin
+ * 2. Create admin account (first time setup)
+ * 3. Strapi auto-creates content types from schema.json files
+ * 4. Verify in: Content Manager → Collections
+ * 5. Then seed data:
+ *    npm run seed
+ * 
+ * ───────────────────────────────────────────────────────
+ * 
+ * OPTION 3: Fix Script to Work Without Token
+ * ═════════════════════════════════════════════
+ * 
+ * Strapi v5 can auto-discover schemas WITHOUT API token
+ * by checking if content types are already registered.
+ * 
+ * We'll update register-content-types.js to:
+ * 1. Check if content type already exists
+ * 2. Skip registration if it does
+ * 3. Only use API token if needed
+ * 
+ * See the updated register-content-types-v2.js file
+ * 
+ * ───────────────────────────────────────────────────────
+ */
+
+console.log(`
+╔════════════════════════════════════════════════════════════╗
+║          🔐 API TOKEN SETUP REQUIRED                       ║
+╚════════════════════════════════════════════════════════════╝
+
+The registration script got a 401 Unauthorized error.
+
+This means Strapi requires a valid API token to register content types.
+
+═══════════════════════════════════════════════════════════════
+
+🔧 QUICK FIX (Choose one)
+
+═══════════════════════════════════════════════════════════════
+
+OPTION 1: Create API Token in Strapi Admin ⭐ RECOMMENDED
+─────────────────────────────────────────────────────────────
+
+1. Go to: http://localhost:1337/admin
+2. Click "Settings" (bottom left)
+3. Click "API Tokens"
+4. Click "Create new API Token"
+5. Fill in:
+   - Name: "Content Type Registration"
+   - Type: "Full access"
+6. Click "Save"
+7. Copy the generated token
+8. Run this in PowerShell:
+
+   $env:STRAPI_API_TOKEN = "6947cb9552ea47d3784030d57502b31714ef2cf9f65815cc62d25ce2bc9ac1c3f3b969413217c2fa744f2f7be70359914a9e523c6272baea3a71774fbf3065c30e9a6651a8574fc71012ea5c4821bfb86a3ad05783020e7701ceff6a173e60def26ff290f883973af911998a6c52b645ee6c46ef2619e1396b3a80a941c0d8a1"
+   npm run setup
+
+───────────────────────────────────────────────────────────────
+
+OPTION 2: Let Strapi Auto-Discover Schemas (No Token Needed)
+─────────────────────────────────────────────────────────────
+
+Strapi v5 can auto-discover and register content types from
+schema.json files WITHOUT an API token!
+
+Steps:
+1. Go to: http://localhost:1337/admin
+2. Create admin account (first time setup)
+3. Go to: Content Manager → Collections
+4. Look for: Post, Category, Tag, etc.
+   (They should appear automatically!)
+5. If they don't appear, restart Strapi:
+   - Kill npm run develop (Ctrl+C)
+   - Run it again: npm run develop
+6. Verify types appear in Content Manager
+7. Then run seed:
+   npm run seed
+
+───────────────────────────────────────────────────────────────
+
+OPTION 3: Use Updated Registration Script (No Token)
+─────────────────────────────────────────────────────
+
+I'll create register-content-types-v2.js that:
+✓ Checks if types already exist
+✓ Works without API token
+✓ Skips already-registered types
+✓ Better error handling
+
+Then run:
+  npm run register-types
+
+═══════════════════════════════════════════════════════════════
+
+⏱️  IMMEDIATE ACTION
+
+If you just created admin account:
+
+1. Restart Strapi to trigger auto-discovery:
+   
+   Kill current: Ctrl+C in Terminal 1
+   Restart: npm run develop
+
+2. Check if types appeared:
+   
+   Go to: http://localhost:1337/admin
+   Look: Content Manager → Collections
+
+3. If types still missing, try OPTION 1 above
+
+═══════════════════════════════════════════════════════════════
+
+📌 WHY THIS HAPPENED
+
+The register-content-types.js script uses the Content-Type 
+Builder API, which requires authentication for security reasons.
+
+Strapi v5 has TWO ways to create content types:
+
+Method 1: Content-Type Builder API
+  ├─ Requires: Valid API token with admin access
+  ├─ Pro: Programmatic, scriptable
+  └─ Con: Needs auth
+
+Method 2: Auto-discovery from schema.json
+  ├─ Requires: Admin account to be created
+  ├─ Pro: No token needed, automatic
+  └─ Con: Only works on admin creation
+
+═══════════════════════════════════════════════════════════════
+
+Need more help?
+
+Check the generated files for complete setup guides:
+  - cms/strapi-main/SCHEMA_SETUP_README.md
+  - cms/strapi-main/SCHEMA_SETUP_GUIDE.js
+  - cms/strapi-main/SCHEMA_ARCHITECTURE.md
+
+═══════════════════════════════════════════════════════════════
+`);
