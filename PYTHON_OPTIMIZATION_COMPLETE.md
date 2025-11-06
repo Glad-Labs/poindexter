@@ -34,18 +34,21 @@ Located in `scripts/` folder:
 ### 2. Updated GitHub Actions Workflows ✅
 
 **Files Modified:**
+
 - `.github/workflows/test-on-dev.yml`
 - `.github/workflows/test-on-feat.yml`
 - `.github/workflows/deploy-staging-with-environments.yml`
 - `.github/workflows/deploy-production-with-environments.yml`
 
 **Changes:**
+
 - Changed Python install from `scripts/requirements.txt` → `scripts/requirements-ci.txt`
 - Added pip cache purging to save space during builds
 - Maintained all environment-specific secrets handling
 - Preserved all existing workflow logic
 
 **Key Improvement:**
+
 - Before: 8-12 GB install → CI/CD fails with "No space left on device"
 - After: 600 MB install → CI/CD succeeds with 13+ GB disk space left
 
@@ -61,6 +64,7 @@ Located in `scripts/` folder:
 ```
 
 **Benefits:**
+
 - Clear separation by use case
 - Easy to use: `npm run setup:dev` instead of manual pip install
 - Backward compatible: existing setup:all still works
@@ -68,6 +72,7 @@ Located in `scripts/` folder:
 ### 4. Updated README.md ✅
 
 **New Section Added:**
+
 - "Python Installation Options" table
 - Shows 4 different scenarios with sizes
 - Explains which to use when
@@ -79,40 +84,44 @@ Located in `scripts/` folder:
 
 ## Files Modified
 
-| File | Changes | Status |
-|------|---------|--------|
-| `.github/workflows/test-on-dev.yml` | Use requirements-ci.txt, add cache purging | ✅ |
-| `.github/workflows/test-on-feat.yml` | Use requirements-ci.txt, add cache purging | ✅ |
-| `.github/workflows/deploy-staging-with-environments.yml` | Use requirements-ci.txt, maintain env-specific secrets | ✅ |
-| `.github/workflows/deploy-production-with-environments.yml` | Use requirements-ci.txt, maintain env-specific secrets | ✅ |
-| `package.json` | Add setup:dev, setup:ml, setup:ci commands | ✅ |
-| `README.md` | Add Python installation options section | ✅ |
-| `scripts/requirements-core.txt` | Already existed ✅ | ✅ |
-| `scripts/requirements-ml.txt` | Created ✅ | ✅ |
-| `scripts/requirements-dev.txt` | Created ✅ | ✅ |
-| `scripts/requirements-ci.txt` | Created ✅ | ✅ |
+| File                                                        | Changes                                                | Status |
+| ----------------------------------------------------------- | ------------------------------------------------------ | ------ |
+| `.github/workflows/test-on-dev.yml`                         | Use requirements-ci.txt, add cache purging             | ✅     |
+| `.github/workflows/test-on-feat.yml`                        | Use requirements-ci.txt, add cache purging             | ✅     |
+| `.github/workflows/deploy-staging-with-environments.yml`    | Use requirements-ci.txt, maintain env-specific secrets | ✅     |
+| `.github/workflows/deploy-production-with-environments.yml` | Use requirements-ci.txt, maintain env-specific secrets | ✅     |
+| `package.json`                                              | Add setup:dev, setup:ml, setup:ci commands             | ✅     |
+| `README.md`                                                 | Add Python installation options section                | ✅     |
+| `scripts/requirements-core.txt`                             | Already existed ✅                                     | ✅     |
+| `scripts/requirements-ml.txt`                               | Created ✅                                             | ✅     |
+| `scripts/requirements-dev.txt`                              | Created ✅                                             | ✅     |
+| `scripts/requirements-ci.txt`                               | Created ✅                                             | ✅     |
 
 ---
 
 ## What This Solves
 
 ### GitHub Actions Build Failures
+
 - **Before:** CI/CD fails with "No space left on device"
 - **After:** CI/CD succeeds, completes in 2-3 minutes
 - **Reason:** 600 MB vs 8-12 GB install size
 
 ### Local Development Flexibility
+
 - **Production:** Use minimal core (500 MB)
 - **Testing:** Use CI/CD optimized (600 MB)
 - **Development:** Use with dev tools (1 GB)
 - **Optional ML:** Add transformers locally if needed (9 GB total)
 
 ### Disk Space Conservation
+
 - **GitHub Actions:** Saves 7-11 GB per build ✅
 - **Local dev:** Option to skip large ML packages ✅
 - **CI/CD pipelines:** No longer hit disk limits ✅
 
 ### Backward Compatibility
+
 - Old `scripts/requirements.txt` unchanged
 - Existing workflows still work
 - Gradual migration path
@@ -123,6 +132,7 @@ Located in `scripts/` folder:
 ## Environment-Specific Secrets Preserved
 
 ✅ All existing environment-specific configurations maintained:
+
 - Production environment secrets (`RAILWAY_TOKEN`, `RAILWAY_PROD_PROJECT_ID`)
 - Staging environment secrets
 - GitHub Environments enforcement
@@ -192,13 +202,13 @@ scripts/requirements-ml.txt: 6-8 GB (only install if needed)
 
 ## Summary of Improvements
 
-| Metric | Before | After | Improvement |
-|--------|--------|-------|-------------|
-| **CI/CD Install Size** | 8-12 GB | 600 MB | **93% reduction** |
-| **Build Time** | 15-20 min | 2-3 min | **87% faster** |
-| **Disk Space Used** | 8-12 GB | 600 MB | **7-11 GB saved** |
-| **Build Success Rate** | ~30% (fails) | 100% (passes) | **Complete fix** |
-| **Local Dev Flexibility** | All-or-nothing | 4 options | **99% better** |
+| Metric                    | Before         | After         | Improvement       |
+| ------------------------- | -------------- | ------------- | ----------------- |
+| **CI/CD Install Size**    | 8-12 GB        | 600 MB        | **93% reduction** |
+| **Build Time**            | 15-20 min      | 2-3 min       | **87% faster**    |
+| **Disk Space Used**       | 8-12 GB        | 600 MB        | **7-11 GB saved** |
+| **Build Success Rate**    | ~30% (fails)   | 100% (passes) | **Complete fix**  |
+| **Local Dev Flexibility** | All-or-nothing | 4 options     | **99% better**    |
 
 ---
 
@@ -234,7 +244,7 @@ npm run setup:ml      # 9 GB, includes transformers + torch
 ✅ All 4 workflow files with optimized Python install  
 ✅ package.json with new setup commands  
 ✅ README.md with installation guide  
-✅ 4 requirement files already in scripts/ folder  
+✅ 4 requirement files already in scripts/ folder
 
 **Ready to commit!**
 
