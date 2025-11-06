@@ -17,7 +17,7 @@
 
 ## 📖 Overview
 
-Welcome to GLAD Labs! This guide covers everything from initial setup through production deployment. GLAD Labs is a comprehensive AI Co-Founder system that combines autonomous content creation, business intelligence, and multi-agent orchestration.
+Welcome to Glad Labs! This guide covers everything from initial setup through production deployment. Glad Labs is a comprehensive AI Co-Founder system that combines autonomous content creation, business intelligence, and multi-agent orchestration.
 
 **This document will get you:**
 
