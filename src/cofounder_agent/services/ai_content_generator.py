@@ -247,9 +247,10 @@ Improved version:"""
                 from services.ollama_client import OllamaClient
                 ollama = OllamaClient()
                 
-                # Try best model for RTX 5070 first
-                # Use available models: neural-chat:latest, mistral:latest, llama2:latest, etc.
-                for model_name in ["neural-chat:latest", "mistral:latest", "llama2:latest", "qwen2.5:14b"]:
+                # Try stable models first, avoid slow models that timeout
+                # llama2 is stable; mistral/neural-chat sometimes throw 500 errors; qwen2.5:14b too slow (10-20 tokens/sec)
+                # Use available models: llama2:latest, mistral:latest, neural-chat:latest, etc.
+                for model_name in ["llama2:latest", "mistral:latest", "neural-chat:latest", "qwen2.5:14b"]:
                     try:
                         logger.debug(f"Trying Ollama model: {model_name}")
                         metrics["generation_attempts"] += 1
@@ -323,20 +324,30 @@ Improved version:"""
                                     generated_content = refined_content  # Use refined for next check
                             
                             # If still not passing after refinement, return best attempt
-                            if metrics["generation_attempts"] == len(["neural-chat:latest", "mistral:latest", "llama2:latest", "qwen2.5:14b"]):
+                            if metrics["generation_attempts"] == len(["llama2:latest", "mistral:latest", "neural-chat:latest", "qwen2.5:14b"]):
                                 metrics["model_used"] = f"Ollama - {model_name} (below threshold)"
                                 metrics["final_quality_score"] = validation.quality_score
                                 metrics["generation_time_seconds"] = time.time() - start_time
                                 logger.warning(f"Returning content below quality threshold (score: {validation.quality_score:.1f}/{self.quality_threshold})")
                                 return generated_content, metrics["model_used"], metrics
                     
+                    except asyncio.TimeoutError as e:
+                        # Explicitly catch timeout - model too slow or server unresponsive
+                        error_msg = f"Timeout (120s exceeded) with {model_name}"
+                        logger.warning(f"Ollama model {model_name} timed out: {error_msg}")
+                        attempts.append(("Ollama", error_msg))
+                        continue
                     except Exception as e:
-                        logger.debug(f"Ollama model {model_name} failed: {e}")
+                        # Catch other errors (500 errors, connection issues, etc.)
+                        error_msg = str(e)[:150]  # Truncate long error messages
+                        logger.warning(f"Ollama model {model_name} failed: {error_msg}")
+                        attempts.append(("Ollama", f"{model_name}: {error_msg}"))
                         continue
 
             except Exception as e:
                 logger.warning(f"Ollama generation failed: {e}")
-                attempts.append(("Ollama", str(e)))
+                if not attempts:  # Only append if attempts list is still empty
+                    attempts.append(("Ollama", str(e)[:150]))
 
         # 2. Try HuggingFace (free tier, online)
         if self.hf_token:

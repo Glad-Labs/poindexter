@@ -15,7 +15,7 @@ Benefits:
 import logging
 import os
 import asyncpg
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -203,6 +203,62 @@ class DatabaseService:
                 limit,
             )
             return [dict(row) for row in rows]
+
+    async def get_tasks_paginated(
+        self,
+        offset: int = 0,
+        limit: int = 20,
+        status: Optional[str] = None,
+        category: Optional[str] = None,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        """
+        Get tasks with pagination and optional filtering.
+        
+        Args:
+            offset: Number of records to skip
+            limit: Number of records to return (max 100)
+            status: Filter by status (optional)
+            category: Filter by category (optional)
+        
+        Returns:
+            Tuple of (task_list, total_count)
+        """
+        async with self.pool.acquire() as conn:
+            # Build WHERE clause based on filters
+            where_clauses = []
+            params = []
+            param_idx = 1
+            
+            if status:
+                where_clauses.append(f"status = ${param_idx}")
+                params.append(status)
+                param_idx += 1
+            
+            if category:
+                where_clauses.append(f"category = ${param_idx}")
+                params.append(category)
+                param_idx += 1
+            
+            where_clause = " AND ".join(where_clauses) if where_clauses else "1=1"
+            
+            # Get total count
+            count_query = f"SELECT COUNT(*) as count FROM tasks WHERE {where_clause}"
+            count_row = await conn.fetchrow(count_query, *params)
+            total = count_row["count"] if count_row else 0
+            
+            # Get paginated results
+            params.extend([limit, offset])
+            query = f"""
+                SELECT * FROM tasks
+                WHERE {where_clause}
+                ORDER BY created_at DESC
+                LIMIT ${param_idx}
+                OFFSET ${param_idx + 1}
+            """
+            rows = await conn.fetch(query, *params)
+            tasks = [dict(row) for row in rows]
+            
+            return tasks, total
 
     async def update_task_status(
         self,
