@@ -248,9 +248,10 @@ Improved version:"""
                 ollama = OllamaClient()
                 
                 # Try stable models first, avoid slow models that timeout
-                # llama2 is stable; mistral/neural-chat sometimes throw 500 errors; qwen2.5:14b too slow (10-20 tokens/sec)
-                # Use available models: llama2:latest, mistral:latest, neural-chat:latest, etc.
-                for model_name in ["llama2:latest", "mistral:latest", "neural-chat:latest", "qwen2.5:14b"]:
+                # neural-chat works reliably; mistral/llama2 have issues (500 errors, timeouts)
+                # qwen2.5:14b too slow (10-20 tokens/sec), only fallback
+                # Use available models in priority order: neural-chat:latest, mistral:latest, llama2:latest, qwen2.5:14b
+                for model_name in ["neural-chat:latest", "mistral:latest", "llama2:latest", "qwen2.5:14b"]:
                     try:
                         logger.debug(f"Trying Ollama model: {model_name}")
                         metrics["generation_attempts"] += 1
