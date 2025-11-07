@@ -22,7 +22,7 @@ import sys
 import os
 
 # Import the content critique loop
-from src.cofounder_agent.services.content_critique_loop import ContentCritiqueLoop
+from services.content_critique_loop import ContentCritiqueLoop
 
 logger = logging.getLogger(__name__)
 
@@ -361,8 +361,8 @@ class TaskExecutor:
             "category": category,
             "status": "completed",
             
-            # Generation phase
-            "generated_content": generated_content[:500] if generated_content else "",  # Summary
+            # Generation phase - FULL CONTENT, not truncated!
+            "generated_content": generated_content,  # Full content for preview
             "content_length": len(generated_content) if generated_content else 0,
             "orchestrator_error": orchestrator_error,
             
