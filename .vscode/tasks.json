@@ -43,7 +43,7 @@
     {
       "label": "Start Co-founder Agent",
       "type": "shell",
-      "command": "python start_backend.py",
+      "command": "python main.py",
       "options": {
         "cwd": "${workspaceFolder}/src/cofounder_agent"
       },
