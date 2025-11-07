@@ -313,28 +313,33 @@ class TaskExecutor:
                 slug = topic.lower().replace(" ", "-").replace("_", "-")[:100]
                 slug = "".join(c for c in slug if c.isalnum() or c == "-")
                 
-                # Post to Strapi
-                post_result = self.strapi_client.create_post_from_content(
+                # Post to Strapi using async create_post method
+                # StrapiPublisher.create_post() is async - requires await
+                post_result = await self.strapi_client.create_post(
                     title=topic,
                     content=generated_content,
                     excerpt=generated_content[:200] if generated_content else "",
+                    slug=slug,
                     category=category,
-                    tags=[primary_keyword] if primary_keyword else [],
-                    slug=slug
+                    tags=[primary_keyword] if primary_keyword else []
                 )
                 
+                # Extract post_id from response dict
                 if isinstance(post_result, dict):
-                    strapi_post_id = post_result.get("id") or post_result.get("post_id")
-                    strapi_url = post_result.get("url") or post_result.get("post_url")
-                elif hasattr(post_result, 'id'):
-                    strapi_post_id = post_result.id
-                    strapi_url = getattr(post_result, 'url', None)
+                    strapi_post_id = post_result.get("post_id") or post_result.get("id")
+                    strapi_url = f"/posts/{post_result.get('slug', 'unknown')}"
+                    publish_error = None if post_result.get("success") else post_result.get("error", "Unknown error")
+                    
+                    if post_result.get("success"):
+                        self.published_count += 1
+                        logger.info(f"✅ PHASE 3 Complete: Published to Strapi (ID: {strapi_post_id})")
+                        logger.info(f"🎉 Blog post published: {strapi_url}")
+                    else:
+                        logger.error(f"❌ PHASE 3 Failed: {publish_error}")
                 else:
                     strapi_post_id = str(post_result)
-                
-                self.published_count += 1
-                logger.info(f"✅ PHASE 3 Complete: Published to Strapi (ID: {strapi_post_id})")
-                logger.info(f"🎉 Blog post published: {strapi_url or f'strapi_id:{strapi_post_id}'}")
+                    strapi_url = None
+                    publish_error = f"Unexpected response type: {type(post_result)}"
                 
             except Exception as e:
                 publish_error = str(e)

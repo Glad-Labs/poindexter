@@ -170,18 +170,11 @@ async def lifespan(app: FastAPI):
             logger.warning(f"  ⚠️ Content critique loop initialization failed: {e}")
             critique_loop = None
         
-        logger.info("  🌐 Initializing Strapi publisher...")
+        logger.info("  🌐 Initializing Strapi publisher (PostgreSQL direct)...")
         try:
-            strapi_url = os.getenv("STRAPI_URL", "http://localhost:1337")
-            strapi_token = os.getenv("STRAPI_API_TOKEN", "")
-            strapi_publisher = StrapiPublisher(strapi_url=strapi_url, api_token=strapi_token)
-            
-            # Test connection
-            if strapi_publisher.test_connection():
-                logger.info(f"  ✅ Strapi publisher initialized ({strapi_url})")
-            else:
-                logger.warning(f"  ⚠️ Could not connect to Strapi at {strapi_url}")
-                strapi_publisher = None
+            # New approach: Direct PostgreSQL, no REST API
+            strapi_publisher = StrapiPublisher()
+            logger.info(f"  ✅ Strapi publisher initialized (PostgreSQL direct)")
         except Exception as e:
             logger.warning(f"  ⚠️ Strapi publisher initialization failed: {e}")
             strapi_publisher = None
