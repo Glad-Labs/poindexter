@@ -248,10 +248,12 @@ Improved version:"""
                 ollama = OllamaClient()
                 
                 # Try stable models first, avoid slow models that timeout
-                # neural-chat works reliably; mistral/llama2 have issues (500 errors, timeouts)
-                # qwen2.5:14b too slow (10-20 tokens/sec), only fallback
-                # Use available models in priority order: neural-chat:latest, mistral:latest, llama2:latest, qwen2.5:14b
-                for model_name in ["neural-chat:latest", "mistral:latest", "llama2:latest", "qwen2.5:14b"]:
+                # neural-chat:latest - PROVEN RELIABLE ✓
+                # mistral:latest - Crashes with "llama runner process terminated: exit status 2"
+                # llama2:latest - Occasional timeouts
+                # qwen2.5:14b - Too slow (10-20 tokens/sec), only fallback
+                # Priority: neural-chat (reliable) → llama2 (reasonable) → qwen2.5 (slow) → skip mistral
+                for model_name in ["neural-chat:latest", "llama2:latest", "qwen2.5:14b"]:
                     try:
                         logger.debug(f"Trying Ollama model: {model_name}")
                         metrics["generation_attempts"] += 1
@@ -325,7 +327,7 @@ Improved version:"""
                                     generated_content = refined_content  # Use refined for next check
                             
                             # If still not passing after refinement, return best attempt
-                            if metrics["generation_attempts"] == len(["llama2:latest", "mistral:latest", "neural-chat:latest", "qwen2.5:14b"]):
+                            if metrics["generation_attempts"] == len(["neural-chat:latest", "llama2:latest", "qwen2.5:14b"]):
                                 metrics["model_used"] = f"Ollama - {model_name} (below threshold)"
                                 metrics["final_quality_score"] = validation.quality_score
                                 metrics["generation_time_seconds"] = time.time() - start_time
