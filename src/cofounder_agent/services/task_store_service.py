@@ -117,49 +117,39 @@ class SyncTaskStoreDatabase:
         Initialize synchronous database
 
         Args:
-            database_url: PostgreSQL or SQLite database URL
-                         If None, uses DATABASE_URL environment variable
+            database_url: PostgreSQL database URL (required)
+                         Must be provided or set in DATABASE_URL environment variable
         """
         if database_url is None:
-            database_url = os.getenv(
-                "DATABASE_URL",
-                "sqlite:///.tmp/content_tasks.db"
-            )
+            database_url = os.getenv("DATABASE_URL")
+            if not database_url:
+                logger.error("❌ DATABASE_URL not set! Cannot initialize task store without PostgreSQL")
+                raise ValueError("DATABASE_URL environment variable must be set")
 
         self.database_url = database_url
         self.engine = None
         self.session_factory = None
-        logger.info(f"Initializing task store database: {database_url}")
+        logger.info(f"🗄️ Initializing task store database: {database_url[:50]}...")
 
     def initialize(self):
         """Initialize database engine and create tables"""
         try:
-            # Create engine
-            if self.database_url.startswith("sqlite"):
-                # SQLite for local development
-                os.makedirs(os.path.dirname(".tmp/content_tasks.db"), exist_ok=True)
-                self.engine = create_engine(
-                    self.database_url,
-                    echo=False,
-                    connect_args={"check_same_thread": False},
-                )
-            else:
-                # PostgreSQL with connection pooling
-                self.engine = create_engine(
-                    self.database_url,
-                    echo=False,
-                    poolclass=QueuePool,
-                    pool_size=20,
-                    max_overflow=40,
-                    pool_pre_ping=True,
-                )
+            # Create engine for PostgreSQL with connection pooling
+            self.engine = create_engine(
+                self.database_url,
+                echo=False,
+                poolclass=QueuePool,
+                pool_size=20,
+                max_overflow=40,
+                pool_pre_ping=True,
+            )
 
             # Create session factory
             self.session_factory = sessionmaker(bind=self.engine)
 
             # Create tables
             Base.metadata.create_all(self.engine)
-            logger.info("✅ Database tables created/verified")
+            logger.info("✅ Database tables created/verified in PostgreSQL")
 
         except Exception as e:
             logger.error(f"❌ Error initializing database: {e}")
@@ -220,9 +210,13 @@ class PersistentTaskStore:
         Returns:
             Task ID for tracking
         """
+        logger.debug(f"🟡 PersistentTaskStore.create_task() called - Topic: {topic}")
         task_id = f"blog_{datetime.utcnow().strftime('%Y%m%d')}_{uuid.uuid4().hex[:8]}"
+        logger.debug(f"  🆔 Generated task_id: {task_id}")
 
         session = self.database.get_session()
+        logger.debug(f"  📊 Got database session: {session is not None}")
+        
         try:
             task = ContentTask(
                 task_id=task_id,
@@ -240,27 +234,43 @@ class PersistentTaskStore:
                     "message": "Task created and queued",
                 },
             )
+            logger.debug(f"  📋 ContentTask object created: {task_id}")
+            
             session.add(task)
+            logger.debug(f"  ➕ Task added to session")
+            
             session.commit()
-            logger.info(f"✅ Task created: {task_id}")
+            logger.info(f"✅✅ Task COMMITTED TO DATABASE: {task_id}")
+            logger.debug(f"  💾 Database commit successful")
+            
             return task_id
 
         except Exception as e:
             session.rollback()
-            logger.error(f"❌ Error creating task: {e}")
+            logger.error(f"❌ Error creating task in database: {e}", exc_info=True)
             raise
         finally:
             session.close()
+            logger.debug(f"  🔐 Database session closed")
 
     def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
         """Get task by ID from database"""
+        logger.debug(f"🟡 PersistentTaskStore.get_task() called - task_id: {task_id}")
+        
         session = self.database.get_session()
         try:
             task = session.query(ContentTask).filter_by(task_id=task_id).first()
-            return task.to_dict() if task else None
+            
+            if task:
+                task_dict = task.to_dict()
+                logger.debug(f"✅ Task FOUND in database: {task_id} - status: {task.status}")
+                return task_dict
+            else:
+                logger.warning(f"⚠️ Task NOT FOUND in database: {task_id}")
+                return None
 
         except Exception as e:
-            logger.error(f"❌ Error getting task: {e}")
+            logger.error(f"❌ Error getting task: {e}", exc_info=True)
             raise
         finally:
             session.close()
@@ -327,30 +337,30 @@ class PersistentTaskStore:
         Returns:
             Tuple of (tasks, total_count)
         """
+        logger.debug(f"🟡 PersistentTaskStore.list_tasks() called - status: {status}, limit: {limit}, offset: {offset}")
+        
         session = self.database.get_session()
         try:
             query = session.query(ContentTask)
 
             if status:
                 query = query.filter_by(status=status)
+                logger.debug(f"  🔍 Filtering by status: {status}")
 
             # Count total
             total = query.count()
+            logger.debug(f"  📊 Total tasks in database: {total}")
 
             # Get paginated results
-            tasks = [
-                task.to_dict()
-                for task in query.order_by(ContentTask.created_at.desc())
-                .offset(offset)
-                .limit(limit)
-                .all()
-            ]
-
-            logger.debug(f"✅ Listed tasks: {len(tasks)} of {total} (status={status})")
+            results = query.order_by(ContentTask.created_at.desc()).offset(offset).limit(limit).all()
+            tasks = [task.to_dict() for task in results]
+            
+            logger.info(f"✅ Listed {len(tasks)} tasks from database - total: {total} (status={status})")
+            logger.debug(f"  📋 Returned tasks: {[t['task_id'] for t in tasks]}")
             return tasks, total
 
         except Exception as e:
-            logger.error(f"❌ Error listing tasks: {e}")
+            logger.error(f"❌ Error listing tasks: {e}", exc_info=True)
             raise
         finally:
             session.close()

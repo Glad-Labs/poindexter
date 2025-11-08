@@ -107,22 +107,37 @@ class ContentTaskStore:
         Returns:
             Task ID for tracking
         """
+        logger.debug(f"🔵 ContentTaskStore.create_task() called - Topic: {topic}")
+        
         # Add generate_featured_image to metadata
         metadata = {"generate_featured_image": generate_featured_image}
+        logger.debug(f"  📝 Metadata: {metadata}")
         
-        # Create task in persistent store
-        task_id = self.persistent_store.create_task(
-            topic=topic,
-            style=style,
-            tone=tone,
-            target_length=target_length,
-            tags=tags or [],
-            request_type=request_type,
-            metadata=metadata,
-        )
-        
-        logger.info(f"Task created in persistent store: {task_id} (type: {request_type})")
-        return task_id
+        try:
+            # Get persistent store
+            logger.debug(f"  📌 Getting persistent_store from property...")
+            persistent_store = self.persistent_store
+            logger.debug(f"  📌 Persistent store obtained: {persistent_store is not None}")
+            
+            # Create task in persistent store
+            logger.debug(f"  📝 Calling persistent_store.create_task()...")
+            task_id = persistent_store.create_task(
+                topic=topic,
+                style=style,
+                tone=tone,
+                target_length=target_length,
+                tags=tags or [],
+                request_type=request_type,
+                metadata=metadata,
+            )
+            
+            logger.info(f"✅ Task CREATED and PERSISTED: {task_id} (type: {request_type}, topic: {topic})")
+            logger.debug(f"  🎯 Task ID returned: {task_id}")
+            return task_id
+            
+        except Exception as e:
+            logger.error(f"❌ ERROR in ContentTaskStore.create_task(): {e}", exc_info=True)
+            raise
 
     def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
         """Get task by ID from persistent storage"""
@@ -371,12 +386,15 @@ async def process_content_generation_task(task_id: str):
     task = task_store.get_task(task_id)
 
     if not task:
-        logger.error(f"Task not found: {task_id}")
+        logger.error(f"🔴 Task not found in database: {task_id}")
         return
+
+    logger.info(f"🟢 Starting background generation for task {task_id}: {task.get('topic')}")
 
     try:
         # Stage 1: Generate content
-        task_store.update_task(
+        logger.info(f"📝 Stage 1: Updating task {task_id} to 'generating' status")
+        update_result = task_store.update_task(
             task_id,
             {
                 "status": "generating",
@@ -387,15 +405,24 @@ async def process_content_generation_task(task_id: str):
                 },
             },
         )
+        logger.info(f"📝 Task {task_id} status update result: {update_result}")
+        
+        # Verify update worked
+        updated_task = task_store.get_task(task_id)
+        if updated_task:
+            logger.info(f"📝 Verified task {task_id} status: {updated_task.get('status')}")
+        else:
+            logger.warning(f"⚠️ Could not retrieve task {task_id} after update")
 
         gen_service = ContentGenerationService()
         enhanced = task.get("request_type") == "enhanced"
+        tags = task.get("tags") or []  # Default to empty list if None
         content, model_used, metrics = await gen_service.generate_blog_post(
             topic=task["topic"],
             style=task["style"],
             tone=task["tone"],
             target_length=task["target_length"],
-            tags=task.get("tags"),
+            tags=tags,
             enhanced=enhanced,
         )
 

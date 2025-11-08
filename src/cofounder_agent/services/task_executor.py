@@ -98,48 +98,62 @@ class TaskExecutor:
         while self.running:
             try:
                 # Get pending tasks from database
+                logger.debug(f"🔍 [TASK_EXEC_LOOP] Polling for pending tasks...")
                 pending_tasks = await self.database_service.get_pending_tasks(limit=10)
 
                 if pending_tasks:
-                    logger.info(f"📦 Found {len(pending_tasks)} pending tasks")
+                    logger.info(f"� [TASK_EXEC_LOOP] Found {len(pending_tasks)} pending task(s)")
+                    for idx, task in enumerate(pending_tasks, 1):
+                        logger.info(f"   [{idx}] Task ID: {task.get('id')}, Name: {task.get('task_name')}, Status: {task.get('status')}")
 
                     # Process each task
                     for task in pending_tasks:
                         if not self.running:
+                            logger.warning("[TASK_EXEC_LOOP] Executor stopped - breaking loop")
                             break
 
                         task_id = task.get("id")
                         task_name = task.get("task_name", "Untitled")
 
                         try:
+                            logger.info(f"⚡ [TASK_EXEC_LOOP] Starting to process task: {task_id}")
                             await self._process_single_task(task)
                             self.success_count += 1
+                            logger.info(f"✅ [TASK_EXEC_LOOP] Task succeeded (total success: {self.success_count})")
                         except Exception as e:
-                            logger.error(f"❌ Error processing task {task_id}: {str(e)}", exc_info=True)
+                            logger.error(f"❌ [TASK_EXEC_LOOP] Error processing task {task_id}: {str(e)}", exc_info=True)
                             # Update task as failed
-                            await self.database_service.update_task_status(
-                                task_id,
-                                "failed",
-                                result=json.dumps({
-                                    "error": str(e),
-                                    "timestamp": datetime.now(timezone.utc).isoformat()
-                                })
-                            )
+                            try:
+                                await self.database_service.update_task_status(
+                                    task_id,
+                                    "failed",
+                                    result=json.dumps({
+                                        "error": str(e),
+                                        "timestamp": datetime.now(timezone.utc).isoformat()
+                                    })
+                                )
+                                logger.info(f"📝 [TASK_EXEC_LOOP] Updated task {task_id} status to failed")
+                            except Exception as update_err:
+                                logger.error(f"❌ [TASK_EXEC_LOOP] Failed to update task status: {str(update_err)}")
                             self.error_count += 1
+                            logger.info(f"❌ [TASK_EXEC_LOOP] Task failed (total errors: {self.error_count})")
                         finally:
                             self.task_count += 1
+                else:
+                    logger.debug(f"⏳ [TASK_EXEC_LOOP] No pending tasks - sleeping for {self.poll_interval}s")
 
                 # Sleep before next poll
                 await asyncio.sleep(self.poll_interval)
 
             except asyncio.CancelledError:
-                logger.info("Task executor processor loop cancelled")
+                logger.info("[TASK_EXEC_LOOP] Task executor processor loop cancelled")
                 break
             except Exception as e:
-                logger.error(f"❌ Unexpected error in task executor loop: {str(e)}", exc_info=True)
+                logger.error(f"❌ [TASK_EXEC_LOOP] Unexpected error in task executor loop: {str(e)}", exc_info=True)
+                logger.info(f"⏳ [TASK_EXEC_LOOP] Sleeping for {self.poll_interval}s before retry...")
                 await asyncio.sleep(self.poll_interval)
 
-        logger.info("📋 Task executor processor loop stopped")
+        logger.info("📋 [TASK_EXEC_LOOP] Task executor processor loop stopped")
 
     async def _process_single_task(self, task: Dict[str, Any]):
         """Process a single task through the pipeline"""
@@ -148,10 +162,14 @@ class TaskExecutor:
         topic = task.get("topic", "")
         category = task.get("category", "general")
 
-        logger.info(f"⏳ Processing task: {task_id} ({task_name})")
+        logger.info(f"⏳ [TASK_SINGLE] Processing task: {task_id}")
+        logger.info(f"   Name: {task_name}")
+        logger.info(f"   Topic: {topic}")
+        logger.info(f"   Category: {category}")
 
         try:
             # 1. Update task status to 'in_progress'
+            logger.info(f"📝 [TASK_SINGLE] Marking task as in_progress...")
             await self.database_service.update_task_status(
                 task_id,
                 "in_progress",
@@ -160,23 +178,28 @@ class TaskExecutor:
                     "started_at": datetime.now(timezone.utc).isoformat()
                 })
             )
-            logger.debug(f"   ✓ Task marked as in_progress")
+            logger.info(f"✅ [TASK_SINGLE] Task marked as in_progress")
 
             # 2. Process through orchestrator/agent pipeline
+            logger.info(f"🚀 [TASK_SINGLE] Executing task through pipeline...")
             result = await self._execute_task(task)
-            logger.debug(f"   ✓ Task execution completed")
+            logger.info(f"✅ [TASK_SINGLE] Task execution completed successfully")
+            logger.debug(f"   Result type: {type(result).__name__}")
+            if isinstance(result, dict):
+                logger.debug(f"   Result keys: {list(result.keys())}")
 
             # 3. Update task status to 'completed' with result
+            logger.info(f"💾 [TASK_SINGLE] Updating task status to completed...")
             result_json = json.dumps(result) if isinstance(result, dict) else str(result)
             await self.database_service.update_task_status(
                 task_id,
                 "completed",
                 result=result_json
             )
-            logger.info(f"✅ Task completed: {task_id} ({task_name})")
+            logger.info(f"✅ [TASK_SINGLE] Task completed: {task_id}")
 
         except Exception as e:
-            logger.error(f"❌ Task failed: {task_id} - {str(e)}")
+            logger.error(f"❌ [TASK_SINGLE] Task failed: {task_id} - {str(e)}", exc_info=True)
             # Status already updated to 'failed' in _process_loop
             raise
 
@@ -195,19 +218,22 @@ class TaskExecutor:
         category = task.get("category", "general")
         agent_id = task.get("agent_id", "content-agent")
 
-        logger.debug(f"🎬 PRODUCTION PIPELINE: Task {task_id}: {task_name}")
-        logger.debug(f"   Topic: {topic}")
-        logger.debug(f"   Keyword: {primary_keyword}")
-        logger.debug(f"   Audience: {target_audience}")
-        logger.debug(f"   Agent: {agent_id}")
+        logger.info(f"🎬 [TASK_EXECUTE] PRODUCTION PIPELINE: {task_id}")
+        logger.info(f"   Name: {task_name}")
+        logger.info(f"   Topic: {topic}")
+        logger.info(f"   Keyword: {primary_keyword}")
+        logger.info(f"   Audience: {target_audience}")
+        logger.info(f"   Agent: {agent_id}")
 
         # ===== PHASE 1: Generate Content via Orchestrator =====
         generated_content = None
         orchestrator_error = None
 
+        logger.info(f"📝 [TASK_EXECUTE] PHASE 1: Generating content via orchestrator...")
         if self.orchestrator:
             try:
-                logger.info(f"📝 PHASE 1: Generating content via orchestrator...")
+                logger.info(f"   Orchestrator available: YES")
+                logger.info(f"   Calling orchestrator with context...")
                 
                 # Call orchestrator with task context
                 orchestrator_result = await self.orchestrator.process_command_async(
@@ -223,31 +249,42 @@ class TaskExecutor:
                     }
                 )
                 
+                logger.info(f"   ✓ Orchestrator returned result")
+                logger.info(f"   Result type: {type(orchestrator_result).__name__}")
+                
                 # Extract content from result
                 if isinstance(orchestrator_result, dict):
+                    logger.info(f"   Result keys: {list(orchestrator_result.keys())}")
                     if "content" in orchestrator_result:
                         generated_content = orchestrator_result["content"]
+                        logger.info(f"   ✓ Found content in 'content' field")
                     elif "response" in orchestrator_result:
                         generated_content = orchestrator_result["response"]
+                        logger.info(f"   ✓ Found content in 'response' field")
                     elif "result" in orchestrator_result:
                         generated_content = orchestrator_result["result"]
+                        logger.info(f"   ✓ Found content in 'result' field")
                     else:
                         generated_content = json.dumps(orchestrator_result)
+                        logger.info(f"   ✓ Using full result as JSON")
                 else:
                     generated_content = str(orchestrator_result)
+                    logger.info(f"   ✓ Converted non-dict result to string")
                 
-                logger.info(f"✅ PHASE 1 Complete: Generated {len(generated_content)} chars")
+                logger.info(f"✅ [TASK_EXECUTE] PHASE 1 Complete: Generated {len(generated_content)} chars")
                 
             except Exception as e:
                 orchestrator_error = str(e)
-                logger.error(f"❌ PHASE 1 Failed: Orchestrator error - {orchestrator_error}")
+                logger.error(f"❌ [TASK_EXECUTE] PHASE 1 Failed: Orchestrator error - {orchestrator_error}", exc_info=True)
                 generated_content = f"Error in content generation: {orchestrator_error}"
         else:
-            logger.warning("⚠️ No orchestrator available, using fallback content generation")
+            logger.warning(f"⚠️ [TASK_EXECUTE] Orchestrator available: NO - Using fallback")
             # Fallback: Simple template-based generation
             generated_content = await self._fallback_generate_content(task)
+            logger.info(f"✅ [TASK_EXECUTE] PHASE 1 Complete (fallback): Generated {len(generated_content)} chars")
 
         # ===== PHASE 2: Critique Loop (Validate Quality) =====
+        logger.info(f"🔍 [TASK_EXECUTE] PHASE 2: Validating content through critique loop...")
         critique_result = await self.critique_loop.critique(
             content=generated_content,
             context={
@@ -261,15 +298,18 @@ class TaskExecutor:
         quality_score = critique_result.get("quality_score", 0)
         approved = critique_result.get("approved", False)
         
+        logger.info(f"   Quality Score: {quality_score}/100")
+        logger.info(f"   Approved: {approved}")
+        
         if approved:
-            logger.info(f"✅ PHASE 2 Complete: Content approved (quality score: {quality_score}/100)")
+            logger.info(f"✅ [TASK_EXECUTE] PHASE 2 Complete: Content approved")
         else:
-            logger.warning(f"⚠️ PHASE 2 Complete: Content needs improvement (score: {quality_score}/100)")
+            logger.warning(f"⚠️ [TASK_EXECUTE] PHASE 2 Complete: Content needs improvement")
             logger.debug(f"   Feedback: {critique_result.get('feedback')}")
             
             # If not approved but can refine, attempt refinement
             if critique_result.get("needs_refinement") and self.orchestrator:
-                logger.info(f"🔄 Attempting refinement based on critique feedback...")
+                logger.info(f"🔄 [TASK_EXECUTE] Attempting refinement based on critique feedback...")
                 try:
                     refinement_result = await self.orchestrator.process_command_async(
                         command="refine_content",

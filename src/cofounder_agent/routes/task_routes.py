@@ -238,6 +238,7 @@ async def create_task(
     try:
         # Validate required fields with detailed error messages
         if not request.task_name or not str(request.task_name).strip():
+            logger.error("❌ Task creation failed: task_name is empty")
             raise HTTPException(
                 status_code=422,
                 detail={
@@ -248,6 +249,7 @@ async def create_task(
             )
         
         if not request.topic or not str(request.topic).strip():
+            logger.error("❌ Task creation failed: topic is empty")
             raise HTTPException(
                 status_code=422,
                 detail={
@@ -257,9 +259,17 @@ async def create_task(
                 }
             )
         
+        # Log incoming request
+        logger.info(f"📥 [TASK_CREATE] Received request:")
+        logger.info(f"   - task_name: {request.task_name}")
+        logger.info(f"   - topic: {request.topic}")
+        logger.info(f"   - category: {request.category}")
+        logger.info(f"   - user_id: {current_user.get('id', 'system')}")
+        
         # Create task data
+        task_id = str(uuid_lib.uuid4())
         task_data = {
-            "id": str(uuid_lib.uuid4()),
+            "id": task_id,
             "task_name": request.task_name.strip(),
             "topic": request.topic.strip(),
             "primary_keyword": (request.primary_keyword or "").strip(),
@@ -272,19 +282,37 @@ async def create_task(
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         
-        # Add task to database
-        task_id = await db_service.add_task(task_data)
+        logger.info(f"🔄 [TASK_CREATE] Generated task_id: {task_id}")
+        logger.info(f"🔄 [TASK_CREATE] Task data prepared: {json.dumps({k: v for k, v in task_data.items() if k != 'metadata'}, indent=2)}")
         
-        return {
-            "id": task_id,
+        # Add task to database
+        logger.info(f"💾 [TASK_CREATE] Inserting into database...")
+        returned_task_id = await db_service.add_task(task_data)
+        logger.info(f"✅ [TASK_CREATE] Database insert successful - returned task_id: {returned_task_id}")
+        
+        # Verify task was inserted
+        logger.info(f"🔍 [TASK_CREATE] Verifying task in database...")
+        verify_task = await db_service.get_task(returned_task_id)
+        if verify_task:
+            logger.info(f"✅ [TASK_CREATE] Verification SUCCESS - Task found in database")
+            logger.info(f"   - Status: {verify_task.get('status')}")
+            logger.info(f"   - Created: {verify_task.get('created_at')}")
+        else:
+            logger.error(f"❌ [TASK_CREATE] Verification FAILED - Task NOT found in database after insert!")
+        
+        response = {
+            "id": returned_task_id,
             "status": "pending",
             "created_at": task_data["created_at"],
             "message": "Task created successfully"
         }
+        logger.info(f"📤 [TASK_CREATE] Returning response: {response}")
+        return response
         
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"❌ [TASK_CREATE] Exception: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail={

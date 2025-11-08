@@ -118,9 +118,12 @@ async def lifespan(app: FastAPI):
         # 2. Initialize persistent task store
         logger.info("  📋 Initializing persistent task store...")
         try:
-            database_url = os.getenv("DATABASE_URL", "sqlite:///.tmp/data.db")
+            database_url = os.getenv("DATABASE_URL")
+            if not database_url:
+                logger.error("  ❌ DATABASE_URL environment variable not set!")
+                raise ValueError("DATABASE_URL must be set in .env.local")
             initialize_task_store(database_url)
-            logger.info("  ✅ Persistent task store initialized")
+            logger.info("  ✅ Persistent task store initialized with PostgreSQL")
         except Exception as e:
             error_msg = f"Task store initialization failed: {str(e)}"
             logger.error(f"  ⚠️ {error_msg}", exc_info=True)

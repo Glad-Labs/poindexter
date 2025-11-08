@@ -141,35 +141,81 @@ class DatabaseService:
         import json
         task_id = task_data.get("id") or str(uuid4())
         
+        logger.info(f"📝 [DB_ADD_TASK] Starting task insert for id: {task_id}")
+        logger.info(f"📝 [DB_ADD_TASK] Task data keys: {list(task_data.keys())}")
+        
         # PostgreSQL path (with connection pooling)
-        async with self.pool.acquire() as conn:
-            # Convert metadata dict to JSON string for JSONB storage
-            metadata = task_data.get("metadata", {})
-            if isinstance(metadata, dict):
-                metadata = json.dumps(metadata)
-            
-            # Insert task with new schema (content generation fields)
-            await conn.execute(
-                """
+        try:
+            async with self.pool.acquire() as conn:
+                logger.info(f"🔌 [DB_ADD_TASK] Connection acquired from pool")
+                
+                # Convert metadata dict to JSON string for JSONB storage
+                metadata = task_data.get("metadata", {})
+                if isinstance(metadata, dict):
+                    metadata_json = json.dumps(metadata)
+                    logger.info(f"📦 [DB_ADD_TASK] Metadata JSON: {metadata_json}")
+                else:
+                    metadata_json = metadata
+                    logger.info(f"📦 [DB_ADD_TASK] Metadata already JSON: {metadata_json}")
+                
+                # Log all the values being inserted
+                logger.info(f"📊 [DB_ADD_TASK] Insert values:")
+                logger.info(f"   id: {task_id}")
+                logger.info(f"   task_name: {task_data.get('task_name')}")
+                logger.info(f"   topic: {task_data.get('topic')}")
+                logger.info(f"   primary_keyword: {task_data.get('primary_keyword')}")
+                logger.info(f"   target_audience: {task_data.get('target_audience')}")
+                logger.info(f"   category: {task_data.get('category')}")
+                logger.info(f"   status: {task_data.get('status')}")
+                logger.info(f"   agent_id: {task_data.get('agent_id')}")
+                logger.info(f"   user_id: {task_data.get('user_id')}")
+                
+                # Insert task with new schema (content generation fields)
+                sql_query = """
                 INSERT INTO tasks (
                     id, task_name, topic, primary_keyword, target_audience,
                     category, status, agent_id, user_id, metadata, created_at, updated_at
                 )
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
-                """,
-                task_id,
-                task_data.get("task_name", "Untitled Task"),
-                task_data.get("topic", ""),
-                task_data.get("primary_keyword", ""),
-                task_data.get("target_audience", ""),
-                task_data.get("category", "general"),
-                task_data.get("status", "pending"),
-                task_data.get("agent_id", "content-agent"),
-                task_data.get("user_id", "system"),
-                metadata,
-            )
-            logger.info(f"✅ Task created: {task_id}")
-            return task_id
+                """
+                logger.info(f"🔍 [DB_ADD_TASK] Executing SQL INSERT...")
+                logger.info(f"🔍 [DB_ADD_TASK] SQL: {sql_query.strip()}")
+                
+                result = await conn.execute(
+                    sql_query,
+                    task_id,
+                    task_data.get("task_name", "Untitled Task"),
+                    task_data.get("topic", ""),
+                    task_data.get("primary_keyword", ""),
+                    task_data.get("target_audience", ""),
+                    task_data.get("category", "general"),
+                    task_data.get("status", "pending"),
+                    task_data.get("agent_id", "content-agent"),
+                    task_data.get("user_id", "system"),
+                    metadata_json,
+                )
+                logger.info(f"✅ [DB_ADD_TASK] INSERT executed successfully - Result: {result}")
+                
+                # Verify insert
+                verify_row = await conn.fetchrow(
+                    "SELECT id, task_name, status, created_at FROM tasks WHERE id = $1",
+                    task_id
+                )
+                if verify_row:
+                    logger.info(f"✅ [DB_ADD_TASK] Verification SUCCESS - Task found after insert!")
+                    logger.info(f"   - id: {verify_row['id']}")
+                    logger.info(f"   - task_name: {verify_row['task_name']}")
+                    logger.info(f"   - status: {verify_row['status']}")
+                    logger.info(f"   - created_at: {verify_row['created_at']}")
+                else:
+                    logger.error(f"❌ [DB_ADD_TASK] Verification FAILED - Task NOT found after insert!")
+                
+                logger.info(f"✅ [DB_ADD_TASK] Task created: {task_id}")
+                return task_id
+                
+        except Exception as e:
+            logger.error(f"❌ [DB_ADD_TASK] Exception during insert: {str(e)}", exc_info=True)
+            raise
 
     async def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
         """Get task by ID"""

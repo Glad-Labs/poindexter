@@ -170,13 +170,19 @@ async def create_blog_post(
         - task_id: Use to poll for status
         - polling_url: Endpoint to check progress
     """
+    logger.info(f"🟢 POST /api/content/blog-posts called - Topic: {request.topic}")
+    
     try:
         if len(request.topic.strip()) < 3:
             raise HTTPException(status_code=400, detail="Topic must be at least 3 characters")
 
+        logger.debug(f"  ✓ Topic validation passed")
+        
         task_store = get_content_task_store()
+        logger.debug(f"  ✓ Got task store")
 
         # Create task
+        logger.debug(f"  📝 Creating task in store...")
         task_id = task_store.create_task(
             topic=request.topic,
             style=request.style.value,
@@ -186,9 +192,11 @@ async def create_blog_post(
             generate_featured_image=request.generate_featured_image,
             request_type="enhanced" if request.enhanced else "basic",
         )
+        logger.info(f"  ✅ Task created: {task_id}")
 
         # Update with additional fields
-        task_store.update_task(
+        logger.debug(f"  📝 Updating task with additional fields...")
+        update_result = task_store.update_task(
             task_id,
             {
                 "categories": request.categories or [],
@@ -196,13 +204,16 @@ async def create_blog_post(
                 "target_environment": request.target_environment,
             },
         )
+        logger.debug(f"  ✅ Task updated: {update_result}")
 
         # Start background generation
+        logger.debug(f"  ⏳ Starting background task...")
         background_tasks.add_task(process_content_generation_task, task_id)
+        logger.debug(f"  ✓ Background task queued")
 
         logger.info(
-            f"Blog post task created: {task_id} - Topic: {request.topic} - "
-            f"Enhanced: {request.enhanced}"
+            f"✅✅ BLOG POST TASK CREATED: {task_id} - Topic: {request.topic} - "
+            f"Enhanced: {request.enhanced} - Ready for polling at /api/content/blog-posts/tasks/{task_id}"
         )
 
         return CreateBlogPostResponse(
@@ -216,7 +227,7 @@ async def create_blog_post(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error creating blog post task: {e}")
+        logger.error(f"❌ Error creating blog post task: {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail=f"Failed to create blog post: {str(e)}"
         )
@@ -240,13 +251,22 @@ async def get_blog_post_status(task_id: str):
         - result: Generated blog post data (when completed)
         - error: Error details (if failed)
     """
+    logger.debug(f"🟢 GET /api/content/blog-posts/tasks/{task_id} called")
+    
     try:
         task_store = get_content_task_store()
+        logger.debug(f"  ✓ Got task store")
+        
+        logger.debug(f"  🔍 Retrieving task from store...")
         task = task_store.get_task(task_id)
+        logger.debug(f"  ✓ Retrieved from store: {task is not None}")
 
         if not task:
+            logger.warning(f"❌ Task not found: {task_id}")
             raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
 
+        logger.info(f"✅ Task status retrieved: {task_id} - status: {task.get('status', 'unknown')}")
+        
         return TaskStatusResponse(
             task_id=task_id,
             status=task.get("status", "unknown"),
@@ -259,7 +279,7 @@ async def get_blog_post_status(task_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting task status: {e}")
+        logger.error(f"❌ Error getting task status: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error getting task status: {str(e)}")
 
 
