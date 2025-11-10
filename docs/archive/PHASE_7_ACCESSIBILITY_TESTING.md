@@ -2,7 +2,7 @@
 
 **Status:** ✅ ACCESSIBILITY TESTING IN PROGRESS  
 **Target:** 95+ Lighthouse accessibility score, 0 axe violations, 100% keyboard accessible  
-**Scope:** All 11 components across GLAD Labs public site
+**Scope:** All 11 components across Glad Labs public site
 
 ---
 
@@ -492,7 +492,7 @@ Prefers-Contrast:
 
 ---
 
-**🎯 Phase 7 Goal:** Deliver production-ready, fully accessible GLAD Labs public site with WCAG 2.1 AA compliance verified through comprehensive automated and manual testing.
+**🎯 Phase 7 Goal:** Deliver production-ready, fully accessible Glad Labs public site with WCAG 2.1 AA compliance verified through comprehensive automated and manual testing.
 
 **📆 Target Completion:** October 26, 2025 (Today)
 

@@ -1,4 +1,4 @@
-# 🎯 GLAD LABS STRAPI SETUP - YOUR NEXT STEPS
+# 🎯 Glad LABS STRAPI SETUP - YOUR NEXT STEPS
 
 **Current Status**: ✅ Everything is set up and ready to go!
 

@@ -21,13 +21,8 @@ __pycache__/
 *.egg-info/
 *.egg
 
-# Strapi
-cms/strapi-v5-backend-archive/
-cms/strapi-v5-backend-old-backup/
-
+# Temporary files
 .tmp/
-#cms/strapi-main/
-cms/strapi-main_orig.zip
 
 # Environment variables
 .env

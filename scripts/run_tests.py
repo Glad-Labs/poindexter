@@ -1,6 +1,6 @@
 """
 Comprehensive Test Suite Documentation and Runner Configuration
-Tests for GLAD Labs Settings Manager (API + UI)
+Tests for Glad Labs Settings Manager (API + UI)
 """
 
 import subprocess
@@ -329,7 +329,7 @@ def main():
     """Main test runner entry point"""
     import argparse
 
-    parser = argparse.ArgumentParser(description="Run GLAD Labs test suite")
+    parser = argparse.ArgumentParser(description="Run Glad Labs test suite")
     parser.add_argument("--unit", action="store_true", help="Run unit tests only")
     parser.add_argument("--integration", action="store_true", help="Run integration tests only")
     parser.add_argument("--coverage", action="store_true", help="Generate coverage report")

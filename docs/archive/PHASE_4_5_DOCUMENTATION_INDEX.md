@@ -68,7 +68,7 @@
 3. Review metrics and status
 4. See next steps
 
-### I'm Onboarding to GLAD Labs
+### I'm Onboarding to Glad Labs
 
 1. Start: [PHASE_4_5_EXECUTIVE_SUMMARY.md](./PHASE_4_5_EXECUTIVE_SUMMARY.md)
 2. Learn: [TEST_TEMPLATE.md](./src/cofounder_agent/tests/TEST_TEMPLATE.md)

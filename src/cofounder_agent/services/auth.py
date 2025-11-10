@@ -1,5 +1,5 @@
 """
-Authentication Service for GLAD Labs AI Co-Founder
+Authentication Service for Glad Labs AI Co-Founder
 
 Provides JWT token generation, validation, refresh token management, and password operations.
 Implements industry-standard security practices:

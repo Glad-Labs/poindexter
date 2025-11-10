@@ -1,4 +1,4 @@
-# 🎯 GLAD Labs - Complete Configuration & Fix Summary
+# 🎯 Glad Labs - Complete Configuration & Fix Summary
 
 **Date:** October 29, 2025  
 **Status:** ✅ **COMPLETE - Ready for Development**
@@ -170,7 +170,7 @@ npm run dev
 
 # Or manually:
 # Terminal 1: Strapi
-cd cms/strapi-v5-backend && npm run develop
+cd cms/strapi-main && npm run develop
 
 # Terminal 2: Public Site
 cd web/public-site && npm run dev

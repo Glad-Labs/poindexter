@@ -52,7 +52,7 @@ DATABASE_PASSWORD=your_postgres_password
 cd c:\Users\mattm\glad-labs-website
 
 # Run Strapi migrations (if using Strapi)
-cd cms/strapi-v5-backend
+cd cms/strapi-main
 npm run build
 npm run develop
 
@@ -162,7 +162,7 @@ psql -U postgres -h localhost -l | Select-String glad_labs_dev
 
 Strapi will auto-create tables when it starts. Just point it to your PostgreSQL database:
 
-**File:** `cms/strapi-v5-backend/.env`
+**File:** `cms/strapi-main/.env`
 
 ```bash
 DATABASE_CLIENT=postgres
@@ -178,7 +178,7 @@ DATABASE_SCHEMA=public
 Then start Strapi:
 
 ```bash
-cd cms/strapi-v5-backend
+cd cms/strapi-main
 npm run develop
 ```
 
@@ -383,7 +383,7 @@ Once your database is set up:
 1. **Start Strapi with PostgreSQL:**
 
    ```bash
-   cd cms/strapi-v5-backend
+   cd cms/strapi-main
    npm run develop
    ```
 

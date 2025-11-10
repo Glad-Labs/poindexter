@@ -355,7 +355,7 @@ logger = logging.getLogger(__name__)
 
 # Create FastAPI app
 app = FastAPI(
-    title="GLAD Labs Co-Founder Agent",
+    title="Glad Labs Co-Founder Agent",
     version="3.0-poindexter"
 )
 

@@ -80,12 +80,12 @@ if ($missingItems.Count -gt 0) {
     Write-Host "    USE_OLLAMA=true" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "2️⃣  Get Strapi API Token:" -ForegroundColor White
-    Write-Host "    • Start Strapi: cd cms\strapi-v5-backend; npm run develop" -ForegroundColor Cyan
+    Write-Host "    • Start Strapi: cd cms\strapi-main; npm run develop" -ForegroundColor Cyan
     Write-Host "    • Go to: http://localhost:1337/admin" -ForegroundColor Cyan
     Write-Host "    • Settings → API Tokens → Create → Copy token" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "3️⃣  Start Services (each in separate terminal):" -ForegroundColor White
-    Write-Host "    • Strapi: cd cms\strapi-v5-backend; npm run develop" -ForegroundColor Cyan
+    Write-Host "    • Strapi: cd cms\strapi-main; npm run develop" -ForegroundColor Cyan
     Write-Host "    • Backend: cd src\cofounder_agent; python -m uvicorn main:app --reload" -ForegroundColor Cyan
     Write-Host "    • Ollama: ollama serve (if using local AI)" -ForegroundColor Cyan
     Write-Host ""

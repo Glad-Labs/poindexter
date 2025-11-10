@@ -200,7 +200,7 @@ python main.py
 
 **SQLite Removal:** ✅ COMPLETE
 
-All SQLite has been removed from the GLAD Labs project. PostgreSQL is now mandatory. The application fails fast with clear error messages if the database is not available.
+All SQLite has been removed from the Glad Labs project. PostgreSQL is now mandatory. The application fails fast with clear error messages if the database is not available.
 
 The system is ready for Phase 2 (Memory System PostgreSQL Migration).
 

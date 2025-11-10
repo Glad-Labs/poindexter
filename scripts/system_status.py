@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-GLAD Labs System Integration Status Check
+Glad Labs System Integration Status Check
 ===========================================
 Quick diagnostic script to verify all services are connected and working
 """
@@ -33,7 +33,7 @@ def check_service(name, url, description=""):
 
 def main():
     print("\n" + "="*100)
-    print("🚀 GLAD LABS SYSTEM INTEGRATION STATUS CHECK")
+    print("🚀 Glad LABS SYSTEM INTEGRATION STATUS CHECK")
     print("="*100)
     print(f"\n📍 Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("\n" + "-"*100)

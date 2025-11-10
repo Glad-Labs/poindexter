@@ -1,4 +1,4 @@
-# 🏗️ GLAD Labs: Task Pipeline & Real-Time Architecture Proposal
+# 🏗️ Glad Labs: Task Pipeline & Real-Time Architecture Proposal
 
 **Date:** November 3, 2025  
 **Status:** ⏳ AWAITING YOUR APPROVAL  

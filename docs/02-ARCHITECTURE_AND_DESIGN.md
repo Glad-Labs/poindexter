@@ -8,7 +8,7 @@
 
 ## 🎯 Quick Links
 
-- **[Vision & Mission](#vision--mission)** - What GLAD Labs does
+- **[Vision & Mission](#vision--mission)** - What Glad Labs does
 - **[System Architecture](#system-architecture)** - High-level overview
 - **[Technology Stack](#technology-stack)** - Tools and platforms
 - **[Component Design](#component-design)** - Each system explained

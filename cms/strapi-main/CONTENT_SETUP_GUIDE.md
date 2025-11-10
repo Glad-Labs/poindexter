@@ -1,4 +1,4 @@
-# Content Setup Guide for GLAD Labs Strapi
+# Content Setup Guide for Glad Labs Strapi
 
 ## 📋 Overview
 
@@ -64,7 +64,7 @@ Creating Privacy Policy page...
 
 | Field          | Type      | Description                                                        |
 | -------------- | --------- | ------------------------------------------------------------------ |
-| **Title**      | String    | Main page heading (e.g., "About GLAD Labs")                        |
+| **Title**      | String    | Main page heading (e.g., "About Glad Labs")                        |
 | **Subtitle**   | String    | Secondary heading (e.g., "Building the AI Co-Founder of Tomorrow") |
 | **Content**    | Rich Text | Main body content with sections, bullet points, formatting         |
 | **Mission**    | Rich Text | Mission statement with HTML formatting                             |
@@ -79,7 +79,7 @@ Creating Privacy Policy page...
 - What We Build section
 - Our Vision statement
 - Core Values (5 key values with descriptions)
-- Mission-driven content aligned with GLAD Labs
+- Mission-driven content aligned with Glad Labs
 
 ---
 
@@ -219,7 +219,7 @@ Example: Add a "Why Us" section:
 {
   "whyUs": {
     "type": "richtext",
-    "description": "Why customers choose GLAD Labs"
+    "description": "Why customers choose Glad Labs"
   }
 }
 ```

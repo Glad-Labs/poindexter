@@ -9,7 +9,7 @@
 
 ## 🎨 Vision
 
-Transform GLAD Labs into a true autonomous orchestrator that:
+Transform Glad Labs into a true autonomous orchestrator that:
 
 ```
 Raw Text Command

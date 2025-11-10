@@ -1,9 +1,9 @@
 # Verify End-to-End Pipeline
-# This script checks the entire GLAD Labs content creation pipeline
+# This script checks the entire Glad Labs content creation pipeline
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host " GLAD Labs Pipeline Verification" -ForegroundColor Cyan
+Write-Host " Glad Labs Pipeline Verification" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 

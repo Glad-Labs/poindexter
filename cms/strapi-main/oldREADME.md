@@ -4,7 +4,7 @@
 ![PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL-336791)
 ![TypeScript](https://img.shields.io/badge/Language-TypeScript-3178c6)
 
-Headless content management system serving GLAD Labs content and data infrastructure.
+Headless content management system serving Glad Labs content and data infrastructure.
 
 **Status:** ✅ Production Ready  
 **Version:** 5.0  
@@ -44,7 +44,7 @@ The Strapi v5 CMS backend provides:
 
 ```bash
 # Navigate to CMS directory
-cd cms/strapi-v5-backend
+cd cms/strapi-main
 
 # Install dependencies
 npm install
@@ -262,7 +262,7 @@ npm run develop
 ### Project Structure
 
 ```text
-cms/strapi-v5-backend/
+cms/strapi-main/
 ├── src/
 │   ├── admin/                     # Strapi admin customizations
 │   ├── api/                       # Content type definitions
@@ -395,7 +395,7 @@ npm install -g railway
 railway login
 
 # Deploy
-cd cms/strapi-v5-backend
+cd cms/strapi-main
 railway up
 
 # Set environment variables in Railway dashboard
@@ -406,7 +406,7 @@ railway up
 ### Docker Deployment
 
 ```dockerfile
-# Dockerfile (in project root or cms/strapi-v5-backend/)
+# Dockerfile (in project root or cms/strapi-main/)
 FROM node:20-alpine
 
 WORKDIR /app
@@ -525,7 +525,7 @@ curl -H "Authorization: Bearer YOUR_TOKEN" \
 **Solution:**
 
 ```bash
-cd cms/strapi-v5-backend
+cd cms/strapi-main
 
 # Clear cache
 rm -rf .cache build node_modules
@@ -609,6 +609,6 @@ const config = {
 
 ---
 
-**Maintained by:** GLAD Labs Development Team  
+**Maintained by:** Glad Labs Development Team  
 **Last Updated:** October 26, 2025  
 **Status:** ✅ Production Ready

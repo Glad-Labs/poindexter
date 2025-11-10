@@ -1,4 +1,4 @@
-# GLAD Labs - Complete Integration Implementation Guide
+# Glad Labs - Complete Integration Implementation Guide
 
 **Objective:** Enable the full workflow: Login → Delegate Task → Agent Execute → Display Metrics
 
@@ -488,7 +488,7 @@ function LoginForm() {
   return (
     <div className="login-container">
       <div className="login-form">
-        <h1>GLAD Labs - Oversight Hub</h1>
+        <h1>Glad Labs - Oversight Hub</h1>
         <p>Login to manage your AI agents and tasks</p>
 
         {error && <div className="error-message">{error}</div>}

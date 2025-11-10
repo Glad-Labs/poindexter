@@ -1,4 +1,4 @@
-# GLAD Labs AI Co-Founder Monorepo Requirements
+# Glad Labs AI Co-Founder Monorepo Requirements
 # Complete Python dependencies for all agents and services
 
 # ===== CORE AI & AGENT FRAMEWORKS =====

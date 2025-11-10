@@ -1,7 +1,7 @@
 # Quick Dev Startup Troubleshooting Script
 # Usage: . scripts/dev-troubleshoot.ps1
 
-Write-Host "`n🔍 GLAD Labs Dev Troubleshooting`n" -ForegroundColor Cyan
+Write-Host "`n🔍 Glad Labs Dev Troubleshooting`n" -ForegroundColor Cyan
 
 # Check 1: Git branch
 Write-Host "1️⃣  Checking git branch..." -ForegroundColor Yellow

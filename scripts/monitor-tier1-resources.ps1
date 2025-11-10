@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-GLAD Labs Tier 1 Resource Monitor (PowerShell)
+Glad Labs Tier 1 Resource Monitor (PowerShell)
 
 .DESCRIPTION
 Monitor Tier 1 production resources and alert when approaching limits.
@@ -47,7 +47,7 @@ function Write-Color {
 function Show-Banner {
     Write-Color ""
     Write-Color "╔════════════════════════════════════════════════════════╗" "Cyan"
-    Write-Color "║     GLAD Labs Tier 1 Resource Monitor (PowerShell)     ║" "Cyan"
+    Write-Color "║     Glad Labs Tier 1 Resource Monitor (PowerShell)     ║" "Cyan"
     Write-Color "╚════════════════════════════════════════════════════════╝" "Cyan"
     Write-Color ""
 }

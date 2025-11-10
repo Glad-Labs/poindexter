@@ -1,5 +1,5 @@
 """
-Performance monitoring and metrics collection for GLAD Labs AI Co-Founder
+Performance monitoring and metrics collection for Glad Labs AI Co-Founder
 Implements structured logging, performance tracking, and operational metrics
 """
 
@@ -17,7 +17,7 @@ logger = structlog.get_logger(__name__)
 
 class PerformanceMonitor:
     """
-    Performance monitoring service for GLAD Labs AI Co-Founder system
+    Performance monitoring service for Glad Labs AI Co-Founder system
     
     Tracks:
     - Command processing times

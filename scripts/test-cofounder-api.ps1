@@ -1,7 +1,7 @@
-# GLAD Labs Co-founder Agent - PowerShell API Test Commands
+# Glad Labs Co-founder Agent - PowerShell API Test Commands
 # Use these commands to test the API from PowerShell
 
-Write-Host "`n🧪 GLAD Labs Co-founder Agent API Test Commands`n" -ForegroundColor Cyan
+Write-Host "`n🧪 Glad Labs Co-founder Agent API Test Commands`n" -ForegroundColor Cyan
 
 # Health Check
 Write-Host "📍 Health Check:" -ForegroundColor Yellow

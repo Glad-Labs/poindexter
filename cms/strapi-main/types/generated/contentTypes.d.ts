@@ -433,7 +433,7 @@ export interface AdminUser extends Struct.CollectionTypeSchema {
 export interface ApiAboutAbout extends Struct.SingleTypeSchema {
   collectionName: 'abouts';
   info: {
-    description: 'About page content for GLAD Labs';
+    description: 'About page content for Glad Labs';
     displayName: 'About Page';
     pluralName: 'abouts';
     singularName: 'about';
@@ -617,7 +617,7 @@ export interface ApiPostPost extends Struct.CollectionTypeSchema {
 export interface ApiPrivacyPolicyPrivacyPolicy extends Struct.SingleTypeSchema {
   collectionName: 'privacy_policies';
   info: {
-    description: 'Privacy policy content for GLAD Labs';
+    description: 'Privacy policy content for Glad Labs';
     displayName: 'Privacy Policy';
     pluralName: 'privacy-policies';
     singularName: 'privacy-policy';

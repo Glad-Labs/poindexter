@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 logger.info("=" * 70)
-logger.info("🚀 GLAD LABS AI CO-FOUNDER AGENT - STARTUP SEQUENCE")
+logger.info("🚀 Glad LABS AI CO-FOUNDER AGENT - STARTUP SEQUENCE")
 logger.info("=" * 70)
 logger.info(f"⏰ Startup time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 logger.info(f"📍 Python version: {sys.version.split()[0]}")

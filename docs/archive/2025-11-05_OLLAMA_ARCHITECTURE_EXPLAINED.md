@@ -1,7 +1,7 @@
 # 🧠 Ollama Architecture: Chat & Blog Generation
 
 **Last Updated:** November 2, 2025  
-**Overview:** How GLAD Labs uses Ollama for both real-time chat and async blog post generation
+**Overview:** How Glad Labs uses Ollama for both real-time chat and async blog post generation
 
 ---
 

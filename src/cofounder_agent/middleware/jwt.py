@@ -1,5 +1,5 @@
 """
-JWT Authentication Middleware for GLAD Labs
+JWT Authentication Middleware for Glad Labs
 
 Provides:
 - Token verification and validation

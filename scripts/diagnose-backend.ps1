@@ -5,7 +5,7 @@ $ErrorActionPreference = "Continue"
 
 Write-Host ""
 Write-Host "=========================================" -ForegroundColor Cyan
-Write-Host "GLAD LABS - BACKEND DIAGNOSTICS" -ForegroundColor Cyan
+Write-Host "Glad LABS - BACKEND DIAGNOSTICS" -ForegroundColor Cyan
 Write-Host "=========================================" -ForegroundColor Cyan
 Write-Host ""
 

@@ -1,4 +1,4 @@
-# GLAD Labs - Execution Plan (Oct 25, 2025)
+# Glad Labs - Execution Plan (Oct 25, 2025)
 
 **Status:** Starting Implementation  
 **Branch:** feat/bugs  

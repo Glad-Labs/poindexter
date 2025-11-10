@@ -3,7 +3,7 @@ ARCHIVED: October 26, 2025 (Phase 5)
 REASON: Migrated to PostgreSQL + REST API backend
 LOCATION: archive/google-cloud-services/pubsub_client.py.archive
 
-This was the Google Cloud Pub/Sub client for GLAD Labs AI Co-Founder
+This was the Google Cloud Pub/Sub client for Glad Labs AI Co-Founder
 Implements asynchronous messaging for agent orchestration and INTERVENE protocol
 
 MIGRATION NOTES:
@@ -68,7 +68,7 @@ logger = structlog.get_logger(__name__)
 
 class PubSubClient:
     """
-    Pub/Sub client for orchestrating GLAD Labs agent communication
+    Pub/Sub client for orchestrating Glad Labs agent communication
     
     Topics:
     - agent-commands: Commands to individual agents

@@ -21,7 +21,7 @@ The pipeline from PostgreSQL database to Strapi CMS exists but **has a critical 
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                   GLAD LABS PIPELINE                            │
+│                   Glad LABS PIPELINE                            │
 └─────────────────────────────────────────────────────────────────┘
 
 ┌──────────────────────┐
@@ -499,7 +499,7 @@ Check Strapi: No new content ❌
 
 - `web/oversight-hub/src/services/cofounderAgentClient.js` - Frontend client
 - `src/cofounder_agent/main.py` - Application startup
-- `cms/strapi-v5-backend/` - Strapi CMS (receives published content)
+- `cms/strapi-main/` - Strapi CMS (receives published content)
 
 ---
 

@@ -1,6 +1,6 @@
 """
 Advanced Business Intelligence Dashboard
-Comprehensive analytics, metrics, and insights for GLAD Labs
+Comprehensive analytics, metrics, and insights for Glad Labs
 """
 
 import asyncio

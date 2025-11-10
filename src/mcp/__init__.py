@@ -1,7 +1,7 @@
 """
-MCP (Model Context Protocol) Integration for GLAD Labs
+MCP (Model Context Protocol) Integration for Glad Labs
 
-This module provides MCP servers and clients for the GLAD Labs AI platform,
+This module provides MCP servers and clients for the Glad Labs AI platform,
 enabling standardized communication between AI agents and external systems.
 
 Key Components:

@@ -84,7 +84,7 @@ Runs on: `http://127.0.0.1:8000` (Health check: `/api/health`)
 **Window 2 - Strapi CMS**
 
 ```powershell
-cd c:\Users\mattm\glad-labs-website\cms\strapi-v5-backend
+cd c:\Users\mattm\glad-labs-website\cms\strapi-main
 npm run develop
 ```
 

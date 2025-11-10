@@ -341,7 +341,7 @@ Drafts Endpoint              ⚠️ Check    🟡 Medium   10 min
 
 ```bash
 # Terminal 1: Strapi CMS
-cd cms/strapi-v5-backend
+cd cms/strapi-main
 npm run develop
 
 # Terminal 2: FastAPI Backend

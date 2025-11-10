@@ -19,7 +19,7 @@
 
 ## 📋 Deployment Overview
 
-GLAD Labs uses a three-tier deployment architecture:
+Glad Labs uses a three-tier deployment architecture:
 
 ```text
 1. CMS Backend (Strapi v5)
@@ -169,7 +169,7 @@ export default ({ env }) => ({
 ```python
 # src/cofounder_agent/main.py
 app = FastAPI(
-    title="GLAD Labs AI Co-Founder",
+    title="Glad Labs AI Co-Founder",
     version="1.0.0",
     docs_url="/api/docs" if DEBUG else None,
     redoc_url="/api/redoc" if DEBUG else None,
@@ -391,7 +391,7 @@ Configure error monitoring:
 
 ## 🔄 Automated Deployment Workflow (GitHub Actions)
 
-GLAD Labs uses GitHub Actions to automate deployments from git branches to cloud platforms.
+Glad Labs uses GitHub Actions to automate deployments from git branches to cloud platforms.
 
 ### Branch Strategy
 

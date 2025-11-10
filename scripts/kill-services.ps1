@@ -1,9 +1,9 @@
-# Kill All GLAD Labs Services
+# Kill All Glad Labs Services
 # Stops all running services on their designated ports
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Yellow
-Write-Host " Stopping GLAD Labs Services" -ForegroundColor Yellow  
+Write-Host " Stopping Glad Labs Services" -ForegroundColor Yellow  
 Write-Host "========================================" -ForegroundColor Yellow
 Write-Host ""
 

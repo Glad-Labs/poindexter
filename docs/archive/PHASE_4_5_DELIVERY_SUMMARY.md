@@ -433,7 +433,7 @@ glad-labs-website/
 
 **Phase 4-5 Test Infrastructure Delivery is COMPLETE and PRODUCTION-READY.**
 
-The GLAD Labs test framework is now:
+The Glad Labs test framework is now:
 
 - ✅ **Fully Functional** - 18 fixtures, 50+ templates, 5/5 tests passing
 - ✅ **Production Quality** - 100% type-safe, fully documented

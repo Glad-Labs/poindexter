@@ -1,5 +1,5 @@
 # ============================================================================
-# GLAD Labs E2E Workflow Test Script
+# Glad Labs E2E Workflow Test Script
 # ============================================================================
 # This script tests the complete workflow:
 # 1. Ollama generates blog post
@@ -43,7 +43,7 @@ function Write-Warning-Custom {
 # Header
 Write-Host ""
 Write-Host "================================================" -ForegroundColor Cyan
-Write-Host "  GLAD Labs E2E Workflow Test" -ForegroundColor Cyan
+Write-Host "  Glad Labs E2E Workflow Test" -ForegroundColor Cyan
 Write-Host "================================================" -ForegroundColor Cyan
 Write-Host ""
 

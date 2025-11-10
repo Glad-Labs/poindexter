@@ -1,5 +1,5 @@
 #!/usr/bin/env powershell
-# GLAD Labs AI Co-Founder System - Comprehensive Dependency Setup
+# Glad Labs AI Co-Founder System - Comprehensive Dependency Setup
 param(
     [switch]$Clean = $false,
     [switch]$PythonOnly = $false,
@@ -7,7 +7,7 @@ param(
     [switch]$Verbose = $false
 )
 
-Write-Host "🚀 GLAD Labs AI Co-Founder System - Dependency Setup" -ForegroundColor Cyan
+Write-Host "🚀 Glad Labs AI Co-Founder System - Dependency Setup" -ForegroundColor Cyan
 Write-Host "================================================================" -ForegroundColor Cyan
 
 if ($Verbose) {
@@ -199,7 +199,7 @@ if (-not $PythonOnly) {
 Write-Section "Creating Development Scripts"
 
 $startScript = @'
-Write-Host "🚀 Starting GLAD Labs AI Co-Founder System..." -ForegroundColor Cyan
+Write-Host "🚀 Starting Glad Labs AI Co-Founder System..." -ForegroundColor Cyan
 
 # Start services
 Write-Host "Starting services in background..." -ForegroundColor Yellow

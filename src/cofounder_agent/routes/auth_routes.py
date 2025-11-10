@@ -1,5 +1,5 @@
 """
-Authentication API Routes for GLAD Labs AI Co-Founder
+Authentication API Routes for Glad Labs AI Co-Founder
 
 SIMPLIFIED FOR ASYNCPG MIGRATION:
 - Removed SQLAlchemy dependencies

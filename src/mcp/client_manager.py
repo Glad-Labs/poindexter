@@ -1,5 +1,5 @@
 """
-MCP Client Manager for GLAD Labs
+MCP Client Manager for Glad Labs
 
 Manages connections to multiple MCP servers and provides a unified interface
 for discovering and using tools and resources across all connected servers.

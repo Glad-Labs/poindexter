@@ -1,4 +1,4 @@
-# This is a foundational .gitlab-ci.yml file for the GLAD Labs monorepo.
+# This is a foundational .gitlab-ci.yml file for the Glad Labs monorepo.
 # It defines the stages and initial jobs for CI/CD.
 
 stages:

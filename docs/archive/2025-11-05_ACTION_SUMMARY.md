@@ -114,7 +114,7 @@
 4. Run seed script to populate content:
 
    ```powershell
-   cd cms/strapi-v5-backend
+   cd cms/strapi-main
    node scripts/seed-data.js
    ```
 

@@ -1,5 +1,5 @@
 """
-Strapi CMS MCP Server for GLAD Labs
+Strapi CMS MCP Server for Glad Labs
 
 Provides MCP tools and resources for interacting with the Strapi v5 CMS.
 Exposes content management capabilities as standardized MCP tools.

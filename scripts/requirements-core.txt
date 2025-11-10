@@ -1,4 +1,4 @@
-# Core dependencies for GLAD Labs AI Co-Founder
+# Core dependencies for Glad Labs AI Co-Founder
 # Phase 1: Essential FastAPI and basic AI functionality
 
 # --- Web Framework ---

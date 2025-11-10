@@ -376,5 +376,5 @@ Once all secrets are configured correctly, your GitHub Actions workflows can:
 ---
 
 **Last Verified:** October 25, 2025  
-**Maintained By:** GLAD Labs Development Team  
+**Maintained By:** Glad Labs Development Team  
 **Questions?** Check GitHub Actions documentation or Railway/Vercel support

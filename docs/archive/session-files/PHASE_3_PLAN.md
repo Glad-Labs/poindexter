@@ -10,7 +10,7 @@
 
 ## 🎯 Phase 3 Vision
 
-Transform GLAD Labs from **unified model management** into a **truly intelligent multi-agent system** where each specialized agent can:
+Transform Glad Labs from **unified model management** into a **truly intelligent multi-agent system** where each specialized agent can:
 
 1. **Select optimal models** based on task requirements
 2. **Manage its own context and memory** independently

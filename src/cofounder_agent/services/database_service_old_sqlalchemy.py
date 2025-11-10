@@ -1,5 +1,5 @@
 """
-PostgreSQL Database Service for GLAD Labs
+PostgreSQL Database Service for Glad Labs
 
 Replaces Google Cloud Firestore with SQLAlchemy async ORM.
 Provides same interface for tasks, logs, financial data, and agent status tracking.

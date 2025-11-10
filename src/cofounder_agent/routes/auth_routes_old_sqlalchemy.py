@@ -1,5 +1,5 @@
 """
-Authentication API Routes for GLAD Labs AI Co-Founder
+Authentication API Routes for Glad Labs AI Co-Founder
 
 Provides REST endpoints for user authentication, token management, and 2FA setup.
 

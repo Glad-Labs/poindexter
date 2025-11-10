@@ -8,7 +8,7 @@
 
 ## 📋 Overview
 
-This guide walks through a complete end-to-end test of the GLAD Labs authentication and task creation system.
+This guide walks through a complete end-to-end test of the Glad Labs authentication and task creation system.
 
 **Testing Path:**
 

@@ -2,7 +2,7 @@
 # Quick restart script for testing the unified table fix
 
 Write-Host ""
-Write-Host "===== GLAD LABS - Task Management Unified Table Fix =====" -ForegroundColor Cyan
+Write-Host "===== Glad LABS - Task Management Unified Table Fix =====" -ForegroundColor Cyan
 Write-Host "        Restart Backend & Test New Changes               " -ForegroundColor Cyan
 Write-Host "=========================================================" -ForegroundColor Cyan
 Write-Host ""

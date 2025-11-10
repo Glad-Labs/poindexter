@@ -430,7 +430,7 @@ Before deploying this change:
 
 ## 🎉 Conclusion
 
-**SQLite has been completely removed from the GLAD Labs codebase.**
+**SQLite has been completely removed from the Glad Labs codebase.**
 
 The system now:
 

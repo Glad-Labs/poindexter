@@ -67,7 +67,7 @@
 ### 1. Run Content Seeding Script
 
 ```powershell
-cd cms/strapi-v5-backend
+cd cms/strapi-main
 # Make sure STRAPI_API_TOKEN is set in .env
 node scripts/seed-data.js
 ```

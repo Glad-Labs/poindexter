@@ -108,7 +108,7 @@ class ContentBatchGenerator:
         total = len(topics)
         
         print("\n" + "="*80)
-        print("🚀 GLAD LABS CONTENT BATCH GENERATOR")  # Note: Keeping uppercase for visual consistency in terminal
+        print("🚀 Glad LABS CONTENT BATCH GENERATOR")  # Note: Keeping uppercase for visual consistency in terminal
         print("="*80)
         print(f"📝 Topics to generate: {total}")
         print(f"🤖 API endpoint: {self.api_url}")
@@ -185,7 +185,7 @@ class ContentBatchGenerator:
 
 def main():
     """Main entry point"""
-    print("\n🎯 GLAD LABS CONTENT BATCH GENERATOR")  # Note: Keeping uppercase for visual consistency
+    print("\n🎯 Glad LABS CONTENT BATCH GENERATOR")  # Note: Keeping uppercase for visual consistency
     print("="*80)
     
     # Choose topic set
