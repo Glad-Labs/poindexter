@@ -247,13 +247,15 @@ Improved version:"""
                 from services.ollama_client import OllamaClient
                 ollama = OllamaClient()
                 
-                # Try stable models first, avoid slow models that timeout
-                # neural-chat:latest - PROVEN RELIABLE ✓
-                # mistral:latest - Crashes with "llama runner process terminated: exit status 2"
-                # llama2:latest - Occasional timeouts
-                # qwen2.5:14b - Too slow (10-20 tokens/sec), only fallback
-                # Priority: neural-chat (reliable) → llama2 (reasonable) → qwen2.5 (slow) → skip mistral
-                for model_name in ["neural-chat:latest", "llama2:latest", "qwen2.5:14b"]:
+                # Try stable, fast models first, avoid slow/problematic ones
+                # neural-chat:latest - PROVEN RELIABLE & FAST ✓✓✓
+                # mistral:latest - Fast but crashes with "llama runner process terminated"
+                # llama2:latest - Reasonable but occasional timeouts
+                # qwen2.5:14b - TOO SLOW (10-20 tokens/sec), causes timeouts
+                # qwen3:14b - Better than qwen2.5 but still slow
+                # deepseek-r1:14b - Reasonable quality
+                # Priority: neural-chat (best) → deepseek → llama2 → others
+                for model_name in ["neural-chat:latest", "deepseek-r1:14b", "llama2:latest"]:
                     try:
                         logger.debug(f"Trying Ollama model: {model_name}")
                         metrics["generation_attempts"] += 1

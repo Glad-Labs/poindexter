@@ -17,8 +17,13 @@ services:
       - "${STRAPI_PORT:-1337}:1337"
     environment:
       NODE_ENV: ${NODE_ENV:-production}
-      DATABASE_CLIENT: ${DATABASE_CLIENT:-sqlite}
-      DATABASE_FILENAME: ${DATABASE_FILENAME:-.tmp/data.db}
+      # PostgreSQL REQUIRED - no SQLite
+      DATABASE_CLIENT: postgres
+      DATABASE_HOST: ${DATABASE_HOST:-postgres}
+      DATABASE_PORT: ${DATABASE_PORT:-5432}
+      DATABASE_NAME: ${DATABASE_NAME:-glad_labs_dev}
+      DATABASE_USER: ${DATABASE_USER:-postgres}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
       JWT_SECRET: ${STRAPI_JWT_SECRET}
       ADMIN_JWT_SECRET: ${STRAPI_ADMIN_JWT_SECRET}
       APP_KEYS: ${STRAPI_APP_KEYS}

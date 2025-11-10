@@ -20,148 +20,217 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
+# MEMORY TABLE SCHEMAS (PostgreSQL)
+# ============================================================================
+
+# SQL definitions for AI memory system tables
+# These are created during database initialization
+MEMORY_TABLE_SCHEMAS = """
+-- Memories table: Core persistent memory storage
+CREATE TABLE IF NOT EXISTS memories (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    content TEXT NOT NULL,
+    memory_type VARCHAR(50) NOT NULL,
+    importance INTEGER NOT NULL CHECK (importance BETWEEN 1 AND 5),
+    confidence REAL NOT NULL CHECK (confidence BETWEEN 0 AND 1),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_accessed TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    access_count INTEGER DEFAULT 0,
+    tags TEXT[],
+    related_memories UUID[],
+    metadata JSONB,
+    embedding bytea,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(memory_type);
+CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance);
+CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at DESC);
+
+-- Knowledge clusters table: Grouped related memories
+CREATE TABLE IF NOT EXISTS knowledge_clusters (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    memories UUID[],
+    confidence REAL NOT NULL,
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    importance_score REAL NOT NULL,
+    topics TEXT[],
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_clusters_importance ON knowledge_clusters(importance_score DESC);
+
+-- Learning patterns table: Patterns discovered from interactions
+CREATE TABLE IF NOT EXISTS learning_patterns (
+    pattern_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    pattern_type VARCHAR(50) NOT NULL,
+    description TEXT NOT NULL,
+    frequency INTEGER NOT NULL,
+    confidence REAL NOT NULL,
+    examples TEXT[],
+    discovered_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- User preferences table: Persistent user preferences
+CREATE TABLE IF NOT EXISTS user_preferences (
+    key VARCHAR(255) PRIMARY KEY,
+    value TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    source VARCHAR(100)
+);
+
+-- Conversation sessions table: Track conversation history
+CREATE TABLE IF NOT EXISTS conversation_sessions (
+    session_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ended_at TIMESTAMP,
+    message_count INTEGER DEFAULT 0,
+    topics TEXT[],
+    summary TEXT,
+    importance REAL DEFAULT 0.5
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_started ON conversation_sessions(started_at DESC);
+"""
+
+
+# ============================================================================
 # DATABASE CONFIGURATION
 # ============================================================================
 
 def get_database_url() -> str:
     """
-    Get database URL from environment variables.
+    Get PostgreSQL database URL from environment variables.
+    
+    PostgreSQL is REQUIRED - no fallback to SQLite.
     
     Environment Variables:
-        DATABASE_URL: Full database URL (takes precedence)
-        DATABASE_CLIENT: 'postgres' or 'sqlite' (default: postgres)
-        DATABASE_HOST: Hostname/IP
-        DATABASE_PORT: Port number
-        DATABASE_NAME: Database name
-        DATABASE_USER: Username
-        DATABASE_PASSWORD: Password
-        DATABASE_FILENAME: For SQLite (if using local development)
+        DATABASE_URL: Full PostgreSQL URL (takes precedence)
+        DATABASE_HOST: Hostname/IP (default: localhost)
+        DATABASE_PORT: Port number (default: 5432)
+        DATABASE_NAME: Database name (default: glad_labs_dev)
+        DATABASE_USER: Username (REQUIRED if no DATABASE_URL)
+        DATABASE_PASSWORD: Password (optional)
     
     Returns:
-        str: Database connection URL
+        str: PostgreSQL connection URL
     
     Raises:
-        ValueError: If required environment variables are missing
+        ValueError: If DATABASE_URL not set and components missing
     """
     
     # Check for full URL first (Railway pattern)
     database_url = os.getenv('DATABASE_URL')
     if database_url:
-        logger.info("Using DATABASE_URL from environment")
+        if 'postgresql' not in database_url:
+            raise ValueError(
+                f"❌ FATAL: Invalid database URL. PostgreSQL is REQUIRED."
+                f"\n   Got: {database_url[:50]}..."
+                f"\n   Expected: postgresql://user:password@host:port/database"
+            )
+        logger.info("✅ Using DATABASE_URL from environment (PostgreSQL)")
         return database_url
     
-    # Fallback to component-based configuration
-    db_client = os.getenv('DATABASE_CLIENT', 'postgres')
+    # Component-based configuration (all must be PostgreSQL)
+    host = os.getenv('DATABASE_HOST', 'localhost')
+    port = os.getenv('DATABASE_PORT', '5432')
+    name = os.getenv('DATABASE_NAME', 'glad_labs_dev')
+    user = os.getenv('DATABASE_USER')
+    password = os.getenv('DATABASE_PASSWORD')
     
-    if db_client == 'sqlite':
-        # SQLite for local development
-        db_filename = os.getenv('DATABASE_FILENAME', '.tmp/data.db')
-        os.makedirs(os.path.dirname(db_filename), exist_ok=True)
-        url = f"sqlite:///{db_filename}"
-        logger.info(f"Using SQLite database: {db_filename}")
-        return url
+    # Validate required components
+    if not user:
+        raise ValueError(
+            f"❌ FATAL: DATABASE_USER is REQUIRED"
+            f"\n   PostgreSQL connection requires DATABASE_USER environment variable"
+            f"\n   Either set DATABASE_URL or provide DATABASE_USER + DATABASE_HOST + DATABASE_PORT + DATABASE_NAME"
+        )
     
-    elif db_client == 'postgres':
-        # PostgreSQL for production
-        host = os.getenv('DATABASE_HOST', 'localhost')
-        port = os.getenv('DATABASE_PORT', '5432')
-        name = os.getenv('DATABASE_NAME', 'glad_labs')
-        user = os.getenv('DATABASE_USER', 'postgres')
-        password = os.getenv('DATABASE_PASSWORD', '')
-        
-        if not user:
-            raise ValueError("DATABASE_USER environment variable is required")
-        
-        if password:
-            url = f"postgresql://{user}:{password}@{host}:{port}/{name}"
-        else:
-            url = f"postgresql://{user}@{host}:{port}/{name}"
-        
-        logger.info(f"Using PostgreSQL database: {host}:{port}/{name}")
-        return url
-    
+    if password:
+        url = f"postgresql://{user}:{password}@{host}:{port}/{name}"
     else:
-        raise ValueError(f"Unsupported DATABASE_CLIENT: {db_client}")
+        url = f"postgresql://{user}@{host}:{port}/{name}"
+    
+    logger.info(f"✅ Using PostgreSQL database: {host}:{port}/{name}")
+    return url
 
 
 def create_db_engine():
     """
-    Create SQLAlchemy database engine with appropriate configuration.
+    Create SQLAlchemy database engine with PostgreSQL configuration.
+    
+    PostgreSQL only - no SQLite fallback.
+    Uses asyncpg driver for async support.
     
     Returns:
-        Engine: Configured SQLAlchemy engine
+        Engine: Configured SQLAlchemy engine for PostgreSQL
+    
+    Raises:
+        ValueError: If database URL is invalid or PostgreSQL connection fails
     """
     
     database_url = get_database_url()
     
-    # Detect if PostgreSQL and convert to asyncpg dialect if needed
-    is_postgres = 'postgresql' in database_url
+    # Validate PostgreSQL
+    if 'postgresql' not in database_url:
+        raise ValueError(
+            f"❌ FATAL: Only PostgreSQL supported. Got: {database_url[:50]}..."
+        )
     
-    # Convert postgresql:// to postgresql+asyncpg:// to use asyncpg driver
-    # This avoids psycopg2 dependency in Railway build environment
-    if is_postgres and '+' not in database_url:
+    # Convert postgresql:// to postgresql+asyncpg:// for async support
+    if '+' not in database_url:
         database_url = database_url.replace('postgresql://', 'postgresql+asyncpg://')
-        logger.info("Using PostgreSQL with asyncpg driver (async support)")
+        logger.info("🔄 Using PostgreSQL with asyncpg driver (async support)")
     
-    # Engine configuration
+    # Engine configuration for PostgreSQL with asyncpg
     engine_kwargs = {
         'echo': os.getenv('SQL_ECHO', 'false').lower() == 'true',
         'pool_pre_ping': True,  # Verify connections before using
+        'poolclass': pool.NullPool,  # asyncpg requires NullPool (no connection pooling)
         'connect_args': {}
     }
     
-    if is_postgres:
-        # PostgreSQL-specific configuration
-        # Use NullPool for asyncpg (async driver doesn't use connection pooling)
-        engine_kwargs.update({
-            'poolclass': pool.NullPool,  # asyncpg requires NullPool, not QueuePool
-        })
-        
-        # SSL configuration for production
-        if os.getenv('DATABASE_SSL_MODE') == 'require':
-            engine_kwargs['connect_args']['sslmode'] = 'require'
+    # SSL configuration for production
+    if os.getenv('DATABASE_SSL_MODE') == 'require':
+        engine_kwargs['connect_args']['sslmode'] = 'require'
+        logger.info("🔒 SSL required for database connection")
     
-    else:
-        # SQLite configuration
-        engine_kwargs.update({
-            'poolclass': pool.StaticPool,
-            'connect_args': {'check_same_thread': False}
-        })
-    
-    engine = create_engine(database_url, **engine_kwargs)
+    try:
+        engine = create_engine(database_url, **engine_kwargs)
+        logger.info(f"✅ PostgreSQL engine created: {database_url.split('@')[-1]}")
+    except Exception as e:
+        logger.error(f"❌ FATAL: Failed to create database engine: {e}")
+        raise ValueError(
+            f"Failed to create PostgreSQL engine:\n{e}\n"
+            f"Check DATABASE_URL or component variables (HOST, PORT, NAME, USER, PASSWORD)"
+        )
     
     # Set up connection event listeners
     setup_engine_listeners(engine)
     
-    logger.info(f"Database engine created: {database_url}")
     return engine
 
 
 def setup_engine_listeners(engine):
     """
-    Set up event listeners for database connection handling.
+    Set up event listeners for PostgreSQL connection handling.
     
     Args:
         engine: SQLAlchemy engine instance
     """
     
-    is_postgres = 'postgresql' in engine.url.drivername
-    
-    if is_postgres:
-        @event.listens_for(Pool, "connect")
-        def set_sqlite_pragma(dbapi_conn, connection_record):
-            """Configure PostgreSQL connection."""
-            # Enable connection extras for better error messages
-            pass
-        
-        @event.listens_for(Pool, "checkout")
-        def receive_checkout(dbapi_conn, connection_record, connection_proxy):
-            """Validate connection before checkout."""
-            try:
-                dbapi_conn.execute(text("SELECT 1"))
-            except exc.DBAPIError as e:
-                logger.warning(f"Database connection validation failed: {e}")
-                raise
+    @event.listens_for(Pool, "checkout")
+    def receive_checkout(dbapi_conn, connection_record, connection_proxy):
+        """Validate PostgreSQL connection before checkout."""
+        try:
+            dbapi_conn.execute(text("SELECT 1"))
+        except exc.DBAPIError as e:
+            logger.warning(f"⚠️ PostgreSQL connection validation failed: {e}")
+            raise
 
 
 # ============================================================================
@@ -262,6 +331,9 @@ def init_db():
         Base.metadata.create_all(bind=get_db_engine())
         logger.info("Database tables created successfully")
         
+        # Create memory system tables
+        init_memory_tables()
+        
         # Seed initial data
         seed_initial_data()
         
@@ -270,6 +342,39 @@ def init_db():
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
         raise
+
+
+def init_memory_tables():
+    """
+    Initialize memory system tables in PostgreSQL.
+    
+    Creates tables for:
+    - memories: Core persistent memory storage
+    - knowledge_clusters: Grouped related memories
+    - learning_patterns: Discovered interaction patterns
+    - user_preferences: Persistent user preferences
+    - conversation_sessions: Conversation history tracking
+    
+    Called automatically during database initialization.
+    Safe to call multiple times (uses IF NOT EXISTS).
+    """
+    
+    try:
+        engine = get_db_engine()
+        
+        with engine.begin() as connection:
+            # Execute all memory table creation statements
+            for statement in MEMORY_TABLE_SCHEMAS.split(';'):
+                statement = statement.strip()
+                if statement:
+                    connection.execute(text(statement))
+            
+        logger.info("✅ Memory system tables initialized successfully")
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize memory tables: {e}")
+        # Don't raise - memory tables might already exist
+        # This is especially true if the schema was created by alembic migrations
 
 
 def seed_initial_data():

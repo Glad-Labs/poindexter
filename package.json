@@ -3,7 +3,7 @@
   "version": "3.0.0",
   "private": true,
   "description": "Complete AI Co-Founder system with intelligent business management, autonomous agents, voice interface, and comprehensive business intelligence",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "author": "Matthew M. Gladding (Glad Labs, LLC)",
   "workspaces": [
     "web/public-site",

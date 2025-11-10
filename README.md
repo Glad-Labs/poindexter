@@ -318,6 +318,54 @@ glad-labs-website/
 
 - **Frontend**: Jest + React Testing Library
 - **Backend**: Strapi built-in testing framework
+
+---
+
+## **📋 License**
+
+This project is licensed under the **GNU Affero General Public License v3.0 (AGPL 3.0)**.
+
+### **What This Means**
+
+**You are free to:**
+
+- Use the software for any purpose
+- Study and understand the source code
+- Distribute copies to others
+- Modify the code and distribute modifications
+
+**With the requirement that:**
+
+- If you run modified versions on a network server, you must provide source code to users
+- Any modifications must also be licensed under AGPL 3.0
+- You must include a copy of this license with your distribution
+
+### **Commercial Use**
+
+A **commercial license** is required for:
+
+- Closed-source, proprietary applications
+- Use cases that do not comply with AGPL 3.0
+- Modifications that will not be shared with users
+
+**To purchase a commercial license:**
+
+📧 **sales@gladlabs.io**
+
+### **License Files**
+
+- Root: [LICENSE.md](./LICENSE.md) - Full AGPL 3.0 text
+- Components: Each component directory includes a LICENSE.md file for reference
+
+For the complete AGPL 3.0 license text, see [GNU AGPL 3.0](https://www.gnu.org/licenses/agpl-3.0.html)
+
+---
+
+## **📞 Support**
+
+- **Documentation**: See [docs/00-README.md](./docs/00-README.md) for comprehensive guides
+- **Issues**: Report bugs and feature requests on GitHub
+- **Commercial Support**: Contact [sales@gladlabs.io](mailto:sales@gladlabs.io) for enterprise support
 - **Content Agent**: Python unittest framework
 - **Integration**: End-to-end testing with Playwright
 

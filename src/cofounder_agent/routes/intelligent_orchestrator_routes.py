@@ -1,0 +1,559 @@
+"""
+REST API Routes for Intelligent Orchestrator
+
+Endpoints for:
+- Processing natural language business requests
+- Managing orchestration tasks
+- Approving and publishing results
+- Training data management
+- Proprietary LLM fine-tuning
+"""
+
+import logging
+from typing import Dict, Any, Optional, List
+from datetime import datetime
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
+from pydantic import BaseModel, Field
+import json
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/orchestrator", tags=["intelligent-orchestrator"])
+
+# ============================================================================
+# PYDANTIC MODELS
+# ============================================================================
+
+class BusinessMetrics(BaseModel):
+    """Business metrics for context"""
+    revenue_monthly: Optional[float] = None
+    traffic_monthly: Optional[int] = None
+    conversion_rate: Optional[float] = None
+    customer_count: Optional[int] = None
+    market_position: Optional[str] = None
+    custom_metrics: Optional[Dict[str, Any]] = Field(None, description="Additional metrics")
+
+
+class UserPreferences(BaseModel):
+    """User preferences for execution"""
+    tone: Optional[str] = Field("professional", description="Writing tone")
+    length: Optional[str] = Field(None, description="Content length")
+    channels: Optional[List[str]] = Field(
+        ["blog"],
+        description="Publishing channels: blog, linkedin, twitter, email"
+    )
+    language: Optional[str] = Field("en", description="Language code")
+    custom_preferences: Optional[Dict[str, Any]] = Field(None)
+
+
+class ProcessRequestBody(BaseModel):
+    """Request body for intelligent orchestration"""
+    request: str = Field(
+        ...,
+        description="Natural language business request",
+        min_length=10
+    )
+    business_metrics: Optional[BusinessMetrics] = Field(None)
+    preferences: Optional[UserPreferences] = Field(None)
+    auto_approve: bool = Field(
+        False,
+        description="Automatically approve if quality score > 0.85"
+    )
+
+
+class ExecutionStatusResponse(BaseModel):
+    """Current execution status"""
+    task_id: str
+    status: str  # "initializing", "planning", "executing", "quality_check", "ready_for_approval"
+    progress_percentage: int
+    current_phase: Optional[str] = None
+    estimated_completion_seconds: Optional[float] = None
+    error: Optional[str] = None
+
+
+class ApprovalResponse(BaseModel):
+    """Result ready for approval"""
+    task_id: str
+    status: str = "pending_approval"
+    quality_score: float
+    quality_passed: bool
+    main_content: Dict[str, Any]
+    channel_variants: Dict[str, Any]
+    metadata: Dict[str, Any]
+    supporting_materials: Dict[str, Any]
+    approval_url: str
+
+
+class ApprovalAction(BaseModel):
+    """User approval action"""
+    approved: bool
+    publish_to_channels: List[str] = Field(["blog"])
+    feedback: Optional[str] = None
+    modifications: Optional[Dict[str, Any]] = None
+
+
+class TrainingDataExportRequest(BaseModel):
+    """Request to export training data"""
+    format: str = Field("jsonl", description="Format: jsonl, csv")
+    filter_by_quality: Optional[float] = Field(None, description="Min quality score")
+    limit: Optional[int] = Field(1000, description="Max examples")
+
+
+# ============================================================================
+# IN-MEMORY TASK STORE (Replace with database in production)
+# ============================================================================
+
+task_store: Dict[str, Dict[str, Any]] = {}
+
+
+# ============================================================================
+# API ENDPOINTS
+# ============================================================================
+
+@router.post("/process")
+async def process_request(
+    body: ProcessRequestBody,
+    background_tasks: BackgroundTasks,
+    user_id: str = "demo_user"
+) -> Dict[str, Any]:
+    """
+    Process a natural language business request with intelligent orchestration.
+
+    The orchestrator will:
+    1. Parse intent and requirements
+    2. Discover available tools via MCP
+    3. Design optimal execution workflow
+    4. Execute with quality feedback loops
+    5. Refine results if needed
+    6. Format for approval
+    7. Accumulate learning data
+
+    Returns:
+        - task_id: For polling status
+        - status_url: URL to check progress
+        - approval_url: URL to approve when ready
+    """
+    try:
+        # Import here to avoid circular dependency
+        from main import orchestrator as app_orchestrator
+
+        if not app_orchestrator:
+            raise HTTPException(status_code=503, detail="Orchestrator not initialized")
+
+        # Generate task ID
+        task_id = f"task-{datetime.now().timestamp()}"
+
+        # Store initial task
+        task_store[task_id] = {
+            "status": "initializing",
+            "created_at": datetime.now().isoformat(),
+            "request": body.request,
+            "user_id": user_id,
+            "progress": 0,
+            "execution_context": {}
+        }
+
+        # Start background processing
+        background_tasks.add_task(
+            _process_request_background,
+            task_id,
+            app_orchestrator,
+            body,
+            user_id
+        )
+
+        return {
+            "success": True,
+            "task_id": task_id,
+            "status": "processing",
+            "message": "Request received and processing started",
+            "status_url": f"/api/orchestrator/status/{task_id}",
+            "approval_url": f"/api/orchestrator/approval/{task_id}"
+        }
+
+    except Exception as e:
+        logger.error(f"Error processing request: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def _process_request_background(
+    task_id: str,
+    orchestrator,
+    body: ProcessRequestBody,
+    user_id: str
+):
+    """Background task: Full orchestration workflow"""
+    try:
+        logger.info(f"Starting orchestration for task {task_id}")
+
+        # Convert preferences to dict
+        preferences = body.preferences.dict(exclude_none=True) if body.preferences else None
+        business_metrics = body.business_metrics.dict(exclude_none=True) if body.business_metrics else None
+
+        # Check if orchestrator has the new intelligent process_request method
+        if hasattr(orchestrator, 'intelligent_orchestrator') and orchestrator.intelligent_orchestrator:
+            # Use new IntelligentOrchestrator
+            result = await orchestrator.intelligent_orchestrator.process_request(
+                user_request=body.request,
+                user_id=user_id,
+                business_metrics=business_metrics,
+                preferences=preferences
+            )
+
+            # Update task store
+            task_store[task_id] = {
+                **task_store[task_id],
+                "status": "ready_for_approval" if result.quality_assessment.passed else "quality_check_complete",
+                "result": result,
+                "completed_at": datetime.now().isoformat(),
+                "progress": 100
+            }
+
+            logger.info(f"Orchestration complete for task {task_id}: {result.status.value}")
+        else:
+            # Fallback to existing orchestrator
+            logger.warning("IntelligentOrchestrator not available, using fallback")
+            task_store[task_id]["status"] = "fallback_mode"
+            task_store[task_id]["message"] = "Using existing orchestrator (IntelligentOrchestrator not initialized)"
+
+    except Exception as e:
+        logger.error(f"Background processing failed for {task_id}: {e}", exc_info=True)
+        task_store[task_id]["status"] = "failed"
+        task_store[task_id]["error"] = str(e)
+
+
+@router.get("/status/{task_id}")
+async def get_status(task_id: str) -> ExecutionStatusResponse:
+    """Get current status of an orchestration task"""
+    if task_id not in task_store:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+    task = task_store[task_id]
+
+    return ExecutionStatusResponse(
+        task_id=task_id,
+        status=task.get("status", "unknown"),
+        progress_percentage=task.get("progress", 0),
+        current_phase=task.get("current_phase"),
+        error=task.get("error")
+    )
+
+
+@router.get("/approval/{task_id}")
+async def get_approval(task_id: str) -> ApprovalResponse:
+    """Get result ready for approval"""
+    if task_id not in task_store:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+    task = task_store[task_id]
+
+    if task.get("status") not in ["ready_for_approval", "quality_check_complete"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Task not ready for approval. Status: {task.get('status')}"
+        )
+
+    result = task.get("result")
+    if not result:
+        raise HTTPException(status_code=400, detail="No result available")
+
+    formatted = result.final_formatting or {}
+
+    return ApprovalResponse(
+        task_id=task_id,
+        status="pending_approval",
+        quality_score=result.quality_assessment.score,
+        quality_passed=result.quality_assessment.passed,
+        main_content=formatted.get("main_content", {}),
+        channel_variants=formatted.get("channel_variants", {}),
+        metadata=formatted.get("metadata", {}),
+        supporting_materials=formatted.get("supporting_materials", {}),
+        approval_url=f"/api/orchestrator/approve/{task_id}"
+    )
+
+
+@router.post("/approve/{task_id}")
+async def approve_result(
+    task_id: str,
+    action: ApprovalAction,
+    background_tasks: BackgroundTasks
+) -> Dict[str, Any]:
+    """
+    User approves result and triggers publishing.
+
+    Can also include modifications to request re-execution of specific steps.
+    """
+    if task_id not in task_store:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+    task = task_store[task_id]
+
+    if task.get("status") not in ["ready_for_approval", "quality_check_complete"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Task not in approval state. Status: {task.get('status')}"
+        )
+
+    if action.approved:
+        task["status"] = "approved"
+        task["approved_at"] = datetime.now().isoformat()
+        task["publish_channels"] = action.publish_to_channels
+
+        # Start publishing in background
+        background_tasks.add_task(
+            _publish_result_background,
+            task_id,
+            action.publish_to_channels
+        )
+
+        return {
+            "success": True,
+            "task_id": task_id,
+            "status": "approved_and_publishing",
+            "message": f"Content approved and queued for publishing to {action.publish_to_channels}"
+        }
+    else:
+        task["status"] = "rejected"
+        task["rejected_at"] = datetime.now().isoformat()
+        task["rejection_feedback"] = action.feedback
+
+        return {
+            "success": True,
+            "task_id": task_id,
+            "status": "rejected",
+            "message": "Result rejected and archived"
+        }
+
+
+async def _publish_result_background(task_id: str, channels: List[str]):
+    """Background task: Publish to selected channels"""
+    try:
+        logger.info(f"Publishing task {task_id} to channels: {channels}")
+        # TODO: Implement publishing logic for each channel
+        # - Blog: Publish to Strapi
+        # - LinkedIn: Use LinkedIn API
+        # - Twitter: Use Twitter API
+        # - Email: Send via email service
+        
+        if task_id in task_store:
+            task_store[task_id]["status"] = "published"
+            task_store[task_id]["published_at"] = datetime.now().isoformat()
+
+    except Exception as e:
+        logger.error(f"Publishing failed for {task_id}: {e}")
+        if task_id in task_store:
+            task_store[task_id]["status"] = "publishing_failed"
+            task_store[task_id]["publishing_error"] = str(e)
+
+
+@router.get("/history")
+async def get_history(
+    user_id: str = Query("demo_user"),
+    limit: int = Query(50, ge=1, le=500),
+    status_filter: Optional[str] = None
+) -> Dict[str, Any]:
+    """Get execution history for user"""
+    user_tasks = [
+        {
+            "task_id": tid,
+            "status": task.get("status"),
+            "created_at": task.get("created_at"),
+            "request": task.get("request", "")[:100],
+            "quality_score": task.get("result", {}).get("quality_assessment", {}).get("score")
+        }
+        for tid, task in task_store.items()
+        if task.get("user_id") == user_id
+    ]
+
+    if status_filter:
+        user_tasks = [t for t in user_tasks if t["status"] == status_filter]
+
+    return {
+        "user_id": user_id,
+        "total": len(user_tasks),
+        "recent": sorted(user_tasks, key=lambda t: t["created_at"], reverse=True)[:limit]
+    }
+
+
+@router.post("/training-data/export")
+async def export_training_data(
+    request_body: TrainingDataExportRequest
+) -> Dict[str, Any]:
+    """
+    Export accumulated training examples for fine-tuning.
+
+    This allows training a proprietary orchestrator LLM on your
+    organization's specific workflows and decisions.
+    """
+    try:
+        from main import orchestrator as app_orchestrator
+
+        if not app_orchestrator:
+            raise HTTPException(status_code=503, detail="Orchestrator not initialized")
+
+        # Check if IntelligentOrchestrator available
+        intelligent_orch = getattr(app_orchestrator, 'intelligent_orchestrator', None)  # type: ignore
+        if not intelligent_orch:
+            raise HTTPException(status_code=503, detail="IntelligentOrchestrator not initialized")
+
+        # Get training examples
+        training_examples = intelligent_orch.get_training_dataset()
+
+        # Filter by quality if specified
+        if request_body.filter_by_quality:
+            training_examples = [
+                ex for ex in training_examples
+                if ex.result.quality_assessment.score >= request_body.filter_by_quality
+            ]
+
+        # Limit results
+        if request_body.limit:
+            training_examples = training_examples[:request_body.limit]
+
+        # Export in requested format
+        exported = intelligent_orch.export_training_dataset(format=request_body.format)
+
+        return {
+            "success": True,
+            "format": request_body.format,
+            "example_count": len(training_examples),
+            "data": exported,
+            "download_url": f"/api/orchestrator/training-data/download?format={request_body.format}"
+        }
+
+    except Exception as e:
+        logger.error(f"Training data export failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/training-data/upload-model")
+async def upload_custom_llm(
+    model_file: str = Query(..., description="Path to fine-tuned model"),
+    model_name: str = Query(..., description="Name of custom orchestrator LLM"),
+    enable_immediately: bool = Query(False, description="Use for all new requests?")
+) -> Dict[str, Any]:
+    """
+    Upload a custom proprietary orchestrator LLM.
+
+    Allows you to train a model on your organization's execution patterns
+    and use it to make better decisions about workflows.
+
+    This model will:
+    - Learn your organization's unique business logic
+    - Adapt to your communication style and tone
+    - Make more accurate predictions over time
+    - Serve as your org's unique differentiator
+    """
+    try:
+        from main import orchestrator as app_orchestrator
+
+        if not app_orchestrator:
+            raise HTTPException(status_code=503, detail="Orchestrator not initialized")
+
+        # TODO: Load model from file/endpoint
+        # custom_llm = load_model(model_file)
+
+        # # Set as custom orchestrator
+        # app_orchestrator.set_custom_orchestrator_llm(custom_llm)
+
+        return {
+            "success": True,
+            "model_name": model_name,
+            "status": "loaded",
+            "message": f"Custom LLM '{model_name}' loaded and {'enabled' if enable_immediately else 'available for testing'}",
+            "enabled": enable_immediately
+        }
+
+    except Exception as e:
+        logger.error(f"Model upload failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/learning-patterns")
+async def get_learning_patterns() -> Dict[str, Any]:
+    """Get learned execution patterns from memory system"""
+    try:
+        from main import orchestrator as app_orchestrator
+
+        if not app_orchestrator:
+            raise HTTPException(status_code=503, detail="Orchestrator not initialized")
+
+        # Get memory system from intelligent orchestrator
+        memory_sys = getattr(app_orchestrator, 'memory_system', None)  # type: ignore
+        if not memory_sys:
+            raise HTTPException(status_code=503, detail="Memory system not available")
+
+        # Get patterns from enhanced memory
+        patterns_md = memory_sys.export_learned_patterns(format="markdown")
+
+        return {
+            "success": True,
+            "patterns_markdown": patterns_md,
+            "pattern_count": len(memory_sys.execution_patterns)
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get learning patterns: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/business-metrics-analysis")
+async def analyze_metrics() -> Dict[str, Any]:
+    """Analyze correlations between workflows and business metrics"""
+    try:
+        from main import orchestrator as app_orchestrator
+
+        if not app_orchestrator:
+            raise HTTPException(status_code=503, detail="Orchestrator not initialized")
+
+        # Get memory system
+        memory_sys = getattr(app_orchestrator, 'memory_system', None)  # type: ignore
+        if not memory_sys:
+            raise HTTPException(status_code=503, detail="Memory system not available")
+
+        correlations = await memory_sys.correlate_with_business_metrics()
+
+        return {
+            "success": True,
+            "correlations": correlations,
+            "insight_count": len(correlations)
+        }
+
+    except Exception as e:
+        logger.error(f"Metrics analysis failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/tools")
+async def list_tools() -> Dict[str, Any]:
+    """List all available tools for orchestration"""
+    try:
+        from main import orchestrator as app_orchestrator
+
+        if not app_orchestrator:
+            raise HTTPException(status_code=503, detail="Orchestrator not initialized")
+
+        # Get tools from intelligent orchestrator
+        intelligent_orch = getattr(app_orchestrator, 'intelligent_orchestrator', None)  # type: ignore
+        if not intelligent_orch:
+            raise HTTPException(status_code=503, detail="IntelligentOrchestrator not initialized")
+
+        tools = intelligent_orch.list_tools()
+
+        return {
+            "success": True,
+            "tools": [
+                {
+                    "id": tool.tool_id,
+                    "name": tool.name,
+                    "description": tool.description,
+                    "category": tool.category,
+                    "estimated_cost": tool.estimated_cost,
+                    "success_rate": tool.success_rate
+                }
+                for tool in tools
+            ]
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -1,23 +1,65 @@
-# MIT License
+# GNU AFFERO GENERAL PUBLIC LICENSE v3.0
 
-## Copyright (c) 2025 Matthew M. Gladding (Glad Labs, LLC)
+**Glad Labs AI Co-Founder System**
 
-Glad Labs AI Co-Founder System
+Copyright (C) 2025 Matthew M. Gladding (Glad Labs, LLC)
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published
+by the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+---
+
+## Full License Terms
+
+The complete GNU AGPL 3.0 license text is available at: https://www.gnu.org/licenses/agpl-3.0.html
+
+Key points of the AGPL 3.0:
+
+- **Freedom to Use**: You are free to run the program for any purpose
+- **Freedom to Study**: You can access and study the source code
+- **Freedom to Distribute**: You can distribute copies to others
+- **Freedom to Modify**: You can modify the code and distribute modifications
+- **Copyleft Requirement**: If you run modified versions on a network server, you must provide source code to users
+
+---
+
+## Commercial & Proprietary Use
+
+**The Glad Labs platform is licensed under the GNU AGPL 3.0.** This means it is free to use for any project that also complies with the AGPL 3.0.
+
+### Commercial License
+
+A **commercial license** is required for any use of this software in a closed-source, proprietary application or for any use that does not comply with the terms of the AGPL 3.0.
+
+To purchase a commercial license or inquire about licensing options, please contact:
+
+📧 **sales@gladlabs.io**
+
+---
+
+## Third-Party Dependencies
+
+This software includes components with the following licenses:
+
+- **FastAPI**: MIT License
+- **React**: MIT License
+- **Strapi**: MIT License
+- **PostgreSQL**: PostgreSQL License (permissive open-source)
+- **smolagents**: MIT License
+- See individual component repositories for complete license information
+
+---
+
+## Important Notice
+
+This software is provided AS-IS without warranty of any kind. Users are responsible for ensuring compliance with all applicable laws and licenses, including the AGPL 3.0.

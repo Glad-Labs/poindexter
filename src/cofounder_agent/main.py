@@ -59,6 +59,18 @@ from routes.social_routes import social_router
 from routes.metrics_routes import metrics_router
 from routes.agents_routes import router as agents_router
 
+# Import intelligent orchestrator (NEW - separate module, no conflicts)
+try:
+    from services.intelligent_orchestrator import IntelligentOrchestrator
+    from services.orchestrator_memory_extensions import EnhancedMemorySystem
+    from routes.intelligent_orchestrator_routes import router as intelligent_orchestrator_router
+    INTELLIGENT_ORCHESTRATOR_AVAILABLE = True
+except ImportError as e:
+    INTELLIGENT_ORCHESTRATOR_AVAILABLE = False
+    IntelligentOrchestrator = None
+    EnhancedMemorySystem = None
+    intelligent_orchestrator_router = None
+
 # Import database initialization
 try:
     from database import init_db
@@ -90,30 +102,36 @@ logger = get_logger(__name__)
 database_service: Optional[DatabaseService] = None
 orchestrator: Optional[Orchestrator] = None
 task_executor: Optional[TaskExecutor] = None
+intelligent_orchestrator: Optional[IntelligentOrchestrator] = None  # NEW
 startup_error: Optional[str] = None
 startup_complete: bool = False
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan manager - startup and shutdown with PostgreSQL initialization"""
+    """Application lifespan manager - PostgreSQL connection is MANDATORY"""
     global database_service, orchestrator, task_executor, startup_error, startup_complete
     
     try:
         logger.info("🚀 Starting Glad Labs AI Co-Founder application...")
-        logger.info(f"  Environment: {os.getenv('ENVIRONMENT', 'development')}")
-        logger.info(f"  Database URL: {os.getenv('DATABASE_URL', 'SQLite (local dev)')[:50]}...")
+        logger.info(f"  Environment: {os.getenv('ENVIRONMENT', 'production')}")
         
-        # 1. Initialize PostgreSQL database service
-        logger.info("  📦 Connecting to PostgreSQL...")
+        # ============================================================================
+        # 1. MANDATORY: Initialize PostgreSQL database connection
+        # ============================================================================
+        logger.info("  📦 Connecting to PostgreSQL (REQUIRED)...")
+        logger.info(f"  DATABASE_URL: {os.getenv('DATABASE_URL', 'Not set')[:50]}...")
+        
         try:
             database_service = DatabaseService()
             await database_service.initialize()
-            logger.info("  ✅ PostgreSQL connection established")
+            logger.info("  ✅ PostgreSQL connected - ready for operations")
         except Exception as e:
-            startup_error = f"PostgreSQL connection failed: {str(e)}"
-            logger.error(f"  ❌ {startup_error}", exc_info=True)
-            logger.warning("  ⚠️ Continuing in development mode without database")
-            database_service = None
+            startup_error = f"❌ FATAL: PostgreSQL connection failed: {str(e)}"
+            logger.error(f"  {startup_error}", exc_info=True)
+            logger.error("  🛑 PostgreSQL is REQUIRED - cannot continue")
+            logger.error("  ⚠️ Set DATABASE_URL or DATABASE_USER environment variables")
+            logger.error("  Example DATABASE_URL: postgresql://user:password@localhost:5432/glad_labs_dev")
+            raise SystemExit(1)  # ❌ STOP - PostgreSQL required
         
         # 2. Initialize persistent task store
         logger.info("  📋 Initializing persistent task store...")
@@ -163,6 +181,34 @@ async def lifespan(app: FastAPI):
             logger.error(f"  ❌ {error_msg}", exc_info=True)
             startup_error = error_msg
             # Don't re-raise - allow app to start for health checks
+        
+        # 4b. Initialize intelligent orchestrator (NEW - non-intrusive addition)
+        logger.info("  🧠 Initializing intelligent orchestrator...")
+        try:
+            if INTELLIGENT_ORCHESTRATOR_AVAILABLE and orchestrator and database_service:
+                # Create enhanced memory system wrapper
+                try:
+                    from services.memory_system import AIMemorySystem
+                    base_memory = AIMemorySystem()
+                except Exception:
+                    base_memory = None
+                    
+                enhanced_memory = EnhancedMemorySystem(base_memory)
+                
+                # Initialize intelligent orchestrator
+                intelligent_orchestrator = IntelligentOrchestrator(
+                    llm_client=None,  # Will be initialized internally
+                    database_service=database_service,
+                    memory_system=enhanced_memory,
+                    mcp_orchestrator=None  # Optional, can be injected later
+                )
+                logger.info("  ✅ Intelligent orchestrator initialized successfully")
+            else:
+                logger.warning("  ⚠️ Intelligent orchestrator module not available or dependencies missing")
+        except Exception as e:
+            error_msg = f"Intelligent orchestrator initialization failed: {str(e)}"
+            logger.warning(f"  ⚠️ {error_msg}", exc_info=True)
+            intelligent_orchestrator = None
         
         # 5. Initialize content critique loop and Strapi publisher
         logger.info("  🔍 Initializing content critique loop...")
@@ -308,6 +354,13 @@ app.include_router(webhook_router)  # Webhook handlers for Strapi events
 app.include_router(social_router)  # Social media management
 app.include_router(metrics_router)  # Metrics and analytics
 app.include_router(agents_router)  # AI agent management and monitoring
+
+# Register intelligent orchestrator routes (NEW - conditional on availability)
+if INTELLIGENT_ORCHESTRATOR_AVAILABLE and intelligent_orchestrator_router:
+    app.include_router(intelligent_orchestrator_router)
+    logger.info("✅ Intelligent orchestrator routes registered")
+else:
+    logger.warning("⚠️ Intelligent orchestrator routes not registered (module not available)")
 
 # ===== UNIFIED HEALTH CHECK ENDPOINT =====
 # Consolidated from: /api/health, /status, /metrics/health, and route-specific health endpoints

@@ -522,6 +522,153 @@ def mock_logger():
     logger.debug = Mock()
     return logger
 
+# ========================================================================
+# POINDEXTER TEST FIXTURES
+# ========================================================================
+
+@pytest.fixture
+def mock_tools_service():
+    """Mock PoindexterTools service with all tool methods."""
+    tools = AsyncMock()
+    
+    # Mock all 7 Poindexter tools
+    tools.research_tool = AsyncMock(return_value={
+        "success": True,
+        "data": {"research_data": "test"},
+        "cost": 0.15,
+        "quality_score": 0.90
+    })
+    
+    tools.generate_content_tool = AsyncMock(return_value={
+        "success": True,
+        "data": {"content": "Generated content"},
+        "cost": 0.25,
+        "quality_score": 0.85,
+        "iterations": 1
+    })
+    
+    tools.critique_content_tool = AsyncMock(return_value={
+        "success": True,
+        "data": {"feedback": "Great content"},
+        "cost": 0.10,
+        "quality_score": 0.92
+    })
+    
+    tools.publish_tool = AsyncMock(return_value={
+        "success": True,
+        "data": {"published_id": "pub_001"},
+        "cost": 0.0,
+        "quality_score": 1.0
+    })
+    
+    tools.track_metrics_tool = AsyncMock(return_value={
+        "success": True,
+        "data": {"recorded": True},
+        "cost": 0.0,
+        "quality_score": 1.0
+    })
+    
+    tools.fetch_images_tool = AsyncMock(return_value={
+        "success": True,
+        "data": {"images": ["img1.jpg", "img2.jpg", "img3.jpg"]},
+        "cost": 0.05,
+        "quality_score": 0.88
+    })
+    
+    tools.refine_tool = AsyncMock(return_value={
+        "success": True,
+        "data": {"refined_content": "Improved content"},
+        "cost": 0.12,
+        "quality_score": 0.93
+    })
+    
+    # Utility methods
+    tools.get_all_tools = Mock(return_value=[
+        {"name": "research_tool", "description": "Research information"},
+        {"name": "generate_content_tool", "description": "Generate content"},
+        {"name": "critique_content_tool", "description": "Critique content"},
+        {"name": "publish_tool", "description": "Publish content"},
+        {"name": "track_metrics_tool", "description": "Track metrics"},
+        {"name": "fetch_images_tool", "description": "Fetch images"},
+        {"name": "refine_tool", "description": "Refine content"}
+    ])
+    
+    tools.get_tool_descriptions = Mock(return_value="Tool descriptions")
+    tools.estimate_tool_cost = Mock(return_value=(0.10, 0.50))
+    tools.estimate_tool_time = Mock(return_value=(5, 30))
+    
+    return tools
+
+
+@pytest.fixture
+def mock_research_agent():
+    """Mock ResearchAgent."""
+    agent = AsyncMock()
+    agent.execute = AsyncMock(return_value={
+        "success": True,
+        "data": {"research": "Sample research data"}
+    })
+    return agent
+
+
+@pytest.fixture
+def mock_creative_agent():
+    """Mock CreativeAgent."""
+    agent = AsyncMock()
+    agent.execute = AsyncMock(return_value={
+        "success": True,
+        "data": {"content": "Generated creative content"}
+    })
+    return agent
+
+
+@pytest.fixture
+def mock_qa_agent():
+    """Mock QAAgent for quality assessment."""
+    agent = AsyncMock()
+    agent.execute = AsyncMock(return_value={
+        "success": True,
+        "data": {"quality_score": 0.90, "feedback": "Good content"}
+    })
+    return agent
+
+
+@pytest.fixture
+def sample_pipeline_state():
+    """Sample PipelineState data."""
+    return {
+        "request_id": "workflow_001",
+        "current_step": 0,
+        "steps": [
+            {"tool": "research_tool", "params": {}},
+            {"tool": "generate_content_tool", "params": {}},
+            {"tool": "critique_content_tool", "params": {}},
+            {"tool": "publish_tool", "params": {}}
+        ],
+        "constraints": {
+            "quality_threshold": 0.85,
+            "max_iterations": 3,
+            "max_cost": 2.0
+        },
+        "results": [],
+        "metadata": {}
+    }
+
+
+@pytest.fixture
+def sample_tool_result():
+    """Sample ToolResult data."""
+    return {
+        "success": True,
+        "data": {"key": "value"},
+        "cost": 0.15,
+        "quality_score": 0.92,
+        "critique_notes": None,
+        "iterations": 1,
+        "error": None
+    }
+
+
 # Export test configuration
 __all__ = [
     "TEST_CONFIG",
@@ -547,5 +694,12 @@ __all__ = [
     "async_mock_manager",
     "performance_monitor",
     "test_utils",
-    "mock_api_responses"
+    "mock_api_responses",
+    # Poindexter fixtures
+    "mock_tools_service",
+    "mock_research_agent",
+    "mock_creative_agent",
+    "mock_qa_agent",
+    "sample_pipeline_state",
+    "sample_tool_result"
 ]
