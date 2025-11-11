@@ -22,40 +22,4 @@ module.exports = ({ env }) => {
       },
     };
   }
-
-  // Fallback to DATABASE_CLIENT environment variable
-  const client = env('DATABASE_CLIENT', 'sqlite');
-
-  if (client === 'postgres') {
-    return {
-      connection: {
-        client: 'postgres',
-        connection: {
-          connectionString: env('DATABASE_URL'),
-          ssl:
-            env('NODE_ENV') === 'production'
-              ? { rejectUnauthorized: false }
-              : false,
-        },
-        debug: false,
-        pool: {
-          min: 0,
-          max: 5,
-          acquireTimeoutMillis: 30000,
-          idleTimeoutMillis: 30000,
-        },
-      },
-    };
-  }
-
-  // Default to SQLite for local development
-  return {
-    connection: {
-      client: 'sqlite',
-      connection: {
-        filename: env('DATABASE_FILENAME', './.tmp/data.db'),
-      },
-      useNullAsDefault: true,
-    },
-  };
 };

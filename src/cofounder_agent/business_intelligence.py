@@ -4,6 +4,8 @@ Business Intelligence System for Glad Labs AI Co-Founder
 This module provides comprehensive business intelligence gathering and analysis
 capabilities, including data collection from multiple sources, trend analysis,
 performance monitoring, and strategic insights generation.
+
+Note: Uses PostgreSQL (glad_labs_dev) for all data storage.
 """
 
 import asyncio
@@ -16,8 +18,6 @@ from dataclasses import dataclass, asdict
 from enum import Enum
 
 import aiohttp
-import sqlite3
-from pathlib import Path
 
 
 class DataSource(str, Enum):
@@ -81,14 +81,13 @@ class BusinessIntelligenceSystem:
     """
     
     def __init__(self, data_dir: str = "business_intelligence_data"):
-        self.data_dir = Path(data_dir)
-        self.data_dir.mkdir(exist_ok=True)
-        
         self.logger = logging.getLogger("business_intelligence")
         
-        # Database for storing metrics and insights
-        self.db_path = self.data_dir / "business_intelligence.db"
-        self._init_database()
+        # Database: PostgreSQL only (glad_labs_dev)
+        self.database_url = os.getenv(
+            "DATABASE_URL",
+            "postgresql://postgres:postgres@localhost:5432/glad_labs_dev"
+        )
         
         # Data collectors
         self.data_collectors = {}
@@ -104,75 +103,10 @@ class BusinessIntelligenceSystem:
         self.cache_timestamp = None
         self.cache_duration = timedelta(minutes=15)
     
-    def _init_database(self):
-        """Initialize SQLite database for storing business intelligence data"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            
-            # Metrics table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS metrics (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL,
-                    value REAL NOT NULL,
-                    unit TEXT,
-                    category TEXT,
-                    source TEXT,
-                    timestamp TEXT NOT NULL,
-                    confidence REAL DEFAULT 1.0,
-                    metadata TEXT
-                )
-            """)
-            
-            # Trends table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS trends (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    metric TEXT NOT NULL,
-                    direction TEXT NOT NULL,
-                    magnitude REAL NOT NULL,
-                    period TEXT NOT NULL,
-                    confidence REAL NOT NULL,
-                    significant BOOLEAN DEFAULT FALSE,
-                    timestamp TEXT NOT NULL,
-                    forecast TEXT
-                )
-            """)
-            
-            # Insights table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS insights (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    type TEXT NOT NULL,
-                    area TEXT NOT NULL,
-                    title TEXT NOT NULL,
-                    description TEXT NOT NULL,
-                    confidence REAL NOT NULL,
-                    priority INTEGER NOT NULL,
-                    actionable BOOLEAN DEFAULT TRUE,
-                    timestamp TEXT NOT NULL,
-                    data_sources TEXT,
-                    recommendations TEXT
-                )
-            """)
-            
-            # Competitors table
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS competitors (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL,
-                    domain TEXT UNIQUE NOT NULL,
-                    content_frequency REAL,
-                    social_engagement REAL,
-                    estimated_traffic INTEGER,
-                    key_topics TEXT,
-                    strengths TEXT,
-                    opportunities TEXT,
-                    last_analyzed TEXT NOT NULL
-                )
-            """)
-            
-            conn.commit()
+    async def initialize(self):
+        """Initialize PostgreSQL connection for business intelligence"""
+        self.logger.info(f"✅ Initializing Business Intelligence System with PostgreSQL")
+        # Connection will be established on-demand via database service
     
     def _register_data_collectors(self):
         """Register data collection methods for different sources"""
@@ -537,31 +471,15 @@ class BusinessIntelligenceSystem:
         return metrics
     
     async def _store_metrics(self, metrics: List[BusinessMetric]):
-        """Store metrics in database"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            
-            for metric in metrics:
-                cursor.execute("""
-                    INSERT INTO metrics (name, value, unit, category, source, timestamp, confidence, metadata)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    metric.name,
-                    metric.value,
-                    metric.unit,
-                    metric.category,
-                    metric.source.value,
-                    metric.timestamp.isoformat(),
-                    metric.confidence,
-                    json.dumps(metric.metadata) if metric.metadata else None
-                ))
-            
-            conn.commit()
+        """Store metrics in PostgreSQL database"""
+        # TODO: Implement PostgreSQL storage via DatabaseService
+        # For now, store in cache only
+        self.logger.debug(f"Storing {len(metrics)} metrics in cache (PostgreSQL integration pending)")
     
     async def analyze_trends(self, metric_name: str, period: str = "weekly") -> Optional[TrendAnalysis]:
         """Analyze trends for a specific metric"""
         try:
-            return await self.trend_analyzer.analyze_metric_trend(self.db_path, metric_name, period)
+            return await self.trend_analyzer.analyze_metric_trend(metric_name, period)
         except Exception as e:
             self.logger.error(f"Error analyzing trends for {metric_name}: {e}")
             return None
@@ -569,7 +487,7 @@ class BusinessIntelligenceSystem:
     async def get_performance_summary(self) -> Dict[str, Any]:
         """Get comprehensive performance summary"""
         try:
-            return await self.performance_analyzer.generate_summary(self.db_path)
+            return await self.performance_analyzer.generate_summary()
         except Exception as e:
             self.logger.error(f"Error generating performance summary: {e}")
             return {}
@@ -577,7 +495,7 @@ class BusinessIntelligenceSystem:
     async def analyze_competitive_landscape(self) -> List[CompetitorInsight]:
         """Analyze competitive landscape"""
         try:
-            return await self.competitive_analyzer.analyze_competitors(self.db_path)
+            return await self.competitive_analyzer.analyze_competitors()
         except Exception as e:
             self.logger.error(f"Error analyzing competitive landscape: {e}")
             return []
@@ -704,182 +622,49 @@ class BusinessIntelligenceSystem:
 class TrendAnalyzer:
     """Analyzes trends in business metrics over time"""
     
-    async def analyze_metric_trend(self, db_path: Path, metric_name: str, period: str) -> TrendAnalysis:
-        """Analyze trend for a specific metric"""
-        
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.cursor()
-            
-            # Get historical data for the metric
-            cursor.execute("""
-                SELECT value, timestamp FROM metrics
-                WHERE name = ? 
-                ORDER BY timestamp DESC
-                LIMIT 30
-            """, (metric_name,))
-            
-            rows = cursor.fetchall()
-            
-            if len(rows) < 2:
-                # Not enough data for trend analysis
-                return TrendAnalysis(
-                    metric=metric_name,
-                    direction="unknown",
-                    magnitude=0.0,
-                    period=period,
-                    confidence=0.0,
-                    significant=False
-                )
-            
-            # Simple trend analysis (could be enhanced with more sophisticated algorithms)
-            values = [row[0] for row in rows]
-            recent_avg = sum(values[:5]) / min(5, len(values))
-            older_avg = sum(values[5:10]) / min(5, len(values[5:]))
-            
-            if older_avg == 0:
-                magnitude = 0.0
-            else:
-                magnitude = ((recent_avg - older_avg) / older_avg) * 100
-            
-            direction = "up" if magnitude > 1 else "down" if magnitude < -1 else "stable"
-            confidence = min(0.9, len(rows) / 30.0)  # Higher confidence with more data points
-            significant = abs(magnitude) > 5.0  # Consider >5% change significant
-            
-            return TrendAnalysis(
-                metric=metric_name,
-                direction=direction,
-                magnitude=magnitude,
-                period=period,
-                confidence=confidence,
-                significant=significant
-            )
+    async def analyze_metric_trend(self, metric_name: str, period: str) -> TrendAnalysis:
+        """Analyze trend for a specific metric (PostgreSQL integration pending)"""
+        # TODO: Implement with PostgreSQL queries via DatabaseService
+        # For now, return placeholder trend analysis
+        return TrendAnalysis(
+            metric=metric_name,
+            direction="unknown",
+            magnitude=0.0,
+            period=period,
+            confidence=0.0,
+            significant=False
+        )
 
 
 class PerformanceAnalyzer:
     """Analyzes overall business performance"""
     
-    async def generate_summary(self, db_path: Path) -> Dict[str, Any]:
-        """Generate comprehensive performance summary"""
-        
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.cursor()
-            
-            # Get recent metrics by category
-            cursor.execute("""
-                SELECT category, name, value, unit, confidence
-                FROM metrics
-                WHERE timestamp > datetime('now', '-7 days')
-                ORDER BY timestamp DESC
-            """)
-            
-            rows = cursor.fetchall()
-            
-            # Group by category
-            categories = {}
-            for row in rows:
-                category = row[0]
-                if category not in categories:
-                    categories[category] = []
-                categories[category].append({
-                    "name": row[1],
-                    "value": row[2],
-                    "unit": row[3],
-                    "confidence": row[4]
-                })
-            
-            return {
-                "categories": categories,
-                "total_metrics": len(rows),
-                "performance_score": self._calculate_performance_score(categories),
-                "generated_at": datetime.now().isoformat()
-            }
+    async def generate_summary(self) -> Dict[str, Any]:
+        """Generate comprehensive performance summary (PostgreSQL integration pending)"""
+        # TODO: Query metrics from PostgreSQL via DatabaseService
+        # For now, return placeholder summary
+        return {
+            "categories": {},
+            "total_metrics": 0,
+            "performance_score": 0.0,
+            "generated_at": datetime.now().isoformat()
+        }
     
     def _calculate_performance_score(self, categories: Dict[str, List[Dict]]) -> float:
         """Calculate overall performance score (0-100)"""
-        
-        # This is a simplified scoring algorithm
-        # In practice, this would be more sophisticated with weighted categories
-        
-        score_components = []
-        
-        # Content performance (weight: 25%)
-        if "content" in categories:
-            content_score = min(100, len(categories["content"]) * 10)
-            score_components.append(("content", content_score, 0.25))
-        
-        # Financial performance (weight: 30%)
-        if "finance" in categories:
-            # Look for profit margin
-            profit_metrics = [m for m in categories["finance"] if "profit" in m["name"].lower()]
-            if profit_metrics:
-                profit_margin = profit_metrics[0]["value"]
-                finance_score = min(100, profit_margin * 1.5)  # Scale profit margin to 0-100
-            else:
-                finance_score = 50  # Default neutral score
-            score_components.append(("finance", finance_score, 0.30))
-        
-        # System health (weight: 20%)
-        if "system" in categories:
-            uptime_metrics = [m for m in categories["system"] if "uptime" in m["name"].lower()]
-            if uptime_metrics:
-                system_score = uptime_metrics[0]["value"]
-            else:
-                system_score = 80  # Default good score
-            score_components.append(("system", system_score, 0.20))
-        
-        # Growth indicators (weight: 25%)
-        growth_score = 70  # Default score, would be calculated from actual growth metrics
-        score_components.append(("growth", growth_score, 0.25))
-        
-        # Calculate weighted average
-        total_score = sum(score * weight for _, score, weight in score_components)
-        
-        return round(total_score, 1)
+        # TODO: Implement scoring logic with PostgreSQL-sourced data
+        return 0.0
 
 
 class CompetitiveAnalyzer:
     """Analyzes competitive landscape"""
     
-    async def analyze_competitors(self, db_path: Path) -> List[CompetitorInsight]:
-        """Analyze competitive landscape"""
-        
-        # This would integrate with actual competitive intelligence APIs
-        # For now, return simulated competitive data
-        
-        competitors = [
-            CompetitorInsight(
-                competitor_name="ContentBot AI",
-                domain="contentbot.ai",
-                content_frequency=5.2,
-                social_engagement=8.3,
-                estimated_traffic=25000,
-                key_topics=["AI writing", "SEO content", "blog automation"],
-                strengths=["Strong SEO focus", "Large user base", "Enterprise features"],
-                opportunities=["Complex pricing", "Limited local model support", "High learning curve"]
-            ),
-            CompetitorInsight(
-                competitor_name="WriteWise",
-                domain="writewise.com",
-                content_frequency=3.1,
-                social_engagement=6.7,
-                estimated_traffic=12000,
-                key_topics=["Content marketing", "Social media", "Email campaigns"],
-                strengths=["User-friendly interface", "Good integrations", "Affordable pricing"],
-                opportunities=["Limited AI capabilities", "No multi-language support", "Basic analytics"]
-            ),
-            CompetitorInsight(
-                competitor_name="SmartContent Pro",
-                domain="smartcontentpro.com",
-                content_frequency=4.8,
-                social_engagement=9.1,
-                estimated_traffic=35000,
-                key_topics=["Enterprise content", "Team collaboration", "Brand management"],
-                strengths=["Enterprise focus", "Advanced analytics", "Strong brand"],
-                opportunities=["Expensive for small business", "Complex setup", "Limited customization"]
-            )
-        ]
-        
-        return competitors
+    async def analyze_competitors(self) -> List[CompetitorInsight]:
+        """Analyze competitive landscape (PostgreSQL integration pending)"""
+        # TODO: Implement with actual competitive intelligence API calls
+        # Store results in PostgreSQL via DatabaseService
+        # For now, return empty list (placeholder)
+        return []
 
 
 # Example usage

@@ -12,7 +12,7 @@ Endpoints:
 - GET /api/metrics - Aggregated task metrics
 """
 
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, BackgroundTasks
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
@@ -204,7 +204,8 @@ class MetricsResponse(BaseModel):
 @router.post("", response_model=Dict[str, Any], summary="Create new task", status_code=201)
 async def create_task(
     request: TaskCreateRequest,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    background_tasks: BackgroundTasks = None
 ):
     """
     Create a new task for content generation.
@@ -307,6 +308,18 @@ async def create_task(
             "message": "Task created successfully"
         }
         logger.info(f"📤 [TASK_CREATE] Returning response: {response}")
+        
+        # Queue background task to execute content generation and publishing
+        if background_tasks:
+            logger.info(f"⏳ [TASK_CREATE] Queueing background task for content generation...")
+            background_tasks.add_task(
+                _execute_and_publish_task,
+                returned_task_id
+            )
+            logger.info(f"✅ [TASK_CREATE] Background task queued successfully")
+        else:
+            logger.warning(f"⚠️ [TASK_CREATE] No background_tasks available - content generation will not run!")
+        
         return response
         
     except HTTPException:
@@ -552,34 +565,43 @@ async def publish_task(
                 detail=f"Task must be completed to publish (current status: {task_status})"
             )
         
-        # Extract content from task result
+        # Extract content from task result or metadata
+        # Try multiple sources for content (in order of priority)
         task_result = task.get('result')
-        if not task_result:
-            raise HTTPException(
-                status_code=400,
-                detail="Task has no result data to publish"
-            )
+        task_metadata = task.get('metadata')
         
-        if isinstance(task_result, str):
-            content = task_result
-            title = task.get('title', 'Untitled')
-        else:
-            # task_result is a dict-like object
-            if isinstance(task_result, dict):
+        # Parse metadata if it's a JSON string
+        if task_metadata and isinstance(task_metadata, str):
+            try:
+                import json
+                task_metadata = json.loads(task_metadata)
+            except:
+                task_metadata = {}
+        
+        # Determine content source and extract it
+        content = None
+        title = task.get('topic') or task.get('title') or 'Untitled'  # Use topic as title (more specific than title field)
+        
+        # Priority 1: Content in metadata (generated content stored here)
+        if task_metadata and isinstance(task_metadata, dict):
+            content = task_metadata.get('content') or task_metadata.get('generated_content') or task_metadata.get('body')
+        
+        # Priority 2: Content in result field (for backward compatibility)
+        if not content and task_result:
+            if isinstance(task_result, str):
+                content = task_result
+            elif isinstance(task_result, dict):
                 content = task_result.get('content') or task_result.get('generated_content') or task_result.get('body', '')
-                title = task_result.get('title') or task.get('title', 'Untitled')
             else:
-                # Unknown type, try to convert to string
                 content = str(task_result)
-                title = task.get('title', 'Untitled')
         
         if not content:
             raise HTTPException(
                 status_code=400,
-                detail="Task has no content to publish"
+                detail="Task has no content to publish (no result or metadata)"
             )
         
-        # Extract metadata from task (initialize variables)
+        # Extract remaining metadata from task (initialize variables)
         excerpt = task.get('description', '')[:200] if task.get('description') else content[:200]
         category = task.get('category')
         tags = task.get('tags')
@@ -691,3 +713,200 @@ async def get_metrics(
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch metrics: {str(e)}")
+
+
+# ============================================================================
+# BACKGROUND TASK EXECUTION
+# ============================================================================
+
+async def _execute_and_publish_task(task_id: str):
+    """
+    Background task to execute content generation and publish to Strapi.
+    
+    This function:
+    1. Retrieves the task from database
+    2. Generates content using Ollama (or other LLM)
+    3. Stores generated content in task.metadata via result JSON
+    4. Automatically publishes to Strapi
+    5. Updates task status to "completed" or "failed"
+    
+    This runs in the background after task creation returns to the client.
+    """
+    try:
+        logger.info(f"🚀 [BG_TASK] Starting content generation for task: {task_id}")
+        
+        # Step 1: Retrieve task from database
+        logger.info(f"📖 [BG_TASK] Fetching task from database...")
+        task = await db_service.get_task(task_id)
+        
+        if not task:
+            logger.error(f"❌ [BG_TASK] Task not found: {task_id}")
+            return
+        
+        logger.info(f"✅ [BG_TASK] Task retrieved:")
+        logger.info(f"   - Topic: {task.get('topic')}")
+        logger.info(f"   - Status: {task.get('status')}")
+        logger.info(f"   - Category: {task.get('category')}")
+        
+        # Step 2: Update status to "in_progress"
+        logger.info(f"🔄 [BG_TASK] Updating task status to 'in_progress'...")
+        await db_service.update_task_status(task_id, "in_progress")
+        
+        # Step 3: Generate content using Ollama
+        logger.info(f"🧠 [BG_TASK] Starting content generation with Ollama...")
+        
+        topic = task.get('topic', '')
+        keyword = task.get('primary_keyword', '')
+        audience = task.get('target_audience', '')
+        
+        # Build prompt for Ollama
+        prompt = f"""Write a professional blog post about: {topic}
+        
+Target Audience: {audience if audience else 'General audience'}
+Primary Keyword: {keyword if keyword else topic}
+
+The post should be:
+- Well-structured with clear headings
+- 800-1200 words
+- Include an introduction, main points, and conclusion
+- Professional and informative
+- SEO-optimized
+
+Start writing the blog post now:"""
+        
+        logger.info(f"📝 [BG_TASK] Calling Ollama with prompt...")
+        logger.debug(f"Prompt:\n{prompt[:200]}...")
+        
+        # Call Ollama directly via HTTP
+        import aiohttp
+        generated_content = None
+        try:
+            async with aiohttp.ClientSession() as session:
+                ollama_url = "http://localhost:11434/api/generate"
+                ollama_payload = {
+                    "model": "llama2",
+                    "prompt": prompt,
+                    "stream": False,
+                    "temperature": 0.7,
+                    "top_p": 0.9,
+                    "top_k": 40,
+                }
+                
+                logger.info(f"🔗 [BG_TASK] Connecting to Ollama at {ollama_url}...")
+                async with session.post(ollama_url, json=ollama_payload, timeout=aiohttp.ClientTimeout(total=300)) as resp:
+                    if resp.status == 200:
+                        result = await resp.json()
+                        generated_content = result.get('response', '').strip()
+                        logger.info(f"✅ [BG_TASK] Content generation successful! ({len(generated_content)} chars)")
+                    else:
+                        logger.error(f"❌ [BG_TASK] Ollama returned status {resp.status}")
+                        generated_content = f"# {topic}\n\nError generating content. Status: {resp.status}"
+        except Exception as ollama_err:
+            logger.error(f"❌ [BG_TASK] Ollama error: {str(ollama_err)}")
+            generated_content = f"# {topic}\n\nContent generation failed: {str(ollama_err)}"
+        
+        if not generated_content:
+            generated_content = f"# {topic}\n\nContent generation returned empty result."
+        
+        # Step 4: Update task status and store result with generated content
+        logger.info(f"💾 [BG_TASK] Storing generated content in database...")
+        
+        # Store result as JSON containing the generated content
+        result_json = json.dumps({
+            "content": generated_content,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "content_length": len(generated_content)
+        })
+        
+        await db_service.update_task_status(task_id, "ready_to_publish", result=result_json)
+        logger.info(f"✅ [BG_TASK] Content stored in task result")
+        
+        # Step 5: Automatically publish to Strapi
+        logger.info(f"📤 [BG_TASK] Publishing to Strapi...")
+        
+        # Extract fields for publishing
+        title = task.get('topic') or task.get('task_name') or 'Untitled'
+        excerpt = generated_content[:200]
+        category = task.get('category', 'general')
+        tags = task.get('tags', [])
+        
+        logger.info(f"   - Title: {title}")
+        logger.info(f"   - Excerpt: {excerpt[:100]}...")
+        logger.info(f"   - Category: {category}")
+        logger.info(f"   - Content length: {len(generated_content)}")
+        
+        # Publish to Strapi using StrapiPublisher (PostgreSQL direct)
+        publisher = StrapiPublisher()
+        publish_success = False
+        post_id = None
+        publish_error = None
+        
+        try:
+            if not await publisher.connect():
+                publish_error = "Failed to connect to Strapi database"
+                logger.error(publish_error)
+            else:
+                logger.info(f"✅ [BG_TASK] Connected to Strapi")
+                
+                # Create post in Strapi PostgreSQL database
+                strapi_result = await publisher.create_post(
+                    title=title,
+                    content=generated_content,
+                    excerpt=excerpt,
+                    category=category,
+                    tags=tags
+                )
+                
+                logger.info(f"Strapi response: {strapi_result}")
+                
+                publish_success = strapi_result.get('success', False)
+                post_id = strapi_result.get('post_id')
+                
+                if publish_success:
+                    logger.info(f"✅ [BG_TASK] Post published to Strapi! Post ID: {post_id}")
+                else:
+                    publish_error = strapi_result.get('error', strapi_result.get('message', 'Unknown error'))
+                    logger.error(f"❌ [BG_TASK] Publishing error: {publish_error}")
+                
+        except Exception as pub_err:
+            publish_error = str(pub_err)
+            logger.error(f"❌ [BG_TASK] Publishing exception: {publish_error}", exc_info=True)
+        finally:
+            try:
+                await publisher.disconnect()
+                logger.info(f"✅ [BG_TASK] Disconnected from Strapi")
+            except Exception as e:
+                logger.warning(f"⚠️ [BG_TASK] Error disconnecting from Strapi: {e}")
+        
+        # Step 6: Final status update
+        if publish_success:
+            final_result = json.dumps({
+                "content": generated_content,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "post_id": post_id,
+                "published_at": datetime.now(timezone.utc).isoformat(),
+                "status": "success"
+            })
+            await db_service.update_task_status(task_id, "completed", result=final_result)
+            logger.info(f"✅ [BG_TASK] Task completed successfully!")
+        else:
+            final_result = json.dumps({
+                "content": generated_content,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "error": publish_error,
+                "status": "publish_failed"
+            })
+            await db_service.update_task_status(task_id, "publish_failed", result=final_result)
+            logger.error(f"❌ [BG_TASK] Task completed with publish failure: {publish_error}")
+        
+    except Exception as e:
+        logger.error(f"❌ [BG_TASK] Unhandled error: {str(e)}", exc_info=True)
+        try:
+            error_result = json.dumps({
+                "error": str(e),
+                "failed_at": datetime.now(timezone.utc).isoformat()
+            })
+            await db_service.update_task_status(task_id, "failed", result=error_result)
+        except Exception as status_err:
+            logger.error(f"❌ [BG_TASK] Could not update task status to failed: {status_err}")
+

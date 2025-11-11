@@ -31,8 +31,15 @@ from services.encryption import get_encryption_service
 def seed_test_user():
     """Create test user in database."""
     
-    # Get database URL from environment or use default
-    database_url = os.getenv("DATABASE_URL", "sqlite:///./test.db")
+    # DATABASE_URL is REQUIRED - no SQLite fallback
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        print("❌ ERROR: DATABASE_URL environment variable is required")
+        print("   PostgreSQL (glad_labs_dev) is REQUIRED for all development and production environments")
+        print()
+        print("   Set DATABASE_URL before running this script:")
+        print('   export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/glad_labs_dev"')
+        sys.exit(1)
     
     print(f"📦 Connecting to database: {database_url}")
     

@@ -1,11 +1,10 @@
 """
 Persistent Task Store Service
 
-Replaces in-memory task storage with database persistence.
 Provides unified interface for task CRUD operations across all services.
 
-Supports:
-- PostgreSQL (production) and SQLite (development)
+Features:
+- PostgreSQL only (glad_labs_dev database)
 - Automatic table creation
 - Task filtering and pagination
 - Synchronous operations (compatible with FastAPI)

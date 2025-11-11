@@ -36,39 +36,29 @@ class DatabaseService:
         
         Args:
             database_url: PostgreSQL connection URL
-                         Default: from DATABASE_URL env var or SQLite for dev
+                         Required: DATABASE_URL env var or passed explicitly
         """
         if database_url:
             self.database_url = database_url
         else:
-            # Try DATABASE_URL first (Railway production)
+            # Require DATABASE_URL env var - no fallback to SQLite
             database_url_env = os.getenv("DATABASE_URL")
-            if database_url_env:
-                self.database_url = database_url_env
-            else:
-                # Fall back to SQLite for local development
-                database_filename = os.getenv("DATABASE_FILENAME", ".tmp/data.db")
-                db_dir = os.path.dirname(database_filename)
-                if db_dir and not os.path.exists(db_dir):
-                    os.makedirs(db_dir, exist_ok=True)
-                
-                database_filename = os.path.abspath(database_filename)
-                # SQLite with aiosqlite for async
-                self.database_url = f"sqlite+aiosqlite:///{database_filename}"
+            if not database_url_env:
+                raise ValueError(
+                    "❌ DATABASE_URL environment variable is required. "
+                    "PostgreSQL is REQUIRED for all development and production environments. "
+                    "Local development must use glad_labs_dev PostgreSQL database."
+                )
+            self.database_url = database_url_env
 
-        logger.info(f"DatabaseService initialized with: {self.database_url[:50]}...")
+        logger.info(f"DatabaseService initialized with PostgreSQL: {self.database_url[:50]}...")
         
         self.pool = None
 
     async def initialize(self):
-        """Initialize connection pool"""
+        """Initialize connection pool for PostgreSQL"""
         try:
-            # Skip pool for SQLite (it doesn't support connection pooling)
-            if "sqlite" in self.database_url:
-                logger.info("Using SQLite - skipping connection pooling")
-                return
-            
-            # For PostgreSQL, create asyncpg pool
+            # PostgreSQL requires connection pooling
             min_size = int(os.getenv("DATABASE_POOL_MIN_SIZE", "10"))
             max_size = int(os.getenv("DATABASE_POOL_MAX_SIZE", "20"))
             
