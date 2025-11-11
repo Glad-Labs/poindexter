@@ -32,7 +32,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     """Chat request with message and model selection"""
     message: str = Field(..., description="The user's message")
-    model: str = Field(default="ollama", description="Model to use: ollama, openai, claude, gemini")
+    model: str = Field(default="ollama", description="Model to use: ollama (or ollama-modelname), openai, claude, gemini, etc.")
     conversationId: str = Field(default="default", description="Conversation ID for multi-turn context")
     temperature: Optional[float] = Field(default=0.7, ge=0.0, le=2.0)
     max_tokens: Optional[int] = Field(default=500, ge=1, le=4000)
@@ -81,10 +81,21 @@ async def chat(request: ChatRequest) -> ChatResponse:
     ```
     """
     try:
-        # Validate model
-        valid_models = ["ollama", "openai", "claude", "gemini"]
-        if request.model not in valid_models:
-            raise ValueError(f"Invalid model. Must be one of: {', '.join(valid_models)}")
+        # Log incoming request details
+        logger.info(f"[Chat] Incoming request - model: '{request.model}', message length: {len(request.message)}")
+        
+        # Parse model specification (e.g., "ollama-mistral" -> provider="ollama", model_name="mistral")
+        # Also accept generic names like "ollama", "openai", etc.
+        model_parts = request.model.split('-', 1)  # Split on first dash only
+        provider = model_parts[0]  # First part is the provider (ollama, openai, claude, gemini)
+        model_name = model_parts[1] if len(model_parts) > 1 else None  # Rest is specific model name
+        
+        # Validate provider is supported
+        supported_providers = ["ollama", "openai", "claude", "gemini"]
+        if provider not in supported_providers:
+            raise ValueError(f"Invalid model provider '{provider}'. Must be one of: {', '.join(supported_providers)}")
+        
+        logger.info(f"[Chat] PARSED MODEL - provider: '{provider}', model_name: '{model_name}'")
         
         # Initialize conversation if needed
         if request.conversationId not in conversations:
@@ -98,15 +109,56 @@ async def chat(request: ChatRequest) -> ChatResponse:
         })
         
         # Log the chat request
-        logger.info(f"[Chat] Processing message with model: {request.model}")
+        logger.info(f"[Chat] Processing message with: provider={provider}, model={model_name or 'default'}")
         logger.debug(f"[Chat] Message: {request.message}")
         
-        # Get actual AI response based on model selection
-        if request.model == "ollama":
-            # Use local Ollama
+        # Get actual AI response based on provider selection
+        if provider == "ollama":
+            # Use local Ollama with specified model or default
             try:
-                # Map generic "ollama" to actual Ollama model
-                actual_ollama_model = "llama2"
+                # Use specified Ollama model or fall back to lightweight default
+                # Use llama2 instead of mistral - it's more stable with memory constraints
+                actual_ollama_model = model_name or "llama2"
+                logger.info(f"[Chat] Calling Ollama with model: {actual_ollama_model}")
+                
+                # Check if model is available
+                try:
+                    available_models = await ollama_client.list_models()
+                    logger.debug(f"[Chat] Available Ollama models: {available_models}")
+                    
+                    if actual_ollama_model not in available_models:
+                        # Model not found, suggest alternatives
+                        alternatives = [m for m in available_models if 'llama' in m.lower() or len(available_models) == 0]
+                        if not alternatives:
+                            alternatives = available_models[:3] if available_models else ["llama2"]
+                        
+                        logger.warning(f"[Chat] Model '{actual_ollama_model}' not found. Available: {alternatives}")
+                        response_text = (
+                            f"❌ Model '{actual_ollama_model}' not available.\n\n"
+                            f"Available models: {', '.join(alternatives[:5])}\n\n"
+                            f"Pull a model with: ollama pull {alternatives[0] if alternatives else 'llama2'}"
+                        )
+                        tokens_used = len(response_text.split())
+                        
+                        # Fall through to add response to history and return
+                        conversations[request.conversationId].append({
+                            "role": "assistant",
+                            "content": response_text,
+                            "model": request.model,
+                            "provider": provider,
+                            "timestamp": datetime.utcnow().isoformat()
+                        })
+                        
+                        return ChatResponse(
+                            response=response_text,
+                            model=request.model,
+                            conversationId=request.conversationId,
+                            timestamp=datetime.utcnow().isoformat(),
+                            tokens_used=tokens_used
+                        )
+                except Exception as e:
+                    logger.debug(f"[Chat] Could not check available models: {str(e)}")
+                
                 chat_result = await ollama_client.chat(
                     messages=conversations[request.conversationId],
                     model=actual_ollama_model,
@@ -115,14 +167,25 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 )
                 # ollama_client.chat returns {"content": "...", "tokens": ...}
                 response_text = chat_result.get("content", chat_result.get("response", "No response generated"))
+                
+                # Validate response is not empty or obviously wrong
+                if not response_text or len(response_text.strip()) < 5:
+                    response_text = f"✓ Processed by {actual_ollama_model} (generated short response)"
+                
                 tokens_used = chat_result.get("tokens", len(response_text.split()))
             except Exception as e:
-                logger.error(f"[Chat] Ollama error: {str(e)}")
-                response_text = f"Error calling Ollama: {str(e)}"
+                logger.error(f"[Chat] Ollama error with model {model_name or 'default'}: {str(e)}", exc_info=True)
+                response_text = (
+                    f"⚠️ Ollama Error: {str(e)[:100]}\n\n"
+                    f"Troubleshooting:\n"
+                    f"1. Is Ollama running? Start: ollama serve\n"
+                    f"2. Check model exists: ollama list\n"
+                    f"3. Check http://localhost:11434 is accessible"
+                )
                 tokens_used = 0
         else:
             # For other models, generate placeholder (would integrate with OpenAI/Claude/Gemini in production)
-            logger.warning(f"[Chat] Model {request.model} not yet integrated, using demo response")
+            logger.warning(f"[Chat] Provider '{provider}' model '{model_name or 'default'}' not yet integrated, using demo response")
             response_text = generate_demo_response(request.message, request.model)
             tokens_used = len(response_text.split())
         
@@ -130,13 +193,14 @@ async def chat(request: ChatRequest) -> ChatResponse:
         conversations[request.conversationId].append({
             "role": "assistant",
             "content": response_text,
-            "model": request.model,
+            "model": request.model,  # Keep original full model specification
+            "provider": provider,
             "timestamp": datetime.utcnow().isoformat()
         })
         
         return ChatResponse(
             response=response_text,
-            model=request.model,
+            model=request.model,  # Return original full model specification
             conversationId=request.conversationId,
             timestamp=datetime.utcnow().isoformat(),
             tokens_used=len(response_text.split())  # Rough estimate

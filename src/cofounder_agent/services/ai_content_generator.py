@@ -184,6 +184,15 @@ class AIContentGenerator:
         Returns:
             Tuple of (content, model_used, metrics_dict)
         """
+        logger.info(f"\n{'='*80}")
+        logger.info(f"🎬 BLOG GENERATION STARTED")
+        logger.info(f"{'='*80}")
+        logger.info(f"📌 Topic: {topic}")
+        logger.info(f"📌 Style: {style} | Tone: {tone}")
+        logger.info(f"📌 Target length: {target_length} words | Tags: {tags}")
+        logger.info(f"📌 Quality threshold: {self.quality_threshold}")
+        logger.info(f"{'='*80}\n")
+        
         # Build prompts
         system_prompt = f"""You are an expert technical writer and blogger.
 Your writing style is {style}.
@@ -242,10 +251,14 @@ Improved version:"""
 
         # 1. Try Ollama (local, free, no internet, RTX 5070 optimized)
         if self.ollama_available:
-            logger.info("Attempting content generation with Ollama...")
+            logger.info(f"🔄 [ATTEMPT 1/3] Trying Ollama (Local, GPU-accelerated)...")
+            logger.info(f"   ├─ Endpoint: http://localhost:11434")
+            logger.info(f"   ├─ Model preference order: [neural-chat, mistral, llama2]")
+            logger.info(f"   └─ Status: Checking connection...\n")
             try:
-                from services.ollama_client import OllamaClient
+                from .ollama_client import OllamaClient
                 ollama = OllamaClient()
+                logger.info(f"   ✓ OllamaClient initialized")
                 
                 # Try stable, fast models first, avoid slow/problematic ones
                 # neural-chat:latest - PROVEN RELIABLE & FAST ✓✓✓
@@ -253,22 +266,51 @@ Improved version:"""
                 # llama2:latest - Reasonable but occasional timeouts
                 # qwen2.5:14b - TOO SLOW (10-20 tokens/sec), causes timeouts
                 # qwen3:14b - Better than qwen2.5 but still slow
-                # deepseek-r1:14b - Reasonable quality
-                # Priority: neural-chat (best) → deepseek → llama2 → others
-                for model_name in ["neural-chat:latest", "deepseek-r1:14b", "llama2:latest"]:
+                # deepseek-r1:14b - REMOVED (causes 500 errors, requires 16GB+ VRAM)
+                # Priority: neural-chat (best) → llama2 → qwen2.5 (with timeout)
+                model_list = ["neural-chat:latest", "llama2:latest", "qwen2:7b"]
+                for model_idx, model_name in enumerate(model_list, 1):
                     try:
-                        logger.debug(f"Trying Ollama model: {model_name}")
+                        logger.info(f"   └─ Testing model {model_idx}/{len(model_list)}: {model_name}")
                         metrics["generation_attempts"] += 1
                         
-                        generated_content = await ollama.generate(
+                        logger.info(f"      ⏱️  Generating content (timeout: 120s)...")
+                        response = await ollama.generate(
                             prompt=generation_prompt,
                             system=system_prompt,
                             model=model_name,
                             stream=False,
                         )
                         
+                        # Extract text from response dict
+                        # OllamaClient.generate() returns dict with 'text' key (not 'response')
+                        logger.info(f"      📦 Raw response type: {type(response)}")
+                        if isinstance(response, dict):
+                            logger.info(f"      📦 Response is dict with keys: {list(response.keys())}")
+                        
+                        generated_content = ""
+                        if isinstance(response, dict):
+                            # Try multiple possible keys: 'text' (OllamaClient), 'response' (Ollama API), 'content'
+                            generated_content = response.get("text", "") or response.get("response", "") or response.get("content", "")
+                            logger.info(f"      📦 Extracted from dict: {len(generated_content)} chars")
+                            if generated_content:
+                                logger.debug(f"      📦 Response type: dict | Extracted text: {len(generated_content)} chars")
+                            else:
+                                logger.warning(f"      ⚠️  No text found in response dict keys: {list(response.keys())}")
+                        elif isinstance(response, str):
+                            generated_content = response
+                            logger.info(f"      📦 Got direct string: {len(generated_content)} chars")
+                            logger.debug(f"      📦 Response type: str | Content: {len(generated_content)} chars")
+                        else:
+                            logger.warning(f"      ⚠️  Unexpected response type: {type(response)}")
+                            generated_content = ""
+                        
+                        logger.info(f"      🔍 Final check: bool(content)={bool(generated_content)}, len={len(generated_content)}, threshold=100")
                         if generated_content and len(generated_content) > 100:
+                            logger.info(f"      ✓ Content generated: {len(generated_content)} characters")
+                            
                             # Self-check: Validate content quality
+                            logger.info(f"      🔍 Validating content quality...")
                             validation = self._validate_content(generated_content, topic, target_length)
                             metrics["validation_results"].append({
                                 "attempt": metrics["generation_attempts"],
@@ -277,19 +319,30 @@ Improved version:"""
                                 "passed": validation.is_valid
                             })
                             
-                            logger.info(f"✓ Initial generation: {validation.feedback}")
+                            word_count = len(generated_content.split())
+                            logger.info(f"      📊 Quality Score: {validation.quality_score:.1f}/{self.quality_threshold} | Words: {word_count} | Issues: {len(validation.issues)}")
+                            
+                            if validation.issues:
+                                for issue in validation.issues:
+                                    logger.debug(f"         ⚠️  {issue}")
                             
                             # If content passes QA, return it
                             if validation.is_valid:
+                                logger.info(f"      ✅ Content APPROVED by QA")
                                 metrics["model_used"] = f"Ollama - {model_name}"
                                 metrics["final_quality_score"] = validation.quality_score
                                 metrics["generation_time_seconds"] = time.time() - start_time
-                                logger.info(f"✓ Content approved after {metrics['generation_attempts']} attempt(s)")
+                                logger.info(f"\n{'='*80}")
+                                logger.info(f"✅ GENERATION COMPLETE")
+                                logger.info(f"   Model: {metrics['model_used']}")
+                                logger.info(f"   Quality: {validation.quality_score:.1f}/{self.quality_threshold}")
+                                logger.info(f"   Time: {metrics['generation_time_seconds']:.1f}s")
+                                logger.info(f"{'='*80}\n")
                                 return generated_content, metrics["model_used"], metrics
                             
                             # If content fails QA but we have refinement attempts left, try to improve
                             if metrics["refinement_attempts"] < self.max_refinement_attempts:
-                                logger.info(f"Content needs improvement. Attempting refinement ({metrics['refinement_attempts'] + 1}/{self.max_refinement_attempts})...")
+                                logger.info(f"      ⚙️  Content below threshold. Refining ({metrics['refinement_attempts'] + 1}/{self.max_refinement_attempts})...")
                                 
                                 metrics["refinement_attempts"] += 1
                                 refinement_prompt = refinement_prompt_template.format(
@@ -299,15 +352,27 @@ Improved version:"""
                                 )
                                 
                                 # Try to refine with same model
-                                refined_content = await ollama.generate(
+                                response = await ollama.generate(
                                     prompt=refinement_prompt,
                                     system=system_prompt,
                                     model=model_name,
                                     stream=False,
                                 )
                                 
+                                # Extract text from response dict
+                                refined_content = ""
+                                if isinstance(response, dict):
+                                    refined_content = response.get("response", "")
+                                    logger.debug(f"      📦 Refined response type: dict | Content: {len(refined_content)} chars")
+                                elif isinstance(response, str):
+                                    refined_content = response
+                                    logger.debug(f"      📦 Refined response type: str | Content: {len(refined_content)} chars")
+                                
                                 if refined_content and len(refined_content) > 100:
+                                    logger.info(f"      ✓ Refined content generated: {len(refined_content)} characters")
+                                    
                                     # Validate refined content
+                                    logger.info(f"      🔍 Validating refined content...")
                                     refined_validation = self._validate_content(refined_content, topic, target_length)
                                     metrics["validation_results"].append({
                                         "attempt": metrics["generation_attempts"],
@@ -317,24 +382,39 @@ Improved version:"""
                                         "passed": refined_validation.is_valid
                                     })
                                     
-                                    logger.info(f"✓ Refinement: {refined_validation.feedback}")
+                                    refined_word_count = len(refined_content.split())
+                                    logger.info(f"      📊 Refined Quality: {refined_validation.quality_score:.1f}/{self.quality_threshold} | Words: {refined_word_count} | Issues: {len(refined_validation.issues)}")
                                     
                                     if refined_validation.is_valid:
+                                        logger.info(f"      ✅ Refined content APPROVED")
                                         metrics["model_used"] = f"Ollama - {model_name} (refined)"
                                         metrics["final_quality_score"] = refined_validation.quality_score
                                         metrics["generation_time_seconds"] = time.time() - start_time
-                                        logger.info(f"✓ Content approved after refinement")
+                                        logger.info(f"\n{'='*80}")
+                                        logger.info(f"✅ GENERATION COMPLETE (with refinement)")
+                                        logger.info(f"   Model: {metrics['model_used']}")
+                                        logger.info(f"   Quality: {refined_validation.quality_score:.1f}/{self.quality_threshold}")
+                                        logger.info(f"   Time: {metrics['generation_time_seconds']:.1f}s")
+                                        logger.info(f"{'='*80}\n")
                                         return refined_content, metrics["model_used"], metrics
                                     
                                     generated_content = refined_content  # Use refined for next check
                             
                             # If still not passing after refinement, return best attempt
-                            if metrics["generation_attempts"] == len(["neural-chat:latest", "llama2:latest", "qwen2.5:14b"]):
+                            if metrics["generation_attempts"] == len(model_list):
+                                logger.warning(f"      ⚠️  Content below quality threshold but no more refinements available")
                                 metrics["model_used"] = f"Ollama - {model_name} (below threshold)"
                                 metrics["final_quality_score"] = validation.quality_score
                                 metrics["generation_time_seconds"] = time.time() - start_time
-                                logger.warning(f"Returning content below quality threshold (score: {validation.quality_score:.1f}/{self.quality_threshold})")
+                                logger.info(f"\n{'='*80}")
+                                logger.warning(f"⚠️  GENERATION COMPLETE (below quality threshold)")
+                                logger.info(f"   Model: {metrics['model_used']}")
+                                logger.info(f"   Quality: {validation.quality_score:.1f}/{self.quality_threshold}")
+                                logger.info(f"   Time: {metrics['generation_time_seconds']:.1f}s")
+                                logger.info(f"{'='*80}\n")
                                 return generated_content, metrics["model_used"], metrics
+                        else:
+                            logger.warning(f"      ❌ Generated content too short or empty")
                     
                     except asyncio.TimeoutError as e:
                         # Explicitly catch timeout - model too slow or server unresponsive
@@ -358,7 +438,7 @@ Improved version:"""
         if self.hf_token:
             logger.info("Attempting content generation with HuggingFace...")
             try:
-                from services.huggingface_client import HuggingFaceClient
+                from .huggingface_client import HuggingFaceClient
                 hf = HuggingFaceClient(api_token=self.hf_token)
                 
                 # Try recommended models

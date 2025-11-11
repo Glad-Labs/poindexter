@@ -22,7 +22,7 @@ import sys
 import os
 
 # Import the content critique loop
-from services.content_critique_loop import ContentCritiqueLoop
+from .content_critique_loop import ContentCritiqueLoop
 
 logger = logging.getLogger(__name__)
 

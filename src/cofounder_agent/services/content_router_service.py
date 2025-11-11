@@ -21,11 +21,11 @@ from enum import Enum
 import uuid
 import logging
 
-from services.ai_content_generator import get_content_generator
-from services.seo_content_generator import get_seo_content_generator
-from services.strapi_client import StrapiClient, StrapiEnvironment
-from services.pexels_client import PexelsClient
-from services.task_store_service import get_persistent_task_store
+from .ai_content_generator import get_content_generator
+from .seo_content_generator import get_seo_content_generator
+from .strapi_client import StrapiClient, StrapiEnvironment
+from .pexels_client import PexelsClient
+from .task_store_service import get_persistent_task_store
 
 logger = logging.getLogger(__name__)
 
@@ -107,20 +107,24 @@ class ContentTaskStore:
         Returns:
             Task ID for tracking
         """
-        logger.debug(f"🔵 ContentTaskStore.create_task() called - Topic: {topic}")
+        logger.info(f"� [CONTENT_TASK_STORE] Creating task")
+        logger.info(f"   Topic: {topic[:60]}{'...' if len(topic) > 60 else ''}")
+        logger.info(f"   Style: {style} | Tone: {tone} | Length: {target_length}w")
+        logger.info(f"   Tags: {', '.join(tags) if tags else 'none'}")
+        logger.debug(f"   Type: {request_type} | Image: {generate_featured_image}")
         
         # Add generate_featured_image to metadata
         metadata = {"generate_featured_image": generate_featured_image}
-        logger.debug(f"  📝 Metadata: {metadata}")
+        logger.debug(f"   Metadata: {metadata}")
         
         try:
             # Get persistent store
-            logger.debug(f"  📌 Getting persistent_store from property...")
+            logger.debug(f"   📌 Getting persistent_store...")
             persistent_store = self.persistent_store
-            logger.debug(f"  📌 Persistent store obtained: {persistent_store is not None}")
+            logger.debug(f"   📌 Store ready: {persistent_store is not None}")
             
             # Create task in persistent store
-            logger.debug(f"  📝 Calling persistent_store.create_task()...")
+            logger.debug(f"   📝 Calling persistent_store.create_task()...")
             task_id = persistent_store.create_task(
                 topic=topic,
                 style=style,
@@ -131,12 +135,14 @@ class ContentTaskStore:
                 metadata=metadata,
             )
             
-            logger.info(f"✅ Task CREATED and PERSISTED: {task_id} (type: {request_type}, topic: {topic})")
-            logger.debug(f"  🎯 Task ID returned: {task_id}")
+            logger.info(f"✅ [CONTENT_TASK_STORE] Task CREATED and PERSISTED")
+            logger.info(f"   Task ID: {task_id}")
+            logger.info(f"   Status: pending")
+            logger.debug(f"   🎯 Ready for processing")
             return task_id
             
         except Exception as e:
-            logger.error(f"❌ ERROR in ContentTaskStore.create_task(): {e}", exc_info=True)
+            logger.error(f"❌ [CONTENT_TASK_STORE] ERROR: {e}", exc_info=True)
             raise
 
     def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
@@ -386,14 +392,23 @@ async def process_content_generation_task(task_id: str):
     task = task_store.get_task(task_id)
 
     if not task:
-        logger.error(f"🔴 Task not found in database: {task_id}")
+        logger.error(f"❌ [PROCESS_TASK] Task not found: {task_id}")
         return
 
-    logger.info(f"🟢 Starting background generation for task {task_id}: {task.get('topic')}")
+    topic = task.get('topic', 'Unknown')
+    logger.info(f"\n{'='*80}")
+    logger.info(f"� [PROCESS_TASK] STARTING BACKGROUND GENERATION")
+    logger.info(f"{'='*80}")
+    logger.info(f"   Task ID: {task_id}")
+    logger.info(f"   Topic: {topic}")
+    logger.info(f"   Style: {task.get('style')} | Tone: {task.get('tone')}")
+    logger.info(f"   Target: {task.get('target_length')} words")
+    logger.info(f"{'='*80}\n")
 
     try:
         # Stage 1: Generate content
-        logger.info(f"📝 Stage 1: Updating task {task_id} to 'generating' status")
+        logger.info(f"📝 [STAGE 1/4] Generating content with AI...")
+        logger.info(f"   └─ Updating task status to 'generating'...")
         update_result = task_store.update_task(
             task_id,
             {
@@ -405,15 +420,14 @@ async def process_content_generation_task(task_id: str):
                 },
             },
         )
-        logger.info(f"📝 Task {task_id} status update result: {update_result}")
+        logger.info(f"   └─ Status update: {'✅ Success' if update_result else '❌ Failed'}")
         
         # Verify update worked
         updated_task = task_store.get_task(task_id)
         if updated_task:
-            logger.info(f"📝 Verified task {task_id} status: {updated_task.get('status')}")
-        else:
-            logger.warning(f"⚠️ Could not retrieve task {task_id} after update")
+            logger.info(f"   └─ Verified status: {updated_task.get('status')}")
 
+        logger.info(f"   └─ Calling AI content generator...")
         gen_service = ContentGenerationService()
         enhanced = task.get("request_type") == "enhanced"
         tags = task.get("tags") or []  # Default to empty list if None
@@ -426,11 +440,51 @@ async def process_content_generation_task(task_id: str):
             enhanced=enhanced,
         )
 
+        logger.info(f"✅ [STAGE 1/4] Content generation complete")
+        logger.info(f"   └─ Model: {model_used}")
+        logger.info(f"   └─ Quality Score: {metrics.get('final_quality_score', 0):.1f}")
+        logger.info(f"   └─ Content size: {len(content)} characters")
+        logger.info(f"   └─ Generation time: {metrics.get('generation_time_seconds', 0):.1f}s\n")
+
+        # Check if generation failed (fallback was used)
+        is_fallback = "Fallback" in model_used or model_used == "Fallback (no AI models available)"
+        if is_fallback:
+            logger.warning(f"⚠️  GENERATION USED FALLBACK - ALL AI MODELS FAILED")
+            logger.warning(f"   └─ This indicates all AI providers are unavailable or failed")
+            logger.warning(f"   └─ Content quality may be reduced")
+            task_store.update_task(
+                task_id,
+                {
+                    "progress": {
+                        "stage": "content_generation",
+                        "percentage": 25,
+                        "message": "Content generation used fallback (AI models unavailable)",
+                    },
+                    "generation_failed": True,
+                },
+            )
+        else:
+            logger.info(f"   └─ Generation successful with {model_used}")
+            task_store.update_task(
+                task_id,
+                {
+                    "progress": {
+                        "stage": "content_generation",
+                        "percentage": 25,
+                        "message": "Content generation successful",
+                    },
+                    "generation_failed": False,
+                },
+            )
+
+
         # Stage 2: Search for featured image
         featured_image_url = None
         image_source = None
 
         if task.get("generate_featured_image"):
+            logger.info(f"🖼️  [STAGE 2/4] Searching for featured image...")
+            logger.info(f"   └─ Topic: {topic}")
             task_store.update_task(
                 task_id,
                 {
@@ -450,11 +504,22 @@ async def process_content_generation_task(task_id: str):
             if image:
                 featured_image_url = image.get("url")
                 image_source = image.get("photographer")
+                logger.info(f"✅ [STAGE 2/4] Image found")
+                logger.info(f"   └─ Source: {image_source}")
+                if featured_image_url:
+                    logger.info(f"   └─ URL: {featured_image_url[:50] if len(featured_image_url) > 50 else featured_image_url}...")
+                logger.info(f"")
+            else:
+                logger.warning(f"⚠️  [STAGE 2/4] No image found, continuing without featured image\n")
+        else:
+            logger.info(f"⏭️  [STAGE 2/4] Featured image disabled - skipping\n")
 
         # Stage 3: Publish to Strapi (if requested)
         strapi_post_id = None
 
         if task.get("publish_mode") == "publish":
+            logger.info(f"📤 [STAGE 3/4] Publishing to Strapi...")
+            logger.info(f"   └─ Environment: {task.get('target_environment', 'production')}")
             task_store.update_task(
                 task_id,
                 {
@@ -469,6 +534,7 @@ async def process_content_generation_task(task_id: str):
             pub_service = StrapiPublishingService(
                 task.get("target_environment", "production")
             )
+            logger.info(f"   └─ Sending to Strapi...")
             strapi_result = await pub_service.publish_blog_post(
                 title=task["topic"],
                 content=content,
@@ -480,18 +546,27 @@ async def process_content_generation_task(task_id: str):
             )
 
             strapi_post_id = strapi_result.get("data", {}).get("id")
+            logger.info(f"✅ [STAGE 3/4] Published to Strapi")
+            logger.info(f"   └─ Post ID: {strapi_post_id}\n")
+        else:
+            logger.info(f"💾 [STAGE 3/4] Publish mode is DRAFT - saving as draft\n")
 
         # Stage 4: Complete
+        logger.info(f"✨ [STAGE 4/4] Finalizing task...")
+        final_status = "failed" if is_fallback else "completed"
+        logger.info(f"   └─ Final status: {final_status}")
+        
         task_store.update_task(
             task_id,
             {
-                "status": "completed",
+                "status": final_status,
                 "progress": {
                     "stage": "complete",
                     "percentage": 100,
-                    "message": "Generation complete",
+                    "message": "Generation complete" if not is_fallback else "Generation completed with fallback content",
                 },
                 "completed_at": datetime.now(),
+                "generation_failed": is_fallback,
                 "result": {
                     "title": task["topic"],
                     "content": content,
@@ -506,7 +581,10 @@ async def process_content_generation_task(task_id: str):
             },
         )
 
-        logger.info(f"Task {task_id} completed successfully")
+        if is_fallback:
+            logger.warning(f"❌ Task {task_id} completed with fallback content (AI models failed)")
+        else:
+            logger.info(f"✅ Task {task_id} completed successfully")
 
     except Exception as e:
         logger.error(f"Error processing task {task_id}: {e}", exc_info=True)

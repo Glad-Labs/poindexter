@@ -113,7 +113,7 @@ class OllamaAdapter(ProviderAdapter):
     """Adapter for Ollama local model provider"""
     
     def __init__(self):
-        from services.ollama_client import OllamaClient
+        from .ollama_client import OllamaClient
         self.host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
         self.client = OllamaClient(base_url=self.host)
         self.provider_type = ProviderType.OLLAMA
@@ -185,7 +185,7 @@ class HuggingFaceAdapter(ProviderAdapter):
     """Adapter for HuggingFace Inference API"""
     
     def __init__(self):
-        from services.huggingface_client import HuggingFaceClient
+        from .huggingface_client import HuggingFaceClient
         self.token = os.getenv("HUGGINGFACE_API_TOKEN")
         self.client = HuggingFaceClient(api_token=self.token)
         self.provider_type = ProviderType.HUGGINGFACE
@@ -249,7 +249,7 @@ class GoogleAdapter(ProviderAdapter):
     """Adapter for Google Gemini API"""
     
     def __init__(self):
-        from services.gemini_client import GeminiClient
+        from .gemini_client import GeminiClient
         self.api_key = os.getenv("GOOGLE_API_KEY")
         self.client = GeminiClient(api_key=self.api_key)
         self.provider_type = ProviderType.GOOGLE

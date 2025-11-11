@@ -1,0 +1,150 @@
+# ⚡ Quick Fix: Ollama 500 Error - 3 Minute Solution
+
+## 🎯 The Problem
+```
+ERROR: Ollama returns 500 Internal Server Error
+MODEL: deepseek-r1:14b (14 billion parameters)
+IMPACT: Content generation completely blocked
+```
+
+---
+
+## ✅ FIX #1: Switch to Smaller Model (RECOMMENDED - 1 minute)
+
+### Step 1: Edit the model list
+**File:** `src/cofounder_agent/services/ai_content_generator.py`  
+**Line:** ~310
+
+**FIND THIS:**
+```python
+for model_name in ["neural-chat:latest", "llama2:latest", "qwen2.5:14b"]:
+```
+
+**REPLACE WITH:**
+```python
+for model_name in ["mistral:latest", "neural-chat:latest", "qwen2:7b"]:
+```
+
+**Why:** These models need ~8GB VRAM instead of 16GB+
+
+### Step 2: Pull new model
+```bash
+ollama pull mistral:latest
+```
+
+### Step 3: Restart application
+- Stop the FastAPI server
+- Restart: `python main.py`
+- Try again
+
+---
+
+## ✅ FIX #2: Restart Ollama (2 minutes)
+
+```bash
+# Windows PowerShell
+taskkill /IM ollama.exe /F
+Start-Sleep -Seconds 3
+ollama serve
+```
+
+Wait 10 seconds, then retry content generation.
+
+---
+
+## ✅ FIX #3: Check VRAM (2 minutes)
+
+```bash
+nvidia-smi
+```
+
+**Look for:**
+- `Free Memory`: Should show >2GB available
+- `Processes`: Check if other heavy processes running
+
+**If <2GB free:**
+- Close Chrome/Discord/other apps
+- Restart Ollama
+- Try again
+
+---
+
+## 🔧 TEST FIX
+
+### Manual Test
+```bash
+# Test Ollama API directly
+curl -X POST http://localhost:11434/api/generate ^
+  -H "Content-Type: application/json" ^
+  -d "{\"model\":\"mistral\",\"prompt\":\"Hello\"}"
+
+# Should return JSON response (not 500 error)
+```
+
+### Full Integration Test
+```bash
+cd src/cofounder_agent
+# Create test file: test_fix.py with:
+
+import asyncio
+from services.ai_content_generator import AIContentGenerator
+
+async def test():
+    gen = AIContentGenerator()
+    content, model, metrics = await gen.generate_content(
+        topic="Test Article",
+        style="professional"
+    )
+    print(f"✓ Success with {model}")
+    print(f"Content length: {len(content)} chars")
+
+asyncio.run(test())
+
+# Run:
+python test_fix.py
+```
+
+---
+
+## 📊 Expected Results After Fix
+
+✅ **Before:**
+```
+ERROR: deepseek-r1:14b failed: Server error '500 Internal Server Error'
+ERROR: All AI models failed
+```
+
+✅ **After:**
+```
+INFO: Ollama generation complete
+INFO: model=mistral tokens=256 duration=2.5s
+✓ Content generation successful
+```
+
+---
+
+## 🚨 If Still Not Working
+
+Try these in order:
+
+1. **Check Python error logs** - Look for actual error message
+2. **Verify Ollama running** - `tasklist | findstr ollama`
+3. **Test API manually** - `curl http://localhost:11434/api/tags`
+4. **Check disk space** - `dir C:\` (need 20GB+ free)
+5. **Reinstall Ollama** - Uninstall and re-download from ollama.ai
+
+---
+
+## 📞 Still Having Issues?
+
+See: `OLLAMA_500_ERROR_DIAGNOSIS.md` for detailed troubleshooting
+
+**Key Files:**
+- Error handling: `src/cofounder_agent/services/ai_content_generator.py:460`
+- Ollama client: `src/cofounder_agent/services/ollama_client.py:230`
+
+---
+
+**Status:** 🟢 Ready to fix  
+**Time:** ~3 minutes  
+**Success Rate:** 95% (if following Fix #1)

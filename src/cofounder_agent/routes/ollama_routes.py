@@ -134,6 +134,46 @@ async def check_ollama_health() -> OllamaHealthResponse:
         )
 
 
+@router.get("/models", response_model=dict)
+async def get_ollama_models() -> dict:
+    """
+    Get list of available Ollama models (FAST - no timeout/warmup)
+    
+    This endpoint quickly returns the list of available models without
+    blocking operations. Used by frontend on initialization.
+    
+    **Returns:**
+    ```json
+    {
+      "models": ["llama2", "neural-chat", "mistral"],
+      "connected": true
+    }
+    ```
+    """
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:  # Fast timeout
+            response = await client.get(f"{OLLAMA_HOST}/api/tags")
+            
+            if response.status_code == 200:
+                data = response.json()
+                models = [model["name"].replace(":latest", "") for model in data.get("models", [])]
+                
+                logger.info(f"[Ollama] Found {len(models)} models")
+                return {"models": models, "connected": True}
+            else:
+                logger.warning(f"[Ollama] models endpoint returned {response.status_code}")
+                return {"models": ["llama2", "neural-chat", "mistral"], "connected": False}
+    
+    except (httpx.ConnectError, httpx.TimeoutException):
+        logger.debug("[Ollama] Could not reach Ollama - returning defaults")
+        # Return safe defaults if Ollama not available
+        return {"models": ["llama2", "neural-chat", "mistral"], "connected": False}
+    
+    except Exception as e:
+        logger.debug(f"[Ollama] Error getting models: {str(e)}")
+        return {"models": ["llama2", "neural-chat", "mistral"], "connected": False}
+
+
 @router.post("/warmup", response_model=OllamaWarmupResponse)
 async def warmup_ollama(model: str = "mistral:latest") -> OllamaWarmupResponse:
     """
