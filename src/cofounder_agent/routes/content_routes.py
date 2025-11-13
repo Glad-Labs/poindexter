@@ -128,7 +128,8 @@ class BlogDraftResponse(BaseModel):
     created_at: str
     status: str
     word_count: int
-    summary: str
+    summary: Optional[str] = None
+
 
 
 class DraftsListResponse(BaseModel):
@@ -218,9 +219,11 @@ async def create_content_task(
             tone=request.tone.value,
             target_length=request.target_length,
             tags=request.tags,
-            generate_featured_image=request.generate_featured_image,
             request_type="enhanced" if request.enhanced else "basic",
             task_type=request.task_type,  # ✅ Store task type
+            metadata={
+                "generate_featured_image": request.generate_featured_image,
+            },
         )
         logger.info(f"  ✅ Task created: {task_id}")
 
