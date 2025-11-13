@@ -64,7 +64,11 @@
         "Start Oversight Hub",
         "Start Public Site"
       ],
-      "problemMatcher": []
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
     },
     {
       "type": "Live Preview",

@@ -40,6 +40,7 @@ class ContentTask(Base):
 
     # Task metadata
     request_type = Column(String(50), nullable=False)  # basic, enhanced
+    task_type = Column(String(50), default="blog_post", nullable=False, index=True)  # blog_post, social_media, email, newsletter
     status = Column(String(50), nullable=False, index=True)  # pending, processing, completed, failed
     topic = Column(String(500), nullable=False)
     style = Column(String(50), nullable=False)
@@ -78,6 +79,7 @@ class ContentTask(Base):
         return {
             "task_id": self.task_id,
             "request_type": self.request_type,
+            "task_type": self.task_type,
             "status": self.status,
             "topic": self.topic,
             "style": self.style,
@@ -190,6 +192,7 @@ class PersistentTaskStore:
         style: str,
         tone: str,
         target_length: int,
+        task_type: str = "blog_post",
         tags: Optional[List[str]] = None,
         request_type: str = "basic",
         metadata: Optional[Dict[str, Any]] = None,
@@ -202,6 +205,7 @@ class PersistentTaskStore:
             style: Content style
             tone: Content tone
             target_length: Target word count
+            task_type: Type of task (blog_post, social_media, email, newsletter)
             tags: Tags for categorization
             request_type: Type of request (basic, enhanced)
             metadata: Additional metadata
@@ -209,7 +213,7 @@ class PersistentTaskStore:
         Returns:
             Task ID for tracking
         """
-        logger.debug(f"🟡 PersistentTaskStore.create_task() called - Topic: {topic}")
+        logger.debug(f"🟡 PersistentTaskStore.create_task() called - Topic: {topic}, Type: {task_type}")
         task_id = f"blog_{datetime.utcnow().strftime('%Y%m%d')}_{uuid.uuid4().hex[:8]}"
         logger.debug(f"  🆔 Generated task_id: {task_id}")
 
@@ -220,6 +224,7 @@ class PersistentTaskStore:
             task = ContentTask(
                 task_id=task_id,
                 request_type=request_type,
+                task_type=task_type,
                 status="pending",
                 topic=topic,
                 style=style,
@@ -323,20 +328,21 @@ class PersistentTaskStore:
             session.close()
 
     def list_tasks(
-        self, status: Optional[str] = None, limit: int = 50, offset: int = 0
+        self, status: Optional[str] = None, task_type: Optional[str] = None, limit: int = 50, offset: int = 0
     ) -> Tuple[List[Dict[str, Any]], int]:
         """
         List tasks with optional filtering
 
         Args:
             status: Filter by status (pending, processing, completed, failed)
+            task_type: Filter by task type (blog_post, social_media, email, newsletter)
             limit: Number of tasks to return
             offset: Pagination offset
 
         Returns:
             Tuple of (tasks, total_count)
         """
-        logger.debug(f"🟡 PersistentTaskStore.list_tasks() called - status: {status}, limit: {limit}, offset: {offset}")
+        logger.debug(f"🟡 PersistentTaskStore.list_tasks() called - status: {status}, task_type: {task_type}, limit: {limit}, offset: {offset}")
         
         session = self.database.get_session()
         try:
@@ -345,6 +351,10 @@ class PersistentTaskStore:
             if status:
                 query = query.filter_by(status=status)
                 logger.debug(f"  🔍 Filtering by status: {status}")
+            
+            if task_type:
+                query = query.filter_by(task_type=task_type)
+                logger.debug(f"  🔍 Filtering by task_type: {task_type}")
 
             # Count total
             total = query.count()
@@ -354,7 +364,7 @@ class PersistentTaskStore:
             results = query.order_by(ContentTask.created_at.desc()).offset(offset).limit(limit).all()
             tasks = [task.to_dict() for task in results]
             
-            logger.info(f"✅ Listed {len(tasks)} tasks from database - total: {total} (status={status})")
+            logger.info(f"✅ Listed {len(tasks)} tasks from database - total: {total} (status={status}, task_type={task_type})")
             logger.debug(f"  📋 Returned tasks: {[t['task_id'] for t in tasks]}")
             return tasks, total
 

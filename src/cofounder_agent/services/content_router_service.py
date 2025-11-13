@@ -556,30 +556,40 @@ async def process_content_generation_task(task_id: str):
         final_status = "failed" if is_fallback else "completed"
         logger.info(f"   └─ Final status: {final_status}")
         
+        # ✅ FIXED: Save content directly to content_tasks table fields
+        # Instead of nesting in "result" object, map to actual database columns
+        excerpt = content[:200] + "..." if len(content) > 200 else content
+        
         task_store.update_task(
             task_id,
             {
                 "status": final_status,
+                "content": content,  # ✅ SAVE TO content FIELD
+                "excerpt": excerpt,  # ✅ SAVE TO excerpt FIELD
+                "featured_image_url": featured_image_url,  # ✅ SAVE TO featured_image_url FIELD
+                "model_used": model_used,  # ✅ SAVE TO model_used FIELD
+                "quality_score": int(metrics.get('final_quality_score', 0)),  # ✅ SAVE TO quality_score FIELD
                 "progress": {
                     "stage": "complete",
                     "percentage": 100,
                     "message": "Generation complete" if not is_fallback else "Generation completed with fallback content",
                 },
                 "completed_at": datetime.now(),
-                "generation_failed": is_fallback,
-                "result": {
+                "task_metadata": {  # Store additional metadata
                     "title": task["topic"],
-                    "content": content,
-                    "summary": content[:200] + "...",
+                    "summary": excerpt,
                     "word_count": len(content.split()),
-                    "featured_image_url": featured_image_url,
                     "featured_image_source": image_source,
-                    "model_used": model_used,
-                    "quality_metrics": metrics,
+                    "generation_metrics": metrics,
                     "strapi_post_id": strapi_post_id,
                 },
             },
         )
+        logger.info(f"✅ Content persisted to database:")
+        logger.info(f"   └─ content field: {len(content)} characters saved")
+        logger.info(f"   └─ excerpt field: saved")
+        logger.info(f"   └─ featured_image_url: {'saved' if featured_image_url else 'none'}")
+        logger.info(f"   └─ model_used: {model_used} saved")
 
         if is_fallback:
             logger.warning(f"❌ Task {task_id} completed with fallback content (AI models failed)")

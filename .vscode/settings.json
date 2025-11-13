@@ -3,7 +3,7 @@
   "python.terminal.activateEnvironment": true,
   "task.autoDetect": "on",
   "task.allowAutomaticTasks": "on",
-  "terminal.integrated.defaultProfile.windows": "PowerShell",
+  "terminal.integrated.defaultProfile.windows": "Git Bash",
   "files.watcherExclude": {
     "**/node_modules/**": true,
     "**/.next/**": true,
@@ -26,11 +26,15 @@
   "[python]": {
     "editor.defaultFormatter": "ms-python.python"
   },
-  "github.copilot.instructions.file": "${workspaceFolder}/GLAD-LABS-STANDARDS.md",
+  "github.copilot.instructions.file": "${workspaceFolder}/.github/copilot-instructions.md",
   "python.testing.pytestArgs": ["."],
   "python.testing.unittestEnabled": false,
   "python.testing.pytestEnabled": true,
   "[powershell]": {
     "editor.defaultFormatter": "ms-vscode.powershell"
+  },
+  "terminal.integrated.automationProfile.windows": {
+    "path": "C:\\Program Files\\Git\\bin\\bash.exe",
+    "args": ["--login", "-i"]
   }
 }

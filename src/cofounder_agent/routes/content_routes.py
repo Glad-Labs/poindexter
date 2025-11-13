@@ -1,22 +1,39 @@
 """
-Unified Content Routes
+Unified Content Task Routes
 
 Consolidates all content creation functionality into a single,
-well-organized API with backward-compatible endpoints.
+task-type-agnostic API supporting multiple task types (blog posts,
+social media, emails, etc.) with a unified interface.
+
+This architecture supports the multi-agent system where the LLM chat
+interface can request different task types and the system routes them
+to the appropriate agent pipeline.
 
 Primary Endpoints (NEW):
-- POST   /api/content/blog-posts
-- GET    /api/content/blog-posts/tasks/{task_id}
-- GET    /api/content/blog-posts/drafts
-- POST   /api/content/blog-posts/drafts/{id}/publish
-- DELETE /api/content/blog-posts/drafts/{id}
+- POST   /api/content/tasks                    Create task (blog_post, social_media, email, etc.)
+- GET    /api/content/tasks/{task_id}          Get task status and result
+- GET    /api/content/tasks                    List all tasks (filterable by type/status)
+- POST   /api/content/tasks/{task_id}/approve  Approve/publish task
+- DELETE /api/content/tasks/{task_id}          Delete task
+
+Task Types Supported:
+- blog_post      Blog post generation with self-critique pipeline
+- social_media   Multi-platform social content (Twitter, LinkedIn, etc.)
+- email          Email campaign generation
+- newsletter     Newsletter generation
+- (extensible)   New types can be added as agent pipelines are created
+
+Query Parameters:
+- GET /api/content/tasks?type=blog_post        Filter by task type
+- GET /api/content/tasks?status=completed      Filter by status
+- GET /api/content/tasks?limit=20&offset=0     Pagination
 
 Backward Compatible Endpoints (DEPRECATED):
 - POST   /api/content/create
 - POST   /api/content/create-blog-post
 - POST   /api/content/generate
 - GET    /api/content/status/{task_id}
-- GET    /api/content/tasks
+- GET    /api/content/blog-posts/*             Redirect to /api/content/tasks/*
 - POST   /api/v1/content/enhanced/blog-posts/create-seo-optimized
 """
 
@@ -48,9 +65,12 @@ content_router = APIRouter(prefix="/api/content", tags=["content"])
 
 
 class CreateBlogPostRequest(BaseModel):
-    """Request to create a blog post"""
+    """Request to create a content task (blog post, social media, email, etc.)"""
 
-    topic: str = Field(..., min_length=3, max_length=200, description="Blog post topic")
+    task_type: Literal["blog_post", "social_media", "email", "newsletter"] = Field(
+        "blog_post", description="Type of content task to create"
+    )
+    topic: str = Field(..., min_length=3, max_length=200, description="Content topic/subject")
     style: ContentStyle = Field(
         ContentStyle.TECHNICAL, description="Content style"
     )
@@ -62,7 +82,7 @@ class CreateBlogPostRequest(BaseModel):
         None, description="Tags for categorization"
     )
     categories: Optional[List[str]] = Field(
-        None, description="Strapi categories"
+        None, description="Strapi categories (blog_post only)"
     )
     generate_featured_image: bool = Field(
         True, description="Search Pexels for featured image (free)"
@@ -79,9 +99,10 @@ class CreateBlogPostRequest(BaseModel):
 
 
 class CreateBlogPostResponse(BaseModel):
-    """Response from blog post creation"""
+    """Response from task creation"""
 
     task_id: str
+    task_type: str
     status: str
     topic: str
     created_at: str
@@ -141,36 +162,44 @@ class PublishDraftResponse(BaseModel):
 
 
 @content_router.post(
-    "/blog-posts",
+    "/tasks",
     response_model=CreateBlogPostResponse,
     status_code=201,
-    description="Create a blog post (unified endpoint)",
-    tags=["content-unified"],
+    description="Create a content task (blog post, social media, email, etc.)",
+    tags=["content-tasks"],
 )
-async def create_blog_post(
+async def create_content_task(
     request: CreateBlogPostRequest, background_tasks: BackgroundTasks
 ):
     """
-    Create a new blog post with AI generation.
+    Create a new content task with AI generation.
 
     This is an async operation - returns immediately with task_id.
-    Poll /api/content/blog-posts/tasks/{task_id} to check progress.
+    Poll /api/content/tasks/{task_id} to check progress.
+
+    Task Types:
+        - blog_post: Blog post generation with self-critique pipeline
+        - social_media: Multi-platform social content
+        - email: Email campaign generation
+        - newsletter: Newsletter generation
 
     Request:
-        - topic: Blog post topic/title
+        - task_type: Type of content to generate (default: blog_post)
+        - topic: Content topic/subject
         - style: technical, narrative, listicle, educational, thought-leadership
         - tone: professional, casual, academic, inspirational
         - target_length: Target word count (200-5000)
         - tags: Optional tags for categorization
-        - generate_featured_image: Search Pexels for featured image
+        - generate_featured_image: Search Pexels for featured image (blog_post only)
         - enhanced: Use SEO enhancement
         - publish_mode: draft or publish immediately
 
     Returns:
         - task_id: Use to poll for status
+        - task_type: Type of task created
         - polling_url: Endpoint to check progress
     """
-    logger.info(f"🟢 POST /api/content/blog-posts called - Topic: {request.topic}")
+    logger.info(f"🟢 POST /api/content/tasks called - Type: {request.task_type} - Topic: {request.topic}")
     
     try:
         if len(request.topic.strip()) < 3:
@@ -191,6 +220,7 @@ async def create_blog_post(
             tags=request.tags,
             generate_featured_image=request.generate_featured_image,
             request_type="enhanced" if request.enhanced else "basic",
+            task_type=request.task_type,  # ✅ Store task type
         )
         logger.info(f"  ✅ Task created: {task_id}")
 
@@ -212,46 +242,47 @@ async def create_blog_post(
         logger.debug(f"  ✓ Background task queued")
 
         logger.info(
-            f"✅✅ BLOG POST TASK CREATED: {task_id} - Topic: {request.topic} - "
-            f"Enhanced: {request.enhanced} - Ready for polling at /api/content/blog-posts/tasks/{task_id}"
+            f"✅✅ CONTENT TASK CREATED: {task_id} - Type: {request.task_type} - Topic: {request.topic} - "
+            f"Enhanced: {request.enhanced} - Ready for polling at /api/content/tasks/{task_id}"
         )
 
         return CreateBlogPostResponse(
             task_id=task_id,
+            task_type=request.task_type,  # ✅ Include task type in response
             status="pending",
             topic=request.topic,
             created_at=datetime.now().isoformat(),
-            polling_url=f"/api/content/blog-posts/tasks/{task_id}",
+            polling_url=f"/api/content/tasks/{task_id}",
         )
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error creating blog post task: {e}", exc_info=True)
+        logger.error(f"❌ Error creating content task: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Failed to create blog post: {str(e)}"
+            status_code=500, detail=f"Failed to create content task: {str(e)}"
         )
 
 
 @content_router.get(
-    "/blog-posts/tasks/{task_id}",
+    "/tasks/{task_id}",
     response_model=TaskStatusResponse,
-    description="Get blog post generation status",
-    tags=["content-unified"],
+    description="Get content task status",
+    tags=["content-tasks"],
 )
-async def get_blog_post_status(task_id: str):
+async def get_content_task_status(task_id: str):
     """
-    Check the status of a blog post generation task.
+    Check the status of a content task.
 
     Poll every 2-5 seconds until status is 'completed' or 'failed'.
 
     Response:
         - status: pending, generating, completed, failed
         - progress: Current progress info (while generating)
-        - result: Generated blog post data (when completed)
+        - result: Generated content data (when completed)
         - error: Error details (if failed)
     """
-    logger.debug(f"🟢 GET /api/content/blog-posts/tasks/{task_id} called")
+    logger.debug(f"🟢 GET /api/content/tasks/{task_id} called")
     
     try:
         task_store = get_content_task_store()
@@ -267,12 +298,32 @@ async def get_blog_post_status(task_id: str):
 
         logger.info(f"✅ Task status retrieved: {task_id} - status: {task.get('status', 'unknown')}")
         
+        # ✅ FIXED: Build result object from actual database fields
+        result = None
+        if task.get("status") in ["completed", "failed"]:
+            result = {
+                "title": task.get("topic", "Untitled"),
+                "content": task.get("content", ""),  # ✅ From content field
+                "excerpt": task.get("excerpt", ""),  # ✅ From excerpt field
+                "summary": task.get("excerpt", ""),  # Alias for excerpt
+                "word_count": len(task.get("content", "").split()) if task.get("content") else 0,
+                "featured_image_url": task.get("featured_image_url"),  # ✅ From featured_image_url field
+                "featured_image_source": task.get("task_metadata", {}).get("featured_image_source"),
+                "model_used": task.get("model_used"),  # ✅ From model_used field
+                "quality_score": task.get("quality_score"),  # ✅ From quality_score field
+                "tags": task.get("tags", []),
+                "strapi_post_id": task.get("strapi_id"),  # Strapi post ID if published
+                "strapi_url": task.get("strapi_url"),  # Strapi URL if published
+                # Include any additional metadata
+                "task_metadata": task.get("task_metadata", {}),
+            }
+        
         return TaskStatusResponse(
             task_id=task_id,
             status=task.get("status", "unknown"),
             progress=task.get("progress"),
-            result=task.get("result"),
-            error=task.get("error"),
+            result=result,  # ✅ Now populated with actual data from database
+            error=task.get("error_message") if task.get("error_message") else None,
             created_at=task.get("created_at", ""),
         )
 
@@ -284,37 +335,54 @@ async def get_blog_post_status(task_id: str):
 
 
 @content_router.get(
-    "/blog-posts/drafts",
+    "/tasks",
     response_model=DraftsListResponse,
-    description="List blog post drafts",
-    tags=["content-unified"],
+    description="List content tasks",
+    tags=["content-tasks"],
 )
-async def list_drafts(
+async def list_content_tasks(
+    task_type: Optional[str] = Query(None, description="Filter by task type (blog_post, social_media, etc.)"),
+    status: Optional[str] = Query(None, description="Filter by status (pending, generating, completed, failed)"),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ):
     """
-    Get list of generated blog drafts (not yet published to Strapi).
+    Get list of content tasks (drafts not yet published to Strapi).
 
     Query Parameters:
-        - limit: Number of drafts to return (1-100)
+        - task_type: Filter by type (blog_post, social_media, email, newsletter)
+        - status: Filter by status (pending, generating, completed, failed)
+        - limit: Number of tasks to return (1-100)
         - offset: Pagination offset
+
+    Example:
+        - GET /api/content/tasks?task_type=blog_post&status=completed
+        - GET /api/content/tasks?status=generating&limit=50
     """
     try:
         task_store = get_content_task_store()
         drafts, total = task_store.get_drafts(limit=limit, offset=offset)
 
+        # Apply filters
+        if task_type:
+            drafts = [t for t in drafts if t.get("task_type") == task_type or t.get("request_type") == task_type]
+            total = len(drafts)
+        
+        if status:
+            drafts = [t for t in drafts if t.get("status") == status]
+            total = len(drafts)
+
         draft_responses = []
         for task in drafts:
-            result = task.get("result", {})
+            # ✅ Get title and summary from actual database fields
             draft_responses.append(
                 BlogDraftResponse(
                     draft_id=task["task_id"],
-                    title=result.get("title", "Untitled"),
+                    title=task.get("topic", "Untitled"),  # ✅ Use topic field
                     created_at=task.get("created_at", ""),
-                    status="draft",
-                    word_count=result.get("word_count", 0),
-                    summary=result.get("summary", ""),
+                    status=task.get("status", "draft"),  # ✅ Use actual status
+                    word_count=len(task.get("content", "").split()) if task.get("content") else 0,  # ✅ Calculate from content
+                    summary=task.get("excerpt", ""),  # ✅ Use excerpt field
                 )
             )
 
@@ -323,92 +391,145 @@ async def list_drafts(
         )
 
     except Exception as e:
-        logger.error(f"Error listing drafts: {e}")
-        raise HTTPException(status_code=500, detail=f"Error listing drafts: {str(e)}")
+        logger.error(f"Error listing tasks: {e}")
+        raise HTTPException(status_code=500, detail=f"Error listing tasks: {str(e)}")
 
 
 @content_router.post(
-    "/blog-posts/drafts/{draft_id}/publish",
+    "/tasks/{task_id}/approve",
     response_model=PublishDraftResponse,
-    description="Publish a draft to Strapi",
-    tags=["content-unified"],
+    description="Approve and publish a task to Strapi",
+    tags=["content-tasks"],
 )
-async def publish_draft(draft_id: str, request: PublishDraftRequest):
+async def approve_and_publish_task(task_id: str, request: PublishDraftRequest):
     """
-    Publish a draft blog post to Strapi CMS.
+    Approve and publish a completed task to Strapi CMS.
+
+    This endpoint approves a generated content task and publishes it to Strapi.
+    Currently supports blog posts; will extend to other content types.
 
     Path Parameters:
-        - draft_id: Task ID of the draft to publish
+        - task_id: Task ID of the task to approve and publish
 
     Request Body:
         - target_environment: 'production' or 'staging'
+
+    Response:
+        - strapi_post_id: ID of the published post in Strapi
+        - published_url: URL of the published post
+        - status: 'published'
     """
     try:
         task_store = get_content_task_store()
-        task = task_store.get_task(draft_id)
+        task = task_store.get_task(task_id)
 
         if not task:
-            raise HTTPException(status_code=404, detail=f"Draft not found: {draft_id}")
+            raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
 
         if task.get("status") != "completed":
             raise HTTPException(
-                status_code=409, detail=f"Draft must be completed (current: {task.get('status')})"
+                status_code=409, detail=f"Task must be completed (current: {task.get('status')})"
             )
 
-        result = task.get("result", {})
-        strapi_post_id = result.get("strapi_post_id")
-
-        if not strapi_post_id:
+        # ✅ Get content from actual database fields, not result object
+        content = task.get("content")
+        if not content:
             raise HTTPException(
-                status_code=400, detail="Draft has not been published yet"
+                status_code=400, detail="Task content is empty - cannot publish"
             )
 
-        published_url = f"https://glad-labs-website-{request.target_environment}.railway.app/blog/{strapi_post_id}"
+        strapi_post_id = task.get("strapi_id")  # Check if already published
+        
+        if not strapi_post_id:
+            # ✅ Publish to Strapi if not already published
+            logger.info(f"📤 Publishing task {task_id} to Strapi...")
+            from services.strapi_publisher import StrapiPublisher
+            
+            publisher = StrapiPublisher()
+            await publisher.connect()
+            
+            try:
+                result = await publisher.create_post(
+                    title=task.get("topic", "Untitled"),
+                    content=content,
+                    excerpt=task.get("excerpt", ""),
+                    featured_image_url=task.get("featured_image_url"),
+                    tags=task.get("tags", []),
+                )
+                
+                if result.get("success") and result.get("post_id"):
+                    strapi_post_id = str(result.get("post_id"))
+                    strapi_url = f"/blog/{strapi_post_id}"  # Strapi URL format
+                    
+                    # ✅ Save strapi_id and strapi_url to database
+                    task_store.update_task(
+                        task_id,
+                        {
+                            "strapi_id": strapi_post_id,
+                            "strapi_url": strapi_url,
+                            "publish_mode": "published",
+                        },
+                    )
+                    logger.info(f"✅ Published to Strapi - Post ID: {strapi_post_id}")
+                else:
+                    raise HTTPException(
+                        status_code=500, detail=f"Failed to publish to Strapi: {result.get('message', 'Unknown error')}"
+                    )
+            finally:
+                await publisher.disconnect()
+        else:
+            logger.info(f"ℹ️ Task already published - Strapi ID: {strapi_post_id}")
+            strapi_url = task.get("strapi_url", "")
+
+        published_url = strapi_url or f"https://glad-labs-website-{request.target_environment or 'production'}.railway.app/blog/{strapi_post_id}"
 
         return PublishDraftResponse(
-            draft_id=draft_id,
-            strapi_post_id=strapi_post_id,
+            draft_id=task_id,
+            strapi_post_id=int(strapi_post_id),  # Convert to int for response
             published_url=published_url,
-            published_at=result.get("published_at", datetime.now().isoformat()),
+            published_at=datetime.now().isoformat(),
             status="published",
         )
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error publishing draft: {e}")
-        raise HTTPException(status_code=500, detail=f"Error publishing draft: {str(e)}")
+        logger.error(f"Error approving/publishing task: {e}")
+        raise HTTPException(status_code=500, detail=f"Error approving/publishing task: {str(e)}")
 
 
 @content_router.delete(
-    "/blog-posts/drafts/{draft_id}",
-    description="Delete a draft",
-    tags=["content-unified"],
+    "/tasks/{task_id}",
+    description="Delete a task",
+    tags=["content-tasks"],
 )
-async def delete_draft(draft_id: str):
+async def delete_content_task(task_id: str):
     """
-    Delete a blog draft.
+    Delete a content task.
 
     Path Parameters:
-        - draft_id: Task ID of the draft to delete
+        - task_id: Task ID to delete
+
+    Returns:
+        - Confirmation of deletion
     """
     try:
         task_store = get_content_task_store()
 
-        if not task_store.delete_task(draft_id):
-            raise HTTPException(status_code=404, detail=f"Draft not found: {draft_id}")
+        if not task_store.delete_task(task_id):
+            raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
 
-        logger.info(f"Draft deleted: {draft_id}")
+        logger.info(f"Task deleted: {task_id}")
 
         return {
-            "draft_id": draft_id,
+            "task_id": task_id,
             "deleted": True,
-            "message": "Draft deleted successfully",
+            "message": "Task deleted successfully",
         }
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error deleting draft: {e}")
-        raise HTTPException(status_code=500, detail=f"Error deleting draft: {str(e)}")
+        logger.error(f"Error deleting task: {e}")
+        raise HTTPException(status_code=500, detail=f"Error deleting task: {str(e)}")
 
