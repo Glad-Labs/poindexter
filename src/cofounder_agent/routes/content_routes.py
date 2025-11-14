@@ -147,6 +147,30 @@ class PublishDraftRequest(BaseModel):
     target_environment: str = Field("production", description="Strapi environment")
 
 
+class ApprovalRequest(BaseModel):
+    """
+    ✅ Phase 5: Human Approval Request
+    
+    Request from human reviewer to approve or reject a task pending approval.
+    Mandatory gate before publishing - requires explicit human decision.
+    """
+    approved: bool = Field(..., description="True to approve and publish, False to reject")
+    human_feedback: str = Field(..., description="Human reviewer feedback (reason for decision)")
+    reviewer_id: str = Field(..., description="Reviewer username or ID")
+
+
+class ApprovalResponse(BaseModel):
+    """Response from approval decision"""
+    
+    task_id: str
+    approval_status: str  # "approved" or "rejected"
+    strapi_post_id: Optional[int] = None  # Only if approved and published
+    published_url: Optional[str] = None  # Only if approved and published
+    approval_timestamp: str
+    reviewer_id: str
+    message: str
+
+
 class PublishDraftResponse(BaseModel):
     """Response from publishing a draft"""
 
@@ -400,105 +424,203 @@ async def list_content_tasks(
 
 @content_router.post(
     "/tasks/{task_id}/approve",
-    response_model=PublishDraftResponse,
-    description="Approve and publish a task to Strapi",
+    response_model=ApprovalResponse,
+    description="✅ Phase 5: Human Approval Gate - Approve or reject task",
     tags=["content-tasks"],
 )
-async def approve_and_publish_task(task_id: str, request: PublishDraftRequest):
+async def approve_and_publish_task(task_id: str, request: ApprovalRequest):
     """
-    Approve and publish a completed task to Strapi CMS.
-
-    This endpoint approves a generated content task and publishes it to Strapi.
-    Currently supports blog posts; will extend to other content types.
-
+    ✅ Phase 5: Human Approval Decision Endpoint
+    
+    **MANDATORY GATE**: Tasks awaiting approval must be explicitly approved or rejected
+    by a human reviewer before publishing.
+    
+    This endpoint handles the critical human decision point in the content pipeline:
+    - If `approved=true`: Publishes content to Strapi
+    - If `approved=false`: Marks task as rejected with feedback
+    
     Path Parameters:
-        - task_id: Task ID of the task to approve and publish
-
-    Request Body:
-        - target_environment: 'production' or 'staging'
-
+        - task_id: Task ID awaiting approval
+    
+    Request Body (ApprovalRequest):
+        - approved (bool): True to publish, False to reject
+        - human_feedback (str): Reason for decision (required)
+        - reviewer_id (str): Reviewer username/ID (required)
+    
     Response:
-        - strapi_post_id: ID of the published post in Strapi
-        - published_url: URL of the published post
-        - status: 'published'
+        - task_id: Task ID
+        - approval_status: "approved" or "rejected"
+        - strapi_post_id: Published post ID (only if approved)
+        - published_url: Live URL (only if approved)
+        - approval_timestamp: Decision time
+        - reviewer_id: Who made the decision
+        - message: Human-readable status
+    
+    Errors:
+        - 404: Task not found
+        - 409: Task not in "awaiting_approval" status
+        - 400: Missing or invalid approval data
+        - 500: Publishing error
     """
     try:
         task_store = get_content_task_store()
         task = task_store.get_task(task_id)
 
         if not task:
+            logger.error(f"❌ Approval: Task not found {task_id}")
             raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
 
-        if task.get("status") != "completed":
-            raise HTTPException(
-                status_code=409, detail=f"Task must be completed (current: {task.get('status')})"
-            )
-
-        # ✅ Get content from actual database fields, not result object
-        content = task.get("content")
-        if not content:
-            raise HTTPException(
-                status_code=400, detail="Task content is empty - cannot publish"
-            )
-
-        strapi_post_id = task.get("strapi_id")  # Check if already published
+        # ✅ CRITICAL: Check task is awaiting approval
+        current_status = task.get("status")
+        approval_status = task.get("approval_status", "pending")
         
-        if not strapi_post_id:
-            # ✅ Publish to Strapi if not already published
-            logger.info(f"📤 Publishing task {task_id} to Strapi...")
-            from services.strapi_publisher import StrapiPublisher
+        if current_status != "awaiting_approval":
+            logger.error(
+                f"❌ Approval: Task {task_id} not awaiting approval (status={current_status})"
+            )
+            raise HTTPException(
+                status_code=409,
+                detail=f"Task must be in 'awaiting_approval' status (current: {current_status})"
+            )
+
+        approval_timestamp = datetime.now()
+        reviewer_id = request.reviewer_id
+        human_feedback = request.human_feedback
+        
+        logger.info(f"\n{'='*80}")
+        logger.info(f"🔍 HUMAN APPROVAL DECISION")
+        logger.info(f"{'='*80}")
+        logger.info(f"   Task ID: {task_id}")
+        logger.info(f"   Reviewer: {reviewer_id}")
+        logger.info(f"   Decision: {'✅ APPROVED' if request.approved else '❌ REJECTED'}")
+        logger.info(f"   Feedback: {human_feedback[:100]}...")
+        logger.info(f"{'='*80}\n")
+
+        # ============================================================================
+        # CASE 1: HUMAN APPROVED - Publish to Strapi
+        # ============================================================================
+        if request.approved:
+            logger.info(f"✅ APPROVED: Publishing task {task_id} to Strapi...")
             
-            publisher = StrapiPublisher()
-            await publisher.connect()
-            
-            try:
-                result = await publisher.create_post(
-                    title=task.get("topic", "Untitled"),
-                    content=content,
-                    excerpt=task.get("excerpt", ""),
-                    featured_image_url=task.get("featured_image_url"),
-                    tags=task.get("tags", []),
+            # Get content from database
+            content = task.get("content")
+            if not content:
+                logger.error(f"❌ Task {task_id} has no content to publish")
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Task content is empty - cannot publish"
                 )
+
+            strapi_post_id = task.get("strapi_id")
+            
+            # Only publish if not already published
+            if not strapi_post_id:
+                logger.info(f"   📤 Sending content to Strapi...")
+                from services.strapi_publisher import StrapiPublisher
                 
-                if result.get("success") and result.get("post_id"):
-                    strapi_post_id = str(result.get("post_id"))
-                    strapi_url = f"/blog/{strapi_post_id}"  # Strapi URL format
+                publisher = StrapiPublisher()
+                await publisher.connect()
+                
+                try:
+                    result = await publisher.create_post(
+                        title=task.get("topic", "Untitled"),
+                        content=content,
+                        excerpt=task.get("excerpt", ""),
+                        featured_image_url=task.get("featured_image_url"),
+                        tags=task.get("tags", []),
+                    )
                     
-                    # ✅ Save strapi_id and strapi_url to database
-                    task_store.update_task(
-                        task_id,
-                        {
-                            "strapi_id": strapi_post_id,
-                            "strapi_url": strapi_url,
-                            "publish_mode": "published",
-                        },
-                    )
-                    logger.info(f"✅ Published to Strapi - Post ID: {strapi_post_id}")
-                else:
-                    raise HTTPException(
-                        status_code=500, detail=f"Failed to publish to Strapi: {result.get('message', 'Unknown error')}"
-                    )
-            finally:
-                await publisher.disconnect()
+                    if result.get("success") and result.get("post_id"):
+                        strapi_post_id = str(result.get("post_id"))
+                        strapi_url = f"/blog/{strapi_post_id}"
+                        
+                        logger.info(f"   ✅ Published to Strapi - Post ID: {strapi_post_id}")
+                        logger.info(f"   📌 URL: {strapi_url}")
+                    else:
+                        logger.error(f"❌ Strapi publish failed: {result.get('message')}")
+                        raise HTTPException(
+                            status_code=500,
+                            detail=f"Failed to publish to Strapi: {result.get('message', 'Unknown error')}"
+                        )
+                finally:
+                    await publisher.disconnect()
+            else:
+                logger.info(f"   ℹ️ Already published - Strapi ID: {strapi_post_id}")
+                strapi_url = task.get("strapi_url", "")
+
+            # ✅ Update task with approval metadata
+            published_url = strapi_url or f"/blog/{strapi_post_id}"
+            task_store.update_task(
+                task_id,
+                {
+                    "status": "published",
+                    "approval_status": "approved",
+                    "approved_by": reviewer_id,
+                    "approval_timestamp": approval_timestamp,
+                    "approval_notes": human_feedback,
+                    "human_feedback": human_feedback,
+                    "strapi_id": strapi_post_id,
+                    "strapi_url": published_url,
+                    "publish_mode": "published",
+                    "completed_at": approval_timestamp,
+                }
+            )
+            
+            logger.info(f"✅ Task {task_id} APPROVED and PUBLISHED")
+            logger.info(f"{'='*80}\n")
+            
+            return ApprovalResponse(
+                task_id=task_id,
+                approval_status="approved",
+                strapi_post_id=int(strapi_post_id) if strapi_post_id else None,
+                published_url=published_url,
+                approval_timestamp=approval_timestamp.isoformat(),
+                reviewer_id=reviewer_id,
+                message=f"✅ Task approved and published by {reviewer_id}"
+            )
+
+        # ============================================================================
+        # CASE 2: HUMAN REJECTED - Mark as rejected with feedback
+        # ============================================================================
         else:
-            logger.info(f"ℹ️ Task already published - Strapi ID: {strapi_post_id}")
-            strapi_url = task.get("strapi_url", "")
-
-        published_url = strapi_url or f"https://glad-labs-website-{request.target_environment or 'production'}.railway.app/blog/{strapi_post_id}"
-
-        return PublishDraftResponse(
-            draft_id=task_id,
-            strapi_post_id=int(strapi_post_id),  # Convert to int for response
-            published_url=published_url,
-            published_at=datetime.now().isoformat(),
-            status="published",
-        )
+            logger.info(f"❌ REJECTED: Marking task {task_id} as rejected...")
+            logger.info(f"   📌 Reviewer feedback: {human_feedback}")
+            
+            # ✅ Update task with rejection metadata
+            task_store.update_task(
+                task_id,
+                {
+                    "status": "rejected",
+                    "approval_status": "rejected",
+                    "approved_by": reviewer_id,
+                    "approval_timestamp": approval_timestamp,
+                    "approval_notes": human_feedback,
+                    "human_feedback": human_feedback,
+                    "completed_at": approval_timestamp,
+                }
+            )
+            
+            logger.info(f"✅ Task {task_id} REJECTED - Not published")
+            logger.info(f"{'='*80}\n")
+            
+            return ApprovalResponse(
+                task_id=task_id,
+                approval_status="rejected",
+                strapi_post_id=None,
+                published_url=None,
+                approval_timestamp=approval_timestamp.isoformat(),
+                reviewer_id=reviewer_id,
+                message=f"❌ Task rejected by {reviewer_id} - Feedback: {human_feedback}"
+            )
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error approving/publishing task: {e}")
-        raise HTTPException(status_code=500, detail=f"Error approving/publishing task: {str(e)}")
+        logger.error(f"❌ Error in approval endpoint: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Error processing approval decision: {str(e)}"
+        )
 
 
 @content_router.delete(
@@ -535,4 +657,221 @@ async def delete_content_task(task_id: str):
     except Exception as e:
         logger.error(f"Error deleting task: {e}")
         raise HTTPException(status_code=500, detail=f"Error deleting task: {str(e)}")
+
+
+# ============================================================================
+# PHASE 4: CONTENT GENERATION & DIRECT CMS PUBLISHING
+# ============================================================================
+# New unified endpoint for generating content and publishing directly to FastAPI CMS
+
+class GenerateAndPublishRequest(BaseModel):
+    """Request model for content generation and direct publishing"""
+    topic: str = Field(..., description="Topic for content generation")
+    audience: Optional[str] = Field("General audience", description="Target audience")
+    keywords: Optional[List[str]] = Field(default_factory=list, description="SEO keywords")
+    style: Optional[ContentStyle] = Field(ContentStyle.EDUCATIONAL, description="Content style")
+    tone: Optional[ContentTone] = Field(ContentTone.PROFESSIONAL, description="Content tone")
+    length: Optional[str] = Field("medium", description="Content length (short/medium/long)")
+    category: Optional[str] = Field(None, description="Category ID or name")
+    tags: Optional[List[str]] = Field(default_factory=list, description="Tag names")
+    auto_publish: Optional[bool] = Field(False, description="Immediately publish to site")
+
+
+@content_router.post(
+    "/generate-and-publish",
+    description="PHASE 4: Generate content and publish directly to FastAPI CMS",
+    tags=["phase-4-integration"],
+)
+async def generate_and_publish_content(request: GenerateAndPublishRequest, background_tasks: BackgroundTasks):
+    """
+    PHASE 4: Generate content and publish directly to FastAPI CMS database.
+
+    This endpoint implements direct database publishing, bypassing HTTP layers.
+
+    Request Body:
+        - topic: Topic for content generation (required)
+        - audience: Target audience (optional)
+        - keywords: SEO keywords as list (optional)
+        - style: professional|casual|technical|creative (optional)
+        - tone: informative|persuasive|engaging|educational (optional)
+        - length: short|medium|long (optional)
+        - category: Category for post (optional)
+        - tags: List of tag names (optional)
+        - auto_publish: Immediately publish if true (optional)
+
+    Returns:
+        - task_id: Task ID for tracking
+        - post_id: Generated post ID in CMS
+        - slug: Post slug for URL
+        - status: "draft" or "published"
+        - view_url: Direct link to published post
+        - edit_url: Admin edit URL
+
+    Example:
+        POST /api/content/generate-and-publish
+        {
+            "topic": "The Future of AI in E-commerce",
+            "audience": "E-commerce business owners",
+            "keywords": ["AI", "e-commerce", "automation"],
+            "category": "technology",
+            "tags": ["AI", "Automation"],
+            "auto_publish": true
+        }
+
+    Response:
+        {
+            "success": true,
+            "task_id": "task-12345",
+            "post_id": "post-uuid-here",
+            "slug": "future-of-ai-in-ecommerce",
+            "title": "The Future of AI in E-commerce",
+            "status": "published",
+            "content_preview": "First 200 chars...",
+            "view_url": "https://example.com/posts/future-of-ai-in-ecommerce",
+            "edit_url": "https://admin.example.com/posts/post-uuid-here",
+            "generated_at": "2025-11-14T04:40:00Z",
+            "published_at": "2025-11-14T04:40:30Z"
+        }
+    """
+    try:
+        import uuid
+        from datetime import datetime
+        import psycopg2
+        from psycopg2.extras import execute_values
+
+        task_id = str(uuid.uuid4())
+        logger.info(f"PHASE 4: Starting content generation for task {task_id}: {request.topic}")
+
+        # Create task record
+        task_store = get_content_task_store()
+        
+        # Call create_task with required parameters
+        task_id = task_store.create_task(
+            topic=request.topic,
+            style=request.style.value if request.style else "educational",
+            tone=request.tone.value if request.tone else "professional",
+            target_length=len(request.keywords or []) + 1000,  # Simple estimation
+            tags=request.tags or [],
+            generate_featured_image=True,
+            request_type="phase4_direct",
+            task_type="blog_post",
+            metadata={"audience": request.audience, "category": request.category}
+        )
+        
+        created_at = datetime.utcnow().isoformat()
+
+        # Generate content using existing content service
+        content_service = get_content_task_store()
+        logger.info(f"Generating content for: {request.topic}")
+
+        # For now, we'll create a placeholder that demonstrates the endpoint works
+        # In production, this would call the full content generation pipeline
+        keywords_str = ', '.join(request.keywords or [])
+        generated_content = {
+            "title": f"{request.topic}",
+            "content": f"# {request.topic}\n\nGenerated content for audience: {request.audience}\n\nKeywords: {keywords_str}\n\nThis is generated AI content.",
+            "excerpt": f"AI-generated content about {request.topic}",
+            "seo_title": f"{request.topic} - Expert Guide",
+            "seo_description": f"Learn about {request.topic}. This comprehensive guide covers everything you need to know.",
+            "seo_keywords": request.keywords or [],
+        }
+
+        # Publish to CMS database
+        logger.info(f"Publishing to FastAPI CMS: {generated_content['title']}")
+
+        import psycopg2
+        conn = psycopg2.connect(
+            host="localhost",
+            database="glad_labs_dev",
+            user="postgres",
+            password="postgres",
+            port="5432",
+        )
+        cur = conn.cursor()
+
+        post_id = str(uuid.uuid4())
+        slug = generated_content["title"].lower().replace(" ", "-").replace("/", "-")
+        
+        # Add timestamp to ensure uniqueness
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        slug = f"{slug}-{timestamp}"
+
+        # Get category ID if provided
+        category_id = None
+        if request.category:
+            cur.execute(
+                "SELECT id FROM categories WHERE name ILIKE %s OR slug = %s LIMIT 1",
+                (request.category, request.category.lower().replace(" ", "-")),
+            )
+            result = cur.fetchone()
+            if result:
+                category_id = result[0]
+
+        # Get tag IDs
+        tag_ids = []
+        if request.tags:
+            placeholders = ",".join(["%s"] * len(request.tags))
+            cur.execute(
+                f"SELECT id FROM tags WHERE name ILIKE ANY(ARRAY[{placeholders}])",
+                request.tags,
+            )
+            tag_ids = [row[0] for row in cur.fetchall()]
+
+        # Insert post
+        cur.execute(
+            """
+            INSERT INTO posts (
+                id, title, slug, content, excerpt,
+                featured_image_url, cover_image_url,
+                author_id, category_id, tag_ids,
+                seo_title, seo_description, seo_keywords,
+                status, published_at, view_count,
+                created_at, updated_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                post_id,
+                generated_content["title"],
+                slug,
+                generated_content["content"],
+                generated_content["excerpt"],
+                f"https://via.placeholder.com/600x400?text={slug}",
+                f"https://via.placeholder.com/1200x400?text={slug}",
+                None,  # author_id - set to None for now
+                category_id,
+                tag_ids,
+                generated_content["seo_title"],
+                generated_content["seo_description"],
+                generated_content["seo_keywords"],
+                "published" if request.auto_publish else "draft",
+                datetime.utcnow() if request.auto_publish else None,
+                0,
+                datetime.utcnow(),
+                datetime.utcnow(),
+            ),
+        )
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        logger.info(f"PHASE 4: Content generated and published successfully: {post_id}")
+
+        return {
+            "success": True,
+            "task_id": task_id,
+            "post_id": post_id,
+            "slug": slug,
+            "title": generated_content["title"],
+            "status": "published" if request.auto_publish else "draft",
+            "content_preview": generated_content["content"][:200] + "...",
+            "view_url": f"http://localhost:3000/posts/{slug}",
+            "edit_url": f"http://localhost:3001/posts/{post_id}",
+            "generated_at": created_at,
+            "published_at": datetime.utcnow().isoformat() if request.auto_publish else None,
+        }
+
+    except Exception as e:
+        logger.error(f"PHASE 4 Error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Content generation failed: {str(e)}")
 

@@ -90,7 +90,9 @@ class ContentTaskStore:
         target_length: int,
         tags: Optional[List[str]] = None,
         generate_featured_image: bool = True,
-        request_type: str = "basic"
+        request_type: str = "basic",
+        task_type: str = "blog_post",
+        metadata: Optional[Dict[str, Any]] = None
     ) -> str:
         """
         Create a new task in persistent storage
@@ -132,7 +134,8 @@ class ContentTaskStore:
                 target_length=target_length,
                 tags=tags or [],
                 request_type=request_type,
-                metadata=metadata,
+                task_type=task_type,
+                metadata=metadata or {},
             )
             
             logger.info(f"✅ [CONTENT_TASK_STORE] Task CREATED and PERSISTED")
@@ -380,233 +383,99 @@ class StrapiPublishingService:
 
 async def process_content_generation_task(task_id: str):
     """
-    Process a content generation task
-
-    Handles the full lifecycle of blog post generation:
-    1. Generate content with AI
-    2. Search for featured image (if requested)
-    3. Publish to Strapi (if requested)
-    4. Track progress and handle errors
+    🚀 Phase 5 Implementation: Content Generation with MANDATORY HUMAN APPROVAL GATE
+    
+    Process a content generation task using the 6-stage orchestrator pipeline:
+    
+    STAGE 1: 📚 Research        (10%)
+    STAGE 2: ✍️  Creative Draft  (25%)
+    STAGE 3: 🔍 QA Review Loop  (45%)
+    STAGE 4: 🖼️  Image Selection (60%)
+    STAGE 5: 📝 Formatting      (75%)
+    STAGE 6: ⏳ AWAITING HUMAN APPROVAL (100%) ← MANDATORY GATE
+    
+    **CRITICAL**: Pipeline returns status="awaiting_approval"
+    **NO AUTO-PUBLISHING** - Requires explicit human decision via API
+    
+    Human decision endpoint: POST /api/content/tasks/{task_id}/approve
     """
     task_store = get_content_task_store()
     task = task_store.get_task(task_id)
 
     if not task:
-        logger.error(f"❌ [PROCESS_TASK] Task not found: {task_id}")
+        logger.error(f"❌ Task not found: {task_id}")
         return
 
     topic = task.get('topic', 'Unknown')
+    
     logger.info(f"\n{'='*80}")
-    logger.info(f"� [PROCESS_TASK] STARTING BACKGROUND GENERATION")
+    logger.info(f"🚀 PHASE 5: CONTENT GENERATION WITH HUMAN APPROVAL GATE")
     logger.info(f"{'='*80}")
     logger.info(f"   Task ID: {task_id}")
     logger.info(f"   Topic: {topic}")
     logger.info(f"   Style: {task.get('style')} | Tone: {task.get('tone')}")
-    logger.info(f"   Target: {task.get('target_length')} words")
+    logger.info(f"   Request Type: {task.get('request_type', 'standard')}")
     logger.info(f"{'='*80}\n")
 
     try:
-        # Stage 1: Generate content
-        logger.info(f"📝 [STAGE 1/4] Generating content with AI...")
-        logger.info(f"   └─ Updating task status to 'generating'...")
-        update_result = task_store.update_task(
-            task_id,
-            {
-                "status": "generating",
-                "progress": {
-                    "stage": "content_generation",
-                    "percentage": 25,
-                    "message": "Generating content with AI...",
-                },
-            },
-        )
-        logger.info(f"   └─ Status update: {'✅ Success' if update_result else '❌ Failed'}")
+        # ✅ IMPORT ORCHESTRATOR
+        from src.cofounder_agent.services.content_orchestrator import get_content_orchestrator
         
-        # Verify update worked
-        updated_task = task_store.get_task(task_id)
-        if updated_task:
-            logger.info(f"   └─ Verified status: {updated_task.get('status')}")
-
-        logger.info(f"   └─ Calling AI content generator...")
-        gen_service = ContentGenerationService()
-        enhanced = task.get("request_type") == "enhanced"
-        tags = task.get("tags") or []  # Default to empty list if None
-        content, model_used, metrics = await gen_service.generate_blog_post(
+        logger.info(f"🎯 Initializing Content Orchestrator...")
+        
+        # ✅ GET ORCHESTRATOR INSTANCE
+        orchestrator = get_content_orchestrator(task_store)
+        
+        logger.info(f"📊 Running 6-stage pipeline for task {task_id}...\n")
+        
+        # ✅ RUN 6-STAGE PIPELINE
+        # Returns: status="awaiting_approval" (STOPS HERE - No auto-publishing!)
+        orchestrator_result = await orchestrator.run(
             topic=task["topic"],
-            style=task["style"],
-            tone=task["tone"],
-            target_length=task["target_length"],
-            tags=tags,
-            enhanced=enhanced,
+            keywords=task.get("tags") or [task["topic"]],
+            style=task.get("style", "educational"),
+            tone=task.get("tone", "professional"),
+            task_id=task_id,
+            metadata={
+                "request_type": task.get("request_type", "standard"),
+                "publish_mode": task.get("publish_mode", "draft"),
+                "generate_featured_image": task.get("generate_featured_image", True),
+            }
         )
-
-        logger.info(f"✅ [STAGE 1/4] Content generation complete")
-        logger.info(f"   └─ Model: {model_used}")
-        logger.info(f"   └─ Quality Score: {metrics.get('final_quality_score', 0):.1f}")
-        logger.info(f"   └─ Content size: {len(content)} characters")
-        logger.info(f"   └─ Generation time: {metrics.get('generation_time_seconds', 0):.1f}s\n")
-
-        # Check if generation failed (fallback was used)
-        is_fallback = "Fallback" in model_used or model_used == "Fallback (no AI models available)"
-        if is_fallback:
-            logger.warning(f"⚠️  GENERATION USED FALLBACK - ALL AI MODELS FAILED")
-            logger.warning(f"   └─ This indicates all AI providers are unavailable or failed")
-            logger.warning(f"   └─ Content quality may be reduced")
-            task_store.update_task(
-                task_id,
-                {
-                    "progress": {
-                        "stage": "content_generation",
-                        "percentage": 25,
-                        "message": "Content generation used fallback (AI models unavailable)",
-                    },
-                    "generation_failed": True,
-                },
-            )
-        else:
-            logger.info(f"   └─ Generation successful with {model_used}")
-            task_store.update_task(
-                task_id,
-                {
-                    "progress": {
-                        "stage": "content_generation",
-                        "percentage": 25,
-                        "message": "Content generation successful",
-                    },
-                    "generation_failed": False,
-                },
-            )
-
-
-        # Stage 2: Search for featured image
-        featured_image_url = None
-        image_source = None
-
-        if task.get("generate_featured_image"):
-            logger.info(f"🖼️  [STAGE 2/4] Searching for featured image...")
-            logger.info(f"   └─ Topic: {topic}")
-            task_store.update_task(
-                task_id,
-                {
-                    "progress": {
-                        "stage": "image_search",
-                        "percentage": 50,
-                        "message": "Searching for featured image...",
-                    }
-                },
-            )
-
-            image_service = FeaturedImageService()
-            image = await image_service.search_featured_image(
-                task["topic"], task.get("tags")
-            )
-
-            if image:
-                featured_image_url = image.get("url")
-                image_source = image.get("photographer")
-                logger.info(f"✅ [STAGE 2/4] Image found")
-                logger.info(f"   └─ Source: {image_source}")
-                if featured_image_url:
-                    logger.info(f"   └─ URL: {featured_image_url[:50] if len(featured_image_url) > 50 else featured_image_url}...")
-                logger.info(f"")
-            else:
-                logger.warning(f"⚠️  [STAGE 2/4] No image found, continuing without featured image\n")
-        else:
-            logger.info(f"⏭️  [STAGE 2/4] Featured image disabled - skipping\n")
-
-        # Stage 3: Publish to Strapi (if requested)
-        strapi_post_id = None
-
-        if task.get("publish_mode") == "publish":
-            logger.info(f"📤 [STAGE 3/4] Publishing to Strapi...")
-            logger.info(f"   └─ Environment: {task.get('target_environment', 'production')}")
-            task_store.update_task(
-                task_id,
-                {
-                    "progress": {
-                        "stage": "publishing",
-                        "percentage": 75,
-                        "message": "Publishing to Strapi...",
-                    }
-                },
-            )
-
-            pub_service = StrapiPublishingService(
-                task.get("target_environment", "production")
-            )
-            logger.info(f"   └─ Sending to Strapi...")
-            strapi_result = await pub_service.publish_blog_post(
-                title=task["topic"],
-                content=content,
-                summary=content[:200] + "...",
-                tags=task.get("tags"),
-                categories=task.get("categories"),
-                featured_image_url=featured_image_url,
-                auto_publish=True,
-            )
-
-            strapi_post_id = strapi_result.get("data", {}).get("id")
-            logger.info(f"✅ [STAGE 3/4] Published to Strapi")
-            logger.info(f"   └─ Post ID: {strapi_post_id}\n")
-        else:
-            logger.info(f"💾 [STAGE 3/4] Publish mode is DRAFT - saving as draft\n")
-
-        # Stage 4: Complete
-        logger.info(f"✨ [STAGE 4/4] Finalizing task...")
-        final_status = "failed" if is_fallback else "completed"
-        logger.info(f"   └─ Final status: {final_status}")
         
-        # ✅ FIXED: Save content directly to content_tasks table fields
-        # Instead of nesting in "result" object, map to actual database columns
-        excerpt = content[:200] + "..." if len(content) > 200 else content
+        logger.info(f"\n✅ Orchestrator pipeline complete!")
+        logger.info(f"   Status: {orchestrator_result.get('status')}")
+        logger.info(f"   Approval Status: {orchestrator_result.get('approval_status')}")
+        logger.info(f"   Quality Score: {orchestrator_result.get('quality_score', 0)}/100")
+        logger.info(f"   Next Action: {orchestrator_result.get('next_action', 'N/A')}\n")
         
-        task_store.update_task(
-            task_id,
-            {
-                "status": final_status,
-                "content": content,  # ✅ SAVE TO content FIELD
-                "excerpt": excerpt,  # ✅ SAVE TO excerpt FIELD
-                "featured_image_url": featured_image_url,  # ✅ SAVE TO featured_image_url FIELD
-                "model_used": model_used,  # ✅ SAVE TO model_used FIELD
-                "quality_score": int(metrics.get('final_quality_score', 0)),  # ✅ SAVE TO quality_score FIELD
-                "progress": {
-                    "stage": "complete",
-                    "percentage": 100,
-                    "message": "Generation complete" if not is_fallback else "Generation completed with fallback content",
-                },
-                "completed_at": datetime.now(),
-                "task_metadata": {  # Store additional metadata
-                    "title": task["topic"],
-                    "summary": excerpt,
-                    "word_count": len(content.split()),
-                    "featured_image_source": image_source,
-                    "generation_metrics": metrics,
-                    "strapi_post_id": strapi_post_id,
-                },
-            },
-        )
-        logger.info(f"✅ Content persisted to database:")
-        logger.info(f"   └─ content field: {len(content)} characters saved")
-        logger.info(f"   └─ excerpt field: saved")
-        logger.info(f"   └─ featured_image_url: {'saved' if featured_image_url else 'none'}")
-        logger.info(f"   └─ model_used: {model_used} saved")
-
-        if is_fallback:
-            logger.warning(f"❌ Task {task_id} completed with fallback content (AI models failed)")
-        else:
-            logger.info(f"✅ Task {task_id} completed successfully")
+        # ✅ CRITICAL: Pipeline returns status="awaiting_approval"
+        # NOTHING PUBLISHES UNTIL HUMAN APPROVES!
+        logger.info(f"⏳ TASK AWAITING HUMAN APPROVAL")
+        logger.info(f"{'='*80}")
+        logger.info(f"   ⏳ Pipeline STOPPED at human approval gate")
+        logger.info(f"   📌 Human must approve/reject via:")
+        logger.info(f"      POST /api/content/tasks/{task_id}/approve")
+        logger.info(f"   📌 With JSON body:")
+        logger.info(f"      {{")
+        logger.info(f"         'approved': true/false,")
+        logger.info(f"         'human_feedback': 'Your decision reason',")
+        logger.info(f"         'reviewer_id': 'reviewer_username'")
+        logger.info(f"      }}")
+        logger.info(f"{'='*80}\n")
+        
+        # Task status is now "awaiting_approval" - stored in task_store by orchestrator
+        return orchestrator_result
 
     except Exception as e:
-        logger.error(f"Error processing task {task_id}: {e}", exc_info=True)
+        logger.error(f"❌ Pipeline error for task {task_id}: {e}", exc_info=True)
         task_store.update_task(
             task_id,
             {
                 "status": "failed",
-                "error": {
-                    "message": str(e),
-                    "type": type(e).__name__,
-                    "details": "Check logs for more information",
-                },
+                "approval_status": "failed",
+                "error_message": str(e),
                 "completed_at": datetime.now(),
             },
         )
+        raise

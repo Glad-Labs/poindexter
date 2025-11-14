@@ -69,6 +69,14 @@ class ContentTask(Base):
     progress = Column(JSON, nullable=True)  # {stage, percentage, message}
     error_message = Column(Text, nullable=True)
 
+    # ✅ NEW: Approval workflow fields (Phase 5)
+    approval_status = Column(String(50), default="pending", nullable=False, index=True)  # pending, awaiting_review, approved, rejected
+    qa_feedback = Column(Text, nullable=True)  # Feedback from QA agent
+    human_feedback = Column(Text, nullable=True)  # Feedback from human reviewer
+    approved_by = Column(String(255), nullable=True)  # Username of approver/rejector
+    approval_timestamp = Column(DateTime, nullable=True)  # When approved/rejected
+    approval_notes = Column(Text, nullable=True)  # Additional approval notes
+
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -99,6 +107,13 @@ class ContentTask(Base):
             "quality_score": self.quality_score,
             "progress": self.progress or {"stage": "pending", "percentage": 0},
             "error_message": self.error_message,
+            # ✅ NEW: Approval workflow fields
+            "approval_status": self.approval_status,
+            "qa_feedback": self.qa_feedback,
+            "human_feedback": self.human_feedback,
+            "approved_by": self.approved_by,
+            "approval_timestamp": self.approval_timestamp.isoformat() if self.approval_timestamp else None,
+            "approval_notes": self.approval_notes,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,

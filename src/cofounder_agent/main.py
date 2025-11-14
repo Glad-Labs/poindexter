@@ -46,6 +46,7 @@ from services.strapi_publisher import StrapiPublisher
 # Import route routers
 # Unified content router (consolidates content.py, content_generation.py, enhanced_content.py)
 from routes.content_routes import content_router
+from routes.cms_routes import router as cms_router
 from routes.models import models_router, models_list_router
 from routes.auth import router as github_oauth_router
 from routes.auth_routes import router as auth_router
@@ -342,6 +343,7 @@ app.include_router(auth_router)  # Traditional authentication endpoints
 app.include_router(task_router)  # Task management endpoints
 # Register unified content router (replaces 3 legacy routers)
 app.include_router(content_router)
+app.include_router(cms_router)  # Simple CMS API (replaces Strapi)
 
 # Register models router
 app.include_router(models_router)

@@ -629,6 +629,167 @@ class HealthCheck(Base):
         return f"<HealthCheck(service='{self.service}', status='{self.status}')>"
 
 
+# ============================================================================
+# CONTENT MANAGEMENT MODELS (Replaces Strapi)
+# ============================================================================
+
+class Author(Base):
+    """Author model for blog content."""
+    __tablename__ = "authors"
+    __table_args__ = (
+        Index('idx_authors_slug', 'slug'),
+        UniqueConstraint('slug', name='unique_author_slug'),
+    )
+    
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid_lib.uuid4)
+    name = Column(String(255), nullable=False)
+    slug = Column(String(255), nullable=False, unique=True, index=True)
+    email = Column(String(255))
+    bio = Column(Text)
+    avatar_url = Column(String(500))
+    
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    posts = relationship("Post", back_populates="author", cascade="all, delete-orphan")
+    
+    def __repr__(self):
+        return f"<Author(name='{self.name}', slug='{self.slug}')>"
+
+
+class Category(Base):
+    """Category model for organizing posts."""
+    __tablename__ = "categories"
+    __table_args__ = (
+        Index('idx_categories_slug', 'slug'),
+        UniqueConstraint('slug', name='unique_category_slug'),
+    )
+    
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid_lib.uuid4)
+    name = Column(String(255), nullable=False)
+    slug = Column(String(255), nullable=False, unique=True, index=True)
+    description = Column(Text)
+    
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    posts = relationship("Post", back_populates="category")
+    
+    def __repr__(self):
+        return f"<Category(name='{self.name}', slug='{self.slug}')>"
+
+
+class Tag(Base):
+    """Tag model for tagging posts."""
+    __tablename__ = "tags"
+    __table_args__ = (
+        Index('idx_tags_slug', 'slug'),
+        UniqueConstraint('slug', name='unique_tag_slug'),
+    )
+    
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid_lib.uuid4)
+    name = Column(String(255), nullable=False)
+    slug = Column(String(255), nullable=False, unique=True, index=True)
+    description = Column(Text)
+    color = Column(String(7))  # Hex color for UI
+    
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<Tag(name='{self.name}', slug='{self.slug}')>"
+
+
+class Post(Base):
+    """Blog post model."""
+    __tablename__ = "posts"
+    __table_args__ = (
+        Index('idx_posts_slug', 'slug'),
+        Index('idx_posts_status', 'status'),
+        Index('idx_posts_published_at', 'published_at'),
+        Index('idx_posts_author_id', 'author_id'),
+        Index('idx_posts_category_id', 'category_id'),
+        UniqueConstraint('slug', name='unique_post_slug'),
+    )
+    
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid_lib.uuid4)
+    
+    # Content
+    title = Column(String(500), nullable=False)
+    slug = Column(String(500), nullable=False, unique=True, index=True)
+    content = Column(Text, nullable=False)  # Markdown content
+    excerpt = Column(String(1000))
+    
+    # Media
+    featured_image_url = Column(String(500))
+    cover_image_url = Column(String(500))
+    
+    # Relations
+    author_id = Column(PG_UUID(as_uuid=True), ForeignKey('authors.id'), nullable=False)
+    category_id = Column(PG_UUID(as_uuid=True), ForeignKey('categories.id'))
+    
+    # Tags (many-to-many via JSON for simplicity, can be normalized later)
+    tag_ids = Column(ARRAY(PG_UUID(as_uuid=True)), default=[])
+    
+    # SEO
+    seo_title = Column(String(255))
+    seo_description = Column(String(500))
+    seo_keywords = Column(String(500))
+    
+    # Status & Publishing
+    status = Column(String(50), default='draft', index=True)  # draft, published, archived
+    published_at = Column(DateTime, index=True)
+    
+    # Metadata
+    view_count = Column(Integer, default=0)
+    metadata_ = Column('metadata', JSONB, default={})
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by = Column(PG_UUID(as_uuid=True), ForeignKey('users.id'))
+    updated_by = Column(PG_UUID(as_uuid=True), ForeignKey('users.id'))
+    
+    # Relationships
+    author = relationship("Author", back_populates="posts")
+    category = relationship("Category", back_populates="posts")
+    
+    def __repr__(self):
+        return f"<Post(title='{self.title}', status='{self.status}')>"
+
+
+class ContentMetric(Base):
+    """Content performance metrics."""
+    __tablename__ = "content_metrics"
+    __table_args__ = (
+        Index('idx_metrics_post_id', 'post_id'),
+        Index('idx_metrics_date', 'metric_date'),
+    )
+    
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid_lib.uuid4)
+    post_id = Column(PG_UUID(as_uuid=True), ForeignKey('posts.id'), nullable=False)
+    
+    # Metrics
+    metric_date = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    views = Column(Integer, default=0)
+    unique_visitors = Column(Integer, default=0)
+    engagement_time_seconds = Column(Float, default=0.0)
+    bounce_rate = Column(Float, default=0.0)
+    shares = Column(Integer, default=0)
+    comments = Column(Integer, default=0)
+    
+    # Calculated fields
+    engagement_score = Column(Float, default=0.0)
+    
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<ContentMetric(post_id='{self.post_id}', date='{self.metric_date}')>"
+
+
 __all__ = [
     'Base',
     'User',
@@ -647,4 +808,10 @@ __all__ = [
     'FinancialEntry',
     'AgentStatus',
     'HealthCheck',
+    # Content management models (replaces Strapi)
+    'Author',
+    'Category',
+    'Tag',
+    'Post',
+    'ContentMetric',
 ]

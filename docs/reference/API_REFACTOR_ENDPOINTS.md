@@ -34,13 +34,13 @@ The original `/api/content/blog-posts` endpoints implied a blog-post-only system
 
 ### Complete Endpoint Changes
 
-| Operation | Old Endpoint | New Endpoint | Purpose |
-|-----------|--------------|--------------|---------|
-| Create task | `POST /api/content/blog-posts` | `POST /api/content/tasks` | Create any task type |
-| Get task status | `GET /api/content/blog-posts/tasks/{id}` | `GET /api/content/tasks/{id}` | Get task status & result |
-| List tasks | `GET /api/content/blog-posts/drafts` | `GET /api/content/tasks` | List tasks with filters |
-| Approve/Publish | `POST /api/content/blog-posts/drafts/{id}/publish` | `POST /api/content/tasks/{id}/approve` | Approve task |
-| Delete task | `DELETE /api/content/blog-posts/drafts/{id}` | `DELETE /api/content/tasks/{id}` | Delete task |
+| Operation       | Old Endpoint                                       | New Endpoint                           | Purpose                  |
+| --------------- | -------------------------------------------------- | -------------------------------------- | ------------------------ |
+| Create task     | `POST /api/content/blog-posts`                     | `POST /api/content/tasks`              | Create any task type     |
+| Get task status | `GET /api/content/blog-posts/tasks/{id}`           | `GET /api/content/tasks/{id}`          | Get task status & result |
+| List tasks      | `GET /api/content/blog-posts/drafts`               | `GET /api/content/tasks`               | List tasks with filters  |
+| Approve/Publish | `POST /api/content/blog-posts/drafts/{id}/publish` | `POST /api/content/tasks/{id}/approve` | Approve task             |
+| Delete task     | `DELETE /api/content/blog-posts/drafts/{id}`       | `DELETE /api/content/tasks/{id}`       | Delete task              |
 
 ---
 
@@ -51,6 +51,7 @@ The original `/api/content/blog-posts` endpoints implied a blog-post-only system
 **Description:** Create a new content task of any type
 
 **Request:**
+
 ```javascript
 POST http://localhost:8000/api/content/tasks
 Content-Type: application/json
@@ -67,14 +68,15 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "task_id": "blog_20251112_a1b2c3d4",
-  "task_type": "blog_post",  // ✅ NEW: Task type echoed back
+  "task_type": "blog_post", // ✅ NEW: Task type echoed back
   "status": "pending",
   "topic": "AI in Business",
   "created_at": "2025-11-12T10:30:00Z",
-  "polling_url": "/api/content/tasks/blog_20251112_a1b2c3d4",  // ✅ UPDATED URL
+  "polling_url": "/api/content/tasks/blog_20251112_a1b2c3d4", // ✅ UPDATED URL
   "progress": {
     "stage": "queued",
     "percentage": 0,
@@ -84,6 +86,7 @@ Content-Type: application/json
 ```
 
 **Task Types:**
+
 - `blog_post` - Blog article (default)
 - `social_media` - Social media content (Twitter, LinkedIn, Instagram)
 - `email` - Email marketing content
@@ -96,15 +99,17 @@ Content-Type: application/json
 **Description:** Get complete task status and result
 
 **Request:**
+
 ```javascript
 GET http://localhost:8000/api/content/tasks/blog_20251112_a1b2c3d4
 ```
 
 **Response - Pending:**
+
 ```json
 {
   "task_id": "blog_20251112_a1b2c3d4",
-  "task_type": "blog_post",  // ✅ NEW: Task type included
+  "task_type": "blog_post", // ✅ NEW: Task type included
   "status": "pending",
   "topic": "AI in Business",
   "created_at": "2025-11-12T10:30:00Z",
@@ -117,6 +122,7 @@ GET http://localhost:8000/api/content/tasks/blog_20251112_a1b2c3d4
 ```
 
 **Response - Completed:**
+
 ```json
 {
   "task_id": "blog_20251112_a1b2c3d4",
@@ -150,11 +156,13 @@ GET http://localhost:8000/api/content/tasks/blog_20251112_a1b2c3d4
 **Description:** List all tasks with optional filtering
 
 **Request - List all:**
+
 ```javascript
 GET http://localhost:8000/api/content/tasks?limit=20&offset=0
 ```
 
 **Request - Filter by type:**
+
 ```javascript
 // Get all blog posts
 GET http://localhost:8000/api/content/tasks?task_type=blog_post&limit=20
@@ -170,12 +178,14 @@ GET http://localhost:8000/api/content/tasks?task_type=blog_post&status=completed
 ```
 
 **Query Parameters:**
+
 - `task_type` (optional) - Filter by type: `blog_post`, `social_media`, `email`, `newsletter`
 - `status` (optional) - Filter by status: `pending`, `processing`, `completed`, `failed`
 - `limit` (optional) - Results per page (1-100, default 20)
 - `offset` (optional) - Pagination offset (default 0)
 
 **Response:**
+
 ```json
 {
   "tasks": [
@@ -183,7 +193,7 @@ GET http://localhost:8000/api/content/tasks?task_type=blog_post&status=completed
       "id": "blog_20251112_a1b2c3d4",
       "task_name": "AI in Business",
       "topic": "AI in Business",
-      "task_type": "blog_post",  // ✅ NEW: Task type shown in list
+      "task_type": "blog_post", // ✅ NEW: Task type shown in list
       "status": "completed",
       "created_at": "2025-11-12T10:30:00Z",
       "word_count": 2150,
@@ -193,7 +203,7 @@ GET http://localhost:8000/api/content/tasks?task_type=blog_post&status=completed
       "id": "social_20251112_b2c3d4e5",
       "task_name": "Twitter Thread - AI Trends",
       "topic": "AI Trends",
-      "task_type": "social_media",  // ✅ NEW: Different type
+      "task_type": "social_media", // ✅ NEW: Different type
       "status": "completed",
       "created_at": "2025-11-12T09:15:00Z",
       "word_count": 280,
@@ -213,6 +223,7 @@ GET http://localhost:8000/api/content/tasks?task_type=blog_post&status=completed
 **Description:** Approve and publish a completed task
 
 **Request:**
+
 ```javascript
 POST http://localhost:8000/api/content/tasks/blog_20251112_a1b2c3d4/approve
 Content-Type: application/json
@@ -227,6 +238,7 @@ Content-Type: application/json
 ```
 
 **Response - Current Behavior (Publishes to Strapi):**
+
 ```json
 {
   "status": "approved",
@@ -240,6 +252,7 @@ Content-Type: application/json
 ```
 
 **Future Behavior (Type-Specific Routing):**
+
 ```
 blog_post → Publish to Strapi CMS
 social_media → Post to Twitter/LinkedIn/Instagram APIs
@@ -254,11 +267,13 @@ newsletter → Schedule in newsletter platform
 **Description:** Delete a task and associated data
 
 **Request:**
+
 ```javascript
 DELETE http://localhost:8000/api/content/tasks/blog_20251112_a1b2c3d4
 ```
 
 **Response:**
+
 ```json
 {
   "task_id": "blog_20251112_a1b2c3d4",
@@ -274,6 +289,7 @@ DELETE http://localhost:8000/api/content/tasks/blog_20251112_a1b2c3d4
 ### Request Model: CreateBlogPostRequest
 
 **Old Fields:**
+
 - topic
 - style
 - tone
@@ -283,6 +299,7 @@ DELETE http://localhost:8000/api/content/tasks/blog_20251112_a1b2c3d4
 - request_type
 
 **New Fields:**
+
 ```python
 task_type: Literal["blog_post", "social_media", "email", "newsletter"] = "blog_post"
 ```
@@ -292,6 +309,7 @@ task_type: Literal["blog_post", "social_media", "email", "newsletter"] = "blog_p
 ### Response Model: CreateBlogPostResponse
 
 **New Fields:**
+
 ```python
 task_type: str  # Returns the type created
 ```
@@ -299,6 +317,7 @@ task_type: str  # Returns the type created
 ### Database Model: ContentTask
 
 **New Column:**
+
 ```python
 task_type: Column(String(50), default="blog_post", nullable=False, index=True)
 ```
@@ -336,6 +355,7 @@ Run the ALTER TABLE command above before deploying.
 ### Backend Changes (Completed)
 
 ✅ **content_routes.py** (5 endpoints refactored)
+
 - File header documentation updated
 - CreateBlogPostRequest model updated with task_type field
 - CreateBlogPostResponse model updated with task_type field
@@ -346,6 +366,7 @@ Run the ALTER TABLE command above before deploying.
 - DELETE /api/content/tasks/{id} endpoint (new path)
 
 ✅ **task_store_service.py** (Database layer)
+
 - ContentTask model updated with `task_type` column
 - create_task() method updated to accept and store task_type
 - list_tasks() method updated with task_type filtering
@@ -354,6 +375,7 @@ Run the ALTER TABLE command above before deploying.
 ### Frontend Changes (Completed)
 
 ✅ **TaskManagement.jsx** (4 API calls refactored)
+
 - fetchContentTaskStatus() - Updated endpoint URL
 - fetchTasks() - Updated endpoint URL, comments
 - handleDeleteTask() - Updated endpoint URL, comments
@@ -366,6 +388,7 @@ Run the ALTER TABLE command above before deploying.
 ### Creating Different Task Types
 
 **Blog Post:**
+
 ```javascript
 const response = await fetch('/api/content/tasks', {
   method: 'POST',
@@ -375,12 +398,13 @@ const response = await fetch('/api/content/tasks', {
     style: 'technical',
     tone: 'educational',
     target_length: 2500,
-    task_type: 'blog_post'  // ✅ Specify type
-  })
+    task_type: 'blog_post', // ✅ Specify type
+  }),
 });
 ```
 
 **Social Media:**
+
 ```javascript
 const response = await fetch('/api/content/tasks', {
   method: 'POST',
@@ -390,12 +414,13 @@ const response = await fetch('/api/content/tasks', {
     style: 'casual',
     tone: 'engaging',
     target_length: 280,
-    task_type: 'social_media'  // ✅ Different type
-  })
+    task_type: 'social_media', // ✅ Different type
+  }),
 });
 ```
 
 **Email:**
+
 ```javascript
 const response = await fetch('/api/content/tasks', {
   method: 'POST',
@@ -405,8 +430,8 @@ const response = await fetch('/api/content/tasks', {
     style: 'professional',
     tone: 'friendly',
     target_length: 400,
-    task_type: 'email'  // ✅ Email type
-  })
+    task_type: 'email', // ✅ Email type
+  }),
 });
 ```
 
@@ -417,7 +442,9 @@ const response = await fetch('/api/content/tasks', {
 const blogPosts = await fetch('/api/content/tasks?task_type=blog_post');
 
 // Get all completed social media content
-const socialComplete = await fetch('/api/content/tasks?task_type=social_media&status=completed');
+const socialComplete = await fetch(
+  '/api/content/tasks?task_type=social_media&status=completed'
+);
 
 // Get pending tasks (any type)
 const pending = await fetch('/api/content/tasks?status=pending');
@@ -478,6 +505,7 @@ user_request → LLM extracts task_type → API routes to pipeline
 4. `/api/content/blog-posts/drafts/{id}/publish` → `/api/content/tasks/{id}/approve`
 
 **New functionality:**
+
 - Add `task_type: "blog_post"` to POST requests (optional, defaults to "blog_post")
 - Add `?task_type=blog_post` to GET /api/content/tasks if filtering by type
 - Update comments and docstrings
@@ -485,16 +513,19 @@ user_request → LLM extracts task_type → API routes to pipeline
 ### For Backend Developers
 
 **Database migrations:**
+
 - PostgreSQL: Run ALTER TABLE to add task_type column
 - SQLite: Automatic (ORM creates schema)
 
 **Code changes:**
+
 - task_store.create_task() now accepts `task_type` parameter
 - ContentTask model now has `task_type` field
 - list_tasks() now supports `task_type` filtering
 - Response models include `task_type` field
 
 **Backward compatibility:**
+
 - task_type defaults to "blog_post" for existing code
 - All new endpoints are backward compatible with old URLs (won't work - use new ones)
 - Request/response models include task_type but don't require it
@@ -502,6 +533,7 @@ user_request → LLM extracts task_type → API routes to pipeline
 ### For DevOps/Infrastructure
 
 **Database changes:**
+
 ```sql
 ALTER TABLE content_tasks ADD COLUMN task_type VARCHAR(50) NOT NULL DEFAULT 'blog_post';
 CREATE INDEX idx_content_tasks_task_type ON content_tasks(task_type);
@@ -537,16 +569,19 @@ CREATE INDEX idx_content_tasks_task_type ON content_tasks(task_type);
 To add a new task type (e.g., "video", "podcast"):
 
 1. **Update Literal type hint in CreateBlogPostRequest:**
+
 ```python
 task_type: Literal["blog_post", "social_media", "email", "newsletter", "video"]
 ```
 
 2. **Update database default (if needed):**
+
 ```python
 task_type = Column(String(50), default="blog_post", nullable=False, index=True)
 ```
 
 3. **Add routing logic in POST /api/content/tasks/{id}/approve:**
+
 ```python
 if request.task_type == "video":
     # Route to video generation pipeline

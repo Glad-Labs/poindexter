@@ -215,17 +215,28 @@ class DatabaseService:
 
     async def get_pending_tasks(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Get pending tasks"""
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT * FROM tasks
-                WHERE status = 'pending'
-                ORDER BY created_at DESC
-                LIMIT $1
-                """,
-                limit,
-            )
-            return [dict(row) for row in rows]
+        try:
+            if not self.pool:
+                return []
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT * FROM tasks
+                    WHERE status = 'pending'
+                    ORDER BY created_at DESC
+                    LIMIT $1
+                    """,
+                    limit,
+                )
+                return [dict(row) for row in rows]
+        except Exception as e:
+            # Table might not exist in fresh database
+            if "tasks" in str(e) or "does not exist" in str(e) or "relation" in str(e):
+                return []
+            # Log but don't raise - tasks are optional
+            import logging
+            logging.warning(f"Error fetching pending tasks: {str(e)}")
+            return []
 
     async def get_all_tasks(self, limit: int = 100) -> List[Dict[str, Any]]:
         """Get all tasks"""

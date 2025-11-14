@@ -101,10 +101,11 @@ class BlogDraftResponse(BaseModel):
     created_at: str
     status: str
     word_count: int
-    summary: str
+    summary: Optional[str] = None
     can_edit: bool = True
     can_publish: bool = True
     can_delete: bool = True
+
 
 
 class DraftsListResponse(BaseModel):
