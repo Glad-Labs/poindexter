@@ -66,7 +66,9 @@ class User(Base):
     roles = relationship("UserRole", back_populates="user", cascade="all, delete-orphan", foreign_keys="UserRole.user_id")
     sessions = relationship("Session", back_populates="user", cascade="all, delete-orphan")
     api_keys = relationship("APIKey", back_populates="user", cascade="all, delete-orphan")
+    oauth_accounts = relationship("OAuthAccount", back_populates="user", cascade="all, delete-orphan", foreign_keys="OAuthAccount.user_id")
     created_users = relationship("User", remote_side=[created_by], foreign_keys=[created_by])
+
     
     @validates('email')
     def validate_email(self, key, value):
@@ -99,6 +101,62 @@ class User(Base):
     
     def __repr__(self):
         return f"<User(id={self.id}, username={self.username})>"
+
+
+class OAuthAccount(Base):
+    """OAuth provider account linking for users.
+    
+    Each user can have multiple OAuth accounts (GitHub, Google, Facebook, etc.)
+    This model tracks which OAuth providers are linked to each user.
+    
+    A user created via GitHub OAuth will have one OAuthAccount entry.
+    If they later link their Google account, a second entry is created.
+    
+    Constraints ensure:
+    - Same OAuth account can't be linked twice
+    - But a user can link multiple OAuth providers
+    """
+    
+    __tablename__ = "oauth_accounts"
+    __table_args__ = (
+        Index('idx_oauth_accounts_user_id', 'user_id'),
+        Index('idx_oauth_accounts_provider', 'provider'),
+        UniqueConstraint(
+            'provider', 
+            'provider_user_id', 
+            name='uq_oauth_provider_user_id'
+        ),  # Prevent same OAuth account from being linked twice
+    )
+    
+    # Core fields
+    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid_lib.uuid4)
+    user_id = Column(
+        PG_UUID(as_uuid=True), 
+        ForeignKey('users.id', ondelete='CASCADE'), 
+        nullable=False,
+        index=True
+    )
+    
+    # OAuth provider info
+    provider = Column(
+        String(50), 
+        nullable=False,
+        index=True
+    )  # 'github', 'google', 'facebook', etc.
+    provider_user_id = Column(String(255), nullable=False)  # ID from OAuth provider
+    
+    # Provider data (cached from OAuth provider)
+    provider_data = Column(JSONB, default={})  # username, email, avatar_url, bio, etc.
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    last_used = Column(DateTime, default=datetime.utcnow, nullable=False)  # Track login usage
+    
+    # Relationships
+    user = relationship("User", back_populates="oauth_accounts", foreign_keys=[user_id])
+    
+    def __repr__(self):
+        return f"<OAuthAccount(provider={self.provider}, user_id={self.user_id})>"
 
 
 class Role(Base):
@@ -793,6 +851,7 @@ class ContentMetric(Base):
 __all__ = [
     'Base',
     'User',
+    'OAuthAccount',
     'Role',
     'Permission',
     'RolePermission',

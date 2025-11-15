@@ -123,6 +123,157 @@ class DatabaseService:
             return dict(row)
 
     # ========================================================================
+    # OAUTH - Get or Create User from OAuth Provider
+    # ========================================================================
+
+    async def get_or_create_oauth_user(
+        self,
+        provider: str,
+        provider_user_id: str,
+        provider_data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Get existing OAuth user or create new one from provider data.
+        
+        Args:
+            provider: OAuth provider name ('github', 'google', etc.)
+            provider_user_id: User ID from provider
+            provider_data: User data from provider {username, email, avatar_url, etc.}
+        
+        Returns:
+            User dict with id, email, username, is_active, created_at, updated_at
+        
+        Logic:
+        1. Check if OAuthAccount already exists (prevent duplicate linking)
+        2. If OAuth account exists, return existing user
+        3. If OAuth account doesn't exist but email exists, link OAuth to existing user
+        4. If nothing exists, create new user and link OAuth account
+        """
+        import json
+        
+        async with self.pool.acquire() as conn:
+            # Step 1: Check if OAuthAccount already linked
+            oauth_row = await conn.fetchrow(
+                """
+                SELECT oa.user_id 
+                FROM oauth_accounts oa
+                WHERE oa.provider = $1 AND oa.provider_user_id = $2
+                """,
+                provider,
+                provider_user_id,
+            )
+            
+            if oauth_row:
+                # OAuth account already linked, get existing user
+                user_id = oauth_row["user_id"]
+                logger.info(f"✅ OAuth account found, getting user: {user_id}")
+                
+                user = await conn.fetchrow(
+                    "SELECT * FROM users WHERE id = $1",
+                    user_id,
+                )
+                return dict(user) if user else None
+            
+            # Step 2: Check if user with same email already exists
+            email = provider_data.get("email")
+            existing_user = None
+            
+            if email:
+                existing_user = await conn.fetchrow(
+                    "SELECT * FROM users WHERE email = $1",
+                    email,
+                )
+            
+            if existing_user:
+                # Email exists, link OAuth account to existing user
+                user_id = existing_user["id"]
+                logger.info(f"✅ Email found, linking OAuth to user: {user_id}")
+                
+                # Create OAuth account link
+                provider_data_json = json.dumps(provider_data)
+                await conn.execute(
+                    """
+                    INSERT INTO oauth_accounts (
+                        id, user_id, provider, provider_user_id, provider_data, created_at, last_used
+                    )
+                    VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+                    """,
+                    str(uuid4()),
+                    user_id,
+                    provider,
+                    provider_user_id,
+                    provider_data_json,
+                )
+                
+                return dict(existing_user)
+            
+            # Step 3: Create new user and OAuth account
+            user_id = str(uuid4())
+            logger.info(f"✅ Creating new user from OAuth: {user_id}")
+            
+            # Create user
+            user = await conn.fetchrow(
+                """
+                INSERT INTO users (
+                    id, email, username, is_active, created_at, updated_at
+                )
+                VALUES ($1, $2, $3, $4, NOW(), NOW())
+                RETURNING *
+                """,
+                user_id,
+                email,
+                provider_data.get("username", email.split("@")[0] if email else "user"),
+                True,  # OAuth users are active by default
+            )
+            
+            # Create OAuth account link
+            provider_data_json = json.dumps(provider_data)
+            await conn.execute(
+                """
+                INSERT INTO oauth_accounts (
+                    id, user_id, provider, provider_user_id, provider_data, created_at, last_used
+                )
+                VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+                """,
+                str(uuid4()),
+                user_id,
+                provider,
+                provider_user_id,
+                provider_data_json,
+            )
+            
+            logger.info(f"✅ Created new OAuth user: {user_id}")
+            return dict(user) if user else None
+
+    async def get_oauth_accounts(self, user_id: str) -> List[Dict[str, Any]]:
+        """Get all OAuth accounts linked to a user"""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id, provider, provider_user_id, provider_data, created_at, last_used
+                FROM oauth_accounts
+                WHERE user_id = $1
+                ORDER BY last_used DESC
+                """,
+                user_id,
+            )
+            return [dict(row) for row in rows]
+
+    async def unlink_oauth_account(self, user_id: str, provider: str) -> bool:
+        """Unlink OAuth account from user"""
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                """
+                DELETE FROM oauth_accounts
+                WHERE user_id = $1 AND provider = $2
+                """,
+                user_id,
+                provider,
+            )
+            # Result is a string like "DELETE 1"
+            return "1" in result or "1" == result
+
+    # ========================================================================
     # TASKS
     # ========================================================================
 
