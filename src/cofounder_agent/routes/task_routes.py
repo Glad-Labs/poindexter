@@ -69,7 +69,6 @@ def convert_db_row_to_dict(row):
 # Import async database service
 from services.database_service import DatabaseService
 from routes.auth_routes import get_current_user
-from services.strapi_publisher import StrapiPublisher
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -514,177 +513,6 @@ async def update_task(
         raise HTTPException(status_code=500, detail=f"Failed to update task: {str(e)}")
 
 
-@router.post("/{task_id}/publish", response_model=Dict[str, Any], summary="Publish task content to Strapi")
-async def publish_task(
-    task_id: str,
-    current_user: dict = Depends(get_current_user)
-):
-    """
-    Publish completed task content to Strapi CMS.
-    
-    **Path Parameters:**
-    - task_id: UUID of the task to publish
-    
-    **Returns:**
-    - {status: "published", message: "Task published successfully"}
-    
-    **Status Codes:**
-    - 200: Successfully published
-    - 404: Task not found
-    - 409: Task not in publishable state
-    - 500: Publication error
-    
-    **Example cURL:**
-    ```bash
-    curl -X POST http://localhost:8000/api/tasks/9205eab0-2491-4014-bda2-45b6c9c8489c/publish \
-      -H "Authorization: Bearer YOUR_JWT_TOKEN"
-    ```
-    """
-    try:
-        # Validate UUID format
-        try:
-            UUID(task_id)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid task ID format")
-        
-        # Get task from database
-        task_row = await db_service.get_task(task_id)
-        if not task_row:
-            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-        
-        task = convert_db_row_to_dict(task_row)
-        if not task:
-            raise HTTPException(status_code=500, detail="Failed to convert task data")
-        
-        # Verify task is in a publishable state
-        task_status = task.get('status')
-        if task_status not in ['completed', 'published']:
-            raise HTTPException(
-                status_code=409,
-                detail=f"Task must be completed to publish (current status: {task_status})"
-            )
-        
-        # Extract content from task result or metadata
-        # Try multiple sources for content (in order of priority)
-        task_result = task.get('result')
-        task_metadata = task.get('metadata')
-        
-        # Parse metadata if it's a JSON string
-        if task_metadata and isinstance(task_metadata, str):
-            try:
-                import json
-                task_metadata = json.loads(task_metadata)
-            except:
-                task_metadata = {}
-        
-        # Determine content source and extract it
-        content = None
-        title = task.get('topic') or task.get('title') or 'Untitled'  # Use topic as title (more specific than title field)
-        
-        # Priority 1: Content in metadata (generated content stored here)
-        if task_metadata and isinstance(task_metadata, dict):
-            content = task_metadata.get('content') or task_metadata.get('generated_content') or task_metadata.get('body')
-        
-        # Priority 2: Content in result field (for backward compatibility)
-        if not content and task_result:
-            if isinstance(task_result, str):
-                content = task_result
-            elif isinstance(task_result, dict):
-                content = task_result.get('content') or task_result.get('generated_content') or task_result.get('body', '')
-            else:
-                content = str(task_result)
-        
-        if not content:
-            raise HTTPException(
-                status_code=400,
-                detail="Task has no content to publish (no result or metadata)"
-            )
-        
-        # Extract remaining metadata from task (initialize variables)
-        excerpt = task.get('description', '')[:200] if task.get('description') else content[:200]
-        category = task.get('category')
-        tags = task.get('tags')
-        
-        # Publish to Strapi using StrapiPublisher (PostgreSQL direct)
-        strapi_success = False
-        strapi_post_id = None
-        strapi_error_detail = None
-        
-        try:
-            logger.info(f"Publishing task {task_id} to PostgreSQL database (Strapi)")
-            
-            # Create publisher (uses DATABASE_URL from environment)
-            publisher = StrapiPublisher()
-            
-            # Connect to database
-            if not await publisher.connect():
-                strapi_error_detail = "Failed to connect to Strapi database"
-                logger.error(strapi_error_detail)
-            else:
-                logger.info(f"Publishing content - Title: {title}, Content length: {len(content)}")
-                
-                # Publish to PostgreSQL (Strapi database)
-                strapi_result = await publisher.create_post(
-                    title=title,
-                    content=content,
-                    excerpt=excerpt,
-                    category=category,
-                    tags=tags,
-                )
-                
-                logger.info(f"Strapi database response: {strapi_result}")
-                
-                strapi_success = strapi_result.get('success', False)
-                strapi_post_id = strapi_result.get('post_id')
-                
-                if not strapi_success:
-                    strapi_error_detail = strapi_result.get('error', strapi_result.get('message', 'Unknown error'))
-                    logger.error(f"Strapi publishing failed: {strapi_error_detail}")
-                
-                # Cleanup connection
-                await publisher.disconnect()
-        
-        except Exception as e:
-            logger.error(f"Exception during Strapi publish: {str(e)}", exc_info=True)
-            strapi_error_detail = str(e)
-            strapi_success = False
-            strapi_post_id = None
-        
-        # Update task status to published
-        await db_service.update_task_status(task_id, 'published')
-        
-        # Return response with Strapi information
-        response_data = {
-            "status": "published",
-            "task_id": task_id,
-            "message": "Task published successfully",
-            "content": {
-                "title": title,
-                "length": len(content),
-                "excerpt": excerpt[:100] if excerpt else "No excerpt"
-            }
-        }
-        
-        if strapi_success:
-            response_data["strapi"] = {
-                "success": True,
-                "post_id": strapi_post_id,
-                "message": "Content published to Strapi PostgreSQL database"
-            }
-        else:
-            response_data["strapi"] = {
-                "success": False,
-                "message": f"Strapi publishing failed: {strapi_error_detail or 'Unknown error'}"
-            }
-        
-        return response_data
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to publish task: {str(e)}")
-
-
 @router.get("/metrics/summary", response_model=MetricsResponse, summary="Get task metrics")
 async def get_metrics(
     current_user: dict = Depends(get_current_user)
@@ -720,14 +548,13 @@ async def get_metrics(
 
 async def _execute_and_publish_task(task_id: str):
     """
-    Background task to execute content generation and publish to Strapi.
+    Background task to execute content generation.
     
     This function:
     1. Retrieves the task from database
     2. Generates content using Ollama (or other LLM)
-    3. Stores generated content in task.metadata via result JSON
-    4. Automatically publishes to Strapi
-    5. Updates task status to "completed" or "failed"
+    3. Stores generated content in task result JSON
+    4. Updates task status to "completed" or "failed"
     
     This runs in the background after task creation returns to the client.
     """
@@ -820,83 +647,17 @@ Start writing the blog post now:"""
         await db_service.update_task_status(task_id, "ready_to_publish", result=result_json)
         logger.info(f"✅ [BG_TASK] Content stored in task result")
         
-        # Step 5: Automatically publish to Strapi
-        logger.info(f"📤 [BG_TASK] Publishing to Strapi...")
+        # Step 5: Final status update
+        logger.info(f"✅ [BG_TASK] Content generation complete, marking task as completed...")
         
-        # Extract fields for publishing
-        title = task.get('topic') or task.get('task_name') or 'Untitled'
-        excerpt = generated_content[:200]
-        category = task.get('category', 'general')
-        tags = task.get('tags', [])
-        
-        logger.info(f"   - Title: {title}")
-        logger.info(f"   - Excerpt: {excerpt[:100]}...")
-        logger.info(f"   - Category: {category}")
-        logger.info(f"   - Content length: {len(generated_content)}")
-        
-        # Publish to Strapi using StrapiPublisher (PostgreSQL direct)
-        publisher = StrapiPublisher()
-        publish_success = False
-        post_id = None
-        publish_error = None
-        
-        try:
-            if not await publisher.connect():
-                publish_error = "Failed to connect to Strapi database"
-                logger.error(publish_error)
-            else:
-                logger.info(f"✅ [BG_TASK] Connected to Strapi")
-                
-                # Create post in Strapi PostgreSQL database
-                strapi_result = await publisher.create_post(
-                    title=title,
-                    content=generated_content,
-                    excerpt=excerpt,
-                    category=category,
-                    tags=tags
-                )
-                
-                logger.info(f"Strapi response: {strapi_result}")
-                
-                publish_success = strapi_result.get('success', False)
-                post_id = strapi_result.get('post_id')
-                
-                if publish_success:
-                    logger.info(f"✅ [BG_TASK] Post published to Strapi! Post ID: {post_id}")
-                else:
-                    publish_error = strapi_result.get('error', strapi_result.get('message', 'Unknown error'))
-                    logger.error(f"❌ [BG_TASK] Publishing error: {publish_error}")
-                
-        except Exception as pub_err:
-            publish_error = str(pub_err)
-            logger.error(f"❌ [BG_TASK] Publishing exception: {publish_error}", exc_info=True)
-        finally:
-            try:
-                await publisher.disconnect()
-                logger.info(f"✅ [BG_TASK] Disconnected from Strapi")
-            except Exception as e:
-                logger.warning(f"⚠️ [BG_TASK] Error disconnecting from Strapi: {e}")
-        
-        # Step 6: Final status update
-        if publish_success:
-            final_result = json.dumps({
-                "content": generated_content,
-                "generated_at": datetime.now(timezone.utc).isoformat(),
-                "post_id": post_id,
-                "published_at": datetime.now(timezone.utc).isoformat(),
-                "status": "success"
-            })
-            await db_service.update_task_status(task_id, "completed", result=final_result)
-            logger.info(f"✅ [BG_TASK] Task completed successfully!")
-        else:
-            final_result = json.dumps({
-                "content": generated_content,
-                "generated_at": datetime.now(timezone.utc).isoformat(),
-                "error": publish_error,
-                "status": "publish_failed"
-            })
-            await db_service.update_task_status(task_id, "publish_failed", result=final_result)
-            logger.error(f"❌ [BG_TASK] Task completed with publish failure: {publish_error}")
+        final_result = json.dumps({
+            "content": generated_content,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "content_length": len(generated_content),
+            "status": "success"
+        })
+        await db_service.update_task_status(task_id, "completed", result=final_result)
+        logger.info(f"✅ [BG_TASK] Task completed successfully!")
         
     except Exception as e:
         logger.error(f"❌ [BG_TASK] Unhandled error: {str(e)}", exc_info=True)

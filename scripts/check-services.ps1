@@ -11,7 +11,6 @@ $services = @(
     @{Port = 8000; Name = "AI Co-Founder API"; URL = "http://localhost:8000/docs"}
     @{Port = 3001; Name = "Oversight Hub"; URL = "http://localhost:3001"}
     @{Port = 3000; Name = "Public Site"; URL = "http://localhost:3000"}
-    @{Port = 1337; Name = "Strapi CMS"; URL = "http://localhost:1337/admin"}
 )
 
 $running = 0

@@ -180,7 +180,7 @@ A 1035-line multi-agent orchestration engine that is the **brain of Glad Labs**
 ### Files Preserved (17 - Strategic Value)
 
 **Core Active Services (14)**
-database_service, task_executor, content_critique_loop, strapi_publisher, logger_config, task_store_service, model_consolidation_service, ollama_client, model_router, content_router_service, ai_content_generator, seo_content_generator, strapi_client, command_queue
+database_service, task_executor, content_critique_loop, content_publisher, logger_config, task_store_service, model_consolidation_service, ollama_client, model_router, content_router_service, ai_content_generator, seo_content_generator, strapi_client, command_queue
 
 **Strategic Orchestration (5 - RESTORED)**
 intelligent_orchestrator, orchestrator_memory_extensions, poindexter_orchestrator, poindexter_tools, gemini_client

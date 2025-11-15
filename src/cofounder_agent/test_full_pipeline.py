@@ -107,7 +107,7 @@ async def test_full_pipeline():
         sys.path.insert(0, '.')
         
         try:
-            from services.strapi_publisher import StrapiPublisher
+            from services.content_publisher import StrapiPublisher
             
             publisher = StrapiPublisher()
             await publisher.connect()

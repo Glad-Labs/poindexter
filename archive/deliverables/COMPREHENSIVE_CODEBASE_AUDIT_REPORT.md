@@ -230,7 +230,7 @@ src/cofounder_agent/
 ├─ services/                        ✅ Clean service layer
 │  ├─ content_router_service.py
 │  ├─ content_orchestrator.py       (NEW Phase 5)
-│  ├─ strapi_publisher.py
+│  ├─ content_publisher.py
 │  └─ ...
 ├─ models.py                        ✅ All schema models
 ├─ database.py                      ✅ DB initialization

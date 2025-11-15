@@ -10,7 +10,6 @@ Provides centralized blog post generation with:
 - Multi-model AI support (Ollama → HuggingFace → Gemini)
 - Featured image search (Pexels - free)
 - SEO optimization and metadata
-- Strapi CMS integration
 - Draft management
 - Comprehensive task tracking
 """
@@ -23,9 +22,9 @@ import logging
 
 from .ai_content_generator import get_content_generator
 from .seo_content_generator import get_seo_content_generator
-from .strapi_client import StrapiClient, StrapiEnvironment
 from .pexels_client import PexelsClient
 from .task_store_service import get_persistent_task_store
+from .content_orchestrator import get_content_orchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -307,75 +306,6 @@ class FeaturedImageService:
             logger.error(f"Error searching for featured image: {e}")
             return None
 
-
-# ============================================================================
-# STRAPI PUBLISHING SERVICE
-# ============================================================================
-
-
-class StrapiPublishingService:
-    """Service for publishing content to Strapi CMS"""
-
-    def __init__(self, environment: str = "production"):
-        """Initialize Strapi client"""
-        env = (
-            StrapiEnvironment.STAGING
-            if environment == "staging"
-            else StrapiEnvironment.PRODUCTION
-        )
-        self.strapi = StrapiClient(env)
-
-    async def publish_blog_post(
-        self,
-        title: str,
-        content: str,
-        summary: str,
-        tags: Optional[List[str]] = None,
-        categories: Optional[List[str]] = None,
-        featured_image_url: Optional[str] = None,
-        auto_publish: bool = False,
-    ) -> Dict[str, Any]:
-        """
-        Publish blog post to Strapi
-
-        Args:
-            title: Post title
-            content: Post content (markdown)
-            summary: Post summary/excerpt
-            tags: Tags
-            categories: Categories
-            featured_image_url: Featured image URL
-            auto_publish: Auto-publish (True) or create as draft (False)
-
-        Returns:
-            Strapi response with post ID and metadata
-        """
-        try:
-            logger.info(f"Publishing blog post to Strapi: {title}")
-
-            result = await self.strapi.create_blog_post(
-                title=title,
-                content=content,
-                summary=summary,
-                tags=tags or [],
-                categories=categories or [],
-                featured_image_url=featured_image_url,
-                publish=auto_publish,
-            )
-
-            post_id = result.get("data", {}).get("id")
-            logger.info(
-                f"Blog post published to Strapi. ID: {post_id}, "
-                f"Status: {'published' if auto_publish else 'draft'}"
-            )
-
-            return result
-
-        except Exception as e:
-            logger.error(f"Error publishing to Strapi: {e}")
-            raise
-
-
 # ============================================================================
 # BACKGROUND TASK PROCESSORS
 # ============================================================================
@@ -418,9 +348,7 @@ async def process_content_generation_task(task_id: str):
     logger.info(f"{'='*80}\n")
 
     try:
-        # ✅ IMPORT ORCHESTRATOR
-        from src.cofounder_agent.services.content_orchestrator import get_content_orchestrator
-        
+        # ✅ IMPORT ORCHESTRATOR (moved to top-level imports for multiprocessing compatibility)
         logger.info(f"🎯 Initializing Content Orchestrator...")
         
         # ✅ GET ORCHESTRATOR INSTANCE

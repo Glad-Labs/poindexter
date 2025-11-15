@@ -1,14 +1,13 @@
 """
-Background Task Executor Service (Production Pipeline)
+Background Task Executor Service
 
 Complete end-to-end pipeline for blog generation:
 1. Polls for pending tasks every 5 seconds
 2. Updates task status to 'in_progress'
 3. Calls orchestrator to generate content (with multi-agent, self-critique loop)
 4. Validates content through critique loop
-5. Posts approved content to Strapi CMS
-6. Updates task with published post ID and URL
-7. Handles errors gracefully with retry logic
+5. Updates task with generated content and quality score
+6. Handles errors gracefully with retry logic
 
 Production-ready for full blog automation!
 """
@@ -31,21 +30,19 @@ class TaskExecutor:
     """Background task executor service"""
 
     def __init__(self, database_service, orchestrator=None, critique_loop=None, 
-                 strapi_client=None, poll_interval: int = 5):
+                 poll_interval: int = 5):
         """
-        Initialize task executor with full production pipeline
+        Initialize task executor
 
         Args:
             database_service: DatabaseService instance
             orchestrator: Optional Orchestrator instance for processing
             critique_loop: Optional ContentCritiqueLoop for validating content
-            strapi_client: Optional Strapi client for publishing
             poll_interval: Seconds between polling for pending tasks (default: 5)
         """
         self.database_service = database_service
         self.orchestrator = orchestrator
         self.critique_loop = critique_loop or ContentCritiqueLoop()
-        self.strapi_client = strapi_client
         self.poll_interval = poll_interval
         self.running = False
         self.task_count = 0
@@ -55,8 +52,7 @@ class TaskExecutor:
         self._processor_task = None
         
         logger.info(f"TaskExecutor initialized: orchestrator={'✅' if orchestrator else '❌'}, "
-                   f"critique_loop={'✅' if critique_loop else '❌'}, "
-                   f"strapi_client={'✅' if strapi_client else '❌'}")
+                   f"critique_loop={'✅' if critique_loop else '❌'}")
 
     async def start(self):
         """Start the background task processor"""
@@ -205,10 +201,9 @@ class TaskExecutor:
 
     async def _execute_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Execute task through PRODUCTION PIPELINE:
+        Execute task through production pipeline:
         1. Generate content via orchestrator
         2. Validate through critique loop
-        3. Publish to Strapi CMS if approved
         """
         task_id = task.get("id")
         task_name = task.get("task_name", "")
@@ -340,57 +335,6 @@ class TaskExecutor:
                 except Exception as e:
                     logger.warning(f"Refinement attempt failed: {e}")
 
-        # ===== PHASE 3: Publish to Strapi =====
-        strapi_post_id = None
-        strapi_url = None
-        publish_error = None
-
-        if approved and self.strapi_client:
-            try:
-                logger.info(f"🌐 PHASE 3: Publishing to Strapi CMS...")
-                
-                # Create slug from topic
-                slug = topic.lower().replace(" ", "-").replace("_", "-")[:100]
-                slug = "".join(c for c in slug if c.isalnum() or c == "-")
-                
-                # Post to Strapi using async create_post method
-                # StrapiPublisher.create_post() is async - requires await
-                post_result = await self.strapi_client.create_post(
-                    title=topic,
-                    content=generated_content,
-                    excerpt=generated_content[:200] if generated_content else "",
-                    slug=slug,
-                    category=category,
-                    tags=[primary_keyword] if primary_keyword else []
-                )
-                
-                # Extract post_id from response dict
-                if isinstance(post_result, dict):
-                    strapi_post_id = post_result.get("post_id") or post_result.get("id")
-                    strapi_url = f"/posts/{post_result.get('slug', 'unknown')}"
-                    publish_error = None if post_result.get("success") else post_result.get("error", "Unknown error")
-                    
-                    if post_result.get("success"):
-                        self.published_count += 1
-                        logger.info(f"✅ PHASE 3 Complete: Published to Strapi (ID: {strapi_post_id})")
-                        logger.info(f"🎉 Blog post published: {strapi_url}")
-                    else:
-                        logger.error(f"❌ PHASE 3 Failed: {publish_error}")
-                else:
-                    strapi_post_id = str(post_result)
-                    strapi_url = None
-                    publish_error = f"Unexpected response type: {type(post_result)}"
-                
-            except Exception as e:
-                publish_error = str(e)
-                logger.error(f"❌ PHASE 3 Failed: Strapi publication error - {publish_error}")
-        elif approved and not self.strapi_client:
-            logger.warning("⚠️ Content approved but Strapi client not available")
-            publish_error = "Strapi client not configured"
-        elif not approved:
-            logger.info("⏭️ PHASE 3 Skipped: Content not approved, not publishing")
-            publish_error = f"Content quality below threshold (score: {quality_score}/100)"
-
         # ===== Build Final Result =====
         result = {
             "task_id": str(task_id),
@@ -412,19 +356,12 @@ class TaskExecutor:
             "critique_feedback": critique_result.get("feedback", ""),
             "critique_suggestions": critique_result.get("suggestions", []),
             
-            # Publishing phase
-            "strapi_post_id": strapi_post_id,
-            "strapi_url": strapi_url,
-            "publish_status": "published" if strapi_post_id else "not_published",
-            "publish_error": publish_error,
-            
             # Metadata
             "word_count": len(generated_content.split()) if generated_content else 0,
             "completed_at": datetime.now(timezone.utc).isoformat(),
             "pipeline_summary": {
                 "phase_1_generation": "✅" if generated_content else "❌",
                 "phase_2_critique": f"{'✅' if approved else '⚠️'} ({quality_score}/100)",
-                "phase_3_published": "✅" if strapi_post_id else f"❌ ({publish_error})",
             }
         }
 
@@ -493,7 +430,7 @@ Word Count: {word_count_placeholder} words
             "total_processed": self.task_count,
             "successful": self.success_count,
             "failed": self.error_count,
-            "published_to_strapi": self.published_count,
+            "published": self.published_count,
             "poll_interval": self.poll_interval,
             "critique_stats": self.critique_loop.get_stats() if self.critique_loop else {},
         }

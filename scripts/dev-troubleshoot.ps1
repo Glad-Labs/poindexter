@@ -39,7 +39,7 @@ if ($npmRunAll) {
 
 # Check 5: Workspace installations
 Write-Host "`n5️⃣  Checking workspace installations..." -ForegroundColor Yellow
-$workspaces = @("cms/strapi-main", "web/public-site", "web/oversight-hub", "src/cofounder_agent")
+$workspaces = @("web/public-site", "web/oversight-hub", "src/cofounder_agent")
 foreach ($workspace in $workspaces) {
     if (Test-Path "$workspace/node_modules") {
         Write-Host "   ✅ $workspace/node_modules exists" -ForegroundColor Green
@@ -50,7 +50,7 @@ foreach ($workspace in $workspaces) {
 
 # Check 6: Ports
 Write-Host "`n6️⃣  Checking if required ports are available..." -ForegroundColor Yellow
-$ports = @{1337="Strapi"; 3000="Public Site"; 3001="Oversight Hub"; 8000="Co-Founder Agent"}
+$ports = @{3000="Public Site"; 3001="Oversight Hub"; 8000="Co-Founder Agent"}
 
 foreach ($port in $ports.Keys) {
     $connection = Test-NetConnection -ComputerName localhost -Port $port -WarningAction SilentlyContinue
@@ -63,19 +63,17 @@ foreach ($port in $ports.Keys) {
 
 Write-Host "`n✨ Ready to start development!" -ForegroundColor Cyan
 Write-Host "`nNext steps:`n" -ForegroundColor White
-Write-Host "Option 1: Start all services (Strapi + Frontends only, no Python):" -ForegroundColor White
+Write-Host "Option 1: Start all services (Frontends only, no Python):" -ForegroundColor White
 Write-Host "  npm run dev`n" -ForegroundColor Cyan
 
 Write-Host "Option 2: Start services individually (most reliable):" -ForegroundColor White
-Write-Host "  Terminal 1: cd cms\strapi-main ; npm run develop" -ForegroundColor Cyan
-Write-Host "  Terminal 2: cd web\public-site ; npm run dev" -ForegroundColor Cyan
-Write-Host "  Terminal 3: cd web\oversight-hub ; npm start`n" -ForegroundColor Cyan
+Write-Host "  Terminal 1: cd web\public-site ; npm run dev" -ForegroundColor Cyan
+Write-Host "  Terminal 2: cd web\oversight-hub ; npm start`n" -ForegroundColor Cyan
 
 Write-Host "Option 3: Start all including Python backend:" -ForegroundColor White
 Write-Host "  npm run dev:full`n" -ForegroundColor Cyan
 
 Write-Host "Services will be available at:" -ForegroundColor White
-Write-Host "  Strapi Admin: http://localhost:1337/admin" -ForegroundColor Green
 Write-Host "  Public Site: http://localhost:3000" -ForegroundColor Green
 Write-Host "  Oversight Hub: http://localhost:3001" -ForegroundColor Green
 Write-Host "  Co-Founder Agent: http://localhost:8000/docs" -ForegroundColor Green

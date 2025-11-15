@@ -56,8 +56,6 @@ class ContentTask(Base):
 
     # Publishing data
     publish_mode = Column(String(50), default="draft")  # draft, published, archived
-    strapi_id = Column(String(100), nullable=True, index=True)  # Strapi post ID
-    strapi_url = Column(String(500), nullable=True)
 
     # Metadata
     tags = Column(JSON, default=list)  # List of tags
@@ -99,8 +97,6 @@ class ContentTask(Base):
             "featured_image_url": self.featured_image_url,
             "featured_image_data": self.featured_image_data,
             "publish_mode": self.publish_mode,
-            "strapi_id": self.strapi_id,
-            "strapi_url": self.strapi_url,
             "tags": self.tags or [],
             "metadata": self.task_metadata or {},
             "model_used": self.model_used,

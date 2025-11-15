@@ -105,12 +105,12 @@ npm run setup:python     # Just pip install for backend
 - **PATTERN:** Routes handle HTTP validation; services handle business logic
 - **KEY:** CMS routes read/write directly to PostgreSQL posts table (same schema as Strapi)
 
-**Database Patterns** (`database.py`, `services/database_service.py`, `services/strapi_publisher.py`)
+**Database Patterns** (`database.py`, `services/database_service.py`, `services/content_publisher.py`)
 
 - SQLAlchemy models for local SQLite (dev) / PostgreSQL (prod)
 - StrapiPublisher service writes directly to Strapi schema tables in PostgreSQL (no REST API)
 - psycopg2 for sync database operations (cms_routes.py)
-- asyncpg for async pool operations (strapi_publisher.py)
+- asyncpg for async pool operations (content_publisher.py)
 - Direct table access: posts, categories, tags, memories, tasks, knowledge_clusters
 - **PATTERN:** Services handle database operations; routes handle HTTP
 
@@ -223,7 +223,7 @@ npm run setup:python     # Just pip install for backend
 | Authentication flow      | `src/cofounder_agent/routes/auth_routes.py`, `middleware/auth.py`       |
 | Audit logging            | `src/cofounder_agent/middleware/audit_logging.py` (type-safe, 0 errors) |
 | PostgreSQL operations    | `src/cofounder_agent/services/database_service.py`, route files         |
-| Direct to DB writes      | `src/cofounder_agent/services/strapi_publisher.py` (asyncpg, no REST)   |
+| Direct to DB writes      | `src/cofounder_agent/services/content_publisher.py` (asyncpg, no REST)   |
 | Tests                    | `src/cofounder_agent/tests/`, `**/__tests__/` (Jest)                    |
 | NPM workspace configs    | Root `package.json` (`workspaces` array)                                |
 

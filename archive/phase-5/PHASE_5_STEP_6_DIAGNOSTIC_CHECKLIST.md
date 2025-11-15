@@ -118,7 +118,7 @@
 
 ### ✅ 6. Strapi Publisher Service
 
-**Location**: `src/cofounder_agent/services/strapi_publisher.py`
+**Location**: `src/cofounder_agent/services/content_publisher.py`
 
 **Implementation**:
 

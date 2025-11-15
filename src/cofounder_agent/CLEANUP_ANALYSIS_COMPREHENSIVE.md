@@ -15,7 +15,7 @@
 - `database_service.py` - Core database operations (used in main, routes)
 - `task_executor.py` - Task execution (used in main)
 - `content_critique_loop.py` - Content QA pipeline (used in main)
-- `strapi_publisher.py` - Publishing to Strapi (used in routes, main)
+- `content_publisher.py` - Publishing to Strapi (used in routes, main)
 - `logger_config.py` - Logging setup (used in main)
 - `task_store_service.py` - Task persistence (used in main)
 - `model_consolidation_service.py` - Model management (used in routes)

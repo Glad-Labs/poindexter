@@ -82,7 +82,7 @@ class CreateBlogPostRequest(BaseModel):
         None, description="Tags for categorization"
     )
     categories: Optional[List[str]] = Field(
-        None, description="Strapi categories (blog_post only)"
+        None, description="Categories for blog posts"
     )
     generate_featured_image: bool = Field(
         True, description="Search Pexels for featured image (free)"
@@ -94,7 +94,7 @@ class CreateBlogPostRequest(BaseModel):
         False, description="Use SEO enhancement"
     )
     target_environment: str = Field(
-        "production", description="Strapi environment"
+        "production", description="Target deployment environment"
     )
 
 
@@ -144,7 +144,7 @@ class DraftsListResponse(BaseModel):
 class PublishDraftRequest(BaseModel):
     """Request to publish a draft"""
 
-    target_environment: str = Field("production", description="Strapi environment")
+    target_environment: str = Field("production", description="Target deployment environment")
 
 
 class ApprovalRequest(BaseModel):
@@ -339,8 +339,8 @@ async def get_content_task_status(task_id: str):
                 "model_used": task.get("model_used"),  # ✅ From model_used field
                 "quality_score": task.get("quality_score"),  # ✅ From quality_score field
                 "tags": task.get("tags", []),
-                "strapi_post_id": task.get("strapi_id"),  # Strapi post ID if published
-                "strapi_url": task.get("strapi_url"),  # Strapi URL if published
+                "strapi_post_id": task.get("strapi_id"),  # Post ID if published externally
+                "strapi_url": task.get("strapi_url"),  # URL if published externally
                 # Include any additional metadata
                 "task_metadata": task.get("task_metadata", {}),
             }
@@ -374,7 +374,7 @@ async def list_content_tasks(
     offset: int = Query(0, ge=0),
 ):
     """
-    Get list of content tasks (drafts not yet published to Strapi).
+    Get list of content tasks (drafts pending review or approval).
 
     Query Parameters:
         - task_type: Filter by type (blog_post, social_media, email, newsletter)
@@ -433,25 +433,25 @@ async def approve_and_publish_task(task_id: str, request: ApprovalRequest):
     ✅ Phase 5: Human Approval Decision Endpoint
     
     **MANDATORY GATE**: Tasks awaiting approval must be explicitly approved or rejected
-    by a human reviewer before publishing.
+    by a human reviewer before marking as approved.
     
     This endpoint handles the critical human decision point in the content pipeline:
-    - If `approved=true`: Publishes content to Strapi
+    - If `approved=true`: Marks content as approved
     - If `approved=false`: Marks task as rejected with feedback
     
     Path Parameters:
         - task_id: Task ID awaiting approval
     
     Request Body (ApprovalRequest):
-        - approved (bool): True to publish, False to reject
+        - approved (bool): True to approve, False to reject
         - human_feedback (str): Reason for decision (required)
         - reviewer_id (str): Reviewer username/ID (required)
     
     Response:
         - task_id: Task ID
         - approval_status: "approved" or "rejected"
-        - strapi_post_id: Published post ID (only if approved)
-        - published_url: Live URL (only if approved)
+        - strapi_post_id: None (content not published to external CMS)
+        - published_url: None (content staged locally)
         - approval_timestamp: Decision time
         - reviewer_id: Who made the decision
         - message: Human-readable status
@@ -497,86 +497,46 @@ async def approve_and_publish_task(task_id: str, request: ApprovalRequest):
         logger.info(f"{'='*80}\n")
 
         # ============================================================================
-        # CASE 1: HUMAN APPROVED - Publish to Strapi
+        # CASE 1: HUMAN APPROVED - Mark as approved
         # ============================================================================
         if request.approved:
-            logger.info(f"✅ APPROVED: Publishing task {task_id} to Strapi...")
+            logger.info(f"✅ APPROVED: Marking task {task_id} as approved...")
             
             # Get content from database
             content = task.get("content")
             if not content:
-                logger.error(f"❌ Task {task_id} has no content to publish")
+                logger.error(f"❌ Task {task_id} has no content")
                 raise HTTPException(
                     status_code=400, 
-                    detail="Task content is empty - cannot publish"
+                    detail="Task content is empty"
                 )
 
-            strapi_post_id = task.get("strapi_id")
-            
-            # Only publish if not already published
-            if not strapi_post_id:
-                logger.info(f"   📤 Sending content to Strapi...")
-                from services.strapi_publisher import StrapiPublisher
-                
-                publisher = StrapiPublisher()
-                await publisher.connect()
-                
-                try:
-                    result = await publisher.create_post(
-                        title=task.get("topic", "Untitled"),
-                        content=content,
-                        excerpt=task.get("excerpt", ""),
-                        featured_image_url=task.get("featured_image_url"),
-                        tags=task.get("tags", []),
-                    )
-                    
-                    if result.get("success") and result.get("post_id"):
-                        strapi_post_id = str(result.get("post_id"))
-                        strapi_url = f"/blog/{strapi_post_id}"
-                        
-                        logger.info(f"   ✅ Published to Strapi - Post ID: {strapi_post_id}")
-                        logger.info(f"   📌 URL: {strapi_url}")
-                    else:
-                        logger.error(f"❌ Strapi publish failed: {result.get('message')}")
-                        raise HTTPException(
-                            status_code=500,
-                            detail=f"Failed to publish to Strapi: {result.get('message', 'Unknown error')}"
-                        )
-                finally:
-                    await publisher.disconnect()
-            else:
-                logger.info(f"   ℹ️ Already published - Strapi ID: {strapi_post_id}")
-                strapi_url = task.get("strapi_url", "")
-
             # ✅ Update task with approval metadata
-            published_url = strapi_url or f"/blog/{strapi_post_id}"
             task_store.update_task(
                 task_id,
                 {
-                    "status": "published",
+                    "status": "approved",
                     "approval_status": "approved",
                     "approved_by": reviewer_id,
                     "approval_timestamp": approval_timestamp,
                     "approval_notes": human_feedback,
                     "human_feedback": human_feedback,
-                    "strapi_id": strapi_post_id,
-                    "strapi_url": published_url,
-                    "publish_mode": "published",
+                    "publish_mode": "approved",
                     "completed_at": approval_timestamp,
                 }
             )
             
-            logger.info(f"✅ Task {task_id} APPROVED and PUBLISHED")
+            logger.info(f"✅ Task {task_id} APPROVED")
             logger.info(f"{'='*80}\n")
             
             return ApprovalResponse(
                 task_id=task_id,
                 approval_status="approved",
-                strapi_post_id=int(strapi_post_id) if strapi_post_id else None,
-                published_url=published_url,
+                strapi_post_id=None,
+                published_url=None,
                 approval_timestamp=approval_timestamp.isoformat(),
                 reviewer_id=reviewer_id,
-                message=f"✅ Task approved and published by {reviewer_id}"
+                message=f"✅ Task approved by {reviewer_id}"
             )
 
         # ============================================================================

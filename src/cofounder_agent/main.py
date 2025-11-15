@@ -41,7 +41,6 @@ from orchestrator_logic import Orchestrator
 from services.database_service import DatabaseService
 from services.task_executor import TaskExecutor
 from services.content_critique_loop import ContentCritiqueLoop
-from services.strapi_publisher import StrapiPublisher
 
 # Import route routers
 # Unified content router (consolidates content.py, content_generation.py, enhanced_content.py)
@@ -211,7 +210,7 @@ async def lifespan(app: FastAPI):
             logger.warning(f"  ⚠️ {error_msg}", exc_info=True)
             intelligent_orchestrator = None
         
-        # 5. Initialize content critique loop and Strapi publisher
+        # 5. Initialize content critique loop
         logger.info("  🔍 Initializing content critique loop...")
         try:
             critique_loop = ContentCritiqueLoop()
@@ -220,28 +219,18 @@ async def lifespan(app: FastAPI):
             logger.warning(f"  ⚠️ Content critique loop initialization failed: {e}")
             critique_loop = None
         
-        logger.info("  🌐 Initializing Strapi publisher (PostgreSQL direct)...")
-        try:
-            # New approach: Direct PostgreSQL, no REST API
-            strapi_publisher = StrapiPublisher()
-            logger.info(f"  ✅ Strapi publisher initialized (PostgreSQL direct)")
-        except Exception as e:
-            logger.warning(f"  ⚠️ Strapi publisher initialization failed: {e}")
-            strapi_publisher = None
-        
-        # 6. Initialize background task executor (UPDATED WITH PRODUCTION PIPELINE)
-        logger.info("  ⏳ Starting background task executor (with production pipeline)...")
+        # 6. Initialize background task executor
+        logger.info("  ⏳ Starting background task executor...")
         try:
             task_executor = TaskExecutor(
                 database_service=database_service,
                 orchestrator=orchestrator,
                 critique_loop=critique_loop,
-                strapi_client=strapi_publisher,
                 poll_interval=5  # Poll every 5 seconds
             )
             await task_executor.start()
             logger.info("  ✅ Background task executor started successfully")
-            logger.info(f"     🔗 Pipeline: Orchestrator→Critique→Strapi")
+            logger.info(f"     🔗 Pipeline: Orchestrator→Critique→Publishing")
         except Exception as e:
             error_msg = f"Task executor startup failed: {str(e)}"
             logger.error(f"  ⚠️ {error_msg}", exc_info=True)
@@ -352,7 +341,7 @@ app.include_router(settings_router)  # Settings management
 app.include_router(command_queue_router)  # Command queue (replaces Pub/Sub)
 app.include_router(chat_router)  # Chat and AI model integration
 app.include_router(ollama_router)  # Ollama health checks and warm-up
-app.include_router(webhook_router)  # Webhook handlers for Strapi events
+app.include_router(webhook_router)  # Webhook event handlers
 app.include_router(social_router)  # Social media management
 app.include_router(metrics_router)  # Metrics and analytics
 app.include_router(agents_router)  # AI agent management and monitoring
