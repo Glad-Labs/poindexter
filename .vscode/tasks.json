@@ -2,19 +2,6 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Start Strapi CMS",
-      "type": "shell",
-      "command": "npm run develop",
-      "options": {
-        "cwd": "${workspaceFolder}/cms/strapi-main"
-      },
-      "problemMatcher": [],
-      "presentation": {
-        "group": "services",
-        "panel": "dedicated"
-      }
-    },
-    {
       "label": "Start Oversight Hub",
       "type": "shell",
       "command": "npm start",
@@ -60,7 +47,6 @@
       "label": "Start All Services",
       "dependsOn": [
         "Start Co-founder Agent",
-        "Start Strapi CMS",
         "Start Oversight Hub",
         "Start Public Site"
       ],

@@ -278,7 +278,6 @@ async def create_task(
             "category": (request.category or "general").strip(),
             "status": "pending",
             "agent_id": "content-agent",
-            "user_id": current_user.get("id", "system"),
             "metadata": request.metadata or {},
             "created_at": datetime.now(timezone.utc).isoformat(),
         }

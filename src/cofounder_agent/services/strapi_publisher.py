@@ -188,47 +188,44 @@ class StrapiPublisher:
             if not excerpt:
                 excerpt = content[:200] if content else ""
 
-            # Generate timestamps and UUID for document_id
+            # Generate timestamps
             # NOTE: Use datetime objects, not ISO strings - asyncpg requires actual datetime objects
             now = datetime.utcnow()
-            document_id = str(uuid.uuid4())
 
             async with self.pool.acquire() as conn:
                 # Insert into posts table
                 # CRITICAL: Do NOT pass 'id' - it's auto-increment integer (serial)
                 # Pass 'document_id' as UUID string for Strapi internal tracking
-                # Let PostgreSQL generate the integer 'id' automatically
+                # Let PostgreSQL generate the UUID 'id' automatically
                 query = """
                     INSERT INTO posts (
-                        document_id, title, slug, content, excerpt, 
-                        published_at, created_at, updated_at, featured
+                        title, slug, content, excerpt, 
+                        published_at, created_at, updated_at, status
                     ) VALUES (
-                        $1, $2, $3, $4, $5, $6, $7, $8, $9
+                        $1, $2, $3, $4, $5, $6, $7, $8
                     )
-                    RETURNING id, document_id, title, slug, created_at
+                    RETURNING id, title, slug, created_at
                 """
 
                 result = await conn.fetchrow(
                     query,
-                    document_id,           # $1: document_id (UUID string for Strapi)
-                    title,                 # $2: title
-                    slug,                  # $3: slug
-                    content,               # $4: content
-                    excerpt,               # $5: excerpt
-                    now,                   # $6: published_at
-                    now,                   # $7: created_at
-                    now,                   # $8: updated_at
-                    True,                  # $9: featured
+                    title,                 # $1: title
+                    slug,                  # $2: slug
+                    content,               # $3: content
+                    excerpt,               # $4: excerpt
+                    now,                   # $5: published_at
+                    now,                   # $6: created_at
+                    now,                   # $7: updated_at
+                    'published',           # $8: status (published instead of using 'featured')
                 )
 
                 if result:
-                    message = f"✅ Post created: '{title}' (ID: {result['id']}, Doc: {result['document_id']})"
+                    message = f"✅ Post created: '{title}' (ID: {result['id']})"
                     logger.info(message)
                     
                     return {
                         "success": True,
                         "post_id": str(result['id']),
-                        "document_id": str(result['document_id']),
                         "slug": result['slug'],
                         "message": message,
                         "created_at": result['created_at'],

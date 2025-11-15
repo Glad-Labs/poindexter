@@ -164,9 +164,9 @@ class DatabaseService:
                 sql_query = """
                 INSERT INTO tasks (
                     id, task_name, topic, primary_keyword, target_audience,
-                    category, status, agent_id, user_id, metadata, created_at, updated_at
+                    category, status, agent_id, task_metadata, created_at, updated_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
                 """
                 logger.info(f"🔍 [DB_ADD_TASK] Executing SQL INSERT...")
                 logger.info(f"🔍 [DB_ADD_TASK] SQL: {sql_query.strip()}")
@@ -181,7 +181,6 @@ class DatabaseService:
                     task_data.get("category", "general"),
                     task_data.get("status", "pending"),
                     task_data.get("agent_id", "content-agent"),
-                    task_data.get("user_id", "system"),
                     metadata_json,
                 )
                 logger.info(f"✅ [DB_ADD_TASK] INSERT executed successfully - Result: {result}")

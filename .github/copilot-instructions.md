@@ -1,58 +1,70 @@
 # 🤖 GitHub Copilot Instructions for AI Agents
 
-**Last Updated:** November 2, 2025  
+**Last Updated:** November 14, 2025  
 **Project:** Glad Labs AI Co-Founder System v3.0  
-**Status:** Production Ready | PostgreSQL Backend | Ollama AI Integration 
+**Status:** PostgreSQL-First Backend | Strapi Removed | Direct DB Publishing | FastAPI REST API Only
 
 ---
 
 ## 🎯 Essential Context for AI Agents
 
-### Architecture & Component Boundaries
+### Architecture & Component Boundaries (Current State)
 
-**Glad Labs** is a three-tier monorepo orchestrating AI-powered business operations:
+**Glad Labs** is a three-tier monorepo with direct PostgreSQL integration:
 
 ```
-Web Tier (React/Next.js)
+Frontend Tier (React)
 ├── Oversight Hub (port 3001): React dashboard for agent control, model management, cost tracking
-├── Public Site (port 3000): Next.js SSG site consuming Strapi content
-└── Uses Zustand for state, Material-UI for components
+│   └── Material-UI + Zustand state management
+├── Public Site (port 3000): Next.js SSG site consuming PostgreSQL posts directly
+│   └── Server-side rendering with ISR for content updates
+└── Both frontends connect to FastAPI backend via JWT authentication
 
-API Tier (FastAPI + Strapi)
+Backend Tier (FastAPI + PostgreSQL)
 ├── Co-Founder Agent (port 8000): Central orchestrator routing tasks to specialized agents
 ├── Multi-agent system: Content, Financial, Market, Compliance agents
-├── Model router: Automatic fallback (Ollama → OpenAI → Claude → Gemini)
-├── Memory system: Persistent context + semantic search for agent context
-└── Strapi CMS (port 1337): Headless content management with TypeScript plugins
+├── Model router: Automatic fallback (Ollama → Claude → OpenAI → Gemini)
+├── Memory system: PostgreSQL-backed persistent context + semantic search
+├── Strapi Publisher: Direct PostgreSQL writes (no REST API, no separate CMS service)
+└── CMS Routes: Direct database read/write to posts, categories, tags, media tables
 
 Data Tier
-├── PostgreSQL: Production data (Strapi collections, audit logs)
-├── SQLite: Local development
-├── Redis: Caching (planned)
-└── Google Cloud: Firestore + Pub/Sub (production integrations)
+├── PostgreSQL: PRIMARY DATA STORE
+│   ├── Posts, categories, tags, media (CMS tables)
+│   ├── Memories, knowledge clusters (AI memory tables)
+│   ├── Tasks, workflows (command queue)
+│   └── Users, sessions, audit logs
+├── Local SQLite: Development option (DATABASE_URL env var)
+└── Google Cloud: No longer used (Firestore/Pub/Sub removed)
 ```
 
-**Key Integration Patterns:**
+**Key Integration Pattern (NO STRAPI SERVICE):**
 
-- Oversight Hub → FastAPI REST endpoints to orchestrator (tasks, models, health)
-- FastAPI → Specialized agents (parallel execution via asyncio)
-- Agents → Strapi API for content CRUD operations
-- All components → Model router for LLM calls with multi-provider fallback
-- Logging → Audit middleware captures all state changes
+- Frontend → FastAPI REST API (GET/POST/PUT/DELETE endpoints)
+- FastAPI routes → PostgreSQL database directly (psycopg2/asyncpg)
+- StrapiPublisher service → Writes directly to Strapi schema tables in PostgreSQL
+- Model router → LLM calls with automatic provider fallback
+- No separate Strapi service/port - CMS is database-driven
 
 ---
 
-## � Critical Development Commands (Reference for AI Implementation)
+## 🎯 Critical Development Commands (Reference for AI Implementation)
 
 ### Starting Services (Workspace is pre-configured)
 
 ```bash
-npm run dev              # ✅ Starts Oversight Hub + Public Site (recommended for frontend work)
-npm run dev:oversight    # React admin dashboard on http://localhost:3001
-npm run dev:public       # Next.js site on http://localhost:3000
-npm run dev:cofounder    # FastAPI backend on http://localhost:8000 (port may vary)
-npm run dev:strapi       # Strapi CMS on http://localhost:1337 (currently has build issues)
+npm run dev              # ✅ Starts all frontends + backend together (recommended)
+npm run dev:backend       # FastAPI backend + CMS database setup on port 8000
+npm run dev:frontend      # Oversight Hub (3001) + Public Site (3000) together
+npm run dev:oversight     # React dashboard on http://localhost:3001
+npm run dev:public        # Next.js site on http://localhost:3000
+npm run dev:cofounder     # FastAPI Co-Founder Agent on http://localhost:8000
 ```
+
+**IMPORTANT: NO STRAPI SERVICE** - CMS is database-driven directly via FastAPI routes:
+- CMS endpoints are in `src/cofounder_agent/routes/cms_routes.py`
+- Data is stored in PostgreSQL (Strapi schema tables)
+- StrapiPublisher writes directly to database (no REST API middleware)
 
 ### Code Quality (MUST run before committing)
 
@@ -87,53 +99,58 @@ npm run setup:python     # Just pip install for backend
 
 **FastAPI Route Structure** (`src/cofounder_agent/routes/`)
 
-- Routes are modular: `content_router`, `models_router`, `auth_router`, `enhanced_content_router`
-- All routes injected into main FastAPI app in `main.py`
-- Routes depend on orchestrator and database services
-- **PATTERN:** Routes handle HTTP validation; orchestrator handles business logic
+- Routes are modular: `content_routes.py`, `cms_routes.py`, `models.py`, `auth_routes.py`, `task_routes.py`, etc.
+- All routes injected into main FastAPI app in `main.py` (no Strapi service routes)
+- Routes directly access PostgreSQL via psycopg2 or asyncpg (no REST layer)
+- **PATTERN:** Routes handle HTTP validation; services handle business logic
+- **KEY:** CMS routes read/write directly to PostgreSQL posts table (same schema as Strapi)
 
-**Orchestrator Pattern** (`orchestrator_logic.py`)
+**Database Patterns** (`database.py`, `services/database_service.py`, `services/strapi_publisher.py`)
 
-- Central `Orchestrator` class coordinates all agent execution
+- SQLAlchemy models for local SQLite (dev) / PostgreSQL (prod)
+- StrapiPublisher service writes directly to Strapi schema tables in PostgreSQL (no REST API)
+- psycopg2 for sync database operations (cms_routes.py)
+- asyncpg for async pool operations (strapi_publisher.py)
+- Direct table access: posts, categories, tags, memories, tasks, knowledge_clusters
+- **PATTERN:** Services handle database operations; routes handle HTTP
+
+**Orchestrator Pattern** (`orchestrator_logic.py`, `services/poindexter_orchestrator.py`)
+
+- Central orchestrator coordinates all agent execution
 - Async methods for parallel task processing via `asyncio.gather()`
-- Multi-provider model routing (Ollama → OpenAI → Claude → Gemini fallback)
+- Multi-provider model routing (Ollama → Claude → GPT → Gemini fallback)
 - **KEY FILE:** `src/cofounder_agent/main.py` shows FastAPI setup and route registration
 - **PATTERN:** Thin controllers, thick orchestrator
 
-**Database Patterns** (`database.py`)
-
-- SQLAlchemy models for local SQLite (dev) / PostgreSQL (prod)
-- Audit logging middleware wraps all CRUD operations
-- JWT token storage separate from user model
-- **PATTERN:** All DB changes logged to `audit_logging.py` middleware
-
 **Error Handling - Watch for:**
 
-- Google Cloud integrations optional: `try/except ImportError` for Firestore/Pub/Sub
-- Database optional during dev: check `DATABASE_AVAILABLE` flag before using db
+- Google Cloud integrations REMOVED: No Firestore/Pub/Sub - using PostgreSQL task store instead
+- Database ALWAYS available: `DATABASE_SERVICE_AVAILABLE = True` (required)
 - Model provider failures trigger automatic fallback (don't wrap in try/except - router handles it)
+- Strapi REST API NOT used: All operations go directly to PostgreSQL
 
 ### React/Next.js Patterns (web/)
 
 **Oversight Hub State Management** (`web/oversight-hub/src/`)
 
-- **Single source of truth:** `store/useStore.js` (Zustand global state)
-- Theme management: `useStore((state) => state.theme)` pattern used throughout
-- **PATTERN:** Never prop-drill state; use Zustand selectors
-- Components subscribe to specific store slices: `useStore(state => state.singleValue)` not entire state
+- **Single source of truth:** Redux/Context + local state management
+- **API Client:** `cofounderAgentClient.js` - JWT-authenticated requests to FastAPI
+- **Services:** Direct FastAPI calls (no Strapi - CMS routes are in FastAPI now)
+- **PATTERN:** All API calls go through services, never scattered in components
+- Components subscribe to specific data, not entire state
 
 **Next.js Public Site Patterns** (`web/public-site/`)
 
 - **SSG First:** Use `getStaticProps` and `getStaticPaths` (not SSR for performance)
 - **ISR (Incremental Static Regeneration):** `revalidate: 3600` for content updates
-- Strapi API client in `lib/api.js` (centralized, never scatter API calls)
-- **PATTERN:** All Strapi calls go through `lib/api.js` to enable caching and error handling
+- **Database client:** Queries PostgreSQL directly or via FastAPI CMS routes
+- **PATTERN:** All database calls go through FastAPI `/api/posts` endpoints
 
 **Component Organization:**
 
 - Lightweight presentational components in `components/`
-- Business logic in custom hooks or store selectors
-- Material-UI components preferred (already in dependencies)
+- Business logic in custom hooks or service layers
+- Material-UI components (Oversight Hub), Tailwind CSS (Public Site)
 - **PATTERN:** No nested components, use composition
 
 ### Testing Patterns (Already Existing)
@@ -141,32 +158,40 @@ npm run setup:python     # Just pip install for backend
 **Frontend:** Jest + React Testing Library
 
 - Test location: `__tests__/` folders parallel to source
-- Mock Strapi API responses in tests (don't hit real API)
+- Mock FastAPI API responses in tests (don't hit real API)
 - Example pattern: `expect(getByText(...)).toBeInTheDocument()`
 
 **Backend:** pytest for Python
 
 - Test location: `src/cofounder_agent/tests/`
-- Mock external services (Google Cloud, Strapi, LLMs)
+- Mock external services (LLMs, PostgreSQL, model providers)
 - Run with: `npm run test:python` or `npm run test:python:smoke` (faster)
 
 ---
 
 ## ⚠️ Known Constraints & Pain Points (For AI Agent Context)
 
-**Strapi v5 Build Issues (cms/strapi-main/)**
+**Strapi Service Removed**
 
-- Specific plugin incompatibility with TypeScript configuration
-- `npm run develop` fails; avoid assigning Copilot to fix without explicit request
-- Workaround: Use local SQLite development, deploy PostgreSQL to production
-- **Don't attempt:** Deep plugin debugging - this is known limitation
+- ✅ No separate Strapi service/port (not needed)
+- ✅ CMS data stored directly in PostgreSQL (Strapi schema tables)
+- ✅ Routes in FastAPI handle all CRUD operations
+- ✅ StrapiPublisher writes directly to database (no REST API middleware)
+- **Note:** cms/strapi-main/ folder exists for schema reference only
+
+**Database is Primary Data Store**
+
+- PostgreSQL is the single source of truth
+- All CMS content managed via `/api/posts`, `/api/categories`, `/api/tags` routes
+- Direct table access from FastAPI routes (psycopg2 for sync, asyncpg for async)
+- No ORM abstraction layer - raw SQL or psycopg2 queries
 
 **Async/Await Patterns in Python**
 
 - Backend uses heavy async (FastAPI + asyncio)
 - All orchestrator methods are `async`; use `await` when calling them
 - Parallel execution via `asyncio.gather()` - don't use threading
-- Google Cloud operations non-blocking (Firestore, Pub/Sub async)
+- Some routes use sync psycopg2 (cms_routes.py), others use async asyncpg
 
 **Frontend Port Conflicts**
 
@@ -180,6 +205,7 @@ npm run setup:python     # Just pip install for backend
 - Production secrets: GitHub Secrets + Railway/Vercel dashboards
 - No production secrets should ever appear in code or docs
 - Model provider keys (OPENAI_API_KEY, etc.) are required for backend
+- **DATABASE_URL must point to PostgreSQL:** `postgresql://user:pass@host:5432/dbname`
 
 ---
 
@@ -191,10 +217,13 @@ npm run setup:python     # Just pip install for backend
 | AI agent implementations | `src/agents/{content,financial,market_insight,compliance}_agent/`       |
 | React admin dashboard    | `web/oversight-hub/src/components/`, `store/useStore.js`                |
 | Next.js public site      | `web/public-site/pages/`, `lib/api.js`, `components/`                   |
-| Strapi CMS setup         | `cms/strapi-main/src/` (plugin issues - use with caution)               |
+| CMS routes (NOT Strapi)  | `src/cofounder_agent/routes/cms_routes.py` (direct PostgreSQL access)   |
+| Database schema          | `src/cofounder_agent/database.py` (SQLAlchemy models)                   |
+| Strapi schema reference  | `cms/strapi-main/src/` (for understanding table structure, not running)  |
 | Authentication flow      | `src/cofounder_agent/routes/auth_routes.py`, `middleware/auth.py`       |
 | Audit logging            | `src/cofounder_agent/middleware/audit_logging.py` (type-safe, 0 errors) |
-| Database models          | `src/cofounder_agent/models.py`, `database.py`                          |
+| PostgreSQL operations    | `src/cofounder_agent/services/database_service.py`, route files         |
+| Direct to DB writes      | `src/cofounder_agent/services/strapi_publisher.py` (asyncpg, no REST)   |
 | Tests                    | `src/cofounder_agent/tests/`, `**/__tests__/` (Jest)                    |
 | NPM workspace configs    | Root `package.json` (`workspaces` array)                                |
 
@@ -214,14 +243,14 @@ npm run setup:python     # Just pip install for backend
 ### DON'T:
 
 - ❌ Import from sibling workspaces directly (use published APIs/REST)
-- ❌ Create ANY documentation in the root folder EXCEPT for a single README.md and LICENSE.md
+- ❌ Create ANY documentation in the root folder (only docs/, archive/, and core files like README.md)
 - ❌ Hardcode API endpoints (use environment variables from `.env`)
 - ❌ Prop-drill state in React (use Zustand or URL params)
 - ❌ Mix async/sync in Python orchestrator (everything must be async)
 - ❌ Ignore type hints or leave Python functions untyped
 - ❌ Commit secrets, API keys, or unencrypted sensitive data
 - ❌ Modify Strapi plugins without extensive testing (known issues)
-- ❌ Write documentation that becomes stale (keep HIGH-LEVEL ONLY)
+- ❌ Create documentation that will become stale (use pragmatic approach: active docs vs archive)
 
 ---
 
@@ -364,52 +393,99 @@ npm run test -- [filename]
 
 ```
 docs/
-├── 00-README.md                    # Hub - Main navigation
-├── 01-SETUP_AND_OVERVIEW.md        # Getting started
-├── 02-ARCHITECTURE_AND_DESIGN.md   # System design
+├── 00-README.md                      # Hub - Main navigation
+├── 01-SETUP_AND_OVERVIEW.md          # Getting started
+├── 02-ARCHITECTURE_AND_DESIGN.md     # System design
 ├── 03-DEPLOYMENT_AND_INFRASTRUCTURE.md
-├── 04-DEVELOPMENT_WORKFLOW.md      # Git & testing
-├── 05-AI_AGENTS_AND_INTEGRATION.md # Agent system
+├── 04-DEVELOPMENT_WORKFLOW.md        # Git & testing
+├── 05-AI_AGENTS_AND_INTEGRATION.md   # Agent system
 ├── 06-OPERATIONS_AND_MAINTENANCE.md
-├── 07-BRANCH_SPECIFIC_VARIABLES.md # Environment config
-├── components/                     # Per-component docs (minimal)
-├── reference/                      # Technical references (schemas, API specs)
-└── troubleshooting/                # Focused troubleshooting guides
+├── 07-BRANCH_SPECIFIC_VARIABLES.md   # Environment config
+├── decisions/                        # Architectural decisions (WHY_*.md)
+├── reference/                        # Technical references (API specs, schemas)
+├── roadmap/                          # Future planning and milestones
+├── guides/                           # How-to guides (minimal maintenance)
+├── troubleshooting/                  # Problem solving (living document)
+└── components/                       # Per-component documentation
+
+archive/
+├── phase-5/                          # Phase 5 deliverables (frozen)
+├── phase-4/                          # Phase 4 deliverables (frozen)
+├── sessions/                         # Session notes (frozen)
+├── deliverables/                     # Major deliverables (frozen)
+└── README.md                         # Archive index
 ```
 
-### High-Level Documentation Policy ⚠️ **IMPORTANT**
+### Documentation Strategy ⚠️ **PRAGMATIC APPROACH**
 
-**Effective: October 22, 2025**
+**Effective: November 14, 2025 - Framework Complete**
 
-Glad Labs maintains a **HIGH-LEVEL ONLY** documentation approach to reduce maintenance burden and prevent documentation staleness as the codebase evolves.
+Glad Labs uses a **PRAGMATIC DOCUMENTATION** approach balancing usefulness with sustainability.
 
-**DOCUMENTATION CREATED:**
+**5 Categories with Clear Ownership:**
 
-- ✅ Core docs (00-07): Architecture-level, high-level guidance
-- ✅ Components: Only when unique from core docs
-- ✅ Reference: Technical specs, schemas, API definitions
-- ✅ Troubleshooting: Focused, specific issues with solutions
-- ✅ README files: In component folders for local setup
+1. **Architecture & Decisions** (MAINTAIN ACTIVELY - Quarterly)
+   - Core docs 00-07 (system design, deployment, workflows)
+   - `docs/decisions/` with WHY_*.md files (decision rationale)
+   - `docs/roadmap/` for future planning
+   - ✅ Update when architecture or strategic direction changes
+   - **Example:** WHY_FASTAPI.md, WHY_POSTGRESQL.md
 
-**DOCUMENTATION NOT CREATED:**
+2. **Technical Reference** (MAINTAIN ACTIVELY - Ongoing)
+   - `docs/reference/` with API contracts, schemas, standards
+   - Component inventory and specifications
+   - ✅ Update as APIs, database, or systems change
+   - **Example:** API_CONTRACTS.md, TESTING.md
 
-- ❌ How-to guides for every feature (feature code is the guide)
-- ❌ Status updates or session-specific documents
-- ❌ Duplicate documentation (consolidate into core docs)
-- ❌ Step-by-step tutorials for changing code (too high maintenance)
-- ❌ Outdated historical guides (archive or delete)
-- ❌ Temporary project audit files
+3. **How-To Guides** (MAINTAIN MINIMALLY - As Needed)
+   - `docs/guides/` for stable, valuable topics only
+   - Accept some staleness as acceptable trade-off
+   - ✅ Complement core docs with practical examples
+   - **Focus:** Evergreen content with lasting value
 
-**PHILOSOPHY:**
-Documentation should answer "WHAT is the architecture?" and "WHERE do I look?" — NOT "HOW do I implement X?" (That changes too fast and code is self-documenting).
+4. **Troubleshooting** (MAINTAIN AS NEEDED - Living Document)
+   - `docs/troubleshooting/` for common issues and solutions
+   - Grows organically as problems are solved
+   - ✅ Actively encouraged contributions from fixes
+   - **Pattern:** Problem → Solution → Prevention
 
-**MAINTENANCE:**
+5. **Archive & History** (NEVER MAINTAIN - Frozen)
+   - `archive/` for completed phases, sessions, old implementations
+   - Preserved for reference and knowledge transfer
+   - ✅ Restore historical context without cluttering active docs
+   - **70+ files** now archived, keeping root folder clean
 
-- Update core docs (00-07) only when architecture changes
-- Delete guides that become outdated
-- Archive historical documents
-- Keep docs < 8 files in root
-- Archive > 50 files total in docs/
+**Update Schedules & Maintenance Levels:**
+
+| Category | Frequency | Effort | Status |
+|----------|-----------|--------|--------|
+| Core Docs (00-07) | Quarterly review | 2-3 hours | Active ✅ |
+| Architecture Decisions | When decision made | 1-2 hours | Active ✅ |
+| API References | As APIs change | Ongoing | Active ✅ |
+| Roadmaps | Plan updates | Monthly | Active ✅ |
+| Guides | Minimal | 30 min per | Minimal ⚠️ |
+| Troubleshooting | As issues solved | Variable | Living 📝 |
+| Archive | Never | 0 hours | Frozen 🔒 |
+
+**MAINTENANCE PHILOSOPHY:**
+
+- Document what **survives architectural changes** ✅
+- Document what **developers actually need** ✅
+- Archive what **becomes stale quickly** ✅
+- Keep **decisions documented** so we understand why ✅
+- **Encourage troubleshooting entries** from every fix ✅
+
+**KEY RULE: "Pragmatism > Purity"**
+
+If something helps developers and is maintainable, document it. If it gets stale, archive it. We don't follow rigid rules that reduce usefulness.
+
+**Current Metrics (Phase 1 Complete):**
+- ✅ 8 new documents created (3,700+ lines)
+- ✅ 5-category framework established
+- ✅ 70+ historical files archived
+- ✅ Root folder reduced from 100+ to 5 files
+- ✅ Decision document pattern established (2 WHY_*.md examples)
+- ✅ API reference complete (50+ endpoints documented)
 
 ### Update Process
 
@@ -438,9 +514,31 @@ Documentation should answer "WHAT is the architecture?" and "WHERE do I look?" �
 
 1. Create bugfix branch: `git checkout -b bugfix/issue-description`
 2. Add test case that reproduces bug
-3. Fix bug, verify test passes
-4. Commit: `fix: resolve issue description`
-5. Follow PR process above
+3. Fix bug in FastAPI route or service (for backend bugs)
+   - OR fix in React component/store (for frontend bugs)
+4. Verify test passes
+5. Commit: `fix: resolve issue description`
+6. Follow PR process above
+
+### Add a New API Endpoint
+
+1. Create route file or add to existing route in `src/cofounder_agent/routes/`
+2. Import database connection and define endpoint function
+3. Use `psycopg2` for sync operations (like cms_routes.py) or `asyncpg` for async
+4. Handle direct PostgreSQL access, not through Strapi API
+5. Add input validation and error handling
+6. Write test in `src/cofounder_agent/tests/`
+7. Test locally: `curl http://localhost:8000/api/your-endpoint`
+8. Commit and push
+
+### Add a Database Table or Schema Change
+
+1. Update SQLAlchemy models in `src/cofounder_agent/database.py`
+2. For direct SQL operations, add migration script if needed
+3. Update corresponding service that uses the table
+4. Add tests for database operations
+5. Test with both SQLite (local) and PostgreSQL (production)
+6. **Never hardcode Strapi table names** - use schema reference in docs
 
 ### Update Documentation
 
@@ -454,7 +552,7 @@ Documentation should answer "WHAT is the architecture?" and "WHERE do I look?" �
 1. Ensure all tests pass on `dev`
 2. Create PR: `dev` → `main`
 3. Code review and approval required
-4. Merge to main (triggers deployment)
+4. Merge to main (triggers GitHub Actions deployment)
 5. Verify in production environment
 6. Tag release: `git tag v1.2.3 && git push --tags`
 
@@ -469,18 +567,6 @@ Documentation should answer "WHAT is the architecture?" and "WHERE do I look?" �
 
 ```bash
 nvm use 22
-```
-
-### Strapi Build Failures
-
-**Problem:** Module not found, dependency errors
-**Solution:** Clear cache and reinstall
-
-```bash
-cd cms/strapi-main
-rm -rf node_modules yarn.lock package-lock.json
-npm install
-npm run develop
 ```
 
 ### FastAPI Import Errors
@@ -511,6 +597,37 @@ echo $DATABASE_URL
 **See:** [Documentation Hub](../docs/00-README.md)
 
 ---
+
+## 📦 Root Folder Organization (CLEAN - Phase 1 Complete)
+
+**Active Files in Root:**
+
+- `README.md` - Project overview
+- `LICENSE.md` - License information
+- `PHASE_1_COMPLETE.md` - Current phase summary
+- `DOCUMENTATION_STRATEGY.md` - Documentation framework
+- `package.json` - Workspace configuration
+
+**All Other Historical Files Archived:**
+
+- ✅ 70+ files moved to `archive/`
+- ✅ Phase 5 files → `archive/phase-5/`
+- ✅ Phase 4 files → `archive/phase-4/`
+- ✅ Session docs → `archive/sessions/`
+- ✅ Deliverables → `archive/deliverables/`
+- ✅ See `archive/README.md` for index
+
+**Why Archive?**
+
+- Keeps root folder clean and focused
+- Reduces cognitive load for new developers
+- Preserves history for reference
+- Prevents outdated files from being used as templates
+- Makes active documentation more discoverable
+
+---
+
+## 📚 Documentation Reference Map
 
 ## 📞 Getting Help
 
@@ -559,9 +676,10 @@ echo $DATABASE_URL
 **Backend Developers:**
 
 - [FastAPI Documentation](https://fastapi.tiangolo.com)
-- [Strapi Documentation](https://docs.strapi.io)
+- [PostgreSQL Documentation](https://www.postgresql.org/docs/)
 - [src/cofounder_agent/README.md](../src/cofounder_agent/README.md)
 - [AI Agents Guide](../docs/05-AI_AGENTS_AND_INTEGRATION.md)
+- [Database Schema & Migration](../docs/reference/data_schemas.md)
 
 **DevOps / Infrastructure:**
 
@@ -609,13 +727,14 @@ echo $DATABASE_URL
 ## 📋 Document Control
 
 | Field            | Value                                          |
-| ---------------- | ---------------------------------------------- | ---------------- |
-| **Version**      | 2.0                                            |
-| **Last Updated** | November 2, 2025                               |
-| **Next Review**  | February 2, 2026 (quarterly)                   |
+| ---------------- | ---------------------------------------------- | 
+| **Version**      | 2.1                                            |
+| **Last Updated** | November 14, 2025                              |
+| **Next Review**  | February 14, 2026 (quarterly)                  |
 | **Author**       | GitHub Copilot & Glad Labs Team                |
-| **Status**       | Active & Maintained                            | Production Ready |
+| **Status**       | Active & Maintained | Production Ready       |
 | **Audience**     | All team members (developers, DevOps, QA, PMs) |
+| **Key Changes**  | Phase 1 complete - Archive structure, pragmatic documentation framework established |
 
 ---
 

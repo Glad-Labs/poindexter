@@ -1,20 +1,19 @@
 {
   "name": "glad-labs-monorepo",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "private": true,
-  "description": "Complete AI Co-Founder system with intelligent business management, autonomous agents, voice interface, and comprehensive business intelligence",
+  "description": "Complete AI orchestration system with intelligent business management and autonomous agents",
   "license": "AGPL-3.0-or-later",
   "author": "Matthew M. Gladding (Glad Labs, LLC)",
   "workspaces": [
     "web/public-site",
     "web/oversight-hub",
-    "cms/strapi-main",
     "src/cofounder_agent"
   ],
   "scripts": {
     "//": "=== DEVELOPMENT ===",
-    "dev": "npm run env:select && concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
-    "dev:backend": "concurrently \"npm run dev --workspace=src/cofounder_agent\" \"npm run develop --workspace=cms/strapi-main\"",
+    "dev": "npm run env:select && concurrently \"npm run dev:cofounder\" \"npm run dev:frontend\"",
+    "dev:backend": "npm run dev:cofounder",
     "dev:cofounder": "npm run dev --workspace=src/cofounder_agent",
     "dev:frontend": "concurrently \"npm run dev --workspace=web/public-site\" \"npm start --workspace=web/oversight-hub\"",
     "dev:oversight": "npm start --workspace=web/oversight-hub",
@@ -38,7 +37,6 @@
     "test:python:smoke": "cd src/cofounder_agent && python -m pytest tests/test_e2e_fixed.py -v"
   },
   "devDependencies": {
-    "@strapi/strapi": "^5.18.1",
     "concurrently": "^9.2.1",
     "cross-env": "^7.0.3",
     "markdownlint-cli": "^0.42.0",

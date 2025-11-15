@@ -53,7 +53,6 @@ This software includes components with the following licenses:
 
 - **FastAPI**: MIT License
 - **React**: MIT License
-- **Strapi**: MIT License
 - **PostgreSQL**: PostgreSQL License (permissive open-source)
 - **smolagents**: MIT License
 - See individual component repositories for complete license information
