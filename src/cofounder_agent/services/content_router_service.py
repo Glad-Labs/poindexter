@@ -23,7 +23,7 @@ import logging
 from .ai_content_generator import get_content_generator
 from .seo_content_generator import get_seo_content_generator
 from .pexels_client import PexelsClient
-from .task_store_service import get_persistent_task_store
+from .database_service import DatabaseService
 from .content_orchestrator import get_content_orchestrator
 
 logger = logging.getLogger(__name__)
@@ -70,18 +70,24 @@ class ContentTaskStore:
     Provides backward-compatible interface with enhanced persistence.
     """
 
-    def __init__(self):
-        """Initialize unified task store (delegates to persistent backend)"""
-        self._persistent_store = None
+    def __init__(self, database_service: Optional[DatabaseService] = None):
+        """
+        Initialize unified task store with async DatabaseService
+        
+        Args:
+            database_service: Optional DatabaseService instance for task persistence
+        """
+        self.database_service = database_service
 
     @property
     def persistent_store(self):
-        """Lazy-load persistent task store on first access"""
-        if self._persistent_store is None:
-            self._persistent_store = get_persistent_task_store()
-        return self._persistent_store
+        """
+        Backward-compatible property for existing code.
+        Now returns the DatabaseService which handles all async task operations.
+        """
+        return self.database_service
 
-    def create_task(
+    async def create_task(
         self,
         topic: str,
         style: str,
@@ -94,7 +100,7 @@ class ContentTaskStore:
         metadata: Optional[Dict[str, Any]] = None
     ) -> str:
         """
-        Create a new task in persistent storage
+        Create a new task in persistent storage (async, non-blocking)
 
         Args:
             topic: Blog post topic
@@ -108,7 +114,7 @@ class ContentTaskStore:
         Returns:
             Task ID for tracking
         """
-        logger.info(f"� [CONTENT_TASK_STORE] Creating task")
+        logger.info(f"📋 [CONTENT_TASK_STORE] Creating task (async)")
         logger.info(f"   Topic: {topic[:60]}{'...' if len(topic) > 60 else ''}")
         logger.info(f"   Style: {style} | Tone: {tone} | Length: {target_length}w")
         logger.info(f"   Tags: {', '.join(tags) if tags else 'none'}")
@@ -119,25 +125,24 @@ class ContentTaskStore:
         logger.debug(f"   Metadata: {metadata}")
         
         try:
-            # Get persistent store
-            logger.debug(f"   📌 Getting persistent_store...")
-            persistent_store = self.persistent_store
-            logger.debug(f"   📌 Store ready: {persistent_store is not None}")
+            # Check if we have database service
+            if not self.database_service:
+                raise ValueError("DatabaseService not initialized - cannot persist tasks")
             
-            # Create task in persistent store
-            logger.debug(f"   📝 Calling persistent_store.create_task()...")
-            task_id = persistent_store.create_task(
-                topic=topic,
-                style=style,
-                tone=tone,
-                target_length=target_length,
-                tags=tags or [],
-                request_type=request_type,
-                task_type=task_type,
-                metadata=metadata or {},
-            )
+            logger.debug(f"   📝 Calling database_service.add_task() (async)...")
             
-            logger.info(f"✅ [CONTENT_TASK_STORE] Task CREATED and PERSISTED")
+            task_id = await self.database_service.add_task({
+                "topic": topic,
+                "style": style,
+                "tone": tone,
+                "target_length": target_length,
+                "tags": tags or [],
+                "request_type": request_type,
+                "task_type": task_type,
+                "metadata": metadata or {},
+            })
+            
+            logger.info(f"✅ [CONTENT_TASK_STORE] Task CREATED and PERSISTED (async)")
             logger.info(f"   Task ID: {task_id}")
             logger.info(f"   Status: pending")
             logger.debug(f"   🎯 Ready for processing")
@@ -147,31 +152,51 @@ class ContentTaskStore:
             logger.error(f"❌ [CONTENT_TASK_STORE] ERROR: {e}", exc_info=True)
             raise
 
-    def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
-        """Get task by ID from persistent storage"""
-        return self.persistent_store.get_task(task_id)
+    async def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """Get task by ID from persistent storage (async, non-blocking)"""
+        if not self.database_service:
+            return None
+        return await self.database_service.get_task(task_id)
 
-    def update_task(self, task_id: str, updates: Dict[str, Any]) -> bool:
-        """Update task data in persistent storage"""
-        return self.persistent_store.update_task(task_id, updates)
+    async def update_task(self, task_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Update task data in persistent storage (async, non-blocking)"""
+        if not self.database_service:
+            return None
+        
+        # Only call update if we have a status to update
+        status = updates.get("status")
+        if status:
+            return await self.database_service.update_task_status(
+                task_id=task_id,
+                status=status,
+                result=updates.get("result")
+            )
+        return None
 
-    def delete_task(self, task_id: str) -> bool:
-        """Delete task from persistent storage"""
-        return self.persistent_store.delete_task(task_id)
+    async def delete_task(self, task_id: str) -> bool:
+        """Delete task from persistent storage (async, non-blocking)"""
+        if not self.database_service:
+            return False
+        return await self.database_service.delete_task(task_id)
 
-    def list_tasks(
+    async def list_tasks(
         self, status: Optional[str] = None, limit: int = 50, offset: int = 0
     ) -> List[Dict[str, Any]]:
-        """List tasks from persistent storage with optional filtering"""
-        tasks, total = self.persistent_store.list_tasks(
-            status=status, limit=limit, offset=offset
+        """List tasks from persistent storage with optional filtering (async, non-blocking)"""
+        if not self.database_service:
+            return []
+        tasks, total = await self.database_service.get_tasks_paginated(
+            offset=offset,
+            limit=limit,
+            status=status
         )
         return tasks
 
-    def get_drafts(self, limit: int = 20, offset: int = 0) -> tuple:
-        """Get list of drafts from persistent storage"""
-        drafts, total = self.persistent_store.get_drafts(limit=limit, offset=offset)
-        return drafts, total
+    async def get_drafts(self, limit: int = 20, offset: int = 0) -> tuple:
+        """Get list of drafts from persistent storage (async, non-blocking)"""
+        if not self.database_service:
+            return ([], 0)
+        return await self.database_service.get_drafts(limit=limit, offset=offset)
 
 
 # Global unified task store (lazy-initialized)
@@ -248,7 +273,7 @@ class ContentGenerationService:
                 style=style,
                 tone=tone,
                 target_length=target_length,
-                tags=tags,
+                tags=tags or [],
             )
             return content, model_used, metrics
 
@@ -330,7 +355,7 @@ async def process_content_generation_task(task_id: str):
     Human decision endpoint: POST /api/content/tasks/{task_id}/approve
     """
     task_store = get_content_task_store()
-    task = task_store.get_task(task_id)
+    task = await task_store.get_task(task_id)
 
     if not task:
         logger.error(f"❌ Task not found: {task_id}")
@@ -397,7 +422,7 @@ async def process_content_generation_task(task_id: str):
 
     except Exception as e:
         logger.error(f"❌ Pipeline error for task {task_id}: {e}", exc_info=True)
-        task_store.update_task(
+        await task_store.update_task(
             task_id,
             {
                 "status": "failed",

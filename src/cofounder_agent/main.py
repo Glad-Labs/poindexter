@@ -93,7 +93,6 @@ firestore_client = None
 
 # Use centralized logging configuration
 from services.logger_config import get_logger
-from services.task_store_service import initialize_task_store, get_persistent_task_store
 from services.model_consolidation_service import initialize_model_consolidation_service
 
 logger = get_logger(__name__)
@@ -133,21 +132,9 @@ async def lifespan(app: FastAPI):
             logger.error("  Example DATABASE_URL: postgresql://user:password@localhost:5432/glad_labs_dev")
             raise SystemExit(1)  # ❌ STOP - PostgreSQL required
         
-        # 2. Initialize persistent task store
-        logger.info("  📋 Initializing persistent task store...")
-        try:
-            database_url = os.getenv("DATABASE_URL")
-            if not database_url:
-                logger.error("  ❌ DATABASE_URL environment variable not set!")
-                raise ValueError("DATABASE_URL must be set in .env.local")
-            initialize_task_store(database_url)
-            logger.info("  ✅ Persistent task store initialized with PostgreSQL")
-        except Exception as e:
-            error_msg = f"Task store initialization failed: {str(e)}"
-            logger.error(f"  ⚠️ {error_msg}", exc_info=True)
-            startup_error = error_msg
-            # Don't re-raise - allow app to start for health checks
-        
+        # 2. All task operations now handled by DatabaseService (pure asyncpg)
+        logger.info("  📋 Task storage ready via DatabaseService (asyncpg)")
+
         # 3. Initialize unified model consolidation service
         logger.info("  🧠 Initializing unified model consolidation service...")
         try:
@@ -287,15 +274,8 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 logger.error(f"  ⚠️ Error stopping task executor: {e}", exc_info=True)
             
-            # Close task store
-            try:
-                logger.info("  Closing persistent task store...")
-                task_store = get_persistent_task_store()
-                if task_store:
-                    task_store.close()
-                    logger.info("  ✅ Task store connection closed")
-            except Exception as e:
-                logger.error(f"  ⚠️ Error closing task store: {e}", exc_info=True)
+            # Task store is now handled by database_service - no separate close needed
+            logger.info("  Task store cleanup handled by database_service")
             
             if database_service:
                 try:

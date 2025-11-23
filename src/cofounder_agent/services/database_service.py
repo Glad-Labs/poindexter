@@ -658,6 +658,234 @@ class DatabaseService:
             }
 
     # ========================================================================
+    # TASK MANAGEMENT (pure asyncpg, replaces SQLAlchemy-based methods)
+    # ========================================================================
+
+    async def add_task(self, task_data: Dict[str, Any]) -> str:
+        """
+        Add a new task to the database (pure asyncpg).
+        
+        Args:
+            task_data: Task data dict with keys: id, task_name, topic, status, agent_id, etc.
+            
+        Returns:
+            Task ID (UUID string)
+        """
+        import json
+        from datetime import datetime
+        
+        task_id = task_data.get("id", str(__import__('uuid').uuid4()))
+        
+        sql = """
+            INSERT INTO tasks (
+                id, task_name, task_type, topic, status, agent_id,
+                primary_keyword, target_audience, category,
+                style, tone, target_length,
+                tags, task_metadata,
+                created_at, updated_at,
+                approval_status
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6,
+                $7, $8, $9,
+                $10, $11, $12,
+                $13, $14,
+                $15, $16,
+                $17
+            )
+            RETURNING id
+        """
+        
+        try:
+            now = datetime.utcnow().isoformat() + "+00:00"
+            
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchval(
+                    sql,
+                    task_id,  # id
+                    task_data.get("task_name"),  # task_name
+                    task_data.get("task_type", "generic"),  # task_type
+                    task_data.get("topic", ""),  # topic
+                    task_data.get("status", "pending"),  # status
+                    task_data.get("agent_id", "content-agent"),  # agent_id
+                    task_data.get("primary_keyword"),  # primary_keyword
+                    task_data.get("target_audience"),  # target_audience
+                    task_data.get("category"),  # category
+                    task_data.get("style"),  # style
+                    task_data.get("tone"),  # tone
+                    task_data.get("target_length"),  # target_length
+                    json.dumps(task_data.get("tags", [])),  # tags (JSONB)
+                    json.dumps(task_data.get("metadata", {})),  # metadata (JSONB)
+                    now,  # created_at
+                    now,  # updated_at
+                    "pending",  # approval_status
+                )
+                
+                logger.info(f"✅ Task added: {task_id}")
+                return str(result)
+        except Exception as e:
+            logger.error(f"❌ Failed to add task: {e}")
+            raise
+
+    async def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a task by ID (pure asyncpg).
+        
+        Args:
+            task_id: UUID of the task
+            
+        Returns:
+            Task dict or None
+        """
+        sql = "SELECT * FROM tasks WHERE id = $1 OR id = $1::text"
+        
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(sql, task_id)
+                if row:
+                    return self._convert_row_to_dict(row)
+                return None
+        except Exception as e:
+            logger.error(f"❌ Failed to get task {task_id}: {e}")
+            raise
+
+    async def update_task_status(
+        self,
+        task_id: str,
+        status: str,
+        result: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Update task status and optionally result (pure asyncpg).
+        
+        Args:
+            task_id: UUID of task
+            status: New status
+            result: Optional result JSON
+            
+        Returns:
+            Updated task dict or None
+        """
+        from datetime import datetime
+        
+        now = datetime.utcnow().isoformat() + "+00:00"
+        
+        if result:
+            sql = """
+                UPDATE tasks
+                SET status = $2, result = $3, updated_at = $4
+                WHERE id = $1 OR id = $1::text
+                RETURNING *
+            """
+            params = [task_id, status, result, now]
+        else:
+            sql = """
+                UPDATE tasks
+                SET status = $2, updated_at = $3
+                WHERE id = $1 OR id = $1::text
+                RETURNING *
+            """
+            params = [task_id, status, now]
+        
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(sql, *params)
+                if row:
+                    logger.info(f"✅ Task status updated: {task_id} → {status}")
+                    return self._convert_row_to_dict(row)
+                return None
+        except Exception as e:
+            logger.error(f"❌ Failed to update task status {task_id}: {e}")
+            raise
+
+    async def get_tasks_paginated(
+        self,
+        offset: int = 0,
+        limit: int = 20,
+        status: Optional[str] = None,
+        category: Optional[str] = None,
+    ) -> tuple[List[Dict[str, Any]], int]:
+        """
+        Get paginated tasks with optional filtering (pure asyncpg).
+        
+        Args:
+            offset: Pagination offset
+            limit: Results per page
+            status: Optional status filter
+            category: Optional category filter
+            
+        Returns:
+            Tuple of (tasks list, total count)
+        """
+        where_clauses = []
+        params = []
+        
+        if status:
+            where_clauses.append(f"status = ${len(params) + 1}")
+            params.append(status)
+        
+        if category:
+            where_clauses.append(f"category = ${len(params) + 1}")
+            params.append(category)
+        
+        where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+        
+        sql_count = f"SELECT COUNT(*) FROM tasks WHERE {where_sql}"
+        sql_list = f"""
+            SELECT * FROM tasks
+            WHERE {where_sql}
+            ORDER BY created_at DESC
+            LIMIT ${len(params) + 1} OFFSET ${len(params) + 2}
+        """
+        
+        try:
+            async with self.pool.acquire() as conn:
+                # Get count
+                count_result = await conn.fetchval(sql_count, *params)
+                total = count_result or 0
+                
+                # Get tasks
+                params.extend([limit, offset])
+                rows = await conn.fetch(sql_list, *params)
+                
+                tasks = [self._convert_row_to_dict(row) for row in rows]
+                logger.info(f"✅ Listed {len(tasks)} tasks (total: {total})")
+                return tasks, total
+        except Exception as e:
+            logger.error(f"❌ Failed to list tasks: {e}")
+            raise
+
+    @staticmethod
+    def _convert_row_to_dict(row: Any) -> Dict[str, Any]:
+        """Convert asyncpg Record to dict with proper type handling"""
+        import json
+        
+        if hasattr(row, 'keys'):
+            data = dict(row)
+        else:
+            data = row
+        
+        # Convert UUID to string
+        if 'id' in data and data['id']:
+            data['id'] = str(data['id'])
+        
+        # Handle JSONB fields
+        for key in ['tags', 'task_metadata', 'result', 'progress']:
+            if key in data:
+                if isinstance(data[key], str):
+                    try:
+                        data[key] = json.loads(data[key])
+                    except (json.JSONDecodeError, TypeError):
+                        data[key] = {} if key != 'tags' else []
+        
+        # Convert timestamps to ISO strings
+        for key in ['created_at', 'updated_at', 'started_at', 'completed_at']:
+            if key in data and data[key]:
+                if hasattr(data[key], 'isoformat'):
+                    data[key] = data[key].isoformat()
+        
+        return data
+
+    # ========================================================================
     # METRICS (from tasks and logs)
     # ========================================================================
 
@@ -688,3 +916,49 @@ class DatabaseService:
                 "avgExecutionTime": 0,  # TODO: Calculate from task data
                 "totalCost": 0,  # TODO: Calculate from financial data
             }
+
+    # ========================================================================
+    # TASK OPERATIONS (Additional methods for content_router_service)
+    # ========================================================================
+
+    async def delete_task(self, task_id: str) -> bool:
+        """Delete task from database"""
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(
+                    "DELETE FROM tasks WHERE id = $1",
+                    task_id
+                )
+                return result == "DELETE 1"
+        except Exception as e:
+            logger.error(f"❌ Error deleting task {task_id}: {e}")
+            return False
+
+    async def get_drafts(
+        self, limit: int = 20, offset: int = 0
+    ) -> tuple:
+        """Get list of draft tasks"""
+        try:
+            async with self.pool.acquire() as conn:
+                # Get drafts
+                rows = await conn.fetch(
+                    """
+                    SELECT * FROM tasks
+                    WHERE status = 'draft'
+                    ORDER BY created_at DESC
+                    LIMIT $1 OFFSET $2
+                    """,
+                    limit,
+                    offset
+                )
+                
+                # Get total count
+                total = await conn.fetchval(
+                    "SELECT COUNT(*) FROM tasks WHERE status = 'draft'"
+                )
+                
+                drafts = [self._convert_row_to_dict(row) for row in rows]
+                return (drafts, total or 0)
+        except Exception as e:
+            logger.error(f"❌ Error getting drafts: {e}")
+            return ([], 0)

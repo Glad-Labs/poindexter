@@ -50,6 +50,14 @@ from services.content_router_service import (
     get_content_task_store,
     process_content_generation_task,
 )
+from services.error_handler import (
+    ValidationError,
+    NotFoundError,
+    StateError,
+    DatabaseError,
+    ServiceError,
+    handle_error,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -227,8 +235,14 @@ async def create_content_task(
     logger.info(f"🟢 POST /api/content/tasks called - Type: {request.task_type} - Topic: {request.topic}")
     
     try:
-        if len(request.topic.strip()) < 3:
-            raise HTTPException(status_code=400, detail="Topic must be at least 3 characters")
+        # Validate topic
+        if not request.topic or len(request.topic.strip()) < 3:
+            raise ValidationError(
+                "Topic must be at least 3 characters",
+                field="topic",
+                constraint="min_length=3",
+                value=request.topic
+            )
 
         logger.debug(f"  ✓ Topic validation passed")
         
@@ -237,7 +251,7 @@ async def create_content_task(
 
         # Create task
         logger.debug(f"  📝 Creating task in store...")
-        task_id = task_store.create_task(
+        task_id = await task_store.create_task(
             topic=request.topic,
             style=request.style.value,
             tone=request.tone.value,
@@ -253,7 +267,7 @@ async def create_content_task(
 
         # Update with additional fields
         logger.debug(f"  📝 Updating task with additional fields...")
-        update_result = task_store.update_task(
+        update_result = await task_store.update_task(
             task_id,
             {
                 "categories": request.categories or [],
@@ -282,13 +296,13 @@ async def create_content_task(
             polling_url=f"/api/content/tasks/{task_id}",
         )
 
-    except HTTPException:
-        raise
+    except ValidationError as e:
+        logger.warning(f"⚠️ Validation error: {e.message}")
+        raise e.to_http_exception()
     except Exception as e:
         logger.error(f"❌ Error creating content task: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail=f"Failed to create content task: {str(e)}"
-        )
+        error = handle_error(e)
+        raise error.to_http_exception()
 
 
 @content_router.get(
@@ -316,12 +330,16 @@ async def get_content_task_status(task_id: str):
         logger.debug(f"  ✓ Got task store")
         
         logger.debug(f"  🔍 Retrieving task from store...")
-        task = task_store.get_task(task_id)
+        task = await task_store.get_task(task_id)
         logger.debug(f"  ✓ Retrieved from store: {task is not None}")
 
         if not task:
             logger.warning(f"❌ Task not found: {task_id}")
-            raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
+            raise NotFoundError(
+                f"Task not found",
+                resource_type="task",
+                resource_id=task_id
+            )
 
         logger.info(f"✅ Task status retrieved: {task_id} - status: {task.get('status', 'unknown')}")
         
@@ -354,11 +372,13 @@ async def get_content_task_status(task_id: str):
             created_at=task.get("created_at", ""),
         )
 
-    except HTTPException:
-        raise
+    except NotFoundError as e:
+        logger.warning(f"⚠️ Resource not found: {e.message}")
+        raise e.to_http_exception()
     except Exception as e:
         logger.error(f"❌ Error getting task status: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error getting task status: {str(e)}")
+        error = handle_error(e)
+        raise error.to_http_exception()
 
 
 @content_router.get(
@@ -388,7 +408,7 @@ async def list_content_tasks(
     """
     try:
         task_store = get_content_task_store()
-        drafts, total = task_store.get_drafts(limit=limit, offset=offset)
+        drafts, total = await task_store.get_drafts(limit=limit, offset=offset)
 
         # Apply filters
         if task_type:
@@ -419,7 +439,8 @@ async def list_content_tasks(
 
     except Exception as e:
         logger.error(f"Error listing tasks: {e}")
-        raise HTTPException(status_code=500, detail=f"Error listing tasks: {str(e)}")
+        error = handle_error(e)
+        raise error.to_http_exception()
 
 
 @content_router.post(
@@ -464,11 +485,15 @@ async def approve_and_publish_task(task_id: str, request: ApprovalRequest):
     """
     try:
         task_store = get_content_task_store()
-        task = task_store.get_task(task_id)
+        task = await task_store.get_task(task_id)
 
         if not task:
             logger.error(f"❌ Approval: Task not found {task_id}")
-            raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
+            raise NotFoundError(
+                f"Task not found",
+                resource_type="task",
+                resource_id=task_id
+            )
 
         # ✅ CRITICAL: Check task is awaiting approval
         current_status = task.get("status")
@@ -478,9 +503,10 @@ async def approve_and_publish_task(task_id: str, request: ApprovalRequest):
             logger.error(
                 f"❌ Approval: Task {task_id} not awaiting approval (status={current_status})"
             )
-            raise HTTPException(
-                status_code=409,
-                detail=f"Task must be in 'awaiting_approval' status (current: {current_status})"
+            raise StateError(
+                f"Task must be in 'awaiting_approval' status",
+                current_state=current_status,
+                requested_action="approve"
             )
 
         approval_timestamp = datetime.now()
@@ -506,13 +532,14 @@ async def approve_and_publish_task(task_id: str, request: ApprovalRequest):
             content = task.get("content")
             if not content:
                 logger.error(f"❌ Task {task_id} has no content")
-                raise HTTPException(
-                    status_code=400, 
-                    detail="Task content is empty"
+                raise ValidationError(
+                    "Task content is empty",
+                    field="content",
+                    constraint="required"
                 )
 
             # ✅ Update task with approval metadata
-            task_store.update_task(
+            await task_store.update_task(
                 task_id,
                 {
                     "status": "approved",
@@ -547,7 +574,7 @@ async def approve_and_publish_task(task_id: str, request: ApprovalRequest):
             logger.info(f"   📌 Reviewer feedback: {human_feedback}")
             
             # ✅ Update task with rejection metadata
-            task_store.update_task(
+            await task_store.update_task(
                 task_id,
                 {
                     "status": "rejected",
@@ -601,7 +628,7 @@ async def delete_content_task(task_id: str):
     try:
         task_store = get_content_task_store()
 
-        if not task_store.delete_task(task_id):
+        if not await task_store.delete_task(task_id):
             raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
 
         logger.info(f"Task deleted: {task_id}")
@@ -706,7 +733,7 @@ async def generate_and_publish_content(request: GenerateAndPublishRequest, backg
         task_store = get_content_task_store()
         
         # Call create_task with required parameters
-        task_id = task_store.create_task(
+        task_id = await task_store.create_task(
             topic=request.topic,
             style=request.style.value if request.style else "educational",
             tone=request.tone.value if request.tone else "professional",
