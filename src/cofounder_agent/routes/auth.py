@@ -284,30 +284,9 @@ async def verify_session(token: str = Depends(get_token_from_header)) -> Dict[st
     }
 
 
-@router.post("/logout")
-async def logout(token: str = Depends(get_token_from_header)) -> Dict[str, Union[bool, str]]:
-    """
-    Logout user and invalidate session.
-
-    In a production system, this would blacklist the token.
-    Currently just acknowledges the logout request.
-
-    Headers:
-        Authorization: Bearer <JWT token>
-
-    Returns:
-        - success (bool): True if logout successful
-        - message (str): Confirmation message
-
-    Raises:
-        HTTPException: If token is invalid
-    """
-    payload = verify_jwt_token(token)
-
-    if not payload:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
-    username = payload.get("sub", "unknown")
+# NOTE: POST /logout endpoint moved to routes/auth_unified.py
+# (unified endpoint that works for all auth types: JWT, OAuth, GitHub)
+# See: routes/auth_unified.py for consolidated implementation
     logger.info(f"User logged out: {username}")
 
     return {

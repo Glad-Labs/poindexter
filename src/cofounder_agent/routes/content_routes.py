@@ -38,7 +38,7 @@ Backward Compatible Endpoints (DEPRECATED):
 """
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
 import logging
@@ -76,34 +76,78 @@ class CreateBlogPostRequest(BaseModel):
     """Request to create a content task (blog post, social media, email, etc.)"""
 
     task_type: Literal["blog_post", "social_media", "email", "newsletter"] = Field(
-        "blog_post", description="Type of content task to create"
+        "blog_post", 
+        description="Type of content task to create"
     )
-    topic: str = Field(..., min_length=3, max_length=200, description="Content topic/subject")
+    topic: str = Field(
+        ..., 
+        min_length=3, 
+        max_length=200, 
+        description="Content topic/subject",
+        examples=["The Future of AI", "E-commerce Best Practices"]
+    )
     style: ContentStyle = Field(
-        ContentStyle.TECHNICAL, description="Content style"
+        ContentStyle.TECHNICAL, 
+        description="Content style (technical, narrative, listicle, educational, thought-leadership)"
     )
-    tone: ContentTone = Field(ContentTone.PROFESSIONAL, description="Content tone")
+    tone: ContentTone = Field(
+        ContentTone.PROFESSIONAL, 
+        description="Content tone (professional, casual, academic, inspirational)"
+    )
     target_length: int = Field(
-        1500, ge=200, le=5000, description="Target word count"
+        1500, 
+        ge=200, 
+        le=5000, 
+        description="Target word count (200-5000 words)",
+        examples=[1500, 2000, 3000]
     )
     tags: Optional[List[str]] = Field(
-        None, description="Tags for categorization"
+        None, 
+        min_items=0,
+        max_items=10,
+        description="Tags for categorization (max 10)"
     )
     categories: Optional[List[str]] = Field(
-        None, description="Categories for blog posts"
+        None, 
+        min_items=0,
+        max_items=5,
+        description="Categories for blog posts (max 5)"
     )
     generate_featured_image: bool = Field(
-        True, description="Search Pexels for featured image (free)"
+        True, 
+        description="Search Pexels for featured image (free)"
     )
     publish_mode: PublishMode = Field(
-        PublishMode.DRAFT, description="Draft or publish immediately"
+        PublishMode.DRAFT, 
+        description="Draft or publish immediately"
     )
     enhanced: bool = Field(
-        False, description="Use SEO enhancement"
+        False, 
+        description="Use SEO enhancement"
     )
     target_environment: str = Field(
-        "production", description="Target deployment environment"
+        "production", 
+        pattern="^(development|staging|production)$",
+        description="Target deployment environment (development, staging, production)"
     )
+
+    class Config:
+        """Pydantic configuration"""
+        json_schema_extra = {
+            "example": {
+                "task_type": "blog_post",
+                "topic": "AI-Powered E-commerce: Trends and Best Practices",
+                "style": "technical",
+                "tone": "professional",
+                "target_length": 2000,
+                "tags": ["AI", "E-commerce"],
+                "categories": ["Technology"],
+                "generate_featured_image": True,
+                "publish_mode": "draft",
+                "enhanced": True,
+                "target_environment": "production"
+            }
+        }
 
 
 class CreateBlogPostResponse(BaseModel):
@@ -152,7 +196,18 @@ class DraftsListResponse(BaseModel):
 class PublishDraftRequest(BaseModel):
     """Request to publish a draft"""
 
-    target_environment: str = Field("production", description="Target deployment environment")
+    target_environment: str = Field(
+        "production", 
+        pattern="^(development|staging|production)$",
+        description="Target deployment environment: development, staging, or production"
+    )
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "target_environment": "production"
+            }
+        }
 
 
 class ApprovalRequest(BaseModel):
@@ -162,9 +217,33 @@ class ApprovalRequest(BaseModel):
     Request from human reviewer to approve or reject a task pending approval.
     Mandatory gate before publishing - requires explicit human decision.
     """
-    approved: bool = Field(..., description="True to approve and publish, False to reject")
-    human_feedback: str = Field(..., description="Human reviewer feedback (reason for decision)")
-    reviewer_id: str = Field(..., description="Reviewer username or ID")
+    approved: bool = Field(
+        ..., 
+        description="True to approve and publish, False to reject"
+    )
+    human_feedback: str = Field(
+        ..., 
+        min_length=10, 
+        max_length=1000,
+        description="Human reviewer feedback (reason for decision) - 10-1000 chars"
+    )
+    reviewer_id: str = Field(
+        ..., 
+        min_length=2, 
+        max_length=100,
+        pattern="^[a-zA-Z0-9._-]+$",
+        description="Reviewer username or ID (alphanumeric, dots, dashes, underscores)"
+    )
+
+    class Config:
+        """Pydantic configuration"""
+        json_schema_extra = {
+            "example": {
+                "approved": True,
+                "human_feedback": "Excellent content! Well-researched and engaging. Approved for publication.",
+                "reviewer_id": "john.doe"
+            }
+        }
 
 
 class ApprovalResponse(BaseModel):
@@ -627,11 +706,22 @@ async def delete_content_task(task_id: str):
     """
     try:
         task_store = get_content_task_store()
+        logger.debug(f"🟢 DELETE /api/content/tasks/{task_id} called")
 
-        if not await task_store.delete_task(task_id):
-            raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
+        # Get task first to verify it exists
+        task = await task_store.get_task(task_id)
+        if not task:
+            logger.warning(f"⚠️ Task not found: {task_id}")
+            raise NotFoundError(
+                f"Task not found",
+                resource_type="task",
+                resource_id=task_id
+            )
 
-        logger.info(f"Task deleted: {task_id}")
+        # Delete the task
+        logger.debug(f"  🗑️  Deleting task {task_id}...")
+        await task_store.delete_task(task_id)
+        logger.info(f"✅ Task deleted: {task_id}")
 
         return {
             "task_id": task_id,
@@ -639,11 +729,13 @@ async def delete_content_task(task_id: str):
             "message": "Task deleted successfully",
         }
 
-    except HTTPException:
-        raise
+    except NotFoundError as e:
+        logger.warning(f"⚠️ Resource not found: {e.message}")
+        raise e.to_http_exception()
     except Exception as e:
-        logger.error(f"Error deleting task: {e}")
-        raise HTTPException(status_code=500, detail=f"Error deleting task: {str(e)}")
+        logger.error(f"❌ Error deleting task: {e}", exc_info=True)
+        error = handle_error(e)
+        raise error.to_http_exception()
 
 
 # ============================================================================
@@ -653,15 +745,59 @@ async def delete_content_task(task_id: str):
 
 class GenerateAndPublishRequest(BaseModel):
     """Request model for content generation and direct publishing"""
-    topic: str = Field(..., description="Topic for content generation")
-    audience: Optional[str] = Field("General audience", description="Target audience")
-    keywords: Optional[List[str]] = Field(default_factory=list, description="SEO keywords")
-    style: Optional[ContentStyle] = Field(ContentStyle.EDUCATIONAL, description="Content style")
-    tone: Optional[ContentTone] = Field(ContentTone.PROFESSIONAL, description="Content tone")
-    length: Optional[str] = Field("medium", description="Content length (short/medium/long)")
-    category: Optional[str] = Field(None, description="Category ID or name")
-    tags: Optional[List[str]] = Field(default_factory=list, description="Tag names")
+    topic: str = Field(..., min_length=3, max_length=200, 
+                      description="Topic for content generation (3-200 chars)")
+    audience: Optional[str] = Field("General audience", min_length=3, max_length=100,
+                                   description="Target audience (3-100 chars)")
+    keywords: Optional[List[str]] = Field(None,
+                                         description="SEO keywords (max 15)")
+    style: Optional[ContentStyle] = Field(ContentStyle.EDUCATIONAL, 
+                                         description="Content style (EDUCATIONAL/INFORMATIVE/...)")
+    tone: Optional[ContentTone] = Field(ContentTone.PROFESSIONAL, 
+                                       description="Content tone (PROFESSIONAL/CASUAL/...)")
+    length: Optional[str] = Field("medium", 
+                                 pattern="^(short|medium|long)$",
+                                 description="Content length: short, medium, or long")
+    category: Optional[str] = Field(None, min_length=1, max_length=100,
+                                   description="Category ID or name (1-100 chars)")
+    tags: Optional[List[str]] = Field(None,
+                                     description="Tag names (max 10)")
     auto_publish: Optional[bool] = Field(False, description="Immediately publish to site")
+    
+    @field_validator("keywords")
+    @classmethod
+    def validate_keywords(cls, v):
+        """Validate keywords list"""
+        if v is None:
+            return []
+        if len(v) > 15:
+            raise ValueError("Maximum 15 keywords allowed")
+        return v
+    
+    @field_validator("tags")
+    @classmethod
+    def validate_tags(cls, v):
+        """Validate tags list"""
+        if v is None:
+            return []
+        if len(v) > 10:
+            raise ValueError("Maximum 10 tags allowed")
+        return v
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "topic": "How to Implement AI-Driven Content Generation",
+                "audience": "Software developers and content creators",
+                "keywords": ["AI", "content", "generation", "automation"],
+                "style": "EDUCATIONAL",
+                "tone": "PROFESSIONAL",
+                "length": "medium",
+                "category": "ai-technology",
+                "tags": ["AI", "Tutorial", "Best-Practices"],
+                "auto_publish": False
+            }
+        }
 
 
 @content_router.post(
@@ -726,12 +862,24 @@ async def generate_and_publish_content(request: GenerateAndPublishRequest, backg
         import psycopg2
         from psycopg2.extras import execute_values
 
+        # Validate request
+        if not request.topic or len(request.topic.strip()) < 3:
+            raise ValidationError(
+                "Topic must be at least 3 characters",
+                field="topic",
+                constraint="min_length=3",
+                value=request.topic
+            )
+
         task_id = str(uuid.uuid4())
+        logger.info(f"🟢 POST /api/content/generate-and-publish called - Topic: {request.topic}")
         logger.info(f"PHASE 4: Starting content generation for task {task_id}: {request.topic}")
 
         # Create task record
         task_store = get_content_task_store()
+        logger.debug(f"  ✓ Got task store")
         
+        logger.debug(f"  📝 Creating task...")
         # Call create_task with required parameters
         task_id = await task_store.create_task(
             topic=request.topic,
@@ -744,12 +892,13 @@ async def generate_and_publish_content(request: GenerateAndPublishRequest, backg
             task_type="blog_post",
             metadata={"audience": request.audience, "category": request.category}
         )
+        logger.info(f"  ✅ Task created: {task_id}")
         
         created_at = datetime.utcnow().isoformat()
 
         # Generate content using existing content service
         content_service = get_content_task_store()
-        logger.info(f"Generating content for: {request.topic}")
+        logger.info(f"  📝 Generating content for: {request.topic}")
 
         # For now, we'll create a placeholder that demonstrates the endpoint works
         # In production, this would call the full content generation pipeline
@@ -764,101 +913,140 @@ async def generate_and_publish_content(request: GenerateAndPublishRequest, backg
         }
 
         # Publish to CMS database
-        logger.info(f"Publishing to FastAPI CMS: {generated_content['title']}")
+        logger.info(f"  🌐 Publishing to FastAPI CMS: {generated_content['title']}")
 
-        import psycopg2
-        conn = psycopg2.connect(
-            host="localhost",
-            database="glad_labs_dev",
-            user="postgres",
-            password="postgres",
-            port="5432",
-        )
-        cur = conn.cursor()
-
-        post_id = str(uuid.uuid4())
-        slug = generated_content["title"].lower().replace(" ", "-").replace("/", "-")
-        
-        # Add timestamp to ensure uniqueness
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        slug = f"{slug}-{timestamp}"
-
-        # Get category ID if provided
-        category_id = None
-        if request.category:
-            cur.execute(
-                "SELECT id FROM categories WHERE name ILIKE %s OR slug = %s LIMIT 1",
-                (request.category, request.category.lower().replace(" ", "-")),
+        try:
+            import psycopg2
+            conn = psycopg2.connect(
+                host="localhost",
+                database="glad_labs_dev",
+                user="postgres",
+                password="postgres",
+                port="5432",
             )
-            result = cur.fetchone()
-            if result:
-                category_id = result[0]
-
-        # Get tag IDs
-        tag_ids = []
-        if request.tags:
-            placeholders = ",".join(["%s"] * len(request.tags))
-            cur.execute(
-                f"SELECT id FROM tags WHERE name ILIKE ANY(ARRAY[{placeholders}])",
-                request.tags,
+            cur = conn.cursor()
+        except psycopg2.Error as e:
+            logger.error(f"❌ Database connection failed: {e}")
+            raise DatabaseError(
+                f"Failed to connect to database",
+                details={"error": str(e)}
             )
-            tag_ids = [row[0] for row in cur.fetchall()]
 
-        # Insert post
-        cur.execute(
-            """
-            INSERT INTO posts (
-                id, title, slug, content, excerpt,
-                featured_image_url, cover_image_url,
-                author_id, category_id, tag_ids,
-                seo_title, seo_description, seo_keywords,
-                status, published_at, view_count,
-                created_at, updated_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """,
-            (
-                post_id,
-                generated_content["title"],
-                slug,
-                generated_content["content"],
-                generated_content["excerpt"],
-                f"https://via.placeholder.com/600x400?text={slug}",
-                f"https://via.placeholder.com/1200x400?text={slug}",
-                None,  # author_id - set to None for now
-                category_id,
-                tag_ids,
-                generated_content["seo_title"],
-                generated_content["seo_description"],
-                generated_content["seo_keywords"],
-                "published" if request.auto_publish else "draft",
-                datetime.utcnow() if request.auto_publish else None,
-                0,
-                datetime.utcnow(),
-                datetime.utcnow(),
-            ),
-        )
+        try:
+            post_id = str(uuid.uuid4())
+            slug = generated_content["title"].lower().replace(" ", "-").replace("/", "-")
+            
+            # Add timestamp to ensure uniqueness
+            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            slug = f"{slug}-{timestamp}"
 
-        conn.commit()
-        cur.close()
-        conn.close()
+            # Get category ID if provided
+            category_id = None
+            if request.category:
+                try:
+                    cur.execute(
+                        "SELECT id FROM categories WHERE name ILIKE %s OR slug = %s LIMIT 1",
+                        (request.category, request.category.lower().replace(" ", "-")),
+                    )
+                    result = cur.fetchone()
+                    if result:
+                        category_id = result[0]
+                except psycopg2.Error as e:
+                    logger.warning(f"⚠️ Could not fetch category: {e}")
 
-        logger.info(f"PHASE 4: Content generated and published successfully: {post_id}")
+            # Get tag IDs
+            tag_ids = []
+            if request.tags:
+                try:
+                    placeholders = ",".join(["%s"] * len(request.tags))
+                    cur.execute(
+                        f"SELECT id FROM tags WHERE name ILIKE ANY(ARRAY[{placeholders}])",
+                        request.tags,
+                    )
+                    tag_ids = [row[0] for row in cur.fetchall()]
+                except psycopg2.Error as e:
+                    logger.warning(f"⚠️ Could not fetch tags: {e}")
 
-        return {
-            "success": True,
-            "task_id": task_id,
-            "post_id": post_id,
-            "slug": slug,
-            "title": generated_content["title"],
-            "status": "published" if request.auto_publish else "draft",
-            "content_preview": generated_content["content"][:200] + "...",
-            "view_url": f"http://localhost:3000/posts/{slug}",
-            "edit_url": f"http://localhost:3001/posts/{post_id}",
-            "generated_at": created_at,
-            "published_at": datetime.utcnow().isoformat() if request.auto_publish else None,
-        }
+            # Insert post
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO posts (
+                        id, title, slug, content, excerpt,
+                        featured_image_url, cover_image_url,
+                        author_id, category_id, tag_ids,
+                        seo_title, seo_description, seo_keywords,
+                        status, published_at, view_count,
+                        created_at, updated_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        post_id,
+                        generated_content["title"],
+                        slug,
+                        generated_content["content"],
+                        generated_content["excerpt"],
+                        f"https://via.placeholder.com/600x400?text={slug}",
+                        f"https://via.placeholder.com/1200x400?text={slug}",
+                        None,  # author_id - set to None for now
+                        category_id,
+                        tag_ids,
+                        generated_content["seo_title"],
+                        generated_content["seo_description"],
+                        generated_content["seo_keywords"],
+                        "published" if request.auto_publish else "draft",
+                        datetime.utcnow() if request.auto_publish else None,
+                        0,
+                        datetime.utcnow(),
+                        datetime.utcnow(),
+                    ),
+                )
+                logger.debug(f"  ✓ Post inserted: {post_id}")
 
+                conn.commit()
+                logger.info(f"  ✅ Transaction committed")
+            except psycopg2.Error as e:
+                conn.rollback()
+                logger.error(f"❌ Failed to insert post: {e}")
+                raise DatabaseError(
+                    f"Failed to publish content",
+                    details={"error": str(e)}
+                )
+            finally:
+                cur.close()
+                conn.close()
+
+            logger.info(f"✅✅ PHASE 4: Content generated and published successfully: {post_id}")
+
+            return {
+                "success": True,
+                "task_id": task_id,
+                "post_id": post_id,
+                "slug": slug,
+                "title": generated_content["title"],
+                "status": "published" if request.auto_publish else "draft",
+                "content_preview": generated_content["content"][:200] + "...",
+                "view_url": f"http://localhost:3000/posts/{slug}",
+                "edit_url": f"http://localhost:3001/posts/{post_id}",
+                "generated_at": created_at,
+                "published_at": datetime.utcnow().isoformat() if request.auto_publish else None,
+            }
+
+        except psycopg2.Error as e:
+            logger.error(f"❌ Database error during publish: {e}", exc_info=True)
+            raise DatabaseError(
+                f"Failed to publish content",
+                details={"error": str(e)}
+            )
+
+    except ValidationError as e:
+        logger.warning(f"⚠️ Validation error: {e.message}")
+        raise e.to_http_exception()
+    except DatabaseError as e:
+        logger.error(f"⚠️ Database error: {e.message}")
+        raise e.to_http_exception()
     except Exception as e:
-        logger.error(f"PHASE 4 Error: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Content generation failed: {str(e)}")
+        logger.error(f"❌ PHASE 4 Error: {str(e)}", exc_info=True)
+        error = handle_error(e)
+        raise error.to_http_exception()
 

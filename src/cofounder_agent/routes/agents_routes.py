@@ -16,8 +16,9 @@ Endpoints:
 import logging
 from datetime import datetime
 from typing import Dict, Any, Optional, List
+from enum import Enum
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from services.logger_config import get_logger
 
@@ -27,34 +28,143 @@ router = APIRouter(prefix="/api/agents", tags=["agents"])
 
 
 # ============================================================================
-# Data Models
+# Enums for validation
+# ============================================================================
+
+class AgentStatusEnum(str, Enum):
+    """Agent execution status"""
+    IDLE = "idle"
+    WORKING = "working"
+    ERROR = "error"
+
+
+class AgentLogLevelEnum(str, Enum):
+    """Log level types"""
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    CRITICAL = "CRITICAL"
+
+
+class SystemHealthEnum(str, Enum):
+    """System health status"""
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    ERROR = "error"
+
+
+class AgentCommandEnum(str, Enum):
+    """Supported agent commands"""
+    START = "start"
+    STOP = "stop"
+    PAUSE = "pause"
+    RESUME = "resume"
+    EXECUTE = "execute"
+    STATUS = "status"
+    RESET = "reset"
+    CLEAR_MEMORY = "clear_memory"
+
+
+# ============================================================================
+# Data Models with validation
 # ============================================================================
 
 class AgentStatus(BaseModel):
     """Agent status information"""
-    name: str
-    type: str
-    status: str  # "idle", "working", "error"
-    last_activity: Optional[datetime] = None
-    tasks_completed: int = 0
-    tasks_failed: int = 0
-    execution_time_avg: float = 0.0
-    error_message: Optional[str] = None
-    uptime_seconds: int = 0
+    name: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        description="Agent name/identifier"
+    )
+    type: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        description="Agent type/role"
+    )
+    status: AgentStatusEnum = Field(
+        ...,
+        description="Current agent status"
+    )
+    last_activity: Optional[datetime] = Field(
+        None,
+        description="Timestamp of last activity"
+    )
+    tasks_completed: int = Field(
+        default=0,
+        ge=0,
+        description="Number of successfully completed tasks"
+    )
+    tasks_failed: int = Field(
+        default=0,
+        ge=0,
+        description="Number of failed tasks"
+    )
+    execution_time_avg: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Average execution time in seconds"
+    )
+    error_message: Optional[str] = Field(
+        None,
+        max_length=1000,
+        description="Last error message if status is error"
+    )
+    uptime_seconds: int = Field(
+        default=0,
+        ge=0,
+        description="Uptime in seconds"
+    )
 
 
 class AllAgentsStatus(BaseModel):
     """Status of all agents"""
-    status: str  # "healthy", "degraded", "error"
-    timestamp: datetime
-    agents: Dict[str, AgentStatus]
-    system_health: Dict[str, Any]
+    status: SystemHealthEnum = Field(
+        ...,
+        description="Overall system health status"
+    )
+    timestamp: datetime = Field(
+        ...,
+        description="Status timestamp"
+    )
+    agents: Dict[str, AgentStatus] = Field(
+        ...,
+        description="Status of each agent"
+    )
+    system_health: Dict[str, Any] = Field(
+        ...,
+        description="System-level health metrics"
+    )
 
 
 class AgentCommand(BaseModel):
     """Command to send to an agent"""
-    command: str
-    parameters: Optional[Dict[str, Any]] = None
+    command: AgentCommandEnum = Field(
+        ...,
+        description="Command to execute"
+    )
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Command parameters (if any)"
+    )
+
+    @field_validator("command")
+    @classmethod
+    def validate_command(cls, v):
+        """Ensure command is valid"""
+        if not v:
+            raise ValueError("Command cannot be empty")
+        return v
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "command": "execute",
+                "parameters": {"task_id": "task_123"}
+            }
+        }
 
 
 class AgentCommandResult(BaseModel):
@@ -128,10 +238,12 @@ def format_agent_status(agent_name: str, orchestrator) -> AgentStatus:
     return AgentStatus(
         name=agent_name,
         type=agent_name.replace("_", " ").title(),
-        status="idle",
+        status=AgentStatusEnum.IDLE,
+        last_activity=None,
         tasks_completed=0,
         tasks_failed=0,
         execution_time_avg=0.0,
+        error_message=None,
         uptime_seconds=0,
     )
 
@@ -196,13 +308,19 @@ async def get_all_agents_status(orchestrator=Depends(get_orchestrator)):
                 agents_status[agent_name] = AgentStatus(
                     name=agent_name,
                     type=agent_name.replace("_", " ").title(),
-                    status="error",
+                    status=AgentStatusEnum.ERROR,
+                    last_activity=None,
                     error_message=str(e),
                 )
         
         # Determine overall system status
-        error_count = sum(1 for s in agents_status.values() if s.status == "error")
-        overall_status = "error" if error_count > 2 else "degraded" if error_count > 0 else "healthy"
+        error_count = sum(1 for s in agents_status.values() if s.status == AgentStatusEnum.ERROR)
+        if error_count > 2:
+            overall_status = SystemHealthEnum.ERROR
+        elif error_count > 0:
+            overall_status = SystemHealthEnum.DEGRADED
+        else:
+            overall_status = SystemHealthEnum.HEALTHY
         
         return AllAgentsStatus(
             status=overall_status,

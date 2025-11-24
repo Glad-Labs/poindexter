@@ -90,35 +90,46 @@ def set_db_service(service: DatabaseService):
 
 class TaskCreateRequest(BaseModel):
     """Schema for creating a new task"""
-    task_name: str = Field(..., description="Name of the task")
-    topic: str = Field(..., description="Blog post topic")
-    primary_keyword: str = Field(default="", description="Primary SEO keyword")
-    target_audience: str = Field(default="", description="Target audience")
-    category: str = Field(default="general", description="Content category")
-    metadata: Optional[Dict[str, Any]] = Field(default={}, description="Additional metadata")
+    task_name: str = Field(..., min_length=3, max_length=200, 
+                          description="Name of the task (3-200 chars)")
+    topic: str = Field(..., min_length=3, max_length=200, 
+                      description="Blog post topic (3-200 chars)")
+    primary_keyword: str = Field(default="", max_length=100, 
+                                description="Primary SEO keyword (max 100 chars)")
+    target_audience: str = Field(default="", max_length=100, 
+                                description="Target audience (max 100 chars)")
+    category: str = Field(default="general", max_length=50, 
+                         description="Content category (max 50 chars)")
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, 
+                                              description="Additional metadata")
     
     class Config:
-        example = {
-            "task_name": "Blog Post - AI in Healthcare",
-            "topic": "How AI is Transforming Healthcare",
-            "primary_keyword": "AI healthcare",
-            "target_audience": "Healthcare professionals",
-            "category": "healthcare",
-            "metadata": {"priority": "high"}
+        json_schema_extra = {
+            "example": {
+                "task_name": "Blog Post - AI in Healthcare",
+                "topic": "How AI is Transforming Healthcare",
+                "primary_keyword": "AI healthcare",
+                "target_audience": "Healthcare professionals",
+                "category": "healthcare",
+                "metadata": {"priority": "high"}
+            }
         }
 
 
 class TaskStatusUpdateRequest(BaseModel):
     """Schema for updating task status"""
-    status: str = Field(..., description="New task status")
+    status: str = Field(..., pattern="^(pending|in_progress|completed|failed|cancelled)$",
+                       description="New task status")
     result: Optional[Dict[str, Any]] = Field(None, description="Task result/output")
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
     
     class Config:
-        example = {
-            "status": "completed",
-            "result": {"content": "Generated blog post..."},
-            "metadata": {"execution_time": 45.2}
+        json_schema_extra = {
+            "example": {
+                "status": "completed",
+                "result": {"content": "Generated blog post..."},
+                "metadata": {"execution_time": 45.2}
+            }
         }
 
 

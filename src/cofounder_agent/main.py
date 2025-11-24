@@ -2,7 +2,6 @@
 Glad Labs AI Agent - Poindexter
 FastAPI application serving as the central orchestrator for the Glad Labs ecosystem
 Implements PostgreSQL database with REST API command queue integration
-Replaces Google Cloud Firestore and Pub/Sub services
 """
 
 import sys
@@ -47,7 +46,7 @@ from services.content_critique_loop import ContentCritiqueLoop
 from routes.content_routes import content_router
 from routes.cms_routes import router as cms_router
 from routes.models import models_router, models_list_router
-from routes.auth import router as github_oauth_router
+from routes.auth_unified import router as auth_router  # ✅ Unified auth for all types
 from routes.auth_routes import router as auth_router
 from routes.settings_routes import router as settings_router
 from routes.command_queue_routes import router as command_queue_router
@@ -58,6 +57,18 @@ from routes.webhooks import webhook_router
 from routes.social_routes import social_router
 from routes.metrics_routes import metrics_router
 from routes.agents_routes import router as agents_router
+
+# Import workflow history service (Phase 5 - database persistence)
+try:
+    from services.workflow_history import WorkflowHistoryService
+    from routes.workflow_history import router as workflow_history_router, initialize_history_service
+    WORKFLOW_HISTORY_AVAILABLE = True
+except ImportError as e:
+    WORKFLOW_HISTORY_AVAILABLE = False
+    WorkflowHistoryService = None
+    initialize_history_service = None
+    workflow_history_router = None
+    logging.warning(f"Workflow history service not available: {str(e)}")
 
 # Import intelligent orchestrator (NEW - separate module, no conflicts)
 try:
@@ -102,13 +113,14 @@ database_service: Optional[DatabaseService] = None
 orchestrator: Optional[Orchestrator] = None
 task_executor: Optional[TaskExecutor] = None
 intelligent_orchestrator: Optional[IntelligentOrchestrator] = None  # NEW
+workflow_history_service: Optional[Any] = None  # Phase 6 - Workflow history
 startup_error: Optional[str] = None
 startup_complete: bool = False
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager - PostgreSQL connection is MANDATORY"""
-    global database_service, orchestrator, task_executor, startup_error, startup_complete
+    global database_service, orchestrator, task_executor, workflow_history_service, startup_error, startup_complete
     
     try:
         logger.info("🚀 Starting Glad Labs AI Co-Founder application...")
@@ -168,6 +180,20 @@ async def lifespan(app: FastAPI):
             logger.error(f"  ❌ {error_msg}", exc_info=True)
             startup_error = error_msg
             # Don't re-raise - allow app to start for health checks
+        
+        # 4a. Initialize workflow history service (Phase 6 - workflow execution persistence)
+        logger.info("  📊 Initializing workflow history service...")
+        try:
+            if WORKFLOW_HISTORY_AVAILABLE and database_service:
+                workflow_history_service = WorkflowHistoryService(database_service.pool)
+                initialize_history_service(database_service.pool)
+                logger.info("  ✅ Workflow history service initialized - executions will be persisted to PostgreSQL")
+            else:
+                logger.warning("  ⚠️ Workflow history service not available - executions will not be persisted")
+        except Exception as e:
+            error_msg = f"Workflow history service initialization failed: {str(e)}"
+            logger.warning(f"  ⚠️ {error_msg}", exc_info=True)
+            workflow_history_service = None
         
         # 4b. Initialize intelligent orchestrator (NEW - non-intrusive addition)
         logger.info("  🧠 Initializing intelligent orchestrator...")
@@ -307,8 +333,7 @@ app.add_middleware(
 )
 
 # Include route routers
-app.include_router(github_oauth_router)  # GitHub OAuth authentication
-app.include_router(auth_router)  # Traditional authentication endpoints
+app.include_router(auth_router)  # ✅ Unified authentication (JWT, OAuth, GitHub)
 app.include_router(task_router)  # Task management endpoints
 # Register unified content router (replaces 3 legacy routers)
 app.include_router(content_router)
@@ -325,6 +350,13 @@ app.include_router(webhook_router)  # Webhook event handlers
 app.include_router(social_router)  # Social media management
 app.include_router(metrics_router)  # Metrics and analytics
 app.include_router(agents_router)  # AI agent management and monitoring
+
+# Register workflow history routes (Phase 5 - database persistence)
+if WORKFLOW_HISTORY_AVAILABLE and workflow_history_router:
+    app.include_router(workflow_history_router)  # Workflow history tracking
+    logger.info("✅ Workflow history routes registered")
+else:
+    logger.warning("⚠️ Workflow history routes not registered (module not available)")
 
 # Register intelligent orchestrator routes (NEW - conditional on availability)
 if INTELLIGENT_ORCHESTRATOR_AVAILABLE and intelligent_orchestrator_router:
@@ -482,16 +514,6 @@ class StatusResponse(BaseModel):
     status: str
     data: Dict[str, Any]
 
-class TaskRequest(BaseModel):
-    topic: str
-    task_type: str
-    metadata: Optional[Dict[str, Any]] = None
-
-class TaskResponse(BaseModel):
-    task_id: str
-    status: str
-    message: str
-
 @app.post("/command", response_model=CommandResponse)
 async def process_command(request: CommandRequest, background_tasks: BackgroundTasks):
     """
@@ -517,52 +539,6 @@ async def process_command(request: CommandRequest, background_tasks: BackgroundT
     except Exception as e:
         logger.error(f"Error processing command: {str(e)} | command={request.command}")
         raise HTTPException(status_code=500, detail=f"An internal error occurred: {str(e)}")
-
-@app.post("/tasks", response_model=TaskResponse)
-async def create_task(request: TaskRequest, background_tasks: BackgroundTasks):
-    """
-    Create a new task for content creation or business operations
-    """
-    try:
-        logger.info(f"Creating task: topic={request.topic} type={request.task_type}")
-        
-        if not database_service:
-            # Development mode - simulate task creation
-            task_id = f"dev-task-{hash(request.topic)}"
-            return TaskResponse(
-                task_id=task_id,
-                status="created",
-                message=f"Task created for '{request.topic}' (development mode)"
-            )
-        
-        # Create task in PostgreSQL database
-        task_data = {
-            "topic": request.topic,
-            "task_type": request.task_type,
-            "metadata": request.metadata or {},
-            "status": "pending"
-        }
-        
-        task_id = await database_service.add_task(task_data)
-        
-        # Optionally trigger content agent if it's a content task
-        if request.task_type == "content_creation":
-            background_tasks.add_task(
-                trigger_content_agent,
-                task_id,
-                request.topic,
-                request.metadata
-            )
-        
-        return TaskResponse(
-            task_id=task_id,
-            status="created",
-            message=f"Task created for '{request.topic}'"
-        )
-        
-    except Exception as e:
-        logger.error(f"Error creating task: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to create task: {str(e)}")
 
 @app.get("/status", response_model=StatusResponse)
 async def get_status():
@@ -664,7 +640,7 @@ async def reset_performance_metrics():
     try:
         # Performance metrics are now logged to database
         if database_service:
-            await database_service.add_log_entry("info", "Performance metrics reset")
+            await database_service.add_log_entry("system", "info", "Performance metrics reset")
             return {"message": "Performance metrics reset successfully", "status": "success"}
         else:
             return {"message": "Database not available", "status": "disabled"}
@@ -682,24 +658,6 @@ async def root():
         "version": "1.0.0",
         "database_enabled": database_service is not None
     }
-
-async def trigger_content_agent(task_id: str, topic: str, metadata: Optional[Dict[str, Any]]):
-    """Background task to trigger content agent via command queue API"""
-    try:
-        if orchestrator:
-            content_request = {
-                "task_id": task_id,
-                "topic": topic,
-                "type": "blog_post",
-                "metadata": metadata or {}
-            }
-            
-            # Dispatch via REST API instead of Pub/Sub
-            await orchestrator.run_content_pipeline_async(topic, metadata)
-            logger.info(f"Content agent triggered: task_id={task_id} topic={topic}")
-            
-    except Exception as e:
-        logger.error(f"Failed to trigger content agent: task_id={task_id} error={e}")
 
 if __name__ == "__main__":
     uvicorn.run(

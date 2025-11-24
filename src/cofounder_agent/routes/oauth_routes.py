@@ -277,36 +277,9 @@ async def oauth_callback(
         )
 
 
-@router.get("/me", response_model=UserProfile)
-async def get_current_user_profile(
-    current_user: User = Depends(get_current_user)
-) -> UserProfile:
-    """
-    Get current user's profile.
-    
-    Returns:
-        UserProfile with user information
-    
-    Example:
-        GET /api/auth/me
-        Authorization: Bearer jwt_token_here
-        
-        Response:
-        {
-          "id": "550e8400-e29b-41d4-a716-446655440000",
-          "email": "user@github.com",
-          "username": "octocat",
-          "is_active": true,
-          "created_at": "2025-01-15T10:30:00Z"
-        }
-    """
-    return UserProfile(
-        id=str(current_user.id),
-        email=current_user.email,
-        username=current_user.username,
-        is_active=current_user.is_active,
-        created_at=current_user.created_at.isoformat(),
-    )
+# NOTE: GET /me endpoint moved to routes/auth_unified.py
+# (unified endpoint that works for all auth types: JWT, OAuth, GitHub)
+# See: routes/auth_unified.py for consolidated implementation
 
 
 @router.post("/logout")

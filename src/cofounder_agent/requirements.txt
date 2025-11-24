@@ -33,20 +33,8 @@ sentence-transformers>=2.2.0
 
 # ===== DATABASE & STORAGE =====
 # PostgreSQL with asyncpg driver (REQUIRED - no SQLite fallback)
-# asyncpg: High-performance async PostgreSQL driver
-# SQLAlchemy: ORM for database abstraction
-sqlalchemy[asyncio]>=2.0.0
+# asyncpg: High-performance async PostgreSQL driver (direct SQL, no ORM)
 asyncpg>=0.29.0
-alembic>=1.13.0
-
-# ===== REMOVED GOOGLE CLOUD SERVICES =====
-# Migrated from Firestore/Pub/Sub to PostgreSQL + API-based commands
-# Previous services removed:
-# - google-cloud-firestore (→ PostgreSQL)
-# - google-cloud-pubsub (→ FastAPI endpoints)
-# - google-cloud-storage (→ Vercel CDN)
-# - firebase-admin (→ Not needed)
-# This saves ~$30-50/month in GCP costs!
 
 # ===== DATA PROCESSING =====
 # Data handling, parsing, and web scraping

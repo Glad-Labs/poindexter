@@ -11,7 +11,7 @@ from typing import Optional
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from services.database_service import DatabaseService
 from services.auth import validate_access_token
@@ -25,8 +25,18 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 # ============================================================================
 
 class LoginRequest(BaseModel):
-    email: str
-    password: str
+    email: str = Field(..., pattern="^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$",
+                      description="Valid email address")
+    password: str = Field(..., min_length=6, max_length=128,
+                         description="Password (6-128 chars)")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "email": "user@example.com",
+                "password": "secure_password"
+            }
+        }
 
 
 class LoginResponse(BaseModel):
@@ -37,10 +47,33 @@ class LoginResponse(BaseModel):
 
 
 class RegisterRequest(BaseModel):
-    email: EmailStr
-    username: str
-    password: str
-    password_confirm: str
+    email: str = Field(..., pattern="^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$",
+                      description="Valid email address")
+    username: str = Field(..., min_length=3, max_length=50,
+                         pattern="^[a-zA-Z0-9._-]+$",
+                         description="Username (3-50 chars, alphanumeric + . - _)")
+    password: str = Field(..., min_length=8, max_length=128,
+                         description="Password (8-128 chars, strong)")
+    password_confirm: str = Field(..., min_length=8, max_length=128,
+                                 description="Password confirmation")
+    
+    @field_validator("password_confirm")
+    @classmethod
+    def passwords_match(cls, v, info):
+        """Validate passwords match"""
+        if info.data.get("password") != v:
+            raise ValueError("Passwords do not match")
+        return v
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "email": "newuser@example.com",
+                "username": "newuser",
+                "password": "SecurePassword123!",
+                "password_confirm": "SecurePassword123!"
+            }
+        }
 
 
 class RegisterResponse(BaseModel):
@@ -216,26 +249,9 @@ async def refresh(request: Request) -> RefreshTokenResponse:
     )
 
 
-@router.post("/logout")
-async def logout(current_user: dict = Depends(get_current_user)) -> dict:
-    """
-    Logout and revoke current session (STUB).
-    """
-    return {"success": True, "message": "Logged out successfully"}
-
-
-@router.get("/me", response_model=UserProfile)
-async def get_me(current_user: dict = Depends(get_current_user)) -> UserProfile:
-    """
-    Get current user profile.
-    """
-    return UserProfile(
-        id=current_user["id"],
-        email=current_user["email"],
-        username=current_user["username"],
-        is_active=current_user["is_active"],
-        created_at=current_user.get("created_at", datetime.now(timezone.utc).isoformat()),
-    )
+# NOTE: POST /logout and GET /me endpoints moved to routes/auth_unified.py
+# (unified endpoint that works for all auth types: JWT, OAuth, GitHub)
+# See: routes/auth_unified.py for consolidated implementation
 
 
 @router.post("/change-password", response_model=ChangePasswordResponse)
