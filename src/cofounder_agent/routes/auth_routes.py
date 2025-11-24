@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from services.database_service import DatabaseService
-from services.auth import validate_access_token
+from services.token_validator import validate_access_token
 
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])

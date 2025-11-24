@@ -23,7 +23,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Header
 from pydantic import BaseModel
 
-from services.auth import JWTTokenManager
+from services.token_validator import JWTTokenValidator
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +97,7 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
     
     # Verify token
     try:
-        claims = JWTTokenManager.verify_token(token)
+        claims = JWTTokenValidator.verify_token(token)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
