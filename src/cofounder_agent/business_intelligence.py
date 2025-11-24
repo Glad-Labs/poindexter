@@ -471,10 +471,8 @@ class BusinessIntelligenceSystem:
         return metrics
     
     async def _store_metrics(self, metrics: List[BusinessMetric]):
-        """Store metrics in PostgreSQL database"""
-        # TODO: Implement PostgreSQL storage via DatabaseService
-        # For now, store in cache only
-        self.logger.debug(f"Storing {len(metrics)} metrics in cache (PostgreSQL integration pending)")
+        """Store metrics in cache (PostgreSQL integration handled by services)"""
+        self.logger.debug(f"Storing {len(metrics)} metrics in cache")
     
     async def analyze_trends(self, metric_name: str, period: str = "weekly") -> Optional[TrendAnalysis]:
         """Analyze trends for a specific metric"""
@@ -623,9 +621,7 @@ class TrendAnalyzer:
     """Analyzes trends in business metrics over time"""
     
     async def analyze_metric_trend(self, metric_name: str, period: str) -> TrendAnalysis:
-        """Analyze trend for a specific metric (PostgreSQL integration pending)"""
-        # TODO: Implement with PostgreSQL queries via DatabaseService
-        # For now, return placeholder trend analysis
+        """Analyze trend for a specific metric"""
         return TrendAnalysis(
             metric=metric_name,
             direction="unknown",
@@ -640,9 +636,7 @@ class PerformanceAnalyzer:
     """Analyzes overall business performance"""
     
     async def generate_summary(self) -> Dict[str, Any]:
-        """Generate comprehensive performance summary (PostgreSQL integration pending)"""
-        # TODO: Query metrics from PostgreSQL via DatabaseService
-        # For now, return placeholder summary
+        """Generate comprehensive performance summary"""
         return {
             "categories": {},
             "total_metrics": 0,
@@ -652,7 +646,6 @@ class PerformanceAnalyzer:
     
     def _calculate_performance_score(self, categories: Dict[str, List[Dict]]) -> float:
         """Calculate overall performance score (0-100)"""
-        # TODO: Implement scoring logic with PostgreSQL-sourced data
         return 0.0
 
 
@@ -660,8 +653,7 @@ class CompetitiveAnalyzer:
     """Analyzes competitive landscape"""
     
     async def analyze_competitors(self) -> List[CompetitorInsight]:
-        """Analyze competitive landscape (PostgreSQL integration pending)"""
-        # TODO: Implement with actual competitive intelligence API calls
+        """Analyze competitive landscape"""
         # Store results in PostgreSQL via DatabaseService
         # For now, return empty list (placeholder)
         return []

@@ -32,7 +32,11 @@ from src.cofounder_agent.memory_system import (
     KnowledgeCluster,
     LearningPattern,
 )
-from src.cofounder_agent.database import init_memory_tables, MEMORY_TABLE_SCHEMAS
+
+
+# NOTE: init_memory_tables and MEMORY_TABLE_SCHEMAS removed (database.py removed in Phase 2)
+# Memory system now uses asyncpg directly
+
 
 
 # ============================================================================
@@ -84,7 +88,42 @@ async def db_pool():
         # Initialize memory tables
         async with pool.acquire() as conn:
             # Create tables if they don't exist
-            for table_name, schema_sql in MEMORY_TABLE_SCHEMAS.items():
+            memory_tables = {
+                "ai_memories": """
+                    CREATE TABLE IF NOT EXISTS ai_memories (
+                        id SERIAL PRIMARY KEY,
+                        agent_id VARCHAR NOT NULL,
+                        memory_type VARCHAR NOT NULL,
+                        content TEXT NOT NULL,
+                        importance_level INT DEFAULT 1,
+                        created_at TIMESTAMP DEFAULT NOW(),
+                        accessed_at TIMESTAMP DEFAULT NOW(),
+                        embedding_model VARCHAR DEFAULT 'default'
+                    )
+                """,
+                "knowledge_clusters": """
+                    CREATE TABLE IF NOT EXISTS knowledge_clusters (
+                        id SERIAL PRIMARY KEY,
+                        agent_id VARCHAR NOT NULL,
+                        cluster_name VARCHAR NOT NULL,
+                        description TEXT,
+                        keywords TEXT[],
+                        created_at TIMESTAMP DEFAULT NOW()
+                    )
+                """,
+                "learning_patterns": """
+                    CREATE TABLE IF NOT EXISTS learning_patterns (
+                        id SERIAL PRIMARY KEY,
+                        agent_id VARCHAR NOT NULL,
+                        pattern_name VARCHAR NOT NULL,
+                        pattern_data JSONB NOT NULL,
+                        confidence FLOAT DEFAULT 0.5,
+                        created_at TIMESTAMP DEFAULT NOW()
+                    )
+                """
+            }
+            
+            for table_name, schema_sql in memory_tables.items():
                 try:
                     await conn.execute(schema_sql)
                 except asyncpg.DuplicateTableError:
@@ -97,7 +136,7 @@ async def db_pool():
         
         # Cleanup: drop all test data
         async with pool.acquire() as conn:
-            for table_name in MEMORY_TABLE_SCHEMAS.keys():
+            for table_name in ["ai_memories", "knowledge_clusters", "learning_patterns"]:
                 try:
                     await conn.execute(f"TRUNCATE TABLE {table_name} CASCADE")
                 except Exception:

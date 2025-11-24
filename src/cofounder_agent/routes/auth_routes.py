@@ -1,103 +1,31 @@
 """
 Authentication API Routes for Glad Labs AI Co-Founder
 
-SIMPLIFIED FOR ASYNCPG MIGRATION:
-- Removed SQLAlchemy dependencies
-- Using mock/stub responses for now
-- Will be enhanced after asyncpg integration is complete
+OAUTH-ONLY ARCHITECTURE:
+- Frontend handles all OAuth login (GitHub, Google, Facebook)
+- API ONLY validates JWT tokens - no user creation or password management
+- All login/register logic delegated to frontend + OAuth providers
+- Database interactions via token validation only
+
+DEPRECATED ENDPOINTS (Removed):
+- /login, /register - OAuth replaces these
+- /refresh - OAuth providers handle token refresh  
+- /change-password - OAuth providers handle this
+- 2FA endpoints - Not needed for OAuth
+
+USE auth_unified.py for:
+- /logout - Logout for all auth types
+- /me - Get current user profile
 """
 
 from typing import Optional
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from pydantic import BaseModel, EmailStr, Field, field_validator
-
-from services.database_service import DatabaseService
 from services.token_validator import validate_access_token
 
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
-
-
-# ============================================================================
-# Pydantic Models (Response Schemas)
-# ============================================================================
-
-class LoginRequest(BaseModel):
-    email: str = Field(..., pattern="^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$",
-                      description="Valid email address")
-    password: str = Field(..., min_length=6, max_length=128,
-                         description="Password (6-128 chars)")
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "email": "user@example.com",
-                "password": "secure_password"
-            }
-        }
-
-
-class LoginResponse(BaseModel):
-    success: bool
-    accessToken: str
-    refreshToken: Optional[str] = None
-    user: dict
-
-
-class RegisterRequest(BaseModel):
-    email: str = Field(..., pattern="^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$",
-                      description="Valid email address")
-    username: str = Field(..., min_length=3, max_length=50,
-                         pattern="^[a-zA-Z0-9._-]+$",
-                         description="Username (3-50 chars, alphanumeric + . - _)")
-    password: str = Field(..., min_length=8, max_length=128,
-                         description="Password (8-128 chars, strong)")
-    password_confirm: str = Field(..., min_length=8, max_length=128,
-                                 description="Password confirmation")
-    
-    @field_validator("password_confirm")
-    @classmethod
-    def passwords_match(cls, v, info):
-        """Validate passwords match"""
-        if info.data.get("password") != v:
-            raise ValueError("Passwords do not match")
-        return v
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "email": "newuser@example.com",
-                "username": "newuser",
-                "password": "SecurePassword123!",
-                "password_confirm": "SecurePassword123!"
-            }
-        }
-
-
-class RegisterResponse(BaseModel):
-    success: bool
-    message: str
-    user: Optional[dict] = None
-
-
-class RefreshTokenResponse(BaseModel):
-    success: bool
-    accessToken: str
-
-
-class ChangePasswordResponse(BaseModel):
-    success: bool
-    message: str
-
-
-class UserProfile(BaseModel):
-    id: str
-    email: str
-    username: str
-    is_active: bool
-    created_at: str
 
 
 # ============================================================================
@@ -181,114 +109,24 @@ async def get_current_user(request: Request) -> dict:
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
-
 # ============================================================================
-# Authentication Endpoints (Minimal/Stub Implementations)
+# ⚠️ NOTE: All authentication endpoints removed (OAuth-only architecture)
 # ============================================================================
-
-@router.post("/login", response_model=LoginResponse)
-async def login(login_req: LoginRequest) -> LoginResponse:
-    """
-    Login with email and password (STUB IMPLEMENTATION).
-    
-    Returns:
-        LoginResponse with access token and mock user
-    """
-    # TODO: Implement proper login with password verification
-    user_id = f"user_{hash(login_req.email) % 10000}"
-    return LoginResponse(
-        success=True,
-        accessToken=f"mock_jwt_token_{user_id}",
-        refreshToken=None,
-        user={
-            "id": user_id,
-            "email": login_req.email,
-            "username": login_req.email.split("@")[0],
-            "is_active": True,
-        },
-    )
-
-
-@router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
-async def register(register_req: RegisterRequest) -> RegisterResponse:
-    """
-    Create a new user account (STUB IMPLEMENTATION).
-    
-    Returns:
-        RegisterResponse with success status
-    """
-    # TODO: Implement proper user registration with email/username checks
-    if register_req.password != register_req.password_confirm:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Passwords do not match",
-        )
-    
-    user_id = f"user_{hash(register_req.email) % 10000}"
-    return RegisterResponse(
-        success=True,
-        message="User registered successfully",
-        user={
-            "id": user_id,
-            "email": register_req.email,
-            "username": register_req.username,
-            "is_active": True,
-        },
-    )
-
-
-@router.post("/refresh", response_model=RefreshTokenResponse)
-async def refresh(request: Request) -> RefreshTokenResponse:
-    """
-    Get new access token from refresh token (STUB).
-    """
-    # TODO: Implement token refresh logic
-    return RefreshTokenResponse(
-        success=True,
-        accessToken="mock_jwt_token_refreshed",
-    )
-
-
-# NOTE: POST /logout and GET /me endpoints moved to routes/auth_unified.py
-# (unified endpoint that works for all auth types: JWT, OAuth, GitHub)
-# See: routes/auth_unified.py for consolidated implementation
-
-
-@router.post("/change-password", response_model=ChangePasswordResponse)
-async def change_password(
-    request: dict,  # TODO: Define proper request model
-    current_user: dict = Depends(get_current_user)
-) -> ChangePasswordResponse:
-    """
-    Change user password (STUB).
-    """
-    # TODO: Implement password change
-    return ChangePasswordResponse(
-        success=True,
-        message="Password changed successfully",
-    )
-
-
+# 
+# Traditional endpoints removed:
+# - POST /login - Use OAuth frontend instead
+# - POST /register - Use OAuth frontend instead
+# - POST /refresh - OAuth providers handle token refresh
+# - POST /change-password - Use OAuth provider's account management
+# - POST /setup-2fa, /verify-2fa, /disable-2fa - Not needed for OAuth
+#
+# Use auth_unified.py for:
+# - GET /api/auth/me - Get current user profile
+# - POST /api/auth/logout - Logout for all auth types
+#
+# All auth logic happens in the frontend with OAuth providers.
+# API only validates JWT tokens from OAuth providers.
 # ============================================================================
-# 2FA Endpoints (Stubs - not implemented yet)
-# ============================================================================
-
-@router.post("/setup-2fa")
-async def setup_2fa(current_user: dict = Depends(get_current_user)) -> dict:
-    """Setup 2FA (STUB)"""
-    return {"success": True, "message": "2FA setup not yet implemented"}
-
-
-@router.post("/verify-2fa-setup")
-async def verify_2fa_setup(request: dict) -> dict:
-    """Verify 2FA setup (STUB)"""
-    return {"success": True, "message": "2FA verification not yet implemented"}
-
-
-@router.post("/disable-2fa")
-async def disable_2fa(current_user: dict = Depends(get_current_user)) -> dict:
-    """Disable 2FA (STUB)"""
-    return {"success": True, "message": "2FA disable not yet implemented"}
 
 
 @router.get("/backup-codes")

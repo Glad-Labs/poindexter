@@ -46,8 +46,7 @@ from services.content_critique_loop import ContentCritiqueLoop
 from routes.content_routes import content_router
 from routes.cms_routes import router as cms_router
 from routes.models import models_router, models_list_router
-from routes.auth_unified import router as auth_router  # ✅ Unified auth for all types
-from routes.auth_routes import router as auth_router
+from routes.auth_unified import router as auth_router  # ✅ Unified auth (OAuth-only architecture)
 from routes.settings_routes import router as settings_router
 from routes.command_queue_routes import router as command_queue_router
 from routes.chat_routes import router as chat_router

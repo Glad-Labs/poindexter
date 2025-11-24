@@ -78,16 +78,6 @@ class JWTTokenValidator:
         Returns:
             Tuple of (is_valid, claims_dict)
         """
-        # Development: Accept mock tokens (start with "mock_jwt_token_")
-        if token.startswith("mock_jwt_token_"):
-            # Return mock claims for development
-            return (True, {
-                "user_id": "mock_user_dev_12345",
-                "email": "dev@example.com",
-                "username": "dev-user",
-                "type": "access"
-            })
-
         try:
             claims = JWTTokenValidator.verify_token(token, TokenType.ACCESS)
             return (True, claims)
