@@ -39,6 +39,7 @@ async def list_posts(
     skip: int = Query(0, ge=0, le=10000),
     limit: int = Query(20, ge=1, le=100),
     published_only: bool = Query(True),
+    # featured: Optional[bool] = Query(None), # Disabled until schema update
 ):
     """
     List all blog posts with pagination (ASYNC).
@@ -49,10 +50,24 @@ async def list_posts(
         async with pool.acquire() as conn:
             # Count total
             count_query = "SELECT COUNT(*) as total FROM posts"
-            if published_only:
-                count_query += " WHERE published_at IS NOT NULL"
+            where_clauses = []
+            params = []
             
-            total_row = await conn.fetchrow(count_query)
+            if published_only:
+                where_clauses.append("published_at IS NOT NULL")
+            
+            # if featured is not None:
+            #     where_clauses.append(f"featured = ${len(params) + 1}")
+            #     params.append(featured)
+            
+            if where_clauses:
+                count_query += " WHERE " + " AND ".join(where_clauses)
+            
+            if params:
+                total_row = await conn.fetchrow(count_query, *params)
+            else:
+                total_row = await conn.fetchrow(count_query)
+                
             total = total_row['total'] if total_row else 0
             
             # Get paginated posts
@@ -63,12 +78,17 @@ async def list_posts(
                 FROM posts
             """
             
-            if published_only:
-                query += " WHERE published_at IS NOT NULL"
+            if where_clauses:
+                query += " WHERE " + " AND ".join(where_clauses)
+                
             query += " ORDER BY published_at DESC NULLS LAST"
             query += f" OFFSET {skip} LIMIT {limit}"
             
-            rows = await conn.fetch(query)
+            if params:
+                rows = await conn.fetch(query, *params)
+            else:
+                rows = await conn.fetch(query)
+            
             posts = [dict(row) for row in rows]
             
             # Format timestamps

@@ -17,17 +17,24 @@ Routes:
 """
 
 from typing import Optional, Dict, Any
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import logging
+import os
+import httpx
+import jwt
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Header
 from pydantic import BaseModel
 
-from services.token_validator import JWTTokenValidator
+from services.token_validator import JWTTokenValidator, AuthConfig
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+# GitHub Configuration
+GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
+GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
 
 
 # ============================================================================
@@ -48,6 +55,80 @@ class LogoutResponse(BaseModel):
     """Logout response model."""
     success: bool
     message: str
+
+
+class GitHubCallbackRequest(BaseModel):
+    """GitHub callback request model."""
+    code: str
+    state: str
+
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+async def exchange_code_for_token(code: str) -> str:
+    """Exchange GitHub authorization code for access token."""
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            "https://github.com/login/oauth/access_token",
+            data={
+                "client_id": GITHUB_CLIENT_ID,
+                "client_secret": GITHUB_CLIENT_SECRET,
+                "code": code,
+            },
+            headers={"Accept": "application/json"},
+            timeout=10.0,
+        )
+
+        if response.status_code != 200:
+            logger.error(f"GitHub token exchange failed: {response.status_code}")
+            raise HTTPException(status_code=401, detail="GitHub authentication failed")
+
+        data = response.json()
+
+        if "error" in data:
+            logger.error(f"GitHub error: {data.get('error_description', 'Unknown error')}")
+            raise HTTPException(status_code=401, detail=data.get("error_description", "GitHub authentication failed"))
+
+        return data.get("access_token", "")
+
+
+async def get_github_user(access_token: str) -> Dict[str, Any]:
+    """Fetch GitHub user information using access token."""
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            "https://api.github.com/user",
+            headers={"Authorization": f"token {access_token}"},
+            timeout=10.0,
+        )
+
+        if response.status_code != 200:
+            logger.error(f"GitHub API error: {response.status_code}")
+            raise HTTPException(status_code=401, detail="Failed to fetch GitHub user")
+
+        return response.json()
+
+
+def create_jwt_token(user_data: Dict[str, Any]) -> str:
+    """Create JWT token for authenticated user."""
+    expiry = datetime.now(timezone.utc) + timedelta(minutes=AuthConfig.ACCESS_TOKEN_EXPIRE_MINUTES)
+
+    payload = {
+        "sub": user_data.get("login", ""),
+        "user_id": str(user_data.get("id", "")),
+        "email": user_data.get("email", ""),
+        "username": user_data.get("login", ""),
+        "avatar_url": user_data.get("avatar_url", ""),
+        "name": user_data.get("name", ""),
+        "auth_provider": "github",
+        "type": "access",
+        "exp": expiry,
+        "iat": datetime.now(timezone.utc),
+    }
+
+    token = jwt.encode(payload, AuthConfig.SECRET_KEY, algorithm=AuthConfig.ALGORITHM)
+    return token
 
 
 # ============================================================================
@@ -134,6 +215,59 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
 # ============================================================================
 # Unified Endpoints
 # ============================================================================
+
+@router.post("/github/callback")
+async def github_callback(request_data: GitHubCallbackRequest) -> Dict[str, Any]:
+    """
+    Handle GitHub OAuth callback.
+
+    Receives authorization code from frontend, exchanges it for GitHub access token,
+    fetches user information, and returns JWT token.
+    """
+    code = request_data.code
+    state = request_data.state
+
+    if not code:
+        logger.warning("GitHub callback missing code parameter")
+        raise HTTPException(status_code=400, detail="Missing authorization code")
+
+    if not state:
+        logger.warning("GitHub callback missing state parameter (CSRF check)")
+        raise HTTPException(status_code=400, detail="Missing state parameter")
+
+    try:
+        # Exchange code for GitHub access token
+        github_token = await exchange_code_for_token(code)
+
+        # Fetch user information
+        github_user = await get_github_user(github_token)
+
+        # Create JWT token for user
+        jwt_token = create_jwt_token(github_user)
+
+        # Return token and user info
+        user_info = {
+            "username": github_user.get("login", ""),
+            "email": github_user.get("email", ""),
+            "avatar_url": github_user.get("avatar_url", ""),
+            "name": github_user.get("name", ""),
+            "user_id": str(github_user.get("id", "")),
+            "auth_provider": "github"
+        }
+
+        logger.info(f"GitHub authentication successful for user: {user_info['username']}")
+
+        return {
+            "token": jwt_token,
+            "user": user_info,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"GitHub callback error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Authentication error")
+
 
 @router.post("/logout", response_model=LogoutResponse)
 async def unified_logout(current_user: Dict[str, Any] = Depends(get_current_user)) -> LogoutResponse:

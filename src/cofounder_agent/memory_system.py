@@ -362,7 +362,7 @@ class AIMemorySystem:
                     INSERT INTO memories 
                     (id, content, memory_type, importance, confidence, created_at, 
                      last_accessed, access_count, tags, related_memories, metadata, embedding)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                    VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                     ON CONFLICT (id) DO UPDATE SET
                         content = $2,
                         confidence = $5,
@@ -463,7 +463,7 @@ class AIMemorySystem:
                 await conn.execute("""
                     UPDATE memories 
                     SET last_accessed = $1, access_count = $2
-                    WHERE id = $3
+                    WHERE id = $3::uuid
                 """, memory.last_accessed, memory.access_count, memory.id)
         except Exception as e:
             self.logger.error(f"Error updating memory access: {e}")
@@ -611,7 +611,7 @@ class AIMemorySystem:
                 await conn.execute("""
                     INSERT INTO learning_patterns
                     (pattern_id, pattern_type, description, frequency, confidence, examples, discovered_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    VALUES ($1::uuid, $2, $3, $4, $5, $6, $7)
                     ON CONFLICT (pattern_id) DO UPDATE SET
                         frequency = $4,
                         confidence = $5,
@@ -673,7 +673,7 @@ class AIMemorySystem:
                 await conn.execute("""
                     INSERT INTO knowledge_clusters
                     (id, name, description, memories, confidence, last_updated, importance_score, topics)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                    VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8)
                     ON CONFLICT (id) DO UPDATE SET
                         memories = $4,
                         confidence = $5,

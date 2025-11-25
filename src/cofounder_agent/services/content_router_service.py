@@ -203,11 +203,18 @@ class ContentTaskStore:
 _content_task_store: Optional[ContentTaskStore] = None
 
 
-def get_content_task_store() -> ContentTaskStore:
-    """Get the global unified content task store (lazy-initialized)"""
+def get_content_task_store(database_service: Optional[DatabaseService] = None) -> ContentTaskStore:
+    """
+    Get the global unified content task store (lazy-initialized).
+    Allows injecting database_service during startup.
+    """
     global _content_task_store
     if _content_task_store is None:
-        _content_task_store = ContentTaskStore()
+        _content_task_store = ContentTaskStore(database_service)
+    elif database_service and _content_task_store.database_service is None:
+        # Inject service if it wasn't available during first init
+        _content_task_store.database_service = database_service
+        
     return _content_task_store
 
 

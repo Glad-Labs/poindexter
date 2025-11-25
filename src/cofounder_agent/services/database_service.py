@@ -16,7 +16,7 @@ import logging
 import os
 import asyncpg
 from typing import Dict, List, Optional, Any, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 logger = logging.getLogger(__name__)
@@ -86,7 +86,7 @@ class DatabaseService:
     async def get_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
         """Get user by ID"""
         async with self.pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT * FROM users WHERE id = $1", user_id)
+            row = await conn.fetchrow("SELECT * FROM users WHERE id = $1::uuid", user_id)
             return dict(row) if row else None
 
     async def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
@@ -252,7 +252,7 @@ class DatabaseService:
                 """
                 SELECT id, provider, provider_user_id, provider_data, created_at, last_used
                 FROM oauth_accounts
-                WHERE user_id = $1
+                WHERE user_id = $1::uuid
                 ORDER BY last_used DESC
                 """,
                 user_id,
@@ -265,7 +265,7 @@ class DatabaseService:
             result = await conn.execute(
                 """
                 DELETE FROM oauth_accounts
-                WHERE user_id = $1 AND provider = $2
+                WHERE user_id = $1::uuid AND provider = $2
                 """,
                 user_id,
                 provider,
@@ -398,7 +398,7 @@ class DatabaseService:
 
     async def get_financial_summary(self, days: int = 30) -> Dict[str, Any]:
         """Get financial summary for last N days"""
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
         
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
@@ -428,7 +428,7 @@ class DatabaseService:
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Update or create agent status"""
-        last_run = last_run or datetime.utcnow()
+        last_run = last_run or datetime.now(timezone.utc)
         
         async with self.pool.acquire() as conn:
             # Try to update first
@@ -523,8 +523,8 @@ class DatabaseService:
                 tags, task_metadata,
                 created_at, updated_at,
                 approval_status
-            ) VALUES (
-                $1, $2, $3, $4, $5, $6,
+            VALUES (
+                $1::uuid, $2, $3, $4, $5, $6,
                 $7, $8, $9,
                 $10, $11, $12,
                 $13, $14,
@@ -535,7 +535,7 @@ class DatabaseService:
         """
         
         try:
-            now = datetime.utcnow().isoformat() + "+00:00"
+            now = datetime.now(timezone.utc)
             
             async with self.pool.acquire() as conn:
                 result = await conn.fetchval(
@@ -575,7 +575,7 @@ class DatabaseService:
         Returns:
             Task dict or None
         """
-        sql = "SELECT * FROM tasks WHERE id = $1 OR id = $1::text"
+        sql = "SELECT * FROM tasks WHERE id = $1::uuid"
         
         try:
             async with self.pool.acquire() as conn:
@@ -604,15 +604,15 @@ class DatabaseService:
         Returns:
             Updated task dict or None
         """
-        from datetime import datetime
+        # from datetime import datetime
         
-        now = datetime.utcnow().isoformat() + "+00:00"
+        now = datetime.now(timezone.utc)
         
         if result:
             sql = """
                 UPDATE tasks
                 SET status = $2, result = $3, updated_at = $4
-                WHERE id = $1 OR id = $1::text
+                WHERE id = $1::uuid
                 RETURNING *
             """
             params = [task_id, status, result, now]
@@ -620,7 +620,7 @@ class DatabaseService:
             sql = """
                 UPDATE tasks
                 SET status = $2, updated_at = $3
-                WHERE id = $1 OR id = $1::text
+                WHERE id = $1::uuid
                 RETURNING *
             """
             params = [task_id, status, now]
@@ -660,7 +660,7 @@ class DatabaseService:
         sql = f"""
             UPDATE tasks
             SET {', '.join(set_clauses)}, updated_at = NOW()
-            WHERE id = $1 OR id = $1::text
+            WHERE id = $1::uuid
             RETURNING *
         """
         
@@ -883,7 +883,7 @@ class DatabaseService:
         try:
             async with self.pool.acquire() as conn:
                 result = await conn.execute(
-                    "DELETE FROM tasks WHERE id = $1",
+                    "DELETE FROM tasks WHERE id = $1::uuid",
                     task_id
                 )
                 return result == "DELETE 1"

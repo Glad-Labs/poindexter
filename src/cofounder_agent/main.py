@@ -41,6 +41,7 @@ from services.database_service import DatabaseService
 from services.task_executor import TaskExecutor
 from services.content_critique_loop import ContentCritiqueLoop
 from services.telemetry import setup_telemetry  # ✅ OpenTelemetry tracing
+from services.content_router_service import get_content_task_store  # ✅ Inject DB service
 
 # Import route routers
 # Unified content router (consolidates content.py, content_generation.py, enhanced_content.py)
@@ -82,16 +83,8 @@ except ImportError as e:
     EnhancedMemorySystem = None
     intelligent_orchestrator_router = None
 
-# Import database initialization
-try:
-    from database import init_db
-    DATABASE_AVAILABLE = True
-except ImportError:
-    init_db = None
-    DATABASE_AVAILABLE = False
-    logging.warning("Database module not available - authentication may not work")
-
 # PostgreSQL database service is now the primary service
+# Legacy 'database.py' (SQLAlchemy) has been removed.
 DATABASE_SERVICE_AVAILABLE = True
 
 # Flag for Google Cloud availability (for test mocking)
@@ -130,15 +123,19 @@ async def lifespan(app: FastAPI):
         # 1. MANDATORY: Initialize PostgreSQL database connection
         # ============================================================================
         logger.info("  📦 Connecting to PostgreSQL (REQUIRED)...")
-        logger.info(f"  DATABASE_URL: {os.getenv('DATABASE_URL', 'Not set')[:50]}...")
+        print("  📦 Connecting to PostgreSQL (REQUIRED)...") # Console feedback
+        db_url = os.getenv('DATABASE_URL', 'Not set')
+        logger.info(f"  DATABASE_URL: {db_url[:50]}...")
         
         try:
             database_service = DatabaseService()
             await database_service.initialize()
             logger.info("  ✅ PostgreSQL connected - ready for operations")
+            print("  ✅ PostgreSQL connected - ready for operations") # Console feedback
         except Exception as e:
             startup_error = f"❌ FATAL: PostgreSQL connection failed: {str(e)}"
             logger.error(f"  {startup_error}", exc_info=True)
+            print(f"  {startup_error}") # Console feedback
             logger.error("  🛑 PostgreSQL is REQUIRED - cannot continue")
             logger.error("  ⚠️ Set DATABASE_URL or DATABASE_USER environment variables")
             logger.error("  Example DATABASE_URL: postgresql://user:password@localhost:5432/glad_labs_dev")
@@ -146,6 +143,9 @@ async def lifespan(app: FastAPI):
         
         # 2. All task operations now handled by DatabaseService (pure asyncpg)
         logger.info("  📋 Task storage ready via DatabaseService (asyncpg)")
+        
+        # ✅ Inject database service into content task store (fixes initialization error)
+        get_content_task_store(database_service)
 
         # 3. Initialize unified model consolidation service
         logger.info("  🧠 Initializing unified model consolidation service...")
