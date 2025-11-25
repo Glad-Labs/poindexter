@@ -13,7 +13,7 @@
 ```text
 feat/*** branches
     ↓
-[Local Development] ← npm run dev (localhost, SQLite, http://localhost:1337)
+[Local Development] ← npm run dev (localhost, SQLite, http://localhost:8000)
     ↓
     git push origin feat/...
     ↓
@@ -70,9 +70,8 @@ NODE_ENV=staging
 LOG_LEVEL=DEBUG
 
 # === API Endpoints ===
-NEXT_PUBLIC_STRAPI_API_URL=https://staging-cms.railway.app
-STRAPI_API_TOKEN=<token-stored-in-GitHub-secrets>
 NEXT_PUBLIC_API_BASE_URL=https://staging-api.railway.app
+API_TOKEN=<token-stored-in-GitHub-secrets>
 NEXT_PUBLIC_COFOUNDER_AGENT_URL=https://staging-agent.railway.app:8000
 
 # === Database ===
@@ -83,7 +82,7 @@ DATABASE_NAME=glad_labs_staging
 # DATABASE_USER and DATABASE_PASSWORD stored in GitHub Secrets
 
 # === Services ===
-STRAPI_PORT=1337
+BACKEND_PORT=8000
 PUBLIC_SITE_PORT=3000
 OVERSIGHT_HUB_PORT=3001
 COFOUNDER_AGENT_PORT=8000
@@ -111,9 +110,8 @@ NODE_ENV=production
 LOG_LEVEL=INFO
 
 # === API Endpoints ===
-NEXT_PUBLIC_STRAPI_API_URL=https://cms.railway.app
-STRAPI_API_TOKEN=<token-stored-in-GitHub-secrets>
 NEXT_PUBLIC_API_BASE_URL=https://api.glad-labs.com
+API_TOKEN=<token-stored-in-GitHub-secrets>
 NEXT_PUBLIC_COFOUNDER_AGENT_URL=https://agent.glad-labs.com:8000
 
 # === Database ===
@@ -124,7 +122,7 @@ DATABASE_NAME=glad_labs_production
 # DATABASE_USER and DATABASE_PASSWORD stored in GitHub Secrets
 
 # === Services ===
-STRAPI_PORT=1337
+BACKEND_PORT=8000
 PUBLIC_SITE_PORT=3000
 OVERSIGHT_HUB_PORT=3001
 COFOUNDER_AGENT_PORT=8000
@@ -152,9 +150,8 @@ NODE_ENV=development
 LOG_LEVEL=DEBUG
 
 # === API Endpoints (all localhost) ===
-NEXT_PUBLIC_STRAPI_API_URL=http://localhost:1337
-STRAPI_API_TOKEN=dev-token-12345
-NEXT_PUBLIC_API_BASE_URL=http://localhost:3000
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+API_TOKEN=dev-token-12345
 NEXT_PUBLIC_COFOUNDER_AGENT_URL=http://localhost:8000
 
 # === Database (SQLite for local dev) ===
@@ -162,7 +159,7 @@ DATABASE_CLIENT=sqlite
 DATABASE_FILENAME=.tmp/data.db
 
 # === Services ===
-STRAPI_PORT=1337
+BACKEND_PORT=8000
 PUBLIC_SITE_PORT=3000
 OVERSIGHT_HUB_PORT=3001
 COFOUNDER_AGENT_PORT=8000
@@ -282,7 +279,7 @@ Add environment-aware scripts:
   "scripts": {
     "env:select": "node scripts/select-env.js",
     "dev": "npm run env:select && npm-run-all --parallel dev:*",
-    "dev:strapi": "npm run develop --workspace=cms/strapi-main",
+    "dev:backend": "python -m uvicorn main:app --reload --cwd src/cofounder_agent",
     "dev:oversight": "npm start --workspace=web/oversight-hub",
     "dev:public": "npm run dev --workspace=web/public-site",
     "build": "npm run env:select && npm run build --workspaces --if-present",
@@ -441,8 +438,8 @@ jobs:
       - name: Build frontend
         run: npm run build --workspace=web/public-site
         env:
-          NEXT_PUBLIC_STRAPI_API_URL: ${{ secrets.STAGING_STRAPI_URL }}
-          NEXT_PUBLIC_STRAPI_API_TOKEN: ${{ secrets.STAGING_STRAPI_TOKEN }}
+          NEXT_PUBLIC_API_BASE_URL: ${{ secrets.STAGING_API_URL }}
+          NEXT_PUBLIC_API_TOKEN: ${{ secrets.STAGING_API_TOKEN }}
 
       - name: Deploy to Railway (staging)
         run: |
@@ -492,8 +489,8 @@ jobs:
       - name: Build frontend
         run: npm run build --workspace=web/public-site
         env:
-          NEXT_PUBLIC_STRAPI_API_URL: ${{ secrets.PROD_STRAPI_URL }}
-          NEXT_PUBLIC_STRAPI_API_TOKEN: ${{ secrets.PROD_STRAPI_TOKEN }}
+          NEXT_PUBLIC_API_BASE_URL: ${{ secrets.PROD_API_URL }}
+          NEXT_PUBLIC_API_TOKEN: ${{ secrets.PROD_API_TOKEN }}
 
       - name: Deploy to Vercel (frontend)
         uses: vercel/action@v5
@@ -521,16 +518,16 @@ Set these secrets in GitHub repository settings (Settings → Secrets and variab
 **Development/Staging Secrets:**
 
 ```text
-STAGING_STRAPI_URL
-STAGING_STRAPI_TOKEN
+STAGING_API_URL
+STAGING_API_TOKEN
 RAILWAY_STAGING_PROJECT_ID
 ```
 
 **Production Secrets:**
 
 ```text
-PROD_STRAPI_URL
-PROD_STRAPI_TOKEN
+PROD_API_URL
+PROD_API_TOKEN
 RAILWAY_TOKEN
 RAILWAY_PROD_PROJECT_ID
 VERCEL_TOKEN
@@ -554,7 +551,7 @@ git checkout -b feat/my-feature
 npm run dev
 
 # This launches:
-# - Strapi: http://localhost:1337/admin (SQLite)
+# - Backend API: http://localhost:8000/docs (SQLite)
 # - Public Site: http://localhost:3000
 # - Oversight Hub: http://localhost:3001
 # - Co-founder Agent: http://localhost:8000/docs
@@ -584,7 +581,7 @@ git push origin dev
 # - Runs full test suite
 # - Builds with staging API endpoints
 # - Deploys to Railway staging environment
-# - Available at: https://staging-cms.railway.app
+# - Available at: https://staging-api.railway.app
 
 # Test on staging, verify against test database
 ```
@@ -639,12 +636,7 @@ git push origin main
 
 ## 🐛 Troubleshooting
 
-**Issue: "Cannot find .env file"**
-
-````bash
-## 🐛 Troubleshooting
-
-**Issue: "Cannot find .env file"**
+### Issue: "Cannot find .env file"
 
 ```bash
 # Solution: Create it from example
@@ -652,36 +644,36 @@ cp .env.example .env
 
 # Or let the script do it
 npm run env:select
-````
+```
 
-**Issue: "Environment variables not loading in Next.js"**
+### Issue: "Environment variables not loading in Next.js"
 
 ```bash
 # Solution: Ensure .env.local exists and has NEXT_PUBLIC_* prefix
 # Next.js only exposes variables with NEXT_PUBLIC_ prefix to browser
 
 # Verify in browser DevTools → Application → Environment Variables
-console.log(process.env.NEXT_PUBLIC_STRAPI_API_URL);
+console.log(process.env.NEXT_PUBLIC_API_BASE_URL);
 ```
 
-**Issue: "Different endpoints between local, staging, and production"**
+### Issue: "Different endpoints between local, staging, and production"
 
 ```bash
 # Verify each environment file has correct URLs:
-grep "STRAPI_API_URL" .env .env.staging .env.production
+grep "API_BASE_URL" .env .env.staging .env.production
 
 # Expected:
-# .env: http://localhost:1337
-# .env.staging: https://staging-cms.railway.app
-# .env.production: https://cms.railway.app
+# .env: http://localhost:8000
+# .env.staging: https://staging-api.railway.app
+# .env.production: https://api.glad-labs.com
 ```
 
-**Issue: "API calls failing in staging/production"**
+### Issue: "API calls failing in staging/production"
 
 ```bash
 # Check if API tokens are set in GitHub Secrets
 # Go to: Settings → Secrets and variables → Actions
-# Verify STAGING_STRAPI_TOKEN and PROD_STRAPI_TOKEN exist
+# Verify STAGING_API_TOKEN and PROD_API_TOKEN exist
 
 # Check workflow logs: GitHub → Actions → [workflow name]
 # Look for "Load staging environment" step to confirm env vars loaded

@@ -1,8 +1,8 @@
 # 🤖 GitHub Copilot Instructions for AI Agents
 
-**Last Updated:** November 14, 2025  
+**Last Updated:** November 24, 2025  
 **Project:** Glad Labs AI Co-Founder System v3.0  
-**Status:** PostgreSQL-First Backend | Strapi Removed | Direct DB Publishing | FastAPI REST API Only
+**Status:** PostgreSQL-First | DatabaseService (asyncpg) | JWT Auth | Direct DB Publishing | Phase 5 Complete
 
 ---
 
@@ -99,20 +99,20 @@ npm run setup:python     # Just pip install for backend
 
 **FastAPI Route Structure** (`src/cofounder_agent/routes/`)
 
-- Routes are modular: `content_routes.py`, `cms_routes.py`, `models.py`, `auth_routes.py`, `task_routes.py`, etc.
+- Routes are modular: 15+ route files (content_routes.py, cms_routes.py, auth_unified.py, task_routes.py, etc.)
 - All routes injected into main FastAPI app in `main.py` (no Strapi service routes)
-- Routes directly access PostgreSQL via psycopg2 or asyncpg (no REST layer)
-- **PATTERN:** Routes handle HTTP validation; services handle business logic
-- **KEY:** CMS routes read/write directly to PostgreSQL posts table (same schema as Strapi)
+- Routes delegate to services; services call DatabaseService for all database operations
+- **PATTERN:** Routes handle HTTP/REST → Services handle business logic → DatabaseService handles SQL via asyncpg
+- **KEY:** CMS routes do NOT access database directly; they call services which use DatabaseService
 
-**Database Patterns** (`database.py`, `services/database_service.py`, `services/content_publisher.py`)
+**Database Patterns** (`services/database_service.py`)
 
-- SQLAlchemy models for local SQLite (dev) / PostgreSQL (prod)
-- StrapiPublisher service writes directly to Strapi schema tables in PostgreSQL (no REST API)
-- psycopg2 for sync database operations (cms_routes.py)
-- asyncpg for async pool operations (content_publisher.py)
-- Direct table access: posts, categories, tags, memories, tasks, knowledge_clusters
-- **PATTERN:** Services handle database operations; routes handle HTTP
+- ✅ `database.py` module REMOVED (Phase 2 cleanup complete)
+- DatabaseService uses asyncpg for all database operations (production-grade connection pool)
+- All operations async/await: INSERT, UPDATE, SELECT, DELETE via asyncpg
+- Direct table access: posts, categories, tags, memories, tasks, knowledge_clusters, users, workflows
+- **PATTERN:** Routes call Services → Services call DatabaseService → DatabaseService executes SQL via asyncpg
+- **KEY:** Never access PostgreSQL directly from routes; always go through DatabaseService
 
 **Orchestrator Pattern** (`orchestrator_logic.py`, `services/poindexter_orchestrator.py`)
 
@@ -124,10 +124,12 @@ npm run setup:python     # Just pip install for backend
 
 **Error Handling - Watch for:**
 
-- Google Cloud integrations REMOVED: No Firestore/Pub/Sub - using PostgreSQL task store instead
-- Database ALWAYS available: `DATABASE_SERVICE_AVAILABLE = True` (required)
-- Model provider failures trigger automatic fallback (don't wrap in try/except - router handles it)
-- Strapi REST API NOT used: All operations go directly to PostgreSQL
+- ✅ Google Cloud integrations REMOVED: No Firestore/Pub/Sub - PostgreSQL task store only
+- ✅ Database ALWAYS available: `DATABASE_SERVICE_AVAILABLE = True` (required)
+- ✅ Model provider failures trigger automatic fallback (don't wrap in try/except - router handles it)
+- ✅ Strapi REST API NOT used: All operations via DatabaseService to PostgreSQL
+- ✅ `database.py` module REMOVED: Use `services/database_service.py` instead
+- ✅ No psycopg2 sync operations: Everything is async/await via asyncpg
 
 ### React/Next.js Patterns (web/)
 
@@ -214,16 +216,18 @@ npm run setup:python     # Just pip install for backend
 | Need                     | Look In                                                                 |
 | ------------------------ | ----------------------------------------------------------------------- |
 | FastAPI backend logic    | `src/cofounder_agent/main.py`, `orchestrator_logic.py`, `routes/`       |
+| All database operations  | `src/cofounder_agent/services/database_service.py` (asyncpg pool)       |
 | AI agent implementations | `src/agents/{content,financial,market_insight,compliance}_agent/`       |
 | React admin dashboard    | `web/oversight-hub/src/components/`, `store/useStore.js`                |
 | Next.js public site      | `web/public-site/pages/`, `lib/api.js`, `components/`                   |
-| CMS routes (NOT Strapi)  | `src/cofounder_agent/routes/cms_routes.py` (direct PostgreSQL access)   |
-| Database schema          | `src/cofounder_agent/database.py` (SQLAlchemy models)                   |
+| CMS routes               | `src/cofounder_agent/routes/cms_routes.py` (uses DatabaseService)       |
+| **NOT** database.py      | ❌ REMOVED in Phase 2 cleanup - use DatabaseService instead             |
 | Strapi schema reference  | `cms/strapi-main/src/` (for understanding table structure, not running)  |
-| Authentication flow      | `src/cofounder_agent/routes/auth_routes.py`, `middleware/auth.py`       |
+| Authentication flow      | `src/cofounder_agent/routes/auth_unified.py`, `services/auth.py`        |
 | Audit logging            | `src/cofounder_agent/middleware/audit_logging.py` (type-safe, 0 errors) |
-| PostgreSQL operations    | `src/cofounder_agent/services/database_service.py`, route files         |
-| Direct to DB writes      | `src/cofounder_agent/services/content_publisher.py` (asyncpg, no REST)   |
+| Content orchestration    | `src/cofounder_agent/services/content_orchestrator.py`                  |
+| Task execution           | `src/cofounder_agent/services/task_executor.py` (background tasks)      |
+| Workflow history         | `src/cofounder_agent/services/workflow_history.py` (Phase 5)            |
 | Tests                    | `src/cofounder_agent/tests/`, `**/__tests__/` (Jest)                    |
 | NPM workspace configs    | Root `package.json` (`workspaces` array)                                |
 
@@ -231,12 +235,14 @@ npm run setup:python     # Just pip install for backend
 
 ### DO:
 
-- ✅ Follow existing async/await patterns in Python backend
+- ✅ Follow existing async/await patterns in Python backend (all operations must be async)
+- ✅ Use DatabaseService for ALL database operations (never bypass it)
+- ✅ Call DatabaseService from services, not directly from routes
 - ✅ Use Zustand selectors for React state (not Context)
 - ✅ Centralize API calls in `lib/api.js` (Next.js) or route modules (FastAPI)
 - ✅ Write tests alongside code (Jest for JS, pytest for Python)
 - ✅ Use conventional commits: `feat:`, `fix:`, `refactor:`, etc.
-- ✅ Add type hints to Python functions (all 20 previous errors now fixed)
+- ✅ Add type hints to Python functions (all type hints completed)
 - ✅ Check existing code for patterns before generating new implementations
 - ✅ Reference `docs/04-DEVELOPMENT_WORKFLOW.md` for git workflow
 
@@ -246,9 +252,12 @@ npm run setup:python     # Just pip install for backend
 - ❌ Create ANY documentation in the root folder (only docs/, archive/, and core files like README.md)
 - ❌ Hardcode API endpoints (use environment variables from `.env`)
 - ❌ Prop-drill state in React (use Zustand or URL params)
-- ❌ Mix async/sync in Python orchestrator (everything must be async)
+- ❌ Mix async/sync in Python backend (everything must be async/await)
 - ❌ Ignore type hints or leave Python functions untyped
 - ❌ Commit secrets, API keys, or unencrypted sensitive data
+- ❌ Import from `database.py` (REMOVED - use DatabaseService instead)
+- ❌ Access PostgreSQL directly from routes (must go through DatabaseService via services)
+- ❌ Use psycopg2 sync operations (use asyncpg async only)
 - ❌ Modify Strapi plugins without extensive testing (known issues)
 - ❌ Create documentation that will become stale (use pragmatic approach: active docs vs archive)
 

@@ -25,10 +25,6 @@
 curl https://api.example.com/api/health
 # Expected: {"status": "healthy", "timestamp": "..."}
 
-# CMS
-curl https://cms.example.com/admin
-# Expected: 200 OK
-
 # Frontend
 curl https://example.com/
 # Expected: 200 OK with HTML content

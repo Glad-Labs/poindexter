@@ -86,7 +86,7 @@ docs/* (Tier 2)      Documentation updates (local only)
 git checkout -b feature/content-generation-agent
 
 # Bugfix
-git checkout -b bugfix/strapi-connection-error
+git checkout -b bugfix/database-connection-error
 
 # Documentation
 git checkout -b docs/deployment-guide
@@ -155,7 +155,7 @@ git push origin --delete feature/my-feature
 git commit -m "feat: add multi-provider model router"
 
 # Bug fix
-git commit -m "fix: resolve Strapi connection timeout"
+git commit -m "fix: resolve database connection timeout"
 
 # Documentation
 git commit -m "docs: update deployment guide"

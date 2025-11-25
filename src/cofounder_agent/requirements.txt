@@ -73,3 +73,9 @@ click>=8.1.0
 tqdm>=4.66.0
 pyyaml>=6.0.0
 urllib3>=2.5.0
+
+# ===== OBSERVABILITY & TRACING =====
+opentelemetry-api>=1.24.0
+opentelemetry-sdk>=1.24.0
+opentelemetry-instrumentation-fastapi>=0.45.0
+opentelemetry-exporter-otlp>=1.24.0

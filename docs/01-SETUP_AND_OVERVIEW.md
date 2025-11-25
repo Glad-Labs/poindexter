@@ -1,8 +1,8 @@
 # 01 - Setup & Overview
 
-**Last Updated:** October 22, 2025  
-**Version:** 1.0  
-**Status:** ✅ Production Ready
+**Last Updated:** November 24, 2025  
+**Version:** 2.0  
+**Status:** ✅ Production Ready | PostgreSQL-First
 
 ---
 
@@ -22,7 +22,7 @@ Welcome to Glad Labs! This guide covers everything from initial setup through pr
 **This document will get you:**
 
 - ✅ Local development environment running in 15 minutes
-- ✅ All services (Strapi, FastAPI, Next.js) operational
+- ✅ All services (FastAPI, Next.js) operational
 - ✅ Ready to test the end-to-end pipeline
 - ✅ Connected to AI models (free Ollama or paid APIs)
 
@@ -112,16 +112,13 @@ npm run dev
 #### Option C: Manual (one terminal per service)
 
 ```bash
-# Terminal 1: Strapi CMS
-cd cms/strapi-main && npm run develop
-
-# Terminal 2: AI Co-Founder Backend
+# Terminal 1: AI Co-Founder Backend (FastAPI)
 cd src/cofounder_agent && python -m uvicorn main:app --reload
 
-# Terminal 3: Public Site
+# Terminal 2: Public Site (Next.js)
 cd web/public-site && npm run dev
 
-# Terminal 4: Oversight Hub (optional)
+# Terminal 3: Oversight Hub (React)
 cd web/oversight-hub && npm start
 ```
 
@@ -131,7 +128,6 @@ Access these URLs to confirm everything is running:
 
 - **Public Site**: [http://localhost:3000](http://localhost:3000)
 - **Oversight Hub**: [http://localhost:3001](http://localhost:3001)
-- **Strapi CMS Admin**: [http://localhost:1337/admin](http://localhost:1337/admin)
 - **Backend API Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
 
 **✅ If all URLs work, you're ready to use Glad Labs!**
@@ -148,7 +144,7 @@ glad-labs-website/
 │   ├── public-site/          # Next.js public website (port 3000)
 │   └── oversight-hub/        # React admin dashboard (port 3001)
 ├── cms/
-│   └── strapi-main/    # Strapi CMS (port 1337)
+│   └── strapi-main/          # Schema reference only (no active service)
 ├── src/
 │   ├── agents/               # Specialized AI agents
 │   └── cofounder_agent/      # FastAPI backend (port 8000)

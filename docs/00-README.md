@@ -1,7 +1,7 @@
 # 📚 Glad Labs Documentation Hub
 
-**Last Updated:** November 11, 2025  
-**Status:** ✅ All 8 Core Docs Complete | High-Level Only Policy Enforced | Root Cleaned | Production Ready  
+**Last Updated:** November 24, 2025  
+**Status:** ✅ All 8 Core Docs Complete | High-Level Only Policy Enforced | Root Cleaned | Production Ready | PostgreSQL-First Architecture  
 **Documentation Policy:** 🎯 HIGH-LEVEL ONLY (Architecture-Focused, Zero Maintenance Burden)
 
 > **Policy:** This hub contains only high-level, architecture-stable documentation. Implementation details belong in code. Feature how-tos belong in code comments. Status updates are not maintained. This keeps documentation focused on what matters: system design, deployment, operations, and AI agent orchestration.
@@ -43,7 +43,7 @@ Start with any doc that matches your role, then use cross-links to explore. Each
 
 ### Components & Troubleshooting
 
-- **[Component Docs](./components/)** - Architecture of individual services (Strapi, Co-founder Agent, Oversight Hub, Public Site)
+- **[Component Docs](./components/)** - Architecture of individual services (Co-founder Agent, Oversight Hub, Public Site)
 - **[Troubleshooting Guides](./components/)** - Common issues and solutions for each component
 
 ### Technical References
@@ -123,7 +123,6 @@ Quick answers to common deployment and development problems:
 
 ### Component-Specific Troubleshooting
 
-- **[Strapi CMS Issues](./components/strapi-cms/troubleshooting/)** - Plugin problems, setup issues
 - **[Co-Founder Agent Issues](./components/cofounder-agent/troubleshooting/)** - API, model routing, memory
 - **[Oversight Hub Issues](./components/oversight-hub/troubleshooting/)** - State, API integration
 - **[Public Site Issues](./components/public-site/troubleshooting/)** - Build, data fetching
@@ -155,6 +154,7 @@ Technical specifications and standards for developers and architects:
 **Enforcement:** ✅ HIGH-LEVEL ONLY Policy 100% Enforced  
 
 **Current Metrics:**
+
 - Core Docs: 8 files (00-07) ✅
 - Technical Reference: 5 essential specs ✅ (API, Schemas, Standards, Testing, CI/CD)
 - Troubleshooting: 3 focused guides + component-specific ✅
@@ -172,14 +172,12 @@ Component-specific troubleshooting guides are organized by component:
 
 | Component            | Troubleshooting Guide                                                                             | Common Issues                                             |
 | -------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| **Strapi CMS**       | [docs/components/strapi-cms/troubleshooting/](./components/strapi-cms/troubleshooting/)           | Plugin incompatibilities, build errors, connection issues |
 | **Co-Founder Agent** | [docs/components/cofounder-agent/troubleshooting/](./components/cofounder-agent/troubleshooting/) | API errors, model routing, memory issues                  |
 | **Oversight Hub**    | [docs/components/oversight-hub/troubleshooting/](./components/oversight-hub/troubleshooting/)     | State management, API integration, UI issues              |
 | **Public Site**      | [docs/components/public-site/troubleshooting/](./components/public-site/troubleshooting/)         | Build errors, data fetching, SEO issues                   |
 
 **Quick Links:**
 
-- 🔴 **Strapi v5 Plugin Issue?** → [STRAPI_V5_PLUGIN_ISSUE.md](./components/strapi-cms/troubleshooting/STRAPI_V5_PLUGIN_ISSUE.md)
 - 🔴 **Frontend Build Error?** → Check [components/public-site/troubleshooting/](./components/public-site/troubleshooting/)
 - 🔴 **Backend Issues?** → Check [components/cofounder-agent/troubleshooting/](./components/cofounder-agent/troubleshooting/)
 

@@ -40,6 +40,7 @@ from orchestrator_logic import Orchestrator
 from services.database_service import DatabaseService
 from services.task_executor import TaskExecutor
 from services.content_critique_loop import ContentCritiqueLoop
+from services.telemetry import setup_telemetry  # ✅ OpenTelemetry tracing
 
 # Import route routers
 # Unified content router (consolidates content.py, content_generation.py, enhanced_content.py)
@@ -196,12 +197,13 @@ async def lifespan(app: FastAPI):
         
         # 4b. Initialize intelligent orchestrator (NEW - non-intrusive addition)
         logger.info("  🧠 Initializing intelligent orchestrator...")
+        intelligent_orchestrator = None
         try:
             if INTELLIGENT_ORCHESTRATOR_AVAILABLE and orchestrator and database_service:
                 # Create enhanced memory system wrapper
                 try:
-                    from services.memory_system import AIMemorySystem
-                    base_memory = AIMemorySystem()
+                    from memory_system import AIMemorySystem
+                    base_memory = AIMemorySystem(db_pool=database_service.pool)
                 except Exception:
                     base_memory = None
                     
@@ -234,9 +236,12 @@ async def lifespan(app: FastAPI):
         # 6. Initialize background task executor
         logger.info("  ⏳ Starting background task executor...")
         try:
+            # Prefer IntelligentOrchestrator if available
+            active_orchestrator = intelligent_orchestrator if intelligent_orchestrator else orchestrator
+            
             task_executor = TaskExecutor(
                 database_service=database_service,
-                orchestrator=orchestrator,
+                orchestrator=active_orchestrator,
                 critique_loop=critique_loop,
                 poll_interval=5  # Poll every 5 seconds
             )
@@ -321,6 +326,9 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Initialize OpenTelemetry tracing
+setup_telemetry(app)
 
 # CORS middleware for frontend integration
 app.add_middleware(

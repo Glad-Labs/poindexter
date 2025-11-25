@@ -131,7 +131,7 @@ class DatabaseService:
         provider: str,
         provider_user_id: str,
         provider_data: Dict[str, Any],
-    ) -> Dict[str, Any]:
+    ) -> Optional[Dict[str, Any]]:
         """
         Get existing OAuth user or create new one from provider data.
         
@@ -315,82 +315,7 @@ class DatabaseService:
             )
             return [dict(row) for row in rows]
 
-    async def get_tasks_paginated(
-        self,
-        offset: int = 0,
-        limit: int = 20,
-        status: Optional[str] = None,
-        category: Optional[str] = None,
-    ) -> Tuple[List[Dict[str, Any]], int]:
-        """
-        Get tasks with pagination and optional filtering.
-        
-        Args:
-            offset: Number of records to skip
-            limit: Number of records to return (max 100)
-            status: Filter by status (optional)
-            category: Filter by category (optional)
-        
-        Returns:
-            Tuple of (task_list, total_count)
-        """
-        async with self.pool.acquire() as conn:
-            # Build WHERE clause based on filters
-            where_clauses = []
-            params = []
-            param_idx = 1
-            
-            if status:
-                where_clauses.append(f"status = ${param_idx}")
-                params.append(status)
-                param_idx += 1
-            
-            if category:
-                where_clauses.append(f"category = ${param_idx}")
-                params.append(category)
-                param_idx += 1
-            
-            where_clause = " AND ".join(where_clauses) if where_clauses else "1=1"
-            
-            # Get total count
-            count_query = f"SELECT COUNT(*) as count FROM tasks WHERE {where_clause}"
-            count_row = await conn.fetchrow(count_query, *params)
-            total = count_row["count"] if count_row else 0
-            
-            # Get paginated results
-            params.extend([limit, offset])
-            query = f"""
-                SELECT * FROM tasks
-                WHERE {where_clause}
-                ORDER BY created_at DESC
-                LIMIT ${param_idx}
-                OFFSET ${param_idx + 1}
-            """
-            rows = await conn.fetch(query, *params)
-            tasks = [dict(row) for row in rows]
-            
-            return tasks, total
 
-    async def update_task_status(
-        self,
-        task_id: str,
-        status: str,
-        result: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
-        """Update task status"""
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                UPDATE tasks
-                SET status = $2, result = $3, updated_at = NOW()
-                WHERE id = $1
-                RETURNING *
-                """,
-                task_id,
-                status,
-                result,
-            )
-            return dict(row) if row else None
 
     # ========================================================================
     # LOGS
@@ -711,6 +636,42 @@ class DatabaseService:
             logger.error(f"❌ Failed to update task status {task_id}: {e}")
             raise
 
+    async def update_task(self, task_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Update arbitrary task fields (pure asyncpg).
+        
+        Args:
+            task_id: UUID of task
+            updates: Dictionary of fields to update
+            
+        Returns:
+            Updated task dict or None
+        """
+        if not updates:
+            return await self.get_task(task_id)
+            
+        set_clauses = []
+        params = [task_id]
+        
+        for key, value in updates.items():
+            set_clauses.append(f"{key} = ${len(params) + 1}")
+            params.append(value)
+            
+        sql = f"""
+            UPDATE tasks
+            SET {', '.join(set_clauses)}, updated_at = NOW()
+            WHERE id = $1 OR id = $1::text
+            RETURNING *
+        """
+        
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(sql, *params)
+                return self._convert_row_to_dict(row) if row else None
+        except Exception as e:
+            logger.error(f"❌ Failed to update task {task_id}: {e}")
+            raise
+
     async def get_tasks_paginated(
         self,
         offset: int = 0,
@@ -767,6 +728,88 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"❌ Failed to list tasks: {e}")
             raise
+
+    async def get_task_counts(self) -> Dict[str, int]:
+        """Get task counts by status"""
+        sql = """
+            SELECT status, COUNT(*) as count
+            FROM tasks
+            GROUP BY status
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(sql)
+                counts = {row['status']: row['count'] for row in rows}
+                return {
+                    "total": sum(counts.values()),
+                    "pending": counts.get("pending", 0),
+                    "in_progress": counts.get("in_progress", 0),
+                    "completed": counts.get("completed", 0),
+                    "failed": counts.get("failed", 0)
+                }
+        except Exception as e:
+            logger.error(f"❌ Failed to get task counts: {e}")
+            return {"total": 0, "pending": 0, "in_progress": 0, "completed": 0, "failed": 0}
+
+    async def get_queued_tasks(self, limit: int = 5) -> List[Dict[str, Any]]:
+        """Get top queued tasks"""
+        sql = """
+            SELECT * FROM tasks
+            WHERE status = 'pending'
+            ORDER BY priority DESC, created_at ASC
+            LIMIT $1
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(sql, limit)
+                return [self._convert_row_to_dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"❌ Failed to get queued tasks: {e}")
+            return []
+
+    # ========================================================================
+    # POSTS (CMS Content)
+    # ========================================================================
+
+    async def create_post(self, post_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create new post"""
+        post_id = post_data.get("id") or str(uuid4())
+        
+        async with self.pool.acquire() as conn:
+            # Check if posts table exists, if not create it (temporary fix for dev)
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS posts (
+                    id UUID PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    slug TEXT UNIQUE NOT NULL,
+                    content TEXT,
+                    excerpt TEXT,
+                    category TEXT,
+                    status TEXT DEFAULT 'draft',
+                    featured_image TEXT,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
+            """)
+            
+            row = await conn.fetchrow(
+                """
+                INSERT INTO posts (
+                    id, title, slug, content, excerpt, category, status, featured_image, created_at, updated_at
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+                RETURNING *
+                """,
+                post_id,
+                post_data.get("title"),
+                post_data.get("slug"),
+                post_data.get("content"),
+                post_data.get("excerpt"),
+                post_data.get("category"),
+                post_data.get("status", "draft"),
+                post_data.get("featured_image"),
+            )
+            return dict(row)
 
     @staticmethod
     def _convert_row_to_dict(row: Any) -> Dict[str, Any]:
