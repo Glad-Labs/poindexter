@@ -523,7 +523,7 @@ class DatabaseService:
                 tags, task_metadata,
                 created_at, updated_at,
                 approval_status
-            VALUES (
+            ) VALUES (
                 $1::uuid, $2, $3, $4, $5, $6,
                 $7, $8, $9,
                 $10, $11, $12,
@@ -772,42 +772,39 @@ class DatabaseService:
     # ========================================================================
 
     async def create_post(self, post_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Create new post"""
+        """Create new post in posts table"""
         post_id = post_data.get("id") or str(uuid4())
         
         async with self.pool.acquire() as conn:
-            # Check if posts table exists, if not create it (temporary fix for dev)
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS posts (
-                    id UUID PRIMARY KEY,
-                    title TEXT NOT NULL,
-                    slug TEXT UNIQUE NOT NULL,
-                    content TEXT,
-                    excerpt TEXT,
-                    category TEXT,
-                    status TEXT DEFAULT 'draft',
-                    featured_image TEXT,
-                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-                )
-            """)
-            
             row = await conn.fetchrow(
                 """
                 INSERT INTO posts (
-                    id, title, slug, content, excerpt, category, status, featured_image, created_at, updated_at
+                    id, 
+                    title, 
+                    slug, 
+                    content, 
+                    excerpt, 
+                    featured_image_url,
+                    status, 
+                    seo_title,
+                    seo_description,
+                    seo_keywords,
+                    created_at, 
+                    updated_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
-                RETURNING *
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+                RETURNING id, title, slug, content, excerpt, status, created_at, updated_at
                 """,
                 post_id,
                 post_data.get("title"),
                 post_data.get("slug"),
                 post_data.get("content"),
                 post_data.get("excerpt"),
-                post_data.get("category"),
-                post_data.get("status", "draft"),
                 post_data.get("featured_image"),
+                post_data.get("status", "draft"),
+                post_data.get("seo_title") or post_data.get("title"),  # Default to title if not provided
+                post_data.get("seo_description") or post_data.get("excerpt"),  # Default to excerpt if not provided
+                post_data.get("seo_keywords", ""),
             )
             return dict(row)
 

@@ -40,15 +40,15 @@ from orchestrator_logic import Orchestrator
 from services.database_service import DatabaseService
 from services.task_executor import TaskExecutor
 from services.content_critique_loop import ContentCritiqueLoop
-from services.telemetry import setup_telemetry  # ✅ OpenTelemetry tracing
-from services.content_router_service import get_content_task_store  # ✅ Inject DB service
+from services.telemetry import setup_telemetry  #  OpenTelemetry tracing
+from services.content_router_service import get_content_task_store  #  Inject DB service
 
 # Import route routers
 # Unified content router (consolidates content.py, content_generation.py, enhanced_content.py)
 from routes.content_routes import content_router
 from routes.cms_routes import router as cms_router
 from routes.models import models_router, models_list_router
-from routes.auth_unified import router as auth_router  # ✅ Unified auth (OAuth-only architecture)
+from routes.auth_unified import router as auth_router  #  Unified auth (OAuth-only architecture)
 from routes.settings_routes import router as settings_router
 from routes.command_queue_routes import router as command_queue_router
 from routes.chat_routes import router as chat_router
@@ -122,39 +122,39 @@ async def lifespan(app: FastAPI):
         # ============================================================================
         # 1. MANDATORY: Initialize PostgreSQL database connection
         # ============================================================================
-        logger.info("  📦 Connecting to PostgreSQL (REQUIRED)...")
-        print("  📦 Connecting to PostgreSQL (REQUIRED)...") # Console feedback
+        logger.info("  Connecting to PostgreSQL (REQUIRED)...")
+        print("  Connecting to PostgreSQL (REQUIRED)...") # Console feedback
         db_url = os.getenv('DATABASE_URL', 'Not set')
         logger.info(f"  DATABASE_URL: {db_url[:50]}...")
         
         try:
             database_service = DatabaseService()
             await database_service.initialize()
-            logger.info("  ✅ PostgreSQL connected - ready for operations")
-            print("  ✅ PostgreSQL connected - ready for operations") # Console feedback
+            logger.info("   PostgreSQL connected - ready for operations")
+            print("   PostgreSQL connected - ready for operations") # Console feedback
         except Exception as e:
-            startup_error = f"❌ FATAL: PostgreSQL connection failed: {str(e)}"
+            startup_error = f" FATAL: PostgreSQL connection failed: {str(e)}"
             logger.error(f"  {startup_error}", exc_info=True)
             print(f"  {startup_error}") # Console feedback
             logger.error("  🛑 PostgreSQL is REQUIRED - cannot continue")
-            logger.error("  ⚠️ Set DATABASE_URL or DATABASE_USER environment variables")
+            logger.error("   Set DATABASE_URL or DATABASE_USER environment variables")
             logger.error("  Example DATABASE_URL: postgresql://user:password@localhost:5432/glad_labs_dev")
-            raise SystemExit(1)  # ❌ STOP - PostgreSQL required
+            raise SystemExit(1)  #  STOP - PostgreSQL required
         
         # 2. All task operations now handled by DatabaseService (pure asyncpg)
         logger.info("  📋 Task storage ready via DatabaseService (asyncpg)")
         
-        # ✅ Inject database service into content task store (fixes initialization error)
+        #  Inject database service into content task store (fixes initialization error)
         get_content_task_store(database_service)
 
         # 3. Initialize unified model consolidation service
         logger.info("  🧠 Initializing unified model consolidation service...")
         try:
             initialize_model_consolidation_service()
-            logger.info("  ✅ Model consolidation service initialized (Ollama→HF→Google→Anthropic→OpenAI)")
+            logger.info("   Model consolidation service initialized (Ollama->HF->Google->Anthropic->OpenAI)")
         except Exception as e:
             error_msg = f"Model consolidation initialization failed: {str(e)}"
-            logger.error(f"  ⚠️ {error_msg}", exc_info=True)
+            logger.error(f"   {error_msg}", exc_info=True)
             # Don't fail startup - models are optional
         
         # 4. Create tables if they don't exist
@@ -163,7 +163,7 @@ async def lifespan(app: FastAPI):
                 logger.info("  📋 Database tables initialized in previous step")
             except Exception as e:
                 error_msg = f"Table creation failed: {str(e)}"
-                logger.error(f"  ⚠️ {error_msg}", exc_info=True)
+                logger.error(f"   {error_msg}", exc_info=True)
                 startup_error = error_msg
         
         # 4. Initialize orchestrator with new database service
@@ -174,10 +174,10 @@ async def lifespan(app: FastAPI):
                 database_service=database_service,
                 api_base_url=api_base_url
             )
-            logger.info("  ✅ Orchestrator initialized successfully")
+            logger.info("   Orchestrator initialized successfully")
         except Exception as e:
             error_msg = f"Orchestrator initialization failed: {str(e)}"
-            logger.error(f"  ❌ {error_msg}", exc_info=True)
+            logger.error(f"   {error_msg}", exc_info=True)
             startup_error = error_msg
             # Don't re-raise - allow app to start for health checks
         
@@ -187,12 +187,12 @@ async def lifespan(app: FastAPI):
             if WORKFLOW_HISTORY_AVAILABLE and database_service:
                 workflow_history_service = WorkflowHistoryService(database_service.pool)
                 initialize_history_service(database_service.pool)
-                logger.info("  ✅ Workflow history service initialized - executions will be persisted to PostgreSQL")
+                logger.info("   Workflow history service initialized - executions will be persisted to PostgreSQL")
             else:
-                logger.warning("  ⚠️ Workflow history service not available - executions will not be persisted")
+                logger.warning("   Workflow history service not available - executions will not be persisted")
         except Exception as e:
             error_msg = f"Workflow history service initialization failed: {str(e)}"
-            logger.warning(f"  ⚠️ {error_msg}", exc_info=True)
+            logger.warning(f"   {error_msg}", exc_info=True)
             workflow_history_service = None
         
         # 4b. Initialize intelligent orchestrator (NEW - non-intrusive addition)
@@ -216,21 +216,21 @@ async def lifespan(app: FastAPI):
                     memory_system=enhanced_memory,
                     mcp_orchestrator=None  # Optional, can be injected later
                 )
-                logger.info("  ✅ Intelligent orchestrator initialized successfully")
+                logger.info("   Intelligent orchestrator initialized successfully")
             else:
-                logger.warning("  ⚠️ Intelligent orchestrator module not available or dependencies missing")
+                logger.warning("   Intelligent orchestrator module not available or dependencies missing")
         except Exception as e:
             error_msg = f"Intelligent orchestrator initialization failed: {str(e)}"
-            logger.warning(f"  ⚠️ {error_msg}", exc_info=True)
+            logger.warning(f"   {error_msg}", exc_info=True)
             intelligent_orchestrator = None
         
         # 5. Initialize content critique loop
         logger.info("  🔍 Initializing content critique loop...")
         try:
             critique_loop = ContentCritiqueLoop()
-            logger.info("  ✅ Content critique loop initialized")
+            logger.info("   Content critique loop initialized")
         except Exception as e:
-            logger.warning(f"  ⚠️ Content critique loop initialization failed: {e}")
+            logger.warning(f"   Content critique loop initialization failed: {e}")
             critique_loop = None
         
         # 6. Initialize background task executor
@@ -246,11 +246,11 @@ async def lifespan(app: FastAPI):
                 poll_interval=5  # Poll every 5 seconds
             )
             await task_executor.start()
-            logger.info("  ✅ Background task executor started successfully")
-            logger.info(f"     🔗 Pipeline: Orchestrator→Critique→Publishing")
+            logger.info("   Background task executor started successfully")
+            logger.info(f"     🔗 Pipeline: Orchestrator->Critique->Publishing")
         except Exception as e:
             error_msg = f"Task executor startup failed: {str(e)}"
-            logger.error(f"  ⚠️ {error_msg}", exc_info=True)
+            logger.error(f"   {error_msg}", exc_info=True)
             # Don't fail startup - task processing is optional
             task_executor = None
         
@@ -260,19 +260,19 @@ async def lifespan(app: FastAPI):
                 logger.info("  🔍 Verifying database connection...")
                 health = await database_service.health_check()
                 if health.get("status") == "healthy":
-                    logger.info(f"  ✅ Database health check passed")
+                    logger.info(f"   Database health check passed")
                 else:
-                    logger.warning(f"  ⚠️ Database health check returned: {health}")
+                    logger.warning(f"   Database health check returned: {health}")
             except Exception as e:
-                logger.warning(f"  ⚠️ Database health check failed: {e}", exc_info=True)
+                logger.warning(f"   Database health check failed: {e}", exc_info=True)
         
         # 6. Register database service with route modules
         if database_service:
             from routes.task_routes import set_db_service
             set_db_service(database_service)
-            logger.info("  ✅ Database service registered with routes")
+            logger.info("   Database service registered with routes")
         
-        logger.info("✅ Application started successfully!")
+        logger.info(" Application started successfully!")
         logger.info(f"  - Database Service: {database_service is not None}")
         logger.info(f"  - Orchestrator: {orchestrator is not None}")
         logger.info(f"  - Task Executor: {task_executor is not None and task_executor.running}")
@@ -285,7 +285,7 @@ async def lifespan(app: FastAPI):
         
     except Exception as e:
         startup_error = f"Critical startup failure: {str(e)}"
-        logger.error(f"❌ {startup_error}", exc_info=True)
+        logger.error(f" {startup_error}", exc_info=True)
         startup_complete = True  # Mark complete so /api/health works
     
     finally:
@@ -298,11 +298,11 @@ async def lifespan(app: FastAPI):
                 if task_executor and task_executor.running:
                     logger.info("  Stopping background task executor...")
                     await task_executor.stop()
-                    logger.info("  ✅ Task executor stopped")
+                    logger.info("   Task executor stopped")
                     stats = task_executor.get_stats()
                     logger.info(f"     Tasks processed: {stats['total_processed']}, Success: {stats['successful']}, Failed: {stats['failed']}")
             except Exception as e:
-                logger.error(f"  ⚠️ Error stopping task executor: {e}", exc_info=True)
+                logger.error(f"   Error stopping task executor: {e}", exc_info=True)
             
             # Task store is now handled by database_service - no separate close needed
             logger.info("  Task store cleanup handled by database_service")
@@ -311,14 +311,14 @@ async def lifespan(app: FastAPI):
                 try:
                     logger.info("  Closing database connection...")
                     await database_service.close()
-                    logger.info("  ✅ Database connection closed")
+                    logger.info("   Database connection closed")
                 except Exception as e:
-                    logger.error(f"  ⚠️ Error closing database: {e}", exc_info=True)
+                    logger.error(f"   Error closing database: {e}", exc_info=True)
             
-            logger.info("✅ Application shut down successfully!")
+            logger.info(" Application shut down successfully!")
             
         except Exception as e:
-            logger.error(f"❌ Error during shutdown: {e}", exc_info=True)
+            logger.error(f" Error during shutdown: {e}", exc_info=True)
 
 app = FastAPI(
     title="Glad Labs AI Co-Founder",
@@ -340,7 +340,7 @@ app.add_middleware(
 )
 
 # Include route routers
-app.include_router(auth_router)  # ✅ Unified authentication (JWT, OAuth, GitHub)
+app.include_router(auth_router)  #  Unified authentication (JWT, OAuth, GitHub)
 app.include_router(task_router)  # Task management endpoints
 # Register unified content router (replaces 3 legacy routers)
 app.include_router(content_router)
@@ -361,16 +361,16 @@ app.include_router(agents_router)  # AI agent management and monitoring
 # Register workflow history routes (Phase 5 - database persistence)
 if WORKFLOW_HISTORY_AVAILABLE and workflow_history_router:
     app.include_router(workflow_history_router)  # Workflow history tracking
-    logger.info("✅ Workflow history routes registered")
+    logger.info(" Workflow history routes registered")
 else:
-    logger.warning("⚠️ Workflow history routes not registered (module not available)")
+    logger.warning(" Workflow history routes not registered (module not available)")
 
 # Register intelligent orchestrator routes (NEW - conditional on availability)
 if INTELLIGENT_ORCHESTRATOR_AVAILABLE and intelligent_orchestrator_router:
     app.include_router(intelligent_orchestrator_router)
-    logger.info("✅ Intelligent orchestrator routes registered")
+    logger.info(" Intelligent orchestrator routes registered")
 else:
-    logger.warning("⚠️ Intelligent orchestrator routes not registered (module not available)")
+    logger.warning(" Intelligent orchestrator routes not registered (module not available)")
 
 # ===== UNIFIED HEALTH CHECK ENDPOINT =====
 # Consolidated from: /api/health, /status, /metrics/health, and route-specific health endpoints

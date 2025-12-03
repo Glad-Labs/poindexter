@@ -570,27 +570,27 @@ async def _execute_and_publish_task(task_id: str):
     This runs in the background after task creation returns to the client.
     """
     try:
-        logger.info(f"🚀 [BG_TASK] Starting content generation for task: {task_id}")
+        logger.info(f"[BG_TASK] Starting content generation for task: {task_id}")
         
         # Step 1: Retrieve task from database
-        logger.info(f"📖 [BG_TASK] Fetching task from database...")
+        logger.info(f"[BG_TASK] Fetching task from database...")
         task = await db_service.get_task(task_id)
         
         if not task:
-            logger.error(f"❌ [BG_TASK] Task not found: {task_id}")
+            logger.error(f"[BG_TASK] Task not found: {task_id}")
             return
         
-        logger.info(f"✅ [BG_TASK] Task retrieved:")
+        logger.info(f"[BG_TASK] Task retrieved:")
         logger.info(f"   - Topic: {task.get('topic')}")
         logger.info(f"   - Status: {task.get('status')}")
         logger.info(f"   - Category: {task.get('category')}")
         
         # Step 2: Update status to "in_progress"
-        logger.info(f"🔄 [BG_TASK] Updating task status to 'in_progress'...")
+        logger.info(f"[BG_TASK] Updating task status to 'in_progress'...")
         await db_service.update_task_status(task_id, "in_progress")
         
         # Step 3: Generate content using Ollama
-        logger.info(f"🧠 [BG_TASK] Starting content generation with Ollama...")
+        logger.info(f"[BG_TASK] Starting content generation with Ollama...")
         
         topic = task.get('topic', '')
         keyword = task.get('primary_keyword', '')
@@ -611,7 +611,7 @@ The post should be:
 
 Start writing the blog post now:"""
         
-        logger.info(f"📝 [BG_TASK] Calling Ollama with prompt...")
+        logger.info(f"[BG_TASK] Calling Ollama with prompt...")
         logger.debug(f"Prompt:\n{prompt[:200]}...")
         
         # Call Ollama directly via HTTP
@@ -629,24 +629,24 @@ Start writing the blog post now:"""
                     "top_k": 40,
                 }
                 
-                logger.info(f"🔗 [BG_TASK] Connecting to Ollama at {ollama_url}...")
+                logger.info(f"[BG_TASK] Connecting to Ollama at {ollama_url}...")
                 async with session.post(ollama_url, json=ollama_payload, timeout=aiohttp.ClientTimeout(total=300)) as resp:
                     if resp.status == 200:
                         result = await resp.json()
                         generated_content = result.get('response', '').strip()
-                        logger.info(f"✅ [BG_TASK] Content generation successful! ({len(generated_content)} chars)")
+                        logger.info(f"[BG_TASK] Content generation successful! ({len(generated_content)} chars)")
                     else:
-                        logger.error(f"❌ [BG_TASK] Ollama returned status {resp.status}")
+                        logger.error(f"[BG_TASK] Ollama returned status {resp.status}")
                         generated_content = f"# {topic}\n\nError generating content. Status: {resp.status}"
         except Exception as ollama_err:
-            logger.error(f"❌ [BG_TASK] Ollama error: {str(ollama_err)}")
+            logger.error(f"[BG_TASK] Ollama error: {str(ollama_err)}")
             generated_content = f"# {topic}\n\nContent generation failed: {str(ollama_err)}"
         
         if not generated_content:
             generated_content = f"# {topic}\n\nContent generation returned empty result."
         
         # Step 4: Update task status and store result with generated content
-        logger.info(f"💾 [BG_TASK] Storing generated content in database...")
+        logger.info(f"[BG_TASK] Storing generated content in database...")
         
         # Store result as JSON containing the generated content
         result_json = json.dumps({
@@ -656,22 +656,57 @@ Start writing the blog post now:"""
         })
         
         await db_service.update_task_status(task_id, "ready_to_publish", result=result_json)
-        logger.info(f"✅ [BG_TASK] Content stored in task result")
+        logger.info(f"[BG_TASK] Content stored in task result")
         
-        # Step 5: Final status update
-        logger.info(f"✅ [BG_TASK] Content generation complete, marking task as completed...")
+        # Step 5: Create post from generated content
+        logger.info(f"[BG_TASK] Creating post from generated content...")
+        try:
+            # Extract topic or use default title
+            post_title = topic or task.get('task_name', 'Generated Content')
+            
+            # Create slug from title (replace spaces with hyphens, lowercase)
+            import re
+            slug = re.sub(r'[^\w\s-]', '', post_title.lower())
+            slug = re.sub(r'[-\s]+', '-', slug)
+            slug = slug.strip('-')
+            
+            # Create post data structure matching actual posts table schema
+            post_data = {
+                "id": str(uuid_lib.uuid4()),
+                "title": post_title,
+                "slug": slug,
+                "content": generated_content,
+                "excerpt": (generated_content[:200] + "...") if len(generated_content) > 200 else generated_content,
+                "seo_title": post_title,
+                "seo_description": (generated_content[:150] + "...") if len(generated_content) > 150 else generated_content,
+                "seo_keywords": topic or "generated,content,ai",
+                "status": "published",  # Auto-publish generated posts
+                "featured_image": task.get('featured_image'),
+            }
+            
+            logger.info(f"[BG_TASK] Creating post: {post_title} (slug: {slug})")
+            post_result = await db_service.create_post(post_data)
+            logger.info(f"[BG_TASK] Post created successfully! Post ID: {post_result.get('id')}")
+            
+        except Exception as post_err:
+            logger.error(f"[BG_TASK] Error creating post: {str(post_err)}", exc_info=True)
+            # Don't fail the task if post creation fails, just log it
+        
+        # Step 6: Final status update
+        logger.info(f"[BG_TASK] Content generation complete, marking task as completed...")
         
         final_result = json.dumps({
             "content": generated_content,
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "content_length": len(generated_content),
-            "status": "success"
+            "status": "success",
+            "post_created": True
         })
         await db_service.update_task_status(task_id, "completed", result=final_result)
-        logger.info(f"✅ [BG_TASK] Task completed successfully!")
+        logger.info(f"[BG_TASK] Task completed successfully!")
         
     except Exception as e:
-        logger.error(f"❌ [BG_TASK] Unhandled error: {str(e)}", exc_info=True)
+        logger.error(f"[BG_TASK] Unhandled error: {str(e)}", exc_info=True)
         try:
             error_result = json.dumps({
                 "error": str(e),
@@ -679,5 +714,5 @@ Start writing the blog post now:"""
             })
             await db_service.update_task_status(task_id, "failed", result=error_result)
         except Exception as status_err:
-            logger.error(f"❌ [BG_TASK] Could not update task status to failed: {status_err}")
+            logger.error(f"[BG_TASK] Could not update task status to failed: {status_err}")
 

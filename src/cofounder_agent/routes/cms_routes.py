@@ -54,7 +54,7 @@ async def list_posts(
             params = []
             
             if published_only:
-                where_clauses.append("published_at IS NOT NULL")
+                where_clauses.append("status = 'published'")
             
             # if featured is not None:
             #     where_clauses.append(f"featured = ${len(params) + 1}")
