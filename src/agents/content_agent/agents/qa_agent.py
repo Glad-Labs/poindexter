@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 class QAAgent:
     def __init__(self, llm_client: LLMClient):
+        logger.info("Initializing QAAgent (v2 - Fixed draft key)")
         self.llm_client = llm_client
         self.prompts = load_prompts_from_file(config.PROMPTS_PATH)
 
@@ -34,13 +35,16 @@ class QAAgent:
             topic=post.topic,
             primary_keyword=post.primary_keyword,
             target_audience=post.target_audience,
-            content=previous_content,
+            draft=previous_content,
         )
 
-        response_text = self.llm_client.generate_text(prompt)
+        response_data = self.llm_client.generate_json(prompt)
 
-        # Simple check for approval keyword
-        if "APPROVAL: YES" in response_text:
+        # Parse the JSON response
+        approved = response_data.get("approved", False)
+        feedback = response_data.get("feedback", "No feedback provided.")
+
+        if approved:
             return True, "Content approved."
         else:
-            return False, response_text
+            return False, feedback

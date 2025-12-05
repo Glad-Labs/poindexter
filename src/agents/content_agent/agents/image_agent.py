@@ -70,14 +70,19 @@ class ImageAgent:
 
     def _generate_image_metadata(self, post: BlogPost) -> list[dict[str, str]]:
         """Generates a list of image metadata dicts using the LLM."""
-        metadata_prompt = self.prompts["generate_image_metadata"].format(
-            title=post.title, content=post.raw_content
+        metadata_prompt = self.prompts["image_metadata_generation"].format(
+            title=post.title, num_images=config.DEFAULT_IMAGE_PLACEHOLDERS
         )
         logging.info("Generating image metadata...")
         try:
             metadata_text = self.llm_client.generate_text(metadata_prompt)
             # The response is expected to be a JSON list of objects
-            return json.loads(metadata_text)
+            metadata_json = extract_json_from_string(metadata_text)
+            if metadata_json:
+                return json.loads(metadata_json)
+            else:
+                # Fallback: try parsing the raw text if extract failed (e.g. no markdown)
+                return json.loads(metadata_text)
         except (json.JSONDecodeError, TypeError) as e:
             logging.error(f"Failed to parse image metadata from LLM response: {e}")
             return []

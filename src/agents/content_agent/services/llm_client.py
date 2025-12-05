@@ -1,5 +1,6 @@
 import google.generativeai as genai
 from agents.content_agent.config import config
+from agents.content_agent.utils.helpers import extract_json_from_string
 import logging
 import json
 import os
@@ -78,12 +79,19 @@ class LLMClient:
         try:
             response = requests.post(
                 f"{config.LOCAL_LLM_API_URL}/api/generate",
-                json={"model": config.LOCAL_LLM_MODEL_NAME, "prompt": prompt},
+                json={"model": config.LOCAL_LLM_MODEL_NAME, "prompt": prompt, "stream": False},
             )
             response.raise_for_status()
             response_json = response.json()
             if "response" in response_json:
-                return json.loads(response_json["response"])
+                raw_response = response_json["response"]
+                # Try to extract JSON from the response
+                extracted_json = extract_json_from_string(raw_response)
+                if extracted_json:
+                    return json.loads(extracted_json)
+                else:
+                    # Fallback: try parsing the raw text directly
+                    return json.loads(raw_response)
             else:
                 logging.error("'response' key not found in local LLM output.")
                 return {}

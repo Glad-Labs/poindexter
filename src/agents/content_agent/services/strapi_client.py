@@ -1,8 +1,8 @@
 import requests
 import json
 import logging
-from config import config
-from utils.data_models import StrapiPost, BlogPost
+from ..config import config
+from ..utils.data_models import StrapiPost, BlogPost
 from typing import Optional
 import os
 

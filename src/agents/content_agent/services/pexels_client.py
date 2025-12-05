@@ -1,6 +1,6 @@
 import requests
 import logging
-from config import config
+from ..config import config
 
 
 class PexelsClient:

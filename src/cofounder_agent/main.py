@@ -667,10 +667,15 @@ async def root():
     }
 
 if __name__ == "__main__":
+    # Watch the entire src directory for changes to support agent development
+    src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    print(f"INFO:     Configured watch directory: {src_dir}")
+    
     uvicorn.run(
         "main:app", 
         host="0.0.0.0", 
         port=8000, 
         reload=True,
+        reload_dirs=[src_dir],
         log_level="info"
     )

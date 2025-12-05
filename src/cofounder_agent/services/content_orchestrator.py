@@ -152,21 +152,23 @@ class ContentOrchestrator:
             logger.info(f"⏳ STAGE 6: AWAITING HUMAN APPROVAL (Mandatory Review Required)")
             
             if self.task_store:
-                self.task_store.update_task({
-                    "task_id": task_id,
-                    "status": "awaiting_approval",  # ✅ **STOPS HERE**
-                    "approval_status": "awaiting_review",  # ✅ Requires human decision
-                    "content": formatted_content,
-                    "excerpt": excerpt,
-                    "featured_image_url": featured_image_url,
-                    "qa_feedback": qa_feedback,
-                    "quality_score": quality_score,
-                    "progress": {
-                        "stage": "awaiting_approval",
-                        "percentage": 100,
-                        "message": "⏳ Awaiting human approval"
+                await self.task_store.update_task(
+                    task_id,
+                    {
+                        "status": "awaiting_approval",  # ✅ **STOPS HERE**
+                        "approval_status": "awaiting_review",  # ✅ Requires human decision
+                        "content": formatted_content,
+                        "excerpt": excerpt,
+                        "featured_image_url": featured_image_url,
+                        "qa_feedback": qa_feedback,
+                        "quality_score": quality_score,
+                        "progress": {
+                            "stage": "awaiting_approval",
+                            "percentage": 100,
+                            "message": "⏳ Awaiting human approval"
+                        }
                     }
-                })
+                )
             
             result = {
                 "task_id": task_id,
