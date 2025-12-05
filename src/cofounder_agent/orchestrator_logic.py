@@ -263,6 +263,7 @@ class Orchestrator:
             # Log the pipeline trigger
             if self.database_service:
                 await self.database_service.add_log_entry(
+                    "orchestrator",
                     "info",
                     "Content pipeline triggered by orchestrator",
                     {
@@ -398,6 +399,7 @@ class Orchestrator:
             # Log the intervention
             if self.database_service:
                 await self.database_service.add_log_entry(
+                    "orchestrator",
                     "critical",
                     f"INTERVENE protocol triggered: {reason}",
                     {
@@ -486,6 +488,7 @@ class Orchestrator:
                 
                 # Log the task creation
                 await self.database_service.add_log_entry(
+                    "orchestrator",
                     "info",
                     f"Content task created via orchestrator: {topic}",
                     {"task_id": task_id, "topic": topic, "source": "cofounder"}

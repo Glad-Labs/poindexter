@@ -15,11 +15,42 @@ Benefits:
 import logging
 import os
 import asyncpg
+import json
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 logger = logging.getLogger(__name__)
+
+
+def serialize_value_for_postgres(value: Any) -> Any:
+    """
+    Serialize Python values for PostgreSQL asyncpg.
+    
+    Handles:
+    - dict/list → JSON string (for JSONB columns)
+    - datetime → ISO format string
+    - UUID → string
+    - Other types → as-is
+    
+    Args:
+        value: Python value to serialize
+        
+    Returns:
+        PostgreSQL-compatible value
+    """
+    if isinstance(value, dict):
+        # JSONB fields need JSON strings, not dicts
+        return json.dumps(value)
+    elif isinstance(value, list):
+        # Arrays of objects need JSON strings
+        return json.dumps(value)
+    elif isinstance(value, datetime):
+        return value.isoformat()
+    elif isinstance(value, UUID):
+        return str(value)
+    else:
+        return value
 
 
 class DatabaseService:
@@ -343,7 +374,7 @@ class DatabaseService:
                 agent_name,
                 level,
                 message,
-                context,  # Will be stored as JSONB
+                json.dumps(context or {}),  # Serialize context for JSONB column
             )
         return log_id
 
@@ -392,7 +423,7 @@ class DatabaseService:
                 entry_data.get("category"),
                 entry_data.get("amount"),
                 entry_data.get("description"),
-                entry_data.get("tags"),  # Will be stored as JSONB
+                json.dumps(entry_data.get("tags", [])),  # Serialize tags for JSONB column
             )
         return entry_id
 
@@ -442,7 +473,7 @@ class DatabaseService:
                 agent_name,
                 status,
                 last_run,
-                metadata,
+                json.dumps(metadata or {}),  # Serialize metadata for JSONB column
             )
             
             # If no rows updated, insert new
@@ -458,7 +489,7 @@ class DatabaseService:
                     agent_name,
                     status,
                     last_run,
-                    metadata,
+                    json.dumps(metadata or {}),  # Serialize metadata for JSONB column
                 )
             
             return dict(row)
@@ -654,8 +685,10 @@ class DatabaseService:
         params = [task_id]
         
         for key, value in updates.items():
+            # Serialize the value for PostgreSQL
+            serialized_value = serialize_value_for_postgres(value)
             set_clauses.append(f"{key} = ${len(params) + 1}")
-            params.append(value)
+            params.append(serialized_value)
             
         sql = f"""
             UPDATE tasks

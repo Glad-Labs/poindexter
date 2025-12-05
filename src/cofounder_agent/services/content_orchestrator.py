@@ -74,7 +74,7 @@ class ContentOrchestrator:
                     task_id,
                     {
                         "status": "processing",
-                        "metadata": {"stage": "research", "percentage": 10, "message": "🚀 Starting research..."}
+                        "task_metadata": {"stage": "research", "percentage": 10, "message": "🚀 Starting research..."}
                     }
                 )
 
@@ -89,7 +89,7 @@ class ContentOrchestrator:
                     task_id,
                     {
                         "status": "processing",
-                        "metadata": {"stage": "creative", "percentage": 25, "message": "✍️  Generating draft..."}
+                        "task_metadata": {"stage": "creative", "percentage": 25, "message": "✍️  Generating draft..."}
                     }
                 )
 
@@ -104,7 +104,7 @@ class ContentOrchestrator:
                     task_id,
                     {
                         "status": "processing",
-                        "metadata": {"stage": "qa", "percentage": 45, "message": "🔍 Quality review..."}
+                        "task_metadata": {"stage": "qa", "percentage": 45, "message": "🔍 Quality review..."}
                     }
                 )
 
@@ -121,7 +121,7 @@ class ContentOrchestrator:
                     task_id,
                     {
                         "status": "processing",
-                        "metadata": {"stage": "images", "percentage": 60, "message": "🖼️  Selecting images..."}
+                        "task_metadata": {"stage": "images", "percentage": 60, "message": "🖼️  Selecting images..."}
                     }
                 )
 
@@ -136,7 +136,7 @@ class ContentOrchestrator:
                     task_id,
                     {
                         "status": "processing",
-                        "metadata": {"stage": "formatting", "percentage": 75, "message": "📝 Formatting..."}
+                        "task_metadata": {"stage": "formatting", "percentage": 75, "message": "📝 Formatting..."}
                     }
                 )
 
@@ -157,15 +157,15 @@ class ContentOrchestrator:
                     {
                         "status": "awaiting_approval",  # ✅ **STOPS HERE**
                         "approval_status": "awaiting_review",  # ✅ Requires human decision
-                        "content": formatted_content,
-                        "excerpt": excerpt,
-                        "featured_image_url": featured_image_url,
-                        "qa_feedback": qa_feedback,
-                        "quality_score": quality_score,
-                        "progress": {
+                        "task_metadata": {
                             "stage": "awaiting_approval",
                             "percentage": 100,
-                            "message": "⏳ Awaiting human approval"
+                            "message": "⏳ Awaiting human approval",
+                            "content": formatted_content,
+                            "excerpt": excerpt,
+                            "featured_image_url": featured_image_url,
+                            "qa_feedback": qa_feedback,
+                            "quality_score": quality_score,
                         }
                     }
                 )
@@ -194,7 +194,7 @@ class ContentOrchestrator:
                     task_id,
                     {
                         "status": "failed",
-                        "metadata": {"error": str(e)}
+                        "task_metadata": {"error": str(e)}
                     }
                 )
             raise

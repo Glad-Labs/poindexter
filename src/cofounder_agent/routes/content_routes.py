@@ -362,7 +362,7 @@ async def create_content_task(
             task_id,
             {
                 # Store categories and environment settings in metadata JSON
-                "metadata": {
+                "task_metadata": {
                     "categories": request.categories or [],
                     "publish_mode": request.publish_mode.value,
                     "target_environment": request.target_environment,
@@ -640,12 +640,14 @@ async def approve_and_publish_task(task_id: str, request: ApprovalRequest):
                 {
                     "status": "approved",
                     "approval_status": "approved",
-                    "approved_by": reviewer_id,
-                    "approval_timestamp": approval_timestamp,
-                    "approval_notes": human_feedback,
-                    "human_feedback": human_feedback,
-                    "publish_mode": "approved",
-                    "completed_at": approval_timestamp,
+                    "task_metadata": {
+                        "approved_by": reviewer_id,
+                        "approval_timestamp": approval_timestamp.isoformat(),
+                        "approval_notes": human_feedback,
+                        "human_feedback": human_feedback,
+                        "publish_mode": "approved",
+                        "completed_at": approval_timestamp.isoformat(),
+                    }
                 }
             )
             
@@ -675,11 +677,13 @@ async def approve_and_publish_task(task_id: str, request: ApprovalRequest):
                 {
                     "status": "rejected",
                     "approval_status": "rejected",
-                    "approved_by": reviewer_id,
-                    "approval_timestamp": approval_timestamp,
-                    "approval_notes": human_feedback,
-                    "human_feedback": human_feedback,
-                    "completed_at": approval_timestamp,
+                    "task_metadata": {
+                        "approved_by": reviewer_id,
+                        "approval_timestamp": approval_timestamp.isoformat(),
+                        "approval_notes": human_feedback,
+                        "human_feedback": human_feedback,
+                        "completed_at": approval_timestamp.isoformat(),
+                    }
                 }
             )
             
