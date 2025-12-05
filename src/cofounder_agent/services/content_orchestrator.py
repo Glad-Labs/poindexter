@@ -6,6 +6,7 @@ Master orchestrator coordinating 7 specialized agents with MANDATORY HUMAN APPRO
 Pipeline: Research → Draft → QA Loop → Images → Format → ⏳ AWAITING HUMAN APPROVAL
 
 This is Phase 5: Real Content Generation with Human-in-the-Loop Approval
+All content stored directly to PostgreSQL (no Strapi required)
 """
 
 import asyncio
@@ -21,7 +22,13 @@ class ContentOrchestrator:
     Master orchestrator for the complete content generation pipeline with human approval gate.
     
     Implements the 7-agent pipeline with QA feedback loop and mandatory human review
-    before anything is published to Strapi CMS.
+    before anything is published to PostgreSQL database.
+    
+    All content is stored directly to PostgreSQL tables:
+    - posts: Blog articles and content
+    - media: Images and visual assets
+    - categories: Content organization
+    - tags: Content tagging
     
     Pipeline stops at "awaiting_approval" status. Human must approve via:
         POST /api/content/tasks/{task_id}/approve with human decision
@@ -143,7 +150,7 @@ class ContentOrchestrator:
             # ====================================================================
             # STAGE 5: FORMATTING (75% → 90%)
             # ====================================================================
-            logger.info(f"📝 STAGE 5: Publishing Agent (Strapi Formatting)")
+            logger.info(f"📝 STAGE 5: Publishing Agent (PostgreSQL Formatting)")
             formatted_content, excerpt = await self._run_formatting(topic, final_content, featured_image_url)
             
             # ====================================================================
@@ -341,19 +348,17 @@ class ContentOrchestrator:
         try:
             logger.info(f"🖼️ Images: Selecting visual assets")
             
-            from agents.content_agent.agents.image_agent import ImageAgent
             from agents.content_agent.services.llm_client import LLMClient
             from agents.content_agent.services.pexels_client import PexelsClient
-            from agents.content_agent.services.strapi_client import StrapiClient
+            from agents.content_agent.agents.postgres_image_agent import PostgreSQLImageAgent
             
             llm_client = LLMClient()
             pexels_client = PexelsClient()
-            strapi_client = StrapiClient()
             
-            image_agent = ImageAgent(
+            # Use PostgreSQL-based image agent (no Strapi required)
+            image_agent = PostgreSQLImageAgent(
                 llm_client=llm_client,
-                pexels_client=pexels_client,
-                strapi_client=strapi_client
+                pexels_client=pexels_client
             )
             
             # Run image agent
@@ -375,7 +380,8 @@ class ContentOrchestrator:
             return image_url
 
         except Exception as e:
-            logger.error(f"❌ Image stage failed: {e}")
+            logger.warning(f"⚠️  Image stage warning: {e}")
+            logger.info("Continuing pipeline without images...")
             return None  # Continue without image
 
     async def _run_formatting(
@@ -383,13 +389,12 @@ class ContentOrchestrator:
     ) -> tuple:
         """Run publishing agent for formatting (Stage 5)"""
         try:
-            logger.info(f"📝 Formatting: Converting to Strapi format")
+            logger.info(f"📝 Formatting: Preparing content for PostgreSQL storage")
             
-            from agents.content_agent.agents.publishing_agent import PublishingAgent
-            from agents.content_agent.services.strapi_client import StrapiClient
+            # Use PostgreSQL-based publishing agent (no Strapi required)
+            from agents.content_agent.agents.postgres_publishing_agent import PostgreSQLPublishingAgent
             
-            strapi_client = StrapiClient()
-            publishing_agent = PublishingAgent(strapi_client=strapi_client)
+            publishing_agent = PostgreSQLPublishingAgent()
             
             # Run publishing agent (for formatting, not actually publishing yet)
             result_post = await asyncio.to_thread(
@@ -405,7 +410,8 @@ class ContentOrchestrator:
             return formatted_content, excerpt
 
         except Exception as e:
-            logger.error(f"❌ Formatting stage failed: {e}")
+            logger.warning(f"⚠️  Formatting stage warning: {e}")
+            logger.info("Continuing with unformatted content...")
             # Return content as-is if formatting fails
             return str(content), f"Article about {topic}"
 

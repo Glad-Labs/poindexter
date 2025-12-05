@@ -43,29 +43,13 @@ class Config:
         )
         self.PROMPTS_PATH = os.path.join(self.BASE_DIR, "prompts.json")
 
-        # --- Google Cloud Platform (GCP) & AI Configuration ---
-        self.GCP_SERVICE_ACCOUNT_EMAIL = os.getenv("GCP_SERVICE_ACCOUNT_EMAIL")
-        self.GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID")
-        self.GCP_REGION = os.getenv("GCP_REGION")
-        self.GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-        self.GEMINI_MODEL = os.getenv(
-            "GEMINI_MODEL", "gemini-1.5-pro-latest"
-        )  # Default to the latest powerful model
-        self.SUMMARIZER_MODEL = os.getenv(
-            "SUMMARIZER_MODEL", "gemini-1.5-flash-latest"
-        ) # Default to a fast and cheap model for summarization
-
-        # --- Strapi CMS Integration ---
-        self.STRAPI_API_URL = os.getenv(
-            "STRAPI_API_URL"
-        )  # e.g., "http://localhost:1337/api"
-        self.STRAPI_API_TOKEN = os.getenv("STRAPI_API_TOKEN")
-
-        # --- Google Cloud Storage (GCS) for Media ---
-        self.GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
-
-        # --- Firestore Database for Logging & Metrics ---
-        self.FIRESTORE_COLLECTION = os.getenv("FIRESTORE_COLLECTION", "agent_runs")
+        # --- PostgreSQL Database for CMS ---
+        self.DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./tasks.db")
+        self.DATABASE_HOST = os.getenv("DATABASE_HOST", "localhost")
+        self.DATABASE_PORT = os.getenv("DATABASE_PORT", "5432")
+        self.DATABASE_NAME = os.getenv("DATABASE_NAME", "glad_labs")
+        self.DATABASE_USER = os.getenv("DATABASE_USER", "postgres")
+        self.DATABASE_PASSWORD = os.getenv("DATABASE_PASSWORD", "")
 
         # --- External Services & APIs ---
         self.PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")  # For sourcing stock photos
@@ -122,34 +106,37 @@ config = Config()
 # Set STRICT_ENV_VALIDATION=1 to raise on missing variables.
 
 def validate_required(strict: bool = False) -> list:
+    """
+    Validate required environment variables for the content agent.
+    
+    The agent can now work with minimal configuration:
+    - DATABASE_URL or DATABASE_HOST/PORT/NAME for PostgreSQL
+    - At least one LLM provider (Ollama is local/free, or OpenAI/Anthropic API keys)
+    - Optional: PEXELS_API_KEY for stock images, SERPER_API_KEY for web search
+    """
+    # Core required: Just need database connection
     required_vars = [
-        "GCP_PROJECT_ID",
-        "GCP_REGION",
-        "GEMINI_API_KEY",
-        "STRAPI_API_URL",
-        "STRAPI_API_TOKEN",
-        "GCS_BUCKET_NAME",
+        "DATABASE_URL",  # OR Database host/port/name
+    ]
+    
+    # Optional but recommended
+    optional_vars = [
         "PEXELS_API_KEY",
         "SERPER_API_KEY",
-        "GCP_SERVICE_ACCOUNT_EMAIL",
     ]
 
     missing_vars = [var for var in required_vars if not getattr(config, var, None)]
 
     if missing_vars:
         message = (
-            "CRITICAL CONFIG: Missing required environment variables: "
+            "WARNING: Missing optional environment variables: "
             + ", ".join(missing_vars)
         )
-        if strict or os.getenv("STRICT_ENV_VALIDATION") == "1":
-            logger.critical(message)
-            logger.critical(
-                "Please create or check your .env file in the root directory and ensure all variables are set correctly."
-            )
-            raise ValueError(message)
-        else:
-            logger.warning(message)
-    return missing_vars
+        logger.warning(message)
+        return missing_vars
+    
+    return []
+
 
 # Perform a non-strict validation at import to aid discoverability without breaking tests.
 validate_required(strict=False)
