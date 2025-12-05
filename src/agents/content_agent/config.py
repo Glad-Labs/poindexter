@@ -25,9 +25,16 @@ class Config:
         # Load environment variables from a .env file into the environment.
         # This allows for secure and flexible configuration without hardcoding secrets.
         project_root = Path(__file__).resolve().parents[3]
+        
+        # Try .env.local first (development/local), then .env (committed version)
+        dotenv_local_path = project_root / '.env.local'
         dotenv_path = project_root / '.env'
+        
         if os.getenv("DISABLE_DOTENV") != "1":
-            load_dotenv(dotenv_path=dotenv_path)
+            if dotenv_local_path.exists():
+                load_dotenv(dotenv_path=dotenv_local_path, override=True)
+            elif dotenv_path.exists():
+                load_dotenv(dotenv_path=dotenv_path, override=True)
 
         # --- Core Application Paths ---
         self.BASE_DIR = BASE_DIR
@@ -75,9 +82,17 @@ class Config:
         )
 
         # --- Language Model Provider --
-        # Determines the LLM provider to use. Can be 'gemini' for Google's API
-        # or 'local' for a local model (e.g., Ollama).
-        self.LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini")
+        # Determines the LLM provider to use. Defaults to Ollama (free, local).
+        # Options: 'ollama' (free, local), 'openai', 'anthropic', 'gemini'
+        self.LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama")
+        
+        # --- Model Selection per Task Type --
+        # Allows configuration of which model to use for different task stages
+        self.MODEL_FOR_RESEARCH = os.getenv("MODEL_FOR_RESEARCH", "ollama/mistral")
+        self.MODEL_FOR_CREATIVE = os.getenv("MODEL_FOR_CREATIVE", "ollama/mistral")
+        self.MODEL_FOR_QA = os.getenv("MODEL_FOR_QA", "ollama/mistral")
+        self.MODEL_FOR_IMAGE = os.getenv("MODEL_FOR_IMAGE", "ollama/mistral")
+        self.MODEL_FOR_PUBLISHING = os.getenv("MODEL_FOR_PUBLISHING", "ollama/phi")
 
         # --- Local LLM (Ollama) Configuration --
         # For running a local quality assurance model if available.

@@ -131,7 +131,11 @@ class ContentTaskStore:
             
             logger.debug(f"   📝 Calling database_service.add_task() (async)...")
             
+            # Generate task_name from topic
+            task_name = f"{topic[:50]}" if len(topic) <= 50 else f"{topic[:47]}..."
+            
             task_id = await self.database_service.add_task({
+                "task_name": task_name,  # REQUIRED: must be provided
                 "topic": topic,
                 "style": style,
                 "tone": tone,
@@ -163,15 +167,13 @@ class ContentTaskStore:
         if not self.database_service:
             return None
         
-        # Only call update if we have a status to update
-        status = updates.get("status")
-        if status:
-            return await self.database_service.update_task_status(
-                task_id=task_id,
-                status=status,
-                result=updates.get("result")
-            )
-        return None
+        # Handle metadata updates by converting to JSON
+        import json
+        if "metadata" in updates:
+            updates["task_metadata"] = json.dumps(updates.pop("metadata"))
+        
+        # Call database service to update
+        return await self.database_service.update_task(task_id, updates)
 
     async def delete_task(self, task_id: str) -> bool:
         """Delete task from persistent storage (async, non-blocking)"""

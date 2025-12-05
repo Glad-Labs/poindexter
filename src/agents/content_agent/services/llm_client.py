@@ -27,8 +27,9 @@ class LLMClient:
                 self.model = genai.GenerativeModel(config.GEMINI_MODEL)
                 self.summarizer_model = genai.GenerativeModel(config.SUMMARIZER_MODEL)
                 logging.info("Initialized Gemini client.")
-            elif self.provider == "local":
-                logging.info(f"Using local LLM provider at {config.LOCAL_LLM_API_URL}")
+            elif self.provider == "local" or self.provider == "ollama":
+                # Treat Ollama as a local provider - both use the same HTTP API endpoint
+                logging.info(f"Using local LLM provider (Ollama) at {config.LOCAL_LLM_API_URL}")
             else:
                 raise ValueError(f"Unsupported LLM provider: {self.provider}")
         except Exception as e:
@@ -50,7 +51,7 @@ class LLMClient:
 
         if self.provider == "gemini":
             result = self._generate_json_gemini(prompt)
-        elif self.provider == "local":
+        elif self.provider == "local" or self.provider == "ollama":
             result = self._generate_json_local(prompt)
         else:
             logging.error(f"Unsupported LLM provider: {self.provider}")
@@ -102,7 +103,7 @@ class LLMClient:
 
         if self.provider == "gemini":
             result = self._generate_text_gemini(prompt)
-        elif self.provider == "local":
+        elif self.provider == "local" or self.provider == "ollama":
             result = self._generate_text_local(prompt)
         else:
             logging.error(f"Unsupported LLM provider: {self.provider}")
@@ -142,10 +143,10 @@ class LLMClient:
 
         if self.provider == "gemini":
             result = self._generate_summary_gemini(prompt)
-        elif self.provider == "local":
-            # For local provider, we can reuse the text generation with the summarizer model if needed
+        elif self.provider == "local" or self.provider == "ollama":
+            # For local/ollama provider, we can reuse the text generation with the summarizer model if needed
             # or use a specific endpoint if available. For now, we use the main model.
-            logging.warning("Summarization with local provider falls back to the main model.")
+            logging.warning("Summarization with local/ollama provider falls back to the main model.")
             result = self._generate_text_local(prompt)
         else:
             logging.error(f"Unsupported LLM provider: {self.provider}")

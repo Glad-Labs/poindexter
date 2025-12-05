@@ -70,9 +70,12 @@ class ContentOrchestrator:
             
             # Update status: processing
             if self.task_store:
-                self.task_store.update_task_status(
-                    task_id, "processing",
-                    progress={"stage": "research", "percentage": 10, "message": "🚀 Starting research..."}
+                await self.task_store.update_task(
+                    task_id,
+                    {
+                        "status": "processing",
+                        "metadata": {"stage": "research", "percentage": 10, "message": "🚀 Starting research..."}
+                    }
                 )
 
             # ====================================================================
@@ -82,9 +85,12 @@ class ContentOrchestrator:
             research_data = await self._run_research(topic, keywords or [topic])
             
             if self.task_store:
-                self.task_store.update_task_status(
-                    task_id, "processing",
-                    progress={"stage": "creative", "percentage": 25, "message": "✍️  Generating draft..."}
+                await self.task_store.update_task(
+                    task_id,
+                    {
+                        "status": "processing",
+                        "metadata": {"stage": "creative", "percentage": 25, "message": "✍️  Generating draft..."}
+                    }
                 )
 
             # ====================================================================
@@ -94,9 +100,12 @@ class ContentOrchestrator:
             draft_content = await self._run_creative_initial(topic, research_data, style, tone)
             
             if self.task_store:
-                self.task_store.update_task_status(
-                    task_id, "processing",
-                    progress={"stage": "qa", "percentage": 45, "message": "🔍 Quality review..."}
+                await self.task_store.update_task(
+                    task_id,
+                    {
+                        "status": "processing",
+                        "metadata": {"stage": "qa", "percentage": 45, "message": "🔍 Quality review..."}
+                    }
                 )
 
             # ====================================================================
@@ -108,9 +117,12 @@ class ContentOrchestrator:
             )
             
             if self.task_store:
-                self.task_store.update_task_status(
-                    task_id, "processing",
-                    progress={"stage": "images", "percentage": 60, "message": "🖼️  Selecting images..."}
+                await self.task_store.update_task(
+                    task_id,
+                    {
+                        "status": "processing",
+                        "metadata": {"stage": "images", "percentage": 60, "message": "🖼️  Selecting images..."}
+                    }
                 )
 
             # ====================================================================
@@ -120,9 +132,12 @@ class ContentOrchestrator:
             featured_image_url = await self._run_image_selection(topic, final_content)
             
             if self.task_store:
-                self.task_store.update_task_status(
-                    task_id, "processing",
-                    progress={"stage": "formatting", "percentage": 75, "message": "📝 Formatting..."}
+                await self.task_store.update_task(
+                    task_id,
+                    {
+                        "status": "processing",
+                        "metadata": {"stage": "formatting", "percentage": 75, "message": "📝 Formatting..."}
+                    }
                 )
 
             # ====================================================================
@@ -173,7 +188,13 @@ class ContentOrchestrator:
         except Exception as e:
             logger.error(f"❌ Pipeline error: {e}", exc_info=True)
             if self.task_store:
-                self.task_store.update_task_status(task_id, "failed", error=str(e))
+                await self.task_store.update_task(
+                    task_id,
+                    {
+                        "status": "failed",
+                        "metadata": {"error": str(e)}
+                    }
+                )
             raise
 
     async def _run_research(self, topic: str, keywords: List[str]) -> str:
@@ -181,7 +202,7 @@ class ContentOrchestrator:
         try:
             logger.info(f"📚 Research: Gathering information for '{topic}'")
             
-            from src.agents.content_agent.agents.research_agent import ResearchAgent
+            from agents.content_agent.agents.research_agent import ResearchAgent
             research_agent = ResearchAgent()
             
             # Run research (returns search results as string)
@@ -204,11 +225,11 @@ class ContentOrchestrator:
     ) -> Any:
         """Run creative agent for initial draft (Stage 2)"""
         try:
-            logger.info(f"✍️  Creative: Generating initial draft for '{topic}'")
+            logger.info(f"✍️ Creative: Drafting content for '{topic}'")
             
-            from src.agents.content_agent.agents.creative_agent import CreativeAgent
-            from src.agents.content_agent.services.llm_client import LLMClient
-            from src.agents.content_agent.utils.data_models import BlogPost
+            from agents.content_agent.agents.creative_agent import CreativeAgent
+            from agents.content_agent.services.llm_client import LLMClient
+            from agents.content_agent.utils.data_models import BlogPost
             
             llm_client = LLMClient()
             creative_agent = CreativeAgent(llm_client=llm_client)
@@ -250,9 +271,9 @@ class ContentOrchestrator:
         try:
             logger.info(f"🔍 QA: Reviewing content quality")
             
-            from src.agents.content_agent.agents.qa_agent import QAAgent
-            from src.agents.content_agent.agents.creative_agent import CreativeAgent
-            from src.agents.content_agent.services.llm_client import LLMClient
+            from agents.content_agent.agents.qa_agent import QAAgent
+            from agents.content_agent.agents.creative_agent import CreativeAgent
+            from agents.content_agent.services.llm_client import LLMClient
             
             llm_client = LLMClient()
             qa_agent = QAAgent(llm_client=llm_client)
@@ -316,12 +337,12 @@ class ContentOrchestrator:
     async def _run_image_selection(self, topic: str, content: Any) -> Optional[str]:
         """Run image agent (Stage 4)"""
         try:
-            logger.info(f"🖼️  Image: Selecting featured image for '{topic}'")
+            logger.info(f"🖼️ Images: Selecting visual assets")
             
-            from src.agents.content_agent.agents.image_agent import ImageAgent
-            from src.agents.content_agent.services.llm_client import LLMClient
-            from src.agents.content_agent.services.pexels_client import PexelsClient
-            from src.agents.content_agent.services.strapi_client import StrapiClient
+            from agents.content_agent.agents.image_agent import ImageAgent
+            from agents.content_agent.services.llm_client import LLMClient
+            from agents.content_agent.services.pexels_client import PexelsClient
+            from agents.content_agent.services.strapi_client import StrapiClient
             
             llm_client = LLMClient()
             pexels_client = PexelsClient()
@@ -362,8 +383,8 @@ class ContentOrchestrator:
         try:
             logger.info(f"📝 Formatting: Converting to Strapi format")
             
-            from src.agents.content_agent.agents.publishing_agent import PublishingAgent
-            from src.agents.content_agent.services.strapi_client import StrapiClient
+            from agents.content_agent.agents.publishing_agent import PublishingAgent
+            from agents.content_agent.services.strapi_client import StrapiClient
             
             strapi_client = StrapiClient()
             publishing_agent = PublishingAgent(strapi_client=strapi_client)

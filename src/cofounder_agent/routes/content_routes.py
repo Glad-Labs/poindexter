@@ -130,6 +130,16 @@ class CreateBlogPostRequest(BaseModel):
         pattern="^(development|staging|production)$",
         description="Target deployment environment (development, staging, production)"
     )
+    llm_provider: Optional[str] = Field(
+        None, 
+        description="Optional: LLM provider override (ollama, openai, anthropic, gemini). If not specified, uses default from config.",
+        examples=["ollama", "openai", "anthropic"]
+    )
+    model: Optional[str] = Field(
+        None, 
+        description="Optional: Specific model to use (e.g., 'ollama/mistral', 'gpt-4', 'claude-opus'). If not specified, uses default from config.",
+        examples=["ollama/mistral", "ollama/phi", "gpt-4", "claude-opus"]
+    )
 
     class Config:
         """Pydantic configuration"""
@@ -145,7 +155,9 @@ class CreateBlogPostRequest(BaseModel):
                 "generate_featured_image": True,
                 "publish_mode": "draft",
                 "enhanced": True,
-                "target_environment": "production"
+                "target_environment": "production",
+                "llm_provider": "ollama",
+                "model": "ollama/mistral"
             }
         }
 
@@ -344,14 +356,19 @@ async def create_content_task(
         )
         logger.info(f"  ✅ Task created: {task_id}")
 
-        # Update with additional fields
+        # Update with additional fields stored in metadata
         logger.debug(f"  📝 Updating task with additional fields...")
         update_result = await task_store.update_task(
             task_id,
             {
-                "categories": request.categories or [],
-                "publish_mode": request.publish_mode.value,
-                "target_environment": request.target_environment,
+                # Store categories and environment settings in metadata JSON
+                "metadata": {
+                    "categories": request.categories or [],
+                    "publish_mode": request.publish_mode.value,
+                    "target_environment": request.target_environment,
+                    "llm_provider": request.llm_provider,  # Store LLM provider override
+                    "model": request.model,  # Store model override
+                },
             },
         )
         logger.debug(f"  ✅ Task updated: {update_result}")
@@ -447,7 +464,7 @@ async def get_content_task_status(task_id: str):
             status=task.get("status", "unknown"),
             progress=task.get("progress"),
             result=result,  # ✅ Now populated with actual data from database
-            error=task.get("error_message") if task.get("error_message") else None,
+            error={"message": task.get("error_message")} if task.get("error_message") else None,
             created_at=task.get("created_at", ""),
         )
 

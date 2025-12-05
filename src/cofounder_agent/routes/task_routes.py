@@ -41,6 +41,10 @@ def convert_db_row_to_dict(row):
     if 'id' in data and data['id'] is not None:
         data['id'] = str(data['id'])
     
+    # Ensure task_name is never None (required field)
+    if 'task_name' not in data or data['task_name'] is None:
+        data['task_name'] = data.get('topic', 'Untitled Task')[:100]
+    
     # Convert datetimes to ISO format strings
     for dt_field in ['created_at', 'updated_at', 'started_at', 'completed_at']:
         if dt_field in data and data[dt_field] is not None:

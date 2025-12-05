@@ -1,8 +1,8 @@
 import logging
 import re
-from src.agents.content_agent.services.strapi_client import StrapiClient
-from src.agents.content_agent.utils.data_models import BlogPost
-from src.agents.content_agent.utils.markdown_utils import markdown_to_strapi_blocks
+from ..services.strapi_client import StrapiClient
+from ..utils.data_models import BlogPost
+from ..utils.markdown_utils import markdown_to_strapi_blocks
 
 
 class PublishingAgent:

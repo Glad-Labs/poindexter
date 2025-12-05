@@ -1,9 +1,9 @@
 import logging
 import json
-from src.agents.content_agent.config import config
-from src.agents.content_agent.services.llm_client import LLMClient
-from src.agents.content_agent.utils.data_models import BlogPost
-from src.agents.content_agent.utils.helpers import load_prompts_from_file
+from ..config import config
+from ..services.llm_client import LLMClient
+from ..utils.data_models import BlogPost
+from ..utils.helpers import load_prompts_from_file
 
 logger = logging.getLogger(__name__)
 

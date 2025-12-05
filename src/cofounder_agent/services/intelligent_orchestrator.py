@@ -393,6 +393,11 @@ class IntelligentOrchestrator:
             planning_prompt = await self._build_planning_prompt(
                 user_request, business_metrics, preferences
             )
+            # Check if llm_client is available before using
+            if not self.llm_client:
+                logger.warning(f"[{execution_context['request_id']}] ⚠️ LLM client not available, using fallback plan")
+                return self._create_fallback_plan(user_request)
+            
             plan_json = await self.llm_client.generate_text(
                 planning_prompt,
                 temperature=0.4,
@@ -721,6 +726,10 @@ RESPONSE FORMAT (JSON):
 }}
 """
 
+        if not self.llm_client:
+            logger.warning(f"LLM client not available for quality assessment")
+            return {"assessment": "pending", "score": 0}
+        
         quality_json = await self.llm_client.generate_text(
             quality_prompt,
             temperature=0.2,
@@ -772,6 +781,10 @@ WORKFLOW STEPS:
 Respond with JSON listing step IDs to retry.
 """
 
+            if not self.llm_client:
+                logger.warning(f"LLM client not available for refinement")
+                return {"suggestions": [], "improved_content": content}
+            
             refinement_json = await self.llm_client.generate_text(
                 refinement_prompt,
                 temperature=0.3,
@@ -820,6 +833,10 @@ Format as JSON with:
 - approval_checklist (verification steps)
 """
 
+        if not self.llm_client:
+            logger.warning(f"LLM client not available for formatting")
+            return {"formatted_content": outputs, "format": "markdown"}
+        
         formatted_json = await self.llm_client.generate_text(
             formatting_prompt,
             temperature=0.1,
