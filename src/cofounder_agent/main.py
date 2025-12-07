@@ -297,11 +297,16 @@ async def lifespan(app: FastAPI):
         logger.info(f"  - API Base URL: {api_base_url}")
         
         startup_complete = True
+        logger.info("✅ Lifespan: Yielding control to FastAPI application...")
+        print("✅ Lifespan: Application is now running")
         yield  # Application runs here
+        print("⏹️  Lifespan: Resuming after application shutdown")
+        logger.info("⏹️  Lifespan: Resuming after application shutdown...")
         
     except Exception as e:
         startup_error = f"Critical startup failure: {str(e)}"
         logger.error(f" {startup_error}", exc_info=True)
+        print(f"❌ EXCEPTION IN LIFESPAN: {startup_error}")
         startup_complete = True  # Mark complete so /api/health works
     
     finally:
@@ -727,14 +732,10 @@ async def root():
 
 if __name__ == "__main__":
     # Watch the entire src directory for changes to support agent development
-    src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-    print(f"INFO:     Configured watch directory: {src_dir}")
-    
-    uvicorn.run(
-        "main:app", 
-        host="0.0.0.0", 
-        port=8000, 
-        reload=True,
-        reload_dirs=[src_dir],
-        log_level="info"
-    )
+    # NOTE: Use 'python -m uvicorn main:app --reload' instead of 'python main.py'
+    # This file is imported by uvicorn when using the module syntax, so running
+    # uvicorn.run() here creates nested server conflicts.
+    print("ERROR: Do not run 'python main.py' directly.")
+    print("Instead, use:")
+    print("  python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000")
+    sys.exit(1)
