@@ -11,6 +11,8 @@ Features:
 - Self-checking and validation throughout generation
 - Quality assurance with refinement loops
 - Content metrics and performance tracking
+
+ASYNC-FIRST: All I/O operations use httpx async client (no blocking calls)
 """
 
 import os
@@ -19,6 +21,7 @@ from typing import Optional, Tuple, Dict, Any
 import asyncio
 import re
 import time
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -44,22 +47,24 @@ class AIContentGenerator:
         """
         self.quality_threshold = quality_threshold
         self.ollama_available = False
+        self.ollama_checked = False  # Track if we've checked Ollama async
         self.hf_token = os.getenv("HUGGINGFACE_API_TOKEN")
         self.gemini_key = os.getenv("GEMINI_API_KEY")
         self.generation_attempts = 0
         self.max_refinement_attempts = 3
         
-        # Check Ollama availability
-        self._check_ollama()
+        logger.info("AIContentGenerator initialized (Ollama check deferred to first async call)")
 
-    def _check_ollama(self):
-        """Check if Ollama is running"""
+    async def _check_ollama_async(self):
+        """Async check if Ollama is running - call this once before using Ollama"""
+        if self.ollama_checked:
+            return
+        
         try:
-            import httpx
-            client = httpx.Client(timeout=2)
-            response = client.get("http://localhost:11434/api/tags")
-            self.ollama_available = response.status_code == 200
-            client.close()
+            async with httpx.AsyncClient(timeout=2) as client:
+                response = await client.get("http://localhost:11434/api/tags")
+                self.ollama_available = response.status_code == 200
+            
             if self.ollama_available:
                 logger.info("✓ Ollama available at http://localhost:11434")
             else:
@@ -67,6 +72,8 @@ class AIContentGenerator:
         except Exception as e:
             logger.debug(f"Ollama not available: {e}")
             self.ollama_available = False
+        finally:
+            self.ollama_checked = True
 
     def _validate_content(self, content: str, topic: str, target_length: int) -> ContentValidationResult:
         """

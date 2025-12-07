@@ -4,6 +4,20 @@ Includes unit tests, integration tests, API tests, and end-to-end testing
 """
 
 import pytest
+import os
+import sys
+
+# Ensure .env.local is loaded before any imports
+from dotenv import load_dotenv
+# Get the project root: conftest is at src/cofounder_agent/tests/, need to go up 3 levels to root
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
+env_local_path = os.path.join(project_root, '.env.local')
+if os.path.exists(env_local_path):
+    load_dotenv(env_local_path, override=True)
+    print(f"[conftest] Loaded .env.local from {env_local_path}", flush=True)
+    print(f"[conftest] JWT_SECRET after load_dotenv: {os.getenv('JWT_SECRET')}", flush=True)
+else:
+    print(f"[conftest] ENV file not found at {env_local_path}", flush=True)
 
 # Register custom pytest markers
 def pytest_configure(config):
@@ -390,11 +404,19 @@ def app():
     """FastAPI application fixture - task store now uses DatabaseService (async)"""
     # Task storage is now handled by DatabaseService with asyncpg
     # Simply import and return the app
-    from cofounder_agent.main import app as fastapi_app
+    import sys
+    import os
+    
+    # Add parent directory to path for imports to work properly
+    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if parent_dir not in sys.path:
+        sys.path.insert(0, parent_dir)
+    
+    from main import app as fastapi_app
     return fastapi_app
 
 @pytest.fixture
-def client(app):
+def client(app, initialize_subtask_db_service):
     """FastAPI TestClient fixture"""
     from fastapi.testclient import TestClient
     return TestClient(app)
@@ -642,6 +664,145 @@ def sample_tool_result():
     }
 
 
+# ============================================================================
+# SUBTASK API TEST FIXTURES
+# ============================================================================
+
+@pytest.fixture
+def auth_headers():
+    """Generate valid authentication headers for testing"""
+    import jwt
+    import os
+    from datetime import datetime, timedelta
+    import sys
+    import tempfile
+    
+    # Try multiple environment variable names for JWT secret
+    # Priority: JWT_SECRET_KEY > JWT_SECRET > fallback default
+    secret = (
+        os.getenv("JWT_SECRET_KEY") or 
+        os.getenv("JWT_SECRET") or 
+        "change-this-in-production"
+    )
+    
+    # DEBUG: Write to file to bypass pytest output capture (use tempfile for cross-platform compatibility)
+    debug_log_path = os.path.join(tempfile.gettempdir(), 'auth_headers_debug.log')
+    with open(debug_log_path, 'a') as f:
+        f.write(f"\n[auth_headers] Called with secret: {secret[:30]}...\n")
+        f.write(f"[auth_headers] JWT_SECRET from env: {os.getenv('JWT_SECRET')}\n")
+    
+    # Create payload matching BOTH token_validator.py and auth_unified.py expectations
+    payload = {
+        "sub": "test-user",
+        "user_id": "test-user-123",  # REQUIRED: auth_unified.py checks for this
+        "type": "access",  # REQUIRED: token_validator.py validates this field
+        "exp": datetime.utcnow() + timedelta(hours=1),
+        "iat": datetime.utcnow()
+    }
+    
+    try:
+        token = jwt.encode(payload, secret, algorithm="HS256")
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+        # Debug logging
+        debug_log_path = os.path.join(tempfile.gettempdir(), 'auth_headers_debug.log')
+        with open(debug_log_path, 'a') as f:
+            f.write(f"[auth_headers] JWT.encode succeeded\n")
+            f.write(f"[auth_headers] Token: {token[:50]}...\n")
+        return headers
+    except Exception as e:
+        # Fallback: use a simple test token if JWT encoding fails
+        debug_log_path = os.path.join(tempfile.gettempdir(), 'auth_headers_debug.log')
+        with open(debug_log_path, 'a') as f:
+            f.write(f"[auth_headers] JWT encoding FAILED: {type(e).__name__}: {e}\n")
+        token = "test-token-12345"
+        return {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+
+@pytest.fixture
+def invalid_auth_headers():
+    """Generate invalid authentication headers for testing"""
+    return {
+        "Authorization": "Bearer invalid-token-xyz",
+        "Content-Type": "application/json"
+    }
+
+@pytest.fixture
+def sample_research_request():
+    """Sample research subtask request"""
+    return {
+        "topic": "Artificial Intelligence trends in 2025",
+        "keywords": ["machine learning", "transformers", "LLMs"]
+    }
+
+@pytest.fixture
+def sample_creative_request():
+    """Sample creative subtask request"""
+    return {
+        "topic": "AI trends in 2025",
+        "research_output": "Research findings about AI trends...",
+        "style": "professional",
+        "tone": "informative"
+    }
+
+@pytest.fixture
+def sample_qa_request():
+    """Sample QA subtask request"""
+    return {
+        "topic": "AI trends in 2025",
+        "creative_output": "Generated content about AI trends...",
+        "max_iterations": 2
+    }
+
+@pytest.fixture
+def sample_image_request():
+    """Sample image subtask request"""
+    return {
+        "topic": "AI and machine learning",
+        "number_of_images": 3
+    }
+
+@pytest.fixture
+def sample_format_request():
+    """Sample format subtask request"""
+    return {
+        "topic": "The Future of AI",
+        "content": "# The Future of AI\n\nArtificial Intelligence is evolving rapidly...",
+        "tags": ["AI", "technology", "future"],
+        "category": "technology"
+    }
+
+@pytest.fixture(autouse=True)
+def initialize_subtask_db_service():
+    """Initialize db_service in subtask_routes for test execution"""
+    from routes import subtask_routes
+    from services.database_service import DatabaseService
+    from unittest.mock import AsyncMock, MagicMock
+    
+    # Create a mock DatabaseService for testing
+    mock_db = MagicMock(spec=DatabaseService)
+    
+    # Mock the execute method to return a mock result
+    mock_db.execute = AsyncMock(return_value=None)
+    mock_db.fetch = AsyncMock(return_value=None)
+    mock_db.fetch_one = AsyncMock(return_value=None)
+    mock_db.insert = AsyncMock(return_value={"id": "test-subtask-id"})
+    mock_db.update = AsyncMock(return_value=None)
+    mock_db.delete = AsyncMock(return_value=None)
+    
+    # Set the global db_service in subtask_routes
+    subtask_routes.db_service = mock_db
+    
+    yield
+    
+    # Cleanup
+    subtask_routes.db_service = None
+
+
 # Export test configuration
 __all__ = [
     "TEST_CONFIG",
@@ -668,6 +829,15 @@ __all__ = [
     "performance_monitor",
     "test_utils",
     "mock_api_responses",
+    # Subtask API fixtures
+    "auth_headers",
+    "invalid_auth_headers",
+    "sample_research_request",
+    "sample_creative_request",
+    "sample_qa_request",
+    "sample_image_request",
+    "sample_format_request",
+    "initialize_subtask_db_service",
     # Poindexter fixtures
     "mock_tools_service",
     "mock_research_agent",

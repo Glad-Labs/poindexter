@@ -72,7 +72,7 @@ def convert_db_row_to_dict(row):
 
 # Import async database service
 from services.database_service import DatabaseService
-from routes.auth_routes import get_current_user
+from routes.auth_unified import get_current_user
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -719,4 +719,201 @@ Start writing the blog post now:"""
             await db_service.update_task_status(task_id, "failed", result=error_result)
         except Exception as status_err:
             logger.error(f"[BG_TASK] Could not update task status to failed: {status_err}")
+
+
+# ============================================================================
+# PHASE 1: INTENT-BASED TASK CREATION (Natural Language Support)
+# ============================================================================
+
+class IntentTaskRequest(BaseModel):
+    """Request for natural language task creation."""
+    user_input: str = Field(..., description="Natural language task description")
+    user_context: Optional[Dict[str, Any]] = Field(None, description="User context (preferences, settings)")
+    business_metrics: Optional[Dict[str, Any]] = Field(None, description="Budget, deadline, quality preference")
+
+
+class TaskIntentResponse(BaseModel):
+    """Response from intent detection and planning."""
+    task_id: Optional[str] = Field(None, description="Temp task ID for confirmation")
+    intent_request: Dict[str, Any] = Field(..., description="Parsed intent (task_type, parameters, subtasks)")
+    execution_plan: Dict[str, Any] = Field(..., description="Execution plan summary for UI")
+    ready_to_execute: bool = Field(True, description="Whether user can proceed with execution")
+    warnings: Optional[List[str]] = Field(None, description="Warnings (e.g., 'No QA review')")
+
+
+@router.post("/intent", response_model=TaskIntentResponse)
+async def create_task_from_intent(
+    request: IntentTaskRequest,
+    background_tasks: BackgroundTasks,
+    current_user: str = Depends(get_current_user),
+):
+    """
+    Phase 1: Parse natural language input and create execution plan.
+    
+    This endpoint:
+    1. Takes user NL input
+    2. Detects intent (content_generation, social_media, etc.)
+    3. Extracts parameters (topic, style, budget, deadline)
+    4. Determines subtasks
+    5. Creates execution plan
+    6. Returns plan to UI for confirmation
+    
+    User then calls /api/tasks/confirm to execute.
+    """
+    
+    try:
+        from services.task_intent_router import TaskIntentRouter
+        from services.task_planning_service import TaskPlanningService
+        
+        # Initialize services
+        intent_router = TaskIntentRouter()
+        planner = TaskPlanningService()
+        
+        # Step 1: Parse NL input into TaskIntentRequest
+        intent_request = await intent_router.route_user_input(
+            request.user_input,
+            request.user_context or {}
+        )
+        
+        logger.info(f"[INTENT] Detected intent: {intent_request.intent_type} → task_type: {intent_request.task_type}")
+        logger.info(f"[INTENT] Suggested subtasks: {intent_request.suggested_subtasks}")
+        logger.info(f"[INTENT] Parameters: {intent_request.parameters}")
+        
+        # Step 2: Generate execution plan
+        plan = await planner.generate_plan(
+            intent_request,
+            request.business_metrics or {}
+        )
+        
+        logger.info(f"[INTENT] Generated plan: {plan.total_estimated_duration_ms}ms, ${plan.total_estimated_cost:.2f}")
+        
+        # Step 3: Convert plan to summary for UI
+        plan_summary = planner.plan_to_summary(plan)
+        
+        # Store plan in temp record for confirmation step
+        plan_dict = planner.serialize_plan(plan)
+        
+        response = TaskIntentResponse(
+            task_id=None,  # No task created yet - waiting for confirmation
+            intent_request={
+                "intent_type": intent_request.intent_type,
+                "task_type": intent_request.task_type,
+                "confidence": float(intent_request.confidence),
+                "parameters": intent_request.parameters,
+                "suggested_subtasks": intent_request.suggested_subtasks,
+                "requires_confirmation": intent_request.requires_confirmation,
+                "execution_strategy": intent_request.execution_strategy,
+            },
+            execution_plan={
+                "title": plan_summary.title,
+                "description": plan_summary.description,
+                "estimated_time": plan_summary.estimated_time,
+                "estimated_cost": plan_summary.estimated_cost,
+                "confidence": plan_summary.confidence,
+                "key_stages": plan_summary.key_stages,
+                "warnings": plan_summary.warnings,
+                "opportunities": plan_summary.opportunities,
+                "full_plan": plan_dict,  # Store full plan for confirmation
+            },
+            ready_to_execute=not intent_request.requires_confirmation,
+            warnings=plan_summary.warnings,
+        )
+        
+        logger.info(f"[INTENT] Response ready to send to UI")
+        return response
+        
+    except Exception as e:
+        logger.error(f"[INTENT] Intent parsing failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Intent parsing failed: {str(e)}")
+
+
+class TaskConfirmRequest(BaseModel):
+    """Request to confirm and execute a task from intent plan."""
+    intent_request: Dict[str, Any] = Field(..., description="Original intent request")
+    execution_plan: Dict[str, Any] = Field(..., description="Execution plan (full version)")
+    user_confirmed: bool = Field(True, description="User confirmed the plan")
+    modifications: Optional[Dict[str, Any]] = Field(None, description="User modifications to plan")
+
+
+class TaskConfirmResponse(BaseModel):
+    """Response from task confirmation and creation."""
+    task_id: str
+    status: str
+    message: str
+    execution_plan_id: str
+
+
+@router.post("/confirm-intent", response_model=TaskConfirmResponse)
+async def confirm_and_execute_task(
+    request: TaskConfirmRequest,
+    background_tasks: BackgroundTasks,
+    current_user: str = Depends(get_current_user),
+):
+    """
+    Phase 1: Confirm execution plan and create task.
+    
+    This endpoint:
+    1. Receives confirmed execution plan from UI
+    2. Creates task in database
+    3. Stores execution plan in metadata
+    4. Marks task as pending for execution
+    5. Starts background task executor
+    
+    Task executor will follow the execution plan stages.
+    """
+    
+    if not request.user_confirmed:
+        raise HTTPException(status_code=400, detail="User did not confirm execution plan")
+    
+    try:
+        task_id = str(uuid_lib.uuid4())
+        intent_req = request.intent_request
+        plan = request.execution_plan
+        
+        # Build execution metadata
+        execution_metadata = {
+            "intent": {
+                "intent_type": intent_req.get("intent_type"),
+                "task_type": intent_req.get("task_type"),
+                "parameters": intent_req.get("parameters"),
+            },
+            "plan": plan,
+            "user_confirmed": request.user_confirmed,
+            "modifications": request.modifications or {},
+            "created_from_intent": True,
+            "confirmed_at": datetime.now(timezone.utc).isoformat(),
+        }
+        
+        # Create task in database
+        await db_service.execute(
+            """
+            INSERT INTO tasks (
+                id, task_name, task_type, status, metadata, created_at, updated_at
+            ) VALUES (
+                $1, $2, $3, 'pending', $4, $5, $6
+            )
+            """,
+            task_id,
+            intent_req.get("parameters", {}).get("topic", "Task from Intent"),
+            intent_req.get("task_type", "generic"),
+            execution_metadata,
+            datetime.now(timezone.utc),
+            datetime.now(timezone.utc),
+        )
+        
+        logger.info(f"[CONFIRM] Created task {task_id} from intent plan")
+        
+        # Queue background execution
+        background_tasks.add_task(execute_task_background, task_id, current_user)
+        
+        return TaskConfirmResponse(
+            task_id=task_id,
+            status="pending",
+            message=f"Task created and queued for execution. Plan: {len(plan.get('stages', []))} stages",
+            execution_plan_id=plan.get("task_id", task_id),
+        )
+        
+    except Exception as e:
+        logger.error(f"[CONFIRM] Task confirmation failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Task confirmation failed: {str(e)}")
 

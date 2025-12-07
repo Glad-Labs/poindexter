@@ -6,12 +6,13 @@ Using pure asyncpg for non-blocking database access.
 """
 
 import os
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, status, Depends
 from datetime import datetime
 from typing import Optional, Any
 import logging
 
 from services.database_service import DatabaseService
+from routes.auth_unified import get_current_user, User
 
 logger = logging.getLogger(__name__)
 
@@ -36,10 +37,10 @@ async def get_db_pool():
 
 @router.get("/api/posts")
 async def list_posts(
+    current_user: User = Depends(get_current_user),
     skip: int = Query(0, ge=0, le=10000),
     limit: int = Query(20, ge=1, le=100),
     published_only: bool = Query(True),
-    # featured: Optional[bool] = Query(None), # Disabled until schema update
 ):
     """
     List all blog posts with pagination (ASYNC).
@@ -114,7 +115,10 @@ async def list_posts(
 
 
 @router.get("/api/posts/{slug}")
-async def get_post_by_slug(slug: str):
+async def get_post_by_slug(
+    slug: str,
+    current_user: User = Depends(get_current_user)
+):
     """
     Get single post by slug with full content and tags (ASYNC).
     Returns: {data: {...}, meta: {tags: [...]}}
@@ -179,7 +183,7 @@ async def get_post_by_slug(slug: str):
 # ============================================================================
 
 @router.get("/api/categories")
-async def list_categories():
+async def list_categories(current_user: User = Depends(get_current_user)):
     """
     List all categories (ASYNC).
     Returns: {data: [...], meta: {}}
@@ -214,7 +218,7 @@ async def list_categories():
 # ============================================================================
 
 @router.get("/api/tags")
-async def list_tags():
+async def list_tags(current_user: User = Depends(get_current_user)):
     """
     List all tags (ASYNC).
     Returns: {data: [...], meta: {}}

@@ -290,7 +290,6 @@ class PublishDraftResponse(BaseModel):
     response_model=CreateBlogPostResponse,
     status_code=201,
     description="Create a content task (blog post, social media, email, etc.)",
-    tags=["content-tasks"],
 )
 async def create_content_task(
     request: CreateBlogPostRequest, background_tasks: BackgroundTasks
@@ -405,7 +404,6 @@ async def create_content_task(
     "/tasks/{task_id}",
     response_model=TaskStatusResponse,
     description="Get content task status",
-    tags=["content-tasks"],
 )
 async def get_content_task_status(task_id: str):
     """
@@ -481,7 +479,6 @@ async def get_content_task_status(task_id: str):
     "/tasks",
     response_model=DraftsListResponse,
     description="List content tasks",
-    tags=["content-tasks"],
 )
 async def list_content_tasks(
     task_type: Optional[str] = Query(None, description="Filter by task type (blog_post, social_media, etc.)"),
@@ -543,7 +540,6 @@ async def list_content_tasks(
     "/tasks/{task_id}/approve",
     response_model=ApprovalResponse,
     description="✅ Phase 5: Human Approval Gate - Approve or reject task",
-    tags=["content-tasks"],
 )
 async def approve_and_publish_task(task_id: str, request: ApprovalRequest):
     """
@@ -713,7 +709,6 @@ async def approve_and_publish_task(task_id: str, request: ApprovalRequest):
 @content_router.delete(
     "/tasks/{task_id}",
     description="Delete a task",
-    tags=["content-tasks"],
 )
 async def delete_content_task(task_id: str):
     """
@@ -824,7 +819,6 @@ class GenerateAndPublishRequest(BaseModel):
 @content_router.post(
     "/generate-and-publish",
     description="PHASE 4: Generate content and publish directly to FastAPI CMS",
-    tags=["phase-4-integration"],
 )
 async def generate_and_publish_content(request: GenerateAndPublishRequest, background_tasks: BackgroundTasks):
     """

@@ -14,8 +14,8 @@ from uuid import UUID
 from datetime import datetime, timezone
 import logging
 
-from ..middleware.auth import get_current_user
-from ..services.database import DatabaseService
+from routes.auth_unified import get_current_user
+from services.database_service import DatabaseService
 
 logger = logging.getLogger(__name__)
 db_service = None
@@ -27,7 +27,7 @@ def set_db_service(service: DatabaseService):
     db_service = service
 
 
-router = APIRouter(prefix="/api/tasks", tags=["tasks"])
+router = APIRouter(prefix="/api/tasks", tags=["tasks-bulk"])
 
 
 class BulkTaskRequest(BaseModel):

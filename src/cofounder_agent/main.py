@@ -42,6 +42,7 @@ from services.task_executor import TaskExecutor
 from services.content_critique_loop import ContentCritiqueLoop
 from services.telemetry import setup_telemetry  #  OpenTelemetry tracing
 from services.content_router_service import get_content_task_store  #  Inject DB service
+from services.migrations import run_migrations  #  Database schema migrations
 
 # Import route routers
 # Unified content router (consolidates content.py, content_generation.py, enhanced_content.py)
@@ -54,6 +55,8 @@ from routes.command_queue_routes import router as command_queue_router
 from routes.chat_routes import router as chat_router
 from routes.ollama_routes import router as ollama_router
 from routes.task_routes import router as task_router
+from routes.subtask_routes import router as subtask_router  # Subtask independent execution
+from routes.bulk_task_routes import router as bulk_task_router  # Bulk task operations
 from routes.webhooks import webhook_router
 from routes.social_routes import social_router
 from routes.metrics_routes import metrics_router
@@ -143,6 +146,17 @@ async def lifespan(app: FastAPI):
         
         # 2. All task operations now handled by DatabaseService (pure asyncpg)
         logger.info("  📋 Task storage ready via DatabaseService (asyncpg)")
+        
+        # 2a. Run database migrations (audit logging, etc.)
+        logger.info("  🔄 Running database migrations...")
+        try:
+            migrations_ok = await run_migrations(database_service)
+            if migrations_ok:
+                logger.info("   ✅ Database migrations completed successfully")
+            else:
+                logger.warning("   ⚠️ Database migrations failed (proceeding anyway)")
+        except Exception as e:
+            logger.warning(f"   ⚠️ Migration error: {str(e)} (proceeding anyway)")
         
         #  Inject database service into content task store (fixes initialization error)
         get_content_task_store(database_service)
@@ -269,7 +283,9 @@ async def lifespan(app: FastAPI):
         # 6. Register database service with route modules
         if database_service:
             from routes.task_routes import set_db_service
+            from routes.subtask_routes import set_db_service as set_subtask_db_service
             set_db_service(database_service)
+            set_subtask_db_service(database_service)
             logger.info("   Database service registered with routes")
         
         logger.info(" Application started successfully!")
@@ -353,6 +369,8 @@ app.include_router(settings_router)  # Settings management
 app.include_router(command_queue_router)  # Command queue (replaces Pub/Sub)
 app.include_router(chat_router)  # Chat and AI model integration
 app.include_router(ollama_router)  # Ollama health checks and warm-up
+app.include_router(subtask_router)  # Subtask independent execution (Phase 2 - unified orchestration)
+app.include_router(bulk_task_router)  # Bulk task operations (multiple tasks at once)
 app.include_router(webhook_router)  # Webhook event handlers
 app.include_router(social_router)  # Social media management
 app.include_router(metrics_router)  # Metrics and analytics

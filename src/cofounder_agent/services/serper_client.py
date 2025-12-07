@@ -5,6 +5,8 @@ Provides web search capabilities for content research, fact-checking, and trend 
 Free tier: 100 searches/month
 
 Cost: $0/month (vs spending on expensive searches)
+
+ASYNC-FIRST: All operations use httpx async client (no blocking I/O)
 """
 
 import os
@@ -13,7 +15,7 @@ import json
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 
-import requests
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -48,14 +50,14 @@ class SerperClient:
         }
         self.monthly_usage = 0  # Track free tier usage
     
-    def search(
+    async def search(
         self,
         query: str,
         num: int = 10,
         search_type: str = "search"
     ) -> Dict[str, Any]:
         """
-        Perform web search via Serper API.
+        Perform web search via Serper API (ASYNC).
         
         Args:
             query: Search query
@@ -76,13 +78,13 @@ class SerperClient:
                 "type": search_type
             }
             
-            response = requests.post(
-                f"{self.BASE_URL}/{search_type}",
-                json=payload,
-                headers=self.headers,
-                timeout=10
-            )
-            response.raise_for_status()
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.post(
+                    f"{self.BASE_URL}/{search_type}",
+                    json=payload,
+                    headers=self.headers
+                )
+                response.raise_for_status()
             
             self.monthly_usage += 1
             if self.monthly_usage % 10 == 0:
@@ -92,20 +94,20 @@ class SerperClient:
             logger.info(f"Serper search '{query}' returned {len(data.get('organic', []))} results")
             return data
             
-        except requests.exceptions.RequestException as e:
+        except httpx.HTTPError as e:
             logger.error(f"Serper API request failed: {e}")
             return {}
         except Exception as e:
             logger.error(f"Serper search error: {e}")
             return {}
     
-    def news_search(
+    async def news_search(
         self,
         query: str,
         num: int = 10
     ) -> Dict[str, Any]:
         """
-        Search for news articles.
+        Search for news articles (ASYNC).
         
         Args:
             query: News search query
@@ -114,15 +116,15 @@ class SerperClient:
         Returns:
             News search results
         """
-        return self.search(query, num, search_type="news")
+        return await self.search(query, num, search_type="news")
     
-    def shopping_search(
+    async def shopping_search(
         self,
         query: str,
         num: int = 10
     ) -> Dict[str, Any]:
         """
-        Search for shopping results.
+        Search for shopping results (ASYNC).
         
         Args:
             query: Product search query
@@ -131,15 +133,15 @@ class SerperClient:
         Returns:
             Shopping search results
         """
-        return self.search(query, num, search_type="shopping")
+        return await self.search(query, num, search_type="shopping")
     
-    def get_search_results_summary(
+    async def get_search_results_summary(
         self,
         query: str,
         max_results: int = 5
     ) -> Dict[str, Any]:
         """
-        Get summarized search results for content research.
+        Get summarized search results for content research (ASYNC).
         
         Args:
             query: Search query

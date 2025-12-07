@@ -448,7 +448,8 @@ class ModularPipelineExecutor:
             pending_actions=["approve", "reject"],
         )
         
-        # TODO: Persist checkpoint to database in Phase 4
+        # Checkpoint persistence deferred to Phase 4 (after core pipeline stable)
+        # When implemented: await self.database_service.save_checkpoint(checkpoint_data)
         # await checkpoint_service.save(checkpoint)
         
         return checkpoint

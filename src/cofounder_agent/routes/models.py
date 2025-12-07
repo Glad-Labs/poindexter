@@ -19,7 +19,7 @@ from services.model_consolidation_service import get_model_consolidation_service
 logger = logging.getLogger(__name__)
 
 # Router for all model-related endpoints
-models_router = APIRouter(prefix="/api/v1/models", tags=["models"])
+models_router = APIRouter(prefix="/api/v1/models", tags=["models-v1"])
 
 # Additional router for /api/models endpoint (legacy support)
 models_list_router = APIRouter(prefix="/api/models", tags=["models"])

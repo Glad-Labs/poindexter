@@ -45,9 +45,9 @@ class ResearchTask(PureTask):
         topic = input_data["topic"]
         depth = input_data.get("depth", "medium")
         
-        # 1. Perform Web Search
+        # 1. Perform Web Search (ASYNC)
         serper = SerperClient()
-        search_results = serper.search(topic, num=10)
+        search_results = await serper.search(topic, num=10)
         
         # Extract organic results
         organic_results = search_results.get("organic", [])

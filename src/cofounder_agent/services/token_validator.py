@@ -25,9 +25,15 @@ class TokenType(str, Enum):
 
 class AuthConfig:
     """Auth configuration - minimal version for validation only"""
-    SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change-this-in-production")
+    # Support both JWT_SECRET_KEY and JWT_SECRET for flexibility
+    SECRET_KEY = os.getenv("JWT_SECRET_KEY") or os.getenv("JWT_SECRET", "change-this-in-production")
     ALGORITHM = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
+    
+    # Debug: log what secret was loaded
+    print(f"[token_validator import] JWT_SECRET_KEY={os.getenv('JWT_SECRET_KEY')}", flush=True)
+    print(f"[token_validator import] JWT_SECRET={os.getenv('JWT_SECRET')}", flush=True)
+    print(f"[token_validator import] AuthConfig.SECRET_KEY={SECRET_KEY}", flush=True)
 
 
 class JWTTokenValidator:
@@ -49,13 +55,23 @@ class JWTTokenValidator:
             jwt.ExpiredSignatureError: Token has expired
             jwt.InvalidTokenError: Token is invalid
         """
+        import sys
         try:
+            # Debug logging
+            print(f"\n[verify_token] Verifying token...", file=sys.stderr)
+            print(f"[verify_token] Using secret: {AuthConfig.SECRET_KEY[:30]}...", file=sys.stderr)
+            print(f"[verify_token] Token: {token[:50]}...", file=sys.stderr)
+            
             # Verify and decode token
             payload = jwt.decode(
                 token,
                 AuthConfig.SECRET_KEY,
                 algorithms=[AuthConfig.ALGORITHM]
             )
+            
+            print(f"[verify_token] Token decoded successfully", file=sys.stderr)
+            print(f"[verify_token] Payload type field: {payload.get('type')}", file=sys.stderr)
+            print(f"[verify_token] Expected type: {token_type.value}", file=sys.stderr)
             
             # Verify token type
             if payload.get("type") != token_type.value:
@@ -65,6 +81,7 @@ class JWTTokenValidator:
         except jwt.ExpiredSignatureError:
             raise jwt.ExpiredSignatureError("Token has expired")
         except jwt.InvalidTokenError as e:
+            print(f"[verify_token] Invalid token error: {str(e)}", file=sys.stderr)
             raise jwt.InvalidTokenError(f"Invalid token: {str(e)}")
 
     @staticmethod

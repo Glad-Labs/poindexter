@@ -27,12 +27,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status, Request, P
 from pydantic import BaseModel, Field, validator
 from sqlalchemy.orm import Session
 
-# Note: The following imports will be resolved when dependencies are installed
-# from database import get_db
-# from middleware.jwt import get_current_user, PermissionChecker, JWTTokenVerifier
-# from services.encryption import EncryptionService
-# from models import User, Setting, SettingAuditLog
-# from services.permissions_service import PermissionsService
+# Import audit logging (removed - file doesn't exist yet)
+# from middleware.audit_logging import log_audit, SettingsAuditLogger
 
 # Create router
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -542,6 +538,7 @@ async def update_setting(
     setting_id: int = Path(..., gt=0, description="Setting ID"),
     update_data: SettingUpdate = Body(...),
     current_user = Depends(get_current_user),
+    request: Request = None,
 ):
     """
     Update an existing setting (admin/editor).
@@ -576,10 +573,26 @@ async def update_setting(
     if setting_id < 1 or setting_id > 10:
         raise HTTPException(status_code=404, detail="Setting not found")
     
+    # Log the update for audit trail
+    old_value = f"old_value_{setting_id}"
+    new_value = update_data.value if update_data.value else f"value_{setting_id}"
+    
+    log_audit(
+        action=SettingsAuditLogger.ACTION_UPDATE,
+        setting_id=str(setting_id),
+        user_id=current_user.get("user_id", "unknown"),
+        old_value=old_value,
+        new_value=new_value,
+        user_email=current_user.get("email", "unknown"),
+        change_description=f"Updated setting {setting_id}: {update_data.description or 'no description'}",
+        ip_address=request.client.host if request else None,
+        user_agent=request.headers.get("user-agent") if request else None,
+    )
+    
     return SettingResponse(
         id=setting_id,
         key=f"setting_{setting_id}",
-        value=update_data.value if update_data.value else f"value_{setting_id}",
+        value=new_value,
         data_type=SettingDataTypeEnum.STRING,
         category=SettingCategoryEnum.DATABASE,
         environment=SettingEnvironmentEnum.DEVELOPMENT,
@@ -591,7 +604,7 @@ async def update_setting(
         updated_at=datetime.utcnow(),
         created_by_id=1,
         updated_by_id=1,
-        value_preview=update_data.value if update_data.value else f"value_{setting_id}"
+        value_preview=new_value
     )
 
 
@@ -609,6 +622,7 @@ async def update_setting(
 async def delete_setting(
     setting_id: int = Path(..., gt=0, description="Setting ID"),
     current_user = Depends(get_current_user),
+    request: Request = None,
 ):
     """
     Delete a setting (admin only).
@@ -637,6 +651,19 @@ async def delete_setting(
     # Mock implementation for testing
     if setting_id < 1 or setting_id > 10:
         raise HTTPException(status_code=404, detail="Setting not found")
+    
+    # Log the deletion for audit trail
+    log_audit(
+        action=SettingsAuditLogger.ACTION_DELETE,
+        setting_id=str(setting_id),
+        user_id=current_user.get("user_id", "unknown"),
+        old_value=f"old_value_{setting_id}",
+        new_value=None,
+        user_email=current_user.get("email", "unknown"),
+        change_description=f"Deleted setting {setting_id}",
+        ip_address=request.client.host if request else None,
+        user_agent=request.headers.get("user-agent") if request else None,
+    )
     
     # Return 204 No Content (successful deletion)
     # No response body needed for 204 status
