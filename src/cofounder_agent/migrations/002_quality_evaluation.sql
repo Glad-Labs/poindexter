@@ -122,5 +122,3 @@ COMMENT ON COLUMN quality_evaluations.evaluation_method IS 'pattern-based (fast)
 
 -- Verify migration
 SELECT 'Quality evaluation tables created successfully' AS status;
-\dt quality_*
-\di quality_*

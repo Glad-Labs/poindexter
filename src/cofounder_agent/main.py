@@ -346,14 +346,55 @@ app = FastAPI(
 # Initialize OpenTelemetry tracing
 setup_telemetry(app)
 
-# CORS middleware for frontend integration
+# ===== SECURITY: INPUT VALIDATION MIDDLEWARE =====
+# Validates and sanitizes all incoming requests
+# Prevents SQL injection, XSS, oversized payloads, and other attacks
+try:
+    from middleware.input_validation import InputValidationMiddleware, PayloadInspectionMiddleware
+    
+    app.add_middleware(PayloadInspectionMiddleware)
+    app.add_middleware(InputValidationMiddleware)
+    
+    logger.info("✅ Input validation middleware initialized")
+except ImportError as e:
+    logger.warning(f"⚠️  Input validation middleware not available: {e}")
+
+# CORS middleware for frontend integration (SECURITY: environment-based configuration)
+allowed_origins = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:3000,http://localhost:3001"  # Dev default
+).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],  # React apps
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],  # SECURITY: Restricted from ["*"]
+    allow_headers=["Authorization", "Content-Type"],  # SECURITY: Restricted from ["*"]
 )
+
+# ===== SECURITY: ADD RATE LIMITING MIDDLEWARE =====
+# Protects against DDoS, API abuse, and brute force attacks
+try:
+    from slowapi import Limiter
+    from slowapi.util import get_remote_address
+    from slowapi.errors import RateLimitExceeded
+    from fastapi.responses import JSONResponse
+    
+    limiter = Limiter(key_func=get_remote_address)
+    app.state.limiter = limiter
+    
+    @app.exception_handler(RateLimitExceeded)
+    async def rate_limit_handler(request, exc):
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Rate limit exceeded. Too many requests."},
+        )
+    
+    logger.info("✅ Rate limiting middleware initialized (slowapi)")
+except ImportError:
+    logger.warning("⚠️  slowapi not installed - rate limiting disabled. Install with: pip install slowapi")
+    limiter = None
 
 # Include route routers
 app.include_router(auth_router)  #  Unified authentication (JWT, OAuth, GitHub)

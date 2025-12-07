@@ -26,14 +26,27 @@ class TokenType(str, Enum):
 class AuthConfig:
     """Auth configuration - minimal version for validation only"""
     # Support both JWT_SECRET_KEY and JWT_SECRET for flexibility
-    SECRET_KEY = os.getenv("JWT_SECRET_KEY") or os.getenv("JWT_SECRET", "change-this-in-production")
+    # SECURITY: Do NOT use hardcoded default - require environment variable
+    _secret = os.getenv("JWT_SECRET_KEY") or os.getenv("JWT_SECRET")
+    
+    if not _secret:
+        # In production, this is a critical error
+        import sys
+        if os.getenv("ENVIRONMENT", "development") == "production":
+            print("[ERROR] JWT_SECRET_KEY or JWT_SECRET environment variable is required", file=sys.stderr)
+            sys.exit(1)  # Exit if JWT secret is missing in production
+        else:
+            # Development fallback only
+            _secret = "dev-secret-change-in-production"
+            print("[WARNING] Using development JWT secret - SET JWT_SECRET in .env for production", flush=True)
+    
+    SECRET_KEY = _secret
     ALGORITHM = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
     
-    # Debug: log what secret was loaded
-    print(f"[token_validator import] JWT_SECRET_KEY={os.getenv('JWT_SECRET_KEY')}", flush=True)
-    print(f"[token_validator import] JWT_SECRET={os.getenv('JWT_SECRET')}", flush=True)
-    print(f"[token_validator import] AuthConfig.SECRET_KEY={SECRET_KEY}", flush=True)
+    # Debug: log what secret was loaded (first 20 chars only for security)
+    secret_preview = SECRET_KEY[:20] + "..." if len(SECRET_KEY) > 20 else "***"
+    print(f"[token_validator import] JWT secret loaded: {secret_preview}", flush=True)
 
 
 class JWTTokenValidator:

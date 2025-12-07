@@ -778,15 +778,51 @@ def sample_format_request():
 
 @pytest.fixture(autouse=True)
 def initialize_subtask_db_service():
-    """Initialize db_service in subtask_routes for test execution"""
-    from routes import subtask_routes
+    """Initialize db_service in task_routes and subtask_routes for test execution"""
+    from routes import subtask_routes, task_routes
     from services.database_service import DatabaseService
     from unittest.mock import AsyncMock, MagicMock
+    import uuid
     
     # Create a mock DatabaseService for testing
     mock_db = MagicMock(spec=DatabaseService)
     
-    # Mock the execute method to return a mock result
+    # Track created tasks for retrieval
+    created_tasks = {}
+    
+    async def mock_add_task(task_data):
+        """Mock add_task - store and return the task data"""
+        task_id = str(uuid.uuid4())
+        # Include created_at and updated_at timestamps
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        task_with_meta = {
+            **task_data,
+            "id": task_id,
+            "created_at": now,
+            "updated_at": now,
+            "status": "pending"
+        }
+        created_tasks[task_id] = task_with_meta
+        return task_id
+    
+    async def mock_get_task(task_id):
+        """Mock get_task - retrieve task by ID"""
+        return created_tasks.get(task_id)
+    
+    async def mock_get_tasks_paginated(offset=0, limit=20, status=None, category=None):
+        """Mock get_tasks_paginated - return paginated tasks with optional filtering"""
+        tasks = list(created_tasks.values())
+        # Filter by status if provided
+        if status:
+            tasks = [t for t in tasks if t.get('status') == status]
+        # Filter by category if provided
+        if category:
+            tasks = [t for t in tasks if t.get('category') == category]
+        # Return paginated results and total count
+        return tasks[offset:offset+limit], len(tasks)
+    
+    # Mock the core database methods
     mock_db.execute = AsyncMock(return_value=None)
     mock_db.fetch = AsyncMock(return_value=None)
     mock_db.fetch_one = AsyncMock(return_value=None)
@@ -794,13 +830,23 @@ def initialize_subtask_db_service():
     mock_db.update = AsyncMock(return_value=None)
     mock_db.delete = AsyncMock(return_value=None)
     
-    # Set the global db_service in subtask_routes
+    # Mock task-specific methods with proper behavior
+    mock_db.add_task = mock_add_task
+    mock_db.get_task = mock_get_task
+    mock_db.get_tasks_paginated = mock_get_tasks_paginated
+    mock_db.update_task = AsyncMock(return_value=True)
+    mock_db.delete_task = AsyncMock(return_value=True)
+    
+    # Set the global db_service in both routes
     subtask_routes.db_service = mock_db
+    task_routes.db_service = mock_db
     
     yield
     
     # Cleanup
     subtask_routes.db_service = None
+    task_routes.db_service = None
+    created_tasks.clear()
 
 
 # Export test configuration
