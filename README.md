@@ -1,383 +1,92 @@
-# 🚀 **Glad Labs AI Co-Founder System**
+# ��� **Glad Labs AI Co-Founder System**
 
 ![Production Ready](https://img.shields.io/badge/Status-Production_Ready-brightgreen)
 ![Glad Labs Standards](https://img.shields.io/badge/Standards-v2.0_Compliant-blue)
 ![Next.js](https://img.shields.io/badge/Frontend-Next.js_15-black)
-![Strapi](https://img.shields.io/badge/CMS-Strapi_v5-blue)
 ![Python](https://img.shields.io/badge/Backend-Python_3.12-blue)
 ![AI Powered](https://img.shields.io/badge/AI-Powered_Co--Founder-purple)
 
 > **Revolutionary AI-powered business co-founder system featuring autonomous agents, intelligent orchestration, and comprehensive business intelligence - delivering the world's first complete AI business partner.**
 
-## **📚 Documentation Index**
+## **��� Documentation**
 
-**Core Documentation (START HERE):**
+��� **[��� START HERE: Documentation Hub](./docs/00-README.md)** - Complete guide with setup, architecture, deployment, operations, and troubleshooting.
 
-| Document                                                                            | Description                        | For          |
-| ----------------------------------------------------------------------------------- | ---------------------------------- | ------------ |
-| [📖 **01 Setup & Overview**](./docs/01-SETUP_AND_OVERVIEW.md)                       | Getting started guide (15 minutes) | New Users    |
-| [🏗️ **02 Architecture & Design**](./docs/02-ARCHITECTURE_AND_DESIGN.md)             | System design & components         | Architects   |
-| [🌐 **03 Deployment & Infrastructure**](./docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md) | Production deployment              | DevOps       |
-| [� **04 Development Workflow**](./docs/04-DEVELOPMENT_WORKFLOW.md)                  | Git, testing, CI/CD                | Developers   |
-| [🧠 **05 AI Agents & Integration**](./docs/05-AI_AGENTS_AND_INTEGRATION.md)         | Agent system & MCP                 | AI Engineers |
-| [📊 **06 Operations & Maintenance**](./docs/06-OPERATIONS_AND_MAINTENANCE.md)       | Monitoring & backups               | DevOps/SREs  |
-| [⚙️ **07 Branch-Specific Variables**](./docs/07-BRANCH_SPECIFIC_VARIABLES.md)       | Environment configuration          | All          |
-
-**Documentation Hub:**
-
-- [� **00 Documentation Hub**](./docs/00-README.md) - Complete navigation guide with reference materials, troubleshooting, and learning paths
-
-## **🎯 Executive Summary**
-
-Glad Labs is a comprehensive AI Co-Founder ecosystem that combines autonomous content creation with intelligent business management. The system features a sophisticated AI Co-Founder that provides strategic insights, manages business operations, orchestrates specialized agents, and delivers real-time business intelligence through advanced dashboards and voice interfaces.
-
-**Current Status:** ✅ **Production Ready v3.1** - PostgreSQL Migration in Progress  
-**Last Updated:** October 26, 2025  
-**Architecture:** Enterprise-grade monorepo with PostgreSQL + FastAPI + Next.js  
-**Phase:** 5 - Final Cleanup & Testing Integration
-
----
-
-## **🚀 Quick Start**
-
-### **Prerequisites (Quick Start)**
-
-- Node.js 18+ and Python 3.12+
-- Git and a code editor
-
-### **Installation**
-
-```bash
-# Clone the repository
-git clone <repository-url>
-cd glad-labs-website
-
-# Install all dependencies (Python + Node.js)
-npm run setup:all
-
-# Start all services in development mode
-npm run dev
-```
-
-### **Access Points**
-
-| Service           | URL                     | Purpose               |
-| ----------------- | ----------------------- | --------------------- |
-| **Public Site**   | <http://localhost:3000> | Next.js website       |
-| **Oversight Hub** | <http://localhost:3001> | React admin dashboard |
-| **Strapi CMS**    | <http://localhost:1337> | Content management    |
-| **AI Co-Founder** | <http://localhost:8000> | Python API server     |
-
-### **Available Commands**
-
-```bash
-npm run dev           # Start all services
-npm run build         # Build for production
-npm test              # Run all tests
-npm run lint          # Check code quality
-```
-
-## **🏗️ System Architecture**
-
-The system is designed as a modern monorepo with clear separation of concerns and automated AI workflows.
-
-| Service           | Technology  | Port | Status   | Description                       |
-| ----------------- | ----------- | ---- | -------- | --------------------------------- |
-| **Public Site**   | Next.js 15  | 3000 | ✅ Ready | High-performance public website   |
-| **Oversight Hub** | React 18    | 3001 | ✅ Ready | Admin interface for AI management |
-| **Strapi CMS**    | Strapi v5   | 1337 | ✅ Ready | Headless content management       |
-| **AI Co-Founder** | Python 3.12 | 8000 | ✅ Ready | AI business intelligence system   |
-| **Content Agent** | Python      | -    | ✅ Ready | Autonomous content creation       |
-
-### **Workspace Structure**
-
-```text
-glad-labs-website/
-├── 📁 web/
-│ ├── public-site/ # Next.js 15 public website
-│ └── oversight-hub/ # React admin dashboard
-├── 📁 cms/
-│ └── strapi-main/ # Strapi CMS backend
-├── 📁 src/
-│ ├── cofounder_agent/ # AI Co-Founder system
-│ └── mcp/ # Model Context Protocol
-├── 📁 agents/
-│ └── content-agent/ # Content generation agents
-└── 📁 docs/ # Documentation
-```
+**Core Documentation (7 files in `docs/` folder):**
+- [01 Setup & Overview](./docs/01-SETUP_AND_OVERVIEW.md) - Quick start guide (15 minutes)
+- [02 Architecture & Design](./docs/02-ARCHITECTURE_AND_DESIGN.md) - System design and components
+- [03 Deployment & Infrastructure](./docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md) - Production deployment
+- [04 Development Workflow](./docs/04-DEVELOPMENT_WORKFLOW.md) - Git strategy, testing, CI/CD
+- [05 AI Agents & Integration](./docs/05-AI_AGENTS_AND_INTEGRATION.md) - Agent architecture and MCP
+- [06 Operations & Maintenance](./docs/06-OPERATIONS_AND_MAINTENANCE.md) - Monitoring and backups
+- [07 Branch-Specific Variables](./docs/07-BRANCH_SPECIFIC_VARIABLES.md) - Environment configuration
 
 ---
 
 ## **⚡ Quick Start**
 
 ### **Prerequisites**
+- Node.js 18+ and Python 3.12+
+- Git
 
-- **Node.js:** v20.11.1+
-- **Python:** 3.12+
-- **Git:** Latest stable
+### **Installation (3 steps)**
 
-### **Installation & Setup**
+```bash
+# 1. Clone the repository
+git clone <repository-url> && cd glad-labs-website
 
-1. **Clone the repository:**
+# 2. Install all dependencies
+npm run setup:all
 
-   ```bash
-   git clone <repository-url>
-   cd glad-labs-website
-   ```
+# 3. Start all services
+npm run dev
+```
 
-1. **Install dependencies:**
+### **Access Points**
 
-   ```bash
-   # Install root dependencies
-   npm install
-
-   # Install frontend dependencies
-   cd web/public-site && npm install && cd ../..
-   cd web/oversight-hub && npm install && cd ../..
-
-   # Install CMS dependencies
-   cd cms/strapi-main && npm install && cd ../..
-
-   # Install Python dependencies for content agent
-   cd src/agents/content_agent && pip install -r requirements.txt && cd ../../..
-   ```
-
-1. **Configure environment variables:**
-
-   **Strapi CMS** (`cms/strapi-main/.env`):
-
-   ```env
-   NODE_ENV=development
-   APP_KEYS="your-app-keys"
-   API_TOKEN_SALT="your-api-token-salt"
-   ADMIN_JWT_SECRET="your-admin-jwt-secret"
-   TRANSFER_TOKEN_SALT="your-transfer-token-salt"
-   JWT_SECRET="your-jwt-secret"
-   ```
-
-   **Next.js Frontend** (`web/public-site/.env.local`):
-
-   ```env
-   NEXT_PUBLIC_STRAPI_API_URL=http://localhost:1337
-   STRAPI_API_TOKEN=your-strapi-api-token
-   ```
-
-   **Content Agent** (`src/agents/content_agent/.env`):
-
-   ```env
-   OPENAI_API_KEY=your-openai-api-key
-   PEXELS_API_KEY=your-pexels-api-key
-   STRAPI_API_URL=http://localhost:1337
-   STRAPI_API_TOKEN=your-strapi-api-token
-   ```
-
-1. **Start the development environment:**
-
-   ```bash
-   # Terminal 1: Start Strapi CMS
-   cd cms/strapi-main
-   npm run develop
-
-   # Terminal 2: Start Next.js frontend
-   cd web/public-site
-   npm run dev
-
-   # Terminal 3: Start content agent (optional)
-   cd src/agents/content_agent
-   python orchestrator.py
-   ```
-
-### **Development URLs**
-
-- **Public Site:** <http://localhost:3000>
-- **Strapi Admin:** <http://localhost:1337/admin>
-- **Strapi API:** <http://localhost:1337/api>
+| Service | URL | Purpose |
+|---------|-----|---------|
+| **Public Site** | http://localhost:3000 | Next.js website |
+| **Oversight Hub** | http://localhost:3001 | React admin dashboard |
+| **AI Co-Founder** | http://localhost:8000 | Python API server |
 
 ---
 
-## **🔧 Architecture Components**
+## **���️ System Overview**
 
-### **1. Public Site (Next.js Frontend)**
+| Service | Technology | Purpose |
+|---------|-----------|---------|
+| **Public Site** | Next.js 15 | High-performance public website |
+| **Oversight Hub** | React 18 | Admin interface for AI management |
+| **AI Co-Founder** | Python 3.12 | AI business intelligence system |
+| **Content Agent** | Python | Autonomous content creation |
 
-- **Technology:** Next.js 14 with Static Site Generation (SSG)
-- **Features:** Server-side rendering, SEO optimization, responsive design
-- **API Integration:** Connects to Strapi v5 via REST API
-- **Status:** ✅ Production ready with markdown content rendering
-
-**Key Features:**
-
-- Homepage with featured posts and recent content grid
-- Individual post pages with full markdown rendering
-- Category and tag-based content filtering
-- Privacy policy and about pages
-- SEO-optimized meta tags and Open Graph support
-
-### **2. Content Management System (Strapi v5)**
-
-- **Technology:** Strapi v5 with SQLite database
-- **Features:** Headless CMS, API-first architecture, admin interface
-- **Content Types:** Posts, Categories, Tags, Pages
-- **Status:** ✅ Production ready with full CRUD operations
-
-**Content Structure:**
-
-- **Posts**: Title, slug, content (markdown), excerpt, featured flag, cover image
-- **Categories**: Name, slug, description
-- **Tags**: Name, slug
-- **Relations**: Posts belong to categories and can have multiple tags
-
-### **3. Content Agent (Autonomous AI)**
-
-- **Technology:** Python with OpenAI GPT integration
-- **Features:** Autonomous content creation, image sourcing, quality assurance
-- **Workflow:** Research → Create → Review → Publish
-- **Status:** ✅ Production ready with multi-agent pipeline
-
-**Agent Pipeline:**
-
-1. **Research Agent**: Gathers context and information
-2. **Creative Agent**: Generates initial content drafts
-3. **QA Agent**: Reviews content for quality and compliance
-4. **Image Agent**: Sources and processes relevant images
-5. **Publishing Agent**: Formats and publishes to Strapi
-
-### **4. Oversight Hub (Admin Interface)**
-
-- **Technology:** React 18 with Firebase integration
-- **Features:** Real-time monitoring, agent control, chat interface
-- **Status:** 🚧 Development phase
+**Project Structure:**
+```
+glad-labs-website/
+├── web/                    # Frontend applications
+│   ├── public-site/        # Next.js 15 website
+│   └── oversight-hub/      # React dashboard
+├── src/                    # Backend services
+│   ├── cofounder_agent/    # AI Co-Founder
+│   └── mcp/                # Model Context Protocol
+└── docs/                   # Documentation (start here!)
+```
 
 ---
 
-## **📚 Documentation**
+## **��� License**
 
-| Document                                             | Description                          | Status     |
-| ---------------------------------------------------- | ------------------------------------ | ---------- |
-| [SYSTEM_DOCUMENTATION.md](./SYSTEM_DOCUMENTATION.md) | Complete system documentation        | ✅ Current |
-| [data_schemas.md](./data_schemas.md)                 | Database and content schemas         | ✅ Current |
-| [GLAD-LABS-STANDARDS.md](./GLAD-LABS-STANDARDS.md)   | Development standards and guidelines | ✅ Current |
+**GNU Affero General Public License v3.0 (AGPL 3.0)** - See [LICENSE.md](./LICENSE.md)
 
-### **Component Documentation**
-
-- **[Public Site](./web/public-site/README.md)** - Next.js frontend documentation
-- **[Strapi CMS](./cms/strapi-main/README.md)** - Content management system setup
-- **[Content Agent](./src/agents/content_agent/README.md)** - Autonomous content creation
-- **[Oversight Hub](./web/oversight-hub/README.md)** - Admin interface
+**Commercial License:** Contact sales@gladlabs.io
 
 ---
 
-## **🛠️ Development Workflow**
+## **��� Support**
 
-### **Content Creation Process**
+- **Documentation:** [��� Documentation Hub](./docs/00-README.md)
+- **Issues:** GitHub issues
+- **Commercial:** sales@gladlabs.io
 
-1. **Manual Trigger**: Create content requests via Oversight Hub or direct API
-2. **Agent Processing**: Content agent processes request through multi-agent pipeline
-3. **Content Generation**: AI generates high-quality, SEO-optimized content
-4. **Quality Assurance**: Automated review and refinement process
-5. **Publication**: Content published to Strapi and available on public site
-
-### **Code Quality Standards**
-
-- **ESLint**: Frontend code linting and formatting
-- **Prettier**: Code formatting consistency
-- **React Markdown**: Markdown content rendering
-- **Tailwind CSS**: Utility-first styling approach
-
----
-
-## **🚀 Deployment**
-
-### **Production Considerations**
-
-- **Strapi**: Deploy to cloud hosting with PostgreSQL database
-- **Next.js**: Deploy to Vercel, Netlify, or similar static hosting
-- **Content Agent**: Deploy to Google Cloud Run or AWS Lambda
-- **Environment Variables**: Secure API keys and database credentials
-
-### **Performance Optimizations**
-
-- **Static Site Generation**: Pre-built pages for optimal performance
-- **Image Optimization**: Next.js automatic image optimization
-- **API Caching**: Strapi content caching strategies
-- **CDN Integration**: Global content delivery
-
----
-
-## **🤝 Contributing**
-
-### **Development Setup**
-
-1. **Fork the repository**
-2. **Create feature branch**: `git checkout -b feature/new-capability`
-3. **Follow code standards**: ESLint, Prettier, component conventions
-4. **Add comprehensive tests**: Unit and integration testing
-5. **Update documentation**: Keep all docs current
-6. **Create pull request**: Detailed description of changes
-
-### **Testing Strategy**
-
-- **Frontend**: Jest + React Testing Library
-- **Backend**: Strapi built-in testing framework
-
----
-
-## **📋 License**
-
-This project is licensed under the **GNU Affero General Public License v3.0 (AGPL 3.0)**.
-
-### **What This Means**
-
-**You are free to:**
-
-- Use the software for any purpose
-- Study and understand the source code
-- Distribute copies to others
-- Modify the code and distribute modifications
-
-**With the requirement that:**
-
-- If you run modified versions on a network server, you must provide source code to users
-- Any modifications must also be licensed under AGPL 3.0
-- You must include a copy of this license with your distribution
-
-### **Commercial Use**
-
-A **commercial license** is required for:
-
-- Closed-source, proprietary applications
-- Use cases that do not comply with AGPL 3.0
-- Modifications that will not be shared with users
-
-**To purchase a commercial license:**
-
-📧 **sales@gladlabs.io**
-
-### **License Files**
-
-- Root: [LICENSE.md](./LICENSE.md) - Full AGPL 3.0 text
-- Components: Each component directory includes a LICENSE.md file for reference
-
-For the complete AGPL 3.0 license text, see [GNU AGPL 3.0](https://www.gnu.org/licenses/agpl-3.0.html)
-
----
-
-## **📞 Support**
-
-- **Documentation**: See [docs/00-README.md](./docs/00-README.md) for comprehensive guides
-- **Issues**: Report bugs and feature requests on GitHub
-- **Commercial Support**: Contact [sales@gladlabs.io](mailto:sales@gladlabs.io) for enterprise support
-- **Content Agent**: Python unittest framework
-- **Integration**: End-to-end testing with Playwright
-
-For step-by-step local testing instructions on Windows PowerShell (including virtualenv setup), see the Testing Guide: `TESTING.md`.
-
----
-
-## **📞 Support & Contact**
-
-**Project Owner:** Matthew M. Gladding  
-**Organization:** Glad Labs, LLC  
-**License:** MIT
-
-**Architecture Status:** ✅ Production Ready v2.0  
-**Last Documentation Update:** October 13, 2025
+**Owner:** Matthew M. Gladding | **Organization:** Glad Labs, LLC
