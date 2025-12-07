@@ -1,5 +1,5 @@
 import logging
-import requests
+import httpx
 import json
 from ..config import config
 
@@ -10,6 +10,8 @@ class ResearchAgent:
     """
     Performs initial research on a given topic to provide context
     for the creative agent by calling the Serper API directly.
+    
+    ASYNC-FIRST: All HTTP operations use httpx (no blocking I/O)
     """
 
     def __init__(self):
@@ -21,7 +23,7 @@ class ResearchAgent:
             raise ValueError("SERPER_API_KEY is not set in the environment.")
         self.serper_api_key = config.SERPER_API_KEY
 
-    def run(self, topic: str, keywords: list[str]) -> str:
+    async def run(self, topic: str, keywords: list[str]) -> str:
         """
         Conducts a web search using a combination of the topic and keywords
         to get more targeted and relevant results.
@@ -40,14 +42,15 @@ class ResearchAgent:
             )
 
             url = "https://google.serper.dev/search"
-            payload = json.dumps({"q": search_query})
+            payload = {"q": search_query}
             headers = {
                 "X-API-KEY": self.serper_api_key,
                 "Content-Type": "application/json",
             }
 
-            response = requests.post(url, headers=headers, data=payload)
-            response.raise_for_status()
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.post(url, headers=headers, json=payload)
+                response.raise_for_status()
 
             search_results = response.json()
 
@@ -63,7 +66,7 @@ class ResearchAgent:
 
             logger.info(f"ResearchAgent: Found search results.")
             return context
-        except requests.exceptions.RequestException as e:
+        except httpx.HTTPError as e:
             logger.error(f"An error occurred during research request: {e}")
             return ""
         except Exception as e:

@@ -172,12 +172,12 @@ class SerperClient:
             logger.error(f"Error getting search summary: {e}")
             return {}
     
-    def fact_check_claims(
+    async def fact_check_claims(
         self,
         claims: List[str]
     ) -> Dict[str, Any]:
         """
-        Search for fact-checking information on claims.
+        Search for fact-checking information on claims (ASYNC).
         
         Args:
             claims: List of claims to fact-check
@@ -189,7 +189,7 @@ class SerperClient:
         
         for claim in claims[:3]:  # Limit to 3 to conserve API quota
             try:
-                search_results = self.search(f'fact check: "{claim}"', num=3)
+                search_results = await self.search(f'fact check: "{claim}"', num=3)
                 
                 results[claim] = {
                     "claim": claim,
@@ -209,12 +209,12 @@ class SerperClient:
         
         return results
     
-    def get_trending_topics(
+    async def get_trending_topics(
         self,
         category: str = "general"
     ) -> List[Dict[str, str]]:
         """
-        Get trending topics for content ideas.
+        Get trending topics for content ideas (ASYNC).
         
         Args:
             category: Trend category - "general", "technology", "business", "health"
@@ -224,7 +224,7 @@ class SerperClient:
         """
         try:
             query = f"trending {category} 2025"
-            results = self.search(query, num=5)
+            results = await self.search(query, num=5)
             
             topics = []
             for idx, item in enumerate(results.get("organic", [])[:5]):
@@ -242,13 +242,13 @@ class SerperClient:
             logger.error(f"Error getting trending topics: {e}")
             return []
     
-    def research_topic(
+    async def research_topic(
         self,
         topic: str,
         aspects: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
-        Comprehensive research on a topic with multiple aspects.
+        Comprehensive research on a topic with multiple aspects (ASYNC).
         
         Args:
             topic: Main topic to research
@@ -266,7 +266,7 @@ class SerperClient:
         
         try:
             # Search for main topic
-            main_results = self.search(topic, num=3)
+            main_results = await self.search(topic, num=3)
             research["main_sources"] = [
                 {
                     "title": item.get("title"),
@@ -279,7 +279,7 @@ class SerperClient:
             # Search for each aspect
             for aspect in aspects[:2]:  # Limit searches to conserve quota
                 aspect_query = f"{topic} {aspect}"
-                aspect_results = self.search(aspect_query, num=2)
+                aspect_results = await self.search(aspect_query, num=2)
                 
                 research["aspects"][aspect] = [
                     {
@@ -297,12 +297,12 @@ class SerperClient:
             logger.error(f"Error researching topic '{topic}': {e}")
             return research
     
-    def get_author_information(
+    async def get_author_information(
         self,
         author_name: str
     ) -> Dict[str, Any]:
         """
-        Get information about an author or expert.
+        Get information about an author or expert (ASYNC).
         
         Args:
             author_name: Name of author/expert
@@ -311,7 +311,7 @@ class SerperClient:
             Author information and notable works
         """
         try:
-            results = self.search(author_name, num=5)
+            results = await self.search(author_name, num=5)
             
             return {
                 "author": author_name,

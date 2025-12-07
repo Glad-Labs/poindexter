@@ -1,10 +1,10 @@
 import google.generativeai as genai
+import httpx
 from agents.content_agent.config import config
 from agents.content_agent.utils.helpers import extract_json_from_string
 import logging
 import json
 import os
-import requests
 import hashlib
 from pathlib import Path
 
@@ -42,8 +42,8 @@ class LLMClient:
         prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()
         return self.cache_dir / f"{prompt_hash}.{format}.cache"
 
-    def generate_json(self, prompt: str) -> dict:
-        """Generates JSON content using the configured LLM, with caching."""
+    async def generate_json(self, prompt: str) -> dict:
+        """Generates JSON content using the configured LLM, with caching (async)."""
         cache_path = self._get_cache_path(prompt, "json")
         if cache_path.exists():
             logging.info(f"Returning cached JSON response for prompt.")
@@ -53,7 +53,7 @@ class LLMClient:
         if self.provider == "gemini":
             result = self._generate_json_gemini(prompt)
         elif self.provider == "local" or self.provider == "ollama":
-            result = self._generate_json_local(prompt)
+            result = await self._generate_json_local(prompt)
         else:
             logging.error(f"Unsupported LLM provider: {self.provider}")
             return {}
@@ -75,13 +75,14 @@ class LLMClient:
             logging.error(f"Error generating JSON content from Gemini: {e}")
             return {}
 
-    def _generate_json_local(self, prompt: str) -> dict:
+    async def _generate_json_local(self, prompt: str) -> dict:
         try:
-            response = requests.post(
-                f"{config.LOCAL_LLM_API_URL}/api/generate",
-                json={"model": config.LOCAL_LLM_MODEL_NAME, "prompt": prompt, "stream": False},
-            )
-            response.raise_for_status()
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.post(
+                    f"{config.LOCAL_LLM_API_URL}/api/generate",
+                    json={"model": config.LOCAL_LLM_MODEL_NAME, "prompt": prompt, "stream": False},
+                )
+                response.raise_for_status()
             response_json = response.json()
             if "response" in response_json:
                 raw_response = response_json["response"]
@@ -95,15 +96,15 @@ class LLMClient:
             else:
                 logging.error("'response' key not found in local LLM output.")
                 return {}
-        except requests.exceptions.RequestException as e:
+        except httpx.HTTPError as e:
             logging.error(f"Error communicating with local LLM: {e}")
             return {}
         except json.JSONDecodeError:
             logging.error("Failed to decode JSON from local LLM response.")
             return {}
 
-    def generate_text(self, prompt: str) -> str:
-        """Generates plain text content using the configured LLM, with caching."""
+    async def generate_text(self, prompt: str) -> str:
+        """Generates plain text content using the configured LLM, with caching (async)."""
         cache_path = self._get_cache_path(prompt, "txt")
         if cache_path.exists():
             logging.info(f"Returning cached text response for prompt.")
@@ -112,7 +113,7 @@ class LLMClient:
         if self.provider == "gemini":
             result = self._generate_text_gemini(prompt)
         elif self.provider == "local" or self.provider == "ollama":
-            result = self._generate_text_local(prompt)
+            result = await self._generate_text_local(prompt)
         else:
             logging.error(f"Unsupported LLM provider: {self.provider}")
             return ""
@@ -130,20 +131,21 @@ class LLMClient:
             logging.error(f"Error generating text content from Gemini: {e}")
             return ""
 
-    def _generate_text_local(self, prompt: str) -> str:
+    async def _generate_text_local(self, prompt: str) -> str:
         try:
-            response = requests.post(
-                f"{config.LOCAL_LLM_API_URL}/api/generate",
-                json={"model": config.LOCAL_LLM_MODEL_NAME, "prompt": prompt, "stream": False},
-            )
-            response.raise_for_status()
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.post(
+                    f"{config.LOCAL_LLM_API_URL}/api/generate",
+                    json={"model": config.LOCAL_LLM_MODEL_NAME, "prompt": prompt, "stream": False},
+                )
+                response.raise_for_status()
             return response.json().get("response", "")
-        except requests.exceptions.RequestException as e:
+        except httpx.HTTPError as e:
             logging.error(f"Error communicating with local LLM: {e}")
             return ""
 
-    def generate_summary(self, prompt: str) -> str:
-        """Generates a summary using the configured summarizer model, with caching."""
+    async def generate_summary(self, prompt: str) -> str:
+        """Generates a summary using the configured summarizer model, with caching (async)."""
         cache_path = self._get_cache_path(prompt, "summary.txt")
         if cache_path.exists():
             logging.info(f"Returning cached summary for prompt.")
@@ -155,7 +157,7 @@ class LLMClient:
             # For local/ollama provider, we can reuse the text generation with the summarizer model if needed
             # or use a specific endpoint if available. For now, we use the main model.
             logging.warning("Summarization with local/ollama provider falls back to the main model.")
-            result = self._generate_text_local(prompt)
+            result = await self._generate_text_local(prompt)
         else:
             logging.error(f"Unsupported LLM provider: {self.provider}")
             return ""
