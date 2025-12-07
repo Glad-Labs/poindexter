@@ -41,14 +41,20 @@ Start with any doc that matches your role, then use cross-links to explore. Each
 
 ## 📚 Additional Resources
 
-### Components & Troubleshooting
+### Components
 
-- **[Component Docs](./components/)** - Architecture of individual services (Co-founder Agent, Oversight Hub, Public Site)
-- **[Troubleshooting Guides](./components/)** - Common issues and solutions for each component
+- **[Co-founder Agent](./components/cofounder-agent/README.md)** - AI agent architecture and integration
+- **[Oversight Hub](./components/oversight-hub/README.md)** - Admin dashboard and monitoring
+- **[Public Site](./components/public-site/README.md)** - Customer-facing website
+
+### Troubleshooting & Support
+
+- **[Troubleshooting Guides](./troubleshooting/README.md)** - Common issues and solutions
+- **[Decisions Log](./decisions/)** - Why we chose PostgreSQL, FastAPI, and other key decisions
 
 ### Technical References
 
-- **[API Contracts](./reference/API_CONTRACT_CONTENT_CREATION.md)** - Content creation API specification
+- **[API Contracts](./reference/API_CONTRACTS.md)** - Content creation and other API specifications
 - **[Database Schemas](./reference/data_schemas.md)** - Data model definitions
 - **[Glad Labs Standards](./reference/GLAD-LABS-STANDARDS.md)** - Code quality and naming conventions
 - **[GitHub Secrets Setup](./reference/GITHUB_SECRETS_SETUP.md)** - Production secrets configuration
@@ -117,7 +123,6 @@ Quick answers to common deployment and development problems:
 ### Deployment & Infrastructure Issues
 
 - **[Railway Deployment Failures](./troubleshooting/01-railway-deployment.md)** - Deploy errors, configuration, Docker build issues
-- **[GitHub Actions Problems](./troubleshooting/03-github-actions.md)** - CI/CD pipeline failures
 - **[Build Errors](./troubleshooting/04-build-fixes.md)** - Node.js and Python build failures
 - **[Compilation Issues](./troubleshooting/05-compilation.md)** - TypeScript and Python compilation errors
 
@@ -135,7 +140,7 @@ Technical specifications and standards for developers and architects:
 
 ### API & Data
 
-- **[API Contracts](./reference/API_CONTRACT_CONTENT_CREATION.md)** - Content creation API specification
+- **[API Contracts](./reference/API_CONTRACTS.md)** - API specifications and contracts
 - **[Database Schemas](./reference/data_schemas.md)** - Complete data model definitions
 - **[GitHub Secrets Setup](./reference/GITHUB_SECRETS_SETUP.md)** - Production secrets configuration
 
