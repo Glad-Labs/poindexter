@@ -15,6 +15,9 @@ from typing import Dict, Optional, Type
 
 from .oauth_provider import OAuthProvider, OAuthUser, OAuthException
 from .github_oauth import GitHubOAuthProvider
+from .google_oauth import GoogleOAuthProvider
+from .facebook_oauth import FacebookOAuthProvider
+from .microsoft_oauth import MicrosoftOAuthProvider
 
 
 class OAuthManager:
@@ -37,9 +40,9 @@ class OAuthManager:
     # To add a new provider: import it, then add to this dict
     PROVIDERS: Dict[str, Type[OAuthProvider]] = {
         "github": GitHubOAuthProvider,
-        # "google": GoogleOAuthProvider,      # TODO: Add Google OAuth
-        # "facebook": FacebookOAuthProvider,  # TODO: Add Facebook OAuth
-        # "microsoft": MicrosoftOAuthProvider, # TODO: Add Microsoft OAuth
+        "google": GoogleOAuthProvider,
+        "facebook": FacebookOAuthProvider,
+        "microsoft": MicrosoftOAuthProvider,
     }
     
     @classmethod

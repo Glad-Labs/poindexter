@@ -12,9 +12,11 @@ Endpoints for:
 import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, Depends
 from pydantic import BaseModel, Field
 import json
+
+from routes.auth_unified import get_current_user, UserProfile
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +116,7 @@ task_store: Dict[str, Dict[str, Any]] = {}
 async def process_request(
     body: ProcessRequestBody,
     background_tasks: BackgroundTasks,
-    user_id: str = "demo_user"
+    current_user: UserProfile = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """
     Process a natural language business request with intelligent orchestration.
@@ -128,7 +130,7 @@ async def process_request(
     6. Format for approval
     7. Accumulate learning data
 
-    Returns:
+    **Authentication Required:** Valid JWT token    Returns:
         - task_id: For polling status
         - status_url: URL to check progress
         - approval_url: URL to approve when ready
@@ -276,12 +278,15 @@ async def get_approval(task_id: str) -> ApprovalResponse:
 async def approve_result(
     task_id: str,
     action: ApprovalAction,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    current_user: UserProfile = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """
     User approves result and triggers publishing.
 
     Can also include modifications to request re-execution of specific steps.
+    
+    **Authentication Required:** Valid JWT token
     """
     if task_id not in task_store:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
@@ -462,12 +467,16 @@ async def get_history(
 
 @router.post("/training-data/export")
 async def export_training_data(
-    request_body: TrainingDataExportRequest
+    request_body: TrainingDataExportRequest,
+    current_user: UserProfile = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """
     Export accumulated training examples for fine-tuning.
 
     This allows training a proprietary orchestrator LLM on your
+    specific business logic and decision patterns.
+
+    **Authentication Required:** Valid JWT token (admin recommended)
     organization's specific workflows and decisions.
     """
     try:
@@ -515,10 +524,13 @@ async def export_training_data(
 async def upload_custom_llm(
     model_file: str = Query(..., description="Path to fine-tuned model"),
     model_name: str = Query(..., description="Name of custom orchestrator LLM"),
-    enable_immediately: bool = Query(False, description="Use for all new requests?")
+    enable_immediately: bool = Query(False, description="Use for all new requests?"),
+    current_user: UserProfile = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """
     Upload a custom proprietary orchestrator LLM.
+    
+    **Authentication Required:** Valid JWT token (admin strongly recommended)
 
     Allows you to train a model on your organization's execution patterns
     and use it to make better decisions about workflows.
