@@ -344,18 +344,22 @@ class QAAgentBridge:
         }
 
 
-# Singleton instance
-_qa_bridge_instance: Optional[QAAgentBridge] = None
-
-
-async def get_qa_agent_bridge() -> QAAgentBridge:
+# Dependency injection function (replaces singleton pattern)
+def get_qa_agent_bridge() -> QAAgentBridge:
     """
-    Get or create singleton QA Agent Bridge instance.
+    Factory function for QAAgentBridge dependency injection.
+    
+    Replaces singleton pattern with FastAPI Depends() for:
+    - Testability: Can inject mocks/test instances
+    - Thread safety: No global state
+    - Flexibility: Fresh instances for each request
+    
+    Usage in route:
+        @router.post("/endpoint")
+        async def handler(bridge = Depends(get_qa_agent_bridge)):
+            return await bridge.evaluate(...)
     
     Returns:
         QAAgentBridge instance
     """
-    global _qa_bridge_instance
-    if _qa_bridge_instance is None:
-        _qa_bridge_instance = QAAgentBridge()
-    return _qa_bridge_instance
+    return QAAgentBridge()

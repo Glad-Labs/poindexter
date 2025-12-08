@@ -8,14 +8,23 @@ import sys
 import os
 import logging
 import asyncio
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
 import uvicorn
+
+try:
+    import sentry_sdk
+    SENTRY_AVAILABLE = True
+except ImportError:
+    SENTRY_AVAILABLE = False
 
 # Load environment variables from .env.local first
 from dotenv import load_dotenv
@@ -41,6 +50,8 @@ from services.database_service import DatabaseService
 from services.task_executor import TaskExecutor
 from services.content_critique_loop import ContentCritiqueLoop
 from services.telemetry import setup_telemetry  #  OpenTelemetry tracing
+from services.sentry_integration import setup_sentry  #  Sentry error tracking
+from services.redis_cache import setup_redis_cache  #  Redis caching for query optimization
 from services.content_router_service import get_content_task_store  #  Inject DB service
 from services.migrations import run_migrations  #  Database schema migrations
 
@@ -160,6 +171,17 @@ async def lifespan(app: FastAPI):
         
         #  Inject database service into content task store (fixes initialization error)
         get_content_task_store(database_service)
+
+        # 2b. Initialize Redis cache for query optimization
+        logger.info("  🚀 Initializing Redis cache for query optimization...")
+        try:
+            redis_initialized = await setup_redis_cache()
+            if redis_initialized:
+                logger.info("   ✅ Redis cache initialized (query performance optimization enabled)")
+            else:
+                logger.info("   ℹ️  Redis cache not available (system will continue without caching)")
+        except Exception as e:
+            logger.warning(f"   ⚠️ Redis cache error: {str(e)} (continuing without cache)")
 
         # 3. Initialize unified model consolidation service
         logger.info("  🧠 Initializing unified model consolidation service...")
@@ -343,13 +365,164 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Glad Labs AI Co-Founder",
-    description="Central orchestrator for Glad Labs AI-driven business operations with Google Cloud integration",
-    version="1.0.0",
-    lifespan=lifespan
+    description="""
+## Comprehensive AI-powered business co-founder system
+
+The Glad Labs AI Co-Founder provides autonomous agents and intelligent orchestration 
+for complete business operations including:
+- **Task Planning & Execution**: Intelligent task decomposition and multi-agent execution
+- **Content Generation**: AI-powered content creation with quality evaluation and multi-channel publishing
+- **Business Intelligence**: Market analysis, trend detection, and strategic recommendations
+- **CMS & Media Management**: Content management, featured image generation, and media organization
+- **Social Media Integration**: Multi-platform content distribution and engagement tracking
+- **Workflow Orchestration**: Complex business process automation with persistence and monitoring
+- **Model Management**: Unified LLM access across Ollama, HuggingFace, OpenAI, Anthropic, and Google
+
+### Quick Links
+- **Documentation**: [View Full Docs](./docs/00-README.md)
+- **Architecture**: [System Design](./docs/02-ARCHITECTURE_AND_DESIGN.md)
+- **API Base URL**: http://localhost:8000
+
+### Authentication
+Most endpoints require JWT authentication via the `Authorization: Bearer <token>` header.
+Use the `/api/auth/logout` or GitHub OAuth endpoints to obtain tokens.
+""",
+    version="3.0.1",
+    lifespan=lifespan,
+    contact={
+        "name": "Glad Labs Support",
+        "email": "support@gladlabs.io",
+        "url": "https://gladlabs.io"
+    },
+    license_info={
+        "name": "AGPL-3.0",
+        "url": "https://www.gnu.org/licenses/agpl-3.0.html"
+    },
+    openapi_url="/api/openapi.json",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    swagger_ui_parameters={"defaultModelsExpandDepth": 1}
 )
 
 # Initialize OpenTelemetry tracing
 setup_telemetry(app)
+
+# ===== GLOBAL EXCEPTION HANDLERS =====
+# Centralized error handling for all routes with standardized responses
+from services.error_handler import AppError, ValidationError, NotFoundError, create_error_response
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+import uuid
+
+@app.exception_handler(AppError)
+async def app_error_handler(request, exc: AppError):
+    """Handle application errors with structured response"""
+    request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
+    response = create_error_response(exc, request_id=request_id)
+    
+    # Log error with context
+    logger.warning(
+        f"AppError [{exc.error_code.value}]: {exc.message}",
+        extra={"request_id": request_id, "details": exc.details}
+    )
+    
+    return JSONResponse(
+        status_code=exc.http_status_code,
+        content=response.model_dump(exclude_none=True),
+        headers={"X-Request-ID": request_id}
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request, exc: RequestValidationError):
+    """Handle Pydantic validation errors"""
+    request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
+    
+    # Extract field-level errors
+    errors = {}
+    for error in exc.errors():
+        field = ".".join(str(x) for x in error["loc"][1:])
+        errors[field] = error["msg"]
+    
+    response = create_error_response(
+        ValidationError(
+            "Request validation failed",
+            field=list(errors.keys())[0] if errors else "unknown"
+        ),
+        request_id=request_id
+    )
+    
+    logger.warning(
+        f"Request validation error: {errors}",
+        extra={"request_id": request_id}
+    )
+    
+    return JSONResponse(
+        status_code=400,
+        content=response.model_dump(exclude_none=True),
+        headers={"X-Request-ID": request_id}
+    )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request, exc: StarletteHTTPException):
+    """Handle HTTPException with structured response"""
+    request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
+    
+    response = {
+        "error_code": "HTTP_ERROR",
+        "message": exc.detail or "HTTP Error",
+        "request_id": request_id,
+    }
+    
+    logger.warning(
+        f"HTTP Error {exc.status_code}: {exc.detail}",
+        extra={"request_id": request_id}
+    )
+    
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=response,
+        headers={"X-Request-ID": request_id}
+    )
+
+
+@app.exception_handler(Exception)
+async def generic_exception_handler(request, exc: Exception):
+    """Handle all unhandled exceptions with fallback"""
+    request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
+    
+    logger.error(
+        f"Unhandled exception: {type(exc).__name__}",
+        exc_info=exc,
+        extra={"request_id": request_id}
+    )
+    
+    # Send to Sentry if available
+    if SENTRY_AVAILABLE:
+        with sentry_sdk.push_scope() as scope:
+            scope.set_tag("request_id", request_id)
+            scope.set_context("request", {
+                "path": request.url.path,
+                "method": request.method,
+            })
+            sentry_sdk.capture_exception(exc)
+    
+    response = {
+        "error_code": "INTERNAL_ERROR",
+        "message": "Internal server error",
+        "request_id": request_id,
+    }
+    
+    return JSONResponse(
+        status_code=500,
+        content=response,
+        headers={"X-Request-ID": request_id}
+    )
+
+# ===== ERROR TRACKING: SENTRY INTEGRATION =====
+# Captures exceptions, performance metrics, and error tracking
+setup_sentry(app, service_name="cofounder-agent")
 
 # ===== SECURITY: INPUT VALIDATION MIDDLEWARE =====
 # Validates and sanitizes all incoming requests

@@ -26,6 +26,7 @@
 ## **⚡ Quick Start**
 
 ### **Prerequisites**
+
 - Node.js 18+ and Python 3.12+
 - Git
 
@@ -62,7 +63,7 @@ npm run dev
 | **Content Agent** | Python | Autonomous content creation |
 
 **Project Structure:**
-```
+```text
 glad-labs-website/
 ├── web/                    # Frontend applications
 │   ├── public-site/        # Next.js 15 website
@@ -79,14 +80,14 @@ glad-labs-website/
 
 **GNU Affero General Public License v3.0 (AGPL 3.0)** - See [LICENSE.md](./LICENSE.md)
 
-**Commercial License:** Contact sales@gladlabs.io
+**Commercial License:** Contact <sales@gladlabs.io>
 
 ---
 
 ## **��� Support**
 
-- **Documentation:** [��� Documentation Hub](./docs/00-README.md)
+- **Documentation:** [📚 Documentation Hub](./docs/00-README.md)
 - **Issues:** GitHub issues
-- **Commercial:** sales@gladlabs.io
+- **Commercial:** <sales@gladlabs.io>
 
 **Owner:** Matthew M. Gladding | **Organization:** Glad Labs, LLC

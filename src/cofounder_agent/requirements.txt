@@ -37,6 +37,11 @@ sentence-transformers>=2.2.0
 # asyncpg: High-performance async PostgreSQL driver (direct SQL, no ORM)
 asyncpg>=0.29.0
 
+# ===== CACHING =====
+# Redis client for distributed caching and session management
+redis>=5.0.0
+aioredis>=2.0.1
+
 # ===== DATA PROCESSING =====
 # Data handling, parsing, and web scraping
 beautifulsoup4>=4.12.0
@@ -61,6 +66,10 @@ pytest-asyncio>=0.21.0
 pytest-cov>=4.1.0
 pytest-timeout>=2.1.0
 
+# ===== ERROR TRACKING & MONITORING =====
+# Sentry for error tracking and performance monitoring
+sentry-sdk[fastapi]>=1.40.0
+
 # ===== DEVELOPMENT & MONITORING =====
 # Development tools and logging
 structlog>=23.2.0
@@ -82,9 +91,3 @@ click>=8.1.0
 tqdm>=4.66.0
 pyyaml>=6.0.0
 urllib3>=2.5.0
-
-# ===== OBSERVABILITY & TRACING =====
-opentelemetry-api>=1.24.0
-opentelemetry-sdk>=1.24.0
-opentelemetry-instrumentation-fastapi>=0.45.0
-opentelemetry-exporter-otlp>=1.24.0

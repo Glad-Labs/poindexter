@@ -1,23 +1,42 @@
 """
-Centralized Error Handling Infrastructure
+Comprehensive Error Handling and Recovery System
 
 Provides:
-- AppError base exception class with error codes
-- Centralized error response formatting
-- Consistent HTTP status code mapping
-- Structured logging integration
-- Error context preservation
+- StandardError codes and error classification
+- AppError base exception class with full context
+- Domain-specific exception classes for all error scenarios
+- Retry logic with exponential backoff for resilience
+- Circuit breaker pattern for external service protection
+- Graceful error handling with structured context
+- Request error tracking and correlation
+- Database connection recovery
+- Timeout management
+- Validation utilities with field-level error reporting
+- Standardized error response formatting
 
-All routes should use these classes for consistent error responses.
+All routes should use AppError classes for consistent error responses.
+Integrate retry_with_backoff and CircuitBreaker for resilience.
 """
 
 import logging
-from typing import Dict, Any, Optional
+import asyncio
+import time
+from typing import Dict, Any, Optional, Callable, TypeVar, Coroutine
+from functools import wraps
 from enum import Enum
+from datetime import datetime, timedelta
+from dataclasses import dataclass, field
 from fastapi import HTTPException, status
 from pydantic import BaseModel
 
+try:
+    import sentry_sdk
+    SENTRY_AVAILABLE = True
+except ImportError:
+    SENTRY_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
+T = TypeVar('T')
 
 
 # ============================================================================
@@ -62,6 +81,59 @@ class ErrorCode(str, Enum):
     OPERATION_FAILED = "OPERATION_FAILED"
     SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
     OPERATION_IN_PROGRESS = "OPERATION_IN_PROGRESS"
+
+
+class ErrorCategory(str, Enum):
+    """Error categories for tracking and recovery"""
+    DATABASE = "database"
+    NETWORK = "network"
+    TIMEOUT = "timeout"
+    AUTHENTICATION = "authentication"
+    VALIDATION = "validation"
+    RATE_LIMIT = "rate_limit"
+    SERVICE_UNAVAILABLE = "service_unavailable"
+    INTERNAL = "internal"
+    EXTERNAL_SERVICE = "external_service"
+
+
+# ============================================================================
+# ERROR CONTEXT
+# ============================================================================
+
+@dataclass
+class ErrorContext:
+    """Context information for error tracking and recovery"""
+    category: ErrorCategory
+    service: str
+    operation: str
+    attempt: int = 1
+    max_attempts: int = 3
+    request_id: Optional[str] = None
+    user_id: Optional[str] = None
+    timestamp: datetime = None
+    error: Optional[Exception] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    def __post_init__(self):
+        if self.timestamp is None:
+            self.timestamp = datetime.utcnow()
+        if self.metadata is None:
+            self.metadata = {}
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert context to dictionary for logging/tracking"""
+        return {
+            "category": self.category.value,
+            "service": self.service,
+            "operation": self.operation,
+            "attempt": self.attempt,
+            "request_id": self.request_id,
+            "user_id": self.user_id,
+            "timestamp": self.timestamp.isoformat(),
+            "error_type": type(self.error).__name__ if self.error else None,
+            "error_message": str(self.error) if self.error else None,
+            **self.metadata
+        }
 
 
 # ============================================================================
@@ -313,6 +385,328 @@ def handle_error(
         details=details,
         cause=error,
     )
+
+
+class CircuitBreaker:
+    """
+    Circuit breaker pattern implementation for external service calls.
+    
+    Prevents cascading failures by:
+    - Failing fast when service is down
+    - Exponential backoff for recovery attempts
+    - Tracking failure rates
+    - Resetting on successful calls
+    
+    Usage:
+        breaker = CircuitBreaker("ollama", failure_threshold=5, recovery_timeout=60)
+        result = await breaker.call_async(external_api_call)
+    """
+    
+    def __init__(
+        self,
+        name: str,
+        failure_threshold: int = 5,
+        recovery_timeout: int = 60,
+        expected_exception: type = Exception
+    ):
+        self.name = name
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self.expected_exception = expected_exception
+        
+        self.failure_count = 0
+        self.last_failure_time = None
+        self.is_open = False
+        self.last_state_change = datetime.utcnow()
+    
+    def call(self, func: Callable[..., T], *args, **kwargs) -> T:
+        """
+        Execute function with circuit breaker protection.
+        
+        Args:
+            func: Function to execute
+            *args: Positional arguments
+            **kwargs: Keyword arguments
+            
+        Returns:
+            Function result
+            
+        Raises:
+            HTTPException: If circuit is open (service unavailable)
+        """
+        # Check if circuit should be reset (recovery time passed)
+        if self.is_open and self._should_attempt_reset():
+            self.is_open = False
+            self.failure_count = 0
+            logger.info(f"🔄 Circuit breaker '{self.name}' attempting reset")
+        
+        # If circuit is open, fail fast
+        if self.is_open:
+            logger.warning(f"⚠️  Circuit breaker '{self.name}' is OPEN - failing fast")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Service '{self.name}' temporarily unavailable. Retry in {self.recovery_timeout}s."
+            )
+        
+        # Execute function
+        try:
+            result = func(*args, **kwargs)
+            
+            # Success - reset failure count
+            if self.failure_count > 0:
+                logger.info(f"✅ Circuit breaker '{self.name}' - call successful, resetting")
+            self.failure_count = 0
+            self.last_failure_time = None
+            
+            return result
+            
+        except self.expected_exception as e:
+            self.failure_count += 1
+            self.last_failure_time = datetime.utcnow()
+            
+            logger.warning(
+                f"⚠️  Circuit breaker '{self.name}' - failure {self.failure_count}/{self.failure_threshold}: {e}"
+            )
+            
+            # Open circuit if threshold reached
+            if self.failure_count >= self.failure_threshold:
+                self.is_open = True
+                self.last_state_change = datetime.utcnow()
+                logger.error(f"🔴 Circuit breaker '{self.name}' is now OPEN")
+                
+                # Report to Sentry if available
+                if SENTRY_AVAILABLE:
+                    sentry_sdk.capture_exception(e)
+            
+            raise
+    
+    async def call_async(self, func: Callable[..., Coroutine[Any, Any, T]], *args, **kwargs) -> T:
+        """Async version of call method."""
+        # Check if circuit should be reset
+        if self.is_open and self._should_attempt_reset():
+            self.is_open = False
+            self.failure_count = 0
+            logger.info(f"🔄 Circuit breaker '{self.name}' attempting reset")
+        
+        # If circuit is open, fail fast
+        if self.is_open:
+            logger.warning(f"⚠️  Circuit breaker '{self.name}' is OPEN - failing fast")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Service '{self.name}' temporarily unavailable. Retry in {self.recovery_timeout}s."
+            )
+        
+        # Execute async function
+        try:
+            result = await func(*args, **kwargs)
+            
+            # Success - reset failure count
+            if self.failure_count > 0:
+                logger.info(f"✅ Circuit breaker '{self.name}' - call successful, resetting")
+            self.failure_count = 0
+            self.last_failure_time = None
+            
+            return result
+            
+        except self.expected_exception as e:
+            self.failure_count += 1
+            self.last_failure_time = datetime.utcnow()
+            
+            logger.warning(
+                f"⚠️  Circuit breaker '{self.name}' - failure {self.failure_count}/{self.failure_threshold}: {e}"
+            )
+            
+            # Open circuit if threshold reached
+            if self.failure_count >= self.failure_threshold:
+                self.is_open = True
+                self.last_state_change = datetime.utcnow()
+                logger.error(f"🔴 Circuit breaker '{self.name}' is now OPEN")
+                
+                # Report to Sentry if available
+                if SENTRY_AVAILABLE:
+                    sentry_sdk.capture_exception(e)
+            
+            raise
+    
+    def _should_attempt_reset(self) -> bool:
+        """Check if enough time has passed to attempt recovery"""
+        if not self.last_failure_time:
+            return False
+        return (datetime.utcnow() - self.last_failure_time).total_seconds() >= self.recovery_timeout
+    
+    def get_status(self) -> Dict[str, Any]:
+        """Get circuit breaker status for monitoring"""
+        return {
+            "name": self.name,
+            "state": "open" if self.is_open else "closed",
+            "failure_count": self.failure_count,
+            "threshold": self.failure_threshold,
+            "last_failure": self.last_failure_time.isoformat() if self.last_failure_time else None,
+            "last_state_change": self.last_state_change.isoformat(),
+        }
+
+
+def retry_with_backoff(
+    max_retries: int = 3,
+    initial_delay: float = 1.0,
+    max_delay: float = 60.0,
+    exponential_base: float = 2.0,
+    on_exception: type = Exception,
+    on_error_callback: Optional[Callable] = None
+):
+    """
+    Decorator for retry logic with exponential backoff.
+    
+    Args:
+        max_retries: Maximum number of retry attempts
+        initial_delay: Initial delay in seconds
+        max_delay: Maximum delay between retries
+        exponential_base: Base for exponential backoff calculation
+        on_exception: Exception type to catch and retry on
+        on_error_callback: Optional callback on error (for logging, etc.)
+        
+    Example:
+        @retry_with_backoff(max_retries=3, initial_delay=1.0)
+        async def call_external_api():
+            return await external_api.fetch_data()
+    """
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        async def async_wrapper(*args, **kwargs) -> Any:
+            delay = initial_delay
+            last_exception = None
+            
+            for attempt in range(max_retries + 1):
+                try:
+                    return await func(*args, **kwargs)
+                except on_exception as e:
+                    last_exception = e
+                    
+                    if attempt >= max_retries:
+                        # Final attempt failed
+                        logger.error(
+                            f"❌ {func.__name__} failed after {max_retries + 1} attempts: {e}",
+                            exc_info=True
+                        )
+                        if on_error_callback:
+                            on_error_callback(e, attempt + 1, max_retries + 1)
+                        raise
+                    
+                    # Wait before retry with exponential backoff
+                    logger.warning(
+                        f"⚠️  {func.__name__} attempt {attempt + 1} failed, retrying in {delay}s: {e}"
+                    )
+                    
+                    if on_error_callback:
+                        on_error_callback(e, attempt + 1, max_retries + 1)
+                    
+                    await asyncio.sleep(delay)
+                    delay = min(delay * exponential_base, max_delay)
+        
+        @wraps(func)
+        def sync_wrapper(*args, **kwargs) -> Any:
+            delay = initial_delay
+            
+            for attempt in range(max_retries + 1):
+                try:
+                    return func(*args, **kwargs)
+                except on_exception as e:
+                    if attempt >= max_retries:
+                        logger.error(
+                            f"❌ {func.__name__} failed after {max_retries + 1} attempts: {e}",
+                            exc_info=True
+                        )
+                        if on_error_callback:
+                            on_error_callback(e, attempt + 1, max_retries + 1)
+                        raise
+                    
+                    logger.warning(
+                        f"⚠️  {func.__name__} attempt {attempt + 1} failed, retrying in {delay}s: {e}"
+                    )
+                    
+                    if on_error_callback:
+                        on_error_callback(e, attempt + 1, max_retries + 1)
+                    
+                    time.sleep(delay)
+                    delay = min(delay * exponential_base, max_delay)
+        
+        # Return async or sync wrapper based on function type
+        if asyncio.iscoroutinefunction(func):
+            return async_wrapper
+        else:
+            return sync_wrapper
+    
+    return decorator
+
+
+class ErrorResponseFormatter:
+    """Standardized error response formatting"""
+    
+    @staticmethod
+    def format_error(
+        error: Exception,
+        request_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        include_details: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Format error as standardized API response.
+        
+        Args:
+            error: Exception instance
+            request_id: Request correlation ID
+            user_id: Affected user ID
+            include_details: Include detailed error information (only in dev)
+            
+        Returns:
+            Standardized error response dictionary
+        """
+        error_dict = {
+            "error": type(error).__name__,
+            "message": str(error),
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+        
+        if request_id:
+            error_dict["request_id"] = request_id
+        
+        if user_id:
+            error_dict["user_id"] = user_id
+        
+        if include_details:
+            import traceback
+            error_dict["traceback"] = traceback.format_exc()
+        
+        return error_dict
+
+
+def log_error_context(context: ErrorContext) -> None:
+    """
+    Log error with full context for debugging.
+    
+    Args:
+        context: ErrorContext with error details
+    """
+    context_dict = context.to_dict()
+    
+    log_message = (
+        f"[{context.category.value.upper()}] "
+        f"Service: {context.service} | "
+        f"Operation: {context.operation} | "
+        f"Attempt: {context.attempt}/{context.max_attempts}"
+    )
+    
+    logger.error(log_message, extra=context_dict, exc_info=context.error)
+    
+    # Send to Sentry if available
+    if SENTRY_AVAILABLE and context.error:
+        with sentry_sdk.push_scope() as scope:
+            scope.set_context("error_context", context_dict)
+            if context.request_id:
+                scope.set_tag("request_id", context.request_id)
+            if context.user_id:
+                scope.set_user({"id": context.user_id})
+            sentry_sdk.capture_exception(context.error)
 
 
 def create_error_response(

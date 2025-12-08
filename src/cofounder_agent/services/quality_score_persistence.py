@@ -424,13 +424,27 @@ class QualityScorePersistence:
             return False
 
 
-# Singleton instance
-_persistence_instance = None
-
-
-async def get_quality_score_persistence(database_service) -> QualityScorePersistence:
-    """Get or create persistence service singleton"""
-    global _persistence_instance
-    if _persistence_instance is None:
-        _persistence_instance = QualityScorePersistence(database_service)
-    return _persistence_instance
+# Dependency injection function (replaces singleton pattern)
+def get_quality_score_persistence(database_service) -> QualityScorePersistence:
+    """
+    Factory function for QualityScorePersistence dependency injection.
+    
+    Replaces singleton pattern with FastAPI Depends() for:
+    - Testability: Can inject mocks/test instances
+    - Thread safety: No global state
+    - Flexibility: Can create new instances per request if needed
+    
+    Usage in route:
+        @router.get("/endpoint")
+        async def handler(
+            persistence = Depends(get_quality_score_persistence(database_service))
+        ):
+            return await persistence.store_evaluation(...)
+    
+    Args:
+        database_service: DatabaseService instance for persistence
+        
+    Returns:
+        QualityScorePersistence instance
+    """
+    return QualityScorePersistence(database_service)

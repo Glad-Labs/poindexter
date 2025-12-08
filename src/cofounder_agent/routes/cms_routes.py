@@ -37,10 +37,10 @@ async def get_db_pool():
 
 @router.get("/api/posts")
 async def list_posts(
-    current_user: UserProfile = Depends(get_current_user),
     skip: int = Query(0, ge=0, le=10000),
     limit: int = Query(20, ge=1, le=100),
     published_only: bool = Query(True),
+    current_user: UserProfile = Depends(get_current_user),
 ):
     """
     List all blog posts with pagination (ASYNC).
@@ -253,9 +253,10 @@ async def list_tags(current_user: UserProfile = Depends(get_current_user)):
 # ============================================================================
 
 @router.get("/api/cms/status")
-async def cms_status():
+async def cms_status(current_user: UserProfile = Depends(get_current_user)):
     """
     Check CMS database status and table existence (ASYNC).
+    Requires: Valid JWT authentication
     Returns: {status: "healthy"|"error", tables: {...}}
     """
     try:

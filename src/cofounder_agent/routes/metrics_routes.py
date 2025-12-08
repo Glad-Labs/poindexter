@@ -1,13 +1,17 @@
 """
 Metrics and Analytics Routes
 Provides endpoints for tracking AI model usage, costs, and performance metrics
+
+All endpoints require JWT authentication
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Dict, Any, List
 from datetime import datetime
 import logging
+
+from routes.auth_unified import get_current_user, UserProfile
 
 logger = logging.getLogger(__name__)
 
@@ -79,9 +83,12 @@ _task_stats = {
 
 
 @metrics_router.get("/costs")
-async def get_cost_metrics() -> Dict[str, Any]:
+async def get_cost_metrics(
+    current_user: UserProfile = Depends(get_current_user)
+) -> Dict[str, Any]:
     """
     Get AI model usage and cost metrics
+    Requires: Valid JWT authentication
     
     Returns:
         Cost breakdown by model and provider
@@ -112,9 +119,12 @@ async def get_cost_metrics() -> Dict[str, Any]:
 
 
 @metrics_router.get("")
-async def get_metrics() -> Dict[str, Any]:
+async def get_metrics(
+    current_user: UserProfile = Depends(get_current_user)
+) -> Dict[str, Any]:
     """
     Get aggregated application metrics
+    Requires: Valid JWT authentication
     
     Returns:
         System health and performance metrics
@@ -139,9 +149,12 @@ async def get_metrics() -> Dict[str, Any]:
 
 
 @metrics_router.get("/summary")
-async def get_metrics_summary() -> Dict[str, Any]:
+async def get_metrics_summary(
+    current_user: UserProfile = Depends(get_current_user)
+) -> Dict[str, Any]:
     """
     Get a summary of all metrics
+    Requires: Valid JWT authentication
     
     Returns:
         Summary of costs, performance, and health
@@ -175,9 +188,15 @@ async def get_metrics_summary() -> Dict[str, Any]:
 
 
 @metrics_router.post("/track-usage")
-async def track_usage(model: str, tokens: int, cost: float) -> Dict[str, str]:
+async def track_usage(
+    model: str,
+    tokens: int,
+    cost: float,
+    current_user: UserProfile = Depends(get_current_user),
+) -> Dict[str, str]:
     """
     Track AI model usage for cost analysis
+    Requires: Valid JWT authentication
     
     Args:
         model: Model name

@@ -895,13 +895,43 @@ class DatabaseService:
                 else 0
             )
             
+            # Calculate average execution time from completed tasks
+            avg_execution_time = 0
+            try:
+                time_query = """
+                    SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at))) as avg_seconds
+                    FROM tasks
+                    WHERE status = 'completed' AND updated_at IS NOT NULL
+                """
+                time_result = await conn.fetchrow(time_query)
+                if time_result and time_result['avg_seconds']:
+                    avg_execution_time = round(float(time_result['avg_seconds']), 2)
+            except Exception as e:
+                logger.warning(f"Could not calculate avg execution time: {e}")
+            
+            # Calculate total cost from financial tracking (if implemented)
+            total_cost = 0
+            try:
+                # Check if cost tracking table exists and sum costs
+                cost_query = """
+                    SELECT SUM(cost_usd) as total
+                    FROM task_costs
+                    WHERE created_at >= NOW() - INTERVAL '30 days'
+                """
+                cost_result = await conn.fetchrow(cost_query)
+                if cost_result and cost_result['total']:
+                    total_cost = round(float(cost_result['total']), 2)
+            except Exception:
+                # Table may not exist, use fallback of $0
+                logger.debug("Cost tracking not available (task_costs table may not exist)")
+            
             return {
                 "totalTasks": total_tasks or 0,
                 "completedTasks": completed_tasks or 0,
                 "failedTasks": failed_tasks or 0,
                 "successRate": round(success_rate, 2),
-                "avgExecutionTime": 0,  # TODO: Calculate from task data
-                "totalCost": 0,  # TODO: Calculate from financial data
+                "avgExecutionTime": avg_execution_time,  # In seconds
+                "totalCost": total_cost,  # In USD
             }
 
     # ========================================================================
