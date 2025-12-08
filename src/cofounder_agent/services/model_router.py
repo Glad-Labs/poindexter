@@ -222,7 +222,7 @@ class ModelRouter:
         }
     }
     
-    def __init__(self, default_model: str = "gpt-3.5-turbo", use_ollama: bool | None = None):
+    def __init__(self, default_model: str = "ollama/mistral", use_ollama: bool | None = None):
         """
         Initialize model router.
         
@@ -525,7 +525,7 @@ def get_model_router() -> Optional[ModelRouter]:
 
 
 def initialize_model_router(
-    default_model: str = "gpt-3.5-turbo"
+    default_model: str = "ollama/mistral"
 ) -> ModelRouter:
     """
     Initialize the global model router.

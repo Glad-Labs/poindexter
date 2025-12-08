@@ -306,8 +306,10 @@ async def lifespan(app: FastAPI):
         if database_service:
             from routes.task_routes import set_db_service
             from routes.subtask_routes import set_db_service as set_subtask_db_service
+            from routes.content_routes import set_db_service as set_content_db_service
             set_db_service(database_service)
             set_subtask_db_service(database_service)
+            set_content_db_service(database_service)
             logger.info("   Database service registered with routes")
         
         logger.info(" Application started successfully!")

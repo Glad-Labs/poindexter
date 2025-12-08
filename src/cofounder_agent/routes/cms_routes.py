@@ -40,7 +40,6 @@ async def list_posts(
     skip: int = Query(0, ge=0, le=10000),
     limit: int = Query(20, ge=1, le=100),
     published_only: bool = Query(True),
-    current_user: UserProfile = Depends(get_current_user),
 ):
     """
     List all blog posts with pagination (ASYNC).
@@ -117,7 +116,6 @@ async def list_posts(
 @router.get("/api/posts/{slug}")
 async def get_post_by_slug(
     slug: str,
-    current_user: UserProfile = Depends(get_current_user)
 ):
     """
     Get single post by slug with full content and tags (ASYNC).
@@ -183,7 +181,7 @@ async def get_post_by_slug(
 # ============================================================================
 
 @router.get("/api/categories")
-async def list_categories(current_user: UserProfile = Depends(get_current_user)):
+async def list_categories():
     """
     List all categories (ASYNC).
     Returns: {data: [...], meta: {}}
@@ -218,7 +216,7 @@ async def list_categories(current_user: UserProfile = Depends(get_current_user))
 # ============================================================================
 
 @router.get("/api/tags")
-async def list_tags(current_user: UserProfile = Depends(get_current_user)):
+async def list_tags():
     """
     List all tags (ASYNC).
     Returns: {data: [...], meta: {}}
@@ -253,7 +251,7 @@ async def list_tags(current_user: UserProfile = Depends(get_current_user)):
 # ============================================================================
 
 @router.get("/api/cms/status")
-async def cms_status(current_user: UserProfile = Depends(get_current_user)):
+async def cms_status():
     """
     Check CMS database status and table existence (ASYNC).
     Requires: Valid JWT authentication

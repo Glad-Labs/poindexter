@@ -86,22 +86,25 @@ class LLMClient:
             response_json = response.json()
             if "response" in response_json:
                 raw_response = response_json["response"]
+                logging.debug(f"LLM raw response: {raw_response[:200]}...")
                 # Try to extract JSON from the response
                 extracted_json = extract_json_from_string(raw_response)
                 if extracted_json:
+                    logging.debug(f"Extracted JSON: {extracted_json[:200]}...")
                     return json.loads(extracted_json)
                 else:
                     # Fallback: try parsing the raw text directly
+                    logging.debug("No JSON block found, attempting direct parse...")
                     return json.loads(raw_response)
             else:
                 logging.error("'response' key not found in local LLM output.")
-                return {}
+                raise ValueError("No 'response' key in LLM output")
         except httpx.HTTPError as e:
             logging.error(f"Error communicating with local LLM: {e}")
-            return {}
-        except json.JSONDecodeError:
-            logging.error("Failed to decode JSON from local LLM response.")
-            return {}
+            raise
+        except json.JSONDecodeError as e:
+            logging.error(f"Failed to decode JSON from local LLM response: {e}")
+            raise ValueError(f"LLM response was not valid JSON: {str(e)}")
 
     async def generate_text(self, prompt: str) -> str:
         """Generates plain text content using the configured LLM, with caching (async)."""

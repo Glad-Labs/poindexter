@@ -27,6 +27,7 @@ def convert_db_row_to_dict(row):
     """
     Convert asyncpg database row to proper types for TaskResponse.
     Handles UUID → str, datetime → ISO string, JSONB string → dict conversions.
+    Prioritizes normalized columns over nested task_metadata.
     """
     if row is None:
         return None
@@ -52,7 +53,33 @@ def convert_db_row_to_dict(row):
                 data[dt_field] = data[dt_field].isoformat()
             # else already a string
     
-    # Convert metadata JSONB string to dict
+    # Handle task_metadata JSONB (for backward compatibility with orchestrator)
+    # This is still the primary source for orchestrator metadata
+    if 'task_metadata' in data:
+        if isinstance(data['task_metadata'], str):
+            try:
+                data['task_metadata'] = json.loads(data['task_metadata'])
+            except (json.JSONDecodeError, TypeError):
+                data['task_metadata'] = {}
+        elif data['task_metadata'] is None:
+            data['task_metadata'] = {}
+    else:
+        data['task_metadata'] = {}
+    
+    # IMPORTANT: Merge normalized columns back into task_metadata for UI compatibility
+    # The frontend expects task_metadata to contain all content fields
+    normalized_fields = [
+        'content', 'excerpt', 'featured_image_url', 'featured_image_data',
+        'qa_feedback', 'quality_score', 'seo_title', 'seo_description', 'seo_keywords',
+        'stage', 'percentage', 'message'
+    ]
+    
+    for field in normalized_fields:
+        if field in data and data[field] is not None:
+            # Merge normalized column into task_metadata for UI
+            data['task_metadata'][field] = data[field]
+    
+    # Convert metadata JSONB string to dict (FALLBACK)
     if 'metadata' in data and isinstance(data['metadata'], str):
         try:
             data['metadata'] = json.loads(data['metadata'])
@@ -61,7 +88,7 @@ def convert_db_row_to_dict(row):
     elif 'metadata' not in data:
         data['metadata'] = {}
     
-    # Handle result JSONB similarly
+    # Handle result JSONB similarly (FALLBACK for old results)
     if 'result' in data and isinstance(data['result'], str):
         try:
             data['result'] = json.loads(data['result'])
@@ -152,7 +179,18 @@ class TaskResponse(BaseModel):
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
     metadata: Dict[str, Any] = {}
+    task_metadata: Dict[str, Any] = {}  # For orchestrator output (content, excerpt, qa_feedback, etc.)
     result: Optional[Dict[str, Any]] = None
+    
+    @property
+    def title(self) -> str:
+        """Alias for task_name for frontend compatibility"""
+        return self.task_name
+    
+    @property
+    def name(self) -> str:
+        """Alias for task_name for frontend compatibility"""
+        return self.task_name
     
     class Config:
         example = {

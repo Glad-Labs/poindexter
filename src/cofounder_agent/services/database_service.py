@@ -120,19 +120,19 @@ class DatabaseService:
         """Get user by ID"""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow("SELECT * FROM users WHERE id = $1::uuid", user_id)
-            return dict(row) if row else None
+            return self._convert_row_to_dict(row) if row else None
 
     async def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
         """Get user by email"""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow("SELECT * FROM users WHERE email = $1", email)
-            return dict(row) if row else None
+            return self._convert_row_to_dict(row) if row else None
 
     async def get_user_by_username(self, username: str) -> Optional[Dict[str, Any]]:
         """Get user by username"""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow("SELECT * FROM users WHERE username = $1", username)
-            return dict(row) if row else None
+            return self._convert_row_to_dict(row) if row else None
 
     async def create_user(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
         """Create new user"""
@@ -153,7 +153,7 @@ class DatabaseService:
                 user_data.get("password_hash"),
                 user_data.get("is_active", True),
             )
-            return dict(row)
+            return self._convert_row_to_dict(row)
 
     # ========================================================================
     # OAUTH - Get or Create User from OAuth Provider
@@ -447,7 +447,7 @@ class DatabaseService:
                 """,
                 cutoff_date,
             )
-            return dict(row) if row else {}
+            return self._convert_row_to_dict(row) if row else {}
 
     # ========================================================================
     # AGENT STATUS
@@ -494,7 +494,7 @@ class DatabaseService:
                     json.dumps(metadata or {}),  # Serialize metadata for JSONB column
                 )
             
-            return dict(row)
+            return self._convert_row_to_dict(row)
 
     async def get_agent_status(self, agent_name: str) -> Optional[Dict[str, Any]]:
         """Get agent status"""
@@ -503,7 +503,7 @@ class DatabaseService:
                 "SELECT * FROM agent_status WHERE agent_name = $1",
                 agent_name,
             )
-            return dict(row) if row else None
+            return self._convert_row_to_dict(row) if row else None
 
     # ========================================================================
     # HEALTH CHECK
@@ -548,12 +548,21 @@ class DatabaseService:
         
         task_id = task_data.get("id", str(__import__('uuid').uuid4()))
         
+        # Extract task_metadata or metadata dict for normalized columns
+        metadata = task_data.get("task_metadata") or task_data.get("metadata", {})
+        if isinstance(metadata, str):
+            metadata = json.loads(metadata)
+        
         sql = """
             INSERT INTO tasks (
                 id, task_name, task_type, topic, status, agent_id,
                 primary_keyword, target_audience, category,
                 style, tone, target_length,
                 tags, task_metadata,
+                content, excerpt, featured_image_url, featured_image_data,
+                qa_feedback, quality_score,
+                seo_title, seo_description, seo_keywords,
+                stage, percentage, message,
                 created_at, updated_at,
                 approval_status
             ) VALUES (
@@ -561,8 +570,12 @@ class DatabaseService:
                 $7, $8, $9,
                 $10, $11, $12,
                 $13, $14,
-                $15, $16,
-                $17
+                $15, $16, $17, $18,
+                $19, $20,
+                $21, $22, $23,
+                $24, $25, $26,
+                $27, $28,
+                $29
             )
             RETURNING id
         """
@@ -586,7 +599,19 @@ class DatabaseService:
                     task_data.get("tone"),  # tone
                     task_data.get("target_length"),  # target_length
                     json.dumps(task_data.get("tags", [])),  # tags (JSONB)
-                    json.dumps(task_data.get("metadata", {})),  # metadata (JSONB)
+                    json.dumps(metadata),  # task_metadata (JSONB - keep for backward compat)
+                    metadata.get("content"),  # content
+                    metadata.get("excerpt"),  # excerpt
+                    metadata.get("featured_image_url"),  # featured_image_url
+                    json.dumps(metadata.get("featured_image_data")) if metadata.get("featured_image_data") else None,  # featured_image_data
+                    metadata.get("qa_feedback") if isinstance(metadata.get("qa_feedback"), str) else None,  # qa_feedback
+                    metadata.get("quality_score"),  # quality_score
+                    metadata.get("seo_title"),  # seo_title
+                    metadata.get("seo_description"),  # seo_description
+                    metadata.get("seo_keywords"),  # seo_keywords
+                    metadata.get("stage", "pending"),  # stage
+                    metadata.get("percentage", 0),  # percentage
+                    metadata.get("message"),  # message
                     now,  # created_at
                     now,  # updated_at
                     "pending",  # approval_status
@@ -673,6 +698,8 @@ class DatabaseService:
         """
         Update arbitrary task fields (pure asyncpg).
         
+        Automatically extracts and populates new normalized columns from task_metadata dict.
+        
         Args:
             task_id: UUID of task
             updates: Dictionary of fields to update
@@ -682,11 +709,54 @@ class DatabaseService:
         """
         if not updates:
             return await self.get_task(task_id)
+        
+        import json
+        
+        # Extract task_metadata for normalizing fields
+        task_metadata = updates.get("task_metadata", {})
+        if isinstance(task_metadata, str):
+            task_metadata = json.loads(task_metadata)
+        elif task_metadata is None:
+            task_metadata = {}
+        
+        # Prepare normalized columns from task_metadata
+        normalized_updates = dict(updates)  # Copy all updates
+        
+        # Extract specific fields to dedicated columns
+        if task_metadata:
+            if "content" not in normalized_updates and "content" in task_metadata:
+                normalized_updates["content"] = task_metadata.get("content")
+            if "excerpt" not in normalized_updates and "excerpt" in task_metadata:
+                normalized_updates["excerpt"] = task_metadata.get("excerpt")
+            if "featured_image_url" not in normalized_updates and "featured_image_url" in task_metadata:
+                normalized_updates["featured_image_url"] = task_metadata.get("featured_image_url")
+            if "featured_image_data" not in normalized_updates and "featured_image_data" in task_metadata:
+                normalized_updates["featured_image_data"] = task_metadata.get("featured_image_data")
+            if "qa_feedback" not in normalized_updates and "qa_feedback" in task_metadata:
+                qa_fb = task_metadata.get("qa_feedback")
+                # Convert list to string if needed
+                if isinstance(qa_fb, list):
+                    qa_fb = json.dumps(qa_fb) if qa_fb else None
+                normalized_updates["qa_feedback"] = qa_fb
+            if "quality_score" not in normalized_updates and "quality_score" in task_metadata:
+                normalized_updates["quality_score"] = task_metadata.get("quality_score")
+            if "seo_title" not in normalized_updates and "seo_title" in task_metadata:
+                normalized_updates["seo_title"] = task_metadata.get("seo_title")
+            if "seo_description" not in normalized_updates and "seo_description" in task_metadata:
+                normalized_updates["seo_description"] = task_metadata.get("seo_description")
+            if "seo_keywords" not in normalized_updates and "seo_keywords" in task_metadata:
+                normalized_updates["seo_keywords"] = task_metadata.get("seo_keywords")
+            if "stage" not in normalized_updates and "stage" in task_metadata:
+                normalized_updates["stage"] = task_metadata.get("stage")
+            if "percentage" not in normalized_updates and "percentage" in task_metadata:
+                normalized_updates["percentage"] = task_metadata.get("percentage")
+            if "message" not in normalized_updates and "message" in task_metadata:
+                normalized_updates["message"] = task_metadata.get("message")
             
         set_clauses = []
         params = [task_id]
         
-        for key, value in updates.items():
+        for key, value in normalized_updates.items():
             # Serialize the value for PostgreSQL
             serialized_value = serialize_value_for_postgres(value)
             set_clauses.append(f"{key} = ${len(params) + 1}")
@@ -841,7 +911,7 @@ class DatabaseService:
                 post_data.get("seo_description") or post_data.get("excerpt"),  # Default to excerpt if not provided
                 post_data.get("seo_keywords", ""),
             )
-            return dict(row)
+            return self._convert_row_to_dict(row)
 
     @staticmethod
     def _convert_row_to_dict(row: Any) -> Dict[str, Any]:

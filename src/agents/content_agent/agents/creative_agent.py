@@ -81,9 +81,19 @@ class CreativeAgent:
                 return "\n".join(lines[i:])
 
         logger.warning(
-            "CreativeAgent: Could not find a starting Markdown heading ('#') in the LLM output. The content might contain unwanted preamble."
+            "CreativeAgent: No Markdown heading found in LLM output. Adding heading to ensure proper content structure."
         )
-        return text  # Return original text if no heading is found, with a warning.
+        # No heading found - extract first line as title if it looks reasonable
+        for i, line in enumerate(lines):
+            line_stripped = line.strip()
+            if line_stripped and len(line_stripped) < 100 and not line_stripped.startswith(('-', '*', ' ')):
+                # Use this line as the heading
+                heading = f"# {line_stripped}\n\n"
+                remaining_text = '\n'.join(lines[i+1:]) if i+1 < len(lines) else ""
+                return heading + remaining_text
+        
+        # Fallback: add generic heading
+        return f"# Content\n\n{text}"
 
     async def _generate_seo_assets(self, post: BlogPost) -> BlogPost:
         """Generates and assigns SEO assets (title, meta description, slug) for the post."""

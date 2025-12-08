@@ -50,6 +50,7 @@ from services.content_router_service import (
     get_content_task_store,
     process_content_generation_task,
 )
+from services.database_service import DatabaseService
 from services.error_handler import (
     ValidationError,
     NotFoundError,
@@ -60,6 +61,20 @@ from services.error_handler import (
 )
 
 logger = logging.getLogger(__name__)
+
+# ============================================================================
+# GLOBAL DATABASE SERVICE
+# ============================================================================
+
+# Database service instance (set during app startup)
+db_service = None
+
+
+def set_db_service(service: DatabaseService):
+    """Set the database service (called during app startup)"""
+    global db_service
+    db_service = service
+
 
 # ============================================================================
 # ROUTER SETUP
@@ -263,7 +278,7 @@ class ApprovalResponse(BaseModel):
     
     task_id: str
     approval_status: str  # "approved" or "rejected"
-    strapi_post_id: Optional[int] = None  # Only if approved and published
+    strapi_post_id: Optional[str] = None  # Only if approved and published (UUID or int)
     published_url: Optional[str] = None  # Only if approved and published
     approval_timestamp: str
     reviewer_id: str
@@ -577,6 +592,16 @@ async def approve_and_publish_task(task_id: str, request: ApprovalRequest):
     """
     try:
         task_store = get_content_task_store()
+        
+        # Use the global database service initialized at startup
+        # This ensures the connection pool is properly initialized
+        if db_service is None:
+            raise RuntimeError(
+                "Database service not initialized. "
+                "This is a critical error - the application failed to initialize the database service. "
+                "Check that the FastAPI app startup completed successfully."
+            )
+        
         task = await task_store.get_task(task_id)
 
         if not task:
@@ -620,8 +645,9 @@ async def approve_and_publish_task(task_id: str, request: ApprovalRequest):
         if request.approved:
             logger.info(f"✅ APPROVED: Marking task {task_id} as approved...")
             
-            # Get content from database
-            content = task.get("content")
+            # Get content from task_metadata (where orchestrator stores it)
+            task_metadata = task.get("task_metadata", {})
+            content = task_metadata.get("content")
             if not content:
                 logger.error(f"❌ Task {task_id} has no content")
                 raise ValidationError(
@@ -647,14 +673,66 @@ async def approve_and_publish_task(task_id: str, request: ApprovalRequest):
                 }
             )
             
-            logger.info(f"✅ Task {task_id} APPROVED")
+            # ✅ PUBLISH TO CMS DATABASE
+            try:
+                # Generate slug from title if not provided
+                title = task_metadata.get("title", "Untitled")
+                slug = task_metadata.get("slug", "")
+                if not slug:
+                    # Generate slug from title
+                    import re
+                    import uuid
+                    slug = title.lower()
+                    slug = re.sub(r'[^a-z0-9]+', '-', slug)
+                    slug = slug.strip('-')
+                    slug = slug[:80]  # Limit length to allow room for uniqueness suffix
+                    # Add short UUID to ensure uniqueness
+                    unique_suffix = str(uuid.uuid4())[:8]
+                    slug = f"{slug}-{unique_suffix}" if slug else f"post-{unique_suffix}"
+                    logger.info(f"📝 Generated unique slug from title: '{title}' → '{slug}'")
+                
+                post_data = {
+                    "title": title,
+                    "slug": slug,
+                    "content": content,
+                    "excerpt": task_metadata.get("excerpt", ""),
+                    "featured_image": task_metadata.get("featured_image_url"),
+                    "status": "published",
+                    "seo_title": task_metadata.get("seo_title"),
+                    "seo_description": task_metadata.get("seo_description"),
+                    "seo_keywords": task_metadata.get("seo_keywords", ""),
+                }
+                
+                post_result = await db_service.create_post(post_data)
+                post_id = post_result.get("id")
+                logger.info(f"✅ Post published to CMS database with ID: {post_id}")
+                
+                # Update task with CMS post ID
+                await task_store.update_task(
+                    task_id,
+                    {
+                        "task_metadata": {
+                            **task_metadata,
+                            "cms_post_id": post_id,
+                            "published_at": approval_timestamp.isoformat(),
+                        }
+                    }
+                )
+            except Exception as e:
+                logger.error(f"❌ Failed to publish post to CMS: {e}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Post approved but publishing failed: {str(e)}"
+                )
+            
+            logger.info(f"✅ Task {task_id} APPROVED and PUBLISHED")
             logger.info(f"{'='*80}\n")
             
             return ApprovalResponse(
                 task_id=task_id,
                 approval_status="approved",
-                strapi_post_id=None,
-                published_url=None,
+                strapi_post_id=post_id,
+                published_url=f"/posts/{post_data.get('slug')}",
                 approval_timestamp=approval_timestamp.isoformat(),
                 reviewer_id=reviewer_id,
                 message=f"✅ Task approved by {reviewer_id}"
@@ -682,6 +760,22 @@ async def approve_and_publish_task(task_id: str, request: ApprovalRequest):
                     }
                 }
             )
+            
+            # ✅ VERIFY database persistence
+            try:
+                updated_task = await task_store.get_task(task_id)
+                if updated_task and updated_task.get("status") == "rejected":
+                    logger.info(f"✅ Database verification successful: Task {task_id} status confirmed as 'rejected'")
+                else:
+                    actual_status = updated_task.get("status") if updated_task else "TASK NOT FOUND"
+                    logger.error(f"❌ Database verification failed: Expected status='rejected', got '{actual_status}'")
+                    raise Exception(f"Task status update failed verification. Current status: {actual_status}")
+            except Exception as verify_error:
+                logger.error(f"❌ Failed to verify rejection status in database: {verify_error}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Rejection recorded but verification failed: {str(verify_error)}"
+                )
             
             logger.info(f"✅ Task {task_id} REJECTED - Not published")
             logger.info(f"{'='*80}\n")
