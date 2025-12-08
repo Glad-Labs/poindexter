@@ -35,6 +35,7 @@ try:
     REDIS_AVAILABLE = True
 except ImportError:
     REDIS_AVAILABLE = False
+    Redis = None  # Type placeholder when Redis is not available
     logging.warning("Redis SDK not installed. Caching disabled. Install with: pip install redis aioredis")
 
 logger = logging.getLogger(__name__)

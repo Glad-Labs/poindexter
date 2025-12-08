@@ -70,6 +70,11 @@ class JWTTokenValidator:
         """
         import sys
         try:
+            # Validate token format (should have 3 parts separated by dots)
+            parts = token.split('.')
+            if len(parts) != 3:
+                raise jwt.InvalidTokenError(f"Invalid token format: expected 3 parts, got {len(parts)}")
+            
             # Debug logging
             print(f"\n[verify_token] Verifying token...", file=sys.stderr)
             print(f"[verify_token] Using secret: {AuthConfig.SECRET_KEY[:30]}...", file=sys.stderr)

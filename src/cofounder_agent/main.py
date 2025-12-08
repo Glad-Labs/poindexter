@@ -319,22 +319,33 @@ async def lifespan(app: FastAPI):
         logger.info(f"  - API Base URL: {api_base_url}")
         
         startup_complete = True
-        logger.info("✅ Lifespan: Yielding control to FastAPI application...")
-        print("✅ Lifespan: Application is now running")
+        logger.info("[OK] Lifespan: Yielding control to FastAPI application...")
+        try:
+            print("[OK] Lifespan: Application is now running")
+        except UnicodeEncodeError:
+            print("[OK] Application is now running")
+        
         yield  # Application runs here
-        print("⏹️  Lifespan: Resuming after application shutdown")
-        logger.info("⏹️  Lifespan: Resuming after application shutdown...")
+        
+        try:
+            print("[STOP] Lifespan: Resuming after application shutdown")
+        except UnicodeEncodeError:
+            print("[STOP] Resuming after application shutdown")
+        logger.info("[STOP] Lifespan: Resuming after application shutdown...")
         
     except Exception as e:
         startup_error = f"Critical startup failure: {str(e)}"
         logger.error(f" {startup_error}", exc_info=True)
-        print(f"❌ EXCEPTION IN LIFESPAN: {startup_error}")
+        try:
+            print(f"[ERROR] EXCEPTION IN LIFESPAN: {startup_error}")
+        except UnicodeEncodeError:
+            print(f"[ERROR] EXCEPTION IN LIFESPAN: {startup_error}")
         startup_complete = True  # Mark complete so /api/health works
     
     finally:
         # ===== SHUTDOWN =====
         try:
-            logger.info("🛑 Shutting down Glad Labs AI Co-Founder application...")
+            logger.info("[STOP] Shutting down Glad Labs AI Co-Founder application...")
             
             # Stop background task executor
             try:

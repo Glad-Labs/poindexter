@@ -14,7 +14,7 @@
     "//": "=== DEVELOPMENT ===",
     "dev": "npm run env:select && concurrently \"npm run dev:cofounder\" \"npm run dev:frontend\"",
     "dev:backend": "npm run dev:cofounder",
-    "dev:cofounder": "npm run dev --workspace=src/cofounder_agent",
+    "dev:cofounder": "python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000 --log-level info --reload-dir src/cofounder_agent",
     "dev:frontend": "concurrently \"npm run dev --workspace=web/public-site\" \"npm start --workspace=web/oversight-hub\"",
     "dev:oversight": "npm start --workspace=web/oversight-hub",
     "dev:public": "npm run dev --workspace=web/public-site",
