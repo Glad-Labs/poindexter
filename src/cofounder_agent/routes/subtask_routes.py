@@ -20,9 +20,12 @@ from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from uuid import uuid4
 import logging
+import time
+from datetime import datetime, timezone
 
 from services.database_service import DatabaseService
 from services.content_orchestrator import ContentOrchestrator
+from services.usage_tracker import get_usage_tracker
 from routes.auth_unified import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -117,6 +120,17 @@ async def run_research_subtask(
     Returns: research_data (string with search results)
     """
     subtask_id = str(uuid4())
+    start_time = time.time()
+    
+    # Start tracking usage
+    tracker = get_usage_tracker()
+    metrics = tracker.start_operation(
+        operation_id=subtask_id,
+        operation_type="research",
+        model_name="research-agent",
+        model_provider="internal",
+        metadata={"parent_task_id": request.parent_task_id}
+    )
     
     try:
         # Create subtask record in database
@@ -170,14 +184,19 @@ async def run_research_subtask(
             status="completed",
             result=result_data,
             metadata={
-                "duration_ms": 15000,  # TODO: Track actual duration
-                "tokens_used": 0,  # TODO: Track tokens
-                "model": "gpt-4"
+                "duration_ms": int((time.time() - start_time) * 1000),
+                "tokens_used": result_data.get("token_count", 0),
+                "model": "research-agent",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
         )
         
+        # Mark operation as complete
+        tracker.end_operation(subtask_id, success=True)
+        
     except Exception as e:
         logger.error(f"Research subtask failed: {e}")
+        tracker.end_operation(subtask_id, success=False, error=str(e))
         
         # Mark as failed
         await db_service.execute(
