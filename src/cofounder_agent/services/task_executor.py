@@ -19,11 +19,14 @@ from datetime import datetime, timezone
 import json
 import sys
 import os
+import time
 
 # Import the content critique loop
 from .content_critique_loop import ContentCritiqueLoop
 # Import AI content generator for fallback
 from .ai_content_generator import AIContentGenerator
+# Import usage tracking
+from .usage_tracker import get_usage_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +56,7 @@ class TaskExecutor:
         self.error_count = 0
         self.published_count = 0
         self._processor_task = None
+        self.usage_tracker = get_usage_tracker()  # Initialize usage tracking
         
         logger.info(f"TaskExecutor initialized: orchestrator={'✅' if orchestrator else '❌'}, "
                    f"critique_loop={'✅' if critique_loop else '❌'}, "
@@ -225,9 +229,14 @@ class TaskExecutor:
         logger.info(f"   Audience: {target_audience}")
         logger.info(f"   Agent: {agent_id}")
 
+        # Start usage tracking for entire task execution
+        task_start_time = time.time()
+        self.usage_tracker.start_operation(f"task_execution_{task_id}", "content_generation", "multi-agent-orchestrator")
+
         # ===== PHASE 1: Generate Content via Orchestrator =====
         generated_content = None
         orchestrator_error = None
+        generation_start_time = time.time()
 
         logger.info(f"📝 [TASK_EXECUTE] PHASE 1: Generating content via orchestrator...")
         if self.orchestrator:
@@ -405,6 +414,23 @@ class TaskExecutor:
                 "phase_2_critique": f"{'✅' if approved else '⚠️'} ({quality_score}/100)",
             }
         }
+
+        # End usage tracking with actual metrics
+        task_duration_ms = (time.time() - task_start_time) * 1000
+        content_tokens_estimate = len(generated_content.split()) * 1.3 if generated_content else 0  # Estimate ~1.3 tokens per word
+        self.usage_tracker.end_operation(
+            f"task_execution_{task_id}",
+            success=True,
+            tokens_in=len(f"{topic} {primary_keyword} {target_audience}".split()) * 1.3,
+            tokens_out=int(content_tokens_estimate),
+            metadata={
+                "task_id": str(task_id),
+                "task_name": task_name,
+                "content_length": len(generated_content) if generated_content else 0,
+                "quality_score": quality_score,
+                "approved": approved,
+            }
+        )
 
         return result
     

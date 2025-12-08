@@ -2,9 +2,10 @@
 Chat Routes - Handle real-time chat interactions with AI models
 
 Provides endpoints for:
-- Chat message processing with model selection
+- Chat message processing with multi-model selection (Ollama, OpenAI, Claude, Gemini)
 - Multi-turn conversation tracking
-- Fallback to multiple AI providers
+- Usage tracking and cost calculation
+- Smart fallback to multiple AI providers
 """
 
 import logging
@@ -12,12 +13,18 @@ from typing import Optional, Dict, Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from datetime import datetime
+import time
+
 from services.ollama_client import OllamaClient
+from services.model_router import ModelRouter, TaskComplexity
+from services.usage_tracker import get_usage_tracker
 
 logger = logging.getLogger(__name__)
 
-# Initialize Ollama client
+# Initialize services
 ollama_client = OllamaClient()
+model_router = ModelRouter(use_ollama=True)  # Prefer free local inference
+usage_tracker = get_usage_tracker()
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
