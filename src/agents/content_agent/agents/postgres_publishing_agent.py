@@ -42,11 +42,9 @@ class PostgreSQLPublishingAgent:
         if not hasattr(self.cms_client, 'pool') or self.cms_client.pool is None:
             await self.cms_client.initialize()
 
-    def run(self, post: BlogPost) -> BlogPost:
+    async def run(self, post: BlogPost) -> BlogPost:
         """
         Process and prepare post for publishing to PostgreSQL.
-        
-        This is the synchronous wrapper. For actual publishing, use run_async().
         
         Args:
             post: BlogPost object with final content

@@ -29,7 +29,7 @@ def serialize_value_for_postgres(value: Any) -> Any:
     
     Handles:
     - dict/list → JSON string (for JSONB columns)
-    - datetime → ISO format string
+    - datetime → as-is (asyncpg handles this, don't convert to string!)
     - UUID → string
     - Other types → as-is
     
@@ -46,7 +46,9 @@ def serialize_value_for_postgres(value: Any) -> Any:
         # Arrays of objects need JSON strings
         return json.dumps(value)
     elif isinstance(value, datetime):
-        return value.isoformat()
+        # IMPORTANT: asyncpg handles datetime objects directly
+        # Do NOT convert to string - asyncpg will encode it properly
+        return value
     elif isinstance(value, UUID):
         return str(value)
     else:

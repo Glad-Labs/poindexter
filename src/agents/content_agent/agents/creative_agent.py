@@ -24,7 +24,7 @@ class CreativeAgent:
         self.llm_client = llm_client
         self.prompts = load_prompts_from_file(config.PROMPTS_PATH)
 
-    def run(self, post: BlogPost, is_refinement: bool = False) -> BlogPost:
+    async def run(self, post: BlogPost, is_refinement: bool = False) -> BlogPost:
         """
         Generates or refines the blog post content. The method now directly
         uses the `research_data` and `qa_feedback` stored within the BlogPost object,
@@ -44,7 +44,7 @@ class CreativeAgent:
             logger.info(
                 f"CreativeAgent: Refining content for '{post.topic}' based on QA feedback."
             )
-            raw_draft = self.llm_client.generate_text(refinement_prompt)
+            raw_draft = await self.llm_client.generate_text(refinement_prompt)
         else:
             draft_prompt = self.prompts["initial_draft_generation"].format(
                 topic=post.topic,
@@ -56,13 +56,13 @@ class CreativeAgent:
             logger.info(
                 f"CreativeAgent: Starting initial content generation for '{post.topic}'."
             )
-            raw_draft = self.llm_client.generate_text(draft_prompt)
+            raw_draft = await self.llm_client.generate_text(draft_prompt)
 
         # Sanitize the LLM's output and update the post object
         post.raw_content = self._clean_llm_output(raw_draft)
 
         # Generate SEO assets after the main content is finalized
-        post = self._generate_seo_assets(post)
+        post = await self._generate_seo_assets(post)
 
         logger.info(f"CreativeAgent: Finished processing for '{post.topic}'.")
         return post
@@ -85,13 +85,13 @@ class CreativeAgent:
         )
         return text  # Return original text if no heading is found, with a warning.
 
-    def _generate_seo_assets(self, post: BlogPost) -> BlogPost:
+    async def _generate_seo_assets(self, post: BlogPost) -> BlogPost:
         """Generates and assigns SEO assets (title, meta description, slug) for the post."""
         seo_prompt = self.prompts["seo_and_social_media"].format(
             draft=post.raw_content,
         )
         logger.info(f"CreativeAgent: Generating SEO assets for '{post.topic}'.")
-        seo_assets_text = self.llm_client.generate_text(seo_prompt)
+        seo_assets_text = await self.llm_client.generate_text(seo_prompt)
 
         # Extract the JSON object from the LLM's output
         seo_assets_json = extract_json_from_string(seo_assets_text)

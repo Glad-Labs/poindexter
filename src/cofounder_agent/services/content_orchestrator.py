@@ -214,9 +214,8 @@ class ContentOrchestrator:
             from agents.content_agent.agents.research_agent import ResearchAgent
             research_agent = ResearchAgent()
             
-            # Run research (returns search results as string)
-            research_result = await asyncio.to_thread(
-                research_agent.run,
+            # Run research (research_agent.run is async, so await it directly)
+            research_result = await research_agent.run(
                 topic,
                 keywords[:5]  # Limit to 5 keywords
             )
@@ -253,9 +252,8 @@ class ContentOrchestrator:
                 research_data=research_data,
             )
             
-            # Run creative agent (returns BlogPost)
-            draft_post = await asyncio.to_thread(
-                creative_agent.run,
+            # Run creative agent (creative_agent.run is async, so await it directly)
+            draft_post = await creative_agent.run(
                 post,
                 is_refinement=False
             )
@@ -298,8 +296,7 @@ class ContentOrchestrator:
                 logger.info(f"  QA Iteration {iteration}/{max_iterations}")
                 
                 # Run QA agent (returns tuple[bool, str])
-                qa_result = await asyncio.to_thread(
-                    qa_agent.run,
+                qa_result = await qa_agent.run(
                     content,
                     getattr(content, 'raw_content', str(content))
                 )
@@ -328,8 +325,7 @@ class ContentOrchestrator:
                         logger.info(f"  Refining content based on feedback (iteration {iteration})...")
                         
                         # Refine based on feedback
-                        content = await asyncio.to_thread(
-                            creative_agent.run,
+                        content = await creative_agent.run(
                             content,
                             is_refinement=True
                         )
@@ -362,10 +358,7 @@ class ContentOrchestrator:
             )
             
             # Run image agent
-            result_post = await asyncio.to_thread(
-                image_agent.run,
-                content
-            )
+            result_post = await image_agent.run(content)
             
             # Extract featured image URL
             image_url = None
@@ -397,10 +390,7 @@ class ContentOrchestrator:
             publishing_agent = PostgreSQLPublishingAgent()
             
             # Run publishing agent (for formatting, not actually publishing yet)
-            result_post = await asyncio.to_thread(
-                publishing_agent.run,
-                content
-            )
+            result_post = await publishing_agent.run(content)
             
             # Extract formatted content and excerpt
             formatted_content = getattr(result_post, 'raw_content', str(content))

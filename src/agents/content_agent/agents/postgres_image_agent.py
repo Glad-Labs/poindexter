@@ -53,7 +53,7 @@ class PostgreSQLImageAgent:
         self.image_storage_path = Path(config.IMAGE_STORAGE_PATH)
         self.image_storage_path.mkdir(parents=True, exist_ok=True)
 
-    def run(self, post: BlogPost) -> BlogPost:
+    async def run(self, post: BlogPost) -> BlogPost:
         """
         Process images for a blog post and store metadata in PostgreSQL.
         
@@ -71,7 +71,7 @@ class PostgreSQLImageAgent:
 
         try:
             # Generate metadata for all images first
-            image_metadata = self._generate_image_metadata(post)
+            image_metadata = await self._generate_image_metadata(post)
             if not image_metadata:
                 logger.warning("No image metadata was generated.")
                 return post
@@ -92,7 +92,7 @@ class PostgreSQLImageAgent:
         logger.info(f"ImageAgent: Finished image processing for '{post.title}'. Found {len(post.images or [])} images.")
         return post
 
-    def _generate_image_metadata(self, post: BlogPost) -> List[dict]:
+    async def _generate_image_metadata(self, post: BlogPost) -> List[dict]:
         """
         Generate image metadata/descriptions using the LLM.
         
@@ -126,7 +126,7 @@ Respond with a JSON array like this:
 Only return the JSON array, no other text."""
             
             logger.info("Generating image metadata using LLM...")
-            metadata_text = self.llm_client.generate_text(metadata_prompt)
+            metadata_text = await self.llm_client.generate_text(metadata_prompt)
             
             # Parse JSON response
             metadata_json = extract_json_from_string(metadata_text)

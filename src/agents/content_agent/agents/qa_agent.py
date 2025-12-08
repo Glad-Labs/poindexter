@@ -14,7 +14,7 @@ class QAAgent:
         self.llm_client = llm_client
         self.prompts = load_prompts_from_file(config.PROMPTS_PATH)
 
-    def run(self, post: BlogPost, previous_content: str) -> tuple[bool, str]:
+    async def run(self, post: BlogPost, previous_content: str) -> tuple[bool, str]:
         """
         Reviews the content against the quality rubric. This method is designed
         to be called within the iterative refinement loop of the orchestrator.
@@ -55,7 +55,7 @@ class QAAgent:
             logger.error(f"QAAgent: Template = {self.prompts['qa_review'][:200]}...")
             raise
 
-        response_data = self.llm_client.generate_json(prompt)
+        response_data = await self.llm_client.generate_json(prompt)
 
         # Parse the JSON response
         approved = response_data.get("approved", False)
