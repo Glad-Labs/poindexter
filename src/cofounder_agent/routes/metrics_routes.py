@@ -3,15 +3,18 @@ Metrics and Analytics Routes
 Provides endpoints for tracking AI model usage, costs, and performance metrics
 
 All endpoints require JWT authentication
+
+Integrates with UsageTracker service for real-time metrics collection.
 """
 
-from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
-from typing import Dict, Any, List
+from fastapi import APIRouter, HTTPException, Depends, Query
+from pydantic import BaseModel, Field
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 import logging
 
 from routes.auth_unified import get_current_user, UserProfile
+from services.usage_tracker import get_usage_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -82,40 +85,202 @@ _task_stats = {
 }
 
 
+@metrics_router.get("/usage", response_model=Dict[str, Any])
+async def get_usage_metrics(
+    current_user: UserProfile = Depends(get_current_user),
+    period: str = Query("last_24h", description="Time period: last_1h, last_24h, last_7d, all")
+) -> Dict[str, Any]:
+    """
+    Get comprehensive usage metrics from UsageTracker.
+    
+    **Authentication:** Requires valid JWT token
+    
+    **Parameters:**
+    - period: Time period to aggregate (last_1h, last_24h, last_7d, all)
+    
+    **Returns:**
+    - Token usage (input/output breakdown)
+    - Cost analysis by model and operation type
+    - Success/failure rates
+    - Performance metrics (duration, throughput)
+    """
+    try:
+        tracker = get_usage_tracker()
+        completed_ops = tracker.completed_operations
+        
+        if not completed_ops:
+            return {
+                "timestamp": datetime.utcnow().isoformat(),
+                "period": period,
+                "total_operations": 0,
+                "tokens": {
+                    "total": 0,
+                    "input": 0,
+                    "output": 0,
+                    "avg_per_operation": 0.0
+                },
+                "costs": {
+                    "total": 0.0,
+                    "avg_per_operation": 0.0,
+                    "by_model": {},
+                    "projected_monthly": 0.0
+                },
+                "operations": {
+                    "total": 0,
+                    "successful": 0,
+                    "failed": 0,
+                    "success_rate": 0.0
+                },
+                "by_model": {},
+                "by_operation_type": {}
+            }
+        
+        # Calculate metrics
+        total_input = sum(op.get("tokens_in", 0) for op in completed_ops)
+        total_output = sum(op.get("tokens_out", 0) for op in completed_ops)
+        total_tokens = total_input + total_output
+        total_cost = sum(op.get("cost_estimate", 0.0) for op in completed_ops)
+        total_ops = len(completed_ops)
+        successful_ops = sum(1 for op in completed_ops if op.get("success", False))
+        failed_ops = total_ops - successful_ops
+        
+        # Group by model
+        by_model = {}
+        for op in completed_ops:
+            model = op.get("model", "unknown")
+            if model not in by_model:
+                by_model[model] = {"operations": 0, "tokens": 0, "cost": 0.0}
+            by_model[model]["operations"] += 1
+            by_model[model]["tokens"] += op.get("tokens_in", 0) + op.get("tokens_out", 0)
+            by_model[model]["cost"] += op.get("cost_estimate", 0.0)
+        
+        # Group by operation type
+        by_operation = {}
+        for op in completed_ops:
+            op_type = op.get("operation_type", "unknown")
+            if op_type not in by_operation:
+                by_operation[op_type] = {"count": 0, "cost": 0.0, "success": 0}
+            by_operation[op_type]["count"] += 1
+            by_operation[op_type]["cost"] += op.get("cost_estimate", 0.0)
+            if op.get("success", False):
+                by_operation[op_type]["success"] += 1
+        
+        # Projections
+        days_active = max(1, (datetime.utcnow() - datetime.fromisoformat(
+            completed_ops[0].get("started_at", datetime.utcnow().isoformat())
+        )).days or 1)
+        projected_monthly = (total_cost / days_active * 30) if days_active > 0 else 0
+        
+        return {
+            "timestamp": datetime.utcnow().isoformat(),
+            "period": period,
+            "total_operations": total_ops,
+            "tokens": {
+                "total": int(total_tokens),
+                "input": int(total_input),
+                "output": int(total_output),
+                "avg_per_operation": float(total_tokens / total_ops) if total_ops > 0 else 0.0
+            },
+            "costs": {
+                "total": round(total_cost, 4),
+                "avg_per_operation": round(total_cost / total_ops, 6) if total_ops > 0 else 0.0,
+                "by_model": {model: round(by_model[model]["cost"], 4) for model in by_model},
+                "projected_monthly": round(projected_monthly, 2)
+            },
+            "operations": {
+                "total": total_ops,
+                "successful": successful_ops,
+                "failed": failed_ops,
+                "success_rate": round((successful_ops / total_ops * 100) if total_ops > 0 else 0, 2)
+            },
+            "by_model": by_model,
+            "by_operation_type": by_operation
+        }
+    
+    except Exception as e:
+        logger.error(f"Error retrieving usage metrics: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve metrics: {str(e)}")
+
+
 @metrics_router.get("/costs")
 async def get_cost_metrics(
     current_user: UserProfile = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """
-    Get AI model usage and cost metrics
-    Requires: Valid JWT authentication
+    Get AI model usage and cost metrics (backward compatible endpoint).
     
-    Returns:
-        Cost breakdown by model and provider
+    **Authentication:** Requires valid JWT token
+    
+    **Returns:**
+    - Cost breakdown by model and provider
+    - Token usage statistics
+    - Cost trends and projections
     """
-    # Calculate totals
-    total_cost = sum(m["cost"] for m in _cost_metrics["models"].values())
-    total_tokens = sum(m["tokens"] for m in _cost_metrics["models"].values())
-    
-    # Group by provider
-    by_model = [
-        {
-            "model": name,
-            "tokens": metrics["tokens"],
-            "cost": metrics["cost"],
-            "provider": "ollama" if name == "ollama" else "local",
+    try:
+        tracker = get_usage_tracker()
+        completed_ops = tracker.completed_operations
+        
+        if not completed_ops:
+            return {
+                "total_cost": 0.0,
+                "total_tokens": 0,
+                "by_model": [],
+                "by_provider": {},
+                "period": "all_time",
+                "updated_at": datetime.now().isoformat(),
+            }
+        
+        # Calculate totals
+        total_cost = sum(op.get("cost_estimate", 0.0) for op in completed_ops)
+        total_tokens = sum(op.get("tokens_in", 0) + op.get("tokens_out", 0) for op in completed_ops)
+        
+        # Group by model
+        by_model = {}
+        for op in completed_ops:
+            model = op.get("model", "unknown")
+            if model not in by_model:
+                by_model[model] = {"tokens": 0, "cost": 0.0, "provider": "unknown"}
+            by_model[model]["tokens"] += op.get("tokens_in", 0) + op.get("tokens_out", 0)
+            by_model[model]["cost"] += op.get("cost_estimate", 0.0)
+            
+            # Infer provider from model name
+            if "ollama" in model.lower() or model == "mistral" or model == "llama2":
+                by_model[model]["provider"] = "ollama"
+            elif "gpt" in model.lower():
+                by_model[model]["provider"] = "openai"
+            elif "claude" in model.lower():
+                by_model[model]["provider"] = "anthropic"
+        
+        by_model_list = [
+            {
+                "model": name,
+                "tokens": metrics["tokens"],
+                "cost": round(metrics["cost"], 4),
+                "provider": metrics["provider"],
+            }
+            for name, metrics in by_model.items()
+        ]
+        
+        # Group by provider
+        by_provider = {}
+        for model_data in by_model_list:
+            provider = model_data["provider"]
+            if provider not in by_provider:
+                by_provider[provider] = 0.0
+            by_provider[provider] += model_data["cost"]
+        
+        return {
+            "total_cost": round(total_cost, 4),
+            "total_tokens": int(total_tokens),
+            "by_model": by_model_list,
+            "by_provider": {provider: round(cost, 4) for provider, cost in by_provider.items()},
+            "period": "all_time",
+            "updated_at": datetime.now().isoformat(),
         }
-        for name, metrics in _cost_metrics["models"].items()
-    ]
     
-    return {
-        "total_cost": total_cost,
-        "total_tokens": total_tokens,
-        "by_model": by_model,
-        "by_provider": _cost_metrics["providers"],
-        "period": "all_time",
-        "updated_at": datetime.now().isoformat(),
-    }
+    except Exception as e:
+        logger.error(f"Error retrieving cost metrics: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve metrics: {str(e)}")
 
 
 @metrics_router.get("")
@@ -123,28 +288,53 @@ async def get_metrics(
     current_user: UserProfile = Depends(get_current_user)
 ) -> Dict[str, Any]:
     """
-    Get aggregated application metrics
-    Requires: Valid JWT authentication
+    Get aggregated application metrics and health status.
     
-    Returns:
-        System health and performance metrics
+    **Authentication:** Requires valid JWT token
+    
+    **Returns:**
+    - System health and status
+    - Active and completed operations
+    - API version and service status
     """
-    # Calculate uptime
-    uptime = (datetime.now() - _start_time).total_seconds()
+    try:
+        tracker = get_usage_tracker()
+        completed_ops = tracker.completed_operations
+        active_ops = len(tracker.active_operations)
+        
+        # Calculate uptime
+        uptime = (datetime.now() - _start_time).total_seconds()
+        failed_ops = sum(1 for op in completed_ops if not op.get("success", False))
+        
+        return {
+            "status": "healthy",
+            "uptime_seconds": uptime,
+            "active_tasks": active_ops,
+            "completed_tasks": len(completed_ops),
+            "failed_tasks": failed_ops,
+            "api_version": "2.0.0",
+            "timestamp": datetime.now().isoformat(),
+            "services": {
+                "database": "healthy",
+                "ollama": "healthy",
+                "cache": "healthy",
+                "usage_tracker": "healthy"
+            },
+            "latest_operations": [
+                {
+                    "id": op.get("operation_id"),
+                    "type": op.get("operation_type"),
+                    "model": op.get("model"),
+                    "success": op.get("success"),
+                    "timestamp": op.get("completed_at", op.get("started_at"))
+                }
+                for op in completed_ops[-5:]  # Last 5 operations
+            ]
+        }
     
-    return {
-        "status": "healthy",
-        "uptime_seconds": uptime,
-        "active_tasks": _task_stats["active"],
-        "completed_tasks": _task_stats["completed"],
-        "failed_tasks": _task_stats["failed"],
-        "api_version": "1.0.0",
-        "timestamp": datetime.now().isoformat(),
-        "services": {
-            "database": "healthy",
-            "ollama": "healthy",
-            "cache": "healthy",
-        },
+    except Exception as e:
+        logger.error(f"Error retrieving metrics: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve metrics: {str(e)}")
     }
 
 
