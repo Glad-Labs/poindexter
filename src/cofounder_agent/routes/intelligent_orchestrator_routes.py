@@ -15,8 +15,12 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, Depends
 from pydantic import BaseModel, Field
 import json
+import os
 
 from routes.auth_unified import get_current_user, UserProfile
+from services.linkedin_publisher import LinkedInPublisher
+from services.twitter_publisher import TwitterPublisher
+from services.email_publisher import EmailPublisher
 
 logger = logging.getLogger(__name__)
 
@@ -392,20 +396,87 @@ async def _publish_result_background(task_id: str, channels: List[str]):
                 logger.error(f"❌ {error_msg}")
                 errors.append(error_msg)
         
-        # LinkedIn Publishing (Placeholder for future implementation)
+        # LinkedIn Publishing
         if "linkedin" in channels:
-            logger.info(f"⏭️  LinkedIn publishing reserved for future implementation")
-            published_to.append("linkedin (pending)")
+            try:
+                linkedin = LinkedInPublisher()
+                if linkedin.available:
+                    linkedin_result = await linkedin.publish(
+                        title=formatted.get("title", "New Blog Post"),
+                        content=formatted.get("summary", content)[:500],
+                        image_url=formatted.get("featured_image_url"),
+                        description=formatted.get("summary", ""),
+                    )
+                    if linkedin_result.get("success"):
+                        published_to.append("linkedin")
+                        logger.info(f"✅ Published to LinkedIn: {linkedin_result.get('post_id')}")
+                    else:
+                        error_msg = f"LinkedIn: {linkedin_result.get('error')}"
+                        errors.append(error_msg)
+                        logger.warning(f"⚠️  {error_msg}")
+                else:
+                    logger.info(f"⏭️  LinkedIn publishing not configured (set LINKEDIN_ACCESS_TOKEN)")
+            except Exception as e:
+                logger.error(f"LinkedIn publishing error: {e}")
+                errors.append(f"LinkedIn: {str(e)}")
         
-        # Twitter Publishing (Placeholder for future implementation)
+        # Twitter Publishing
         if "twitter" in channels:
-            logger.info(f"⏭️  Twitter publishing reserved for future implementation")
-            published_to.append("twitter (pending)")
+            try:
+                twitter = TwitterPublisher()
+                if twitter.available:
+                    # Create tweet text from content
+                    tweet_text = formatted.get("summary", content)[:280]
+                    if not tweet_text:
+                        tweet_text = f"New post: {formatted.get('title', 'Check it out!')}"[:280]
+                    
+                    twitter_result = await twitter.publish(
+                        text=tweet_text,
+                        image_url=formatted.get("featured_image_url"),
+                    )
+                    if twitter_result.get("success"):
+                        published_to.append("twitter")
+                        logger.info(f"✅ Published to Twitter: {twitter_result.get('tweet_id')}")
+                    else:
+                        error_msg = f"Twitter: {twitter_result.get('error')}"
+                        errors.append(error_msg)
+                        logger.warning(f"⚠️  {error_msg}")
+                else:
+                    logger.info(f"⏭️  Twitter publishing not configured (set TWITTER_BEARER_TOKEN)")
+            except Exception as e:
+                logger.error(f"Twitter publishing error: {e}")
+                errors.append(f"Twitter: {str(e)}")
         
-        # Email Publishing (Placeholder for future implementation)
+        # Email Publishing
         if "email" in channels:
-            logger.info(f"⏭️  Email publishing reserved for future implementation")
-            published_to.append("email (pending)")
+            try:
+                email = EmailPublisher()
+                if email.available:
+                    # Note: In production, would fetch actual subscriber list
+                    # For now, send test email to admin if configured
+                    admin_email = os.getenv("ADMIN_EMAIL")
+                    if admin_email:
+                        email_result = await email.publish(
+                            subject=formatted.get("title", "New Content Published"),
+                            content=formatted.get("summary", content),
+                            recipient_emails=[admin_email],
+                            html_content=formatted.get("html", ""),
+                            from_name="Glad Labs Publisher",
+                        )
+                        if email_result.get("success"):
+                            published_to.append("email")
+                            logger.info(f"✅ Published email notification to {admin_email}")
+                        else:
+                            error_msg = f"Email: {email_result.get('error')}"
+                            errors.append(error_msg)
+                            logger.warning(f"⚠️  {error_msg}")
+                    else:
+                        logger.info(f"⏭️  Email publishing requires ADMIN_EMAIL configuration")
+                else:
+                    logger.info(f"⏭️  Email publishing not configured (set SMTP_* environment variables)")
+            except Exception as e:
+                logger.error(f"Email publishing error: {e}")
+                errors.append(f"Email: {str(e)}")
         
         # Update task status
         if task_id in task_store:
