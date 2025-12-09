@@ -16,7 +16,7 @@ Requirements:
 
 import os
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, cast
 import aiosmtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -97,7 +97,7 @@ class EmailPublisher:
             # Create message
             msg = MIMEMultipart("alternative")
             msg["Subject"] = subject
-            msg["From"] = f"{from_name} <{self.email_from}>" if from_name else self.email_from
+            msg["From"] = f"{from_name} <{self.email_from}>" if from_name else cast(str, self.email_from)
             msg["To"] = ", ".join(recipient_emails)
             
             # Add plain text part

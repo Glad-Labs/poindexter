@@ -86,7 +86,7 @@ class TwitterPublisher:
                 text = text[:277] + "..."
             
             # Prepare payload
-            payload = {"text": text}
+            payload: Dict[str, Any] = {"text": text}
             
             if reply_to_id:
                 payload["reply"] = {"in_reply_to_tweet_id": reply_to_id}
@@ -179,7 +179,7 @@ class TwitterPublisher:
                     if len(tweet_text) > 280:
                         tweet_text = tweet_text[:277] + "..."
                     
-                    payload = {"text": tweet_text}
+                    payload: Dict[str, Any] = {"text": tweet_text}
                     
                     # Reply to previous tweet to create thread
                     if reply_to_id:
