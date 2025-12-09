@@ -27,17 +27,11 @@ from services.database_service import DatabaseService
 from services.content_orchestrator import ContentOrchestrator
 from services.usage_tracker import get_usage_tracker
 from routes.auth_unified import get_current_user
+from utils.route_utils import get_database_dependency
+from utils.error_responses import ErrorResponseBuilder
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/content/subtasks", tags=["content-subtasks"])
-
-# Global database service (initialized in main.py)
-db_service: Optional[DatabaseService] = None
-
-def set_db_service(service: DatabaseService):
-    """Set the database service instance"""
-    global db_service
-    db_service = service
 
 # ============================================================================
 # PYDANTIC MODELS FOR SUBTASK REQUESTS
@@ -108,6 +102,7 @@ async def run_research_subtask(
     request: ResearchSubtaskRequest,
     background_tasks: BackgroundTasks,
     current_user: str = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
     Run research stage independently.
@@ -217,6 +212,7 @@ async def run_creative_subtask(
     request: CreativeSubtaskRequest,
     background_tasks: BackgroundTasks,
     current_user: str = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
     Run creative (draft) stage independently.
@@ -311,6 +307,7 @@ async def run_qa_subtask(
     request: QASubtaskRequest,
     background_tasks: BackgroundTasks,
     current_user: str = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
     Run QA review stage independently.
@@ -406,6 +403,7 @@ async def run_image_subtask(
     request: ImageSubtaskRequest,
     background_tasks: BackgroundTasks,
     current_user: str = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
     Run image search stage independently.
@@ -492,6 +490,7 @@ async def run_format_subtask(
     request: FormatSubtaskRequest,
     background_tasks: BackgroundTasks,
     current_user: str = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
     Run formatting stage independently.

@@ -37,7 +37,7 @@ Backward Compatible Endpoints (DEPRECATED):
 - POST   /api/v1/content/enhanced/blog-posts/create-seo-optimized
 """
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, Depends
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
@@ -59,22 +59,10 @@ from services.error_handler import (
     ServiceError,
     handle_error,
 )
+from utils.route_utils import get_database_dependency
+from utils.error_responses import ErrorResponseBuilder
 
 logger = logging.getLogger(__name__)
-
-# ============================================================================
-# GLOBAL DATABASE SERVICE
-# ============================================================================
-
-# Database service instance (set during app startup)
-db_service = None
-
-
-def set_db_service(service: DatabaseService):
-    """Set the database service (called during app startup)"""
-    global db_service
-    db_service = service
-
 
 # ============================================================================
 # ROUTER SETUP
@@ -556,7 +544,11 @@ async def list_content_tasks(
     response_model=ApprovalResponse,
     description="✅ Phase 5: Human Approval Gate - Approve or reject task",
 )
-async def approve_and_publish_task(task_id: str, request: ApprovalRequest):
+async def approve_and_publish_task(
+    task_id: str,
+    request: ApprovalRequest,
+    db_service: DatabaseService = Depends(get_database_dependency)
+):
     """
     ✅ Phase 5: Human Approval Decision Endpoint
     
@@ -592,15 +584,6 @@ async def approve_and_publish_task(task_id: str, request: ApprovalRequest):
     """
     try:
         task_store = get_content_task_store()
-        
-        # Use the global database service initialized at startup
-        # This ensures the connection pool is properly initialized
-        if db_service is None:
-            raise RuntimeError(
-                "Database service not initialized. "
-                "This is a critical error - the application failed to initialize the database service. "
-                "Check that the FastAPI app startup completed successfully."
-            )
         
         task = await task_store.get_task(task_id)
 

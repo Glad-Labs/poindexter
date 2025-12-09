@@ -16,16 +16,10 @@ import logging
 
 from routes.auth_unified import get_current_user
 from services.database_service import DatabaseService
+from utils.route_utils import get_database_dependency
+from utils.error_responses import ErrorResponseBuilder
 
 logger = logging.getLogger(__name__)
-db_service = None
-
-
-def set_db_service(service: DatabaseService):
-    """Set the database service (called during app startup)"""
-    global db_service
-    db_service = service
-
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks-bulk"])
 
@@ -59,7 +53,8 @@ class BulkTaskResponse(BaseModel):
 @router.post("/bulk", response_model=BulkTaskResponse, summary="Perform bulk operations on multiple tasks")
 async def bulk_task_operations(
     request: BulkTaskRequest,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
     Perform bulk operations on multiple tasks.
@@ -105,17 +100,22 @@ async def bulk_task_operations(
     }
     ```
     """
-    if not db_service:
-        raise HTTPException(status_code=500, detail="Database service not initialized")
-    
+    # Validate request
     if not request.task_ids:
-        raise HTTPException(status_code=400, detail="No task IDs provided")
+        error_response = (ErrorResponseBuilder()
+            .error_code("VALIDATION_ERROR")
+            .message("No task IDs provided in request")
+            .with_field_error("task_ids", "At least one task ID required", "REQUIRED")
+            .build())
+        raise HTTPException(status_code=400, detail=error_response.model_dump())
     
     if request.action not in ["pause", "resume", "cancel", "delete"]:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid action. Must be one of: pause, resume, cancel, or delete"
-        )
+        error_response = (ErrorResponseBuilder()
+            .error_code("VALIDATION_ERROR")
+            .message("Invalid action specified")
+            .with_field_error("action", f"Must be one of: pause, resume, cancel, or delete. Got: {request.action}", "INVALID_CHOICE")
+            .build())
+        raise HTTPException(status_code=400, detail=error_response.model_dump())
     
     # Map actions to statuses
     status_map = {

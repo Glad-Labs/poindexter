@@ -55,41 +55,28 @@ from services.redis_cache import setup_redis_cache  #  Redis caching for query o
 from services.content_router_service import get_content_task_store  #  Inject DB service
 from services.migrations import run_migrations  #  Database schema migrations
 
-# Import route routers
-# Unified content router (consolidates content.py, content_generation.py, enhanced_content.py)
-from routes.content_routes import content_router
-from routes.cms_routes import router as cms_router
-from routes.models import models_router, models_list_router
-from routes.auth_unified import router as auth_router  #  Unified auth (OAuth-only architecture)
-from routes.settings_routes import router as settings_router
-from routes.command_queue_routes import router as command_queue_router
-from routes.chat_routes import router as chat_router
-from routes.ollama_routes import router as ollama_router
-from routes.task_routes import router as task_router
-from routes.subtask_routes import router as subtask_router  # Subtask independent execution
-from routes.bulk_task_routes import router as bulk_task_router  # Bulk task operations
-from routes.webhooks import webhook_router
-from routes.social_routes import social_router
-from routes.metrics_routes import metrics_router
-from routes.agents_routes import router as agents_router
+# Import new utility modules
+from utils.startup_manager import StartupManager
+from utils.exception_handlers import register_exception_handlers
+from utils.middleware_config import MiddlewareConfig
+from utils.route_registration import register_all_routes
+from utils.route_utils import initialize_services
 
-# Import workflow history service (Phase 5 - database persistence)
+# Import workflow history service dependencies (needed for startup manager)
 try:
     from services.workflow_history import WorkflowHistoryService
-    from routes.workflow_history import router as workflow_history_router, initialize_history_service
+    from routes.workflow_history import initialize_history_service
     WORKFLOW_HISTORY_AVAILABLE = True
 except ImportError as e:
     WORKFLOW_HISTORY_AVAILABLE = False
     WorkflowHistoryService = None
     initialize_history_service = None
-    workflow_history_router = None
     logging.warning(f"Workflow history service not available: {str(e)}")
 
-# Import intelligent orchestrator (NEW - separate module, no conflicts)
+# Import intelligent orchestrator dependencies (needed for startup manager)
 try:
     from services.intelligent_orchestrator import IntelligentOrchestrator
     from services.orchestrator_memory_extensions import EnhancedMemorySystem
-    from routes.intelligent_orchestrator_routes import router as intelligent_orchestrator_router
     INTELLIGENT_ORCHESTRATOR_AVAILABLE = True
 except ImportError as e:
     INTELLIGENT_ORCHESTRATOR_AVAILABLE = False
@@ -115,266 +102,77 @@ from services.model_consolidation_service import initialize_model_consolidation_
 
 logger = get_logger(__name__)
 
-# Global service instances
-database_service: Optional[DatabaseService] = None
-orchestrator: Optional[Orchestrator] = None
-task_executor: Optional[TaskExecutor] = None
-intelligent_orchestrator: Optional[IntelligentOrchestrator] = None  # NEW
-workflow_history_service: Optional[Any] = None  # Phase 6 - Workflow history
-startup_error: Optional[str] = None
-startup_complete: bool = False
+
+# ============================================================================
+# LIFESPAN: Application Startup and Shutdown
+# ============================================================================
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan manager - PostgreSQL connection is MANDATORY"""
-    global database_service, orchestrator, task_executor, workflow_history_service, startup_error, startup_complete
+    """
+    Application lifespan manager - handles startup and shutdown.
+    
+    Uses StartupManager to orchestrate all service initialization
+    in the correct order with proper error handling.
+    """
+    startup_manager = StartupManager()
     
     try:
-        logger.info("🚀 Starting Glad Labs AI Co-Founder application...")
-        logger.info(f"  Environment: {os.getenv('ENVIRONMENT', 'production')}")
+        # Initialize all services
+        services = await startup_manager.initialize_all_services()
         
-        # ============================================================================
-        # 1. MANDATORY: Initialize PostgreSQL database connection
-        # ============================================================================
-        logger.info("  Connecting to PostgreSQL (REQUIRED)...")
-        print("  Connecting to PostgreSQL (REQUIRED)...") # Console feedback
-        db_url = os.getenv('DATABASE_URL', 'Not set')
-        logger.info(f"  DATABASE_URL: {db_url[:50]}...")
+        # Inject services into app state for access in routes
+        app.state.database = services['database']
+        app.state.orchestrator = services['orchestrator']
+        app.state.task_executor = services['task_executor']
+        app.state.intelligent_orchestrator = services['intelligent_orchestrator']
+        app.state.workflow_history = services['workflow_history']
+        app.state.startup_error = services['startup_error']
+        app.state.startup_complete = True
         
-        try:
-            database_service = DatabaseService()
-            await database_service.initialize()
-            logger.info("   PostgreSQL connected - ready for operations")
-            print("   PostgreSQL connected - ready for operations") # Console feedback
-        except Exception as e:
-            startup_error = f" FATAL: PostgreSQL connection failed: {str(e)}"
-            logger.error(f"  {startup_error}", exc_info=True)
-            print(f"  {startup_error}") # Console feedback
-            logger.error("  🛑 PostgreSQL is REQUIRED - cannot continue")
-            logger.error("   Set DATABASE_URL or DATABASE_USER environment variables")
-            logger.error("  Example DATABASE_URL: postgresql://user:password@localhost:5432/glad_labs_dev")
-            raise SystemExit(1)  #  STOP - PostgreSQL required
+        # Initialize ServiceContainer for Phase 2 utilities
+        # Provides 3 access patterns: get_services(), Depends(), Request.state
+        initialize_services(
+            app,
+            database_service=services['database'],
+            orchestrator=services['orchestrator'],
+            task_executor=services['task_executor'],
+            intelligent_orchestrator=services['intelligent_orchestrator'],
+            workflow_history=services['workflow_history']
+        )
         
-        # 2. All task operations now handled by DatabaseService (pure asyncpg)
-        logger.info("  📋 Task storage ready via DatabaseService (asyncpg)")
+        # Register routes with initialized services
+        register_all_routes(
+            app,
+            database_service=services['database'],
+            workflow_history_service=services['workflow_history'],
+            intelligent_orchestrator=services['intelligent_orchestrator']
+        )
         
-        # 2a. Run database migrations (audit logging, etc.)
-        logger.info("  🔄 Running database migrations...")
-        try:
-            migrations_ok = await run_migrations(database_service)
-            if migrations_ok:
-                logger.info("   ✅ Database migrations completed successfully")
-            else:
-                logger.warning("   ⚠️ Database migrations failed (proceeding anyway)")
-        except Exception as e:
-            logger.warning(f"   ⚠️ Migration error: {str(e)} (proceeding anyway)")
-        
-        #  Inject database service into content task store (fixes initialization error)
-        get_content_task_store(database_service)
-
-        # 2b. Initialize Redis cache for query optimization
-        logger.info("  🚀 Initializing Redis cache for query optimization...")
-        try:
-            redis_initialized = await setup_redis_cache()
-            if redis_initialized:
-                logger.info("   ✅ Redis cache initialized (query performance optimization enabled)")
-            else:
-                logger.info("   ℹ️  Redis cache not available (system will continue without caching)")
-        except Exception as e:
-            logger.warning(f"   ⚠️ Redis cache error: {str(e)} (continuing without cache)")
-
-        # 3. Initialize unified model consolidation service
-        logger.info("  🧠 Initializing unified model consolidation service...")
-        try:
-            initialize_model_consolidation_service()
-            logger.info("   Model consolidation service initialized (Ollama->HF->Google->Anthropic->OpenAI)")
-        except Exception as e:
-            error_msg = f"Model consolidation initialization failed: {str(e)}"
-            logger.error(f"   {error_msg}", exc_info=True)
-            # Don't fail startup - models are optional
-        
-        # 4. Create tables if they don't exist
-        if database_service:
-            try:
-                logger.info("  📋 Database tables initialized in previous step")
-            except Exception as e:
-                error_msg = f"Table creation failed: {str(e)}"
-                logger.error(f"   {error_msg}", exc_info=True)
-                startup_error = error_msg
-        
-        # 4. Initialize orchestrator with new database service
-        api_base_url = os.getenv("API_BASE_URL", "http://localhost:8000")
-        logger.info(f"  🤖 Initializing orchestrator (API: {api_base_url})...")
-        try:
-            orchestrator = Orchestrator(
-                database_service=database_service,
-                api_base_url=api_base_url
-            )
-            logger.info("   Orchestrator initialized successfully")
-        except Exception as e:
-            error_msg = f"Orchestrator initialization failed: {str(e)}"
-            logger.error(f"   {error_msg}", exc_info=True)
-            startup_error = error_msg
-            # Don't re-raise - allow app to start for health checks
-        
-        # 4a. Initialize workflow history service (Phase 6 - workflow execution persistence)
-        logger.info("  📊 Initializing workflow history service...")
-        try:
-            if WORKFLOW_HISTORY_AVAILABLE and database_service:
-                workflow_history_service = WorkflowHistoryService(database_service.pool)
-                initialize_history_service(database_service.pool)
-                logger.info("   Workflow history service initialized - executions will be persisted to PostgreSQL")
-            else:
-                logger.warning("   Workflow history service not available - executions will not be persisted")
-        except Exception as e:
-            error_msg = f"Workflow history service initialization failed: {str(e)}"
-            logger.warning(f"   {error_msg}", exc_info=True)
-            workflow_history_service = None
-        
-        # 4b. Initialize intelligent orchestrator (NEW - non-intrusive addition)
-        logger.info("  🧠 Initializing intelligent orchestrator...")
-        intelligent_orchestrator = None
-        try:
-            if INTELLIGENT_ORCHESTRATOR_AVAILABLE and orchestrator and database_service:
-                # Create enhanced memory system wrapper
-                try:
-                    from memory_system import AIMemorySystem
-                    base_memory = AIMemorySystem(db_pool=database_service.pool)
-                except Exception:
-                    base_memory = None
-                    
-                enhanced_memory = EnhancedMemorySystem(base_memory)
-                
-                # Initialize intelligent orchestrator
-                intelligent_orchestrator = IntelligentOrchestrator(
-                    llm_client=None,  # Will be initialized internally
-                    database_service=database_service,
-                    memory_system=enhanced_memory,
-                    mcp_orchestrator=None  # Optional, can be injected later
-                )
-                logger.info("   Intelligent orchestrator initialized successfully")
-            else:
-                logger.warning("   Intelligent orchestrator module not available or dependencies missing")
-        except Exception as e:
-            error_msg = f"Intelligent orchestrator initialization failed: {str(e)}"
-            logger.warning(f"   {error_msg}", exc_info=True)
-            intelligent_orchestrator = None
-        
-        # 5. Initialize content critique loop
-        logger.info("  🔍 Initializing content critique loop...")
-        try:
-            critique_loop = ContentCritiqueLoop()
-            logger.info("   Content critique loop initialized")
-        except Exception as e:
-            logger.warning(f"   Content critique loop initialization failed: {e}")
-            critique_loop = None
-        
-        # 6. Initialize background task executor
-        logger.info("  ⏳ Starting background task executor...")
-        try:
-            # Prefer IntelligentOrchestrator if available
-            active_orchestrator = intelligent_orchestrator if intelligent_orchestrator else orchestrator
-            
-            task_executor = TaskExecutor(
-                database_service=database_service,
-                orchestrator=active_orchestrator,
-                critique_loop=critique_loop,
-                poll_interval=5  # Poll every 5 seconds
-            )
-            await task_executor.start()
-            logger.info("   Background task executor started successfully")
-            logger.info(f"     🔗 Pipeline: Orchestrator->Critique->Publishing")
-        except Exception as e:
-            error_msg = f"Task executor startup failed: {str(e)}"
-            logger.error(f"   {error_msg}", exc_info=True)
-            # Don't fail startup - task processing is optional
-            task_executor = None
-        
-        # 6. Verify connections
-        if database_service:
-            try:
-                logger.info("  🔍 Verifying database connection...")
-                health = await database_service.health_check()
-                if health.get("status") == "healthy":
-                    logger.info(f"   Database health check passed")
-                else:
-                    logger.warning(f"   Database health check returned: {health}")
-            except Exception as e:
-                logger.warning(f"   Database health check failed: {e}", exc_info=True)
-        
-        # 6. Register database service with route modules
-        if database_service:
-            from routes.task_routes import set_db_service
-            from routes.subtask_routes import set_db_service as set_subtask_db_service
-            from routes.content_routes import set_db_service as set_content_db_service
-            set_db_service(database_service)
-            set_subtask_db_service(database_service)
-            set_content_db_service(database_service)
-            logger.info("   Database service registered with routes")
-        
-        logger.info(" Application started successfully!")
-        logger.info(f"  - Database Service: {database_service is not None}")
-        logger.info(f"  - Orchestrator: {orchestrator is not None}")
-        logger.info(f"  - Task Executor: {task_executor is not None and task_executor.running}")
-        logger.info(f"  - Task Store: initialized")
-        logger.info(f"  - Startup Error: {startup_error}")
-        logger.info(f"  - API Base URL: {api_base_url}")
-        
-        startup_complete = True
         logger.info("[OK] Lifespan: Yielding control to FastAPI application...")
         try:
-            print("[OK] Lifespan: Application is now running")
+            print("[OK] Application is now running")
         except UnicodeEncodeError:
             print("[OK] Application is now running")
         
         yield  # Application runs here
         
-        try:
-            print("[STOP] Lifespan: Resuming after application shutdown")
-        except UnicodeEncodeError:
-            print("[STOP] Resuming after application shutdown")
-        logger.info("[STOP] Lifespan: Resuming after application shutdown...")
-        
     except Exception as e:
-        startup_error = f"Critical startup failure: {str(e)}"
-        logger.error(f" {startup_error}", exc_info=True)
+        logger.error(f"Critical startup failure: {str(e)}", exc_info=True)
         try:
-            print(f"[ERROR] EXCEPTION IN LIFESPAN: {startup_error}")
+            print(f"[ERROR] EXCEPTION IN LIFESPAN: {str(e)}")
         except UnicodeEncodeError:
-            print(f"[ERROR] EXCEPTION IN LIFESPAN: {startup_error}")
-        startup_complete = True  # Mark complete so /api/health works
+            print(f"[ERROR] EXCEPTION IN LIFESPAN: {str(e)}")
+        app.state.startup_error = str(e)
+        app.state.startup_complete = True
+        raise
     
     finally:
-        # ===== SHUTDOWN =====
         try:
-            logger.info("[STOP] Shutting down Glad Labs AI Co-Founder application...")
-            
-            # Stop background task executor
-            try:
-                if task_executor and task_executor.running:
-                    logger.info("  Stopping background task executor...")
-                    await task_executor.stop()
-                    logger.info("   Task executor stopped")
-                    stats = task_executor.get_stats()
-                    logger.info(f"     Tasks processed: {stats['total_processed']}, Success: {stats['successful']}, Failed: {stats['failed']}")
-            except Exception as e:
-                logger.error(f"   Error stopping task executor: {e}", exc_info=True)
-            
-            # Task store is now handled by database_service - no separate close needed
-            logger.info("  Task store cleanup handled by database_service")
-            
-            if database_service:
-                try:
-                    logger.info("  Closing database connection...")
-                    await database_service.close()
-                    logger.info("   Database connection closed")
-                except Exception as e:
-                    logger.error(f"   Error closing database: {e}", exc_info=True)
-            
-            logger.info(" Application shut down successfully!")
-            
-        except Exception as e:
-            logger.error(f" Error during shutdown: {e}", exc_info=True)
+            print("[STOP] Shutting down application")
+        except UnicodeEncodeError:
+            print("[STOP] Shutting down application")
+        await startup_manager.shutdown()
 
 app = FastAPI(
     title="Glad Labs AI Co-Founder",
@@ -420,207 +218,18 @@ Use the `/api/auth/logout` or GitHub OAuth endpoints to obtain tokens.
 # Initialize OpenTelemetry tracing
 setup_telemetry(app)
 
-# ===== GLOBAL EXCEPTION HANDLERS =====
-# Centralized error handling for all routes with standardized responses
-from services.error_handler import AppError, ValidationError, NotFoundError, create_error_response
-from fastapi.exceptions import RequestValidationError
-from starlette.exceptions import HTTPException as StarletteHTTPException
-import uuid
-
-@app.exception_handler(AppError)
-async def app_error_handler(request, exc: AppError):
-    """Handle application errors with structured response"""
-    request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
-    response = create_error_response(exc, request_id=request_id)
-    
-    # Log error with context
-    logger.warning(
-        f"AppError [{exc.error_code.value}]: {exc.message}",
-        extra={"request_id": request_id, "details": exc.details}
-    )
-    
-    return JSONResponse(
-        status_code=exc.http_status_code,
-        content=response.model_dump(exclude_none=True),
-        headers={"X-Request-ID": request_id}
-    )
-
-
-@app.exception_handler(RequestValidationError)
-async def validation_error_handler(request, exc: RequestValidationError):
-    """Handle Pydantic validation errors"""
-    request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
-    
-    # Extract field-level errors
-    errors = {}
-    for error in exc.errors():
-        field = ".".join(str(x) for x in error["loc"][1:])
-        errors[field] = error["msg"]
-    
-    response = create_error_response(
-        ValidationError(
-            "Request validation failed",
-            field=list(errors.keys())[0] if errors else "unknown"
-        ),
-        request_id=request_id
-    )
-    
-    logger.warning(
-        f"Request validation error: {errors}",
-        extra={"request_id": request_id}
-    )
-    
-    return JSONResponse(
-        status_code=400,
-        content=response.model_dump(exclude_none=True),
-        headers={"X-Request-ID": request_id}
-    )
-
-
-@app.exception_handler(StarletteHTTPException)
-async def http_exception_handler(request, exc: StarletteHTTPException):
-    """Handle HTTPException with structured response"""
-    request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
-    
-    response = {
-        "error_code": "HTTP_ERROR",
-        "message": exc.detail or "HTTP Error",
-        "request_id": request_id,
-    }
-    
-    logger.warning(
-        f"HTTP Error {exc.status_code}: {exc.detail}",
-        extra={"request_id": request_id}
-    )
-    
-    return JSONResponse(
-        status_code=exc.status_code,
-        content=response,
-        headers={"X-Request-ID": request_id}
-    )
-
-
-@app.exception_handler(Exception)
-async def generic_exception_handler(request, exc: Exception):
-    """Handle all unhandled exceptions with fallback"""
-    request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
-    
-    logger.error(
-        f"Unhandled exception: {type(exc).__name__}",
-        exc_info=exc,
-        extra={"request_id": request_id}
-    )
-    
-    # Send to Sentry if available
-    if SENTRY_AVAILABLE:
-        with sentry_sdk.push_scope() as scope:
-            scope.set_tag("request_id", request_id)
-            scope.set_context("request", {
-                "path": request.url.path,
-                "method": request.method,
-            })
-            sentry_sdk.capture_exception(exc)
-    
-    response = {
-        "error_code": "INTERNAL_ERROR",
-        "message": "Internal server error",
-        "request_id": request_id,
-    }
-    
-    return JSONResponse(
-        status_code=500,
-        content=response,
-        headers={"X-Request-ID": request_id}
-    )
+# ===== EXCEPTION HANDLERS =====
+# Register all exception handlers (centralized in utils.exception_handlers)
+register_exception_handlers(app)
 
 # ===== ERROR TRACKING: SENTRY INTEGRATION =====
 # Captures exceptions, performance metrics, and error tracking
 setup_sentry(app, service_name="cofounder-agent")
 
-# ===== SECURITY: INPUT VALIDATION MIDDLEWARE =====
-# Validates and sanitizes all incoming requests
-# Prevents SQL injection, XSS, oversized payloads, and other attacks
-try:
-    from middleware.input_validation import InputValidationMiddleware, PayloadInspectionMiddleware
-    
-    app.add_middleware(PayloadInspectionMiddleware)
-    app.add_middleware(InputValidationMiddleware)
-    
-    logger.info("✅ Input validation middleware initialized")
-except ImportError as e:
-    logger.warning(f"⚠️  Input validation middleware not available: {e}")
-
-# CORS middleware for frontend integration (SECURITY: environment-based configuration)
-allowed_origins = os.getenv(
-    "ALLOWED_ORIGINS",
-    "http://localhost:3000,http://localhost:3001"  # Dev default
-).split(",")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE"],  # SECURITY: Restricted from ["*"]
-    allow_headers=["Authorization", "Content-Type"],  # SECURITY: Restricted from ["*"]
-)
-
-# ===== SECURITY: ADD RATE LIMITING MIDDLEWARE =====
-# Protects against DDoS, API abuse, and brute force attacks
-try:
-    from slowapi import Limiter
-    from slowapi.util import get_remote_address
-    from slowapi.errors import RateLimitExceeded
-    from fastapi.responses import JSONResponse
-    
-    limiter = Limiter(key_func=get_remote_address)
-    app.state.limiter = limiter
-    
-    @app.exception_handler(RateLimitExceeded)
-    async def rate_limit_handler(request, exc):
-        return JSONResponse(
-            status_code=429,
-            content={"detail": "Rate limit exceeded. Too many requests."},
-        )
-    
-    logger.info("✅ Rate limiting middleware initialized (slowapi)")
-except ImportError:
-    logger.warning("⚠️  slowapi not installed - rate limiting disabled. Install with: pip install slowapi")
-    limiter = None
-
-# Include route routers
-app.include_router(auth_router)  #  Unified authentication (JWT, OAuth, GitHub)
-app.include_router(task_router)  # Task management endpoints
-# Register unified content router (replaces 3 legacy routers)
-app.include_router(content_router)
-app.include_router(cms_router)  # Simple CMS API (replaces Strapi)
-
-# Register models router
-app.include_router(models_router)
-app.include_router(models_list_router)  # Legacy /api/models endpoint support
-app.include_router(settings_router)  # Settings management
-app.include_router(command_queue_router)  # Command queue (replaces Pub/Sub)
-app.include_router(chat_router)  # Chat and AI model integration
-app.include_router(ollama_router)  # Ollama health checks and warm-up
-app.include_router(subtask_router)  # Subtask independent execution (Phase 2 - unified orchestration)
-app.include_router(bulk_task_router)  # Bulk task operations (multiple tasks at once)
-app.include_router(webhook_router)  # Webhook event handlers
-app.include_router(social_router)  # Social media management
-app.include_router(metrics_router)  # Metrics and analytics
-app.include_router(agents_router)  # AI agent management and monitoring
-
-# Register workflow history routes (Phase 5 - database persistence)
-if WORKFLOW_HISTORY_AVAILABLE and workflow_history_router:
-    app.include_router(workflow_history_router)  # Workflow history tracking
-    logger.info(" Workflow history routes registered")
-else:
-    logger.warning(" Workflow history routes not registered (module not available)")
-
-# Register intelligent orchestrator routes (NEW - conditional on availability)
-if INTELLIGENT_ORCHESTRATOR_AVAILABLE and intelligent_orchestrator_router:
-    app.include_router(intelligent_orchestrator_router)
-    logger.info(" Intelligent orchestrator routes registered")
-else:
-    logger.warning(" Intelligent orchestrator routes not registered (module not available)")
+# ===== MIDDLEWARE CONFIGURATION =====
+# Register all middleware (centralized in utils.middleware_config)
+middleware_config = MiddlewareConfig()
+middleware_config.register_all_middleware(app)
 
 # ===== UNIFIED HEALTH CHECK ENDPOINT =====
 # Consolidated from: /api/health, /status, /metrics/health, and route-specific health endpoints
@@ -647,8 +256,6 @@ async def api_health():
     Used by: Railway load balancers, monitoring systems, external health checks
     Authentication: Not required (critical for load balancers)
     """
-    global startup_error, startup_complete
-    
     try:
         # Build comprehensive health response
         health_data = {
@@ -660,6 +267,9 @@ async def api_health():
         }
         
         # Check startup status
+        startup_error = getattr(app.state, 'startup_error', None)
+        startup_complete = getattr(app.state, 'startup_complete', False)
+        
         if startup_error:
             health_data["status"] = "degraded"
             health_data["startup_error"] = startup_error
@@ -670,6 +280,7 @@ async def api_health():
             health_data["startup_complete"] = False
         
         # Include database status if available
+        database_service = getattr(app.state, 'database', None)
         if database_service:
             try:
                 db_health = await database_service.health_check()
@@ -710,6 +321,7 @@ async def get_metrics():
     - total_cost: Estimated total cost in USD
     """
     try:
+        database_service = getattr(app.state, 'database', None)
         if database_service:
             metrics = await database_service.get_metrics()
             return metrics
@@ -743,7 +355,10 @@ async def debug_startup():
     Debug endpoint showing startup status and any errors
     Only available in development mode
     """
-    global startup_error, startup_complete
+    database_service = getattr(app.state, 'database', None)
+    orchestrator = getattr(app.state, 'orchestrator', None)
+    startup_error = getattr(app.state, 'startup_error', None)
+    startup_complete = getattr(app.state, 'startup_complete', False)
     
     return {
         "startup_complete": startup_complete,

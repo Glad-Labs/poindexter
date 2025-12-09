@@ -27,6 +27,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status, Request, P
 from pydantic import BaseModel, Field, validator
 from sqlalchemy.orm import Session
 
+from utils.error_responses import ErrorResponseBuilder
+
 # Import audit logging (removed - file doesn't exist yet)
 # from middleware.audit_logging import log_audit, SettingsAuditLogger
 

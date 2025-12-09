@@ -22,6 +22,9 @@ import json
 import logging
 import os
 
+from utils.error_responses import ErrorResponseBuilder
+from utils.route_utils import get_database_dependency
+
 
 def convert_db_row_to_dict(row):
     """
@@ -100,20 +103,13 @@ def convert_db_row_to_dict(row):
 # Import async database service
 from services.database_service import DatabaseService
 from routes.auth_unified import get_current_user
+from utils.route_utils import get_database_dependency
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 # Configure router with prefix and tags
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
-
-# Global database service (initialized in main.py)
-db_service: Optional[DatabaseService] = None
-
-def set_db_service(service: DatabaseService):
-    """Set the database service instance"""
-    global db_service
-    db_service = service
 
 # ============================================================================
 # PYDANTIC SCHEMAS FOR VALIDATION
@@ -257,6 +253,7 @@ class MetricsResponse(BaseModel):
 async def create_task(
     request: TaskCreateRequest,
     current_user: dict = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
     background_tasks: BackgroundTasks = None
 ):
     """
@@ -392,7 +389,8 @@ async def list_tasks(
     limit: int = Query(20, ge=1, le=100, description="Results per page (default: 20, max: 100)"),
     status: Optional[str] = Query(None, description="Filter by status (optional)"),
     category: Optional[str] = Query(None, description="Filter by category (optional)"),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency)
 ):
     """
     List tasks with database-level pagination and filtering.
@@ -450,7 +448,8 @@ async def list_tasks(
 @router.get("/{task_id}", response_model=TaskResponse, summary="Get task details")
 async def get_task(
     task_id: str,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency)
 ):
     """
     Get details for a specific task.
@@ -493,7 +492,8 @@ async def get_task(
 async def update_task(
     task_id: str,
     update_data: TaskStatusUpdateRequest,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency)
 ):
     """
     Update task status and results.
@@ -568,7 +568,8 @@ async def update_task(
 
 @router.get("/metrics/summary", response_model=MetricsResponse, summary="Get task metrics")
 async def get_metrics(
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency)
 ):
     """
     Get aggregated metrics for all tasks.
@@ -784,6 +785,7 @@ async def create_task_from_intent(
     request: IntentTaskRequest,
     background_tasks: BackgroundTasks,
     current_user: str = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
     Phase 1: Parse natural language input and create execution plan.
@@ -886,6 +888,7 @@ async def confirm_and_execute_task(
     request: TaskConfirmRequest,
     background_tasks: BackgroundTasks,
     current_user: str = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
     Phase 1: Confirm execution plan and create task.
