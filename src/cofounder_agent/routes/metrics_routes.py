@@ -335,7 +335,6 @@ async def get_metrics(
     except Exception as e:
         logger.error(f"Error retrieving metrics: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to retrieve metrics: {str(e)}")
-    }
 
 
 @metrics_router.get("/summary")
