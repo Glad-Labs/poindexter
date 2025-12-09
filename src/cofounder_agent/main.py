@@ -99,6 +99,9 @@ firestore_client = None
 # Use centralized logging configuration
 from services.logger_config import get_logger
 from services.model_consolidation_service import initialize_model_consolidation_service
+from services.training_data_service import TrainingDataService
+from services.fine_tuning_service import FineTuningService
+from services.legacy_data_integration import LegacyDataIntegrationService
 
 logger = get_logger(__name__)
 
@@ -127,6 +130,9 @@ async def lifespan(app: FastAPI):
         app.state.task_executor = services['task_executor']
         app.state.intelligent_orchestrator = services['intelligent_orchestrator']
         app.state.workflow_history = services['workflow_history']
+        app.state.training_data_service = services.get('training_data_service')
+        app.state.fine_tuning_service = services.get('fine_tuning_service')
+        app.state.legacy_data_service = services.get('legacy_data_service')
         app.state.startup_error = services['startup_error']
         app.state.startup_complete = True
         
@@ -146,7 +152,9 @@ async def lifespan(app: FastAPI):
             app,
             database_service=services['database'],
             workflow_history_service=services['workflow_history'],
-            intelligent_orchestrator=services['intelligent_orchestrator']
+            intelligent_orchestrator=services['intelligent_orchestrator'],
+            training_data_service=services.get('training_data_service'),
+            fine_tuning_service=services.get('fine_tuning_service')
         )
         
         logger.info("[OK] Lifespan: Yielding control to FastAPI application...")

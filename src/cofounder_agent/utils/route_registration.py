@@ -23,7 +23,9 @@ def register_all_routes(
     app: FastAPI,
     database_service: Optional[Any] = None,
     workflow_history_service: Optional[Any] = None,
-    intelligent_orchestrator: Optional[Any] = None
+    intelligent_orchestrator: Optional[Any] = None,
+    training_data_service: Optional[Any] = None,
+    fine_tuning_service: Optional[Any] = None
 ) -> Dict[str, bool]:
     """
     Register all route routers with the FastAPI application.
@@ -256,6 +258,25 @@ def register_all_routes(
     except Exception as e:
         logger.error(f" intelligent_orchestrator registration failed: {e}")
         status['intelligent_orchestrator_router'] = False
+    
+    try:
+        # ===== TRAINING DATA MANAGEMENT (Phase 6) =====
+        from routes.training_routes import router as training_router, set_services as set_training_services
+        
+        if training_data_service and fine_tuning_service:
+            set_training_services(training_data_service, fine_tuning_service)
+            app.include_router(training_router)
+            logger.info(" training_router registered")
+            status['training_router'] = True
+        else:
+            logger.warning(" training_router not available (services not initialized)")
+            status['training_router'] = False
+    except ImportError as e:
+        logger.warning(f" training_router not available: {e}")
+        status['training_router'] = False
+    except Exception as e:
+        logger.error(f" training_router registration failed: {e}")
+        status['training_router'] = False
     
     # Log registration summary
     total_routes = len(status)
