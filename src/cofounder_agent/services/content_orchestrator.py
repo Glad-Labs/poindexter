@@ -274,17 +274,19 @@ class ContentOrchestrator:
         tone: str,
         max_iterations: int = 2,
     ) -> tuple:
-        """Run QA agent with feedback loop (Stage 3)"""
+        """Run QA agent with feedback loop (Stage 3) - Uses unified ContentQualityService"""
         try:
-            logger.info(f"🔍 QA: Reviewing content quality")
+            logger.info(f"🔍 QA: Reviewing content quality using unified service")
             
-            from agents.content_agent.agents.qa_agent import QAAgent
             from agents.content_agent.agents.creative_agent import CreativeAgent
             from agents.content_agent.services.llm_client import LLMClient
+            from cofounder_agent.services.content_quality_service import get_content_quality_service, EvaluationMethod
+            from cofounder_agent.services.database_service import get_database_service
             
             llm_client = LLMClient()
-            qa_agent = QAAgent(llm_client=llm_client)
             creative_agent = CreativeAgent(llm_client=llm_client)
+            database_service = get_database_service()
+            quality_service = get_content_quality_service(database_service=database_service)
             
             content = draft_content
             feedback = ""
@@ -295,25 +297,17 @@ class ContentOrchestrator:
                 iteration += 1
                 logger.info(f"  QA Iteration {iteration}/{max_iterations}")
                 
-                # Run QA agent (returns tuple[bool, str])
-                qa_result = await qa_agent.run(
-                    content,
-                    getattr(content, 'raw_content', str(content))
+                # Use unified ContentQualityService for evaluation
+                quality_result = await quality_service.evaluate(
+                    content=getattr(content, 'raw_content', str(content)),
+                    context={'topic': topic},
+                    method=EvaluationMethod.HYBRID  # Use robust hybrid method
                 )
                 
-                # Parse QA result
-                if isinstance(qa_result, tuple) and len(qa_result) == 2:
-                    approval_bool, feedback = qa_result
-                    # Try to extract quality score from feedback
-                    if "score:" in feedback.lower():
-                        try:
-                            score_str = feedback.split("score:")[1].split("/")[0].strip()
-                            quality_score = int(score_str)
-                        except:
-                            quality_score = 75
-                else:
-                    approval_bool = False
-                    feedback = str(qa_result)
+                # Parse quality result
+                approval_bool = quality_result.passing
+                feedback = quality_result.feedback
+                quality_score = int(quality_result.overall_score * 10)  # Convert to 0-100 scale
                 
                 if approval_bool:
                     logger.info(f"✅ QA Approved (iteration {iteration}, score: {quality_score}/100)")
@@ -340,35 +334,28 @@ class ContentOrchestrator:
             raise
 
     async def _run_image_selection(self, topic: str, content: Any) -> Optional[str]:
-        """Run image agent (Stage 4)"""
+        """Run image agent (Stage 4) - Uses unified ImageService"""
         try:
-            logger.info(f"🖼️ Images: Selecting visual assets")
+            logger.info(f"🖼️ Images: Selecting visual assets using unified service")
             
-            from agents.content_agent.services.llm_client import LLMClient
-            from agents.content_agent.services.pexels_client import PexelsClient
-            from agents.content_agent.agents.postgres_image_agent import PostgreSQLImageAgent
+            from cofounder_agent.services.image_service import get_image_service
             
-            llm_client = LLMClient()
-            pexels_client = PexelsClient()
+            image_service = get_image_service()
             
-            # Use PostgreSQL-based image agent (no Strapi required)
-            image_agent = PostgreSQLImageAgent(
-                llm_client=llm_client,
-                pexels_client=pexels_client
+            # Use unified ImageService to search for featured image
+            featured_image = await image_service.search_featured_image(
+                topic=topic,
+                keywords=[]
             )
             
-            # Run image agent
-            result_post = await image_agent.run(content)
-            
-            # Extract featured image URL
+            # Extract featured image URL and metadata
             image_url = None
-            if hasattr(result_post, 'images') and result_post.images:
-                image_url = result_post.images[0].public_url
-            
-            if image_url:
+            if featured_image:
+                image_url = featured_image.url
                 logger.info(f"✅ Featured image selected: {image_url[:60]}...")
+                logger.info(f"   Photographer: {featured_image.photographer}")
             else:
-                logger.warning(f"⚠️  No image selected, continuing without featured image")
+                logger.warning(f"⚠️  No image found on Pexels, continuing without featured image")
             
             return image_url
 

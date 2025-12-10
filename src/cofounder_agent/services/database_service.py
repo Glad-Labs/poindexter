@@ -1051,3 +1051,235 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"❌ Error getting drafts: {e}")
             return ([], 0)
+
+    # ========================================================================
+    # CONTENT_TASKS TABLE METHODS (New content pipeline)
+    # ========================================================================
+
+    async def create_content_task(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Create a new content generation task in content_tasks table
+        
+        Args:
+            task_data: Dict with keys like task_id, task_type, status, topic, style, tone, etc.
+            
+        Returns:
+            Created content_task record as dict
+        """
+        task_id = task_data.get('task_id', str(uuid4()))
+        
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow("""
+                    INSERT INTO content_tasks (
+                        task_id, request_type, task_type, status, topic, style, tone,
+                        target_length, approval_status, created_at, updated_at
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+                    RETURNING *
+                """, 
+                    task_id,
+                    task_data.get('request_type', 'content_generation'),
+                    task_data.get('task_type', 'blog_post'),
+                    task_data.get('status', 'pending'),
+                    task_data.get('topic'),
+                    task_data.get('style', 'technical'),
+                    task_data.get('tone', 'professional'),
+                    task_data.get('target_length', 1500),
+                    task_data.get('approval_status', 'pending')
+                )
+                logger.info(f"✅ Created content_task: {task_id}")
+                return self._convert_row_to_dict(row)
+        except Exception as e:
+            logger.error(f"❌ Error creating content_task: {e}")
+            raise
+
+    async def update_content_task_status(
+        self, 
+        task_id: str, 
+        status: str, 
+        content: Optional[str] = None,
+        quality_score: Optional[int] = None,
+        approval_status: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Update content task status and content
+        
+        Args:
+            task_id: Content task ID
+            status: New status
+            content: Generated content (optional)
+            quality_score: Quality score 0-100 (optional)
+            approval_status: Approval status (optional)
+            
+        Returns:
+            Updated content_task record or None
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow("""
+                    UPDATE content_tasks
+                    SET 
+                        status = COALESCE($2, status),
+                        content = COALESCE($3, content),
+                        quality_score = COALESCE($4, quality_score),
+                        approval_status = COALESCE($5, approval_status),
+                        updated_at = NOW(),
+                        completed_at = CASE 
+                            WHEN $2 IN ('completed', 'approved', 'rejected', 'failed') THEN NOW()
+                            ELSE completed_at
+                        END
+                    WHERE task_id = $1
+                    RETURNING *
+                """,
+                    task_id, status, content, quality_score, approval_status
+                )
+                if row:
+                    logger.info(f"✅ Updated content_task {task_id}: status={status}")
+                    return self._convert_row_to_dict(row)
+                return None
+        except Exception as e:
+            logger.error(f"❌ Error updating content_task: {e}")
+            raise
+
+    async def get_content_task_by_id(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """Get content task by ID"""
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT * FROM content_tasks WHERE task_id = $1",
+                    task_id
+                )
+                return self._convert_row_to_dict(row) if row else None
+        except Exception as e:
+            logger.error(f"❌ Error getting content_task: {e}")
+            return None
+
+    # ========================================================================
+    # QUALITY_EVALUATIONS TABLE METHODS
+    # ========================================================================
+
+    async def create_quality_evaluation(self, eval_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Create quality evaluation record
+        
+        Args:
+            eval_data: Dict with content_id, task_id, overall_score, criteria scores, etc.
+            
+        Returns:
+            Created quality_evaluation record
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow("""
+                    INSERT INTO quality_evaluations (
+                        content_id, task_id, overall_score, clarity, accuracy, 
+                        completeness, relevance, seo_quality, readability, engagement,
+                        passing, feedback, suggestions, evaluated_by, evaluation_method,
+                        evaluation_timestamp
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
+                    RETURNING *
+                """,
+                    eval_data['content_id'],
+                    eval_data.get('task_id'),
+                    eval_data['overall_score'],
+                    eval_data.get('criteria', {}).get('clarity', 0),
+                    eval_data.get('criteria', {}).get('accuracy', 0),
+                    eval_data.get('criteria', {}).get('completeness', 0),
+                    eval_data.get('criteria', {}).get('relevance', 0),
+                    eval_data.get('criteria', {}).get('seo_quality', 0),
+                    eval_data.get('criteria', {}).get('readability', 0),
+                    eval_data.get('criteria', {}).get('engagement', 0),
+                    eval_data['overall_score'] >= 7.0,  # passing threshold
+                    eval_data.get('feedback'),
+                    json.dumps(eval_data.get('suggestions', [])),
+                    eval_data.get('evaluated_by', 'QualityEvaluator'),
+                    eval_data.get('evaluation_method', 'pattern-based')
+                )
+                logger.info(f"✅ Created quality_evaluation for {eval_data['content_id']}")
+                return self._convert_row_to_dict(row)
+        except Exception as e:
+            logger.error(f"❌ Error creating quality_evaluation: {e}")
+            raise
+
+    # ========================================================================
+    # QUALITY_IMPROVEMENT_LOGS TABLE METHODS
+    # ========================================================================
+
+    async def create_quality_improvement_log(self, log_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Log content quality improvement through refinement
+        
+        Args:
+            log_data: Dict with content_id, initial_score, improved_score, refinement_type, etc.
+            
+        Returns:
+            Created quality_improvement_log record
+        """
+        try:
+            initial = log_data['initial_score']
+            improved = log_data['improved_score']
+            
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow("""
+                    INSERT INTO quality_improvement_logs (
+                        content_id, initial_score, improved_score, score_improvement,
+                        refinement_type, changes_made, refinement_timestamp, passed_after_refinement
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7)
+                    RETURNING *
+                """,
+                    log_data['content_id'],
+                    initial,
+                    improved,
+                    improved - initial,  # score_improvement
+                    log_data.get('refinement_type', 'auto-critique'),
+                    log_data.get('changes_made'),
+                    improved >= 7.0  # passed_after_refinement
+                )
+                logger.info(f"✅ Created quality_improvement_log: {initial:.1f} → {improved:.1f}")
+                return self._convert_row_to_dict(row)
+        except Exception as e:
+            logger.error(f"❌ Error creating quality_improvement_log: {e}")
+            raise
+
+    # ========================================================================
+    # ORCHESTRATOR_TRAINING_DATA TABLE METHODS
+    # ========================================================================
+
+    async def create_orchestrator_training_data(self, train_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Capture execution for training/learning pipeline
+        
+        Args:
+            train_data: Dict with execution_id, user_request, intent, execution_result, quality_score, success, tags, etc.
+            
+        Returns:
+            Created training_data record
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow("""
+                    INSERT INTO orchestrator_training_data (
+                        execution_id, user_request, intent, business_state, execution_result,
+                        quality_score, success, tags, created_at, source_agent
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), $9)
+                    RETURNING *
+                """,
+                    train_data['execution_id'],
+                    train_data.get('user_request'),
+                    train_data.get('intent'),
+                    json.dumps(train_data.get('business_state', {})),
+                    train_data.get('execution_result'),
+                    train_data.get('quality_score'),
+                    train_data.get('success', False),
+                    json.dumps(train_data.get('tags', [])),
+                    train_data.get('source_agent', 'content_agent')
+                )
+                logger.info(f"✅ Created orchestrator_training_data: {train_data['execution_id']}")
+                return self._convert_row_to_dict(row)
+        except Exception as e:
+            logger.error(f"❌ Error creating orchestrator_training_data: {e}")
+            raise

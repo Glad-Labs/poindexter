@@ -295,7 +295,9 @@ class PublishDraftResponse(BaseModel):
     description="Create a content task (blog post, social media, email, etc.)",
 )
 async def create_content_task(
-    request: CreateBlogPostRequest, background_tasks: BackgroundTasks
+    request: CreateBlogPostRequest, 
+    background_tasks: BackgroundTasks,
+    db: DatabaseService = Depends(get_database_dependency)
 ):
     """
     Create a new content task with AI generation.
@@ -339,7 +341,7 @@ async def create_content_task(
 
         logger.debug(f"  ✓ Topic validation passed")
         
-        task_store = get_content_task_store()
+        task_store = get_content_task_store(db)
         logger.debug(f"  ✓ Got task store")
 
         # Create task
@@ -375,14 +377,26 @@ async def create_content_task(
         )
         logger.debug(f"  ✅ Task updated: {update_result}")
 
-        # Start background generation
-        logger.debug(f"  ⏳ Starting background task...")
-        background_tasks.add_task(process_content_generation_task, task_id)
-        logger.debug(f"  ✓ Background task queued")
+        # ========================================================================
+        # Start background content generation with complete pipeline
+        # ========================================================================
+        logger.debug(f"  ⏳ Starting background content generation task...")
+        background_tasks.add_task(
+            process_content_generation_task,
+            topic=request.topic,
+            style=request.style.value,
+            tone=request.tone.value,
+            target_length=request.target_length,
+            tags=request.tags,
+            generate_featured_image=request.generate_featured_image,
+            database_service=db,
+            task_id=task_id
+        )
+        logger.debug(f"  ✓ Background task queued with complete parameters")
 
         logger.info(
             f"✅✅ CONTENT TASK CREATED: {task_id} - Type: {request.task_type} - Topic: {request.topic} - "
-            f"Enhanced: {request.enhanced} - Ready for polling at /api/content/tasks/{task_id}"
+            f"Image Search: {request.generate_featured_image} - Ready for polling at /api/content/tasks/{task_id}"
         )
 
         return CreateBlogPostResponse(
