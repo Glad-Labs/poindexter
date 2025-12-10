@@ -50,9 +50,10 @@ class MiddlewareConfig:
             middleware_config.register_all_middleware(app)
         """
         # Register in reverse order (last added = first executed)
-        self._setup_cors(app)
-        self._setup_rate_limiting(app)
+        # CORS should execute FIRST, so it's added LAST
         self._setup_input_validation(app)
+        self._setup_rate_limiting(app)
+        self._setup_cors(app)
         
         logger.info("✅ All middleware registered successfully")
     
@@ -87,9 +88,10 @@ class MiddlewareConfig:
         Configuration is environment-based for security.
         """
         # Get allowed origins from environment, with safe defaults
+        # Includes ports 3000, 3001, 3002, 3003, 3004 for development (in case of port conflicts)
         allowed_origins = os.getenv(
             "ALLOWED_ORIGINS",
-            "http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001"  # Development defaults
+            "http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004,http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:3002,http://127.0.0.1:3003,http://127.0.0.1:3004"  # Development defaults
         ).split(",")
         
         # Strip whitespace from origins

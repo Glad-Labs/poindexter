@@ -17,7 +17,7 @@ import logging
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 from enum import Enum
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
 from services.logger_config import get_logger
@@ -217,10 +217,9 @@ class AgentHealth(BaseModel):
 # Helper Functions
 # ============================================================================
 
-def get_orchestrator():
-    """Get the orchestrator instance - injected as dependency"""
-    # This is imported here to avoid circular imports
-    from main import orchestrator
+def get_orchestrator(request: Request):
+    """Get the orchestrator instance from app state"""
+    orchestrator = getattr(request.app.state, 'orchestrator', None)
     if not orchestrator:
         raise HTTPException(status_code=503, detail="Orchestrator not initialized")
     return orchestrator

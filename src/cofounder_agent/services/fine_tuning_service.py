@@ -13,7 +13,7 @@ import logging
 import subprocess
 import os
 import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 from enum import Enum
 

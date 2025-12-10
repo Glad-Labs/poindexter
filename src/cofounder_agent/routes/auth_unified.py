@@ -69,6 +69,11 @@ class GitHubCallbackRequest(BaseModel):
 
 async def exchange_code_for_token(code: str) -> str:
     """Exchange GitHub authorization code for access token."""
+    # Handle mock auth codes for development
+    if code.startswith("mock_auth_code_"):
+        logger.info("Mock auth code detected, returning mock token")
+        return "mock_github_token_dev"
+    
     async with httpx.AsyncClient() as client:
         response = await client.post(
             "https://github.com/login/oauth/access_token",
@@ -96,6 +101,18 @@ async def exchange_code_for_token(code: str) -> str:
 
 async def get_github_user(access_token: str) -> Dict[str, Any]:
     """Fetch GitHub user information using access token."""
+    # Handle mock auth tokens for development
+    if access_token == "mock_github_token_dev":
+        logger.info("Mock token detected, returning mock user data")
+        return {
+            "id": 999999,
+            "login": "dev-user",
+            "email": "dev@example.com",
+            "name": "Development User",
+            "avatar_url": "https://avatars.githubusercontent.com/u/1?v=4",
+            "bio": "Development user for testing"
+        }
+    
     async with httpx.AsyncClient() as client:
         response = await client.get(
             "https://api.github.com/user",
