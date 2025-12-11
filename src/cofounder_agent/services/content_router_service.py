@@ -452,7 +452,7 @@ async def process_content_generation_task(
         # ================================================================================
         logger.info("✍️  STAGE 2: Generating blog content...")
         
-        content_generator = await get_content_generator()
+        content_generator = get_content_generator()
         content_text, model_used, metrics = await content_generator.generate_blog_post(
             topic=topic,
             style=style,

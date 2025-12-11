@@ -150,55 +150,61 @@ class ContentCritiqueLoop:
 
     def _generate_feedback(self, metrics: Dict[str, Any]) -> str:
         """Generate specific feedback based on metrics"""
+        if not metrics:
+            return "Unable to generate feedback"
+        
         feedback_parts = []
 
-        if metrics["quality_score"] >= 90:
+        if metrics.get("quality_score", 50) >= 90:
             feedback_parts.append("Excellent content quality")
-        elif metrics["quality_score"] >= 80:
+        elif metrics.get("quality_score", 50) >= 80:
             feedback_parts.append("Good content quality")
-        elif metrics["quality_score"] >= 70:
+        elif metrics.get("quality_score", 50) >= 70:
             feedback_parts.append("Acceptable content with room for improvement")
         else:
             feedback_parts.append("Content needs significant improvement")
 
-        if metrics["word_count"] < 150:
+        if metrics.get("word_count", 0) < 150:
             feedback_parts.append("Consider expanding content for more depth")
-        elif metrics["word_count"] > 3000:
+        elif metrics.get("word_count", 0) > 3000:
             feedback_parts.append("Consider breaking into multiple posts")
         else:
             feedback_parts.append("Good word count for publication")
 
-        if not metrics["has_structure"]:
+        if not metrics.get("has_structure", False):
             feedback_parts.append("Add headings to improve structure and readability")
 
-        if metrics["readability_score"] < 60:
+        if metrics.get("readability_score", 100) < 60:
             feedback_parts.append("Break up long paragraphs for better readability")
 
-        if not metrics["has_keywords"]:
+        if not metrics.get("has_keywords", False):
             feedback_parts.append("Include target keywords naturally in content")
 
-        return ". ".join(feedback_parts)
+        return ". ".join(feedback_parts) if feedback_parts else "Content is ready for publication"
 
     def _generate_suggestions(self, metrics: Dict[str, Any]) -> list:
         """Generate specific improvement suggestions"""
+        if not metrics:
+            return ["Content is ready for publication"]
+        
         suggestions = []
 
-        if metrics["word_count"] < 200:
+        if metrics.get("word_count", 0) < 200:
             suggestions.append("Expand content to at least 200-300 words for better SEO")
 
-        if not metrics["has_structure"]:
+        if not metrics.get("has_structure", False):
             suggestions.append("Add H2/H3 headings to organize main points")
 
-        if metrics["readability_score"] < 70:
+        if metrics.get("readability_score", 100) < 70:
             suggestions.append("Shorten paragraphs (max 3-4 sentences)")
 
-        if metrics["paragraph_count"] < 3:
+        if metrics.get("paragraph_count", 0) < 3:
             suggestions.append("Add more paragraphs to improve content flow")
 
-        if not metrics["has_keywords"]:
+        if not metrics.get("has_keywords", False):
             suggestions.append("Incorporate 2-3 target keywords naturally")
 
-        if metrics["quality_score"] < 75:
+        if metrics.get("quality_score", 100) < 75:
             suggestions.append("Review for grammar, spelling, and clarity")
 
         return suggestions if suggestions else ["Content is ready for publication"]

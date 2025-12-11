@@ -395,7 +395,7 @@ class IntelligentOrchestrator:
             )
             # Check if llm_client is available before using
             if not self.llm_client:
-                logger.warning(f"[{execution_context['request_id']}] ⚠️ LLM client not available, using fallback plan")
+                logger.warning(f"⚠️ LLM client not available, using fallback plan")
                 return self._create_fallback_plan(user_request)
             
             plan_json = await self.llm_client.generate_text(
