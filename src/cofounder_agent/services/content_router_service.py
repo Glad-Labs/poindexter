@@ -302,48 +302,6 @@ class ContentGenerationService:
 
 
 # ============================================================================
-# FEATURED IMAGE SERVICE
-# ============================================================================
-
-
-class FeaturedImageService:
-    """Service for featured image generation and search"""
-
-    def __init__(self):
-        """Initialize Pexels client"""
-        self.pexels = PexelsClient()
-
-    async def search_featured_image(
-        self, topic: str, keywords: Optional[List[str]] = None
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Search for featured image via Pexels (free, no cost)
-
-        Args:
-            topic: Blog post topic
-            keywords: Optional search keywords
-
-        Returns:
-            Image dict with url and metadata, or None if not found
-        """
-        try:
-            # Use async method from Pexels client
-            image = await self.pexels.get_featured_image(
-                topic=topic,
-                keywords=keywords
-            )
-
-            if image:
-                logger.info(f"✅ Found featured image from Pexels: {image.get('photographer')}")
-                return image
-            else:
-                logger.warning(f"⚠️  No Pexels image found for: {topic}")
-                return None
-
-        except Exception as e:
-            logger.error(f"❌ Error searching for featured image: {e}")
-            return None
-
 # ============================================================================
 # BACKGROUND TASK PROCESSORS
 # ============================================================================
