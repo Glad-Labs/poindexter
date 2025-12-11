@@ -36,8 +36,8 @@ class AuthConfig:
             print("[ERROR] JWT_SECRET_KEY or JWT_SECRET environment variable is required", file=sys.stderr)
             sys.exit(1)  # Exit if JWT secret is missing in production
         else:
-            # Development fallback only
-            _secret = "dev-secret-change-in-production"
+            # Development fallback only - MUST MATCH frontend mockTokenGenerator.js
+            _secret = "dev-jwt-secret-change-in-production-to-random-64-chars"
             print("[WARNING] Using development JWT secret - SET JWT_SECRET in .env for production", flush=True)
     
     SECRET_KEY = _secret
