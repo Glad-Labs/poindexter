@@ -324,10 +324,11 @@ async def process_content_generation_task(
     
     STAGE 1: 📋 Create content_task record (status='pending')
     STAGE 2: ✍️  Generate blog content
+    STAGE 2B: ⭐ Early quality evaluation
     STAGE 3: 🖼️  Source featured image from Pexels
     STAGE 4: 📊 Generate SEO metadata
-    STAGE 5: ⭐ Create quality evaluation
-    STAGE 6: 📝 Create posts record with all metadata
+    STAGE 5: 📝 Create posts record with all metadata
+    STAGE 6: 🎓 Capture training data for learning
     STAGE 7: 🎓 Capture training data for learning loop
     
     FEATURES:
@@ -434,6 +435,37 @@ async def process_content_generation_task(
         logger.info(f"✅ Content generated ({len(content_text)} chars) using {model_used}\n")
         
         # ================================================================================
+        # STAGE 2B: QUALITY EVALUATION (Early check after content generation)
+        # ================================================================================
+        logger.info("⭐ STAGE 2B: Early quality evaluation...")
+        
+        quality_result = await quality_service.evaluate(
+            content=content_text,
+            context={
+                'topic': topic,
+                'keywords': tags or [topic],
+                'audience': 'General',
+            },
+            method=EvaluationMethod.PATTERN_BASED
+        )
+        
+        result['quality_score'] = quality_result.overall_score
+        result['quality_passing'] = quality_result.passing
+        result['quality_details_initial'] = {
+            'clarity': quality_result.clarity,
+            'accuracy': quality_result.accuracy,
+            'completeness': quality_result.completeness,
+            'relevance': quality_result.relevance,
+            'seo_quality': quality_result.seo_quality,
+            'readability': quality_result.readability,
+            'engagement': quality_result.engagement,
+        }
+        result['stages']['2b_quality_evaluated_initial'] = True
+        logger.info(f"✅ Initial quality evaluation complete:")
+        logger.info(f"   Overall Score: {quality_result.overall_score:.1f}/10")
+        logger.info(f"   Passing: {quality_result.passing} (threshold ≥7.0)\n")
+        
+        # ================================================================================
         # STAGE 3: SOURCE FEATURED IMAGE FROM UNIFIED IMAGE SERVICE
         # ================================================================================
         logger.info("🖼️  STAGE 3: Sourcing featured image from Pexels...")
@@ -493,62 +525,9 @@ async def process_content_generation_task(
         logger.info(f"   Keywords: {', '.join(seo_keywords[:5])}...\n")
         
         # ================================================================================
-        # STAGE 5: QUALITY EVALUATION (Unified Service)
+        # STAGE 5: CREATE POSTS RECORD
         # ================================================================================
-        logger.info("⭐ STAGE 5: Quality evaluation...")
-        
-        quality_result = await quality_service.evaluate(
-            content=content_text,
-            context={
-                'topic': topic,
-                'keywords': seo_keywords,
-                'audience': 'General',
-                'seo_title': seo_title,
-                'seo_description': seo_description,
-                'seo_keywords': seo_keywords
-            },
-            method=EvaluationMethod.PATTERN_BASED
-        )
-        
-        # Store quality evaluation in PostgreSQL
-        await database_service.create_quality_evaluation({
-            'content_id': task_id,
-            'task_id': task_id,
-            'overall_score': quality_result.overall_score,
-            'clarity': quality_result.clarity,
-            'accuracy': quality_result.accuracy,
-            'completeness': quality_result.completeness,
-            'relevance': quality_result.relevance,
-            'seo_quality': quality_result.seo_quality,
-            'readability': quality_result.readability,
-            'engagement': quality_result.engagement,
-            'passing': quality_result.passing,
-            'feedback': quality_result.feedback,
-            'suggestions': quality_result.suggestions,
-            'evaluated_by': 'ContentQualityService',
-            'evaluation_method': quality_result.evaluation_method
-        })
-        
-        result['quality_score'] = quality_result.overall_score
-        result['quality_passing'] = quality_result.passing
-        result['quality_details'] = {
-            'clarity': quality_result.clarity,
-            'accuracy': quality_result.accuracy,
-            'completeness': quality_result.completeness,
-            'relevance': quality_result.relevance,
-            'seo_quality': quality_result.seo_quality,
-            'readability': quality_result.readability,
-            'engagement': quality_result.engagement,
-        }
-        result['stages']['5_quality_evaluated'] = True
-        logger.info(f"✅ Quality evaluation complete:")
-        logger.info(f"   Overall Score: {quality_result.overall_score:.1f}/10")
-        logger.info(f"   Passing: {quality_result.passing} (threshold ≥7.0)\n")
-        
-        # ================================================================================
-        # STAGE 6: CREATE POSTS RECORD
-        # ================================================================================
-        logger.info("📝 STAGE 6: Creating posts record...")
+        logger.info("📝 STAGE 5: Creating posts record...")
         
         # Get default author (Poindexter AI)
         author_id = await _get_or_create_default_author(database_service)
@@ -579,7 +558,7 @@ async def process_content_generation_task(
         
         result['post_id'] = str(post['id'])
         result['post_slug'] = post['slug']
-        result['stages']['6_post_created'] = True
+        result['stages']['5_post_created'] = True
         logger.info(f"✅ Post created: {post['id']}")
         logger.info(f"   Title: {topic}")
         logger.info(f"   Slug: {slug}")
@@ -587,9 +566,28 @@ async def process_content_generation_task(
         logger.info(f"   Category: {category_id}\n")
         
         # ================================================================================
-        # STAGE 7: CAPTURE TRAINING DATA
+        # STAGE 6: CAPTURE TRAINING DATA
         # ================================================================================
-        logger.info("🎓 STAGE 7: Capturing training data...")
+        logger.info("🎓 STAGE 6: Capturing training data...")
+        
+        # Store quality evaluation in PostgreSQL
+        await database_service.create_quality_evaluation({
+            'content_id': task_id,
+            'task_id': task_id,
+            'overall_score': quality_result.overall_score,
+            'clarity': quality_result.clarity,
+            'accuracy': quality_result.accuracy,
+            'completeness': quality_result.completeness,
+            'relevance': quality_result.relevance,
+            'seo_quality': quality_result.seo_quality,
+            'readability': quality_result.readability,
+            'engagement': quality_result.engagement,
+            'passing': quality_result.passing,
+            'feedback': quality_result.feedback,
+            'suggestions': quality_result.suggestions,
+            'evaluated_by': 'ContentQualityService',
+            'evaluation_method': quality_result.evaluation_method
+        })
         
         await database_service.create_orchestrator_training_data({
             'execution_id': task_id,
@@ -608,7 +606,7 @@ async def process_content_generation_task(
             'source_agent': 'content_router_service'
         })
         
-        result['stages']['7_training_data_captured'] = True
+        result['stages']['6_training_data_captured'] = True
         logger.info(f"✅ Training data captured for learning pipeline\n")
         
         # ================================================================================
@@ -629,7 +627,7 @@ async def process_content_generation_task(
         logger.info(f"{'='*80}")
         logger.info(f"   Task ID: {task_id}")
         logger.info(f"   Post ID: {post['id']}")
-        logger.info(f"   Quality Score: {quality_score:.1f}/10")
+        logger.info(f"   Quality Score: {quality_result.overall_score:.1f}/10")
         logger.info(f"   Status: {result['status']}")
         logger.info(f"   Next: Human review & approval")
         logger.info(f"{'='*80}\n")
