@@ -98,6 +98,33 @@ def convert_db_row_to_dict(row):
         except (json.JSONDecodeError, TypeError):
             data['result'] = None
     
+    # Handle error fields (for failed tasks)
+    # Map error_message and error_details from database to response
+    if 'error_message' not in data:
+        data['error_message'] = None
+    
+    if 'error_details' not in data:
+        # Try to extract error details from task_metadata
+        if data.get('task_metadata') and isinstance(data['task_metadata'], dict):
+            if 'error_details' in data['task_metadata']:
+                data['error_details'] = data['task_metadata']['error_details']
+            elif 'error' in data['task_metadata']:
+                # Fallback: if error exists in metadata, use it
+                data['error_details'] = {'error': data['task_metadata']['error']}
+        else:
+            data['error_details'] = None
+    else:
+        # Parse error_details if it's a string (JSON)
+        if isinstance(data['error_details'], str):
+            try:
+                data['error_details'] = json.loads(data['error_details'])
+            except (json.JSONDecodeError, TypeError):
+                data['error_details'] = {'raw_error': data['error_details']}
+    
+    # If error_message is in task_metadata, promote it to top level
+    if not data.get('error_message') and data.get('task_metadata', {}).get('error_message'):
+        data['error_message'] = data['task_metadata']['error_message']
+    
     return data
 
 # Import async database service
@@ -177,6 +204,8 @@ class TaskResponse(BaseModel):
     metadata: Dict[str, Any] = {}
     task_metadata: Dict[str, Any] = {}  # For orchestrator output (content, excerpt, qa_feedback, etc.)
     result: Optional[Dict[str, Any]] = None
+    error_message: Optional[str] = None  # ✅ Error message for failed tasks
+    error_details: Optional[Dict[str, Any]] = None  # ✅ Detailed error info for failed tasks
     
     @property
     def title(self) -> str:
