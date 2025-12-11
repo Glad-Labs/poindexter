@@ -421,6 +421,11 @@ async def process_content_generation_task(
             enhanced=True
         )
         
+        # Validate content_text is not None
+        if not content_text:
+            logger.error(f"❌ Content generation returned None or empty")
+            raise ValueError("Content generation failed: no content produced")
+        
         # Update content_task with generated content
         await database_service.update_content_task_status(
             task_id=task_id,
@@ -448,6 +453,11 @@ async def process_content_generation_task(
             },
             method=EvaluationMethod.PATTERN_BASED
         )
+        
+        # Validate quality_result is not None
+        if not quality_result:
+            logger.error(f"❌ Quality evaluation returned None")
+            raise ValueError("Quality evaluation failed: no result produced")
         
         result['quality_score'] = quality_result.overall_score
         result['quality_passing'] = quality_result.passing
@@ -511,9 +521,28 @@ async def process_content_generation_task(
             topic=topic
         )
         
-        seo_keywords = seo_assets.get('meta_keywords', tags or [])[:10]
-        seo_title = seo_assets.get('seo_title', topic)[:60]
-        seo_description = seo_assets.get('meta_description', '')[:160]
+        # Validate seo_assets is not None and is a dict
+        if not seo_assets or not isinstance(seo_assets, dict):
+            logger.error(f"❌ SEO generation returned None or invalid format")
+            raise ValueError("SEO metadata generation failed: invalid result")
+        
+        seo_keywords = seo_assets.get('meta_keywords', tags or [])
+        if seo_keywords:
+            seo_keywords = seo_keywords[:10]
+        else:
+            seo_keywords = tags[:10] if tags else []
+            
+        seo_title = seo_assets.get('seo_title', topic)
+        if seo_title:
+            seo_title = seo_title[:60]
+        else:
+            seo_title = topic[:60]
+            
+        seo_description = seo_assets.get('meta_description', '')
+        if seo_description:
+            seo_description = seo_description[:160]
+        else:
+            seo_description = topic[:160]
         
         result['seo_title'] = seo_title
         result['seo_description'] = seo_description
