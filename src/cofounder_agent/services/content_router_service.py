@@ -472,7 +472,7 @@ async def process_content_generation_task(
         # ================================================================================
         logger.info("📊 STAGE 4: Generating SEO metadata...")
         
-        seo_generator = await get_seo_content_generator()
+        seo_generator = get_seo_content_generator(content_generator)
         seo_assets = seo_generator.generate_seo_assets(
             title=topic,
             content=content_text,
