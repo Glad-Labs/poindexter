@@ -242,23 +242,23 @@ def register_all_routes(
         status['workflow_history_router'] = False
     
     # ===== INTELLIGENT ORCHESTRATOR (DEPRECATED - replaced by UnifiedOrchestrator) =====
-    # This router is no longer registered. Use unified_orchestrator_routes instead.
-    logger.info(" intelligent_orchestrator_routes SKIPPED (deprecated, use unified_orchestrator_routes)")
+    # This router is no longer registered. Use orchestrator_routes instead.
+    logger.info(" intelligent_orchestrator_routes SKIPPED (deprecated, use orchestrator_routes)")
     status['intelligent_orchestrator_router'] = False
     
     try:
-        # ===== UNIFIED ORCHESTRATOR ROUTES (Consolidated) =====
-        from routes.unified_orchestrator_routes import register_unified_orchestrator_routes
+        # ===== ORCHESTRATOR ROUTES (Clean, no duplicates) =====
+        from routes.orchestrator_routes import register_orchestrator_routes
         
-        register_unified_orchestrator_routes(app)
-        logger.info(" unified_orchestrator_routes registered (NEW - consolidates intelligent + quality)")
-        status['unified_orchestrator_routes'] = True
+        register_orchestrator_routes(app)
+        logger.info(" orchestrator_routes registered (unified orchestration)")
+        status['orchestrator_routes'] = True
     except ImportError as e:
-        logger.warning(f" unified_orchestrator_routes not available: {e}")
-        status['unified_orchestrator_routes'] = False
+        logger.warning(f" orchestrator_routes not available: {e}")
+        status['orchestrator_routes'] = False
     except Exception as e:
-        logger.error(f" unified_orchestrator_routes registration failed: {e}")
-        status['unified_orchestrator_routes'] = False
+        logger.error(f" orchestrator_routes registration failed: {e}")
+        status['orchestrator_routes'] = False
     
     try:
         # ===== TRAINING DATA MANAGEMENT (Phase 6) =====
