@@ -21,16 +21,24 @@ All endpoints require:
 
 from typing import List, Optional
 from datetime import datetime, timedelta
-from enum import Enum
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status, Request, Path, Body
-from pydantic import BaseModel, Field, validator
 from sqlalchemy.orm import Session
 
 from utils.error_responses import ErrorResponseBuilder
-
-# Import audit logging (removed - file doesn't exist yet)
-# from middleware.audit_logging import log_audit, SettingsAuditLogger
+from schemas.settings_schemas import (
+    SettingCategoryEnum,
+    SettingEnvironmentEnum,
+    SettingDataTypeEnum,
+    SettingBase,
+    SettingCreate,
+    SettingUpdate,
+    SettingResponse,
+    SettingListResponse,
+    SettingHistoryResponse,
+    SettingBulkUpdateRequest,
+    ErrorResponse,
+)
 
 # Create router
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -68,177 +76,6 @@ async def get_current_user(request: Request):
         "role": "user"
     }
 
-
-# ============================================================================
-# Enums
-# ============================================================================
-
-class SettingCategoryEnum(str, Enum):
-    """Setting categories for organization"""
-    DATABASE = "database"
-    AUTHENTICATION = "authentication"
-    API = "api"
-    NOTIFICATIONS = "notifications"
-    SYSTEM = "system"
-    INTEGRATION = "integration"
-    SECURITY = "security"
-    PERFORMANCE = "performance"
-
-
-class SettingEnvironmentEnum(str, Enum):
-    """Environment-specific settings"""
-    DEVELOPMENT = "development"
-    STAGING = "staging"
-    PRODUCTION = "production"
-    ALL = "all"
-
-
-class SettingDataTypeEnum(str, Enum):
-    """Supported data types for setting values"""
-    STRING = "string"
-    INTEGER = "integer"
-    BOOLEAN = "boolean"
-    JSON = "json"
-    SECRET = "secret"  # Encrypted in database
-
-
-# ============================================================================
-# Pydantic Models
-# ============================================================================
-
-class SettingBase(BaseModel):
-    """Base model for setting data"""
-    key: str = Field(..., min_length=1, max_length=255, description="Unique setting identifier")
-    value: str = Field(..., description="Setting value (can be complex JSON)")
-    data_type: SettingDataTypeEnum = Field(default=SettingDataTypeEnum.STRING, description="Data type of value")
-    category: SettingCategoryEnum = Field(..., description="Setting category for organization")
-    environment: SettingEnvironmentEnum = Field(default=SettingEnvironmentEnum.ALL, description="Environment applicability")
-    description: Optional[str] = Field(None, max_length=1000, description="Human-readable description")
-    is_encrypted: bool = Field(default=False, description="Whether value is encrypted (secrets, passwords)")
-    is_read_only: bool = Field(default=False, description="Whether this setting can be modified")
-    tags: List[str] = Field(default_factory=list, description="Tags for filtering and organization")
-
-    @validator("key")
-    def validate_key(cls, v):
-        """Key must be alphanumeric with underscores/dots only"""
-        import re
-        if not re.match(r"^[a-zA-Z0-9._-]+$", v):
-            raise ValueError("Key must contain only alphanumeric characters, dots, dashes, and underscores")
-        return v
-
-    @validator("value")
-    def validate_value(cls, v):
-        """Value cannot be empty"""
-        if not v or not v.strip():
-            raise ValueError("Value cannot be empty")
-        return v
-
-
-class SettingCreate(BaseModel):
-    """Model for creating new settings - supports both detailed and simple formats"""
-    # Required fields for full format
-    key: Optional[str] = Field(None, min_length=1, max_length=255, description="Unique setting identifier")
-    value: Optional[str] = Field(None, description="Setting value (can be complex JSON)")
-    data_type: Optional[SettingDataTypeEnum] = Field(default=SettingDataTypeEnum.STRING, description="Data type of value")
-    category: Optional[SettingCategoryEnum] = Field(None, description="Setting category for organization")
-    environment: Optional[SettingEnvironmentEnum] = Field(default=SettingEnvironmentEnum.ALL, description="Environment applicability")
-    description: Optional[str] = Field(None, max_length=1000, description="Human-readable description")
-    is_encrypted: Optional[bool] = Field(default=False, description="Whether value is encrypted (secrets, passwords)")
-    is_read_only: Optional[bool] = Field(default=False, description="Whether this setting can be modified")
-    tags: Optional[List[str]] = Field(default_factory=list, description="Tags for filtering and organization")
-    
-    # Support for simple key-value pairs (e.g., user preferences)
-    # Any additional fields in the request become settings
-    class Config:
-        extra = "allow"  # Allow additional fields for flexible key-value storage
-
-    @validator("key", pre=True, always=True)
-    def validate_or_generate_key(cls, v):
-        """Key is optional - can be generated from first field if not provided"""
-        if v:
-            import re
-            if not re.match(r"^[a-zA-Z0-9._-]+$", v):
-                raise ValueError("Key must contain only alphanumeric characters, dots, dashes, and underscores")
-        return v
-
-
-class SettingUpdate(BaseModel):
-    """Model for updating settings (partial update allowed)"""
-    value: Optional[str] = Field(None, description="New setting value")
-    description: Optional[str] = Field(None, max_length=1000, description="Updated description")
-    is_encrypted: Optional[bool] = Field(None, description="Update encryption flag")
-    is_read_only: Optional[bool] = Field(None, description="Update read-only flag")
-    tags: Optional[List[str]] = Field(None, description="Updated tags")
-    
-    class Config:
-        extra = "allow"  # Allow additional fields for simple key-value updates
-        validate_assignment = True
-
-    def has_updates(self) -> bool:
-        """Check if any fields have been provided for update"""
-        return any([
-            self.value is not None,
-            self.description is not None,
-            self.is_encrypted is not None,
-            self.is_read_only is not None,
-            self.tags is not None,
-        ])
-
-
-class SettingResponse(SettingBase):
-    """Model for returning setting data"""
-    id: int = Field(..., description="Setting database ID")
-    created_at: datetime = Field(..., description="Creation timestamp")
-    updated_at: datetime = Field(..., description="Last update timestamp")
-    created_by_id: int = Field(..., description="User ID who created this setting")
-    updated_by_id: Optional[int] = Field(None, description="User ID who last updated this setting")
-    value_preview: Optional[str] = Field(None, description="Preview of value (for encrypted values)")
-
-    class Config:
-        from_attributes = True
-
-
-class SettingListResponse(BaseModel):
-    """Model for list endpoint response"""
-    total: int = Field(..., description="Total number of settings")
-    page: int = Field(..., description="Current page number")
-    per_page: int = Field(..., description="Items per page")
-    pages: int = Field(..., description="Total number of pages")
-    items: List[SettingResponse] = Field(..., description="List of settings")
-
-
-class SettingHistoryResponse(BaseModel):
-    """Model for audit log entry"""
-    id: int
-    setting_id: int
-    changed_by_id: int
-    changed_by_email: str
-    change_description: str
-    old_value: Optional[str]
-    new_value: Optional[str]
-    timestamp: datetime
-
-    class Config:
-        from_attributes = True
-
-
-class SettingBulkUpdateRequest(BaseModel):
-    """Model for bulk updating multiple settings"""
-    updates: List[dict] = Field(..., description="List of {setting_id, value} objects")
-
-    @validator("updates")
-    def validate_updates(cls, v):
-        """Ensure updates list is not empty"""
-        if not v or len(v) == 0:
-            raise ValueError("Updates list cannot be empty")
-        return v
-
-
-class ErrorResponse(BaseModel):
-    """Standard error response"""
-    status: str = Field(..., description="Error status")
-    message: str = Field(..., description="Error message")
-    code: Optional[str] = Field(None, description="Error code for debugging")
 
 
 # ============================================================================

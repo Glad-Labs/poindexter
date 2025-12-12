@@ -112,9 +112,13 @@ from .ollama_schemas import (
 
 # Settings schemas
 from .settings_schemas import (
+    SettingDataTypeEnum,
+    SettingCategoryEnum,
+    SettingEnvironmentEnum,
     SettingBase,
     SettingCreate,
     SettingUpdate,
+    SettingResponse,
     SettingListResponse,
     SettingHistoryResponse,
     SettingBulkUpdateRequest,
@@ -123,6 +127,8 @@ from .settings_schemas import (
 
 # Social schemas
 from .social_schemas import (
+    SocialPlatformEnum,
+    ToneEnum,
     SocialPlatformConnection,
     SocialPost,
     SocialAnalytics,
@@ -228,14 +234,20 @@ __all__ = [
     "OllamaWarmupResponse",
     "OllamaModelSelection",
     # Settings
+    "SettingDataTypeEnum",
+    "SettingCategoryEnum",
+    "SettingEnvironmentEnum",
     "SettingBase",
     "SettingCreate",
     "SettingUpdate",
+    "SettingResponse",
     "SettingListResponse",
     "SettingHistoryResponse",
     "SettingBulkUpdateRequest",
     "ErrorResponse",
     # Social
+    "SocialPlatformEnum",
+    "ToneEnum",
     "SocialPlatformConnection",
     "SocialPost",
     "SocialAnalytics",

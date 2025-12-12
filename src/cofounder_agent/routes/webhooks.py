@@ -5,9 +5,14 @@ Handles webhook events from Strapi CMS for content creation,  publishing, and de
 """
 
 from typing import Dict, Any, Optional
-from pydantic import BaseModel, Field, validator, ValidationError
 from fastapi import APIRouter, HTTPException, status, Request
 import logging
+
+from schemas.webhooks_schemas import (
+    WebhookEntry,
+    ContentWebhookPayload,
+    WebhookResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -15,43 +20,9 @@ logger = logging.getLogger(__name__)
 webhook_router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
 
 
-class WebhookEntry(BaseModel):
-    """Webhook entry (content item) data"""
-    id: int = Field(..., description="Entry ID")
-    title: Optional[str] = Field(None, description="Entry title")
-    
-    @validator('id')
-    def id_must_be_positive(cls, v):
-        if v <= 0:
-            raise ValueError('Entry ID must be positive')
-        return v
-
-
-class ContentWebhookPayload(BaseModel):
-    """Payload for content webhook events"""
-    event: str = Field(..., description="Event type (entry.create, entry.publish, entry.unpublish, entry.delete)")
-    model: str = Field(..., description="Model name (e.g., article, page)")
-    entry: WebhookEntry = Field(..., description="Entry data")
-    
-    @validator('event')
-    def event_must_not_be_empty(cls, v):
-        if not v or not v.strip():
-            raise ValueError('Event cannot be empty')
-        return v
-    
-    @validator('model')
-    def model_must_not_be_empty(cls, v):
-        if not v or not v.strip():
-            raise ValueError('Model name cannot be empty')
-        return v
-
-
-class WebhookResponse(BaseModel):
-    """Response model for webhook endpoints"""
-    status: str = Field(default="received", description="Processing status")
-    event: str = Field(..., description="Event type that was processed")
-    entry_id: int = Field(..., description="Entry ID from the webhook")
-    message: Optional[str] = Field(None, description="Additional message")
+# ============================================================================
+# WEBHOOK ENDPOINTS
+# ============================================================================
 
 
 @webhook_router.post(

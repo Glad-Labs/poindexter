@@ -90,13 +90,26 @@ class SettingUpdate(BaseModel):
         ])
 
 
+class SettingResponse(SettingBase):
+    """Model for returning setting data"""
+    id: int = Field(..., description="Setting database ID")
+    created_at: datetime = Field(..., description="Creation timestamp")
+    updated_at: datetime = Field(..., description="Last update timestamp")
+    created_by_id: int = Field(..., description="User ID who created this setting")
+    updated_by_id: Optional[int] = Field(None, description="User ID who last updated this setting")
+    value_preview: Optional[str] = Field(None, description="Preview of value (for encrypted values)")
+
+    class Config:
+        from_attributes = True
+
+
 class SettingListResponse(BaseModel):
     """Model for list endpoint response"""
     total: int = Field(..., description="Total number of settings")
     page: int = Field(..., description="Current page number")
     per_page: int = Field(..., description="Items per page")
     pages: int = Field(..., description="Total number of pages")
-    items: List[dict] = Field(..., description="List of settings")
+    items: List["SettingResponse"] = Field(..., description="List of settings")
 
 
 class SettingHistoryResponse(BaseModel):

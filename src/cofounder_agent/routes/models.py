@@ -10,11 +10,16 @@ Provides endpoints for:
 import os
 import logging
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
 from services.model_consolidation_service import get_model_consolidation_service
+from schemas.models_schemas import (
+    ModelInfo,
+    ModelsListResponse,
+    ProviderStatus,
+    ProvidersStatusResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,42 +30,9 @@ models_router = APIRouter(prefix="/api/v1/models", tags=["models-v1"])
 models_list_router = APIRouter(prefix="/api/models", tags=["models"])
 
 
-class ModelInfo(BaseModel):
-    """Model information for frontend"""
-    name: str
-    displayName: str
-    provider: str
-    isFree: bool
-    size: str
-    estimatedVramGb: float
-    description: str
-    icon: str
-    requiresInternet: bool
-
-
-class ModelsListResponse(BaseModel):
-    """Response with list of available models"""
-    models: List[ModelInfo]
-    total: int
-    timestamp: str
-
-
-class ProviderStatus(BaseModel):
-    """Status of an LLM provider"""
-    available: bool
-    url: Optional[str] = None
-    hasToken: bool = False
-    hasKey: bool = False
-    models: int = 0
-
-
-class ProvidersStatusResponse(BaseModel):
-    """Response with all provider statuses"""
-    ollama: ProviderStatus
-    huggingface: ProviderStatus
-    gemini: ProviderStatus
-    timestamp: str
-
+# ============================================================================
+# API ENDPOINTS
+# ============================================================================
 
 @models_router.get(
     "/available",

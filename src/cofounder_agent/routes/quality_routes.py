@@ -30,7 +30,9 @@ quality_router = APIRouter(
 
 # ============================================================================
 # ADDITIONAL RESPONSE MODELS
-# ============================================================================class QualityEvaluationResponse(BaseModel):
+# ============================================================================
+
+class QualityEvaluationResponse(BaseModel):
     """Response from quality evaluation"""
     overall_score: float
     passing: bool
