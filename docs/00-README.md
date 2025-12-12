@@ -1,7 +1,7 @@
 # 📚 Glad Labs Documentation Hub
 
-**Last Updated:** December 12, 2025  
-**Status:** ✅ All 8 Core Docs Complete | High-Level Only Policy 100% Enforced | Root Cleaned | Violation Files Archived | Production Ready  
+**Last Updated:** December 12, 2025 (Subfolder Cleanup Complete)  
+**Status:** ✅ All 8 Core Docs Complete | HIGH-LEVEL ONLY Policy 100% Enforced (73 Files Archived) | Production Ready  
 **Documentation Policy:** 🎯 HIGH-LEVEL ONLY (Architecture-Focused, Zero Maintenance Burden)
 
 > **Policy:** This hub contains only high-level, architecture-stable documentation. Implementation details belong in code. Feature how-tos belong in code comments. Status updates are not maintained. This keeps documentation focused on what matters: system design, deployment, operations, and AI agent orchestration.
@@ -54,11 +54,11 @@ Start with any doc that matches your role, then use cross-links to explore. Each
 
 ### Historical Documentation
 
-- **[Archive (Old Files)](../archive-old/)** - Historical session notes, status updates, and superseded guides (46 root files + 70+ historical files)
-  - All session-specific documentation
-  - Completed audit and analysis files
-  - Legacy implementation notes
-  - Feature guides from previous sprints
+- **[Archive (Old Files)](../archive-old/)** - Historical session notes, status updates, and superseded guides
+  - **Root archive:** 46 files (session summaries, implementation reports, deprecated guides)
+  - **Subfolder archives:** 27 files (src/cofounder_agent: 25 analysis/status docs; web/oversight-hub: 2 implementation notes)
+  - **Total archived:** 73 violation files eliminated from active codebase
+  - **Marked as:** "Not maintained—reference only"
 
 ### Technical References
 
@@ -73,11 +73,16 @@ Start with any doc that matches your role, then use cross-links to explore. Each
 
 ## 🏗️ Documentation Structure Overview
 
-**Clean, Maintainable Documentation** (December 12, 2025 - Cleanup Complete)
+**Clean, Maintainable Documentation** (December 12, 2025 - Subfolder Cleanup Complete)
 
 - ✅ **Core Docs (00-07):** 8 files, 100% high-level architecture
 - ✅ **Technical Reference:** 8 essential specs (no duplicates)
 - ✅ **Troubleshooting:** 4 focused guides + component-specific
+- ✅ **Root Level:** 0 violation files (73 archived across root + subfolders)
+- ✅ **src/cofounder_agent/:** 0 violation files (25 archived to local archive/)
+- ✅ **web/oversight-hub/:** 0 violation files (2 archived to local archive/)
+- ✅ **docs/ Subfolders:** 100% compliant (decisions, reference, troubleshooting verified)
+- ✅ **Policy Enforcement:** Complete across entire codebase
 - ✅ **Components:** 3 service docs + architecture guides
 - ✅ **Decisions:** 3 architectural decision records
 - ✅ **Root Directory:** Clean - 2 files only (README.md, LICENSE.md) **[VERIFIED]**
