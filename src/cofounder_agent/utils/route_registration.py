@@ -241,24 +241,10 @@ def register_all_routes(
         logger.error(f" workflow_history registration failed: {e}")
         status['workflow_history_router'] = False
     
-    try:
-        # ===== INTELLIGENT ORCHESTRATOR (Phase 5+) =====
-        # DEPRECATED: Use unified_orchestrator_routes instead
-        from routes.intelligent_orchestrator_routes import router as intelligent_orchestrator_router
-        
-        if intelligent_orchestrator:
-            app.include_router(intelligent_orchestrator_router)
-            logger.info(" intelligent_orchestrator_router registered (deprecated, use unified instead)")
-            status['intelligent_orchestrator_router'] = True
-        else:
-            logger.warning(" intelligent_orchestrator not available (not initialized)")
-            status['intelligent_orchestrator_router'] = False
-    except ImportError as e:
-        logger.warning(f" intelligent_orchestrator not available: {e}")
-        status['intelligent_orchestrator_router'] = False
-    except Exception as e:
-        logger.error(f" intelligent_orchestrator registration failed: {e}")
-        status['intelligent_orchestrator_router'] = False
+    # ===== INTELLIGENT ORCHESTRATOR (DEPRECATED - replaced by UnifiedOrchestrator) =====
+    # This router is no longer registered. Use unified_orchestrator_routes instead.
+    logger.info(" intelligent_orchestrator_routes SKIPPED (deprecated, use unified_orchestrator_routes)")
+    status['intelligent_orchestrator_router'] = False
     
     try:
         # ===== UNIFIED ORCHESTRATOR ROUTES (Consolidated) =====

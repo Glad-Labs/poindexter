@@ -280,7 +280,7 @@ class ContentOrchestrator:
             
             from agents.content_agent.agents.creative_agent import CreativeAgent
             from agents.content_agent.services.llm_client import LLMClient
-            from cofounder_agent.services.content_quality_service import get_content_quality_service, EvaluationMethod
+            from cofounder_agent.services.quality_service import get_content_quality_service, EvaluationMethod
             from cofounder_agent.services.database_service import get_database_service
             
             llm_client = LLMClient()

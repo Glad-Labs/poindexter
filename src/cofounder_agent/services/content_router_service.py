@@ -23,7 +23,7 @@ import logging
 from .ai_content_generator import get_content_generator
 from .seo_content_generator import get_seo_content_generator
 from .image_service import ImageService, get_image_service
-from .content_quality_service import ContentQualityService, get_content_quality_service, EvaluationMethod
+from .quality_service import UnifiedQualityService, EvaluationMethod
 from .database_service import DatabaseService
 from .content_orchestrator import get_content_orchestrator
 

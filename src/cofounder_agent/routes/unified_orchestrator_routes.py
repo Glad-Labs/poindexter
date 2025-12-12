@@ -1,40 +1,39 @@
 """
 Unified Orchestrator Routes
 
-Consolidated endpoints for ORCHESTRATOR-SPECIFIC functionality:
+Consolidated endpoints for:
 - Natural language request processing via UnifiedOrchestrator
-- Task approval and publishing workflows
-- Multi-channel content distribution
+- Quality assessment and evaluation
+- Task management and approval workflows
+- Multi-channel publishing
 - Training data management
-- Learning patterns and tool discovery
 
 This file consolidates:
 - intelligent_orchestrator_routes.py (orchestration + publishing)
 - natural_language_content_routes.py (natural language processing)
 
-ORCHESTRATOR-SPECIFIC ENDPOINTS (kept):
+Endpoints:
 POST   /api/orchestrator/process              Process natural language request
-POST   /api/orchestrator/tasks/{task_id}/approve  Approve and publish task
-POST   /api/orchestrator/tasks/{task_id}/refine   Refine task content
-POST   /api/orchestrator/training-data/export Export training examples
-POST   /api/orchestrator/training-data/upload Upload custom model
+GET    /api/orchestrator/status/{task_id}     Get task status and progress
+GET    /api/orchestrator/tasks                List all tasks (paginated)
+GET    /api/orchestrator/tasks/{task_id}      Get task details
+POST   /api/orchestrator/tasks/{task_id}/approve  Approve and publish
+POST   /api/orchestrator/tasks/{task_id}/refine   Refine content
 
-REMOVED (now use /api/tasks instead):
-❌ GET    /api/orchestrator/tasks              → Use GET /api/tasks
-❌ GET    /api/orchestrator/tasks/{task_id}    → Use GET /api/tasks/{task_id}
-❌ GET    /api/orchestrator/status/{task_id}   → Use GET /api/tasks/{task_id}
-❌ In-memory TASK_STORE                        → Use PostgreSQL via /api/tasks
-
-QUALITY ENDPOINTS (in separate file):
 POST   /api/quality/evaluate                  Evaluate content quality
 POST   /api/quality/batch-evaluate            Batch quality evaluation
 GET    /api/quality/statistics                Get quality service statistics
+
+POST   /api/orchestrator/training-data/export Export training examples
+POST   /api/orchestrator/training-data/upload Upload custom model
+GET    /api/orchestrator/tools                List available tools
+GET    /api/orchestrator/learning-patterns    Get learned patterns
+GET    /api/orchestrator/metrics-analysis     Analyze business metrics
 """
 
 import logging
 import os
 import re
-import uuid as uuid_lib
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, Depends, Request
@@ -65,6 +64,10 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 orchestrator_router = APIRouter(prefix="/api/orchestrator", tags=["orchestrator"])
+quality_router = APIRouter(prefix="/api/quality", tags=["quality"])
+
+# In-memory task store (for now; use database for production)
+TASK_STORE: Dict[str, Dict[str, Any]] = {}
 
 
 # ============================================================================
@@ -119,6 +122,16 @@ class ProcessRequestBody(BaseModel):
         }
 
 
+class ExecutionStatusResponse(BaseModel):
+    """Execution status response"""
+    task_id: str
+    status: str
+    progress_percentage: int
+    current_phase: Optional[str] = None
+    request_type: Optional[str] = None
+    error: Optional[str] = None
+
+
 class ApprovalAction(BaseModel):
     """User approval action"""
     approved: bool
@@ -130,6 +143,35 @@ class RefineContentRequest(BaseModel):
     """Request to refine content"""
     feedback: str = Field(..., min_length=10, max_length=1000)
     focus_area: Optional[str] = Field(None)
+
+
+class QualityEvaluationRequest(BaseModel):
+    """Quality evaluation request"""
+    content: str = Field(..., min_length=10, max_length=50000)
+    topic: Optional[str] = Field(None)
+    keywords: Optional[List[str]] = Field(None)
+    method: str = Field("pattern-based", description="pattern-based, llm-based, or hybrid")
+
+
+class QualityDimensionsResponse(BaseModel):
+    """Quality dimensions"""
+    clarity: float
+    accuracy: float
+    completeness: float
+    relevance: float
+    seo_quality: float
+    readability: float
+    engagement: float
+
+
+class QualityEvaluationResponse(BaseModel):
+    """Quality evaluation response"""
+    overall_score: float
+    passing: bool
+    dimensions: QualityDimensionsResponse
+    feedback: str
+    suggestions: List[str]
+    evaluation_method: str
 
 
 # ============================================================================
@@ -147,16 +189,12 @@ class RefineContentRequest(BaseModel):
     2. Route to appropriate handler
     3. Execute the workflow
     4. Assess quality (if requested)
-    5. Create a task in /api/tasks (use GET /api/tasks/{task_id} to check status)
+    5. Return result ready for approval (if requested)
     
     Examples:
     - "Create a blog post about AI in healthcare"
     - "Research market trends for SaaS"
     - "Generate financial analysis report"
-    
-    **Note:** To list all tasks or check task status, use the main task endpoints:
-    - GET /api/tasks - List all tasks
-    - GET /api/tasks/{task_id} - Get task details
     """
 )
 async def process_orchestrator_request(
@@ -164,49 +202,49 @@ async def process_orchestrator_request(
     background_tasks: BackgroundTasks,
     orchestrator: UnifiedOrchestrator = Depends(get_unified_orchestrator),
     quality_service: UnifiedQualityService = Depends(get_quality_service),
-    db_service: DatabaseService = Depends(get_database_service),
 ) -> Dict[str, Any]:
     """Process natural language request through unified orchestrator"""
     try:
-        task_id = str(uuid_lib.uuid4())
+        task_id = f"task-{datetime.now().timestamp()}"
         logger.info(f"[{task_id}] Processing: {body.request[:100]}")
         
-        # Create task in database
-        task_data = {
-            "id": task_id,
-            "task_name": f"Orchestrated: {body.request[:100]}",
-            "topic": body.request,
-            "status": "pending",
-            "agent_id": "unified-orchestrator",
-            "metadata": {
-                "orchestrator_request": body.request,
-                "auto_quality_check": body.auto_quality_check,
-                "auto_approve": body.auto_approve,
-                "business_metrics": body.business_metrics.dict() if body.business_metrics else None,
-                "preferences": body.preferences.dict() if body.preferences else None,
-            },
-            "created_at": datetime.now(timezone.utc).isoformat(),
+        # Store initial task
+        TASK_STORE[task_id] = {
+            "status": "processing",
+            "created_at": datetime.now().isoformat(),
+            "request": body.request,
+            "progress": 0,
+            "auto_approve": body.auto_approve,
+            "channels": body.preferences.channels if body.preferences else ["blog"]
         }
         
-        stored_task_id = await db_service.add_task(task_data)
-        logger.info(f"[{stored_task_id}] Task created in database")
-        
-        # Process in background
-        background_tasks.add_task(
-            _process_request_async,
-            stored_task_id,
-            body,
-            orchestrator,
-            quality_service,
-            db_service
-        )
+        # Process in background if auto_approve or auto_quality_check
+        if body.auto_approve or body.auto_quality_check:
+            background_tasks.add_task(
+                _process_request_async,
+                task_id,
+                body,
+                orchestrator,
+                quality_service
+            )
+        else:
+            # Process synchronously for quick feedback
+            result = await orchestrator.process_request(
+                user_input=body.request,
+                context={
+                    "business_metrics": body.business_metrics.dict() if body.business_metrics else None,
+                    "preferences": body.preferences.dict() if body.preferences else None,
+                }
+            )
+            TASK_STORE[task_id]["result"] = result
+            TASK_STORE[task_id]["status"] = result.get("status", "completed")
         
         return {
             "success": True,
-            "task_id": stored_task_id,
-            "status": "pending",
-            "status_url": f"/api/tasks/{stored_task_id}",
-            "approval_url": f"/api/orchestrator/tasks/{stored_task_id}/approve",
+            "task_id": task_id,
+            "status": TASK_STORE[task_id]["status"],
+            "status_url": f"/api/orchestrator/status/{task_id}",
+            "approval_url": f"/api/orchestrator/tasks/{task_id}/approve",
             "message": "Request received and processing started"
         }
         
@@ -219,30 +257,22 @@ async def _process_request_async(
     task_id: str,
     body: ProcessRequestBody,
     orchestrator: UnifiedOrchestrator,
-    quality_service: UnifiedQualityService,
-    db_service: DatabaseService
+    quality_service: UnifiedQualityService
 ):
-    """Background processing of orchestrator request using database"""
+    """Background processing of orchestrator request"""
     try:
-        # Update task to executing
-        await db_service.update_task_status(task_id, "in_progress", {})
-        
         # Process through unified orchestrator
         result = await orchestrator.process_request(
             user_input=body.request,
             context={
                 "business_metrics": body.business_metrics.dict() if body.business_metrics else None,
                 "preferences": body.preferences.dict() if body.preferences else None,
-                "auto_quality_check": body.auto_quality_check,
             }
         )
         
-        # Store result in database
-        task_result = {
-            "request_result": result,
-            "output": result.get("output", ""),
-            "request_type": result.get("request_type"),
-        }
+        TASK_STORE[task_id]["result"] = result
+        TASK_STORE[task_id]["status"] = result.get("status", "completed")
+        TASK_STORE[task_id]["output"] = result.get("output", "")
         
         # Run quality check if requested
         if body.auto_quality_check and result.get("output"):
@@ -252,28 +282,20 @@ async def _process_request_async(
                     context={"topic": body.request},
                     method=EvaluationMethod.PATTERN_BASED
                 )
-                task_result["quality"] = assessment.to_dict()
+                TASK_STORE[task_id]["quality"] = assessment.to_dict()
                 logger.info(f"[{task_id}] Quality: {assessment.overall_score:.1f}/10")
             except Exception as e:
                 logger.warning(f"[{task_id}] Quality check failed: {e}")
         
         # Auto-approve if enabled and quality passes
-        final_status = "completed"
-        if body.auto_approve and task_result.get("quality", {}).get("passing", False):
-            final_status = "completed"  # Mark as ready for approval
-            logger.info(f"[{task_id}] Auto-approved (quality passed)")
-        
-        # Update task with result
-        await db_service.update_task_status(task_id, final_status, task_result)
-        logger.info(f"[{task_id}] Processing complete, status: {final_status}")
+        if body.auto_approve and TASK_STORE[task_id].get("quality", {}).get("passing", False):
+            TASK_STORE[task_id]["status"] = "approved"
+            logger.info(f"[{task_id}] Auto-approved")
         
     except Exception as e:
         logger.error(f"[{task_id}] Background processing failed: {e}", exc_info=True)
-        await db_service.update_task_status(
-            task_id,
-            "failed",
-            {"error": str(e), "error_message": f"Processing failed: {str(e)}"}
-        )
+        TASK_STORE[task_id]["status"] = "failed"
+        TASK_STORE[task_id]["error"] = str(e)
 
 
 @orchestrator_router.get(

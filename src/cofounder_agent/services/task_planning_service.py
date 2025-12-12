@@ -1,7 +1,7 @@
 """
 Task Planning Service - Generate Visible Execution Plans
 
-Extends IntelligentOrchestrator to create visible, user-confirmable execution plans.
+Extends UnifiedOrchestrator to create visible, user-confirmable execution plans.
 
 Purpose:
 - Transform task_intent_request + business metrics into detailed execution plan
@@ -20,7 +20,7 @@ from dataclasses import dataclass, asdict
 from decimal import Decimal
 import json
 
-from .intelligent_orchestrator import IntelligentOrchestrator
+from .unified_orchestrator import UnifiedOrchestrator
 from .model_router import ModelRouter
 from .task_intent_router import TaskIntentRequest, SubtaskPlan
 
@@ -133,7 +133,7 @@ class TaskPlanningService:
     
     def __init__(self):
         """Initialize planning service."""
-        self.orchestrator = IntelligentOrchestrator()
+        self.orchestrator = UnifiedOrchestrator()
         self.model_router = ModelRouter()
     
     async def generate_plan(

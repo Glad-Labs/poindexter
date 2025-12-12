@@ -227,34 +227,10 @@ class StartupManager:
         """Initialize intelligent orchestrator (Phase 5+)"""
         logger.info("  🧠 Initializing intelligent orchestrator...")
         
-        try:
-            from services.intelligent_orchestrator import IntelligentOrchestrator
-            from services.orchestrator_memory_extensions import EnhancedMemorySystem
-            
-            if self.orchestrator and self.database_service:
-                # Create enhanced memory system wrapper
-                try:
-                    from memory_system import AIMemorySystem
-                    base_memory = AIMemorySystem(db_pool=self.database_service.pool)
-                except Exception:
-                    base_memory = None
-                
-                enhanced_memory = EnhancedMemorySystem(base_memory)
-                
-                # Initialize intelligent orchestrator
-                self.intelligent_orchestrator = IntelligentOrchestrator(
-                    llm_client=None,  # Will be initialized internally
-                    database_service=self.database_service,
-                    memory_system=enhanced_memory,
-                    mcp_orchestrator=None  # Optional, can be injected later
-                )
-                logger.info("   Intelligent orchestrator initialized successfully")
-            else:
-                logger.warning("   Intelligent orchestrator module not available or dependencies missing")
-        except Exception as e:
-            error_msg = f"Intelligent orchestrator initialization failed: {str(e)}"
-            logger.warning(f"   {error_msg}", exc_info=True)
-            self.intelligent_orchestrator = None
+        # IntelligentOrchestrator is DEPRECATED - replaced by UnifiedOrchestrator
+        # Skipping initialization
+        logger.info("   Intelligent orchestrator skipped (deprecated, using UnifiedOrchestrator)")
+        self.intelligent_orchestrator = None
     
     async def _initialize_content_critique(self) -> None:
         """Initialize content critique loop"""

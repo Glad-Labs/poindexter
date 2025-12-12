@@ -252,22 +252,13 @@ class TaskExecutor:
                 logger.info(f"   Orchestrator available: YES")
                 logger.info(f"   Type: {type(self.orchestrator).__name__}")
                 
-                # Check if using IntelligentOrchestrator (New System)
-                is_intelligent = False
-                try:
-                    from .intelligent_orchestrator import IntelligentOrchestrator
-                    if isinstance(self.orchestrator, IntelligentOrchestrator):
-                        is_intelligent = True
-                except ImportError:
-                    pass
-
-                if is_intelligent:
-                    logger.info(f"   🧠 Using IntelligentOrchestrator")
-                    # Construct natural language request
-                    prompt = f"Generate a blog post about '{topic}'."
-                    if primary_keyword:
-                        prompt += f" Focus on keywords: {primary_keyword}."
-                    if target_audience:
+                # Using UnifiedOrchestrator (IntelligentOrchestrator is deprecated)
+                logger.info(f"   🚀 Using UnifiedOrchestrator (unified system)")
+                # Construct natural language request
+                prompt = f"Generate a blog post about '{topic}'."
+                if primary_keyword:
+                    prompt += f" Focus on keywords: {primary_keyword}."
+                if target_audience:
                         prompt += f" Target audience is {target_audience}."
                     if category:
                         prompt += f" Category: {category}."

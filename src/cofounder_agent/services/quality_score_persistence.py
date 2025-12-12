@@ -8,7 +8,7 @@ querying/analytics capabilities for quality metrics.
 import logging
 from typing import Dict, List, Any, Optional
 from datetime import datetime, date
-from services.quality_evaluator import QualityScore
+from services.quality_service import QualityScore
 
 logger = logging.getLogger(__name__)
 

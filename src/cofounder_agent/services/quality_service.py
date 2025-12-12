@@ -44,6 +44,46 @@ class EvaluationMethod(str, Enum):
     HYBRID = "hybrid"                    # Combines both
 
 
+@dataclass
+class QualityScore:
+    """Detailed quality evaluation result (backward compatibility with QualityEvaluator)"""
+    overall_score: float  # 0-10 (average of 7 criteria)
+    clarity: float  # 0-10
+    accuracy: float  # 0-10
+    completeness: float  # 0-10
+    relevance: float  # 0-10
+    seo_quality: float  # 0-10
+    readability: float  # 0-10
+    engagement: float  # 0-10
+    
+    # Feedback
+    passing: bool  # True if overall_score >= 7.0
+    feedback: str  # Human-readable feedback
+    suggestions: List[str]  # Improvement suggestions
+    
+    # Metadata
+    evaluation_timestamp: str
+    evaluated_by: str = "QualityEvaluator"
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for database storage"""
+        return {
+            "overall_score": self.overall_score,
+            "clarity": self.clarity,
+            "accuracy": self.accuracy,
+            "completeness": self.completeness,
+            "relevance": self.relevance,
+            "seo_quality": self.seo_quality,
+            "readability": self.readability,
+            "engagement": self.engagement,
+            "passing": self.passing,
+            "feedback": self.feedback,
+            "suggestions": self.suggestions,
+            "evaluation_timestamp": self.evaluation_timestamp,
+            "evaluated_by": self.evaluated_by,
+        }
+
+
 class RefinementType(str, Enum):
     """Types of refinements that can be applied"""
     CLARITY = "clarity"
@@ -567,3 +607,22 @@ class UnifiedQualityService:
             ),
             "average_score": self.average_score,
         }
+
+
+# ============================================================================
+# DEPENDENCY INJECTION & FACTORY FUNCTIONS
+# ============================================================================
+
+def get_quality_service(model_router=None, database_service=None) -> UnifiedQualityService:
+    """Factory function for UnifiedQualityService dependency injection"""
+    return UnifiedQualityService(model_router=model_router, database_service=database_service)
+
+
+# Backward compatibility alias
+def get_content_quality_service(model_router=None, database_service=None) -> UnifiedQualityService:
+    """Backward compatibility alias for get_quality_service (ContentQualityService renamed to UnifiedQualityService)"""
+    return UnifiedQualityService(model_router=model_router, database_service=database_service)
+
+
+# Backward compatibility alias for class name
+ContentQualityService = UnifiedQualityService
