@@ -18,36 +18,14 @@ from routes.auth_unified import get_current_user
 from services.database_service import DatabaseService
 from utils.route_utils import get_database_dependency
 from utils.error_responses import ErrorResponseBuilder
+from schemas.bulk_task_schemas import (
+    BulkTaskRequest,
+    BulkTaskResponse,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks-bulk"])
-
-
-class BulkTaskRequest(BaseModel):
-    """Request schema for bulk task operations"""
-    task_ids: List[str]
-    action: str  # "pause", "resume", "cancel", "delete"
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "task_ids": [
-                    "550e8400-e29b-41d4-a716-446655440000",
-                    "550e8400-e29b-41d4-a716-446655440001"
-                ],
-                "action": "cancel"
-            }
-        }
-
-
-class BulkTaskResponse(BaseModel):
-    """Response schema for bulk operations"""
-    message: str
-    updated: int
-    failed: int
-    total: int
-    errors: Optional[List[dict]] = None
 
 
 @router.post("/bulk", response_model=BulkTaskResponse, summary="Perform bulk operations on multiple tasks")

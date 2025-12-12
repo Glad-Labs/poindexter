@@ -90,6 +90,26 @@ from .metrics_schemas import (
     PerformanceMetrics,
 )
 
+# Bulk task schemas
+from .bulk_task_schemas import (
+    BulkTaskRequest,
+    BulkTaskResponse,
+)
+
+# Natural language schemas
+from .natural_language_schemas import (
+    NaturalLanguageRequest,
+    RefineContentRequest,
+    NaturalLanguageResponse,
+)
+
+# Ollama schemas
+from .ollama_schemas import (
+    OllamaHealthResponse,
+    OllamaWarmupResponse,
+    OllamaModelSelection,
+)
+
 __all__ = [
     # Orchestrator
     "ProcessRequestBody",
@@ -143,5 +163,16 @@ __all__ = [
     "CostsResponse",
     "HealthMetrics",
     "PerformanceMetrics",
+    # Bulk task
+    "BulkTaskRequest",
+    "BulkTaskResponse",
+    # Natural language
+    "NaturalLanguageRequest",
+    "RefineContentRequest",
+    "NaturalLanguageResponse",
+    # Ollama
+    "OllamaHealthResponse",
+    "OllamaWarmupResponse",
+    "OllamaModelSelection",
 ]
 

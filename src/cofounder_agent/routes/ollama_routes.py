@@ -14,35 +14,18 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from datetime import datetime
 
+from schemas.ollama_schemas import (
+    OllamaHealthResponse,
+    OllamaWarmupResponse,
+    OllamaModelSelection,
+)
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ollama", tags=["ollama"])
 
 OLLAMA_HOST = "http://localhost:11434"
 OLLAMA_TIMEOUT = 5.0
-
-
-class OllamaHealthResponse(BaseModel):
-    """Response for Ollama health check"""
-    connected: bool
-    status: str
-    models: Optional[list] = None
-    message: str
-    timestamp: str
-
-
-class OllamaWarmupResponse(BaseModel):
-    """Response for Ollama warm-up"""
-    status: str
-    model: str
-    message: str
-    generation_time: Optional[float] = None
-    timestamp: str
-
-
-class OllamaModelSelection(BaseModel):
-    """Request body for model selection"""
-    model: str
 
 
 @router.get("/health", response_model=OllamaHealthResponse)
