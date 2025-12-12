@@ -47,6 +47,18 @@ from .content_schemas import (
     GenerateAndPublishRequest,
 )
 
+# Agent schemas
+from .agent_schemas import (
+    AgentStatus,
+    AllAgentsStatus,
+    AgentCommand,
+    AgentCommandResult,
+    AgentLog,
+    AgentLogs,
+    MemoryStats,
+    AgentHealth,
+)
+
 __all__ = [
     # Orchestrator
     "ProcessRequestBody",
@@ -72,5 +84,14 @@ __all__ = [
     "ApprovalResponse",
     "PublishDraftResponse",
     "GenerateAndPublishRequest",
+    # Agent
+    "AgentStatus",
+    "AllAgentsStatus",
+    "AgentCommand",
+    "AgentCommandResult",
+    "AgentLog",
+    "AgentLogs",
+    "MemoryStats",
+    "AgentHealth",
 ]
 
