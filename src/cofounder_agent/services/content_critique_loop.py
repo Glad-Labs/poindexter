@@ -46,6 +46,16 @@ class ContentCritiqueLoop:
         """
         self.critique_count += 1
 
+        # Handle None content
+        if not content:
+            return {
+                "approved": False,
+                "quality_score": 0,
+                "feedback": "No content provided for critique",
+                "suggestions": ["Content is empty or None"],
+                "needs_refinement": True
+            }
+
         logger.debug(f"🔍 Critiquing content ({len(content)} chars)")
 
         try:

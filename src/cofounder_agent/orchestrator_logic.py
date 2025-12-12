@@ -522,12 +522,17 @@ class Orchestrator:
                         message_id = api_response.json().get("command_id", "unknown")
                         response += f" → Content agent notified via API (Command ID: {str(message_id)[:8]}...)"
                         
-                        # Update task status
+                        # Update task status with metadata
                         if self.database_service:
-                            await self.database_service.update_task_status(
+                            await self.database_service.update_task(
                                 task_id, 
-                                "in_progress", 
-                                {"api_command_id": message_id, "dispatched_at": str(time.time())}
+                                updates={
+                                    'status': 'in_progress',
+                                    'task_metadata': {
+                                        'api_command_id': message_id,
+                                        'dispatched_at': str(time.time())
+                                    }
+                                }
                             )
                     else:
                         response += " → Content agent ready for processing"

@@ -129,17 +129,12 @@ async def run_research_subtask(
     
     try:
         # Create subtask record in database
-        await db_service.execute(
-            """
-            INSERT INTO tasks (
-                id, task_name, task_type, status, metadata
-            ) VALUES (
-                $1, $2, 'subtask', 'in_progress', $3
-            )
-            """,
-            subtask_id,
-            f"Research: {request.topic}",
-            {
+        await db_service.add_task({
+            "id": subtask_id,
+            "task_name": f"Research: {request.topic}",
+            "task_type": "subtask",
+            "status": "in_progress",
+            "metadata": {
                 "stage": "research",
                 "parent_task_id": request.parent_task_id,
                 "inputs": {
@@ -147,7 +142,7 @@ async def run_research_subtask(
                     "keywords": request.keywords
                 }
             }
-        )
+        })
         
         # Execute research stage
         orchestrator = ContentOrchestrator()
@@ -163,13 +158,10 @@ async def run_research_subtask(
             "keywords": request.keywords
         }
         
-        await db_service.execute(
-            """
-            UPDATE tasks SET status = 'completed', result = $1
-            WHERE id = $2
-            """,
-            result_data,
-            subtask_id
+        await db_service.update_task_status(
+            subtask_id,
+            "completed",
+            result_data
         )
         
         return SubtaskResponse(
@@ -193,16 +185,15 @@ async def run_research_subtask(
         logger.error(f"Research subtask failed: {e}")
         tracker.end_operation(subtask_id, success=False, error=str(e))
         
-        # Mark as failed
-        await db_service.execute(
-            """
-            UPDATE tasks SET status = 'failed', metadata = 
-            jsonb_set(metadata, '{error}', to_jsonb($1))
-            WHERE id = $2
-            """,
-            str(e),
-            subtask_id
-        )
+        # Mark as failed by updating task status
+        try:
+            await db_service.update_task_status(
+                subtask_id,
+                "failed",
+                {"error": str(e)}
+            )
+        except Exception as db_err:
+            logger.error(f"Failed to update task status in error handler: {db_err}")
         
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -227,17 +218,12 @@ async def run_creative_subtask(
     subtask_id = str(uuid4())
     
     try:
-        await db_service.execute(
-            """
-            INSERT INTO tasks (
-                id, task_name, task_type, status, metadata
-            ) VALUES (
-                $1, $2, 'subtask', 'in_progress', $3
-            )
-            """,
-            subtask_id,
-            f"Creative: {request.topic}",
-            {
+        await db_service.add_task({
+            "id": subtask_id,
+            "task_name": f"Creative: {request.topic}",
+            "task_type": "subtask",
+            "status": "in_progress",
+            "metadata": {
                 "stage": "creative",
                 "parent_task_id": request.parent_task_id,
                 "inputs": {
@@ -248,7 +234,7 @@ async def run_creative_subtask(
                     "has_research": request.research_output is not None
                 }
             }
-        )
+        })
         
         orchestrator = ContentOrchestrator()
         blog_post = await orchestrator._run_creative_initial(
@@ -266,13 +252,10 @@ async def run_creative_subtask(
             "tone": request.tone
         }
         
-        await db_service.execute(
-            """
-            UPDATE tasks SET status = 'completed', result = $1
-            WHERE id = $2
-            """,
-            result_data,
-            subtask_id
+        await db_service.update_task_status(
+            subtask_id,
+            "completed",
+            result_data
         )
         
         return SubtaskResponse(
@@ -290,15 +273,14 @@ async def run_creative_subtask(
         
     except Exception as e:
         logger.error(f"Creative subtask failed: {e}")
-        await db_service.execute(
-            """
-            UPDATE tasks SET status = 'failed', metadata = 
-            jsonb_set(metadata, '{error}', to_jsonb($1))
-            WHERE id = $2
-            """,
-            str(e),
-            subtask_id
-        )
+        try:
+            await db_service.update_task_status(
+                subtask_id,
+                "failed",
+                {"error": str(e)}
+            )
+        except Exception as db_err:
+            logger.error(f"Failed to update task status in error handler: {db_err}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -322,17 +304,12 @@ async def run_qa_subtask(
     subtask_id = str(uuid4())
     
     try:
-        await db_service.execute(
-            """
-            INSERT INTO tasks (
-                id, task_name, task_type, status, metadata
-            ) VALUES (
-                $1, $2, 'subtask', 'in_progress', $3
-            )
-            """,
-            subtask_id,
-            f"QA Review: {request.topic}",
-            {
+        await db_service.add_task({
+            "id": subtask_id,
+            "task_name": f"QA Review: {request.topic}",
+            "task_type": "subtask",
+            "status": "in_progress",
+            "metadata": {
                 "stage": "qa",
                 "parent_task_id": request.parent_task_id,
                 "inputs": {
@@ -342,7 +319,7 @@ async def run_qa_subtask(
                     "max_iterations": request.max_iterations
                 }
             }
-        )
+        })
         
         orchestrator = ContentOrchestrator()
         final_content, feedback, quality_score = await orchestrator._run_qa_loop(
@@ -361,13 +338,10 @@ async def run_qa_subtask(
             "iterations": request.max_iterations
         }
         
-        await db_service.execute(
-            """
-            UPDATE tasks SET status = 'completed', result = $1
-            WHERE id = $2
-            """,
-            result_data,
-            subtask_id
+        await db_service.update_task_status(
+            subtask_id,
+            "completed",
+            result_data
         )
         
         return SubtaskResponse(
@@ -386,15 +360,14 @@ async def run_qa_subtask(
         
     except Exception as e:
         logger.error(f"QA subtask failed: {e}")
-        await db_service.execute(
-            """
-            UPDATE tasks SET status = 'failed', metadata = 
-            jsonb_set(metadata, '{error}', to_jsonb($1))
-            WHERE id = $2
-            """,
-            str(e),
-            subtask_id
-        )
+        try:
+            await db_service.update_task_status(
+                subtask_id,
+                "failed",
+                {"error": str(e)}
+            )
+        except Exception as db_err:
+            logger.error(f"Failed to update task status in error handler: {db_err}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -416,17 +389,12 @@ async def run_image_subtask(
     subtask_id = str(uuid4())
     
     try:
-        await db_service.execute(
-            """
-            INSERT INTO tasks (
-                id, task_name, task_type, status, metadata
-            ) VALUES (
-                $1, $2, 'subtask', 'in_progress', $3
-            )
-            """,
-            subtask_id,
-            f"Images: {request.topic}",
-            {
+        await db_service.add_task({
+            "id": subtask_id,
+            "task_name": f"Images: {request.topic}",
+            "task_type": "subtask",
+            "status": "in_progress",
+            "metadata": {
                 "stage": "images",
                 "parent_task_id": request.parent_task_id,
                 "inputs": {
@@ -434,7 +402,7 @@ async def run_image_subtask(
                     "number_of_images": request.number_of_images
                 }
             }
-        )
+        })
         
         orchestrator = ContentOrchestrator()
         featured_image_url = await orchestrator._run_image_selection(
@@ -448,13 +416,10 @@ async def run_image_subtask(
             "number_requested": request.number_of_images
         }
         
-        await db_service.execute(
-            """
-            UPDATE tasks SET status = 'completed', result = $1
-            WHERE id = $2
-            """,
-            result_data,
-            subtask_id
+        await db_service.update_task_status(
+            subtask_id,
+            "completed",
+            result_data
         )
         
         return SubtaskResponse(
@@ -473,15 +438,14 @@ async def run_image_subtask(
         
     except Exception as e:
         logger.error(f"Image subtask failed: {e}")
-        await db_service.execute(
-            """
-            UPDATE tasks SET status = 'failed', metadata = 
-            jsonb_set(metadata, '{error}', to_jsonb($1))
-            WHERE id = $2
-            """,
-            str(e),
-            subtask_id
-        )
+        try:
+            await db_service.update_task_status(
+                subtask_id,
+                "failed",
+                {"error": str(e)}
+            )
+        except Exception as db_err:
+            logger.error(f"Failed to update task status in error handler: {db_err}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -503,17 +467,12 @@ async def run_format_subtask(
     subtask_id = str(uuid4())
     
     try:
-        await db_service.execute(
-            """
-            INSERT INTO tasks (
-                id, task_name, task_type, status, metadata
-            ) VALUES (
-                $1, $2, 'subtask', 'in_progress', $3
-            )
-            """,
-            subtask_id,
-            f"Format: {request.topic}",
-            {
+        await db_service.add_task({
+            "id": subtask_id,
+            "task_name": f"Format: {request.topic}",
+            "task_type": "subtask",
+            "status": "in_progress",
+            "metadata": {
                 "stage": "format",
                 "parent_task_id": request.parent_task_id,
                 "inputs": {
@@ -521,7 +480,7 @@ async def run_format_subtask(
                     "has_image": request.featured_image_url is not None
                 }
             }
-        )
+        })
         
         orchestrator = ContentOrchestrator()
         formatted_content, excerpt = await orchestrator._run_formatting(
@@ -537,13 +496,10 @@ async def run_format_subtask(
             "category": request.category
         }
         
-        await db_service.execute(
-            """
-            UPDATE tasks SET status = 'completed', result = $1
-            WHERE id = $2
-            """,
-            result_data,
-            subtask_id
+        await db_service.update_task_status(
+            subtask_id,
+            "completed",
+            result_data
         )
         
         return SubtaskResponse(
@@ -561,13 +517,12 @@ async def run_format_subtask(
         
     except Exception as e:
         logger.error(f"Format subtask failed: {e}")
-        await db_service.execute(
-            """
-            UPDATE tasks SET status = 'failed', metadata = 
-            jsonb_set(metadata, '{error}', to_jsonb($1))
-            WHERE id = $2
-            """,
-            str(e),
-            subtask_id
-        )
+        try:
+            await db_service.update_task_status(
+                subtask_id,
+                "failed",
+                {"error": str(e)}
+            )
+        except Exception as db_err:
+            logger.error(f"Failed to update task status in error handler: {db_err}")
         raise HTTPException(status_code=500, detail=str(e))

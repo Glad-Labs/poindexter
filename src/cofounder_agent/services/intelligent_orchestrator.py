@@ -264,9 +264,11 @@ class IntelligentOrchestrator:
                 business_metrics,
                 preferences
             )
+            # Handle both ExecutionPlan objects and dicts from fallback
+            plan_id = plan.plan_id if hasattr(plan, 'plan_id') else plan.get('plan_id', 'unknown')
             execution_context["phases"]["planning"] = {
                 "status": "complete",
-                "plan_id": plan.plan_id
+                "plan_id": plan_id
             }
 
             # PHASE 2: Tool Discovery (via MCP)
@@ -549,11 +551,12 @@ RESPONSE FORMAT (JSON):
     # PHASE 2: TOOL DISCOVERY (MCP Integration)
     # ========================================================================
 
-    async def _discover_tools(self, plan: ExecutionPlan) -> Dict[str, ToolSpecification]:
+    async def _discover_tools(self, plan) -> Dict[str, ToolSpecification]:
         """
         Discover available tools for the workflow.
 
         Uses MCP to dynamically discover tools and merges with existing registry.
+        Handles both ExecutionPlan objects and fallback dicts.
         """
         discovered_tools: Dict[str, ToolSpecification] = {}
 
@@ -573,11 +576,17 @@ RESPONSE FORMAT (JSON):
 
         # Filter to tools needed for this plan
         required_tools: Dict[str, ToolSpecification] = {}
-        for step in plan.workflow_steps:
-            if step.tool_id in discovered_tools:
-                tool = discovered_tools[step.tool_id]
+        
+        # Handle both ExecutionPlan objects and fallback dicts
+        workflow_steps = plan.workflow_steps if hasattr(plan, 'workflow_steps') else plan.get('workflow_steps', [])
+        
+        for step in workflow_steps:
+            # Handle both WorkflowStep objects and dicts
+            step_tool_id = step.tool_id if hasattr(step, 'tool_id') else step.get('tool_id')
+            if step_tool_id in discovered_tools:
+                tool = discovered_tools[step_tool_id]
                 if tool is not None:
-                    required_tools[step.tool_id] = tool
+                    required_tools[step_tool_id] = tool
 
         return required_tools
 
@@ -587,25 +596,35 @@ RESPONSE FORMAT (JSON):
 
     async def _execute_workflow(
         self,
-        plan: ExecutionPlan,
+        plan,
         tools: Dict[str, ToolSpecification]
     ) -> Dict[str, Any]:
         """
         Execute the workflow, respecting dependencies.
 
         Uses asyncio.gather() for parallel execution of independent steps.
+        Handles both ExecutionPlan objects and fallback dicts.
         """
         results: Dict[str, Any] = {}
         completed_steps: Set[str] = set()
-        step_map = {step.step_id: step for step in plan.workflow_steps}
+        
+        # Handle both ExecutionPlan objects and fallback dicts
+        workflow_steps = plan.workflow_steps if hasattr(plan, 'workflow_steps') else plan.get('workflow_steps', [])
+        step_map = {}
+        
+        for step in workflow_steps:
+            step_id = step.step_id if hasattr(step, 'step_id') else step.get('step_id')
+            step_map[step_id] = step
 
-        while len(completed_steps) < len(plan.workflow_steps):
+        while len(completed_steps) < len(workflow_steps):
             # Find steps ready to execute
-            ready_steps = [
-                step for step in plan.workflow_steps
-                if step.step_id not in completed_steps 
-                and all(dep in completed_steps for dep in step.dependencies)
-            ]
+            ready_steps = []
+            for step in workflow_steps:
+                step_id = step.step_id if hasattr(step, 'step_id') else step.get('step_id')
+                dependencies = step.dependencies if hasattr(step, 'dependencies') else step.get('depends_on', [])
+                
+                if step_id not in completed_steps and all(dep in completed_steps for dep in dependencies):
+                    ready_steps.append(step)
 
             if not ready_steps:
                 raise RuntimeError(
@@ -622,59 +641,70 @@ RESPONSE FORMAT (JSON):
 
             # Process results
             for step, result in zip(ready_steps, step_results):
+                # Handle both WorkflowStep objects and dicts
+                step_id = step.step_id if hasattr(step, 'step_id') else step.get('step_id')
+                
                 if isinstance(result, Exception):
-                    results[step.step_id] = {
+                    results[step_id] = {
                         "error": str(result),
                         "status": "failed"
                     }
                 else:
-                    results[step.step_id] = result
+                    results[step_id] = result
 
-                completed_steps.add(step.step_id)
+                completed_steps.add(step_id)
 
         return results
 
     async def _execute_step(
         self,
-        step: WorkflowStep,
+        step,
         results: Dict[str, Any],
         tools: Dict[str, ToolSpecification]
     ) -> Dict[str, Any]:
         """Execute a single workflow step"""
-        logger.info(f"Executing step {step.step_id}: {step.description}")
+        # Handle both WorkflowStep objects and dicts
+        step_id = step.step_id if hasattr(step, 'step_id') else step.get('step_id')
+        description = step.description if hasattr(step, 'description') else step.get('description', '')
+        input_data = step.input_data if hasattr(step, 'input_data') else step.get('input_data', {})
+        dependencies = step.dependencies if hasattr(step, 'dependencies') else step.get('depends_on', [])
+        tool_id = step.tool_id if hasattr(step, 'tool_id') else step.get('tool_id')
+        timeout_seconds = step.timeout_seconds if hasattr(step, 'timeout_seconds') else step.get('timeout_seconds', 300)
+        
+        logger.info(f"Executing step {step_id}: {description}")
 
         # Prepare input by merging original data and dependency results
         step_input = {
-            **step.input_data,
+            **input_data,
             "dependencies": {
-                dep_id: results.get(dep_id) for dep_id in step.dependencies
+                dep_id: results.get(dep_id) for dep_id in dependencies
             }
         }
 
         # Get tool
-        tool = tools.get(step.tool_id)
+        tool = tools.get(tool_id)
         if not tool:
-            raise ValueError(f"Tool not found: {step.tool_id}")
+            raise ValueError(f"Tool not found: {tool_id}")
 
         # Execute via MCP if available, otherwise use direct execution
         if self.mcp_orchestrator and tool.source == "mcp":
             try:
                 output = await self.mcp_orchestrator.call_tool(
-                    step.tool_id,
+                    tool_id,
                     step_input,
-                    timeout=step.timeout_seconds
+                    timeout=timeout_seconds
                 )
             except Exception as e:
                 logger.error(f"MCP tool execution failed: {e}")
                 output = {"error": str(e)}
         else:
             # Fallback to direct execution
-            output = await self._execute_tool_direct(step.tool_id, step_input)
+            output = await self._execute_tool_direct(tool_id, step_input)
 
         return {
             "output": output,
-            "step_id": step.step_id,
-            "tool_id": step.tool_id,
+            "step_id": step_id,
+            "tool_id": tool_id,
             "executed_at": datetime.now().isoformat()
         }
 

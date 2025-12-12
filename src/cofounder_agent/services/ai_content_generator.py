@@ -200,6 +200,10 @@ class AIContentGenerator:
         logger.info(f"📌 Quality threshold: {self.quality_threshold}")
         logger.info(f"{'='*80}\n")
         
+        # Check if Ollama is available (async check, happens once)
+        await self._check_ollama_async()
+        logger.info(f"📌 Ollama available: {self.ollama_available}\n")
+        
         # Build prompts
         system_prompt = f"""You are an expert technical writer and blogger.
 Your writing style is {style}.

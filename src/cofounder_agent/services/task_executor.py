@@ -303,9 +303,10 @@ class TaskExecutor:
                 else:
                     # Legacy Orchestrator
                     logger.info(f"   ⚙️ Using Legacy Orchestrator")
-                    orchestrator_result = await self.orchestrator.process_command_async(
-                        command="generate_content",
-                        context={
+                    orchestrator_result = await self.orchestrator.process_request(
+                        user_request=f"Generate content: {topic}",
+                        user_id="system_task_executor",
+                        business_metrics={
                             "topic": topic,
                             "keywords": primary_keyword,
                             "target_audience": target_audience,
@@ -369,9 +370,10 @@ class TaskExecutor:
             if critique_result.get("needs_refinement") and self.orchestrator:
                 logger.info(f"🔄 [TASK_EXECUTE] Attempting refinement based on critique feedback...")
                 try:
-                    refinement_result = await self.orchestrator.process_command_async(
-                        command="refine_content",
-                        context={
+                    refinement_result = await self.orchestrator.process_request(
+                        user_request=f"Refine content based on feedback: {topic}",
+                        user_id="system_task_executor",
+                        business_metrics={
                             "original_content": generated_content,
                             "feedback": critique_result.get("feedback"),
                             "suggestions": critique_result.get("suggestions"),

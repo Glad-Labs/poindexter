@@ -390,8 +390,10 @@ async def process_content_generation_task(
         # ================================================================================
         logger.info("📋 STAGE 1: Creating content_task record...")
         
-        content_task = await database_service.create_content_task({
+        # Use consolidated add_task() method
+        task_id_created = await database_service.add_task({
             'task_id': task_id,
+            'id': task_id,
             'request_type': 'api_request',
             'task_type': 'blog_post',
             'status': 'pending',
@@ -402,7 +404,7 @@ async def process_content_generation_task(
             'approval_status': 'pending'
         })
         
-        result['content_task_id'] = content_task['task_id']
+        result['content_task_id'] = task_id_created
         result['stages']['1_content_task_created'] = True
         logger.info(f"✅ Content task created: {content_task['task_id']}\n")
         
@@ -417,8 +419,7 @@ async def process_content_generation_task(
             style=style,
             tone=tone,
             target_length=target_length,
-            tags=tags or [],
-            enhanced=True
+            tags=tags or []
         )
         
         # Validate content_text is not None
@@ -427,10 +428,12 @@ async def process_content_generation_task(
             raise ValueError("Content generation failed: no content produced")
         
         # Update content_task with generated content
-        await database_service.update_content_task_status(
+        await database_service.update_task(
             task_id=task_id,
-            status='generated',
-            content=content_text
+            updates={
+                'status': 'generated',
+                'content': content_text
+            }
         )
         
         result['content'] = content_text
@@ -515,7 +518,8 @@ async def process_content_generation_task(
         logger.info("📊 STAGE 4: Generating SEO metadata...")
         
         seo_generator = get_seo_content_generator(content_generator)
-        seo_assets = seo_generator.generate_seo_assets(
+        # SEOOptimizedContentGenerator wraps ContentMetadataGenerator which has generate_seo_assets
+        seo_assets = seo_generator.metadata_gen.generate_seo_assets(
             title=topic,
             content=content_text,
             topic=topic
@@ -526,11 +530,14 @@ async def process_content_generation_task(
             logger.error(f"❌ SEO generation returned None or invalid format")
             raise ValueError("SEO metadata generation failed: invalid result")
         
-        seo_keywords = seo_assets.get('meta_keywords', tags or [])
-        if seo_keywords:
+        seo_keywords = seo_assets.get('meta_keywords') or (tags or [])
+        # Ensure seo_keywords is a list before slicing
+        if isinstance(seo_keywords, list):
             seo_keywords = seo_keywords[:10]
+        elif seo_keywords:
+            seo_keywords = [seo_keywords][:10]
         else:
-            seo_keywords = tags[:10] if tags else []
+            seo_keywords = []
             
         seo_title = seo_assets.get('seo_title', topic)
         if seo_title:
@@ -641,11 +648,13 @@ async def process_content_generation_task(
         # ================================================================================
         # UPDATE CONTENT_TASK WITH FINAL STATUS
         # ================================================================================
-        await database_service.update_content_task_status(
+        await database_service.update_task(
             task_id=task_id,
-            status='completed',
-            approval_status='pending_human_review',
-            quality_score=int(quality_result.overall_score)
+            updates={
+                'status': 'completed',
+                'approval_status': 'pending_human_review',
+                'quality_score': int(quality_result.overall_score)
+            }
         )
         
         result['status'] = 'completed'
@@ -668,10 +677,12 @@ async def process_content_generation_task(
         
         # Update content_task with failure status
         try:
-            await database_service.update_content_task_status(
+            await database_service.update_task(
                 task_id=task_id,
-                status='failed',
-                approval_status='failed'
+                updates={
+                    'status': 'failed',
+                    'approval_status': 'failed'
+                }
             )
         except Exception as db_error:
             logger.error(f"❌ Failed to update task status: {db_error}")

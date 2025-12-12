@@ -189,9 +189,9 @@ class TaskStatusUpdateRequest(BaseModel):
 
 class TaskResponse(BaseModel):
     """Schema for task response"""
-    id: str
+    id: Optional[str] = None  # Can be NULL for legacy migrated tasks
     task_name: str
-    agent_id: str
+    agent_id: Optional[str] = None  # Can be NULL for legacy migrated tasks
     status: str
     topic: str
     primary_keyword: Optional[str]
@@ -955,21 +955,13 @@ async def confirm_and_execute_task(
         }
         
         # Create task in database
-        await db_service.execute(
-            """
-            INSERT INTO tasks (
-                id, task_name, task_type, status, metadata, created_at, updated_at
-            ) VALUES (
-                $1, $2, $3, 'pending', $4, $5, $6
-            )
-            """,
-            task_id,
-            intent_req.get("parameters", {}).get("topic", "Task from Intent"),
-            intent_req.get("task_type", "generic"),
-            execution_metadata,
-            datetime.now(timezone.utc),
-            datetime.now(timezone.utc),
-        )
+        await db_service.add_task({
+            "id": task_id,
+            "task_name": intent_req.get("parameters", {}).get("topic", "Task from Intent"),
+            "task_type": intent_req.get("task_type", "generic"),
+            "status": "pending",
+            "metadata": execution_metadata
+        })
         
         logger.info(f"[CONFIRM] Created task {task_id} from intent plan")
         
