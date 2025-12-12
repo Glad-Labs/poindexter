@@ -59,6 +59,13 @@ from .agent_schemas import (
     AgentHealth,
 )
 
+# Auth schemas
+from .auth_schemas import (
+    UserProfile,
+    LogoutResponse,
+    GitHubCallbackRequest,
+)
+
 __all__ = [
     # Orchestrator
     "ProcessRequestBody",
@@ -93,5 +100,9 @@ __all__ = [
     "AgentLogs",
     "MemoryStats",
     "AgentHealth",
+    # Auth
+    "UserProfile",
+    "LogoutResponse",
+    "GitHubCallbackRequest",
 ]
 

@@ -27,6 +27,11 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request, Header
 from pydantic import BaseModel
 
 from services.token_validator import JWTTokenValidator, AuthConfig
+from schemas.auth_schemas import (
+    UserProfile,
+    LogoutResponse,
+    GitHubCallbackRequest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,32 +40,6 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 # GitHub Configuration
 GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
 GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
-
-
-# ============================================================================
-# Pydantic Models
-# ============================================================================
-
-class UserProfile(BaseModel):
-    """User profile response model."""
-    id: str
-    email: str
-    username: str
-    auth_provider: str  # "jwt", "oauth", "github"
-    is_active: bool
-    created_at: str
-
-
-class LogoutResponse(BaseModel):
-    """Logout response model."""
-    success: bool
-    message: str
-
-
-class GitHubCallbackRequest(BaseModel):
-    """GitHub callback request model."""
-    code: str
-    state: str
 
 
 # ============================================================================
