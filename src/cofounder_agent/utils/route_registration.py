@@ -243,11 +243,12 @@ def register_all_routes(
     
     try:
         # ===== INTELLIGENT ORCHESTRATOR (Phase 5+) =====
+        # DEPRECATED: Use unified_orchestrator_routes instead
         from routes.intelligent_orchestrator_routes import router as intelligent_orchestrator_router
         
         if intelligent_orchestrator:
             app.include_router(intelligent_orchestrator_router)
-            logger.info(" intelligent_orchestrator_router registered")
+            logger.info(" intelligent_orchestrator_router registered (deprecated, use unified instead)")
             status['intelligent_orchestrator_router'] = True
         else:
             logger.warning(" intelligent_orchestrator not available (not initialized)")
@@ -258,6 +259,20 @@ def register_all_routes(
     except Exception as e:
         logger.error(f" intelligent_orchestrator registration failed: {e}")
         status['intelligent_orchestrator_router'] = False
+    
+    try:
+        # ===== UNIFIED ORCHESTRATOR ROUTES (Consolidated) =====
+        from routes.unified_orchestrator_routes import register_unified_orchestrator_routes
+        
+        register_unified_orchestrator_routes(app)
+        logger.info(" unified_orchestrator_routes registered (NEW - consolidates intelligent + quality)")
+        status['unified_orchestrator_routes'] = True
+    except ImportError as e:
+        logger.warning(f" unified_orchestrator_routes not available: {e}")
+        status['unified_orchestrator_routes'] = False
+    except Exception as e:
+        logger.error(f" unified_orchestrator_routes registration failed: {e}")
+        status['unified_orchestrator_routes'] = False
     
     try:
         # ===== TRAINING DATA MANAGEMENT (Phase 6) =====

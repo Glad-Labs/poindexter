@@ -55,6 +55,11 @@ from services.redis_cache import setup_redis_cache  #  Redis caching for query o
 from services.content_router_service import get_content_task_store  #  Inject DB service
 from services.migrations import run_migrations  #  Database schema migrations
 
+# Import new consolidated services
+from services.unified_orchestrator import UnifiedOrchestrator
+from services.quality_service import UnifiedQualityService
+from services.content_orchestrator import ContentOrchestrator
+
 # Import new utility modules
 from utils.startup_manager import StartupManager
 from utils.exception_handlers import register_exception_handlers
@@ -135,6 +140,42 @@ async def lifespan(app: FastAPI):
         app.state.legacy_data_service = services.get('legacy_data_service')
         app.state.startup_error = services['startup_error']
         app.state.startup_complete = True
+        
+        # Initialize new consolidated services
+        db_service = services['database']
+        
+        # Initialize quality service
+        quality_service = UnifiedQualityService(
+            model_router=getattr(app.state, 'model_router', None),
+            database_service=db_service,
+            qa_agent=None
+        )
+        app.state.quality_service = quality_service
+        logger.info("✅ UnifiedQualityService initialized")
+        
+        # Initialize content orchestrator for use in unified system
+        content_orchestrator = ContentOrchestrator(
+            database_service=db_service,
+            model_router=getattr(app.state, 'model_router', None),
+            quality_service=quality_service
+        )
+        logger.info("✅ ContentOrchestrator initialized")
+        
+        # Initialize unified orchestrator with all available agents
+        unified_orchestrator = UnifiedOrchestrator(
+            database_service=db_service,
+            model_router=getattr(app.state, 'model_router', None),
+            quality_service=quality_service,
+            memory_system=getattr(app.state, 'memory_system', None),
+            content_orchestrator=content_orchestrator,
+            financial_agent=getattr(app.state, 'financial_agent', None),
+            compliance_agent=getattr(app.state, 'compliance_agent', None),
+        )
+        app.state.unified_orchestrator = unified_orchestrator
+        logger.info("✅ UnifiedOrchestrator initialized")
+        
+        # Store db_service with alternative name for dependency injection
+        app.state.db_service = db_service
         
         # Initialize ServiceContainer for Phase 2 utilities
         # Provides 3 access patterns: get_services(), Depends(), Request.state
