@@ -13,51 +13,20 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 import logging
 
-from routes.auth_unified import get_current_user, UserProfile
+from routes.auth_unified import get_current_user
+from schemas.auth_schemas import UserProfile
+from schemas.metrics_schemas import (
+    CostMetric,
+    CostsResponse,
+    HealthMetrics,
+    PerformanceMetrics,
+)
 from services.usage_tracker import get_usage_tracker
 
 logger = logging.getLogger(__name__)
 
 # Create metrics router
 metrics_router = APIRouter(prefix="/api/metrics", tags=["metrics"])
-
-
-class CostMetric(BaseModel):
-    """Individual cost metric"""
-    model_name: str
-    provider: str
-    tokens_used: int
-    cost_usd: float
-    timestamp: str
-
-
-class CostsResponse(BaseModel):
-    """Cost metrics response"""
-    total_cost: float
-    total_tokens: int
-    by_model: List[Dict[str, Any]]
-    by_provider: Dict[str, float]
-    period: str
-    updated_at: str
-
-
-class HealthMetrics(BaseModel):
-    """Health check metrics"""
-    status: str
-    uptime_seconds: float
-    active_tasks: int
-    completed_tasks: int
-    failed_tasks: int
-    api_version: str
-
-
-class PerformanceMetrics(BaseModel):
-    """Performance metrics"""
-    avg_response_time_ms: float
-    requests_per_minute: float
-    error_rate: float
-    cache_hit_rate: float
-
 
 # In-memory storage for metrics (replace with database in production)
 _cost_metrics = {

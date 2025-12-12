@@ -20,50 +20,17 @@ from services.command_queue import (
     create_command,
     CommandStatus,
 )
+from schemas.command_schemas import (
+    CommandRequest,
+    CommandResponse,
+    CommandListResponse,
+    CommandResultRequest,
+    CommandErrorRequest,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/commands", tags=["commands"])
-
-
-class CommandRequest(BaseModel):
-    """Request to create a command"""
-    agent_type: str
-    action: str
-    payload: Optional[Dict[str, Any]] = None
-
-
-class CommandResponse(BaseModel):
-    """Command response"""
-    id: str
-    agent_type: str
-    action: str
-    status: str
-    result: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None
-    created_at: str
-    updated_at: str
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
-
-
-class CommandListResponse(BaseModel):
-    """List of commands"""
-    commands: List[CommandResponse]
-    total: int
-    status_filter: Optional[str] = None
-
-
-class CommandResultRequest(BaseModel):
-    """Request to mark command as completed"""
-    result: Dict[str, Any]
-
-
-class CommandErrorRequest(BaseModel):
-    """Request to mark command as failed"""
-    error: str
-    retry: bool = True
-
 
 @router.post("/", response_model=CommandResponse)
 async def dispatch_command(request: CommandRequest) -> Dict[str, Any]:

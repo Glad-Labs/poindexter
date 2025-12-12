@@ -66,6 +66,30 @@ from .auth_schemas import (
     GitHubCallbackRequest,
 )
 
+# Chat schemas
+from .chat_schemas import (
+    ChatMessage,
+    ChatRequest,
+    ChatResponse,
+)
+
+# Command schemas
+from .command_schemas import (
+    CommandRequest,
+    CommandResponse,
+    CommandListResponse,
+    CommandResultRequest,
+    CommandErrorRequest,
+)
+
+# Metrics schemas
+from .metrics_schemas import (
+    CostMetric,
+    CostsResponse,
+    HealthMetrics,
+    PerformanceMetrics,
+)
+
 __all__ = [
     # Orchestrator
     "ProcessRequestBody",
@@ -104,5 +128,20 @@ __all__ = [
     "UserProfile",
     "LogoutResponse",
     "GitHubCallbackRequest",
+    # Chat
+    "ChatMessage",
+    "ChatRequest",
+    "ChatResponse",
+    # Command
+    "CommandRequest",
+    "CommandResponse",
+    "CommandListResponse",
+    "CommandResultRequest",
+    "CommandErrorRequest",
+    # Metrics
+    "CostMetric",
+    "CostsResponse",
+    "HealthMetrics",
+    "PerformanceMetrics",
 ]
 
