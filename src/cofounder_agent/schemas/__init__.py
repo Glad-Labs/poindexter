@@ -110,6 +110,59 @@ from .ollama_schemas import (
     OllamaModelSelection,
 )
 
+# Settings schemas
+from .settings_schemas import (
+    SettingBase,
+    SettingCreate,
+    SettingUpdate,
+    SettingListResponse,
+    SettingHistoryResponse,
+    SettingBulkUpdateRequest,
+    ErrorResponse,
+)
+
+# Social schemas
+from .social_schemas import (
+    SocialPlatformConnection,
+    SocialPost,
+    SocialAnalytics,
+    GenerateContentRequest,
+    CrossPostRequest,
+)
+
+# Subtask schemas
+from .subtask_schemas import (
+    ResearchSubtaskRequest,
+    CreativeSubtaskRequest,
+    QASubtaskRequest,
+    ImageSubtaskRequest,
+    FormatSubtaskRequest,
+    SubtaskResponse,
+)
+
+# Webhook schemas
+from .webhooks_schemas import (
+    WebhookEntry,
+    ContentWebhookPayload,
+    WebhookResponse,
+)
+
+# Workflow history schemas
+from .workflow_history_schemas import (
+    WorkflowExecutionDetail,
+    WorkflowHistoryResponse,
+    WorkflowStatistics,
+    PerformanceMetrics,
+)
+
+# Models schemas
+from .models_schemas import (
+    ModelInfo,
+    ModelsListResponse,
+    ProviderStatus,
+    ProvidersStatusResponse,
+)
+
 __all__ = [
     # Orchestrator
     "ProcessRequestBody",
@@ -174,5 +227,40 @@ __all__ = [
     "OllamaHealthResponse",
     "OllamaWarmupResponse",
     "OllamaModelSelection",
+    # Settings
+    "SettingBase",
+    "SettingCreate",
+    "SettingUpdate",
+    "SettingListResponse",
+    "SettingHistoryResponse",
+    "SettingBulkUpdateRequest",
+    "ErrorResponse",
+    # Social
+    "SocialPlatformConnection",
+    "SocialPost",
+    "SocialAnalytics",
+    "GenerateContentRequest",
+    "CrossPostRequest",
+    # Subtask
+    "ResearchSubtaskRequest",
+    "CreativeSubtaskRequest",
+    "QASubtaskRequest",
+    "ImageSubtaskRequest",
+    "FormatSubtaskRequest",
+    "SubtaskResponse",
+    # Webhook
+    "WebhookEntry",
+    "ContentWebhookPayload",
+    "WebhookResponse",
+    # Workflow history
+    "WorkflowExecutionDetail",
+    "WorkflowHistoryResponse",
+    "WorkflowStatistics",
+    "PerformanceMetrics",
+    # Models
+    "ModelInfo",
+    "ModelsListResponse",
+    "ProviderStatus",
+    "ProvidersStatusResponse",
 ]
 
