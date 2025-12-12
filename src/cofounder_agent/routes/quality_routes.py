@@ -12,12 +12,15 @@ Provides:
 
 import logging
 from fastapi import APIRouter, HTTPException, Depends, Request
-from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
-from datetime import datetime
 
 from services.quality_service import UnifiedQualityService, EvaluationMethod, QualityAssessment
-from schemas.quality_schemas import QualityEvaluationRequest, QualityDimensionsResponse
+from schemas.quality_schemas import (
+    QualityEvaluationRequest,
+    QualityDimensionsResponse,
+    QualityEvaluationResponse,
+    BatchQualityRequest,
+)
 from utils.service_dependencies import get_quality_service
 
 logger = logging.getLogger(__name__)
@@ -26,47 +29,6 @@ quality_router = APIRouter(
     prefix="/api/quality",
     tags=["quality-assessment"]
 )
-
-
-# ============================================================================
-# ADDITIONAL RESPONSE MODELS
-# ============================================================================
-
-class QualityEvaluationResponse(BaseModel):
-    """Response from quality evaluation"""
-    overall_score: float
-    passing: bool
-    dimensions: QualityDimensionsResponse
-    feedback: str
-    suggestions: List[str]
-    evaluation_method: str
-    content_length: int
-    word_count: int
-    evaluated_at: datetime
-
-
-class BatchQualityRequest(BaseModel):
-    """Request to evaluate multiple content items"""
-    items: List[Dict[str, Any]] = Field(
-        ...,
-        description="List of content items to evaluate"
-    )
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "items": [
-                    {
-                        "content": "First content...",
-                        "topic": "Topic 1"
-                    },
-                    {
-                        "content": "Second content...",
-                        "topic": "Topic 2"
-                    }
-                ]
-            }
-        }
 
 
 # ============================================================================

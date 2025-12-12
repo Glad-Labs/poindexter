@@ -23,6 +23,8 @@ from .orchestrator_schemas import (
 from .quality_schemas import (
     QualityEvaluationRequest,
     QualityDimensionsResponse,
+    QualityEvaluationResponse,
+    BatchQualityRequest,
 )
 
 # Task schemas
@@ -31,6 +33,11 @@ from .task_schemas import (
     TaskStatusUpdateRequest,
     TaskResponse,
     TaskListResponse,
+    MetricsResponse,
+    IntentTaskRequest,
+    TaskIntentResponse,
+    TaskConfirmRequest,
+    TaskConfirmResponse,
 )
 
 # Content schemas
@@ -178,11 +185,18 @@ __all__ = [
     # Quality
     "QualityEvaluationRequest",
     "QualityDimensionsResponse",
+    "QualityEvaluationResponse",
+    "BatchQualityRequest",
     # Task
     "TaskCreateRequest",
     "TaskStatusUpdateRequest",
     "TaskResponse",
     "TaskListResponse",
+    "MetricsResponse",
+    "IntentTaskRequest",
+    "TaskIntentResponse",
+    "TaskConfirmRequest",
+    "TaskConfirmResponse",
     # Content
     "CreateBlogPostRequest",
     "CreateBlogPostResponse",

@@ -4,8 +4,9 @@ Quality Assessment Schemas
 Consolidates all Pydantic models for quality evaluation endpoints
 """
 
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
+from datetime import datetime
 
 
 class QualityEvaluationRequest(BaseModel):
@@ -53,3 +54,40 @@ class QualityDimensionsResponse(BaseModel):
     seo_quality: float
     readability: float
     engagement: float
+
+
+class QualityEvaluationResponse(BaseModel):
+    """Response from quality evaluation"""
+    overall_score: float
+    passing: bool
+    dimensions: QualityDimensionsResponse
+    feedback: str
+    suggestions: List[str]
+    evaluation_method: str
+    content_length: int
+    word_count: int
+    evaluated_at: datetime
+
+
+class BatchQualityRequest(BaseModel):
+    """Request to evaluate multiple content items"""
+    items: List[Dict[str, Any]] = Field(
+        ...,
+        description="List of content items to evaluate"
+    )
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "items": [
+                    {
+                        "content": "First content...",
+                        "topic": "Topic 1"
+                    },
+                    {
+                        "content": "Second content...",
+                        "topic": "Topic 2"
+                    }
+                ]
+            }
+        }

@@ -108,3 +108,59 @@ class TaskListResponse(BaseModel):
     total: int
     offset: int
     limit: int
+
+
+class MetricsResponse(BaseModel):
+    """Schema for aggregated metrics"""
+    total_tasks: int = Field(..., description="Total tasks created")
+    completed_tasks: int = Field(..., description="Successfully completed tasks")
+    failed_tasks: int = Field(..., description="Failed tasks")
+    pending_tasks: int = Field(..., description="Pending/queued tasks")
+    success_rate: float = Field(..., description="Success rate percentage (0-100)")
+    avg_execution_time: float = Field(..., description="Average execution time in seconds")
+    total_cost: float = Field(..., description="Total estimated cost in USD")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "total_tasks": 150,
+                "completed_tasks": 120,
+                "failed_tasks": 5,
+                "pending_tasks": 25,
+                "success_rate": 80.0,
+                "avg_execution_time": 45.2,
+                "total_cost": 125.50
+            }
+        }
+
+
+class IntentTaskRequest(BaseModel):
+    """Request for natural language task creation."""
+    user_input: str = Field(..., description="Natural language task description")
+    user_context: Optional[Dict[str, Any]] = Field(None, description="User context (preferences, settings)")
+    business_metrics: Optional[Dict[str, Any]] = Field(None, description="Budget, deadline, quality preference")
+
+
+class TaskIntentResponse(BaseModel):
+    """Response from intent detection and planning."""
+    task_id: Optional[str] = Field(None, description="Temp task ID for confirmation")
+    intent_request: Dict[str, Any] = Field(..., description="Parsed intent (task_type, parameters, subtasks)")
+    execution_plan: Dict[str, Any] = Field(..., description="Execution plan summary for UI")
+    ready_to_execute: bool = Field(True, description="Whether user can proceed with execution")
+    warnings: Optional[List[str]] = Field(None, description="Warnings (e.g., 'No QA review')")
+
+
+class TaskConfirmRequest(BaseModel):
+    """Request to confirm and execute a task from intent plan."""
+    intent_request: Dict[str, Any] = Field(..., description="Original intent request")
+    execution_plan: Dict[str, Any] = Field(..., description="Execution plan (full version)")
+    user_confirmed: bool = Field(True, description="User confirmed the plan")
+    modifications: Optional[Dict[str, Any]] = Field(None, description="User modifications to plan")
+
+
+class TaskConfirmResponse(BaseModel):
+    """Response from task confirmation and creation."""
+    task_id: str
+    status: str
+    message: str
+    execution_plan_id: str
