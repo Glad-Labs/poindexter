@@ -2,7 +2,7 @@
 
 **Status:** 🟢 COMPLETE  
 **Date:** December 8, 2025  
-**Integration Scope:** Error responses across 5 priority routes  
+**Integration Scope:** Error responses across 5 priority routes
 
 ---
 
@@ -21,6 +21,7 @@ Phase 3 integrates the optional Phase 2 utilities (`error_responses.py` and `com
 **File:** `src/cofounder_agent/routes/bulk_task_routes.py`
 
 **Changes:**
+
 - ✅ Added import: `from utils.error_responses import ErrorResponseBuilder`
 - ✅ Updated validation error responses to use `ErrorResponseBuilder`
   - Empty task_ids validation uses structured error response
@@ -29,6 +30,7 @@ Phase 3 integrates the optional Phase 2 utilities (`error_responses.py` and `com
 - ✅ Maintains backward compatibility with existing endpoints
 
 **Before (Old Error Handling):**
+
 ```python
 if not request.task_ids:
     raise HTTPException(status_code=400, detail="No task IDs provided")
@@ -41,6 +43,7 @@ if request.action not in ["pause", "resume", "cancel", "delete"]:
 ```
 
 **After (New Error Handling):**
+
 ```python
 if not request.task_ids:
     error_response = (ErrorResponseBuilder()
@@ -60,6 +63,7 @@ if request.action not in ["pause", "resume", "cancel", "delete"]:
 ```
 
 **Error Response Format:**
+
 ```json
 {
   "status": "error",
@@ -85,18 +89,21 @@ if request.action not in ["pause", "resume", "cancel", "delete"]:
 **File:** `src/cofounder_agent/routes/content_routes.py`
 
 **Changes:**
+
 - ✅ Added import: `from utils.error_responses import ErrorResponseBuilder`
 - ✅ Already using service-level error classes (ValidationError, NotFoundError)
 - ✅ Ready for optional conversion to ErrorResponseBuilder in future sprints
 - ✅ Maintains existing error handling pattern (service exceptions → HTTP exceptions)
 
-**Current State:** 
+**Current State:**
+
 - Routes already have good error handling via service layer
 - ErrorResponseBuilder import available for future use
 - Pattern: service.method() raises ServiceError → route catches → converts to HTTPException
 - Can gradually migrate individual endpoints to use ErrorResponseBuilder
 
 **Example Current Pattern:**
+
 ```python
 try:
     if not request.topic or len(request.topic.strip()) < 3:
@@ -119,12 +126,14 @@ except ValidationError as e:
 **File:** `src/cofounder_agent/routes/task_routes.py`
 
 **Changes:**
+
 - ✅ Added import: `from utils.error_responses import ErrorResponseBuilder`
 - ✅ Added import: `from utils.route_utils import get_database_dependency`
 - ✅ Ready for incremental error response standardization
 - ✅ 7+ endpoints using service injection pattern via `Depends(get_database_dependency)`
 
 **Status:**
+
 - All endpoints properly using service injection (no global db_service)
 - Error handling functional via service exceptions
 - ErrorResponseBuilder available for gradual migration
@@ -136,11 +145,13 @@ except ValidationError as e:
 **File:** `src/cofounder_agent/routes/settings_routes.py`
 
 **Changes:**
+
 - ✅ Added import: `from utils.error_responses import ErrorResponseBuilder`
 - ✅ Large route file (904 lines) - multiple endpoints ready for gradual enhancement
 - ✅ Setting category validation and CRUD operations ready for improved error handling
 
-**Status:** 
+**Status:**
+
 - 20+ endpoints in this file
 - Excellent candidate for Phase 3 optional work (gradual migration per endpoint)
 - ErrorResponseBuilder imported and ready to use
@@ -152,11 +163,13 @@ except ValidationError as e:
 **File:** `src/cofounder_agent/routes/subtask_routes.py`
 
 **Changes:**
+
 - ✅ Added import: `from utils.error_responses import ErrorResponseBuilder`
 - ✅ 5 primary subtask endpoints (research, creative, qa, images, format) ready for error handling improvement
 - ✅ Service injection pattern already in place
 
 **Status:**
+
 - Subtask operations have dependency tracking and status management
 - ErrorResponseBuilder available for validation error improvements
 - Pipeline-based error handling ready for standardization
@@ -165,13 +178,13 @@ except ValidationError as e:
 
 ## 📊 Integration Summary
 
-| Route File | Status | Changes | ErrorResponseBuilder | Notes |
-|---|---|---|---|---|
-| bulk_task_routes.py | ✅ Enhanced | 2 endpoints updated | ✅ Integrated | Validation improved with field-level errors |
-| content_routes.py | ✅ Ready | Import added | ✅ Available | Service-layer errors good, can migrate gradually |
-| task_routes.py | ✅ Ready | Import added | ✅ Available | All endpoints using Depends(), ready for migration |
-| settings_routes.py | ✅ Ready | Import added | ✅ Available | 20+ endpoints, ideal for staged improvement |
-| subtask_routes.py | ✅ Ready | Import added | ✅ Available | 5 pipeline stages, validation ready for upgrade |
+| Route File          | Status      | Changes             | ErrorResponseBuilder | Notes                                              |
+| ------------------- | ----------- | ------------------- | -------------------- | -------------------------------------------------- |
+| bulk_task_routes.py | ✅ Enhanced | 2 endpoints updated | ✅ Integrated        | Validation improved with field-level errors        |
+| content_routes.py   | ✅ Ready    | Import added        | ✅ Available         | Service-layer errors good, can migrate gradually   |
+| task_routes.py      | ✅ Ready    | Import added        | ✅ Available         | All endpoints using Depends(), ready for migration |
+| settings_routes.py  | ✅ Ready    | Import added        | ✅ Available         | 20+ endpoints, ideal for staged improvement        |
+| subtask_routes.py   | ✅ Ready    | Import added        | ✅ Available         | 5 pipeline stages, validation ready for upgrade    |
 
 ---
 
@@ -212,6 +225,7 @@ error = (ErrorResponseBuilder()
 ## 🔄 Backward Compatibility
 
 ✅ **100% Backward Compatible**
+
 - All existing error handling patterns continue to work
 - HTTP status codes unchanged
 - Route signatures unchanged
@@ -223,9 +237,11 @@ error = (ErrorResponseBuilder()
 ## 📚 Available Utilities
 
 ### ErrorResponseBuilder (`error_responses.py`)
+
 **Usage:** Standardize error response format across routes
 
 **Methods:**
+
 - `.error_code(str)` - Set error code (e.g., "VALIDATION_ERROR", "NOT_FOUND")
 - `.message(str)` - Set human-readable message
 - `.with_field_error(field, message, code)` - Add field-specific error
@@ -235,6 +251,7 @@ error = (ErrorResponseBuilder()
 - `.build()` - Return ErrorResponse model
 
 **Factory Methods:**
+
 - `ErrorResponseBuilder.validation_error(msg, details)`
 - `ErrorResponseBuilder.not_found(resource, id)`
 - `ErrorResponseBuilder.server_error(error)`
@@ -242,9 +259,11 @@ error = (ErrorResponseBuilder()
 - `ErrorResponseBuilder.forbidden(msg)`
 
 ### Common Schemas (`common_schemas.py`)
+
 **Status:** Ready for optional consolidation
 
 **Available Models:**
+
 - `PaginationParams` - Standard pagination request (skip, limit)
 - `PaginationMeta` - Pagination metadata (total, skip, limit, has_more)
 - `PaginatedResponse[T]` - Generic paginated response
@@ -258,16 +277,19 @@ error = (ErrorResponseBuilder()
 ## 🚀 Next Steps (Optional)
 
 ### Immediate (Low Effort, High Value)
+
 1. ✅ **bulk_task_routes.py** - Already enhanced ✓
 2. **content_routes.py** - Migrate validation errors to ErrorResponseBuilder (20 minutes)
 3. **task_routes.py** - Migrate common validation patterns (15 minutes)
 
 ### Short-term (Higher Effort)
+
 4. **settings_routes.py** - Standardize 20+ error responses (1-2 hours)
 5. **subtask_routes.py** - Improve pipeline error messages (45 minutes)
 6. **Remaining routes** - Apply pattern to other 8 route files (3-4 hours)
 
 ### Optional Long-term
+
 7. **common_schemas.py integration** - Consolidate duplicate schemas
 8. **Error tracking** - Add request_id and timestamp to all errors
 9. **API documentation** - Generate OpenAPI docs with standardized error responses
@@ -277,6 +299,7 @@ error = (ErrorResponseBuilder()
 ## ✅ Validation & Testing
 
 ### Manual Testing
+
 All updated routes can be tested with:
 
 ```bash
@@ -304,7 +327,9 @@ curl -X POST http://localhost:8000/api/tasks/bulk \
 ```
 
 ### Syntax Verification
+
 All routes verified:
+
 ```bash
 python -m py_compile src/cofounder_agent/routes/bulk_task_routes.py
 python -m py_compile src/cofounder_agent/routes/content_routes.py
@@ -317,21 +342,22 @@ python -m py_compile src/cofounder_agent/routes/subtask_routes.py
 
 ## 📈 Benefits Achieved
 
-| Benefit | Impact |
-|---------|--------|
-| **Standardized error format** | Clients expect consistent error structure across all endpoints |
-| **Field-level error details** | API consumers know exactly which field caused validation error |
-| **Request tracking** | Errors can include request_id for debugging and tracing |
-| **Improved debugging** | Structured error codes (VALIDATION_ERROR, NOT_FOUND, etc.) enable client-side routing |
-| **Future-proof** | ErrorResponseBuilder can be extended with additional fields (timestamp, request_id, etc.) |
-| **Gradual adoption** | Can migrate endpoints one at a time without affecting others |
-| **Documentation** | StandardResponse models work with FastAPI's OpenAPI generation |
+| Benefit                       | Impact                                                                                    |
+| ----------------------------- | ----------------------------------------------------------------------------------------- |
+| **Standardized error format** | Clients expect consistent error structure across all endpoints                            |
+| **Field-level error details** | API consumers know exactly which field caused validation error                            |
+| **Request tracking**          | Errors can include request_id for debugging and tracing                                   |
+| **Improved debugging**        | Structured error codes (VALIDATION_ERROR, NOT_FOUND, etc.) enable client-side routing     |
+| **Future-proof**              | ErrorResponseBuilder can be extended with additional fields (timestamp, request_id, etc.) |
+| **Gradual adoption**          | Can migrate endpoints one at a time without affecting others                              |
+| **Documentation**             | StandardResponse models work with FastAPI's OpenAPI generation                            |
 
 ---
 
 ## 📝 Implementation Notes
 
 ### What Was Done
+
 1. ✅ Analyzed Phase 2 utilities (error_responses.py, common_schemas.py)
 2. ✅ Identified 5 priority routes for Phase 3 integration
 3. ✅ Added ErrorResponseBuilder imports to all 5 routes
@@ -340,6 +366,7 @@ python -m py_compile src/cofounder_agent/routes/subtask_routes.py
 6. ✅ Maintained 100% backward compatibility
 
 ### What Can Be Done Later
+
 1. Migrate remaining validation errors in content_routes.py (20 mins)
 2. Standardize error responses in task_routes.py (15 mins)
 3. Enhance settings_routes.py with structured errors (1-2 hours)
@@ -347,6 +374,7 @@ python -m py_compile src/cofounder_agent/routes/subtask_routes.py
 5. Apply pattern to remaining 8 route files (3-4 hours)
 
 ### Why This Approach
+
 - **Low Risk:** Each route can be updated independently
 - **High Value:** Immediate improvement with bulk_task_routes, ready for others
 - **Backward Compatible:** No breaking changes to existing API

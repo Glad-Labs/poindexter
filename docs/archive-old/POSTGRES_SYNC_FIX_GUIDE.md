@@ -337,7 +337,7 @@ I've created two diagnostic scripts:
 | `src/cofounder_agent/main.py`                               | Starts task executor    | ✅ Configured  |
 | `src/cofounder_agent/services/task_executor.py`             | Executes pending tasks  | ⚠️ Check logs  |
 | `src/cofounder_agent/routes/task_routes.py`                 | Task CRUD & publish     | ✅ Implemented |
-| `src/cofounder_agent/services/content_publisher.py`          | Publishes to Strapi     | ✅ Implemented |
+| `src/cofounder_agent/services/content_publisher.py`         | Publishes to Strapi     | ✅ Implemented |
 | `web/oversight-hub/src/components/NewTaskModal.jsx`         | Create task form        | ✅ Working     |
 | `web/oversight-hub/src/components/tasks/TaskManagement.jsx` | Approve/publish UI      | ✅ Working     |
 | `web/public-site/lib/api.js`                                | Fetch posts from Strapi | ✅ Correct     |

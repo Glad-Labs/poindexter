@@ -9,6 +9,7 @@
 ## Executive Summary
 
 This document provides step-by-step instructions for testing the 3 new Oversight Hub UI pages:
+
 1. **ChatPage.jsx** - AI chat interface with multi-model support
 2. **AgentsPage.jsx** - Multi-agent monitoring and control
 3. **WorkflowHistoryPage.jsx** - Workflow execution tracking
@@ -20,6 +21,7 @@ Each page is designed with **graceful fallback to mock data**, so they work even
 ## Architecture Overview
 
 ### Pages Created
+
 ```
 web/oversight-hub/src/components/pages/
 ├── ChatPage.jsx              (364 lines) - Chat interface
@@ -33,18 +35,21 @@ web/oversight-hub/src/components/pages/
 ### API Client Methods Added
 
 #### Chat Methods (4)
+
 - `sendChatMessage(message, model, conversationId)` → POST `/api/chat`
 - `getChatHistory(conversationId)` → GET `/api/chat/history/{id}`
 - `clearChatHistory(conversationId)` → DELETE `/api/chat/history/{id}`
 - `getAvailableModels()` → GET `/api/chat/models`
 
 #### Agent Methods (4)
+
 - `getAgentStatus(agentId)` → GET `/api/agents/{id}/status`
 - `getAgentLogs(agentId, limit)` → GET `/api/agents/{id}/logs`
 - `sendAgentCommand(agentId, command)` → POST `/api/agents/{id}/command`
 - `getAgentMetrics(agentId)` → GET `/api/agents/{id}/metrics`
 
 #### Workflow Methods (5)
+
 - `getWorkflowHistory(limit, offset)` → GET `/api/workflow/history`
 - `getExecutionDetails(executionId)` → GET `/api/workflow/execution/{id}`
 - `retryExecution(executionId)` → POST `/api/workflow/execution/{id}/retry`
@@ -56,10 +61,12 @@ web/oversight-hub/src/components/pages/
 ## Testing Phases
 
 ### Phase 1A: Offline Testing (Mock Data)
+
 **Duration:** 15 minutes  
 **Objective:** Verify UI functionality without backend
 
 **Steps:**
+
 1. Ensure backend is NOT running
 2. Navigate to Chat page in Oversight Hub
 3. Verify:
@@ -84,10 +91,12 @@ web/oversight-hub/src/components/pages/
 ---
 
 ### Phase 1B: Online Testing (Real Backend)
+
 **Duration:** 30-45 minutes  
 **Prerequisites:** Backend running at http://localhost:8000
 
 **Setup:**
+
 ```bash
 # Terminal 1 - Start backend
 cd src/cofounder_agent
@@ -209,6 +218,7 @@ npm start
 ### Network Tab Monitoring
 
 **Expected requests for Chat page:**
+
 ```
 POST /api/chat
   Request: { message: "...", model: "...", conversationId: "..." }
@@ -217,6 +227,7 @@ POST /api/chat
 ```
 
 **Expected requests for Agents page:**
+
 ```
 GET /api/agents/content/status
 GET /api/agents/content/logs
@@ -225,6 +236,7 @@ GET /api/agents/financial/status
 ```
 
 **Expected requests for Workflow page:**
+
 ```
 GET /api/workflow/history
 GET /api/workflow/execution/{id}  (when expanding)
@@ -235,6 +247,7 @@ GET /api/metrics/export?format=csv
 ### Console Tab Monitoring
 
 **Expected logs:**
+
 ```javascript
 // Chat sending
 [Chat] Sending message: { message: "...", model: "...", ... }
@@ -260,18 +273,21 @@ GET /api/metrics/export?format=csv
 ### When Backend APIs are Unavailable
 
 **Expected behavior:**
+
 1. Console shows warning: `"API not available, using mock data"`
 2. UI still loads and functions with mock data
 3. User can interact fully (send messages, select agents, expand workflows)
 4. No error dialogs or broken UI
 
 **Test procedure:**
+
 1. Stop backend: `Ctrl+C` in terminal
 2. Refresh page in browser
 3. Verify each page loads with mock data
 4. Try interactions (message, command, expand) - all should work with mock
 
 **Success criteria:**
+
 - ✅ No console errors
 - ✅ UI fully functional
 - ✅ Mock data displays properly
@@ -283,17 +299,20 @@ GET /api/metrics/export?format=csv
 ## Performance Testing
 
 ### Load Time Goals
+
 - **Chat page:** < 2 seconds load
-- **Agents page:** < 1 second load  
+- **Agents page:** < 1 second load
 - **Workflow page:** < 1.5 seconds load (depends on history size)
 
 ### API Response Time Goals
+
 - `sendChatMessage`: < 30 seconds (LLM inference time)
 - `getAgentStatus`: < 500ms
 - `getAgentLogs`: < 500ms
 - `getWorkflowHistory`: < 1 second
 
 ### Memory Usage
+
 - Monitor DevTools Memory tab
 - Expected: < 50MB increase per page
 - No memory leaks on rapid navigation
@@ -329,6 +348,7 @@ GET /api/metrics/export?format=csv
 ## Verification Checklist
 
 ### Chat Page
+
 - [ ] Page loads without errors
 - [ ] Models dropdown populated
 - [ ] Messages send and receive responses
@@ -339,6 +359,7 @@ GET /api/metrics/export?format=csv
 - [ ] Responsive design works (mobile/tablet)
 
 ### Agents Page
+
 - [ ] All 5 agents load
 - [ ] Agent selection updates logs/status
 - [ ] Commands send successfully
@@ -348,6 +369,7 @@ GET /api/metrics/export?format=csv
 - [ ] Error handling works
 
 ### Workflow Page
+
 - [ ] History loads correctly
 - [ ] Filtering by status works (All/Completed/Failed/Running)
 - [ ] Sorting works (Date/Status/Duration)
@@ -358,6 +380,7 @@ GET /api/metrics/export?format=csv
 - [ ] Responsive design works
 
 ### Overall
+
 - [ ] No console errors
 - [ ] No console warnings about missing APIs
 - [ ] Graceful fallback to mock data
@@ -374,6 +397,7 @@ GET /api/metrics/export?format=csv
 **Cause:** Backend endpoints not implemented or not returning expected format
 
 **Solution:**
+
 1. Check backend is running: `http://localhost:8000/docs` (FastAPI Swagger UI)
 2. Check endpoint exists in Swagger
 3. Check response format matches expected model
@@ -384,6 +408,7 @@ GET /api/metrics/export?format=csv
 **Cause:** Model not available or API error
 
 **Solution:**
+
 1. Check DevTools Network tab for 404/500 errors
 2. Check backend logs for exceptions
 3. Try different model
@@ -394,6 +419,7 @@ GET /api/metrics/export?format=csv
 **Cause:** getAgentStatus API not available
 
 **Solution:**
+
 1. Check backend has agents_routes.py
 2. Check endpoint: GET /api/agents/{id}/status
 3. Verify agent IDs match: content, financial, market, compliance, orchestrator
@@ -403,6 +429,7 @@ GET /api/metrics/export?format=csv
 **Cause:** getExecutionDetails API not available or wrong format
 
 **Solution:**
+
 1. Check backend has workflow_history.py
 2. Check endpoint: GET /api/workflow/execution/{id}
 3. Ensure response includes agents_involved, tasks_completed, output, error_message
@@ -412,12 +439,14 @@ GET /api/metrics/export?format=csv
 ## Success Criteria
 
 ### Minimum Success (Mock Data Only)
+
 - ✅ All 3 pages load without JavaScript errors
 - ✅ All interactive elements work (buttons, dropdowns, inputs)
 - ✅ Mock data displays properly
 - ✅ Navigation between pages works
 
 ### Full Success (With Backend APIs)
+
 - ✅ All API endpoints called correctly (verified in Network tab)
 - ✅ Real data displays instead of mock data
 - ✅ All user interactions work end-to-end
@@ -450,11 +479,14 @@ GET /api/metrics/export?format=csv
 # Phase 1 Integration Test Report
 
 ## Date: [Date]
+
 ## Tester: [Name]
+
 ## Backend Status: [Running/Not Running]
 
 ### Chat Page
-- Load time: __ seconds
+
+- Load time: \_\_ seconds
 - Mock data working: [Yes/No]
 - Real API calls working: [Yes/No]
 - Issues found:
@@ -462,25 +494,29 @@ GET /api/metrics/export?format=csv
   - [Issue 2]
 
 ### Agents Page
-- Load time: __ seconds
+
+- Load time: \_\_ seconds
 - Mock data working: [Yes/No]
 - Real API calls working: [Yes/No]
 - Issues found:
   - [Issue 1]
 
 ### Workflow Page
-- Load time: __ seconds
+
+- Load time: \_\_ seconds
 - Mock data working: [Yes/No]
 - Real API calls working: [Yes/No]
 - Issues found:
   - [Issue 1]
 
 ### Overall Results
+
 - [ ] All tests passed
 - [ ] Some tests failed - see issues above
 - [ ] Tests blocked by missing APIs
 
 ### Conclusion
+
 [Summary of findings and next steps]
 ```
 
@@ -494,4 +530,3 @@ GET /api/metrics/export?format=csv
 - **Agent Routes:** `src/cofounder_agent/routes/agents_routes.py`
 - **Workflow Routes:** `src/cofounder_agent/routes/workflow_history.py`
 - **API Client:** `web/oversight-hub/src/services/cofounderAgentClient.js`
-

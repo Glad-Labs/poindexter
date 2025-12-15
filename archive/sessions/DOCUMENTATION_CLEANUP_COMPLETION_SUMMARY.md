@@ -65,7 +65,7 @@
 
 **Archive Plan:**
 
-1. `archive/sessions/` ← SESSION*\*, FRONTEND*_, BACKEND\__, status files
+1. `archive/sessions/` ← SESSION*\*, FRONTEND*\_, BACKEND\_\_, status files
 2. `archive/phase-plans/` ← OAUTH*\*, PHASE*\*, planning files
 3. `docs/reference/` ← POSTGRESQL_SETUP_GUIDE.md
 4. Root folder ← Only 12-15 essential files remain

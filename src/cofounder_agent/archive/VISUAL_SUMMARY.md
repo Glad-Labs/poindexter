@@ -77,7 +77,6 @@ GET /api/metrics GET /api/orchestrator/history
                 ↓
         (Both query tasks table)
 
-
 Result: 5 duplicate endpoints ❌
 
 AFTER: Unified Task API

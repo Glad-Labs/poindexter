@@ -214,13 +214,13 @@ pytest test_file.py -v > test_results.txt
 
 ### 4. Common Issues
 
-| Issue | Solution |
-|-------|----------|
+| Issue                 | Solution                         |
+| --------------------- | -------------------------------- |
 | `ModuleNotFoundError` | Check Python path in conftest.py |
-| `Fixture not found` | Move fixture to conftest.py |
-| `Async timeout` | Increase timeout or mark as slow |
-| `Database locked` | Use separate test database |
-| `Import error` | Run from tests directory |
+| `Fixture not found`   | Move fixture to conftest.py      |
+| `Async timeout`       | Increase timeout or mark as slow |
+| `Database locked`     | Use separate test database       |
+| `Import error`        | Run from tests directory         |
 
 ---
 
@@ -390,11 +390,13 @@ src/cofounder_agent/
 ## 🎓 Learning Resources
 
 ### Documentation
+
 - [Pytest Docs](https://docs.pytest.org/)
 - [FastAPI Testing](https://fastapi.tiangolo.com/advanced/testing-dependencies/)
 - [AsyncIO Testing](https://pytest-asyncio.readthedocs.io/)
 
 ### Files to Review
+
 1. `conftest.py` - Test configuration and fixtures
 2. `pytest.ini` - Pytest settings
 3. `test_example_best_practices.py` - Example patterns
@@ -492,6 +494,7 @@ pytest -v tests/test_file.py -s
 Your FastAPI testing infrastructure is set up and ready to use. Start writing tests using the patterns in `test_example_best_practices.py` and you'll have comprehensive test coverage in no time!
 
 **Next Steps:**
+
 1. Create test files following the examples
 2. Use test_utilities for common operations
 3. Run tests frequently during development

@@ -3,13 +3,14 @@
 **Current Status:** Phase 2 Complete - 40.21% coverage (111 tests)  
 **Phase 3 Goal:** 50%+ coverage (180+ tests)  
 **Estimated Effort:** 6-8 hours  
-**Start Date:** Ready to begin  
+**Start Date:** Ready to begin
 
 ---
 
 ## 🎯 Phase 3 Overview
 
 Phase 3 focuses on expanding test coverage to key routes that have significant opportunities:
+
 - ✅ CMS routes (16.80% → 40%+)
 - ✅ Content routes (33.23% → 50%+)
 - ✅ Database service (13.59% → 25%+)
@@ -23,6 +24,7 @@ Phase 3 focuses on expanding test coverage to key routes that have significant o
 **Scope:** Create, Read, Update, Delete for CMS content (posts, categories, tags)
 
 **Test Classes to Create:**
+
 ```python
 class TestCMSPostsCreate:
     # Test POST /api/cms/posts endpoint
@@ -74,6 +76,7 @@ class TestCMSTags:
 **Scope:** Content generation endpoints, validation, error handling
 
 **Test Classes to Create:**
+
 ```python
 class TestContentGenerate:
     # Test POST /api/content/generate endpoint
@@ -135,6 +138,7 @@ class TestContentDelete:
 **Scope:** Database operations with proper mocking
 
 **Test Classes to Create:**
+
 ```python
 class TestDatabaseConnections:
     # Test database connection management
@@ -235,20 +239,20 @@ python -m coverage html
 ```python
 def test_content_generate_with_ollama(self, admin_token, monkeypatch):
     """Generate content using mocked Ollama"""
-    
+
     # Mock the Ollama call
     def mock_ollama_generate(prompt, model):
         return "Generated content based on prompt"
-    
+
     monkeypatch.setattr("services.ollama_client.generate", mock_ollama_generate)
-    
+
     # Call the endpoint
     response = client.post(
         "/api/content/generate",
         json={"topic": "AI", "length": "500", "keywords": ["AI", "ML"]},
         headers={"Authorization": f"Bearer {admin_token}"}
     )
-    
+
     # Verify
     assert response.status_code == 200
     assert "Generated content" in response.json()["content"]
@@ -259,20 +263,20 @@ def test_content_generate_with_ollama(self, admin_token, monkeypatch):
 ```python
 def test_database_create_post(self, monkeypatch):
     """Test database create operation with mocking"""
-    
+
     # Mock database session
     mock_db = MagicMock()
     mock_db.execute.return_value.inserted_primary_key = [123]
-    
+
     monkeypatch.setattr("services.database_service.get_db", mock_db)
-    
+
     # Call service
     result = database_service.create_post({
         "title": "Test",
         "slug": "test",
         "content": "Test content"
     })
-    
+
     # Verify
     assert result["id"] == 123
     mock_db.commit.assert_called_once()
@@ -283,13 +287,13 @@ def test_database_create_post(self, monkeypatch):
 ```python
 def test_cms_post_create_unauthorized(self, user_token):
     """Test that users can't create posts"""
-    
+
     response = client.post(
         "/api/cms/posts",
         json={"title": "Test", "slug": "test", "content": "Test"},
         headers={"Authorization": f"Bearer {user_token}"}
     )
-    
+
     # User should get 403 (forbidden)
     assert response.status_code in [403, 401]
 ```

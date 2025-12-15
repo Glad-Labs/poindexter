@@ -3,6 +3,7 @@
 ## Current Issues Observed
 
 From user logs:
+
 ```
 ERROR:root:Failed to decode JSON from local LLM response.
 WARNING:services.content_orchestrator:⚠️  QA Rejected - Feedback: No feedback provided....
@@ -15,13 +16,16 @@ WARNING:services.content_orchestrator:⚠️  QA Rejected - Feedback: No feedbac
 ## Fixes Applied (Session Update)
 
 ### 1. **LLM Client Exception Handling** ✅
+
 **File**: `src/agents/content_agent/services/llm_client.py` (Lines 75-105)
 
-**Before**: 
+**Before**:
+
 - JSON decode errors returned empty dict `{}`
 - QA agent couldn't distinguish between "no JSON" and "valid empty response"
 
 **After**:
+
 - `_generate_json_local()` now raises `ValueError` exceptions on JSON decode failures
 - Exceptions propagate to QA agent which catches them gracefully
 - QA agent returns `(False, error_message)` instead of crashing
@@ -31,15 +35,18 @@ WARNING:services.content_orchestrator:⚠️  QA Rejected - Feedback: No feedbac
 ---
 
 ### 2. **QA Prompt Simplification** ✅
+
 **File**: `src/agents/content_agent/prompts.json` (Line 7)
 
-**Before**: 
+**Before**:
+
 ```
 Complex prompt with markdown formatting and verbose examples
 Likely caused llama2 to include formatting in JSON response
 ```
 
 **After**:
+
 ```
 Simplified prompt: "Review this blog post... Respond with ONLY this JSON format: {"approved":true/false,"feedback":"..."}"
 ```
@@ -86,7 +93,7 @@ try:
 except Exception as e:
     logger.error(f"QAAgent: Failed to get JSON from LLM: {e}")
     return False, f"QA system encountered an error..."  # Returns False, not exception
-    
+
 # Orchestrator sees False, refines content, loops
 # After 2 iterations, moves to awaiting_approval
 # Human makes final decision ✅
@@ -99,6 +106,7 @@ except Exception as e:
 **Problem**: llama2 through Ollama is not reliably generating JSON.
 
 **Why This Happens**:
+
 - llama2 is not trained as strongly for JSON generation as GPT models
 - JSON with special characters (quotes, braces) is harder for non-expert LLMs
 - Preamble/explanation text before JSON breaks JSON extraction
@@ -106,21 +114,25 @@ except Exception as e:
 **Solutions Available**:
 
 ### Option 1: Switch LLM (Recommended for production)
+
 - Use OpenAI GPT-4/4o for better JSON reliability
 - Use Claude if available
 - Use other instruction-following models
 
 ### Option 2: Simpler Prompt Engineering (Current approach)
+
 - Further simplify QA prompt
 - Add more JSON examples
 - Use simpler schema (fewer fields)
 
 ### Option 3: Auto-Approve with Warnings (Pragmatic)
+
 - On JSON failure, auto-approve content with feedback: "Unable to perform automated QA - manual review recommended"
 - Human can still reject
 - Pipeline continues reliably
 
 ### Option 4: Retry with Different Prompt
+
 - On first JSON failure, try a simpler version of prompt
 - Then fallback to auto-approve
 
@@ -129,6 +141,7 @@ except Exception as e:
 ## Recommended Next Steps
 
 ### Immediate (Today):
+
 1. **Restart Backend**
    - Changes to llm_client.py and prompts.json need server restart
    - `python main.py` in src/cofounder_agent/
@@ -140,6 +153,7 @@ except Exception as e:
    - Test approval submission
 
 ### Short Term (This Week):
+
 1. **Monitor QA Success Rate**
    - Track how often llama2 successfully generates valid JSON
    - If < 50% success: consider switching to Option 3 (auto-approve with warnings)
@@ -154,6 +168,7 @@ except Exception as e:
    - Feed back to improve prompts
 
 ### Medium Term (Next Sprint):
+
 1. **Switch LLM Provider** (if available)
    - Evaluate OpenAI or Claude for QA task
    - Much higher JSON reliability
@@ -171,7 +186,7 @@ except Exception as e:
 1. `src/agents/content_agent/services/llm_client.py`
    - Changed exception handling to raise instead of return `{}`
 
-2. `src/agents/content_agent/prompts.json`  
+2. `src/agents/content_agent/prompts.json`
    - Simplified QA prompt for llama2
 
 3. `src/agents/content_agent/agents/creative_agent.py`

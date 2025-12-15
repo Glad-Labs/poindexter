@@ -2,7 +2,7 @@
 
 **Date:** December 8, 2025  
 **Version:** 1.0  
-**Status:** Analysis Complete - Ready for Refactoring  
+**Status:** Analysis Complete - Ready for Refactoring
 
 ---
 
@@ -12,20 +12,21 @@ The FastAPI backend is **production-ready** with 70+ endpoints across a well-org
 
 ### Current State Overview
 
-| Metric | Value | Status |
-|--------|-------|--------|
-| **Main.py** | 928 lines | 🟡 Too large - needs extraction |
-| **Total Route Lines** | 8,707 lines | ✅ Reasonable (across 18 files) |
-| **Total Service Lines** | 8,163+ lines | ✅ Well-distributed |
-| **Largest Route File** | content_routes.py (1,161 lines) | 🟡 Large but manageable |
-| **Error Handler Usage** | 188 instances | 🟡 Inconsistent patterns |
-| **Authentication Patterns** | 51 get_current_user calls | ✅ Centralized |
-| **Schema Classes** | 84 (Request/Response models) | 🟡 Potential consolidation |
-| **Database Service Injection** | 4 set_db_service functions | 🟡 Repetitive pattern |
+| Metric                         | Value                           | Status                          |
+| ------------------------------ | ------------------------------- | ------------------------------- |
+| **Main.py**                    | 928 lines                       | 🟡 Too large - needs extraction |
+| **Total Route Lines**          | 8,707 lines                     | ✅ Reasonable (across 18 files) |
+| **Total Service Lines**        | 8,163+ lines                    | ✅ Well-distributed             |
+| **Largest Route File**         | content_routes.py (1,161 lines) | 🟡 Large but manageable         |
+| **Error Handler Usage**        | 188 instances                   | 🟡 Inconsistent patterns        |
+| **Authentication Patterns**    | 51 get_current_user calls       | ✅ Centralized                  |
+| **Schema Classes**             | 84 (Request/Response models)    | 🟡 Potential consolidation      |
+| **Database Service Injection** | 4 set_db_service functions      | 🟡 Repetitive pattern           |
 
 ### Key Findings
 
 ✅ **Strengths:**
+
 - Well-organized modular route structure (17 separate routers)
 - Comprehensive error handling framework in place
 - Centralized logging and authentication
@@ -34,6 +35,7 @@ The FastAPI backend is **production-ready** with 70+ endpoints across a well-org
 - OAuth with 4 providers working correctly
 
 🟡 **Areas for Improvement:**
+
 - `main.py` has too much responsibility (928 lines)
 - Repetitive database service injection pattern across 4 routes
 - Inconsistent error handling patterns (mix of HTTPException and custom handlers)
@@ -43,6 +45,7 @@ The FastAPI backend is **production-ready** with 70+ endpoints across a well-org
 - Startup/shutdown logic could be extracted
 
 ❌ **Not a Problem** (despite appearance):
+
 - Large individual route files (1,161 lines max) - reasonable for complex features
 - Many services (53 files) - properly organized by concern
 - Multiple routers (18) - good separation of concerns
@@ -286,10 +289,10 @@ services/
 
 #### Current Middleware
 
-| File | Lines | Status |
-|------|-------|--------|
-| input_validation.py | 9.3K | ✅ Comprehensive |
-| auth.py | (integrated in main) | ✅ Working |
+| File                | Lines                | Status           |
+| ------------------- | -------------------- | ---------------- |
+| input_validation.py | 9.3K                 | ✅ Comprehensive |
+| auth.py             | (integrated in main) | ✅ Working       |
 
 #### What Should Be Added
 
@@ -314,19 +317,19 @@ services/
 # src/cofounder_agent/utils/startup_manager.py
 class StartupManager:
     """Manages all startup/shutdown operations"""
-    
+
     async def initialize_database(self) -> DatabaseService:
         # Move lines 153-172 here
-        
+
     async def initialize_cache(self, db_service) -> None:
         # Move lines 174-186 here
-        
+
     async def initialize_orchestrator(self, db_service, cache) -> Orchestrator:
         # Move lines 208-220 here
-        
+
     async def initialize_all_services(self) -> dict[str, Any]:
         # Coordinate all startup calls
-        
+
     async def shutdown_all_services(self) -> None:
         # Move lines 350-374 here
 ```
@@ -340,19 +343,19 @@ class StartupManager:
 
 class ExceptionHandlers:
     """Centralized exception handling"""
-    
+
     @staticmethod
     async def app_error_handler(request, exc: AppError):
         # Move lines 428-443 here
-        
+
     @staticmethod
     async def validation_error_handler(request, exc):
         # Move lines 446-469 here
-        
+
     @staticmethod
     async def http_exception_handler(request, exc):
         # Move lines 472-489 here
-        
+
     @staticmethod
     async def generic_exception_handler(request, exc):
         # Move lines 492-514 here
@@ -371,15 +374,15 @@ def register_exception_handlers(app: FastAPI) -> None:
 
 class MiddlewareConfig:
     """Centralized middleware setup"""
-    
+
     @staticmethod
     def configure_cors(app: FastAPI) -> None:
         # Move lines 509-519 here
-        
+
     @staticmethod
     def configure_rate_limiting(app: FastAPI) -> None:
         # Move lines 521-540 here
-        
+
     @staticmethod
     def configure_security(app: FastAPI) -> None:
         # Move lines 545-549 here
@@ -397,12 +400,12 @@ def register_all_middleware(app: FastAPI) -> None:
 
 def register_all_routes(app: FastAPI, services: dict) -> None:
     """Register all route routers with database service injection"""
-    
+
     # Register content router
     from routes.content_routes import content_router, set_db_service as set_content_db
     set_content_db(services['database'])
     app.include_router(content_router)
-    
+
     # Register task router (similar)
     # ... repeat for all 18 routers
 ```
@@ -457,15 +460,15 @@ from utils.route_utils import db_service
 
 class ErrorResponse:
     """Standardized error response builder"""
-    
+
     @staticmethod
     def validation_error(field: str, message: str) -> JSONResponse:
         return JSONResponse(status_code=400, content={...})
-        
+
     @staticmethod
     def not_found(resource: str, id: str) -> JSONResponse:
         return JSONResponse(status_code=404, content={...})
-        
+
     @staticmethod
     def server_error(error: Exception) -> JSONResponse:
         return JSONResponse(status_code=500, content={...})
@@ -529,17 +532,17 @@ class PaginationParams(BaseModel):
 
 ### Effort Estimate
 
-| Task | Hours | Priority | Impact |
-|------|-------|----------|--------|
-| Extract startup_manager.py | 1.5 | 🔴 HIGH | 280 lines removed |
-| Extract exception_handlers.py | 1.0 | 🔴 HIGH | 200 lines removed |
-| Extract middleware_config.py | 0.5 | 🔴 HIGH | 100 lines removed |
-| Create route_registration.py | 0.5 | 🟡 MED | 50 lines removed |
-| Centralize route_utils.py | 1.0 | 🟡 MED | 40 lines removed (4 files) |
-| Standardize error_responses.py | 1.5 | 🟡 MED | Consistency improvement |
-| Schema consolidation | 2.0 | 🟢 LOW | Optional improvement |
-| Testing & validation | 1.0 | 🔴 HIGH | Ensure no regressions |
-| **TOTAL** | **9-11 hours** | | |
+| Task                           | Hours          | Priority | Impact                     |
+| ------------------------------ | -------------- | -------- | -------------------------- |
+| Extract startup_manager.py     | 1.5            | 🔴 HIGH  | 280 lines removed          |
+| Extract exception_handlers.py  | 1.0            | 🔴 HIGH  | 200 lines removed          |
+| Extract middleware_config.py   | 0.5            | 🔴 HIGH  | 100 lines removed          |
+| Create route_registration.py   | 0.5            | 🟡 MED   | 50 lines removed           |
+| Centralize route_utils.py      | 1.0            | 🟡 MED   | 40 lines removed (4 files) |
+| Standardize error_responses.py | 1.5            | 🟡 MED   | Consistency improvement    |
+| Schema consolidation           | 2.0            | 🟢 LOW   | Optional improvement       |
+| Testing & validation           | 1.0            | 🔴 HIGH  | Ensure no regressions      |
+| **TOTAL**                      | **9-11 hours** |          |                            |
 
 ### Phase 1 Schedule (Recommended - 4 hours)
 
@@ -547,7 +550,7 @@ class PaginationParams(BaseModel):
 SESSION 1 (2 hours):
   ✅ Extract startup_manager.py
   ✅ Extract exception_handlers.py
-  
+
 SESSION 2 (2 hours):
   ✅ Extract middleware_config.py
   ✅ Create route_registration.py
@@ -597,14 +600,14 @@ error_responses.py        60 lines   (standardized error responses)
 
 ### Code Quality Improvements
 
-| Metric | Before | After | Change |
-|--------|--------|-------|--------|
-| main.py complexity | High | Medium | ✅ Much easier to maintain |
-| Code duplication | 4 instances | 0 instances | ✅ DRY principle applied |
-| Error handling consistency | Mixed | Unified | ✅ All endpoints use same patterns |
-| Route setup visibility | Hidden in main | Central file | ✅ Easy to see all routes |
-| Testing difficulty | Hard (globals) | Medium | ✅ Easier to test |
-| Onboarding time | 1-2 hours | 30 min | ✅ New devs ramp up faster |
+| Metric                     | Before         | After        | Change                             |
+| -------------------------- | -------------- | ------------ | ---------------------------------- |
+| main.py complexity         | High           | Medium       | ✅ Much easier to maintain         |
+| Code duplication           | 4 instances    | 0 instances  | ✅ DRY principle applied           |
+| Error handling consistency | Mixed          | Unified      | ✅ All endpoints use same patterns |
+| Route setup visibility     | Hidden in main | Central file | ✅ Easy to see all routes          |
+| Testing difficulty         | Hard (globals) | Medium       | ✅ Easier to test                  |
+| Onboarding time            | 1-2 hours      | 30 min       | ✅ New devs ramp up faster         |
 
 ---
 
@@ -613,6 +616,7 @@ error_responses.py        60 lines   (standardized error responses)
 ### Should You Refactor? **YES ✅**
 
 **Reasons:**
+
 1. **Significant line reduction** (928 → 350 lines) without functionality loss
 2. **Code quality improvement** - Easier to understand and maintain
 3. **Low risk** - Refactoring is purely organizational, no logic changes
@@ -622,6 +626,7 @@ error_responses.py        60 lines   (standardized error responses)
 ### Recommended Approach
 
 **Phase 1 (DO FIRST - 4 hours):**
+
 - ✅ Extract startup_manager.py
 - ✅ Extract exception_handlers.py
 - ✅ Extract middleware_config.py
@@ -630,6 +635,7 @@ error_responses.py        60 lines   (standardized error responses)
 **Result:** main.py becomes ~350 lines, highly readable, production-ready
 
 **Phase 2 (OPTIONAL - 3-4 hours):**
+
 - Create route_utils.py (deduplication)
 - Standardize error_responses.py (consistency)
 - Consolidate schemas (optional improvement)
@@ -653,6 +659,7 @@ While the code works fine, these issues will compound:
 ### File 1: `utils/startup_manager.py`
 
 **Extract these lines from main.py:**
+
 - Lines 145-172 (PostgreSQL init)
 - Lines 174-186 (Redis cache)
 - Lines 189-196 (Model consolidation)
@@ -669,6 +676,7 @@ While the code works fine, these issues will compound:
 ### File 2: `utils/exception_handlers.py`
 
 **Extract these lines from main.py:**
+
 - Lines 428-443 (AppError handler)
 - Lines 446-469 (Validation error handler)
 - Lines 472-489 (HTTP exception handler)
@@ -679,6 +687,7 @@ While the code works fine, these issues will compound:
 ### File 3: `utils/middleware_config.py`
 
 **Extract these lines from main.py:**
+
 - Lines 509-519 (CORS setup)
 - Lines 521-540 (Rate limiting)
 - Lines 545-549 (Security middleware)
@@ -710,6 +719,7 @@ After refactoring, ensure:
 **The FastAPI backend is well-structured and production-ready.** However, `main.py` at 928 lines is a maintenance burden that should be addressed.
 
 **Recommendation:** Implement Phase 1 refactoring (4 hours of work):
+
 - Extract startup logic into `startup_manager.py`
 - Extract error handling into `exception_handlers.py`
 - Extract middleware setup into `middleware_config.py`

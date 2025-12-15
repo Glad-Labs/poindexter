@@ -259,35 +259,42 @@ class TaskExecutor:
                 if primary_keyword:
                     prompt += f" Focus on keywords: {primary_keyword}."
                 if target_audience:
-                        prompt += f" Target audience is {target_audience}."
-                    if category:
-                        prompt += f" Category: {category}."
-                    prompt += " Ensure the content is professional and approximately 1500-2000 words."
+                    prompt += f" Target audience is {target_audience}."
+                if category:
+                    prompt += f" Category: {category}."
+                prompt += " Ensure the content is professional and approximately 1500-2000 words."
 
-                    # Call process_request
+                # Call orchestrator with proper method
+                if hasattr(self.orchestrator, 'process_request'):
+                    # UnifiedOrchestrator has process_request
                     result = await self.orchestrator.process_request(
-                        user_request=prompt,
-                        user_id="system_task_executor",
-                        business_metrics={"task_id": str(task_id)}
+                        user_input=prompt,
+                        context={"task_id": str(task_id)}
                     )
-                    
-                    # Extract content from result
-                    if result.final_formatting:
-                        generated_content = json.dumps(result.final_formatting)
-                    elif result.outputs:
-                        generated_content = str(result.outputs)
-                        for key, val in result.outputs.items():
-                            if isinstance(val, dict) and "content" in val:
-                                generated_content = val["content"]
-                                break
-                            if isinstance(val, str) and len(val) > 100:
-                                generated_content = val
-                                break
-                    else:
-                        generated_content = None
-                    
-                    # Validate that content was actually generated
-                    if not generated_content or (isinstance(generated_content, str) and len(generated_content.strip()) < 50):
+                else:
+                    # Fallback to process_command_async for basic Orchestrator
+                    result = await self.orchestrator.process_command_async(
+                        command=prompt,
+                        context={"task_id": str(task_id)}
+                    )
+                
+                # Extract content from result
+                if result.final_formatting:
+                    generated_content = json.dumps(result.final_formatting)
+                elif result.outputs:
+                    generated_content = str(result.outputs)
+                    for key, val in result.outputs.items():
+                        if isinstance(val, dict) and "content" in val:
+                            generated_content = val["content"]
+                            break
+                        if isinstance(val, str) and len(val) > 100:
+                            generated_content = val
+                            break
+                else:
+                    generated_content = None
+                
+                # Validate that content was actually generated
+                if not generated_content or (isinstance(generated_content, str) and len(generated_content.strip()) < 50):
                         orchestrator_error = f"IntelligentOrchestrator returned empty/minimal content (length: {len(generated_content or '') or 0} chars)"
                         generated_content = None
 

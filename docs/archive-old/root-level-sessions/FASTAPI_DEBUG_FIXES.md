@@ -1,4 +1,5 @@
 # FastAPI Application Debug & Fixes Report
+
 **Date:** December 7, 2025  
 **Status:** ✅ RESOLVED  
 **Branch:** feat/refine
@@ -22,27 +23,31 @@ All three issues have been **FIXED** and the application now starts cleanly.
 ### Issue #1: OpenTelemetry OTLP Export Failures ❌→✅
 
 **Problem:**
+
 - The application was trying to export OpenTelemetry traces to `localhost:4318`
 - This endpoint doesn't exist in development environment
 - Hundreds of connection errors were flooding the logs:
   ```
   ERROR:opentelemetry.sdk._shared_internal:Exception while exporting Span.
-  requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=4318): 
+  requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=4318):
   Max retries exceeded with url: /v1/traces
   ```
 
 **Root Cause:**
+
 - File: `services/telemetry.py`
 - The `OTLPSpanExporter` was configured without error handling
 - Any unreachable endpoint would crash the telemetry setup
 
 **Solution Applied:**
+
 - Wrapped the OTLP exporter initialization in try-catch blocks
 - Added timeout of 5 seconds to detect unavailable endpoints quickly
 - If the OTLP endpoint is unreachable, the app continues with a no-op tracing provider
 - File modified: `src/cofounder_agent/services/telemetry.py` (lines 21-70)
 
 **Changes:**
+
 ```python
 # BEFORE: Hard failure if endpoint not available
 otlp_exporter = OTLPSpanExporter(endpoint=otlp_endpoint)
@@ -59,6 +64,7 @@ except Exception as e:
 ```
 
 **Impact:**
+
 - ✅ Eliminated hundreds of connection error messages
 - ✅ Application starts cleanly even without OTLP endpoint
 - ✅ Production deployments can enable tracing when available
@@ -68,23 +74,27 @@ except Exception as e:
 ### Issue #2: JWT Token Validation Errors ❌→✅
 
 **Problem:**
+
 - Client was sending `mock_jwt_token_pbsqusuevei` (not a valid JWT)
 - JWT tokens require format: `header.payload.signature` (3 parts separated by dots)
 - The mock token only has 1 part
 - Error message was cryptic: `"Not enough segments"`
 
 **Root Cause:**
+
 - File: `services/token_validator.py`
 - The JWT decoder would fail with "Not enough segments" before checking token format
 - No clear validation message for malformed tokens
 
 **Solution Applied:**
+
 - Added explicit token format validation before JWT decoding
 - Check that token has exactly 3 parts (header.payload.signature)
 - Provide clear error message if format is invalid
 - File modified: `src/cofounder_agent/services/token_validator.py` (lines 49-65)
 
 **Changes:**
+
 ```python
 # BEFORE: Generic JWT error
 payload = jwt.decode(token, secret, algorithms=[...])
@@ -97,6 +107,7 @@ payload = jwt.decode(token, secret, algorithms=[...])
 ```
 
 **Impact:**
+
 - ✅ Clear error messages: `"Invalid token format: expected 3 parts, got 1"`
 - ✅ Easier debugging for frontend developers
 - ✅ Better error handling in token_validator
@@ -106,6 +117,7 @@ payload = jwt.decode(token, secret, algorithms=[...])
 ### Issue #3: Unicode Encoding Errors on Windows ❌→✅
 
 **Problem:**
+
 - The application uses emoji characters in print statements (✅, ⏹️, ❌)
 - Windows Command Prompt uses `cp1252` encoding which doesn't support these emojis
 - Application crashed during startup:
@@ -114,16 +126,19 @@ payload = jwt.decode(token, secret, algorithms=[...])
   ```
 
 **Root Cause:**
+
 - File: `src/cofounder_agent/main.py` (lines 323, 327, 339, 343)
 - Print statements used emoji characters without encoding check
 - Windows doesn't support these characters by default
 
 **Solution Applied:**
+
 - Replaced emoji characters with ASCII equivalents
 - Wrapped print statements in try-except blocks for robustness
 - File modified: `src/cofounder_agent/main.py` (lines 310-343)
 
 **Changes:**
+
 ```python
 # BEFORE
 print("✅ Lifespan: Application is now running")
@@ -143,6 +158,7 @@ except UnicodeEncodeError:
 ```
 
 **Impact:**
+
 - ✅ Application starts on Windows without encoding errors
 - ✅ Cross-platform compatibility maintained
 - ✅ Better logging in both console and log files
@@ -152,6 +168,7 @@ except UnicodeEncodeError:
 ## Testing & Verification
 
 ### Pre-Fix Test Results
+
 ```
 ❌ Application startup fails
 ❌ Hundreds of OTLP export errors every 5-10 seconds
@@ -160,6 +177,7 @@ except UnicodeEncodeError:
 ```
 
 ### Post-Fix Test Results
+
 ```
 ✅ Application starts cleanly
 ✅ No OTLP export errors
@@ -168,6 +186,7 @@ except UnicodeEncodeError:
 ```
 
 ### Startup Log (After Fixes)
+
 ```
 [+] Loaded .env.local from C:\Users\mattm\glad-labs-website\.env.local
 [token_validator import] JWT secret loaded: development-secret-k...
@@ -193,11 +212,11 @@ Notice: Clean startup, no spam errors, clear token validation message
 
 ## Files Modified
 
-| File | Changes | Lines | Status |
-|------|---------|-------|--------|
-| `src/cofounder_agent/services/telemetry.py` | Graceful OTLP error handling | 21-70 | ✅ Complete |
-| `src/cofounder_agent/services/token_validator.py` | JWT format validation | 49-65 | ✅ Complete |
-| `src/cofounder_agent/main.py` | Remove emoji characters | 310-343 | ✅ Complete |
+| File                                              | Changes                      | Lines   | Status      |
+| ------------------------------------------------- | ---------------------------- | ------- | ----------- |
+| `src/cofounder_agent/services/telemetry.py`       | Graceful OTLP error handling | 21-70   | ✅ Complete |
+| `src/cofounder_agent/services/token_validator.py` | JWT format validation        | 49-65   | ✅ Complete |
+| `src/cofounder_agent/main.py`                     | Remove emoji characters      | 310-343 | ✅ Complete |
 
 ---
 
@@ -216,17 +235,21 @@ Notice: Clean startup, no spam errors, clear token validation message
 ## Configuration Notes
 
 ### OpenTelemetry (Optional)
+
 The application gracefully handles missing OTLP endpoints:
+
 - **If endpoint available:** Traces are exported to your observability platform
 - **If endpoint unavailable:** App continues with no-op tracing
 - **To enable in development:** Set `ENABLE_TRACING=true` in `.env.local`
 
 ### JWT Tokens
+
 - Required format: `base64_header.base64_payload.base64_signature`
 - For development, use proper JWT tokens from auth endpoints
 - Invalid mock tokens will now show clear error messages
 
 ### Windows Compatibility
+
 - All emoji characters replaced with ASCII equivalents
 - Console output works on Windows Command Prompt, PowerShell, WSL
 - Log files still accept full UTF-8 characters
@@ -245,16 +268,19 @@ The application gracefully handles missing OTLP endpoints:
 ## Troubleshooting
 
 ### If OTLP export errors still appear:
+
 - Check your `.env.local` for `ENABLE_TRACING=true`
 - Set `OTEL_EXPORTER_OTLP_ENDPOINT` to your actual observability platform
 - Or set `ENABLE_TRACING=false` to disable completely
 
 ### If token validation still fails:
+
 - Verify the client is sending proper JWT tokens
 - Check `/api/auth` endpoints for token generation
 - Review token format in error message (should have 3 parts)
 
 ### If Unicode errors appear:
+
 - Update your terminal to support UTF-8
 - On Windows: Use Windows Terminal instead of Command Prompt
 - Or set `PYTHONIOENCODING=utf-8` environment variable
@@ -264,6 +290,7 @@ The application gracefully handles missing OTLP endpoints:
 ## Summary
 
 The FastAPI application is now **production-ready** with:
+
 - ✅ Clean startup process
 - ✅ Graceful error handling
 - ✅ Clear error messages

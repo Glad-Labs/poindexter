@@ -10,6 +10,7 @@
 ## Root Cause Analysis
 
 asyncpg (pure async PostgreSQL driver) requires:
+
 - **JSONB columns:** Must receive JSON strings (via `json.dumps()`), NOT Python dicts
 - **Direct dict passing:** Causes `DataError: expected str, got dict` at runtime
 - **Solution:** The `serialize_value_for_postgres()` helper function already existed in database_service.py, just needed to be applied consistently
@@ -23,6 +24,7 @@ asyncpg (pure async PostgreSQL driver) requires:
 **Problem:** Pipeline uses `metadata` dict fields instead of `task_metadata` column name, and passes unserialized dicts
 
 **Fixes Applied:**
+
 - Line 73: `"metadata": {...}` → `"task_metadata": {...}`
 - Line 88: `"metadata": {...}` → `"task_metadata": {...}`
 - Line 103: `"metadata": {...}` → `"task_metadata": {...}`
@@ -44,7 +46,9 @@ asyncpg (pure async PostgreSQL driver) requires:
 ### 2. **database_service.py** - 3 Methods With JSONB Issues
 
 #### Issue 2a: `add_log_entry()` - Line 374
+
 **Problem:** Passing Python dict directly to JSONB `context` column
+
 ```python
 # BEFORE (❌ BROKEN)
 context,  # Will be stored as JSONB
@@ -54,7 +58,9 @@ json.dumps(context or {}),  # Serialize context for JSONB column
 ```
 
 #### Issue 2b: `add_financial_entry()` - Line 427
+
 **Problem:** Passing Python list directly to JSONB `tags` column
+
 ```python
 # BEFORE (❌ BROKEN)
 entry_data.get("tags"),  # Will be stored as JSONB
@@ -64,7 +70,9 @@ json.dumps(entry_data.get("tags", [])),  # Serialize tags for JSONB column
 ```
 
 #### Issue 2c: `update_agent_status()` - Lines 473 & 494
+
 **Problem:** Passing Python dict directly to JSONB `metadata` column in both UPDATE and INSERT
+
 ```python
 # BEFORE (❌ BROKEN)
 metadata,  # Will be stored as JSONB (line 473)
@@ -80,7 +88,9 @@ json.dumps(metadata or {}),  # Serialize metadata for JSONB column (line 494)
 ### 3. **content_routes.py** - 3 Update Calls
 
 #### Issue 3a: Line 365
+
 **Problem:** Using `metadata` instead of `task_metadata` and passing nested dict
+
 ```python
 # BEFORE (❌ BROKEN)
 "metadata": {
@@ -96,7 +106,9 @@ json.dumps(metadata or {}),  # Serialize metadata for JSONB column (line 494)
 ```
 
 #### Issue 3b: Line 638 - Approval Endpoint
+
 **Problem:** Passing non-existent columns directly instead of nesting in `task_metadata`
+
 ```python
 # BEFORE (❌ BROKEN)
 {
@@ -126,7 +138,9 @@ json.dumps(metadata or {}),  # Serialize metadata for JSONB column (line 494)
 ```
 
 #### Issue 3c: Line 673 - Rejection Endpoint
+
 **Problem:** Same as approval endpoint - non-existent columns not nested in `task_metadata`
+
 ```python
 # BEFORE (❌ BROKEN)
 {
@@ -160,6 +174,7 @@ json.dumps(metadata or {}),  # Serialize metadata for JSONB column (line 494)
 **Problem:** Function signature is `add_log_entry(agent_name, level, message, context)` but being called as `add_log_entry(level, message, context)`
 
 #### Issue 4a: Line 265
+
 ```python
 # BEFORE (❌ BROKEN)
 await self.database_service.add_log_entry(
@@ -178,6 +193,7 @@ await self.database_service.add_log_entry(
 ```
 
 #### Issue 4b: Line 400
+
 ```python
 # BEFORE (❌ BROKEN)
 await self.database_service.add_log_entry(
@@ -196,6 +212,7 @@ await self.database_service.add_log_entry(
 ```
 
 #### Issue 4c: Line 490
+
 ```python
 # BEFORE (❌ BROKEN)
 await self.database_service.add_log_entry(
@@ -218,6 +235,7 @@ await self.database_service.add_log_entry(
 ## Database Schema Context
 
 The `tasks` table actual columns:
+
 ```sql
 id (UUID)                    -- Primary key
 task_name (VARCHAR)          -- Task name
@@ -245,6 +263,7 @@ updated_at (TIMESTAMP)       -- Update timestamp
 ## Serialization Pattern
 
 The `serialize_value_for_postgres()` function in database_service.py handles:
+
 ```python
 def serialize_value_for_postgres(value: Any) -> Any:
     if isinstance(value, dict):
@@ -277,11 +296,13 @@ This is automatically applied in `update_task()` to all values, ensuring proper 
 ## Testing & Verification
 
 ### Pre-Test Checklist
+
 - [ ] All files syntax-validated
 - [ ] No import errors
 - [ ] Backend starts successfully
 
 ### Test Scenarios
+
 1. **Content Pipeline**
    - Create content task via `/api/content/tasks`
    - Verify task_metadata populated correctly
@@ -299,6 +320,7 @@ This is automatically applied in `update_task()` to all values, ensuring proper 
    - Check agent_status updates with serialized metadata
 
 ### Expected Result
+
 ✅ No asyncpg.exceptions.DataError - all JSONB data properly serialized
 
 ---
@@ -306,6 +328,7 @@ This is automatically applied in `update_task()` to all values, ensuring proper 
 ## Prevention Strategy
 
 **Going Forward:**
+
 1. ✅ Always use `json.dumps()` for dict/list values going to JSONB columns
 2. ✅ Use `serialize_value_for_postgres()` wrapper in generic update methods
 3. ✅ Store complex data in JSON columns, not as individual table columns

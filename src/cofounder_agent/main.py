@@ -151,9 +151,7 @@ async def lifespan(app: FastAPI):
         
         # Initialize content orchestrator for use in unified system
         content_orchestrator = ContentOrchestrator(
-            database_service=db_service,
-            model_router=getattr(app.state, 'model_router', None),
-            quality_service=quality_service
+            task_store=getattr(app.state, 'task_store', None)
         )
         logger.info("✅ ContentOrchestrator initialized")
         

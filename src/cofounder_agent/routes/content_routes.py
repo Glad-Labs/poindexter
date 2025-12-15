@@ -488,11 +488,13 @@ async def approve_and_publish_task(
                     logger.info(f"📝 Generated unique slug from title: '{title}' → '{slug}'")
                 
                 post_data = {
+                    "id": task_metadata.get("post_id"),  # Link to original task
                     "title": title,
                     "slug": slug,
                     "content": content,
                     "excerpt": task_metadata.get("excerpt", ""),
-                    "featured_image": task_metadata.get("featured_image_url"),
+                    "featured_image_url": task_metadata.get("featured_image_url"),  # ✅ FIXED: Use correct key name
+                    "cover_image_url": task_metadata.get("cover_image_url"),
                     "status": "published",
                     "seo_title": task_metadata.get("seo_title"),
                     "seo_description": task_metadata.get("seo_description"),
@@ -503,14 +505,18 @@ async def approve_and_publish_task(
                 post_id = post_result.get("id")
                 logger.info(f"✅ Post published to CMS database with ID: {post_id}")
                 
-                # Update task with CMS post ID
+                # Update task with CMS post ID and published timestamp
                 await task_store.update_task(
                     task_id,
                     {
+                        "status": "published",
+                        "published_at": approval_timestamp,
+                        "completed_at": approval_timestamp,
                         "task_metadata": {
                             **task_metadata,
                             "cms_post_id": post_id,
                             "published_at": approval_timestamp.isoformat(),
+                            "published_to_db": True,
                         }
                     }
                 )

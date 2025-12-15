@@ -163,6 +163,7 @@ Is this documentation?
 ```
 
 **Examples of WHAT TO ARCHIVE (don't fit policy):**
+
 - ERROR_HANDLING_GUIDE.md (1,200 lines = implementation detail, not architecture)
 - REDIS_CACHING_GUIDE.md (feature-specific how-to, code shows how to use Redis)
 - SENTRY_INTEGRATION_GUIDE.md (setup detail, belongs in code comments)
@@ -170,13 +171,14 @@ Is this documentation?
 - FASTAPI_DEBUG_FIXES.md (implementation notes, not high-level)
 
 **Examples of WHAT TO KEEP (fit policy):**
+
 - 02-ARCHITECTURE_AND_DESIGN.md (monorepo, AI agent system architecture)
 - decisions/WHY_FASTAPI.md (architectural decision, stable)
 - reference/API_CONTRACTS.md (technical specification, stable)
 - troubleshooting/01-railway-deployment.md (specific issue: how to fix Railway deploys)
 - 03-DEPLOYMENT_AND_INFRASTRUCTURE.md (deployment procedures, high-level)
-Consolidation Checklist
-For each consolidation action, report:
+  Consolidation Checklist
+  For each consolidation action, report:
 
 ### Action: [TITLE]
 
@@ -318,6 +320,7 @@ Use this format for the documentation review report:
 ### IMMEDIATE CLEANUP (REQUIRED - ~4-6 hours)
 
 #### 1. Root Directory Cleanup (30 files)
+
 - [ ] Archive to `archive-old/` all 30+ root-level .md files:
   - `AUTH_FIX_*.md`, `COMPREHENSIVE_*.md`, `CONTENT_DISPLAY_*.md`
   - `ENTERPRISE_SITE_ANALYSIS.md`, `ERROR_HANDLING_*.md`, `FASTAPI_*.md`
@@ -328,6 +331,7 @@ Use this format for the documentation review report:
 - [ ] Verification: `ls docs/*.md | wc -l` shows < 30 files in root
 
 #### 2. Docs/ Directory Cleanup (7 files)
+
 - [ ] Archive to `archive-old/` these violation files:
   - [ ] `docs/ERROR_HANDLING_GUIDE.md` (1,200-line feature guide)
   - [ ] `docs/REDIS_CACHING_GUIDE.md` (feature how-to)
@@ -340,6 +344,7 @@ Use this format for the documentation review report:
 - [ ] Verification: `ls docs/ | grep -E '.md$' | wc -l` should be < 20
 
 #### 3. Update Core Documentation (1 hour)
+
 - [ ] Update `docs/00-README.md` to reflect actual structure including:
   - [ ] Add link to `decisions/` folder
   - [ ] Add link to `archive-old/` (for historical context)
@@ -373,24 +378,25 @@ git commit -m "docs: archive 7 feature guides from docs/ (ERROR_HANDLING_GUIDE, 
 git commit -m "docs: update 00-README.md with correct structure and metrics"
 git commit -m "docs: enforce HIGH-LEVEL ONLY policy - cleanup complete"
 ```
-   🎯 CONSOLIDATION BEST PRACTICES
-   Naming Conventions
-   Core docs: [NUMBER]-[TITLE].md (00, 01, 02...)
-   Guides: [TITLE].md (no number)
-   Troubleshooting: [NUMBER]-[ISSUE].md (01, 02, 03...)
-   Component docs: [component]/README.md
-   Reference: [TOPIC].md (no number)
-   Archive: [ORIGINAL_NAME].md (preserve original name)
-   Folder Organization
-   docs/
-   ├── (8 numbered core files here)
-   ├── components/ (one folder per component)
-   ├── guides/ (5-8 key guides)
-   │ └── troubleshooting/ (5-10 common issues)
-   ├── reference/ (5-10 spec docs)
-   └── archive-old/ (historical, marked clearly)
-   Link Standards
-   Every documentation file should:
+
+🎯 CONSOLIDATION BEST PRACTICES
+Naming Conventions
+Core docs: [NUMBER]-[TITLE].md (00, 01, 02...)
+Guides: [TITLE].md (no number)
+Troubleshooting: [NUMBER]-[ISSUE].md (01, 02, 03...)
+Component docs: [component]/README.md
+Reference: [TOPIC].md (no number)
+Archive: [ORIGINAL_NAME].md (preserve original name)
+Folder Organization
+docs/
+├── (8 numbered core files here)
+├── components/ (one folder per component)
+├── guides/ (5-8 key guides)
+│ └── troubleshooting/ (5-10 common issues)
+├── reference/ (5-10 spec docs)
+└── archive-old/ (historical, marked clearly)
+Link Standards
+Every documentation file should:
 
 ✅ Appear in a README.md or index file
 ✅ Have a clear purpose (component, guide, reference, etc.)
@@ -498,15 +504,15 @@ Root: ONLY README.md + LICENSE.md + config files + source folders
 
 ### Decision Matrix: Keep vs Archive
 
-| Type | Keep? | Example | Location |
-|------|-------|---------|----------|
-| Architecture decisions | ✅ YES | Why FastAPI, Why PostgreSQL | `decisions/` |
-| API specifications | ✅ YES | API contracts, data schemas | `reference/` |
-| Technical standards | ✅ YES | Code quality, naming conventions | `reference/` |
-| Focused troubleshooting | ✅ YES | How to fix Railway deploys (1 specific issue) | `troubleshooting/` |
-| Implementation guides | ❌ NO | How to implement error handling | ARCHIVE |
-| Feature how-tos | ❌ NO | How to use Redis/Sentry | ARCHIVE |
-| Setup guides | ❌ MAYBE | If critical setup only, move to `reference/setup/` | ARCHIVE if > 200 lines |
-| Session summaries | ❌ NO | Session notes, fix summaries | ARCHIVE |
-| Status updates | ❌ NO | Project completion status | DELETE |
-| Dated analysis | ❌ NO | Enterprise analysis from sprint | ARCHIVE |
+| Type                    | Keep?    | Example                                            | Location               |
+| ----------------------- | -------- | -------------------------------------------------- | ---------------------- |
+| Architecture decisions  | ✅ YES   | Why FastAPI, Why PostgreSQL                        | `decisions/`           |
+| API specifications      | ✅ YES   | API contracts, data schemas                        | `reference/`           |
+| Technical standards     | ✅ YES   | Code quality, naming conventions                   | `reference/`           |
+| Focused troubleshooting | ✅ YES   | How to fix Railway deploys (1 specific issue)      | `troubleshooting/`     |
+| Implementation guides   | ❌ NO    | How to implement error handling                    | ARCHIVE                |
+| Feature how-tos         | ❌ NO    | How to use Redis/Sentry                            | ARCHIVE                |
+| Setup guides            | ❌ MAYBE | If critical setup only, move to `reference/setup/` | ARCHIVE if > 200 lines |
+| Session summaries       | ❌ NO    | Session notes, fix summaries                       | ARCHIVE                |
+| Status updates          | ❌ NO    | Project completion status                          | DELETE                 |
+| Dated analysis          | ❌ NO    | Enterprise analysis from sprint                    | ARCHIVE                |

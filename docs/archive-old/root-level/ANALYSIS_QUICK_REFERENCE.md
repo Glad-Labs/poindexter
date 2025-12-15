@@ -25,14 +25,14 @@
 
 ## 🚨 Critical Issues (Fix This Week)
 
-| # | Issue | Risk | Fix Time | Impact |
-|---|-------|------|----------|--------|
-| 1 | CORS misconfigured | Attacks in production | 1h | 🔴 CRITICAL |
-| 2 | No rate limiting | Cost explosion | 2h | 🔴 CRITICAL |
-| 3 | Webhooks unverified | Unauthorized triggering | 2h | 🔴 HIGH |
-| 4 | No caching | 70% latency lost | 4h | 🟠 HIGH |
-| 5 | Polling inefficient | 95% DB overhead | 6h | 🟠 HIGH |
-| 6 | Coverage unknown | Quality blind | 2h | 🟠 HIGH |
+| #   | Issue               | Risk                    | Fix Time | Impact      |
+| --- | ------------------- | ----------------------- | -------- | ----------- |
+| 1   | CORS misconfigured  | Attacks in production   | 1h       | 🔴 CRITICAL |
+| 2   | No rate limiting    | Cost explosion          | 2h       | 🔴 CRITICAL |
+| 3   | Webhooks unverified | Unauthorized triggering | 2h       | 🔴 HIGH     |
+| 4   | No caching          | 70% latency lost        | 4h       | 🟠 HIGH     |
+| 5   | Polling inefficient | 95% DB overhead         | 6h       | 🟠 HIGH     |
+| 6   | Coverage unknown    | Quality blind           | 2h       | 🟠 HIGH     |
 
 ---
 
@@ -61,6 +61,7 @@ PostgreSQL (required)
 ```
 
 **Key Stats:**
+
 - 97 Python files total
 - 23 test files
 - 8 req files
@@ -73,6 +74,7 @@ PostgreSQL (required)
 ## 🔒 Security Issues
 
 ### Issue #1: CORS Overly Permissive (1h fix)
+
 ```python
 # ❌ Current
 allow_methods=["*"]     # DELETE allowed
@@ -84,6 +86,7 @@ export CORS_HEADERS=Content-Type,Authorization
 ```
 
 ### Issue #2: No Rate Limiting (2h fix)
+
 ```python
 # ❌ Current - unlimited requests
 POST /api/content/tasks → Cost explosion possible
@@ -94,6 +97,7 @@ pip install slowapi
 ```
 
 ### Issue #3: Webhook Auth Missing (2h fix)
+
 ```python
 # ❌ Current - anyone can trigger
 POST /api/webhooks/content-generated  # No signature check
@@ -104,6 +108,7 @@ verify_webhook_signature(payload, signature, secret, timestamp)
 ```
 
 ### Issue #4: HTML Sanitization Missing (3h fix)
+
 ```python
 # ❌ Current - XSS risk
 content = await llm.generate(prompt)
@@ -115,6 +120,7 @@ sanitized = bleach.clean(content, tags=[...])
 ```
 
 ### Issue #5: Secrets in Logs (2h fix)
+
 - Environment vars logged during startup
 - Could contain API keys, DB passwords
 - Solution: Filter sensitive fields in structured logging
@@ -124,6 +130,7 @@ sanitized = bleach.clean(content, tags=[...])
 ## ⚡ Performance Issues
 
 ### Issue #1: No Caching (4h fix, 70% latency gain)
+
 ```python
 # ❌ Current
 semantic_search(query) → 200-500ms every time
@@ -136,6 +143,7 @@ cache.set("embedding:query", embedding, ttl=3600)
 **Expected Result:** P95 latency from 3s → 500ms
 
 ### Issue #2: Inefficient Polling (6h fix, 95% overhead reduction)
+
 ```python
 # ❌ Current
 while True:
@@ -153,6 +161,7 @@ await notifier.subscribe(callback)
 **Expected Result:** 86,400+ unnecessary queries eliminated with 5 instances
 
 ### Issue #3: Missing Compression (1h fix, 75% bandwidth)
+
 ```python
 # Add to main.py
 from fastapi.middleware.gzip import GZIPMiddleware
@@ -160,6 +169,7 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
 ```
 
 ### Issue #4: N+1 Query Risk
+
 Currently mostly safe but potential exists in expanded features.
 
 ---
@@ -167,6 +177,7 @@ Currently mostly safe but potential exists in expanded features.
 ## 🧪 Testing Issues
 
 ### Issue #1: Coverage Unknown (2h fix)
+
 ```bash
 # ❌ Current - no metrics
 pytest tests/
@@ -177,12 +188,14 @@ pytest --cov --cov-report=html --cov-fail-under=80
 ```
 
 ### Issue #2: Critical Components Untested
+
 - `orchestrator_logic.py` (724 lines) - Assumed tested
 - `model_router.py` (543 lines) - No dedicated test file
 - `intelligent_orchestrator.py` - New, untested
 - Async edge cases - Flakiness possible
 
 ### Issue #3: No Load/Stress Tests
+
 - Concurrency limits unknown
 - Cascade failure scenarios untested
 - Performance under load untested
@@ -193,31 +206,34 @@ pytest --cov --cov-report=html --cov-fail-under=80
 
 ## 📊 Code Quality Issues
 
-| Issue | Severity | Lines | Fix |
-|-------|----------|-------|-----|
-| Dead code (Google Cloud refs) | LOW | ~100 | Remove |
-| Magic numbers | MEDIUM | ~50 | Extract constants |
-| Large methods (>100 lines) | MEDIUM | 10+ | Decompose |
-| Incomplete docstrings | LOW | ~200 | Expand |
-| CMS routes sync/async mixed | MEDIUM | 5 | Standardize |
+| Issue                         | Severity | Lines | Fix               |
+| ----------------------------- | -------- | ----- | ----------------- |
+| Dead code (Google Cloud refs) | LOW      | ~100  | Remove            |
+| Magic numbers                 | MEDIUM   | ~50   | Extract constants |
+| Large methods (>100 lines)    | MEDIUM   | 10+   | Decompose         |
+| Incomplete docstrings         | LOW      | ~200  | Expand            |
+| CMS routes sync/async mixed   | MEDIUM   | 5     | Standardize       |
 
 ---
 
 ## 🚀 Recommended Priority Order
 
 ### Week 1 (7 hours) - Security & Quality
+
 1. ✅ Fix CORS config (1h)
 2. ✅ Implement rate limiting (2h)
 3. ✅ Add webhook verification (2h)
 4. ✅ Add coverage reporting (2h)
 
 ### Week 2 (8 hours) - Performance
+
 5. 🟠 Add Redis caching (4h)
 6. 🟠 LISTEN/NOTIFY setup (4-6h, do in week 2-3)
 7. 🟠 Health check endpoints (3h, concurrent)
 8. 🟠 Prometheus metrics (3h, concurrent)
 
 ### Week 3+ - Features & Quality
+
 9. API versioning (4h)
 10. WebSocket support (6h)
 11. Test coverage improvement (8h)
@@ -227,13 +243,13 @@ pytest --cov --cov-report=html --cov-fail-under=80
 
 ## 💰 Investment Summary
 
-| Phase | Hours | Timeline | ROI |
-|-------|-------|----------|-----|
-| Security fixes | 7h | 1 week | CRITICAL |
-| Performance | 20h | 2-3 weeks | VERY HIGH |
-| Testing | 8h | 1 week | HIGH |
-| Features | 28h | 4-6 weeks | MEDIUM |
-| Cleanup | 20h | Ongoing | LOW |
+| Phase          | Hours | Timeline  | ROI       |
+| -------------- | ----- | --------- | --------- |
+| Security fixes | 7h    | 1 week    | CRITICAL  |
+| Performance    | 20h   | 2-3 weeks | VERY HIGH |
+| Testing        | 8h    | 1 week    | HIGH      |
+| Features       | 28h   | 4-6 weeks | MEDIUM    |
+| Cleanup        | 20h   | Ongoing   | LOW       |
 
 **Total: ~103 hours** (~2.5 senior engineer weeks)
 
@@ -274,6 +290,7 @@ Product:
 ## 📋 Implementation Checklist
 
 ### Security (This Sprint)
+
 - [ ] Move CORS to environment variables
 - [ ] Implement rate limiting (slowapi)
 - [ ] Add webhook signature verification
@@ -282,6 +299,7 @@ Product:
 - [ ] Add security tests
 
 ### Performance (Next Sprint)
+
 - [ ] Set up Redis connection
 - [ ] Cache semantic search (1h TTL)
 - [ ] Cache model availability (5m TTL)
@@ -290,6 +308,7 @@ Product:
 - [ ] Add database indexes
 
 ### Testing (This Sprint)
+
 - [ ] Add pytest-cov to requirements.txt
 - [ ] Configure coverage reporting in CI/CD
 - [ ] Set coverage threshold to 80%
@@ -298,6 +317,7 @@ Product:
 - [ ] Add E2E content pipeline test
 
 ### DevOps (Next Sprint)
+
 - [ ] Add granular health check endpoints
 - [ ] Expose Prometheus metrics
 - [ ] Configure log aggregation
@@ -310,6 +330,7 @@ Product:
 ## 🎯 Definition of Done
 
 ### Security ✅ Done When:
+
 - All CORS endpoints return proper headers
 - Rate limiting returns 429 on excess requests
 - Webhook signature verification working
@@ -317,6 +338,7 @@ Product:
 - No secrets in logs
 
 ### Performance ✅ Done When:
+
 - Cache hit rate > 70%
 - P95 latency < 500ms
 - Polling database queries reduced 95%
@@ -324,6 +346,7 @@ Product:
 - All tests pass under load
 
 ### Quality ✅ Done When:
+
 - Coverage > 80% enforced in CI/CD
 - All critical components tested
 - E2E scenarios passing
@@ -335,18 +358,21 @@ Product:
 ## 📞 Questions to Ask Stakeholders
 
 **Product:**
+
 - Target SLA? (99.9%? 99.99%?)
 - Max acceptable P95 latency? (current: 2-3s)
 - Cost tolerance per task? (current: unknown)
 - Multi-tenant/SaaS support needed? (impacts priority)
 
 **Engineering:**
+
 - Can we allocate 2.5 weeks for implementation?
 - CI/CD system available for coverage reporting?
 - Monitoring infrastructure (Prometheus, Datadog)?
 - When should fixes be complete? (Recommended: ASAP)
 
 **Business:**
+
 - Target launch date? (Security must come first)
 - Expected user load at launch?
 - Feature priority ranking?
@@ -370,17 +396,17 @@ QUICK_REFERENCE_CARD_ANALYSIS.md (This document)
 
 ## 📚 Key Stats at a Glance
 
-| Metric | Value | Status |
-|--------|-------|--------|
-| Python files | 97 | Well-organized |
-| Test files | 23 | Present, coverage unknown |
-| Route modules | 17 | Clear separation |
-| Service modules | 40+ | Business logic isolated |
-| Security issues | 5 critical | Need fixing |
-| Performance gaps | 4 major | Easy wins available |
-| Code health | 7.4/10 | Good overall |
-| Ready for production | No | Fix security first |
-| Estimated time to production-ready | 6-8 weeks | With team of 2 |
+| Metric                             | Value      | Status                    |
+| ---------------------------------- | ---------- | ------------------------- |
+| Python files                       | 97         | Well-organized            |
+| Test files                         | 23         | Present, coverage unknown |
+| Route modules                      | 17         | Clear separation          |
+| Service modules                    | 40+        | Business logic isolated   |
+| Security issues                    | 5 critical | Need fixing               |
+| Performance gaps                   | 4 major    | Easy wins available       |
+| Code health                        | 7.4/10     | Good overall              |
+| Ready for production               | No         | Fix security first        |
+| Estimated time to production-ready | 6-8 weeks  | With team of 2            |
 
 ---
 
@@ -412,4 +438,3 @@ QUICK_REFERENCE_CARD_ANALYSIS.md (This document)
 **Analysis Date:** December 6, 2025  
 **Confidence Level:** HIGH  
 **For Full Details:** See COMPREHENSIVE_ANALYSIS_REPORT.md
-

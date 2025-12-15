@@ -11,15 +11,18 @@
 ### Phase 3: Unified Workflow Router & NLP Intent Recognition
 
 #### ✅ Component 1: UnifiedWorkflowRouter
+
 **File:** `src/cofounder_agent/services/workflow_router.py`
 
 **Capabilities:**
+
 - Single HTTP endpoint for all workflow types (content_generation, social_media, financial_analysis, market_analysis, compliance_check, performance_review)
 - Maps workflow_type → default pipeline OR custom pipeline specification
 - Integrates with NLPIntentRecognizer for natural language requests
 - Returns unified WorkflowResponse with execution results
 
 **Key Methods:**
+
 ```python
 async def execute_workflow(workflow_type, input_data, user_id, source, custom_pipeline, execution_options)
 async def execute_from_natural_language(user_message, user_id, context)
@@ -27,6 +30,7 @@ async def list_available_workflows()
 ```
 
 **Statistics:**
+
 - 280 lines of code
 - 6 public methods
 - 2 async entry points
@@ -35,9 +39,11 @@ async def list_available_workflows()
 ---
 
 #### ✅ Component 2: NLPIntentRecognizer
+
 **File:** `src/cofounder_agent/services/nlp_intent_recognizer.py`
 
 **Capabilities:**
+
 - Recognize user intent from natural language messages
 - Multiple intent pattern matching (6 intent types, 20+ patterns)
 - Confidence scoring for intent disambiguation
@@ -45,6 +51,7 @@ async def list_available_workflows()
 - Context-aware processing
 
 **Recognized Intents:**
+
 1. **content_generation** - Blog posts, articles, essays
 2. **social_media** - Social media posts and campaigns
 3. **financial_analysis** - Budget, ROI, cost analysis
@@ -53,6 +60,7 @@ async def list_available_workflows()
 6. **performance_review** - Campaign metrics and KPI analysis
 
 **Parameter Extractors (11 total):**
+
 - `extract_topic()` - Extract subject from message
 - `extract_style()` - Professional, casual, academic, creative, formal, informal, technical, conversational
 - `extract_length()` - Word count (500, 2000, 3000+)
@@ -66,6 +74,7 @@ async def list_available_workflows()
 - `extract_metrics()` - Specific metrics to include
 
 **Statistics:**
+
 - 620 lines of code
 - 18 methods (11 async parameter extractors)
 - 20+ regex patterns compiled
@@ -148,18 +157,18 @@ PHASE 3: UNIFIED WORKFLOW ROUTER
 
 ## 📊 Feature Comparison: Phase 1 vs 2 vs 3
 
-| Feature | Phase 1 | Phase 2 | Phase 3 |
-|---------|---------|---------|---------|
-| Task execution | ✅ Individual | ✅ Chained | ✅ Chained |
-| Task composition | ❌ | ✅ Pipelines | ✅ Pipelines + Custom |
-| Workflow types | ❌ | ✅ 6 types | ✅ 6 types + custom |
-| Natural language | ❌ | ❌ | ✅ Full support |
-| Parameter extraction | ❌ | Manual | ✅ Automatic (11 extractors) |
-| Intent recognition | ❌ | ❌ | ✅ 6 intents, 20+ patterns |
-| Confidence scoring | ❌ | ❌ | ✅ Per intent |
-| Custom pipelines | ❌ | ✅ Manual | ✅ Auto-detected or manual |
-| Approval gates | ❌ | ✅ Checkpoints | ✅ Via pipelines |
-| Multi-intent handling | ❌ | ❌ | ✅ Disambiguation |
+| Feature               | Phase 1       | Phase 2        | Phase 3                      |
+| --------------------- | ------------- | -------------- | ---------------------------- |
+| Task execution        | ✅ Individual | ✅ Chained     | ✅ Chained                   |
+| Task composition      | ❌            | ✅ Pipelines   | ✅ Pipelines + Custom        |
+| Workflow types        | ❌            | ✅ 6 types     | ✅ 6 types + custom          |
+| Natural language      | ❌            | ❌             | ✅ Full support              |
+| Parameter extraction  | ❌            | Manual         | ✅ Automatic (11 extractors) |
+| Intent recognition    | ❌            | ❌             | ✅ 6 intents, 20+ patterns   |
+| Confidence scoring    | ❌            | ❌             | ✅ Per intent                |
+| Custom pipelines      | ❌            | ✅ Manual      | ✅ Auto-detected or manual   |
+| Approval gates        | ❌            | ✅ Checkpoints | ✅ Via pipelines             |
+| Multi-intent handling | ❌            | ❌             | ✅ Disambiguation            |
 
 ---
 
@@ -168,18 +177,21 @@ PHASE 3: UNIFIED WORKFLOW ROUTER
 ### Backward Compatible with Phase 1-2
 
 **Phase 1 Components:**
+
 - Task execution unchanged
 - TaskRegistry unmodified
 - All agents work as before
 - ExecutionContext compatible
 
 **Phase 2 Components:**
+
 - ModularPipelineExecutor enhanced (not modified)
 - WorkflowRequest/Response unchanged
 - Default pipelines used by router
 - Checkpoint system available via pipelines
 
 **Phase 3 Additions:**
+
 - Sits on top of Phase 2
 - UnifiedWorkflowRouter → ModularPipelineExecutor
 - NLPIntentRecognizer → workflow parameters
@@ -286,6 +298,7 @@ response = await router.execute_workflow(
 ### Unit Tests (Ready for Phase 4)
 
 **Test Categories:**
+
 1. Intent recognition accuracy (6 intent types)
 2. Parameter extraction completeness
 3. Confidence scoring correctness
@@ -294,17 +307,18 @@ response = await router.execute_workflow(
 6. Pipeline execution with NL input
 
 **Example Test:**
+
 ```python
 @pytest.mark.asyncio
 async def test_nlp_content_generation():
     """Test NLP parsing for content generation"""
     router = UnifiedWorkflowRouter()
-    
+
     response = await router.execute_from_natural_language(
         user_message="Write a professional blog post about AI trends",
         user_id="test_user",
     )
-    
+
     assert response.workflow_type == "content_generation"
     assert response.output["topic"] == "AI trends"
     assert response.output["style"] == "professional"
@@ -316,22 +330,22 @@ async def test_nlp_content_generation():
 
 ### Latency Profile (Per-Request)
 
-| Operation | Latency | Notes |
-|-----------|---------|-------|
-| Intent recognition | <50ms | Regex matching |
-| Parameter extraction | <100ms | 11 extractors, parallel-friendly |
-| Pipeline resolution | <25ms | Dictionary lookup |
-| Task chaining setup | <50ms | ExecutionContext creation |
-| **Total NL→Response** | **<300ms** | Before task execution |
+| Operation             | Latency    | Notes                            |
+| --------------------- | ---------- | -------------------------------- |
+| Intent recognition    | <50ms      | Regex matching                   |
+| Parameter extraction  | <100ms     | 11 extractors, parallel-friendly |
+| Pipeline resolution   | <25ms      | Dictionary lookup                |
+| Task chaining setup   | <50ms      | ExecutionContext creation        |
+| **Total NL→Response** | **<300ms** | Before task execution            |
 
 ### Memory Footprint
 
-| Component | Size | Notes |
-|-----------|------|-------|
-| NLPIntentRecognizer | ~2MB | Compiled regex patterns |
-| UnifiedWorkflowRouter | ~1MB | State management |
-| Per-request overhead | <100KB | Temporary objects |
-| **Total overhead** | **~3.1MB** | One-time on startup |
+| Component             | Size       | Notes                   |
+| --------------------- | ---------- | ----------------------- |
+| NLPIntentRecognizer   | ~2MB       | Compiled regex patterns |
+| UnifiedWorkflowRouter | ~1MB       | State management        |
+| Per-request overhead  | <100KB     | Temporary objects       |
+| **Total overhead**    | **~3.1MB** | One-time on startup     |
 
 ### Scalability
 
@@ -348,10 +362,11 @@ async def test_nlp_content_generation():
 **Planned Endpoints:**
 
 1. **Execute Workflow (Structured)**
+
    ```
    POST /api/workflows/execute
    Content-Type: application/json
-   
+
    {
      "workflow_type": "content_generation",
      "input_data": {"topic": "AI trends"},
@@ -361,10 +376,11 @@ async def test_nlp_content_generation():
    ```
 
 2. **Execute from Natural Language**
+
    ```
    POST /api/workflows/execute-from-nl
    Content-Type: application/json
-   
+
    {
      "message": "Generate a blog post about AI trends",
      "context": {}
@@ -372,28 +388,31 @@ async def test_nlp_content_generation():
    ```
 
 3. **Recognize Intent (Preview)**
+
    ```
    POST /api/intent/recognize
    Content-Type: application/json
-   
+
    {
      "message": "Write about market trends"
    }
-   
+
    Response: IntentMatch with confidence and parameters
    ```
 
 4. **List Workflows**
+
    ```
    GET /api/workflows/list
-   
+
    Response: All workflow types and default pipelines
    ```
 
 5. **Get Workflow Status**
+
    ```
    GET /api/workflows/{workflow_id}
-   
+
    Response: Current execution status
    ```
 
@@ -442,6 +461,7 @@ async def test_nlp_content_generation():
 ### For Phase 4 (API Endpoints)
 
 **Required integrations:**
+
 1. FastAPI route registration
 2. Request validation (Pydantic models)
 3. Authentication/authorization
@@ -449,6 +469,7 @@ async def test_nlp_content_generation():
 5. Response formatting
 
 **Recommended additions:**
+
 1. Caching layer for frequent intents
 2. Intent confidence threshold configuration
 3. Fallback to structured endpoint if NL fails

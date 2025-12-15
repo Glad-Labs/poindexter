@@ -265,7 +265,8 @@ async def create_task(
             logger.info(f"⏳ [TASK_CREATE] Queueing background task for content generation...")
             background_tasks.add_task(
                 _execute_and_publish_task,
-                returned_task_id
+                returned_task_id,
+                db_service
             )
             logger.info(f"✅ [TASK_CREATE] Background task queued successfully")
         else:
@@ -503,7 +504,7 @@ async def get_metrics(
 # BACKGROUND TASK EXECUTION
 # ============================================================================
 
-async def _execute_and_publish_task(task_id: str):
+async def _execute_and_publish_task(task_id: str, db_service: DatabaseService):
     """
     Background task to execute content generation.
     

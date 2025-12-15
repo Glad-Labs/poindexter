@@ -143,7 +143,7 @@ Monday    ┌──────────────────────�
           │ • API integration                │
           │ • Basic styling                  │
           └──────────────────────────────────┘
-          
+
 Tuesday   ┌──────────────────────────────────┐
           │ Metrics Dashboard  (7h)          │ 🎯 PRIORITY 2
           ├──────────────────────────────────┤
@@ -219,6 +219,7 @@ Thursday  ┌──────────────────────�
 ## Component Dependencies
 
 ### Chat Feature (First Build)
+
 ```
 ChatContainer.jsx
 ├── ChatSidebar.jsx
@@ -235,6 +236,7 @@ ChatContainer.jsx
 ```
 
 ### Metrics Feature (Second Build)
+
 ```
 MetricsDashboard.jsx
 ├── UsageChart.jsx (recharts)
@@ -246,6 +248,7 @@ MetricsDashboard.jsx
 ```
 
 ### Multi-Agent Feature (Third Build)
+
 ```
 AgentDashboard.jsx
 ├── AgentStatusCard.jsx (×5)
@@ -310,7 +313,7 @@ UI Component          →   Backend Route    →   Database Table
 ChatContainer         →   /api/chat        →   conversations
 ├─ conversations                                 │
 │  └─ ConversationList                          └─ id, name, created_at, updated_at
-│                          
+│
 ChatMessages          →   /api/chat        →   chat_messages
 ├─ message array             /history/{id}      │
 │  └─ ChatMessage                               └─ id, conversation_id, role, content, timestamp
@@ -352,6 +355,7 @@ AgentDashboard        →   /api/agents       →   agent_executions
 ```
 
 ### Decision Rules:
+
 1. **Quick Wins** (Low effort, high impact): Chat, Metrics
 2. **Core Features** (Medium effort, high impact): Multi-Agent, Content
 3. **Nice to Have** (Any effort, medium impact): Social, Ollama
@@ -421,12 +425,12 @@ User overwhelm          →     Feature flags & progressive rollout
 
 ## Documentation Index
 
-| Document | Purpose | Size | Status |
-|----------|---------|------|--------|
+| Document                              | Purpose                   | Size      | Status  |
+| ------------------------------------- | ------------------------- | --------- | ------- |
 | OVERSIGHT_HUB_FEATURE_GAP_ANALYSIS.md | Complete inventory & gaps | 900 lines | ✅ Done |
-| CHAT_IMPLEMENTATION_SPEC.md | Chat feature guide | 650 lines | ✅ Done |
-| OVERSIGHT_HUB_UPDATE_SUMMARY.md | Quick reference | 170 lines | ✅ Done |
-| OVERSIGHT_HUB_ARCHITECTURE.md | This file | 400 lines | ✅ Done |
+| CHAT_IMPLEMENTATION_SPEC.md           | Chat feature guide        | 650 lines | ✅ Done |
+| OVERSIGHT_HUB_UPDATE_SUMMARY.md       | Quick reference           | 170 lines | ✅ Done |
+| OVERSIGHT_HUB_ARCHITECTURE.md         | This file                 | 400 lines | ✅ Done |
 
 ---
 

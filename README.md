@@ -13,6 +13,7 @@
 ��� **[��� START HERE: Documentation Hub](./docs/00-README.md)** - Complete guide with setup, architecture, deployment, operations, and troubleshooting.
 
 **Core Documentation (7 files in `docs/` folder):**
+
 - [01 Setup & Overview](./docs/01-SETUP_AND_OVERVIEW.md) - Quick start guide (15 minutes)
 - [02 Architecture & Design](./docs/02-ARCHITECTURE_AND_DESIGN.md) - System design and components
 - [03 Deployment & Infrastructure](./docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md) - Production deployment
@@ -45,24 +46,25 @@ npm run dev
 
 ### **Access Points**
 
-| Service | URL | Purpose |
-|---------|-----|---------|
-| **Public Site** | http://localhost:3000 | Next.js website |
+| Service           | URL                   | Purpose               |
+| ----------------- | --------------------- | --------------------- |
+| **Public Site**   | http://localhost:3000 | Next.js website       |
 | **Oversight Hub** | http://localhost:3001 | React admin dashboard |
-| **AI Co-Founder** | http://localhost:8000 | Python API server |
+| **AI Co-Founder** | http://localhost:8000 | Python API server     |
 
 ---
 
 ## **���️ System Overview**
 
-| Service | Technology | Purpose |
-|---------|-----------|---------|
-| **Public Site** | Next.js 15 | High-performance public website |
-| **Oversight Hub** | React 18 | Admin interface for AI management |
-| **AI Co-Founder** | Python 3.12 | AI business intelligence system |
-| **Content Agent** | Python | Autonomous content creation |
+| Service           | Technology  | Purpose                           |
+| ----------------- | ----------- | --------------------------------- |
+| **Public Site**   | Next.js 15  | High-performance public website   |
+| **Oversight Hub** | React 18    | Admin interface for AI management |
+| **AI Co-Founder** | Python 3.12 | AI business intelligence system   |
+| **Content Agent** | Python      | Autonomous content creation       |
 
 **Project Structure:**
+
 ```text
 glad-labs-website/
 ├── web/                    # Frontend applications

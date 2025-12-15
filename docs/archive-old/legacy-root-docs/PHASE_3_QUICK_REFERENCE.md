@@ -19,6 +19,7 @@
 ## 📝 Quick Usage
 
 ### Direct Workflow Execution
+
 ```python
 from src.cofounder_agent.services.workflow_router import UnifiedWorkflowRouter
 
@@ -34,6 +35,7 @@ response = await router.execute_workflow(
 ```
 
 ### Natural Language Execution
+
 ```python
 # Parse NL and execute
 response = await router.execute_from_natural_language(
@@ -43,6 +45,7 @@ response = await router.execute_from_natural_language(
 ```
 
 ### Intent Recognition
+
 ```python
 from src.cofounder_agent.services.nlp_intent_recognizer import NLPIntentRecognizer
 
@@ -61,14 +64,14 @@ print(intent.parameters)       # {"platforms": ["twitter", "linkedin"], "topic":
 
 ## 🔄 Workflow Types Supported
 
-| Type | Example | Default Pipeline |
-|------|---------|------------------|
-| `content_generation` | "Blog post about X" | research → creative → qa → image → publishing |
-| `social_media` | "Social media posts" | research → create → format → publish |
-| `financial_analysis` | "Budget analysis" | gather → analyze → project → report |
-| `market_analysis` | "Market research" | research → trends → competitors → report |
-| `compliance_check` | "Check if compliant" | analyze → check → recommend |
-| `performance_review` | "Review metrics" | gather → analyze → insights → report |
+| Type                 | Example              | Default Pipeline                              |
+| -------------------- | -------------------- | --------------------------------------------- |
+| `content_generation` | "Blog post about X"  | research → creative → qa → image → publishing |
+| `social_media`       | "Social media posts" | research → create → format → publish          |
+| `financial_analysis` | "Budget analysis"    | gather → analyze → project → report           |
+| `market_analysis`    | "Market research"    | research → trends → competitors → report      |
+| `compliance_check`   | "Check if compliant" | analyze → check → recommend                   |
+| `performance_review` | "Review metrics"     | gather → analyze → insights → report          |
 
 ---
 
@@ -136,12 +139,14 @@ assert any(i.intent_type == "market_analysis" for i in intents)
 ## 🔗 Integration
 
 ### Upstream (Phase 1-2)
+
 - Uses `ModularPipelineExecutor` for task chaining
 - Uses `WorkflowRequest/Response` schemas
 - Uses `TaskRegistry` for task resolution
 - Calls `ExecutionContext` for user/source info
 
 ### Downstream (Phase 4+)
+
 - Will be wrapped by REST API endpoints
 - Will connect to database for persistence
 - Will integrate with caching layer

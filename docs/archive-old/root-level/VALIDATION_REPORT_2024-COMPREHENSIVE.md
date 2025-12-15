@@ -308,6 +308,7 @@ logger = logging.getLogger(__name__)
 - **Status:** File exists but only partially implemented
 - **Issue:** Middleware is defined but not registered in `main.py`
 - **Evidence:** Lines 1-100 show class definitions but:
+
   ```python
   # File excerpt (Lines 62-89)
   class SettingsAuditLogger:
@@ -657,6 +658,7 @@ class TestSelfCritiqueLoop:
 - **File:** Missing in `src/cofounder_agent/services/`
 - **Status:** ⚠️ Function exists in tests (mocked) but no implementation
 - **Recommendation:** Create `services/quality_evaluator.py`:
+
   ```python
   class ContentQualityEvaluator:
       async def evaluate_content_quality(self, content: str) -> float:

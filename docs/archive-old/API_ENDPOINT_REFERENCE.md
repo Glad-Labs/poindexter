@@ -5,6 +5,7 @@
 ---
 
 ## Table of Contents
+
 1. [Task Management](#task-management)
 2. [Content Management](#content-management)
 3. [Chat & Messaging](#chat--messaging)
@@ -26,12 +27,15 @@
 ---
 
 ## Task Management
+
 **Route Module:** `task_routes.py`  
 **Base Path:** `/api/tasks`  
 **Auth Required:** All endpoints
 
 ### POST /api/tasks
+
 Create a new task
+
 ```
 Method: POST
 Path: /api/tasks
@@ -64,7 +68,9 @@ Error: 400/401/500
 ```
 
 ### GET /api/tasks
+
 List all tasks with pagination
+
 ```
 Method: GET
 Path: /api/tasks?limit=20&offset=0&status=pending
@@ -94,7 +100,9 @@ Response: 200 OK
 ```
 
 ### GET /api/tasks/{task_id}
+
 Get single task details
+
 ```
 Method: GET
 Path: /api/tasks/{task_id}
@@ -121,7 +129,9 @@ Error: 404 Not Found
 ```
 
 ### PATCH /api/tasks/{task_id}
+
 Update task status
+
 ```
 Method: PATCH
 Path: /api/tasks/{task_id}
@@ -144,7 +154,9 @@ Error: 404/400/500
 ```
 
 ### GET /api/tasks/metrics/summary
+
 Get aggregated task metrics
+
 ```
 Method: GET
 Path: /api/tasks/metrics/summary
@@ -164,7 +176,9 @@ Response: 200 OK
 ```
 
 ### POST /api/tasks/intent
+
 Process task intent
+
 ```
 Method: POST
 Path: /api/tasks/intent
@@ -182,7 +196,9 @@ Response: 200 OK
 ```
 
 ### POST /api/tasks/confirm-intent
+
 Confirm task intent processing
+
 ```
 Method: POST
 Path: /api/tasks/confirm-intent
@@ -201,12 +217,15 @@ Response: 200 OK
 ---
 
 ## Content Management
+
 **Route Module:** `content_routes.py`  
 **Base Path:** `/api/content`  
 **Auth Required:** All endpoints
 
 ### POST /api/content
+
 Create new content
+
 ```
 Method: POST
 Path: /api/content
@@ -226,7 +245,9 @@ Response: 201 Created
 ```
 
 ### GET /api/content
+
 List content items
+
 ```
 Method: GET
 Path: /api/content?limit=20&offset=0
@@ -247,7 +268,9 @@ Response: 200 OK
 ```
 
 ### GET /api/content/{item_id}
+
 Get content details
+
 ```
 Method: GET
 Path: /api/content/{item_id}
@@ -258,7 +281,9 @@ Response: 200 OK
 ```
 
 ### POST /api/content/{item_id}
+
 Update content
+
 ```
 Method: POST
 Path: /api/content/{item_id}
@@ -272,7 +297,9 @@ Response: 200 OK
 ```
 
 ### DELETE /api/content/{item_id}
+
 Delete content
+
 ```
 Method: DELETE
 Path: /api/content/{item_id}
@@ -282,7 +309,9 @@ Response: 204 No Content
 ```
 
 ### POST /api/content/approve
+
 Approve content for publishing
+
 ```
 Method: POST
 Path: /api/content/approve
@@ -302,12 +331,15 @@ Response: 200 OK
 ---
 
 ## Chat & Messaging
+
 **Route Module:** `chat_routes.py`  
 **Base Path:** `/api/chat`  
 **Auth Required:** Most endpoints
 
 ### POST /api/chat
+
 Send chat message
+
 ```
 Method: POST
 Path: /api/chat
@@ -331,7 +363,9 @@ Response: 200 OK
 ```
 
 ### GET /api/chat/history/{conversation_id}
+
 Get conversation history
+
 ```
 Method: GET
 Path: /api/chat/history/{conversation_id}
@@ -352,7 +386,9 @@ Response: 200 OK
 ```
 
 ### DELETE /api/chat/history/{conversation_id}
+
 Clear conversation history
+
 ```
 Method: DELETE
 Path: /api/chat/history/{conversation_id}
@@ -362,7 +398,9 @@ Response: 204 No Content
 ```
 
 ### GET /api/chat/models
+
 Get available chat models
+
 ```
 Method: GET
 Path: /api/chat/models
@@ -384,12 +422,15 @@ Response: 200 OK
 ---
 
 ## Agents
+
 **Route Module:** `agents_routes.py`  
 **Base Path:** `/api/agents`  
 **Auth Required:** All endpoints
 
 ### GET /api/agents/status
+
 Get all agents status
+
 ```
 Method: GET
 Path: /api/agents/status
@@ -409,7 +450,9 @@ Response: 200 OK
 ```
 
 ### GET /api/agents/{agent_name}/status
+
 Get specific agent status
+
 ```
 Method: GET
 Path: /api/agents/{agent_name}/status
@@ -420,7 +463,9 @@ Response: 200 OK
 ```
 
 ### POST /api/agents/{agent_name}/command
+
 Send command to agent
+
 ```
 Method: POST
 Path: /api/agents/{agent_name}/command
@@ -437,7 +482,9 @@ Response: 200 OK
 ```
 
 ### GET /api/agents/logs
+
 Get agent execution logs
+
 ```
 Method: GET
 Path: /api/agents/logs?agent={name}&limit=100
@@ -457,7 +504,9 @@ Response: 200 OK
 ```
 
 ### GET /api/agents/memory/stats
+
 Get memory statistics
+
 ```
 Method: GET
 Path: /api/agents/memory/stats
@@ -473,7 +522,9 @@ Response: 200 OK
 ```
 
 ### GET /api/agents/health
+
 Get agent health status
+
 ```
 Method: GET
 Path: /api/agents/health
@@ -491,12 +542,15 @@ Response: 200 OK
 ---
 
 ## Intelligent Orchestrator
+
 **Route Module:** `intelligent_orchestrator_routes.py`  
 **Base Path:** `/api/orchestrator`  
 **Auth Required:** All endpoints
 
 ### POST /api/orchestrator/process
+
 Process task through orchestrator
+
 ```
 Method: POST
 Path: /api/orchestrator/process
@@ -519,7 +573,9 @@ Response: 200 OK
 ```
 
 ### GET /api/orchestrator/status/{task_id}
+
 Get orchestration status
+
 ```
 Method: GET
 Path: /api/orchestrator/status/{task_id}
@@ -535,7 +591,9 @@ Response: 200 OK
 ```
 
 ### GET /api/orchestrator/approval/{task_id}
+
 Get approval status
+
 ```
 Method: GET
 Path: /api/orchestrator/approval/{task_id}
@@ -551,7 +609,9 @@ Response: 200 OK
 ```
 
 ### POST /api/orchestrator/approve/{task_id}
+
 Approve orchestrated task
+
 ```
 Method: POST
 Path: /api/orchestrator/approve/{task_id}
@@ -569,7 +629,9 @@ Response: 200 OK
 ```
 
 ### GET /api/orchestrator/history
+
 Get orchestration history
+
 ```
 Method: GET
 Path: /api/orchestrator/history?limit=50
@@ -590,7 +652,9 @@ Response: 200 OK
 ```
 
 ### POST /api/orchestrator/training-data/export
+
 Export training data
+
 ```
 Method: POST
 Path: /api/orchestrator/training-data/export
@@ -605,7 +669,9 @@ Response: 200 OK
 ```
 
 ### POST /api/orchestrator/training-data/upload-model
+
 Upload trained model
+
 ```
 Method: POST
 Path: /api/orchestrator/training-data/upload-model
@@ -616,7 +682,9 @@ Response: 200 OK
 ```
 
 ### GET /api/orchestrator/learning-patterns
+
 Get learned patterns
+
 ```
 Method: GET
 Path: /api/orchestrator/learning-patterns
@@ -636,7 +704,9 @@ Response: 200 OK
 ```
 
 ### GET /api/orchestrator/business-metrics-analysis
+
 Business metrics analysis
+
 ```
 Method: GET
 Path: /api/orchestrator/business-metrics-analysis
@@ -652,7 +722,9 @@ Response: 200 OK
 ```
 
 ### GET /api/orchestrator/tools
+
 Get available orchestration tools
+
 ```
 Method: GET
 Path: /api/orchestrator/tools
@@ -674,12 +746,15 @@ Response: 200 OK
 ---
 
 ## Social Publishing
+
 **Route Module:** `social_routes.py`  
 **Base Path:** `/api/social`  
 **Auth Required:** All endpoints
 
 ### GET /api/social/platforms
+
 Get connected social platforms
+
 ```
 Method: GET
 Path: /api/social/platforms
@@ -699,7 +774,9 @@ Response: 200 OK
 ```
 
 ### POST /api/social/connect
+
 Connect new social platform
+
 ```
 Method: POST
 Path: /api/social/connect
@@ -716,7 +793,9 @@ Response: 200 OK
 ```
 
 ### GET /api/social/posts
+
 Get scheduled posts
+
 ```
 Method: GET
 Path: /api/social/posts?platform=twitter&limit=20
@@ -737,7 +816,9 @@ Response: 200 OK
 ```
 
 ### POST /api/social/posts
+
 Create new social post
+
 ```
 Method: POST
 Path: /api/social/posts
@@ -757,7 +838,9 @@ Response: 201 Created
 ```
 
 ### DELETE /api/social/posts/{post_id}
+
 Delete post
+
 ```
 Method: DELETE
 Path: /api/social/posts/{post_id}
@@ -767,7 +850,9 @@ Response: 204 No Content
 ```
 
 ### GET /api/social/posts/{post_id}/analytics
+
 Get post analytics
+
 ```
 Method: GET
 Path: /api/social/posts/{post_id}/analytics
@@ -786,7 +871,9 @@ Response: 200 OK
 ```
 
 ### POST /api/social/generate
+
 Generate social post from content
+
 ```
 Method: POST
 Path: /api/social/generate
@@ -807,7 +894,9 @@ Response: 200 OK
 ```
 
 ### GET /api/social/trending
+
 Get trending topics
+
 ```
 Method: GET
 Path: /api/social/trending?platform=twitter
@@ -826,7 +915,9 @@ Response: 200 OK
 ```
 
 ### POST /api/social/cross-post
+
 Cross-post to multiple platforms
+
 ```
 Method: POST
 Path: /api/social/cross-post
@@ -845,12 +936,15 @@ Response: 200 OK
 ---
 
 ## Metrics & Analytics
+
 **Route Module:** `metrics_routes.py`  
 **Base Path:** `/api/metrics`  
 **Auth Required:** All endpoints
 
 ### GET /api/metrics/usage
+
 Get usage metrics
+
 ```
 Method: GET
 Path: /api/metrics/usage?period=day|week|month
@@ -867,7 +961,9 @@ Response: 200 OK
 ```
 
 ### GET /api/metrics/costs
+
 Get cost analysis
+
 ```
 Method: GET
 Path: /api/metrics/costs
@@ -886,7 +982,9 @@ Response: 200 OK
 ```
 
 ### GET /api/metrics
+
 Get all metrics
+
 ```
 Method: GET
 Path: /api/metrics
@@ -901,7 +999,9 @@ Response: 200 OK
 ```
 
 ### GET /api/metrics/summary
+
 Get metrics summary
+
 ```
 Method: GET
 Path: /api/metrics/summary
@@ -919,7 +1019,9 @@ Response: 200 OK
 ```
 
 ### POST /api/metrics/track-usage
+
 Track custom usage
+
 ```
 Method: POST
 Path: /api/metrics/track-usage
@@ -940,12 +1042,15 @@ Response: 200 OK
 ---
 
 ## Ollama Models
+
 **Route Module:** `ollama_routes.py`  
 **Base Path:** `/api/ollama`  
 **Auth Required:** Varies (see below)
 
 ### GET /api/ollama/health
+
 Check Ollama server health
+
 ```
 Method: GET
 Path: /api/ollama/health
@@ -960,7 +1065,9 @@ Response: 200 OK
 ```
 
 ### GET /api/ollama/models
+
 List available Ollama models
+
 ```
 Method: GET
 Path: /api/ollama/models
@@ -980,7 +1087,9 @@ Response: 200 OK
 ```
 
 ### POST /api/ollama/warmup
+
 Warm up model in memory
+
 ```
 Method: POST
 Path: /api/ollama/warmup
@@ -999,7 +1108,9 @@ Response: 200 OK
 ```
 
 ### GET /api/ollama/status
+
 Get current model status
+
 ```
 Method: GET
 Path: /api/ollama/status
@@ -1014,7 +1125,9 @@ Response: 200 OK
 ```
 
 ### POST /api/ollama/select-model
+
 Select active model
+
 ```
 Method: POST
 Path: /api/ollama/select-model
@@ -1032,12 +1145,15 @@ Response: 200 OK
 ---
 
 ## Settings
+
 **Route Module:** `settings_routes.py`  
 **Base Path:** `/api/settings`  
 **Auth Required:** All endpoints
 
 ### GET /api/settings/general
+
 Get general settings
+
 ```
 Method: GET
 Path: /api/settings/general
@@ -1052,7 +1168,9 @@ Response: 200 OK
 ```
 
 ### GET /api/settings/system
+
 Get system settings
+
 ```
 Method: GET
 Path: /api/settings/system
@@ -1067,7 +1185,9 @@ Response: 200 OK
 ```
 
 ### POST /api/settings/create
+
 Create new setting
+
 ```
 Method: POST
 Path: /api/settings/create
@@ -1085,7 +1205,9 @@ Response: 201 Created
 ```
 
 ### PUT /api/settings/{setting_id}
+
 Update setting
+
 ```
 Method: PUT
 Path: /api/settings/{setting_id}
@@ -1099,7 +1221,9 @@ Response: 200 OK
 ```
 
 ### DELETE /api/settings/{setting_id}
+
 Delete setting
+
 ```
 Method: DELETE
 Path: /api/settings/{setting_id}
@@ -1109,7 +1233,9 @@ Response: 204 No Content
 ```
 
 ### PUT /api/settings/theme
+
 Update theme
+
 ```
 Method: PUT
 Path: /api/settings/theme
@@ -1126,7 +1252,9 @@ Response: 200 OK
 ```
 
 ### DELETE /api/settings/theme
+
 Reset theme
+
 ```
 Method: DELETE
 Path: /api/settings/theme
@@ -1136,7 +1264,9 @@ Response: 204 No Content
 ```
 
 ### GET /api/settings/api-keys
+
 Get API keys
+
 ```
 Method: GET
 Path: /api/settings/api-keys
@@ -1156,7 +1286,9 @@ Response: 200 OK
 ```
 
 ### POST /api/settings/webhooks
+
 Configure webhooks
+
 ```
 Method: POST
 Path: /api/settings/webhooks
@@ -1174,7 +1306,9 @@ Response: 201 Created
 ```
 
 ### GET /api/settings/integrations
+
 Get integrations
+
 ```
 Method: GET
 Path: /api/settings/integrations
@@ -1195,12 +1329,15 @@ Response: 200 OK
 ---
 
 ## Workflow History
+
 **Route Module:** `workflow_history.py`  
 **Base Path:** `/api/workflow`  
 **Auth Required:** All endpoints
 
 ### GET /api/workflow/history
+
 Get execution history
+
 ```
 Method: GET
 Path: /api/workflow/history?limit=50
@@ -1221,7 +1358,9 @@ Response: 200 OK
 ```
 
 ### GET /api/workflow/{execution_id}/details
+
 Get execution details
+
 ```
 Method: GET
 Path: /api/workflow/{execution_id}/details
@@ -1242,7 +1381,9 @@ Response: 200 OK
 ```
 
 ### GET /api/workflow/statistics
+
 Get workflow statistics
+
 ```
 Method: GET
 Path: /api/workflow/statistics
@@ -1258,7 +1399,9 @@ Response: 200 OK
 ```
 
 ### GET /api/workflow/performance-metrics
+
 Get performance metrics
+
 ```
 Method: GET
 Path: /api/workflow/performance-metrics
@@ -1274,7 +1417,9 @@ Response: 200 OK
 ```
 
 ### GET /api/workflow/{workflow_id}/history
+
 Get specific workflow history
+
 ```
 Method: GET
 Path: /api/workflow/{workflow_id}/history
@@ -1290,12 +1435,15 @@ Response: 200 OK
 ---
 
 ## Subtasks
+
 **Route Module:** `subtask_routes.py`  
 **Base Path:** `/api/subtasks`  
 **Auth Required:** All endpoints
 
 ### POST /api/subtasks/research
+
 Execute research subtask
+
 ```
 Method: POST
 Path: /api/subtasks/research
@@ -1317,7 +1465,9 @@ Response: 200 OK
 ```
 
 ### POST /api/subtasks/creative
+
 Execute creative subtask
+
 ```
 Method: POST
 Path: /api/subtasks/creative
@@ -1338,7 +1488,9 @@ Response: 200 OK
 ```
 
 ### POST /api/subtasks/qa
+
 Execute QA subtask
+
 ```
 Method: POST
 Path: /api/subtasks/qa
@@ -1359,7 +1511,9 @@ Response: 200 OK
 ```
 
 ### POST /api/subtasks/images
+
 Process image subtask
+
 ```
 Method: POST
 Path: /api/subtasks/images
@@ -1385,7 +1539,9 @@ Response: 200 OK
 ```
 
 ### POST /api/subtasks/format
+
 Format content subtask
+
 ```
 Method: POST
 Path: /api/subtasks/format
@@ -1408,12 +1564,15 @@ Response: 200 OK
 ---
 
 ## Command Queue
+
 **Route Module:** `command_queue_routes.py`  
 **Base Path:** `/api/commands`  
 **Auth Required:** All endpoints
 
 ### POST /api/commands
+
 Queue new command
+
 ```
 Method: POST
 Path: /api/commands
@@ -1434,7 +1593,9 @@ Response: 201 Created
 ```
 
 ### GET /api/commands/{command_id}
+
 Get command status
+
 ```
 Method: GET
 Path: /api/commands/{command_id}
@@ -1451,7 +1612,9 @@ Response: 200 OK
 ```
 
 ### GET /api/commands
+
 List commands
+
 ```
 Method: GET
 Path: /api/commands?limit=50&status=processing
@@ -1465,7 +1628,9 @@ Response: 200 OK
 ```
 
 ### POST /api/commands/{command_id}/complete
+
 Mark command complete
+
 ```
 Method: POST
 Path: /api/commands/{command_id}/complete
@@ -1481,7 +1646,9 @@ Response: 200 OK
 ```
 
 ### POST /api/commands/{command_id}/fail
+
 Mark command failed
+
 ```
 Method: POST
 Path: /api/commands/{command_id}/fail
@@ -1498,7 +1665,9 @@ Response: 200 OK
 ```
 
 ### POST /api/commands/{command_id}/cancel
+
 Cancel command
+
 ```
 Method: POST
 Path: /api/commands/{command_id}/cancel
@@ -1508,7 +1677,9 @@ Response: 204 No Content
 ```
 
 ### GET /api/commands/stats/queue-stats
+
 Get queue statistics
+
 ```
 Method: GET
 Path: /api/commands/stats/queue-stats
@@ -1525,7 +1696,9 @@ Response: 200 OK
 ```
 
 ### POST /api/commands/cleanup/clear-old
+
 Clean old commands
+
 ```
 Method: POST
 Path: /api/commands/cleanup/clear-old
@@ -1545,12 +1718,15 @@ Response: 200 OK
 ---
 
 ## CMS Routes
+
 **Route Module:** `cms_routes.py`  
 **Base Path:** `/api`  
 **Auth Required:** None (public endpoints)
 
 ### GET /api/posts
+
 Get blog posts
+
 ```
 Method: GET
 Path: /api/posts?skip=0&limit=10
@@ -1571,7 +1747,9 @@ Response: 200 OK
 ```
 
 ### GET /api/posts/{slug}
+
 Get single post by slug
+
 ```
 Method: GET
 Path: /api/posts/{slug}
@@ -1582,7 +1760,9 @@ Response: 200 OK
 ```
 
 ### GET /api/categories
+
 Get post categories
+
 ```
 Method: GET
 Path: /api/categories
@@ -1597,7 +1777,9 @@ Response: 200 OK
 ```
 
 ### GET /api/tags
+
 Get post tags
+
 ```
 Method: GET
 Path: /api/tags
@@ -1612,7 +1794,9 @@ Response: 200 OK
 ```
 
 ### GET /api/cms/status
+
 Get CMS health status
+
 ```
 Method: GET
 Path: /api/cms/status
@@ -1629,12 +1813,15 @@ Response: 200 OK
 ---
 
 ## Bulk Operations
+
 **Route Module:** `bulk_task_routes.py`  
 **Base Path:** `/api/bulk`  
 **Auth Required:** All endpoints
 
 ### POST /api/bulk
+
 Perform bulk operations
+
 ```
 Method: POST
 Path: /api/bulk
@@ -1662,12 +1849,15 @@ Response: 200 OK
 ---
 
 ## Webhooks
+
 **Route Module:** `webhooks.py`  
 **Base Path:** `/api/webhooks`  
 **Auth Required:** Varies
 
 ### POST /api/webhooks/
+
 Handle incoming webhooks
+
 ```
 Method: POST
 Path: /api/webhooks/
@@ -1689,12 +1879,15 @@ Response: 200 OK
 ---
 
 ## Authentication
+
 **Route Module:** `auth_unified.py`  
 **Base Path:** `/api/auth`  
 **Auth Required:** Varies (see below)
 
 ### POST /api/auth/github/callback
+
 GitHub OAuth callback
+
 ```
 Method: POST
 Path: /api/auth/github/callback
@@ -1713,7 +1906,9 @@ Response: 200 OK
 ```
 
 ### POST /api/auth/logout
+
 User logout
+
 ```
 Method: POST
 Path: /api/auth/logout
@@ -1726,7 +1921,9 @@ Response: 200 OK
 ```
 
 ### GET /api/auth/me
+
 Get current user info
+
 ```
 Method: GET
 Path: /api/auth/me
@@ -1744,12 +1941,15 @@ Response: 200 OK
 ---
 
 ## Models Metadata
+
 **Route Module:** `models.py`  
 **Base Path:** `/api/models`  
 **Auth Required:** None
 
 ### GET /api/models
+
 Get available models
+
 ```
 Method: GET
 Path: /api/models
@@ -1770,7 +1970,9 @@ Response: 200 OK
 ```
 
 ### GET /api/models/{model_name}
+
 Get model details
+
 ```
 Method: GET
 Path: /api/models/{model_name}
@@ -1781,7 +1983,9 @@ Response: 200 OK
 ```
 
 ### GET /api/models/list
+
 Get models list
+
 ```
 Method: GET
 Path: /api/models/list
@@ -1792,7 +1996,9 @@ Response: 200 OK
 ```
 
 ### GET /api/models/{model_name}/info
+
 Get model info
+
 ```
 Method: GET
 Path: /api/models/{model_name}/info
@@ -1803,7 +2009,9 @@ Response: 200 OK
 ```
 
 ### GET /api/models-list
+
 Alternate models endpoint
+
 ```
 Method: GET
 Path: /api/models-list
@@ -1818,6 +2026,7 @@ Response: 200 OK
 ## Common Response Patterns
 
 ### Success Response
+
 ```json
 {
   "data": { ... },
@@ -1827,6 +2036,7 @@ Response: 200 OK
 ```
 
 ### Error Response
+
 ```json
 {
   "detail": "Error message",
@@ -1839,6 +2049,7 @@ Response: 200 OK
 ```
 
 ### Paginated Response
+
 ```json
 {
   "items": [ ... ],
@@ -1867,14 +2078,14 @@ Token Structure:
 
 ## Common Query Parameters
 
-| Parameter | Type | Purpose |
-|-----------|------|---------|
-| `limit` | int | Max results (default: 100) |
-| `offset` | int | Skip N results (default: 0) |
-| `sort_by` | string | Sort column |
-| `order` | asc\|desc | Sort order |
-| `filter` | string | Filter criteria |
-| `search` | string | Search text |
+| Parameter | Type      | Purpose                     |
+| --------- | --------- | --------------------------- |
+| `limit`   | int       | Max results (default: 100)  |
+| `offset`  | int       | Skip N results (default: 0) |
+| `sort_by` | string    | Sort column                 |
+| `order`   | asc\|desc | Sort order                  |
+| `filter`  | string    | Filter criteria             |
+| `search`  | string    | Search text                 |
 
 ---
 

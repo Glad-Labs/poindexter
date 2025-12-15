@@ -37,6 +37,7 @@
 ### Pattern 1: Simple GET Request
 
 **BEFORE (Blocking with requests):**
+
 ```python
 import requests
 
@@ -45,6 +46,7 @@ data = response.json()
 ```
 
 **AFTER (Async with httpx):**
+
 ```python
 import httpx
 
@@ -56,18 +58,20 @@ async with httpx.AsyncClient() as client:
 ### Pattern 2: POST with Timeout
 
 **BEFORE (Blocking with requests):**
+
 ```python
 import requests
 
 response = requests.post(
-    url, 
-    json=payload, 
+    url,
+    json=payload,
     headers=headers,
     timeout=10
 )
 ```
 
 **AFTER (Async with httpx):**
+
 ```python
 import httpx
 
@@ -82,6 +86,7 @@ async with httpx.AsyncClient(timeout=10) as client:
 ### Pattern 3: Reusable Client (with connection pooling)
 
 **BEFORE (inefficient):**
+
 ```python
 # Creates new connection each time!
 def search(query):
@@ -90,23 +95,24 @@ def search(query):
 ```
 
 **AFTER (pooled, async):**
+
 ```python
 class MyClient:
     def __init__(self):
         self.client = None
-    
+
     async def init_async(self):
         """Call once at startup"""
         self.client = httpx.AsyncClient(
             limits=httpx.Limits(max_keepalive_connections=5)
         )
-    
+
     async def search(self, query):
         response = await self.client.get(
             f"https://api.example.com/search?q={query}"
         )
         return response.json()
-    
+
     async def close(self):
         """Call at shutdown"""
         await self.client.aclose()
@@ -115,6 +121,7 @@ class MyClient:
 ### Pattern 4: Client-Session Level (httpx)
 
 **BEST PRACTICE (FastAPI integration):**
+
 ```python
 # Shared client instance (in main.py or services/http_client.py)
 _http_client = None
@@ -143,9 +150,10 @@ async def my_endpoint(client: httpx.AsyncClient = Depends(get_http_client)):
 
 **Current State:** Uses `requests` (blocking)  
 **Lines:** Multiple search methods  
-**Action:** Replace `requests.post()` with `async with httpx.AsyncClient()`  
+**Action:** Replace `requests.post()` with `async with httpx.AsyncClient()`
 
 **Key methods to convert:**
+
 - `search_web()` - line ~80
 - `search_news()` - line ~130
 - `search_shopping()` - line ~180
@@ -154,14 +162,16 @@ async def my_endpoint(client: httpx.AsyncClient = Depends(get_http_client)):
 
 **Current State:** Mixes `aiohttp` + `requests` (async + blocking)  
 **Lines:** Multiple image search methods  
-**Action:** Replace all with `httpx` async client  
+**Action:** Replace all with `httpx` async client
 
 **Key methods to convert:**
+
 - `search_images()` - line ~50
 - `get_photo_details()` - line ~120
 - `download_image()` - line ~180
 
 **Special notes:**
+
 - Currently uses `aiohttp.ClientSession` - migrate all to `httpx`
 - Remove all `requests` calls (if any)
 - Ensure proper async context manager usage
@@ -170,9 +180,10 @@ async def my_endpoint(client: httpx.AsyncClient = Depends(get_http_client)):
 
 **Current State:** Now has `httpx` import, but Ollama check was sync  
 **Lines:** ~56 (now async)  
-**Action:** Ensure all callers await `_check_ollama_async()` before using Ollama  
+**Action:** Ensure all callers await `_check_ollama_async()` before using Ollama
 
 **Key changes:**
+
 - `_check_ollama_async()` now properly async ✅
 - Call this once before first Ollama usage
 - All Ollama API calls must use httpx async
@@ -180,19 +191,21 @@ async def my_endpoint(client: httpx.AsyncClient = Depends(get_http_client)):
 ### Task Routes (task_routes.py) (MEDIUM PRIORITY)
 
 **Line 622-637:** Uses `aiohttp` for Ollama communication  
-**Action:** Replace with `httpx`  
+**Action:** Replace with `httpx`
 
 ---
 
 ## 🔍 Search Commands (For Finding Remaining Issues)
 
 **Find all remaining requests imports:**
+
 ```bash
 grep -r "import requests" src/
 grep -r "from requests" src/
 ```
 
 **Find all HTTP operations that might be blocking:**
+
 ```bash
 grep -r "\.get(" src/ --include="*.py"
 grep -r "\.post(" src/ --include="*.py"
@@ -202,6 +215,7 @@ grep -r "\.request(" src/ --include="*.py"
 ```
 
 **Find aiohttp usage (migrate to httpx):**
+
 ```bash
 grep -r "aiohttp" src/ --include="*.py"
 ```
@@ -237,15 +251,15 @@ After each file migration:
 
 ## 📊 httpx vs requests Comparison
 
-| Feature | requests | httpx |
-|---------|----------|-------|
-| **I/O Model** | Blocking | Async-first |
-| **Use in FastAPI** | ❌ Blocks event loop | ✅ Proper async |
-| **Performance** | ~100ms per request | <10ms per request (cached) |
-| **Connection pooling** | Manual | Automatic |
-| **API Design** | requests-like | requests-like (easy migration) |
-| **Error types** | RequestException | HTTPError |
-| **Timeout default** | None | No timeout (set explicitly) |
+| Feature                | requests             | httpx                          |
+| ---------------------- | -------------------- | ------------------------------ |
+| **I/O Model**          | Blocking             | Async-first                    |
+| **Use in FastAPI**     | ❌ Blocks event loop | ✅ Proper async                |
+| **Performance**        | ~100ms per request   | <10ms per request (cached)     |
+| **Connection pooling** | Manual               | Automatic                      |
+| **API Design**         | requests-like        | requests-like (easy migration) |
+| **Error types**        | RequestException     | HTTPError                      |
+| **Timeout default**    | None                 | No timeout (set explicitly)    |
 
 ---
 
@@ -260,4 +274,3 @@ After each file migration:
 ---
 
 **Progress:** Files modified: 3/7 | Estimated completion: 1-2 hours
-

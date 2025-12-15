@@ -190,11 +190,11 @@ Technical specifications and standards for developers and architects:
 
 Component-specific troubleshooting guides are organized by component:
 
-| Component            | Troubleshooting Guide                                                                             | Common Issues                                             |
-| -------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| **Co-Founder Agent** | [docs/components/cofounder-agent/troubleshooting/](./components/cofounder-agent/troubleshooting/) | API errors, model routing, memory issues                  |
-| **Oversight Hub**    | [docs/components/oversight-hub/troubleshooting/](./components/oversight-hub/troubleshooting/)     | State management, API integration, UI issues              |
-| **Public Site**      | [docs/components/public-site/troubleshooting/](./components/public-site/troubleshooting/)         | Build errors, data fetching, SEO issues                   |
+| Component            | Troubleshooting Guide                                                                             | Common Issues                                |
+| -------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| **Co-Founder Agent** | [docs/components/cofounder-agent/troubleshooting/](./components/cofounder-agent/troubleshooting/) | API errors, model routing, memory issues     |
+| **Oversight Hub**    | [docs/components/oversight-hub/troubleshooting/](./components/oversight-hub/troubleshooting/)     | State management, API integration, UI issues |
+| **Public Site**      | [docs/components/public-site/troubleshooting/](./components/public-site/troubleshooting/)         | Build errors, data fetching, SEO issues      |
 
 **Quick Links:**
 

@@ -19,6 +19,7 @@ The FastAPI backend has a complete Chat service (`/api/chat/*`) with multi-model
 ### Endpoints Ready to Consume
 
 #### 1. POST `/api/chat` - Send Message
+
 ```
 Request:
 {
@@ -40,6 +41,7 @@ Response:
 ```
 
 #### 2. GET `/api/chat/history/{conversation_id}`
+
 ```
 Response:
 [
@@ -53,6 +55,7 @@ Response:
 ```
 
 #### 3. DELETE `/api/chat/history/{conversation_id}`
+
 ```
 Response:
 {
@@ -62,6 +65,7 @@ Response:
 ```
 
 #### 4. GET `/api/chat/models`
+
 ```
 Response:
 [
@@ -80,6 +84,7 @@ Response:
 ## Component Architecture
 
 ### Component Tree
+
 ```
 OversightHub.jsx (main)
 ├── Navigation (add "Chat" button)
@@ -147,6 +152,7 @@ web/oversight-hub/src/
 ```
 
 **UI Layout:**
+
 ```
 ┌─────────────┬─────────────────────────────┐
 │ Conversation│  Conversation Name         │
@@ -185,10 +191,7 @@ export default function ChatSidebar() {
   return (
     <div className="chat-sidebar">
       {/* New Chat Button */}
-      <button 
-        onClick={createNewConversation}
-        className="new-chat-btn"
-      >
+      <button onClick={createNewConversation} className="new-chat-btn">
         ➕ New Chat
       </button>
 
@@ -196,7 +199,7 @@ export default function ChatSidebar() {
       {isLoading ? (
         <div>Loading conversations...</div>
       ) : (
-        <ConversationList 
+        <ConversationList
           conversations={conversations}
           selected={selectedConversationId}
           onSelect={setSelectedConversation}
@@ -248,19 +251,14 @@ export default function ChatMain() {
 
   return (
     <div className="chat-main">
-      <ConversationHeader 
-        conversation={currentConversation}
-      />
-      
-      <ChatMessages 
-        messages={messages}
-        isLoading={isLoading}
-      />
-      
+      <ConversationHeader conversation={currentConversation} />
+
+      <ChatMessages messages={messages} isLoading={isLoading} />
+
       <div className="chat-footer">
         <ChatInput />
         <div className="chat-controls">
-          <ModelSelector 
+          <ModelSelector
             selectedModel={selectedModel}
             onModelChange={setSelectedModel}
           />
@@ -316,6 +314,7 @@ export interface ChatMessageProps {
 ```
 
 **UI:**
+
 ```
 User Message:
 ┌────────────────────────────────┐
@@ -351,6 +350,7 @@ Assistant Message:
 ```
 
 **Key Implementation:**
+
 ```javascript
 const handleKeyPress = (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
@@ -418,37 +418,38 @@ Available Models:
 export function useChat() {
   return {
     // State
-    conversations,              // All conversations
-    currentConversationId,      // Current active
-    currentConversation,        // Full object
-    messages,                   // Messages in current
-    selectedModel,              // Selected model
-    isLoading,                  // Sending message
-    error,                      // Last error
-    
+    conversations, // All conversations
+    currentConversationId, // Current active
+    currentConversation, // Full object
+    messages, // Messages in current
+    selectedModel, // Selected model
+    isLoading, // Sending message
+    error, // Last error
+
     // Conversation actions
-    createNewConversation,      // () => void
-    setSelectedConversation,    // (id) => void
-    renameConversation,         // (id, name) => void
-    deleteConversation,         // (id) => void
-    
+    createNewConversation, // () => void
+    setSelectedConversation, // (id) => void
+    renameConversation, // (id, name) => void
+    deleteConversation, // (id) => void
+
     // Message actions
-    sendMessage,                // (text) => Promise
-    loadConversationHistory,    // (id) => Promise
-    clearConversation,          // (id) => Promise
-    
+    sendMessage, // (text) => Promise
+    loadConversationHistory, // (id) => Promise
+    clearConversation, // (id) => Promise
+
     // Model actions
-    setSelectedModel,           // (model) => void
-    getAvailableModels,         // () => Promise<Model[]>
-    
+    setSelectedModel, // (model) => void
+    getAvailableModels, // () => Promise<Model[]>
+
     // UI state
-    isSidebarOpen,              // Boolean
-    toggleSidebar,              // () => void
+    isSidebarOpen, // Boolean
+    toggleSidebar, // () => void
   };
 }
 ```
 
 ### Implementation Notes:
+
 - Use Zustand store for persistence
 - Fetch conversation list on mount
 - Cache models list (refresh every 5 min)
@@ -467,19 +468,19 @@ export const chatService = {
     // POST /api/chat
     // Returns: { response, model, conversationId, timestamp, tokens_used }
   },
-  
+
   // Get conversation history
   async getHistory(conversationId) {
     // GET /api/chat/history/{conversationId}
     // Returns: Array of messages
   },
-  
+
   // Get available models
   async getModels() {
     // GET /api/chat/models
     // Returns: Array of model objects
   },
-  
+
   // Clear conversation
   async clearHistory(conversationId) {
     // DELETE /api/chat/history/{conversationId}
@@ -497,40 +498,44 @@ export const chatService = {
 ```javascript
 const useStore = create((set) => ({
   // Existing state...
-  
+
   // NEW: Chat state
   chat: {
-    conversations: [],          // Array of { id, name, createdAt, updatedAt, lastMessage }
+    conversations: [], // Array of { id, name, createdAt, updatedAt, lastMessage }
     currentConversationId: null,
-    messages: [],               // Current conversation messages
-    selectedModel: 'ollama',    // Default model
+    messages: [], // Current conversation messages
+    selectedModel: 'ollama', // Default model
     isLoading: false,
     error: null,
   },
-  
+
   // Chat actions
-  setChat: (partial) => set((state) => ({
-    chat: { ...state.chat, ...partial }
-  })),
-  
-  setCurrentConversation: (id) => set((state) => ({
-    chat: { ...state.chat, currentConversationId: id }
-  })),
-  
-  addMessage: (message) => set((state) => ({
-    chat: { ...state.chat, messages: [...state.chat.messages, message] }
-  })),
-  
-  clearChat: () => set((state) => ({
-    chat: {
-      conversations: [],
-      currentConversationId: null,
-      messages: [],
-      selectedModel: 'ollama',
-      isLoading: false,
-      error: null,
-    }
-  })),
+  setChat: (partial) =>
+    set((state) => ({
+      chat: { ...state.chat, ...partial },
+    })),
+
+  setCurrentConversation: (id) =>
+    set((state) => ({
+      chat: { ...state.chat, currentConversationId: id },
+    })),
+
+  addMessage: (message) =>
+    set((state) => ({
+      chat: { ...state.chat, messages: [...state.chat.messages, message] },
+    })),
+
+  clearChat: () =>
+    set((state) => ({
+      chat: {
+        conversations: [],
+        currentConversationId: null,
+        messages: [],
+        selectedModel: 'ollama',
+        isLoading: false,
+        error: null,
+      },
+    })),
 }));
 ```
 
@@ -539,6 +544,7 @@ const useStore = create((set) => ({
 ## Integration with OversightHub.jsx
 
 ### 1. Add navigation item:
+
 ```javascript
 const navigationItems = [
   // ... existing items
@@ -548,11 +554,15 @@ const navigationItems = [
 ```
 
 ### 2. Add chat route to currentPage switch:
+
 ```javascript
-{currentPage === 'chat' && <ChatContainer />}
+{
+  currentPage === 'chat' && <ChatContainer />;
+}
 ```
 
 ### 3. Import ChatContainer at top:
+
 ```javascript
 import ChatContainer from './components/chat/ChatContainer';
 ```
@@ -617,7 +627,7 @@ import ChatContainer from './components/chat/ChatContainer';
     z-index: 100;
     transform: translateX(-100%);
   }
-  
+
   .chat-sidebar.open {
     transform: translateX(0);
   }
@@ -629,17 +639,20 @@ import ChatContainer from './components/chat/ChatContainer';
 ## Testing Strategy
 
 ### Unit Tests (chatService.js)
+
 - Mock API calls
 - Test error handling
 - Test model selection logic
 
-### Component Tests (Chat*.jsx)
+### Component Tests (Chat\*.jsx)
+
 - Test message rendering
 - Test input submission
 - Test sidebar interactions
 - Test model selection
 
 ### Integration Tests
+
 - Full chat flow: send → receive → display
 - Conversation switching
 - Model changing mid-conversation
@@ -659,12 +672,14 @@ import ChatContainer from './components/chat/ChatContainer';
 ## Error Handling
 
 ### API Errors:
+
 - Network timeout → Show retry button
 - Invalid model → Fall back to default
 - Auth expired → Redirect to login
 - Rate limited → Show queue indicator
 
 ### UI Errors:
+
 - Graceful degradation if WebSocket fails
 - Fallback to polling if needed
 - Clear error messages to user
@@ -707,15 +722,15 @@ import ChatContainer from './components/chat/ChatContainer';
 
 ## Estimated Timeline
 
-| Phase | Task | Hours |
-|-------|------|-------|
-| 1 | Setup & hooks | 1.5 |
-| 2 | Service layer | 1 |
-| 3 | Core components | 2.5 |
-| 4 | Integration | 0.5 |
-| 5 | Styling | 0.5 |
-| 6 | Testing | 1 |
-| **Total** | | **6.5** |
+| Phase     | Task            | Hours   |
+| --------- | --------------- | ------- |
+| 1         | Setup & hooks   | 1.5     |
+| 2         | Service layer   | 1       |
+| 3         | Core components | 2.5     |
+| 4         | Integration     | 0.5     |
+| 5         | Styling         | 0.5     |
+| 6         | Testing         | 1       |
+| **Total** |                 | **6.5** |
 
 ---
 

@@ -35,9 +35,11 @@ This keeps active documentation focused on what matters long-term: system design
 ## 📖 What to Do
 
 ### If You Need Historical Context
+
 Search this archive for relevant files. They contain detailed context from previous work, but aren't maintained as the codebase evolves.
 
 ### If You Need Current Information
+
 - **Architecture:** See `docs/02-ARCHITECTURE_AND_DESIGN.md`
 - **Deployment:** See `docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md`
 - **Development:** See `docs/04-DEVELOPMENT_WORKFLOW.md`

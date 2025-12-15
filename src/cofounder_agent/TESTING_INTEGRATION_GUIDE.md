@@ -3,13 +3,14 @@
 **Status:** 🚀 Complete  
 **Last Updated:** December 12, 2025  
 **Test Suite:** 30+ comprehensive test files  
-**Coverage:** 80%+ critical paths  
+**Coverage:** 80%+ critical paths
 
 ---
 
 ## 📋 Overview
 
 This guide covers the complete testing infrastructure for the Glad Labs FastAPI application, including:
+
 - Unit testing patterns
 - Integration testing strategies
 - End-to-end (E2E) testing
@@ -22,6 +23,7 @@ This guide covers the complete testing infrastructure for the Glad Labs FastAPI 
 ## 🏗️ Testing Architecture
 
 ### Test Structure
+
 ```
 tests/
 ├── conftest.py                          # Pytest configuration and fixtures
@@ -133,7 +135,7 @@ python_functions = test_*                 # Test function patterns
 testpaths = .                             # Test directory
 pythonpath = ..                           # Python path
 
-addopts = 
+addopts =
     --tb=short                            # Traceback format
     --strict-markers                      # Strict marker checking
     --disable-warnings                    # Disable warnings
@@ -172,22 +174,22 @@ from fastapi import HTTPException
 @pytest.mark.unit
 class TestMyComponent:
     """Test suite for MyComponent"""
-    
+
     def setup_method(self):
         """Setup for each test"""
         self.component = MyComponent()
-    
+
     def test_valid_input(self):
         """Test with valid input"""
         result = self.component.process("valid_data")
         assert result is not None
         assert result.status == "success"
-    
+
     def test_invalid_input_raises_error(self):
         """Test that invalid input raises error"""
         with pytest.raises(ValueError):
             self.component.process(None)
-    
+
     @patch('module.external_service')
     def test_with_mocked_dependency(self, mock_service):
         """Test with mocked external dependency"""
@@ -208,12 +210,12 @@ from fastapi import FastAPI
 @pytest.mark.integration
 class TestAsyncEndpoint:
     """Test async endpoint"""
-    
+
     async def test_async_operation(self):
         """Test async function"""
         result = await my_async_function()
         assert result is not None
-    
+
     async def test_api_endpoint(self, client: AsyncClient):
         """Test API endpoint with async client"""
         response = await client.get("/api/endpoint")
@@ -231,20 +233,20 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 @pytest.mark.integration
 class TestDatabaseOperations:
     """Test database operations"""
-    
+
     @pytest.fixture
     async def db_session(self):
         """Create test database session"""
         engine = create_async_engine("sqlite+aiosqlite:///:memory:")
         async with AsyncSession(engine) as session:
             yield session
-    
+
     async def test_create_record(self, db_session: AsyncSession):
         """Test creating a database record"""
         record = MyModel(name="Test")
         db_session.add(record)
         await db_session.commit()
-        
+
         result = await db_session.query(MyModel).first()
         assert result.name == "Test"
 ```
@@ -259,25 +261,25 @@ from main import app
 @pytest.mark.api
 class TestAPIEndpoints:
     """Test FastAPI endpoints"""
-    
+
     @pytest.fixture
     def client(self):
         """Create test client"""
         return TestClient(app)
-    
+
     def test_get_endpoint(self, client):
         """Test GET endpoint"""
         response = client.get("/api/resource")
         assert response.status_code == 200
         assert "data" in response.json()
-    
+
     def test_post_endpoint(self, client):
         """Test POST endpoint"""
         payload = {"name": "Test Resource"}
         response = client.post("/api/resource", json=payload)
         assert response.status_code == 201
         assert response.json()["id"] is not None
-    
+
     def test_authentication_required(self, client):
         """Test that endpoint requires authentication"""
         response = client.get("/api/protected")
@@ -322,12 +324,14 @@ def authenticated_client(client, sample_user_data):
 ### 1. Test Organization
 
 **✅ DO:**
+
 - One test class per component/module
 - Logical grouping of related tests
 - Clear, descriptive test names
 - Use fixtures for reusable setup
 
 **❌ DON'T:**
+
 - Mix unit and integration tests in same class
 - Use hardcoded test data
 - Create test interdependencies
@@ -451,6 +455,7 @@ pytest --pdb test_file.py::test_name
 ### 2. Common Issues
 
 **Async timeout issues:**
+
 ```python
 # Increase timeout in pytest.ini or mark
 @pytest.mark.timeout(10)
@@ -459,6 +464,7 @@ async def test_long_operation():
 ```
 
 **Database state issues:**
+
 ```python
 # Ensure clean state before each test
 @pytest.fixture(autouse=True)
@@ -469,6 +475,7 @@ async def reset_database():
 ```
 
 **Import errors:**
+
 ```bash
 # Check Python path
 pytest --co test_file.py  # Collect only, don't run
@@ -573,7 +580,7 @@ def test_with_user_data(test_users):
 @pytest.mark.security
 class TestAuthentication:
     """Test authentication security"""
-    
+
     def test_invalid_token_rejected(self, client):
         """Test that invalid tokens are rejected"""
         response = client.get(
@@ -581,7 +588,7 @@ class TestAuthentication:
             headers={"Authorization": "Bearer invalid_token"}
         )
         assert response.status_code == 401
-    
+
     def test_expired_token_rejected(self, client):
         """Test that expired tokens are rejected"""
         expired_token = create_expired_token()
@@ -590,7 +597,7 @@ class TestAuthentication:
             headers={"Authorization": f"Bearer {expired_token}"}
         )
         assert response.status_code == 401
-    
+
     def test_missing_token_rejected(self, client):
         """Test that missing tokens are rejected"""
         response = client.get("/api/protected")
@@ -603,13 +610,13 @@ class TestAuthentication:
 @pytest.mark.security
 class TestInputValidation:
     """Test input validation"""
-    
+
     def test_sql_injection_prevented(self, client):
         """Test SQL injection prevention"""
         payload = {"query": "'; DROP TABLE users; --"}
         response = client.post("/api/search", json=payload)
         assert response.status_code == 400  # Bad request
-    
+
     def test_xss_prevented(self, client):
         """Test XSS prevention"""
         payload = {"content": "<script>alert('xss')</script>"}
@@ -628,24 +635,24 @@ class TestInputValidation:
 @pytest.mark.performance
 class TestPerformance:
     """Test performance metrics"""
-    
+
     def test_endpoint_response_time(self, client):
         """Test endpoint responds within acceptable time"""
         import time
         start = time.time()
         response = client.get("/api/fast-endpoint")
         elapsed = time.time() - start
-        
+
         assert response.status_code == 200
         assert elapsed < 0.5  # Must respond in < 500ms
-    
+
     @pytest.mark.slow
     def test_large_dataset_handling(self, client):
         """Test handling large datasets"""
         # Create large payload
         large_data = [{"id": i} for i in range(10000)]
         response = client.post("/api/bulk-import", json=large_data)
-        
+
         assert response.status_code == 200
         assert response.json()["imported_count"] == 10000
 ```
@@ -678,7 +685,7 @@ Tests:
   - test_basic_operation: Basic functionality
   - test_error_handling: Error scenarios
   - test_edge_cases: Edge cases
-  
+
 Dependencies:
   - [Dependency 1]
   - [Dependency 2]
@@ -720,13 +727,13 @@ jobs:
 
 ### Common Issues
 
-| Issue | Cause | Solution |
-|-------|-------|----------|
-| `ModuleNotFoundError` | Path not configured | Check `conftest.py` paths |
-| `Timeout in test` | Slow operation | Add `@pytest.mark.timeout(30)` |
-| `Fixture not found` | Fixture scope issue | Move to `conftest.py` |
-| `Async test hangs` | Event loop issue | Ensure `asyncio_mode = auto` |
-| `Database locked` | Test isolation | Use separate test DB |
+| Issue                 | Cause               | Solution                       |
+| --------------------- | ------------------- | ------------------------------ |
+| `ModuleNotFoundError` | Path not configured | Check `conftest.py` paths      |
+| `Timeout in test`     | Slow operation      | Add `@pytest.mark.timeout(30)` |
+| `Fixture not found`   | Fixture scope issue | Move to `conftest.py`          |
+| `Async test hangs`    | Event loop issue    | Ensure `asyncio_mode = auto`   |
+| `Database locked`     | Test isolation      | Use separate test DB           |
 
 ### Getting Help
 

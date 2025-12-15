@@ -4,7 +4,7 @@
 **Application:** Glad Labs AI Co-Founder (FastAPI Backend)  
 **Repository:** glad-labs-codebase  
 **Branch:** feat/refine  
-**Analysis Scope:** Architecture, Security, Performance, Testing, DevOps, Code Quality, Product  
+**Analysis Scope:** Architecture, Security, Performance, Testing, DevOps, Code Quality, Product
 
 ---
 
@@ -12,19 +12,20 @@
 
 ### Overall Health Score: **7.2/10** (Good with Optimization Opportunities)
 
-| Category | Score | Status |
-|----------|-------|--------|
-| **Architecture** | 7.5 | ✅ Good - Well-organized, clear separation of concerns |
-| **Security** | 6.8 | ⚠️ Good - Solid fundamentals, some gaps in production hardening |
-| **Performance** | 7.1 | ✅ Good - Async patterns solid, caching minimal |
-| **Testing** | 6.5 | ⚠️ Fair - 23 test files but moderate coverage |
-| **DevOps/Infrastructure** | 7.3 | ✅ Good - PostgreSQL-first, health checks in place |
-| **Code Quality** | 7.4 | ✅ Good - Consistent patterns, 97 Python files well-organized |
-| **Business/Product** | 7.0 | ✅ Good - Feature-complete, but some alignment gaps |
+| Category                  | Score | Status                                                          |
+| ------------------------- | ----- | --------------------------------------------------------------- |
+| **Architecture**          | 7.5   | ✅ Good - Well-organized, clear separation of concerns          |
+| **Security**              | 6.8   | ⚠️ Good - Solid fundamentals, some gaps in production hardening |
+| **Performance**           | 7.1   | ✅ Good - Async patterns solid, caching minimal                 |
+| **Testing**               | 6.5   | ⚠️ Fair - 23 test files but moderate coverage                   |
+| **DevOps/Infrastructure** | 7.3   | ✅ Good - PostgreSQL-first, health checks in place              |
+| **Code Quality**          | 7.4   | ✅ Good - Consistent patterns, 97 Python files well-organized   |
+| **Business/Product**      | 7.0   | ✅ Good - Feature-complete, but some alignment gaps             |
 
 ### Key Insights
 
 **Strengths:**
+
 - ✅ **PostgreSQL-First Architecture**: Mandatory database, no SQLite fallback. Excellent for production consistency
 - ✅ **Modern Async Stack**: FastAPI + asyncpg with proper connection pooling. ~800ms startup time with multiple service initializations
 - ✅ **Clear Component Separation**: 17+ route modules, 40+ service modules - well-defined boundaries
@@ -33,6 +34,7 @@
 - ✅ **Production-Ready Logging**: Structured logging with JSON support, telemetry integration
 
 **Challenges:**
+
 - ⚠️ **CORS Too Permissive**: Allows `["*"]` for methods and headers (should be explicit)
 - ⚠️ **Minimal Caching Strategy**: No Redis/memcached for expensive operations (semantic search, model queries)
 - ⚠️ **Test Coverage Unknown**: 23 test files exist but coverage percentage unclear
@@ -50,6 +52,7 @@
 **Strong Architecture Patterns:**
 
 1. **Layered Architecture (Well-Defined)**
+
    ```
    Routes Layer (17 modules)
        ↓ HTTP/REST interface
@@ -60,6 +63,7 @@
    AI/Agent Layer (4 specialized agents)
        ↓ LLM calls with provider fallback
    ```
+
    - Clear responsibility separation
    - Services never called directly by routes; proper dependency injection
    - DatabaseService as single source for all data access
@@ -75,6 +79,7 @@
    - Intelligent orchestrator for advanced routing (Phase 5 feature)
 
 4. **Service Initialization Pipeline**
+
    ```
    1. PostgreSQL connection (MANDATORY - fails if unavailable)
    2. Database migrations
@@ -84,6 +89,7 @@
    6. Content critique loop
    7. Background task executor
    ```
+
    **✅ Well-ordered, each phase logs startup status**
 
 5. **Task Processing Pipeline**
@@ -96,6 +102,7 @@
 #### 🔴 High-Impact Issues
 
 1. **CORS Configuration Too Permissive (Security & Operational Risk)**
+
    ```python
    # main.py:351-355
    app.add_middleware(
@@ -106,6 +113,7 @@
        allow_headers=["*"],  # ❌ DANGER: Allows any header
    )
    ```
+
    **Impact:** Production deployment will allow cross-origin attacks for any method/header  
    **Risk Level:** HIGH - Exploitable in production  
    **Fix:** Explicit methods/headers list
@@ -114,7 +122,7 @@
    - Semantic search results (expensive embeddings) re-calculated on every call
    - Model availability checks poll on every request (no 5-min cache)
    - Database queries not cached (N+1 potential on list endpoints)
-   
+
    **Impact:** 30-50% higher latency, increased API costs for LLM calls  
    **Risk Level:** MEDIUM - Affects user experience and costs
 
@@ -138,7 +146,7 @@
    - Comments reference Firestore/Pub/Sub but implementation is PostgreSQL-based
    - `GOOGLE_CLOUD_AVAILABLE = False` hardcoded
    - `firestore_client = None` placeholder exists
-   
+
    **Impact:** Code smell, maintainability risk, confusing documentation  
    **Risk Level:** LOW - Cleanup issue
 
@@ -170,15 +178,15 @@
 
 ### Recommendations
 
-| Priority | Action | Effort | Impact | Timeline |
-|----------|--------|--------|--------|----------|
-| 🔴 HIGH | Configure CORS from environment variables | 1 hour | HIGH | Week 1 |
-| 🔴 HIGH | Add request rate limiting middleware | 2 hours | HIGH | Week 1 |
-| 🟡 MEDIUM | Implement Redis caching layer | 8 hours | MEDIUM | Week 2 |
-| 🟡 MEDIUM | Add per-component health check endpoints | 3 hours | MEDIUM | Week 2 |
-| 🟡 MEDIUM | Consolidate CMS routes to async/asyncpg | 4 hours | LOW | Week 3 |
-| 🔵 LOW | Remove Google Cloud integration references | 2 hours | LOW | Week 4 |
-| 🔵 LOW | Document model routing and fallback chain | 1 hour | LOW | Week 2 |
+| Priority  | Action                                     | Effort  | Impact | Timeline |
+| --------- | ------------------------------------------ | ------- | ------ | -------- |
+| 🔴 HIGH   | Configure CORS from environment variables  | 1 hour  | HIGH   | Week 1   |
+| 🔴 HIGH   | Add request rate limiting middleware       | 2 hours | HIGH   | Week 1   |
+| 🟡 MEDIUM | Implement Redis caching layer              | 8 hours | MEDIUM | Week 2   |
+| 🟡 MEDIUM | Add per-component health check endpoints   | 3 hours | MEDIUM | Week 2   |
+| 🟡 MEDIUM | Consolidate CMS routes to async/asyncpg    | 4 hours | LOW    | Week 3   |
+| 🔵 LOW    | Remove Google Cloud integration references | 2 hours | LOW    | Week 4   |
+| 🔵 LOW    | Document model routing and fallback chain  | 1 hour  | LOW    | Week 2   |
 
 ---
 
@@ -215,10 +223,12 @@
 #### 🔴 High-Impact Security Issues
 
 1. **CORS Overly Permissive (Critical in Production)**
+
    ```python
    allow_methods=["*"],  # Allows DELETE, PATCH, PUT
    allow_headers=["*"],  # Allows X-API-Key, Authorization override
    ```
+
    **Vulnerability:** Cross-Origin Request Forgery (CORS bypass attacks)  
    **Impact:** Attackers can delete content, modify data from browser context  
    **Fix:** Limit to `["GET", "POST", "PUT", "OPTIONS"]` and explicit headers
@@ -229,11 +239,13 @@
    - No `bleach` or `markupsafe` HTML sanitization
 
    **Vulnerability:** Stored XSS via content generation
+
    ```python
    # services/seo_content_generator.py - no sanitization
    content = await llm.generate(prompt)
    await db.create_post(content=content)  # ❌ Raw content stored
    ```
+
    **Impact:** Attacker-controlled LLM could inject malicious HTML  
    **Fix:** Sanitize HTML in `content_routes.py` before storing
 
@@ -252,11 +264,13 @@
    - Bulk operations allow N unlimited operations
 
    **Vulnerability:** Denial of Service, API cost explosion
+
    ```python
    # routes/bulk_task_routes.py - no limit on task_ids
    for task_id in task_ids:  # ❌ Could be 1000+ operations
        await process_task(task_id)
    ```
+
    **Impact:** One request = $10,000+ in LLM costs, service outage  
    **Fix:** Add `slowapi` or similar rate limiting middleware
 
@@ -283,6 +297,7 @@
    - Example: Database queries with real values logged
 
 8. **SQL Injection in Dynamic Query Building (Low Risk, High Impact if Hit)**
+
    ```python
    # services/database_service.py - mostly safe but check edge cases
    where_clauses.append("status = 'published'")  # Safe (hardcoded)
@@ -290,6 +305,7 @@
        where_clauses.append(f"featured = ${len(params) + 1}")  # Safe (parameterized)
        params.append(featured)
    ```
+
    **Status:** Currently safe, but dynamic query construction is fragile. Refactor to prepared statements.
 
 9. **No HTTPS Enforcement**
@@ -304,17 +320,17 @@
 
 ### Recommendations
 
-| Priority | Action | Effort | Impact | 
-|----------|--------|--------|--------|
-| 🔴 CRITICAL | Explicitly configure CORS (not "*") | 1 hour | CRITICAL |
-| 🔴 CRITICAL | Implement request rate limiting | 2 hours | CRITICAL |
-| 🔴 CRITICAL | Add webhook signature verification | 2 hours | CRITICAL |
-| 🟡 HIGH | Sanitize HTML in content generation | 3 hours | HIGH |
-| 🟡 HIGH | Move secrets to HashiCorp Vault or platform secrets | 4 hours | HIGH |
-| 🟡 HIGH | Add `pip audit` to CI/CD | 1 hour | MEDIUM |
-| 🟡 MEDIUM | Implement JWT token revocation (blacklist) | 3 hours | MEDIUM |
-| 🟡 MEDIUM | Add request/response logging filters (PII) | 2 hours | MEDIUM |
-| 🟡 MEDIUM | Add HTTPS enforcement headers | 1 hour | MEDIUM |
+| Priority    | Action                                              | Effort  | Impact   |
+| ----------- | --------------------------------------------------- | ------- | -------- |
+| 🔴 CRITICAL | Explicitly configure CORS (not "\*")                | 1 hour  | CRITICAL |
+| 🔴 CRITICAL | Implement request rate limiting                     | 2 hours | CRITICAL |
+| 🔴 CRITICAL | Add webhook signature verification                  | 2 hours | CRITICAL |
+| 🟡 HIGH     | Sanitize HTML in content generation                 | 3 hours | HIGH     |
+| 🟡 HIGH     | Move secrets to HashiCorp Vault or platform secrets | 4 hours | HIGH     |
+| 🟡 HIGH     | Add `pip audit` to CI/CD                            | 1 hour  | MEDIUM   |
+| 🟡 MEDIUM   | Implement JWT token revocation (blacklist)          | 3 hours | MEDIUM   |
+| 🟡 MEDIUM   | Add request/response logging filters (PII)          | 2 hours | MEDIUM   |
+| 🟡 MEDIUM   | Add HTTPS enforcement headers                       | 1 hour  | MEDIUM   |
 
 ---
 
@@ -331,6 +347,7 @@
    - Database pooling: min_size=10, max_size=20 (tunable)
 
 2. **Connection Pooling Configured**
+
    ```python
    # services/database_service.py:110-112
    pool = await asyncpg.create_pool(
@@ -339,6 +356,7 @@
        timeout=30
    )
    ```
+
    **Good:** Connection reuse, efficient resource utilization
    **Potential:** Max 20 concurrent DB connections per instance
 
@@ -360,19 +378,20 @@
    - Semantic search (embedding + similarity) recalculated on every request
    - Model availability checks hit APIs repeatedly
    - Database list queries without pagination optimization
-   
-   **Impact:** 
+
+   **Impact:**
    - 500ms query → 3s latency for cached data
    - 10 API calls/day per embedding → 3,650/year unnecessary costs
    - One expensive operation (QA review) blocks entire content pipeline
 
    **Metrics:**
+
    ```
    Without cache:
    - Semantic search latency: 200-500ms per call
    - Model check latency: 100-200ms per call
    - P95 API response time: 2-3s
-   
+
    With Redis cache (1-hour TTL):
    - Cached hit latency: 5-10ms
    - Cache miss latency: 200-500ms (amortized)
@@ -380,38 +399,41 @@
    ```
 
 2. **Task Polling Inefficiency (Resource Waste)**
+
    ```python
    # services/task_executor.py:70 - Poll every 5 seconds
    await asyncio.sleep(5)
    pending_tasks = await self.database_service.get_pending_tasks()
    ```
-   
-   **Problem:** 
+
+   **Problem:**
    - Polling: 17,280 queries/day per instance
    - Linear scaling: 5 instances = 86,400 unnecessary queries
    - No event-driven notification
-   
+
    **Solution:** PostgreSQL LISTEN/NOTIFY or message queue
    **Impact:** 95% reduction in polling overhead
 
 3. **Database Query N+1 Pattern (Potential)**
+
    ```python
    # Example vulnerable pattern (hypothetical)
    posts = await db.get_posts()  # 1 query
    for post in posts:            # N queries
        post.category = await db.get_category(post.category_id)
    ```
-   
+
    **Status:** Not observed in current code, but possible in expanded features
    **Risk:** HIGH if discovered in future
    **Fix:** Use SQL JOINs or batch queries
 
 4. **Synchronous CMS Routes (Mixed Concurrency Model)**
+
    ```python
    # routes/cms_routes.py - Uses psycopg2 (synchronous)
    row = await conn.fetchrow(...)  # Still async wrapper
    ```
-   
+
    **Issue:** CMS routes could block event loop if not properly awaited
    **Impact:** MEDIUM - Possible intermittent latency spikes
    **Fix:** Ensure all DB calls use async/await consistently
@@ -419,7 +441,7 @@
 5. **No API Response Compression (Bandwidth Waste)**
    - Large JSON responses not gzipped
    - List endpoints could return 1MB+ uncompressed
-   
+
    **Impact:** 70-80% of bandwidth wasted on JSON
    **Fix:** Add `gzip` middleware to FastAPI
 
@@ -441,32 +463,34 @@
    - Queries on `posts`, `categories`, `users` without known indexes
    - Sorting by `published_at` without index optimization
    - User lookups by email/username potentially slow
-   
+
    **Impact:** As database grows, queries degrade O(n)
 
 9. **Background Task Executor Couples to Critique Loop**
+
    ```python
    # services/task_executor.py:35
    self.critique_loop = critique_loop or ContentCritiqueLoop()
    # Single instance, all tasks wait sequentially
    ```
-   
+
    **Issue:** Only one task processed at a time
    **Impact:** MEDIUM - Throughput limited to ~12 tasks/minute (5s poll + critique time)
 
 ### Recommendations & Quick Wins
 
-| Priority | Action | Effort | Impact | ROI | Timeline |
-|----------|--------|--------|--------|-----|----------|
-| 🔴 CRITICAL | Add Redis caching for embeddings | 4 hours | 70% latency reduction | VERY HIGH | Week 1 |
-| 🔴 CRITICAL | Replace polling with PostgreSQL LISTEN/NOTIFY | 6 hours | 95% polling reduction | VERY HIGH | Week 2 |
-| 🟡 HIGH | Add gzip compression middleware | 1 hour | 75% bandwidth savings | HIGH | Week 1 |
-| 🟡 HIGH | Enable database indexes on key columns | 2 hours | 80%+ query speedup | HIGH | Week 1 |
-| 🟡 MEDIUM | Parallelize content critique evaluations | 3 hours | 30% throughput increase | MEDIUM | Week 2 |
-| 🟡 MEDIUM | Implement batch task processing | 4 hours | 50% task throughput | MEDIUM | Week 3 |
-| 🔵 LOW | Load and cache models once on startup | 2 hours | 1-2s latency reduction | LOW | Week 3 |
+| Priority    | Action                                        | Effort  | Impact                  | ROI       | Timeline |
+| ----------- | --------------------------------------------- | ------- | ----------------------- | --------- | -------- |
+| 🔴 CRITICAL | Add Redis caching for embeddings              | 4 hours | 70% latency reduction   | VERY HIGH | Week 1   |
+| 🔴 CRITICAL | Replace polling with PostgreSQL LISTEN/NOTIFY | 6 hours | 95% polling reduction   | VERY HIGH | Week 2   |
+| 🟡 HIGH     | Add gzip compression middleware               | 1 hour  | 75% bandwidth savings   | HIGH      | Week 1   |
+| 🟡 HIGH     | Enable database indexes on key columns        | 2 hours | 80%+ query speedup      | HIGH      | Week 1   |
+| 🟡 MEDIUM   | Parallelize content critique evaluations      | 3 hours | 30% throughput increase | MEDIUM    | Week 2   |
+| 🟡 MEDIUM   | Implement batch task processing               | 4 hours | 50% task throughput     | MEDIUM    | Week 3   |
+| 🔵 LOW      | Load and cache models once on startup         | 2 hours | 1-2s latency reduction  | LOW       | Week 3   |
 
 **Quick Win (1-Hour Implementation):**
+
 ```python
 # Add to main.py
 from fastapi.middleware.gzip import GZIPMiddleware
@@ -487,6 +511,7 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
    - Pytest configured with custom markers: `@pytest.mark.unit`, `.api`, `.e2e`, `.slow`
 
 2. **Test Organization**
+
    ```
    tests/
    ├── conftest.py                          (848 lines - comprehensive fixtures)
@@ -499,6 +524,7 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
    ```
 
 3. **Async Testing Support**
+
    ```python
    # pyproject.toml
    asyncio_mode = "auto"
@@ -518,11 +544,12 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
    - 23 test files exist but coverage metrics not calculated
    - No CI/CD coverage reporting (can't track regression)
    - No coverage threshold enforcement (tests added without coverage)
-   
+
    **Impact:** Unknown code quality assurance
    **Risk:** Medium-High - Can't assess regression risk
-   
+
    **Fix Needed:**
+
    ```bash
    pytest --cov=src/cofounder_agent --cov-report=html
    # Add to CI: coverage report to PR comments
@@ -533,18 +560,19 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
    - `model_router.py` (543 lines) - no dedicated test file
    - `intelligent_orchestrator.py` - new, untested
    - `workflow_history.py` - new service, no visible tests
-   
+
    **Impact:** HIGH - 2000+ lines of untested business logic
    **Risk:** Orchestration failures go undetected
 
 3. **Database Integration Tests May Be Mocked (False Confidence)**
+
    ```python
    # tests/conftest.py - Mock database implementation
    class MockDatabaseService:
        async def get(...):
            # Returns mock data, not real DB behavior
    ```
-   
+
    **Issue:** Tests pass with mocks but fail with real PostgreSQL
    **Risk:** MEDIUM-HIGH - Integration issues discovered in production
    **Evidence:** `test_data/` directory suggests mock data, not DB fixtures
@@ -553,7 +581,7 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
    - Task creation → Processing → Publishing flow not tested E2E
    - Content critique loop interaction unclear
    - Task executor error scenarios not covered
-   
+
    **Impact:** MEDIUM - Content pipeline reliability unknown
 
 5. **Load/Stress Testing Absent**
@@ -561,7 +589,7 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
    - Concurrency limits untested
    - API response time SLAs undefined
    - Cascade failure scenarios (model unavailable) not tested
-   
+
    **Impact:** Production behavior unpredictable at scale
 
 #### 🟡 Medium-Impact Testing Issues
@@ -582,6 +610,7 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
    - Timeout handling might be fragile
 
    **Example Risky Pattern:**
+
    ```python
    async def test_task_executor():
        await executor.start()
@@ -597,28 +626,28 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
 
 ### Metrics Summary
 
-| Metric | Status | Target | Gap |
-|--------|--------|--------|-----|
-| Test Files | 23 | 30+ | -7 |
-| Coverage % | Unknown | >80% | Unknown |
-| Integration Tests | Some | Comprehensive | Medium |
-| E2E Tests | ~2 | 10+ | Medium |
-| Load Tests | None | 5+ scenarios | 5 |
-| Security Tests | None | 10+ | 10 |
-| CI/CD Status | Unknown | Automated | Unknown |
+| Metric            | Status  | Target        | Gap     |
+| ----------------- | ------- | ------------- | ------- |
+| Test Files        | 23      | 30+           | -7      |
+| Coverage %        | Unknown | >80%          | Unknown |
+| Integration Tests | Some    | Comprehensive | Medium  |
+| E2E Tests         | ~2      | 10+           | Medium  |
+| Load Tests        | None    | 5+ scenarios  | 5       |
+| Security Tests    | None    | 10+           | 10      |
+| CI/CD Status      | Unknown | Automated     | Unknown |
 
 ### Recommendations
 
-| Priority | Action | Effort | Impact |
-|----------|--------|--------|--------|
-| 🔴 CRITICAL | Add pytest coverage reporting to CI/CD | 2 hours | HIGH |
+| Priority    | Action                                               | Effort  | Impact   |
+| ----------- | ---------------------------------------------------- | ------- | -------- |
+| 🔴 CRITICAL | Add pytest coverage reporting to CI/CD               | 2 hours | HIGH     |
 | 🔴 CRITICAL | Test critical components: orchestrator, model_router | 8 hours | CRITICAL |
-| 🔴 CRITICAL | Add E2E content pipeline test | 6 hours | CRITICAL |
-| 🟡 HIGH | Add load/stress test scenarios | 6 hours | HIGH |
-| 🟡 HIGH | Add security-focused tests (CORS, XSS, auth) | 6 hours | HIGH |
-| 🟡 MEDIUM | Set coverage threshold enforcement (80%+) | 2 hours | MEDIUM |
-| 🟡 MEDIUM | Add async test utilities (proper timing) | 3 hours | MEDIUM |
-| 🔵 LOW | Expand mock database fixtures | 4 hours | LOW |
+| 🔴 CRITICAL | Add E2E content pipeline test                        | 6 hours | CRITICAL |
+| 🟡 HIGH     | Add load/stress test scenarios                       | 6 hours | HIGH     |
+| 🟡 HIGH     | Add security-focused tests (CORS, XSS, auth)         | 6 hours | HIGH     |
+| 🟡 MEDIUM   | Set coverage threshold enforcement (80%+)            | 2 hours | MEDIUM   |
+| 🟡 MEDIUM   | Add async test utilities (proper timing)             | 3 hours | MEDIUM   |
+| 🔵 LOW      | Expand mock database fixtures                        | 4 hours | LOW      |
 
 ---
 
@@ -633,23 +662,25 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
    - Connection pooling: asyncpg with min=10, max=20
    - Environment-based: DATABASE_URL, DATABASE_HOST, DATABASE_USER
    - Health checks: `await database_service.health_check()`
-   
+
    **Strength:** Single source of truth, no environment mismatch
 
 2. **Container-Ready**
    - Procfile: `web: python -m uvicorn src.cofounder_agent.main:app --host 0.0.0.0 --port $PORT`
    - Railway.json schema present (minimal, but valid)
    - Docker-compose.yml for local development
-   
+
    **Strength:** Railway/Vercel deployment ready
 
 3. **Health Check Endpoint**
+
    ```python
    # main.py - Unified health check
    @app.get("/api/health")
    async def api_health():
        # Returns: {"status": "healthy", "database": "connected", ...}
    ```
+
    **Strength:** Load balancer can detect readiness
 
 4. **Environment Configuration**
@@ -666,20 +697,20 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
    - Background task executor stops immediately on shutdown
    - Running tasks lost if in-progress
    - Database migrations could lock tables during boot
-   
+
    **Impact:** MEDIUM - Service outage during deployment
-   **Scenario:** 
+   **Scenario:**
    - 100 tasks processing
    - Deploy new version
    - All tasks lost, no recovery
-   
+
    **Fix Needed:** Graceful shutdown with task draining
 
 2. **Startup Initialization Too Verbose (Startup Time Risk)**
    - 7+ service initializations with full logging
    - Database migrations run every boot
    - Model consolidation service initialization slow
-   
+
    **Impact:** 60-90 second startup time
    **Problem:** Railway/Kubernetes health checks timeout (30s default)
    **Risk:** MEDIUM - Health check failures during boot
@@ -688,7 +719,7 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
    - Migrations run on every startup
    - No version tracking
    - Rollback mechanism unknown
-   
+
    **Impact:** HIGH - Schema mismatch between instances possible
    **Scenario:** Deploy fails, rollback needed, schema inconsistent
 
@@ -696,9 +727,10 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
    - Single `/api/health` aggregates all components
    - Kubernetes can't detect partial failures
    - No readiness vs liveness probes
-   
+
    **Impact:** MEDIUM - Slow failure detection
    **Fix Needed:**
+
    ```python
    @app.get("/health/live")     # Liveness probe
    @app.get("/health/ready")    # Readiness probe
@@ -709,11 +741,12 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
    - Logs written to stdout (good for containers)
    - No configuration for ELK/Datadog/CloudWatch
    - Structured logging enabled but no shipping
-   
+
    **Impact:** MEDIUM - Logs lost if container crashes
    **Risk:** Debugging impossible in production
 
 6. **Task Executor Stats Not Exposed (Monitoring Gap)**
+
    ```python
    # services/task_executor.py:46-50
    self.running = False
@@ -721,7 +754,7 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
    self.success_count = 0
    self.error_count = 0
    ```
-   
+
    **Issue:** Stats collected but not exposed to monitoring
    **Missing:** Prometheus metrics endpoint, StatsD integration
    **Impact:** MEDIUM - Can't monitor task processing health
@@ -732,8 +765,9 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
    - 50+ env vars but no validation on startup
    - Missing required vars only detected at runtime
    - No loud warnings for invalid configurations
-   
+
    **Example:**
+
    ```python
    # No validation that DATABASE_URL is valid PostgreSQL format
    database_url_env = os.getenv("DATABASE_URL")  # Could be "postgres://..."
@@ -743,14 +777,14 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
    - Fixed min_size=10, max_size=20
    - No guidance on tuning for workload
    - No documentation of expected connection count
-   
+
    **Impact:** LOW-MEDIUM - Possible connection exhaustion under load
 
 9. **No Backup Strategy Visible**
    - PostgreSQL backups not mentioned
    - No disaster recovery documentation
    - No database snapshot automation
-   
+
    **Impact:** MEDIUM - Data loss scenario possible
 
 10. **Secrets in Logs (Information Disclosure)**
@@ -760,17 +794,17 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
 
 ### Recommendations
 
-| Priority | Action | Effort | Impact |
-|----------|--------|--------|--------|
+| Priority    | Action                                        | Effort  | Impact   |
+| ----------- | --------------------------------------------- | ------- | -------- |
 | 🔴 CRITICAL | Implement graceful shutdown for task executor | 3 hours | CRITICAL |
-| 🔴 CRITICAL | Add startup phase timeout tuning | 2 hours | CRITICAL |
-| 🟡 HIGH | Implement granular health check endpoints | 3 hours | HIGH |
-| 🟡 HIGH | Add database migration versioning | 4 hours | HIGH |
-| 🟡 HIGH | Expose task executor metrics (Prometheus) | 3 hours | HIGH |
-| 🟡 MEDIUM | Add environment variable validation | 2 hours | MEDIUM |
-| 🟡 MEDIUM | Configure log aggregation | 4 hours | MEDIUM |
-| 🟡 MEDIUM | Document database connection pooling | 1 hour | MEDIUM |
-| 🔵 LOW | Implement backup automation documentation | 2 hours | MEDIUM |
+| 🔴 CRITICAL | Add startup phase timeout tuning              | 2 hours | CRITICAL |
+| 🟡 HIGH     | Implement granular health check endpoints     | 3 hours | HIGH     |
+| 🟡 HIGH     | Add database migration versioning             | 4 hours | HIGH     |
+| 🟡 HIGH     | Expose task executor metrics (Prometheus)     | 3 hours | HIGH     |
+| 🟡 MEDIUM   | Add environment variable validation           | 2 hours | MEDIUM   |
+| 🟡 MEDIUM   | Configure log aggregation                     | 4 hours | MEDIUM   |
+| 🟡 MEDIUM   | Document database connection pooling          | 1 hour  | MEDIUM   |
+| 🔵 LOW      | Implement backup automation documentation     | 2 hours | MEDIUM   |
 
 ---
 
@@ -785,7 +819,7 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
    - Services: 40+ modules with single responsibilities
    - Routes: 17 route modules, each focused on one feature
    - Models: Workflow, database schemas in `models/`
-   
+
    **Metric:** Average file size ~200-300 lines (healthy, not too large)
 
 2. **Consistent Naming Conventions**
@@ -793,24 +827,26 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
    - Routes: `*_routes.py` (content_routes, cms_routes)
    - Models: `*_schema.py` or `*_model.py`
    - Variables: snake_case throughout
-   
+
    **Metric:** 100% adherence to conventions observed
 
 3. **Type Hints Throughout (PEP 484 Compliance)**
+
    ```python
    # Example from database_service.py
    async def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
        """Get user by email"""
    ```
-   
+
    **Metric:** Estimated 95%+ type hint coverage
 
 4. **Comprehensive Logging**
    - Centralized logger configuration
    - Structured logging with contextual information
    - Different log levels: DEBUG, INFO, WARNING, ERROR
-   
+
    **Example:**
+
    ```python
    logger.info(f"   Orchestrator initialized successfully")
    logger.warning(f"   ⚠️ Database health check failed")
@@ -825,12 +861,13 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
    - Module docstrings explain purpose
    - Function docstrings document parameters and returns
    - Inline comments for complex logic
-   
+
    **Example:**
+
    ```python
    """
    PostgreSQL Database Service using asyncpg (async driver, no SQLAlchemy)
-   
+
    Replaces Google Cloud Firestore with asyncpg directly.
    ...
    """
@@ -849,16 +886,17 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
    - `firestore_client = None` placeholder (Google Cloud legacy)
    - Import references to removed modules (`database.py`)
    - Commented-out code in routes
-   
+
    **Impact:** Code smell, maintenance confusion
    **Lines Affected:** Estimated 50-100 lines
 
 2. **Mixed Sync/Async in CMS Routes (Inconsistency)**
+
    ```python
    # routes/cms_routes.py uses mix of patterns
    # Some endpoints async, some potentially blocking
    ```
-   
+
    **Risk:** MEDIUM - Inconsistent concurrency model
    **Impact:** Potential event loop blocking
 
@@ -866,35 +904,36 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
    - 700 lines of initialization code
    - Better approach: Extract to initialization module
    - Makes testing difficult
-   
+
    **Impact:** LOW-MEDIUM - Maintainability pain
 
 4. **Error Handling Inconsistency (Reliability)**
    - Some routes: `except Exception as e: raise HTTPException(...)`
    - Some routes: `except HTTPException: pass`
    - No consistent error logging pattern
-   
+
    **Impact:** MEDIUM - Debugging difficulties
 
 5. **Magic Numbers Without Constants (Maintainability)**
+
    ```python
    # services/task_executor.py:70
    await asyncio.sleep(5)  # Why 5? Not documented
-   
+
    # services/database_service.py:110
    min_size=10, max_size=20  # No constants for tuning
-   
+
    # routes/content_routes.py
    target_length: int = Field(1500, ge=200, le=5000)  # Hardcoded limits
    ```
-   
+
    **Impact:** MEDIUM - Configuration knowledge lost
 
 6. **Complex Methods Without Decomposition**
    - `database_service.py`: 952 lines total (~50 methods)
    - `orchestrator_logic.py`: 724 lines (~20 methods)
    - Methods average 40-50 lines (some >100)
-   
+
    **Impact:** LOW-MEDIUM - Hard to test, understand
    **Cyclomatic Complexity:** Some methods likely 10+
 
@@ -902,14 +941,14 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
    - LLM integration chain undocumented
    - Model routing fallback logic not explained
    - Critique loop algorithm not commented
-   
+
    **Impact:** MEDIUM - Onboarding difficulty
 
 8. **Test Code Not Up to Production Standards (Test Quality)**
    - Mock implementations inline in conftest.py
    - No separation of test utilities
    - Fixtures could be more composable
-   
+
    **Impact:** LOW - Tests hard to maintain
 
 #### 🔵 Low-Impact Code Quality Issues
@@ -926,27 +965,27 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
 
 ### Code Quality Metrics
 
-| Metric | Status | Target | Gap |
-|--------|--------|--------|-----|
-| Type Hint Coverage | ~95% | 100% | -5% |
-| Docstring Coverage | ~80% | 100% | -20% |
-| Avg Method Length | 45 lines | <30 lines | +15 |
-| Dead Code Lines | ~100 | 0 | -100 |
-| Constants vs Magic Numbers | 60% | 95% | -35% |
-| Test Coverage | Unknown | >80% | Unknown |
+| Metric                     | Status   | Target    | Gap     |
+| -------------------------- | -------- | --------- | ------- |
+| Type Hint Coverage         | ~95%     | 100%      | -5%     |
+| Docstring Coverage         | ~80%     | 100%      | -20%    |
+| Avg Method Length          | 45 lines | <30 lines | +15     |
+| Dead Code Lines            | ~100     | 0         | -100    |
+| Constants vs Magic Numbers | 60%      | 95%       | -35%    |
+| Test Coverage              | Unknown  | >80%      | Unknown |
 
 ### Recommendations
 
-| Priority | Action | Effort | Impact |
-|----------|--------|--------|--------|
-| 🟡 MEDIUM | Remove Google Cloud legacy code | 3 hours | LOW |
+| Priority  | Action                                    | Effort  | Impact |
+| --------- | ----------------------------------------- | ------- | ------ |
+| 🟡 MEDIUM | Remove Google Cloud legacy code           | 3 hours | LOW    |
 | 🟡 MEDIUM | Extract initialization to separate module | 4 hours | MEDIUM |
-| 🟡 MEDIUM | Standardize error handling patterns | 4 hours | MEDIUM |
-| 🟡 MEDIUM | Extract magic numbers to constants | 3 hours | MEDIUM |
-| 🟡 MEDIUM | Decompose large methods | 6 hours | MEDIUM |
-| 🔵 LOW | Expand docstrings on complex modules | 4 hours | LOW |
-| 🔵 LOW | Generate OpenAPI/Swagger documentation | 2 hours | LOW |
-| 🔵 LOW | Refactor test utilities | 3 hours | LOW |
+| 🟡 MEDIUM | Standardize error handling patterns       | 4 hours | MEDIUM |
+| 🟡 MEDIUM | Extract magic numbers to constants        | 3 hours | MEDIUM |
+| 🟡 MEDIUM | Decompose large methods                   | 6 hours | MEDIUM |
+| 🔵 LOW    | Expand docstrings on complex modules      | 4 hours | LOW    |
+| 🔵 LOW    | Generate OpenAPI/Swagger documentation    | 2 hours | LOW    |
+| 🔵 LOW    | Refactor test utilities                   | 3 hours | LOW    |
 
 ---
 
@@ -996,7 +1035,7 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
    - No user adoption metrics
    - No cost tracking per user/workflow
    - No content quality metrics tracked
-   
+
    **Impact:** HIGH - Can't measure business success
    **Missing Metrics:**
    - Content generation success rate (%)
@@ -1009,8 +1048,9 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
    - Legacy endpoints mixed with new ones
    - Deprecation timeline unknown
    - Breaking changes could fail clients
-   
+
    **Example:**
+
    ```
    /api/content/create (legacy?)
    /api/content/tasks (new)
@@ -1023,21 +1063,21 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
    - No multi-tenancy (single org only)
    - No user quotas/limits
    - No API key authentication for integrations
-   
+
    **Impact:** MEDIUM - Can't support team collaboration or API customers
 
 4. **Workflow State Not Resumable (User Experience Gap)**
    - Long-running workflows can't be paused/resumed
    - No workflow versioning
    - No workflow templates
-   
+
    **Impact:** MEDIUM - Users can't manage complex workflows
 
 5. **Content Pipeline Opaque to Users (Transparency Gap)**
    - No real-time progress updates (WebSocket missing?)
    - No way to see what agent is working
    - No cost estimation before starting task
-   
+
    **Impact:** MEDIUM - Poor user experience for long tasks
 
 #### 🟡 Medium-Impact Product Issues
@@ -1046,21 +1086,21 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
    - Database schema supports multiple users
    - But no org/team/project isolation
    - No rate limiting per tenant
-   
+
    **Impact:** MEDIUM - Can't offer SaaS version
 
 7. **Unknown SLA for Model Providers**
    - Fallback chain (Ollama→HF→Google→Anthropic→OpenAI) undocumented
    - No info on availability expectations
    - Cost implications of fallback not shown
-   
+
    **Impact:** MEDIUM - Product behavior unpredictable
 
 8. **No Feedback Loop for Quality Improvement**
    - Generated content not rated by users
    - No mechanism to retrain on user feedback
    - Critique loop optimizations not tracked
-   
+
    **Impact:** MEDIUM - Can't improve over time
 
 9. **Compliance & Privacy Unclear (Risk)**
@@ -1068,39 +1108,39 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
    - Data retention policy unknown
    - No data deletion mechanism visible
    - No audit logging of data access
-   
+
    **Impact:** MEDIUM-HIGH - Legal/regulatory risk
 
 10. **Limited Customization (Product Limitation)**
     - Fixed content styles/tones
     - No custom prompt templates
     - No workflow customization
-    
+
     **Impact:** LOW-MEDIUM - Limits market reach
 
 ### Business Metrics
 
-| Metric | Status | Implication |
-|--------|--------|-------------|
-| User Adoption | Unknown | Need tracking |
-| Cost per Request | Not tracked | Can't optimize |
-| Content Quality Score | Generated, not tracked | Can't measure ROI |
-| API Uptime SLA | Unknown | Can't commit to customers |
-| Compliance Status | Unknown | Legal risk |
-| Multi-tenancy | Partial | Can't be SaaS |
+| Metric                | Status                 | Implication               |
+| --------------------- | ---------------------- | ------------------------- |
+| User Adoption         | Unknown                | Need tracking             |
+| Cost per Request      | Not tracked            | Can't optimize            |
+| Content Quality Score | Generated, not tracked | Can't measure ROI         |
+| API Uptime SLA        | Unknown                | Can't commit to customers |
+| Compliance Status     | Unknown                | Legal risk                |
+| Multi-tenancy         | Partial                | Can't be SaaS             |
 
 ### Recommendations
 
-| Priority | Action | Effort | Impact | Business Value |
-|----------|--------|--------|--------|-----------------|
-| 🔴 CRITICAL | Define SLOs and metrics dashboard | 8 hours | CRITICAL | HIGH |
-| 🔴 CRITICAL | Implement API versioning (v1, v2) | 4 hours | CRITICAL | HIGH |
-| 🟡 HIGH | Add WebSocket for real-time progress | 6 hours | HIGH | MEDIUM |
-| 🟡 HIGH | Document SLA/fallback behavior | 2 hours | MEDIUM | MEDIUM |
-| 🟡 HIGH | Add GDPR/privacy documentation | 4 hours | HIGH | CRITICAL |
-| 🟡 MEDIUM | Implement workflow templates | 8 hours | MEDIUM | MEDIUM |
-| 🟡 MEDIUM | Add user feedback mechanism | 6 hours | MEDIUM | MEDIUM |
-| 🔵 LOW | Implement API key authentication | 4 hours | MEDIUM | LOW |
+| Priority    | Action                               | Effort  | Impact   | Business Value |
+| ----------- | ------------------------------------ | ------- | -------- | -------------- |
+| 🔴 CRITICAL | Define SLOs and metrics dashboard    | 8 hours | CRITICAL | HIGH           |
+| 🔴 CRITICAL | Implement API versioning (v1, v2)    | 4 hours | CRITICAL | HIGH           |
+| 🟡 HIGH     | Add WebSocket for real-time progress | 6 hours | HIGH     | MEDIUM         |
+| 🟡 HIGH     | Document SLA/fallback behavior       | 2 hours | MEDIUM   | MEDIUM         |
+| 🟡 HIGH     | Add GDPR/privacy documentation       | 4 hours | HIGH     | CRITICAL       |
+| 🟡 MEDIUM   | Implement workflow templates         | 8 hours | MEDIUM   | MEDIUM         |
+| 🟡 MEDIUM   | Add user feedback mechanism          | 6 hours | MEDIUM   | MEDIUM         |
+| 🔵 LOW      | Implement API key authentication     | 4 hours | MEDIUM   | LOW            |
 
 ---
 
@@ -1108,41 +1148,42 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
 
 ### High-Impact Risks (Act Immediately)
 
-| Risk | Severity | Likelihood | Effort to Fix | Impact |
-|------|----------|-----------|----------------|--------|
-| CORS misconfiguration in production | CRITICAL | HIGH | 1 hour | Security breach |
-| Rate limiting absent (cost explosion) | CRITICAL | MEDIUM | 2 hours | Financial loss |
-| No caching (performance degradation) | HIGH | HIGH | 4 hours | User experience |
-| Startup timeout (deployment failures) | HIGH | MEDIUM | 2 hours | Availability |
-| Test coverage unknown (quality blind) | HIGH | MEDIUM | 2 hours | Quality unknown |
-| Secrets in logs (credential exposure) | HIGH | MEDIUM | 2 hours | Security breach |
-| Task polling inefficiency (waste) | MEDIUM | HIGH | 6 hours | Resource waste |
-| HTML sanitization missing (XSS) | MEDIUM | MEDIUM | 3 hours | Security breach |
+| Risk                                  | Severity | Likelihood | Effort to Fix | Impact          |
+| ------------------------------------- | -------- | ---------- | ------------- | --------------- |
+| CORS misconfiguration in production   | CRITICAL | HIGH       | 1 hour        | Security breach |
+| Rate limiting absent (cost explosion) | CRITICAL | MEDIUM     | 2 hours       | Financial loss  |
+| No caching (performance degradation)  | HIGH     | HIGH       | 4 hours       | User experience |
+| Startup timeout (deployment failures) | HIGH     | MEDIUM     | 2 hours       | Availability    |
+| Test coverage unknown (quality blind) | HIGH     | MEDIUM     | 2 hours       | Quality unknown |
+| Secrets in logs (credential exposure) | HIGH     | MEDIUM     | 2 hours       | Security breach |
+| Task polling inefficiency (waste)     | MEDIUM   | HIGH       | 6 hours       | Resource waste  |
+| HTML sanitization missing (XSS)       | MEDIUM   | MEDIUM     | 3 hours       | Security breach |
 
 ### Medium-Impact Risks (Plan for Next Sprint)
 
-| Risk | Severity | Likelihood | Effort to Fix | Impact |
-|------|----------|-----------|----------------|--------|
-| Model routing undocumented | MEDIUM | MEDIUM | 2 hours | Maintainability |
-| API versioning strategy missing | MEDIUM | HIGH | 4 hours | Product stability |
-| Webhook auth not verified | MEDIUM | HIGH | 2 hours | Security |
-| No batch task optimization | MEDIUM | HIGH | 4 hours | Throughput |
-| Health check not granular | MEDIUM | MEDIUM | 3 hours | Observability |
+| Risk                            | Severity | Likelihood | Effort to Fix | Impact            |
+| ------------------------------- | -------- | ---------- | ------------- | ----------------- |
+| Model routing undocumented      | MEDIUM   | MEDIUM     | 2 hours       | Maintainability   |
+| API versioning strategy missing | MEDIUM   | HIGH       | 4 hours       | Product stability |
+| Webhook auth not verified       | MEDIUM   | HIGH       | 2 hours       | Security          |
+| No batch task optimization      | MEDIUM   | HIGH       | 4 hours       | Throughput        |
+| Health check not granular       | MEDIUM   | MEDIUM     | 3 hours       | Observability     |
 
 ### Low-Impact Risks (Backlog)
 
-| Risk | Severity | Likelihood | Effort to Fix | Impact |
-|------|----------|-----------|----------------|--------|
-| Dead code (Google Cloud refs) | LOW | HIGH | 3 hours | Maintainability |
-| Large methods need decomposition | LOW | MEDIUM | 6 hours | Maintainability |
-| Missing docstrings | LOW | MEDIUM | 4 hours | Onboarding |
-| No backup documentation | LOW | MEDIUM | 2 hours | Disaster recovery |
+| Risk                             | Severity | Likelihood | Effort to Fix | Impact            |
+| -------------------------------- | -------- | ---------- | ------------- | ----------------- |
+| Dead code (Google Cloud refs)    | LOW      | HIGH       | 3 hours       | Maintainability   |
+| Large methods need decomposition | LOW      | MEDIUM     | 6 hours       | Maintainability   |
+| Missing docstrings               | LOW      | MEDIUM     | 4 hours       | Onboarding        |
+| No backup documentation          | LOW      | MEDIUM     | 2 hours       | Disaster recovery |
 
 ---
 
 ## 🎯 PRIORITIZED ACTION PLAN
 
 ### Phase 1: Critical Security & Stability (Week 1-2)
+
 **Effort:** ~30 hours | **Risk Reduction:** 60% | **Impact:** CRITICAL
 
 1. **Fix CORS Configuration** (1 hour)
@@ -1180,6 +1221,7 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
 ---
 
 ### Phase 2: Performance & Observability (Week 3-4)
+
 **Effort:** ~25 hours | **Risk Reduction:** 40% | **Impact:** HIGH
 
 1. **Add Redis Caching Layer** (4 hours)
@@ -1212,6 +1254,7 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
 ---
 
 ### Phase 3: Feature Completeness & Scalability (Week 5-6)
+
 **Effort:** ~28 hours | **Risk Reduction:** 30% | **Impact:** MEDIUM-HIGH
 
 1. **API Versioning Strategy** (4 hours)
@@ -1244,6 +1287,7 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
 ---
 
 ### Phase 4: Code Quality & Documentation (Ongoing)
+
 **Effort:** ~20 hours | **Risk Reduction:** 20% | **Impact:** MEDIUM
 
 1. **Remove Dead Code** (3 hours)
@@ -1275,6 +1319,7 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
 **Implement These Immediately for High ROI:**
 
 ### 1. Add CORS Configuration from Environment (1 hour)
+
 ```python
 # main.py - Replace hardcoded origins
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001").split(",")
@@ -1291,6 +1336,7 @@ app.add_middleware(
 ```
 
 ### 2. Add GZIP Compression Middleware (30 minutes)
+
 ```python
 # main.py - Add after CORS
 from fastapi.middleware.gzip import GZIPMiddleware
@@ -1298,6 +1344,7 @@ app.add_middleware(GZIPMiddleware, minimum_size=1000)
 ```
 
 ### 3. Add Rate Limiting (2 hours)
+
 ```bash
 pip install slowapi
 ```
@@ -1318,6 +1365,7 @@ async def create_task(request: Request, ...):
 ```
 
 ### 4. Add Environment Variable Validation (1 hour)
+
 ```python
 # services/config.py (new file)
 import os
@@ -1340,6 +1388,7 @@ async def lifespan(app: FastAPI):
 ```
 
 ### 5. Add Coverage Badge to README (30 minutes)
+
 ```markdown
 # Glad Labs AI Co-Founder
 
@@ -1397,6 +1446,7 @@ Alerts → PagerDuty or Opsgenie
 ## 📚 Dependencies Analysis
 
 ### Critical Dependencies
+
 - `fastapi>=0.104.0` - Web framework ✅
 - `asyncpg>=0.29.0` - PostgreSQL driver ✅
 - `openai>=1.30.0` - LLM access ✅
@@ -1404,19 +1454,23 @@ Alerts → PagerDuty or Opsgenie
 - `anthropic>=0.18.0` - Claude API ✅
 
 ### Security Dependencies
+
 - `cryptography>=42.0.0` - Encryption ✅
 - `PyJWT>=2.8.0` - JWT auth ✅
 - Missing: `bleach` (HTML sanitization) ❌
 - Missing: `rate-limit` library ❌
 
 ### Observability Dependencies
+
 - `structlog>=23.2.0` - Structured logging ✅
 - `opentelemetry-*` - Tracing ✅
 - Missing: `prometheus-client` (metrics) ❌
 - Missing: `python-json-logger` (JSON logging) ❌
 
 ### Recommendation
+
 **Add to requirements.txt:**
+
 ```
 bleach>=6.0.0              # HTML sanitization
 slowapi>=0.1.9             # Rate limiting
@@ -1497,7 +1551,7 @@ Week 7+: Code Quality & Documentation (20+ hours)
 ⚠️ **Security gaps** in CORS, rate limiting, and HTML sanitization requiring immediate attention  
 ⚠️ **Performance opportunities** through caching and optimized polling  
 ⚠️ **Testing blind spots** with unknown coverage and missing E2E tests  
-⚠️ **Operational readiness** concerns with verbose startup and missing observability  
+⚠️ **Operational readiness** concerns with verbose startup and missing observability
 
 ### Recommended Next Steps
 
@@ -1520,4 +1574,3 @@ Week 7+: Code Quality & Documentation (20+ hours)
 **Analysis Duration:** 2 hours  
 **Code Reviewed:** 97 Python files, 23 test files, 40+ services  
 **Confidence Level:** HIGH (comprehensive codebase analysis)
-

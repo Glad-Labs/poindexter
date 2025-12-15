@@ -7,26 +7,26 @@
 
 ## 📊 ENDPOINT SUMMARY
 
-| Endpoint Type | Route | Status | Authentication |
-|---|---|---|---|
-| **Authentication** | `/api/auth/*` | ✅ Active | JWT |
-| **Task Management** | `/api/tasks/*` | ✅ Active | JWT |
-| **Subtasks** | `/api/subtasks/*` | ✅ Active | JWT |
-| **Bulk Operations** | `/api/tasks/bulk` | ✅ Active | JWT |
-| **Content** | `/api/content/*` | ✅ Active | JWT |
-| **CMS** | `/api/cms/*` | ✅ Active | JWT |
-| **Models/AI** | `/api/models/*` | ✅ Active | Optional |
-| **Chat** | `/api/chat` | ✅ Active | Optional |
-| **Ollama Integration** | `/api/ollama/*` | ✅ Active | Optional |
-| **Settings** | `/api/settings/*` | ✅ Active | JWT |
-| **Command Queue** | `/api/command-queue/*` | ✅ Active | JWT |
-| **Webhooks** | `/api/webhooks/*` | ✅ Active | Optional |
-| **Social Media** | `/api/social/*` | ✅ Active | JWT |
-| **Metrics** | `/api/metrics/*` | ✅ Active | JWT |
-| **Agents** | `/api/agents/*` | ✅ Active | JWT |
-| **Orchestrator** | `/api/orchestrator/*` | ✅ Active | JWT |
-| **Workflow History** | `/api/workflow-history/*` | ⚠️ Optional | JWT |
-| **Training** | `/api/training/*` | ⚠️ Phase 6 | JWT |
+| Endpoint Type          | Route                     | Status      | Authentication |
+| ---------------------- | ------------------------- | ----------- | -------------- |
+| **Authentication**     | `/api/auth/*`             | ✅ Active   | JWT            |
+| **Task Management**    | `/api/tasks/*`            | ✅ Active   | JWT            |
+| **Subtasks**           | `/api/subtasks/*`         | ✅ Active   | JWT            |
+| **Bulk Operations**    | `/api/tasks/bulk`         | ✅ Active   | JWT            |
+| **Content**            | `/api/content/*`          | ✅ Active   | JWT            |
+| **CMS**                | `/api/cms/*`              | ✅ Active   | JWT            |
+| **Models/AI**          | `/api/models/*`           | ✅ Active   | Optional       |
+| **Chat**               | `/api/chat`               | ✅ Active   | Optional       |
+| **Ollama Integration** | `/api/ollama/*`           | ✅ Active   | Optional       |
+| **Settings**           | `/api/settings/*`         | ✅ Active   | JWT            |
+| **Command Queue**      | `/api/command-queue/*`    | ✅ Active   | JWT            |
+| **Webhooks**           | `/api/webhooks/*`         | ✅ Active   | Optional       |
+| **Social Media**       | `/api/social/*`           | ✅ Active   | JWT            |
+| **Metrics**            | `/api/metrics/*`          | ✅ Active   | JWT            |
+| **Agents**             | `/api/agents/*`           | ✅ Active   | JWT            |
+| **Orchestrator**       | `/api/orchestrator/*`     | ✅ Active   | JWT            |
+| **Workflow History**   | `/api/workflow-history/*` | ⚠️ Optional | JWT            |
+| **Training**           | `/api/training/*`         | ⚠️ Phase 6  | JWT            |
 
 ---
 
@@ -37,6 +37,7 @@
 **File:** `routes/chat_routes.py`
 
 #### POST /api/chat
+
 - **Purpose:** Send natural language message and get AI response
 - **Authentication:** Optional (but recommended)
 - **Request Body:**
@@ -63,11 +64,13 @@
 - **Status:** ✅ **FULLY FUNCTIONAL** - Ready to use immediately
 
 #### GET /api/chat/history/{conversation_id}
+
 - **Purpose:** Retrieve full conversation history
 - **Response:** List of messages with timestamps
 - **Status:** ✅ Functional
 
 #### DELETE /api/chat/history/{conversation_id}
+
 - **Purpose:** Clear conversation history
 - **Status:** ✅ Functional
 
@@ -78,6 +81,7 @@
 **File:** `routes/bulk_task_routes.py`
 
 #### POST /api/tasks/bulk
+
 - **Purpose:** Perform bulk actions on multiple tasks
 - **Authentication:** Required (JWT)
 - **Request Body:**
@@ -107,6 +111,7 @@
 **File:** `routes/metrics_routes.py`
 
 #### GET /api/metrics/usage
+
 - **Purpose:** Get comprehensive usage metrics
 - **Authentication:** Required (JWT)
 - **Query Parameters:** `period` (last_1h, last_24h, last_7d, all)
@@ -114,6 +119,7 @@
 - **Status:** ✅ Functional
 
 #### GET /api/metrics/costs
+
 - **Purpose:** Get cost metrics (backward compatible endpoint)
 - **Authentication:** Required (JWT)
 - **Response:**
@@ -130,11 +136,13 @@
 - **Status:** ✅ **FULLY FUNCTIONAL** - CostMetricsDashboard.jsx can use this
 
 #### GET /api/metrics/summary
+
 - **Purpose:** Quick summary of key metrics
 - **Authentication:** Required (JWT)
 - **Status:** ✅ Functional
 
 #### GET /api/metrics/health
+
 - **Purpose:** System health metrics (uptime, database, cache)
 - **Authentication:** Optional
 - **Status:** ✅ Functional
@@ -146,28 +154,34 @@
 **File:** `routes/orchestrator_routes.py`
 
 #### GET /api/orchestrator/status
+
 - **Purpose:** Get overall orchestrator status
 - **Authentication:** Required (JWT)
 - **Response:** Active agents, pending tasks, health status
 - **Status:** ✅ Functional
 
 #### GET /api/orchestrator/active-agents
+
 - **Purpose:** List currently active agents
 - **Status:** ✅ Functional
 
 #### GET /api/orchestrator/task-queue
+
 - **Purpose:** Get pending task queue
 - **Status:** ✅ Functional
 
 #### POST /api/orchestrator/execute
+
 - **Purpose:** Execute task through orchestrator
 - **Status:** ✅ Functional
 
 #### GET /api/orchestrator/learning-patterns
+
 - **Purpose:** Get patterns learned from execution history
 - **Status:** ✅ Functional
 
 #### GET /api/orchestrator/business-metrics-analysis
+
 - **Purpose:** Analyze business metrics and trends
 - **Status:** ✅ Functional
 
@@ -178,25 +192,30 @@
 **File:** `routes/task_routes.py`
 
 #### GET /api/tasks
+
 - **Purpose:** List tasks with pagination
 - **Parameters:** `offset`, `limit`, `status`, `category`
 - **Status:** ✅ Working
 
 #### POST /api/tasks
+
 - **Purpose:** Create new task
 - **Authentication:** Required (JWT)
 - **Request Schema:** TaskCreateRequest
 - **Status:** ✅ Working
 
 #### GET /api/tasks/{id}
+
 - **Purpose:** Get single task details
 - **Status:** ✅ Working
 
 #### PATCH /api/tasks/{id}
+
 - **Purpose:** Update task
 - **Status:** ✅ Working
 
 #### DELETE /api/tasks/{id}
+
 - **Purpose:** Delete task
 - **Status:** ✅ Working
 
@@ -207,15 +226,18 @@
 **File:** `routes/content_routes.py`
 
 #### POST /api/content/tasks
+
 - **Purpose:** Create content generation task
 - **Specialized:** For blog posts, social media, etc.
 - **Status:** ✅ Working
 
 #### GET /api/content/tasks
+
 - **Purpose:** List content tasks
 - **Status:** ✅ Working
 
 #### GET /api/content/tasks/{id}
+
 - **Purpose:** Get content task details
 - **Status:** ✅ Working
 
@@ -226,18 +248,22 @@
 **File:** `routes/agents_routes.py`
 
 #### GET /api/agents
+
 - **Purpose:** List all available agents
 - **Status:** ✅ Functional
 
 #### GET /api/agents/{agent_id}
+
 - **Purpose:** Get specific agent details
 - **Status:** ✅ Functional
 
 #### GET /api/agents/{agent_id}/status
+
 - **Purpose:** Get agent execution status
 - **Status:** ✅ Functional
 
 #### POST /api/agents/{agent_id}/command
+
 - **Purpose:** Send command to agent
 - **Status:** ✅ Functional
 
@@ -265,38 +291,42 @@
 
 ## 🔄 ENDPOINT MIGRATION MAP
 
-| Old UI Endpoint | Status | Correct Endpoint | Component |
-|---|---|---|---|
-| `/api/chat` | ✅ EXISTS | `/api/chat` | LayoutWrapper.jsx |
-| `/api/execution/active` | ❌ REMOVED | `/api/orchestrator/active-agents` | ExecutionHub.jsx |
-| `/api/execution/queue` | ❌ REMOVED | `/api/orchestrator/task-queue` | ExecutionHub.jsx |
-| `/api/execution/history` | ❌ REMOVED | `/api/workflow-history/*` or task history | ExecutionHub.jsx |
-| `/api/metrics/costs` | ✅ EXISTS | `/api/metrics/costs` | CostMetricsDashboard.jsx |
-| `/api/tasks/bulk` | ✅ EXISTS | `/api/tasks/bulk` | TaskManagement.jsx |
+| Old UI Endpoint          | Status     | Correct Endpoint                          | Component                |
+| ------------------------ | ---------- | ----------------------------------------- | ------------------------ |
+| `/api/chat`              | ✅ EXISTS  | `/api/chat`                               | LayoutWrapper.jsx        |
+| `/api/execution/active`  | ❌ REMOVED | `/api/orchestrator/active-agents`         | ExecutionHub.jsx         |
+| `/api/execution/queue`   | ❌ REMOVED | `/api/orchestrator/task-queue`            | ExecutionHub.jsx         |
+| `/api/execution/history` | ❌ REMOVED | `/api/workflow-history/*` or task history | ExecutionHub.jsx         |
+| `/api/metrics/costs`     | ✅ EXISTS  | `/api/metrics/costs`                      | CostMetricsDashboard.jsx |
+| `/api/tasks/bulk`        | ✅ EXISTS  | `/api/tasks/bulk`                         | TaskManagement.jsx       |
 
 ---
 
 ## 📋 IMPLEMENTATION CHECKLIST
 
 ### For LayoutWrapper.jsx (Chat Feature)
+
 - ✅ Endpoint exists: `/api/chat`
 - ✅ No changes needed to endpoint
 - ✅ Add to cofounderAgentClient.js: `chatMessage()` method
 - ✅ Update component to use API client method
 
 ### For CostMetricsDashboard.jsx (Metrics)
+
 - ✅ Endpoint exists: `/api/metrics/costs`
 - ✅ No changes needed to endpoint
 - ✅ Add to cofounderAgentClient.js: `getCostMetrics()` method
 - ✅ Update component to use API client method
 
 ### For ExecutionHub.jsx (Execution Monitoring)
+
 - ⚠️ Endpoints REMOVED (may be Phase 6 feature)
 - ⚠️ Alternative endpoints exist in orchestrator
 - 🔲 Decision needed: Keep ExecutionHub with orchestrator endpoints, or disable?
 - 🔲 If keeping: Add wrapper methods in cofounderAgentClient.js
 
 ### For TaskManagement.jsx (Bulk Operations)
+
 - ✅ Endpoint exists: `/api/tasks/bulk`
 - ✅ No changes needed to endpoint
 - ✅ Current hardcoded fetch can work directly
@@ -309,8 +339,15 @@
 Add these methods to `cofounderAgentClient.js`:
 
 ### 1. Chat Method
+
 ```javascript
-export const chatMessage = async (message, model = 'ollama', conversationId = 'default', temperature = 0.7, maxTokens = 500) => {
+export const chatMessage = async (
+  message,
+  model = 'ollama',
+  conversationId = 'default',
+  temperature = 0.7,
+  maxTokens = 500
+) => {
   const response = await makeRequest('/chat', {
     method: 'POST',
     body: JSON.stringify({
@@ -326,6 +363,7 @@ export const chatMessage = async (message, model = 'ollama', conversationId = 'd
 ```
 
 ### 2. Cost Metrics Method
+
 ```javascript
 export const getCostMetrics = async () => {
   const response = await makeRequest('/metrics/costs', {
@@ -336,6 +374,7 @@ export const getCostMetrics = async () => {
 ```
 
 ### 3. Usage Metrics Method
+
 ```javascript
 export const getUsageMetrics = async (period = 'last_24h') => {
   const response = await makeRequest(`/metrics/usage?period=${period}`, {
@@ -346,6 +385,7 @@ export const getUsageMetrics = async (period = 'last_24h') => {
 ```
 
 ### 4. Orchestrator Methods
+
 ```javascript
 export const getOrchestratorStatus = async () => {
   const response = await makeRequest('/orchestrator/status', {
@@ -370,6 +410,7 @@ export const getTaskQueue = async () => {
 ```
 
 ### 5. Bulk Operations Method
+
 ```javascript
 export const bulkUpdateTasks = async (taskIds, action) => {
   const response = await makeRequest('/tasks/bulk', {
@@ -434,4 +475,3 @@ export const bulkUpdateTasks = async (taskIds, action) => {
 - **Orchestrator:** `src/cofounder_agent/routes/orchestrator_routes.py`
 - **Task Routes:** `src/cofounder_agent/routes/task_routes.py`
 - **API Client to Update:** `web/oversight-hub/src/services/cofounderAgentClient.js`
-

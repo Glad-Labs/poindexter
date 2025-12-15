@@ -8,24 +8,28 @@ All functionality has been merged into `/src/cofounder_agent/services/` with imp
 ## Migration Mapping
 
 ### ✅ PexelsClient → ImageService
+
 - **Legacy Path:** `src/agents/content_agent/services/pexels_client.py`
 - **New Path:** `src/cofounder_agent/services/image_service.py`
 - **Migration:** All Pexels functionality merged into unified ImageService with additional features
 - **Status:** FULLY CONSOLIDATED
 
-### ✅ ImageGenClient → ImageService  
+### ✅ ImageGenClient → ImageService
+
 - **Legacy Path:** `src/agents/content_agent/services/image_gen_client.py`
 - **New Path:** `src/cofounder_agent/services/image_service.py`
 - **Migration:** SDXL image generation now part of unified ImageService
 - **Status:** FULLY CONSOLIDATED
 
 ### ✅ ImageAgent → ImageService
+
 - **Legacy Path:** `src/agents/content_agent/agents/image_agent.py`
 - **New Path:** `src/cofounder_agent/services/image_service.py`
 - **Migration:** Orchestration logic integrated into unified ImageService
 - **Status:** FULLY CONSOLIDATED
 
 ### ✅ QAAgent → ContentQualityService
+
 - **Legacy Path:** `src/agents/content_agent/agents/qa_agent.py`
 - **New Path:** `src/cofounder_agent/services/content_quality_service.py`
 - **Migration:** Binary approval + LLM feedback merged with 7-criteria evaluation
@@ -33,30 +37,35 @@ All functionality has been merged into `/src/cofounder_agent/services/` with imp
 - **Status:** FULLY CONSOLIDATED
 
 ### ✅ QualityEvaluator → ContentQualityService
+
 - **Legacy Path:** `src/cofounder_agent/services/quality_evaluator.py` (temporary)
 - **New Path:** `src/cofounder_agent/services/content_quality_service.py`
 - **Migration:** Complete rewrite with improved architecture
 - **Status:** FULLY CONSOLIDATED
 
 ### ✅ UnifiedQualityOrchestrator → ContentQualityService
+
 - **Legacy Path:** `src/cofounder_agent/services/unified_quality_orchestrator.py` (temporary)
 - **New Path:** `src/cofounder_agent/services/content_quality_service.py`
 - **Migration:** Orchestration logic integrated into single service
 - **Status:** FULLY CONSOLIDATED
 
 ### ✅ LLMClient → ModelRouter (or removed)
+
 - **Legacy Path:** `src/agents/content_agent/services/llm_client.py`
 - **New Path:** `src/cofounder_agent/services/model_router.py` OR use directly
 - **Migration:** Use ModelRouter for LLM operations
 - **Status:** PARTIALLY MIGRATED (legacy still available for compatibility)
 
 ### ✅ Content Pipeline Orchestration
+
 - **Legacy Path:** `src/agents/content_agent/orchestrator.py`
 - **New Path:** `src/cofounder_agent/services/content_router_service.py`
 - **Migration:** 7-stage unified pipeline with PostgreSQL persistence
 - **Status:** FULLY CONSOLIDATED
 
 ### ✅ SEO Generation
+
 - **Legacy Path:** Embedded in `src/agents/content_agent/agents/creative_agent.py`
 - **New Path:** `src/cofounder_agent/services/seo_content_generator.py`
 - **Migration:** Moved to dedicated service for reusability
@@ -67,6 +76,7 @@ All functionality has been merged into `/src/cofounder_agent/services/` with imp
 All unified services use PostgreSQL (glad_labs_dev) for persistence:
 
 ### Tables
+
 - `content_tasks` - Track generation tasks
 - `quality_evaluations` - Store 7-criteria scores
 - `quality_improvement_logs` - Track refinements
@@ -77,6 +87,7 @@ All unified services use PostgreSQL (glad_labs_dev) for persistence:
 - `tags` - Content tagging
 
 ### Connection
+
 - Uses `DatabaseService` from `src/cofounder_agent/services/database_service.py`
 - Async/await pattern (asyncpg driver)
 - Connection pooling for performance
@@ -86,6 +97,7 @@ All unified services use PostgreSQL (glad_labs_dev) for persistence:
 If you have code depending on legacy implementations:
 
 ### 1. Replace Pexels Client
+
 ```python
 # OLD
 from src.agents.content_agent.services.pexels_client import PexelsClient
@@ -98,7 +110,8 @@ service = get_image_service()
 featured_image = await service.search_featured_image(topic=query, keywords=[])
 ```
 
-### 2. Replace QA Agent  
+### 2. Replace QA Agent
+
 ```python
 # OLD
 from src.agents.content_agent.agents.qa_agent import QAAgent
@@ -117,6 +130,7 @@ approved, feedback = result.to_approval_tuple()  # For compatibility
 ```
 
 ### 3. Replace Content Pipeline
+
 ```python
 # OLD
 from src.agents.content_agent.orchestrator import ContentOrchestrator
@@ -160,6 +174,7 @@ The legacy `src/agents/content_agent/` remains for reference but should not be u
 ## Questions?
 
 See consolidated documentation:
+
 - `CODEBASE_DUPLICATION_ANALYSIS.md` - Full analysis
 - `COMPLETE_IMPLEMENTATION_GUIDE.md` - Integration guide
 - `IMPLEMENTATION_COMPLETE_SUMMARY.md` - Architecture overview

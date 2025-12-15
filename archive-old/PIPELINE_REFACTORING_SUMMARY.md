@@ -3,11 +3,13 @@
 ## Problems Addressed
 
 ### 1. NoneType Error (FIXED)
+
 **Error:** `"object of type 'NoneType' has no len()"`
 **Root Cause:** Missing function argument when calling `get_seo_content_generator()`
 **Solution:** Pass `content_generator` to the function at line 475
 
 ### 2. Inefficient Pipeline Flow (REFACTORED)
+
 **Issue:** Quality assessment happening too late (Stage 5)
 **Problem:** Wastes resources processing low-quality content through image search and SEO generation
 **Solution:** Move QA to Stage 2B (immediately after content generation)
@@ -28,7 +30,8 @@ seo_generator = await get_seo_content_generator()  # ❌ Missing arg, wrong awai
 seo_generator = get_seo_content_generator(content_generator)  # ✅ Correct
 ```
 
-**Why:** 
+**Why:**
+
 - Function requires `ai_content_generator` parameter
 - `content_generator` available from Stage 2
 - Function is not async (no need for `await`)
@@ -36,6 +39,7 @@ seo_generator = get_seo_content_generator(content_generator)  # ✅ Correct
 ### Change 2: Refactored Pipeline Order
 
 #### Old Pipeline (7 Stages - Inefficient)
+
 ```
 1. Create content_task record
 2. Generate blog content
@@ -47,6 +51,7 @@ seo_generator = get_seo_content_generator(content_generator)  # ✅ Correct
 ```
 
 #### New Pipeline (6 Stages - Efficient)
+
 ```
 1. Create content_task record
 2. Generate blog content
@@ -94,6 +99,7 @@ logger.info(f"   Passing: {quality_result.passing} (threshold ≥7.0)\n")
 ### Change 3: Updated Stage Numbers
 
 All subsequent stages renumbered:
+
 - Old Stage 3 → New Stage 3 (no change)
 - Old Stage 4 → New Stage 4 (no change)
 - Old Stage 5 → Removed (moved to Stage 2B)
@@ -101,6 +107,7 @@ All subsequent stages renumbered:
 - Old Stage 7 → New Stage 6
 
 **Updates Made:**
+
 - Line 556: Post creation stage changed from `6_post_created` to `5_post_created`
 - Line 602: Training data stage changed from `7_training_data_captured` to `6_training_data_captured`
 
@@ -151,21 +158,25 @@ await database_service.create_orchestrator_training_data({
 ## Benefits
 
 ### Performance
+
 - ✅ Early quality validation prevents wasted processing
 - ✅ Fail-fast approach saves resources for low-quality content
 - ✅ Image search and SEO generation only run for valid content
 
 ### Reliability
+
 - ✅ Fixes NoneType error completely
 - ✅ Proper function arguments prevent initialization errors
 - ✅ Quality metrics available early in the process
 
 ### Maintainability
+
 - ✅ Simpler pipeline (6 stages instead of 7)
 - ✅ Cleaner logic flow
 - ✅ Quality assessment happens at logical point
 
 ### User Experience
+
 - ✅ Quality score available in task result immediately
 - ✅ No more "N/A" quality scores
 - ✅ Early feedback on content quality
@@ -211,9 +222,10 @@ await database_service.create_orchestrator_training_data({
 ## Git Commits
 
 1. **Commit a9ae88414** (latest)
+
    ```
    refactor: Move QA evaluation to immediately after content generation
-   
+
    - QA evaluation now runs as Stage 2B, immediately after content is generated
    - Allows early validation of content quality before image/SEO processing
    - Reduced pipeline from 7 to 6 stages
@@ -221,6 +233,7 @@ await database_service.create_orchestrator_training_data({
    ```
 
 2. **Commit 71530697d** (earlier)
+
    ```
    fix: Content generation pipeline TypeError - NoneType has no len()
    ```
@@ -234,14 +247,14 @@ await database_service.create_orchestrator_training_data({
 
 ## Impact Summary
 
-| Aspect | Before | After |
-|--------|--------|-------|
-| **Error** | NoneType: 'NoneType' has no len() | ✅ Fixed |
-| **Pipeline Stages** | 7 (inefficient) | 6 (optimized) |
-| **QA Timing** | Stage 5 (too late) | Stage 2B (immediately after content) |
-| **Quality Score** | Shows "N/A" | Shows numeric value immediately |
-| **Task Status** | Shows "Deleted" with error | Shows "completed" with results |
-| **Resource Usage** | Processes all content regardless of quality | Stops early for low-quality content |
+| Aspect              | Before                                      | After                                |
+| ------------------- | ------------------------------------------- | ------------------------------------ |
+| **Error**           | NoneType: 'NoneType' has no len()           | ✅ Fixed                             |
+| **Pipeline Stages** | 7 (inefficient)                             | 6 (optimized)                        |
+| **QA Timing**       | Stage 5 (too late)                          | Stage 2B (immediately after content) |
+| **Quality Score**   | Shows "N/A"                                 | Shows numeric value immediately      |
+| **Task Status**     | Shows "Deleted" with error                  | Shows "completed" with results       |
+| **Resource Usage**  | Processes all content regardless of quality | Stops early for low-quality content  |
 
 ---
 

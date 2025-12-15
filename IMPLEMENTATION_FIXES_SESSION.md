@@ -8,15 +8,18 @@
 ## ✅ COMPLETED FIXES (4/9)
 
 ### Fix 1: CreateTaskModal.jsx - Hardcoded URLs ✅
+
 **Location:** `web/oversight-hub/src/components/tasks/CreateTaskModal.jsx`
 
 **What was fixed:**
+
 - ❌ Before: Used hardcoded `fetch('http://localhost:8000/api/content/tasks', ...)` and `fetch('http://localhost:8000/api/tasks', ...)`
 - ✅ After: Uses API client `createTask()` with proper payload mapping
 - ✅ Added: Response validation `if (!result || !result.id) throw Error(...)`
 - ✅ Added: Import statement `import { createTask } from '../../services/cofounderAgentClient';`
 
 **Changes Made:**
+
 - Lines 1-3: Added import for `createTask`
 - Lines 207-305: Replaced all fetch logic with API client + validation
 - Simplified payload construction to use API client schema
@@ -27,13 +30,16 @@
 ---
 
 ### Fix 2: TaskQueueView.jsx - Unused Fetch ✅
+
 **Location:** `web/oversight-hub/src/components/tasks/TaskQueueView.jsx`
 
 **What was fixed:**
+
 - ❌ Before: Had unused `fetch('http://localhost:8000/api/tasks')` call that didn't use response
 - ✅ After: Removed dead code, added comment explaining tasks come from parent props
 
 **Changes Made:**
+
 - Lines 10-27: Removed entire unused useEffect with fetch call
 - Added comment: "Tasks are passed as props from parent, no fetch needed"
 - Kept polling state for UI controls
@@ -43,15 +49,18 @@
 ---
 
 ### Fix 3: BlogPostCreator.jsx - Hardcoded URLs ✅
+
 **Location:** `web/oversight-hub/src/components/tasks/BlogPostCreator.jsx`
 
 **What was fixed:**
+
 - ❌ Before: Used hardcoded `fetch('http://localhost:8000/api/content/tasks', ...)`
 - ✅ After: Uses API client `createTask()` with proper payload mapping
 - ✅ Added: Response validation
 - ✅ Added: Import statement
 
 **Changes Made:**
+
 - Lines 1-20: Added import for `createTask`
 - Lines 72-95: Replaced hardcoded fetch with API client call
 - Mapped form fields to API client schema
@@ -62,9 +71,11 @@
 ---
 
 ### Fix 4: Environment Configuration ✅
+
 **Location:** `web/oversight-hub/.env.local`
 
 **What was verified:**
+
 - ✅ `REACT_APP_API_URL=http://localhost:8000` is already configured
 - ✅ API client (`cofounderAgentClient.js`) already uses environment variable fallback
 - ✅ Default fallback: `const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000'`
@@ -76,9 +87,11 @@
 ## 🔧 IN PROGRESS / PENDING FIXES (5/9)
 
 ### Fix 2B: TaskManagement.jsx - Non-existent /api/tasks/bulk Endpoint
+
 **Location:** `web/oversight-hub/src/components/tasks/TaskManagement.jsx` (lines 257-263)
 
 **Issue:** Calls `/api/tasks/bulk` endpoint which doesn't exist in FastAPI backend
+
 ```jsx
 // ❌ BROKEN: This endpoint doesn't exist
 const response = await fetch('http://localhost:8000/api/tasks/bulk', {
@@ -92,6 +105,7 @@ const response = await fetch('http://localhost:8000/api/tasks/bulk', {
 ```
 
 **Options for Fix:**
+
 1. **Remove bulk feature** - Delete this button/functionality if not needed
 2. **Use individual PATCH calls** - Loop through tasks and update each one:
    ```javascript
@@ -106,19 +120,24 @@ const response = await fetch('http://localhost:8000/api/tasks/bulk', {
 ---
 
 ### Fix 5: LayoutWrapper.jsx - /api/chat Hardcoded URL
+
 **Location:** `web/oversight-hub/src/components/LayoutWrapper.jsx` (line 154)
 
 **Issue:** Uses hardcoded fetch to `/api/chat` endpoint
+
 ```jsx
 // ❌ BROKEN: Hardcoded URL
 const response = await fetch('http://localhost:8000/api/chat', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ /* ... */ }),
+  body: JSON.stringify({
+    /* ... */
+  }),
 });
 ```
 
 **Fix Strategy:**
+
 - Create `chatMessage()` method in `cofounderAgentClient.js`
 - Or check if this endpoint exists in FastAPI backend
 - Then replace with API client call
@@ -127,20 +146,29 @@ const response = await fetch('http://localhost:8000/api/chat', {
 
 ---
 
-### Fix 6: ExecutionHub.jsx - /api/execution/* Hardcoded URLs
+### Fix 6: ExecutionHub.jsx - /api/execution/\* Hardcoded URLs
+
 **Location:** `web/oversight-hub/src/components/pages/ExecutionHub.jsx` (lines 33-39)
 
 **Issue:** Three parallel hardcoded fetch calls to non-existent endpoints
+
 ```jsx
 // ❌ BROKEN: Hardcoded URLs, non-existent endpoints?
 const [activeRes, queueRes, historyRes] = await Promise.all([
-  fetch('http://localhost:8000/api/execution/active', { /* ... */ }),
-  fetch('http://localhost:8000/api/execution/queue', { /* ... */ }),
-  fetch('http://localhost:8000/api/execution/history', { /* ... */ }),
+  fetch('http://localhost:8000/api/execution/active', {
+    /* ... */
+  }),
+  fetch('http://localhost:8000/api/execution/queue', {
+    /* ... */
+  }),
+  fetch('http://localhost:8000/api/execution/history', {
+    /* ... */
+  }),
 ]);
 ```
 
 **Fix Strategy:**
+
 - Verify if these endpoints exist in FastAPI backend
 - If not: Create them or disable this component
 - If yes: Create wrapper methods in API client
@@ -150,15 +178,18 @@ const [activeRes, queueRes, historyRes] = await Promise.all([
 ---
 
 ### Fix 7: CostMetricsDashboard.jsx - /api/metrics/costs Hardcoded URL
+
 **Location:** `web/oversight-hub/src/components/CostMetricsDashboard.jsx` (line 45)
 
 **Issue:** Uses hardcoded fetch to `/api/metrics/costs`
+
 ```jsx
 // ❌ BROKEN: Hardcoded URL
 const response = await fetch('http://localhost:8000/api/metrics/costs');
 ```
 
 **Fix Strategy:**
+
 - Check if `/api/metrics/costs` endpoint exists in FastAPI backend
 - If exists: Create wrapper method in API client
 - If not: Use existing `/api/tasks/metrics/summary` endpoint
@@ -169,15 +200,15 @@ const response = await fetch('http://localhost:8000/api/metrics/costs');
 
 ## 📊 SUMMARY OF ALL HARDCODED URL LOCATIONS
 
-| File | Line(s) | Endpoint | Status |
-|------|---------|----------|--------|
-| CreateTaskModal.jsx | 207-305 | `/api/content/tasks`, `/api/tasks` | ✅ FIXED |
-| BlogPostCreator.jsx | 72-95 | `/api/content/tasks` | ✅ FIXED |
-| TaskQueueView.jsx | 10-27 | `/api/tasks` | ✅ REMOVED (unused) |
-| TaskManagement.jsx | 257 | `/api/tasks/bulk` | ⚠️ NON-EXISTENT - Needs fix |
-| LayoutWrapper.jsx | 154 | `/api/chat` | ❓ VERIFY exists |
-| ExecutionHub.jsx | 33-39 | `/api/execution/active`, `/api/execution/queue`, `/api/execution/history` | ❓ VERIFY exist |
-| CostMetricsDashboard.jsx | 45 | `/api/metrics/costs` | ❓ VERIFY exists |
+| File                     | Line(s) | Endpoint                                                                  | Status                      |
+| ------------------------ | ------- | ------------------------------------------------------------------------- | --------------------------- |
+| CreateTaskModal.jsx      | 207-305 | `/api/content/tasks`, `/api/tasks`                                        | ✅ FIXED                    |
+| BlogPostCreator.jsx      | 72-95   | `/api/content/tasks`                                                      | ✅ FIXED                    |
+| TaskQueueView.jsx        | 10-27   | `/api/tasks`                                                              | ✅ REMOVED (unused)         |
+| TaskManagement.jsx       | 257     | `/api/tasks/bulk`                                                         | ⚠️ NON-EXISTENT - Needs fix |
+| LayoutWrapper.jsx        | 154     | `/api/chat`                                                               | ❓ VERIFY exists            |
+| ExecutionHub.jsx         | 33-39   | `/api/execution/active`, `/api/execution/queue`, `/api/execution/history` | ❓ VERIFY exist             |
+| CostMetricsDashboard.jsx | 45      | `/api/metrics/costs`                                                      | ❓ VERIFY exists            |
 
 ---
 
@@ -186,6 +217,7 @@ const response = await fetch('http://localhost:8000/api/metrics/costs');
 **File:** `web/oversight-hub/src/services/cofounderAgentClient.js` (779 lines)
 
 **Current Methods Available:**
+
 - ✅ `getTasks(limit, offset)` - List tasks with pagination
 - ✅ `createTask(payload)` - Create new task
 - ✅ `getTask(id)` - Get single task details
@@ -194,11 +226,13 @@ const response = await fetch('http://localhost:8000/api/metrics/costs');
 - ✅ `updateTask(id, updates)` - Update task
 
 **Environment Configuration:**
+
 - ✅ Uses `process.env.REACT_APP_API_URL` with fallback to `http://localhost:8000`
 - ✅ JWT token automatically injected via `getAuthToken()`
 - ✅ Proper error handling and logging
 
 **Missing Methods Needed:**
+
 - ❌ `chatMessage(message, model, mode, agent)` - For LayoutWrapper
 - ❌ `getExecutionActive()` - For ExecutionHub
 - ❌ `getExecutionQueue()` - For ExecutionHub
@@ -210,18 +244,21 @@ const response = await fetch('http://localhost:8000/api/metrics/costs');
 ## 📋 NEXT STEPS
 
 ### Immediate (Required for Working UI):
+
 1. **Decide on /api/tasks/bulk fix** - Option 1: Remove, Option 2: Implement individually, Option 3: Create endpoint
 2. **Verify ExecutionHub endpoints exist** - Check FastAPI backend if `/api/execution/*` endpoints are implemented
 3. **Verify CostMetricsDashboard endpoint** - Check if `/api/metrics/costs` exists
 4. **Verify LayoutWrapper /api/chat** - Check if this endpoint is implemented
 
 ### Implementation (Once decisions made):
+
 1. Create missing methods in `cofounderAgentClient.js`
 2. Update remaining components to use API client
 3. Remove any remaining hardcoded URLs
 4. Test all components for proper API integration
 
 ### Testing Checklist:
+
 - [ ] Create task via CreateTaskModal → verify appears in TaskManagement list
 - [ ] Check Network tab → no 404 errors, all URLs use env variable
 - [ ] Verify JWT tokens automatically injected in Authorization headers
@@ -234,6 +271,7 @@ const response = await fetch('http://localhost:8000/api/metrics/costs');
 ## 📝 QUICK REFERENCE
 
 ### To Add New API Client Method:
+
 ```javascript
 // In cofounderAgentClient.js, add method like:
 export const myNewMethod = async (params) => {
@@ -250,6 +288,7 @@ const result = await myNewMethod(data);
 ```
 
 ### To Replace Hardcoded Fetch:
+
 1. Identify the endpoint and HTTP method
 2. Check if method exists in `cofounderAgentClient.js`
 3. If not, add it
@@ -287,4 +326,3 @@ Before completing remaining fixes, need answers to:
 4. **CostMetricsDashboard:**
    - Is `/api/metrics/costs` implemented?
    - Can we use existing `/api/tasks/metrics/summary` instead?
-

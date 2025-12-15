@@ -80,6 +80,7 @@
 ## 📝 Workflow Types & Pipelines
 
 ### 1. Content Generation
+
 ```
 REQUEST: "Write blog post about AI"
          ↓
@@ -92,6 +93,7 @@ RESULT:  Published blog post in CMS
 ```
 
 ### 2. Social Media
+
 ```
 REQUEST: "Create funny posts for Twitter"
          ↓
@@ -104,6 +106,7 @@ RESULT:  Social media posts distributed
 ```
 
 ### 3. Financial Analysis
+
 ```
 REQUEST: "Analyze Q1 2024 costs"
          ↓
@@ -116,6 +119,7 @@ RESULT:  Financial analysis report
 ```
 
 ### 4. Market Analysis
+
 ```
 REQUEST: "Research SaaS market trends"
          ↓
@@ -128,6 +132,7 @@ RESULT:  Market analysis with competitor insights
 ```
 
 ### 5. Compliance Check
+
 ```
 REQUEST: "Check if this content is compliant"
          ↓
@@ -140,6 +145,7 @@ RESULT:  Compliance report with recommendations
 ```
 
 ### 6. Performance Review
+
 ```
 REQUEST: "Show last 30 days metrics"
          ↓
@@ -156,6 +162,7 @@ RESULT:  Performance metrics and insights
 ## 🧠 Intent Recognition Examples
 
 ### Example 1: Simple Content Generation
+
 ```
 INPUT:  "Write a blog post"
         ↓
@@ -167,6 +174,7 @@ PARAMETERS: {topic: None, style: "professional", length: "2000 words"}
 ```
 
 ### Example 2: Detailed Content with Parameters
+
 ```
 INPUT:  "Write a professional blog post about AI trends for 2000 words"
         ↓
@@ -182,6 +190,7 @@ PARAMETERS: {
 ```
 
 ### Example 3: Social Media with Multiple Platforms
+
 ```
 INPUT:  "Create funny social posts on Twitter and LinkedIn about our launch"
         ↓
@@ -197,6 +206,7 @@ PARAMETERS: {
 ```
 
 ### Example 4: Ambiguous Request (Multi-Intent)
+
 ```
 INPUT:  "Research market and write analysis"
         ↓
@@ -212,6 +222,7 @@ INTENTS (sorted by confidence):
 ## 💻 Code Examples by Use Case
 
 ### Use Case 1: Content Creation from NL
+
 ```python
 router = UnifiedWorkflowRouter()
 
@@ -225,6 +236,7 @@ response = await router.execute_from_natural_language(
 ```
 
 ### Use Case 2: Social Media from NL
+
 ```python
 response = await router.execute_from_natural_language(
     "Create funny posts for Twitter and LinkedIn about our launch",
@@ -236,6 +248,7 @@ response = await router.execute_from_natural_language(
 ```
 
 ### Use Case 3: Structured Request
+
 ```python
 response = await router.execute_workflow(
     workflow_type="financial_analysis",
@@ -247,6 +260,7 @@ response = await router.execute_workflow(
 ```
 
 ### Use Case 4: Custom Pipeline
+
 ```python
 custom_pipeline = ["research", "creative", "publish"]  # Skip QA
 
@@ -265,6 +279,7 @@ response = await router.execute_workflow(
 ## 🔍 Parameter Extraction Examples
 
 ### Topic Extraction
+
 ```
 "Write about AI trends"        → topic: "AI trends"
 "Generate on blockchain"       → topic: "blockchain"
@@ -273,6 +288,7 @@ response = await router.execute_workflow(
 ```
 
 ### Style Extraction
+
 ```
 "Professional blog post"       → style: "professional"
 "Casual social post"           → style: "casual"
@@ -281,6 +297,7 @@ response = await router.execute_workflow(
 ```
 
 ### Length Extraction
+
 ```
 "2000 word article"            → length: "2000 words"
 "Short post"                   → length: "500 words"
@@ -288,6 +305,7 @@ response = await router.execute_workflow(
 ```
 
 ### Platform Extraction
+
 ```
 "Post to Twitter"              → platforms: ["twitter"]
 "Post on Twitter and LinkedIn" → platforms: ["twitter", "linkedin"]
@@ -295,6 +313,7 @@ response = await router.execute_workflow(
 ```
 
 ### Tone Extraction
+
 ```
 "Funny social post"            → tone: "funny"
 "Professional article"         → tone: "professional"
@@ -363,6 +382,7 @@ START: New Request
 ## 📋 Supported Natural Language Patterns
 
 ### Content Generation (19 patterns)
+
 ```
 "write [a] blog [post] about X"
 "generate [a] blog [post] [about/on] X"
@@ -373,6 +393,7 @@ START: New Request
 ```
 
 ### Social Media (18 patterns)
+
 ```
 "create social media post"
 "post to [platform]"
@@ -382,6 +403,7 @@ START: New Request
 ```
 
 ### Financial Analysis (15 patterns)
+
 ```
 "analyze [the] cost[s]"
 "check budget"

@@ -3,12 +3,14 @@
 ## Setup
 
 ### 1. Install Dependencies (if needed)
+
 ```bash
 cd web/oversight-hub
 npm install
 ```
 
 ### 2. Start Development Server
+
 ```bash
 npm start
 ```
@@ -16,7 +18,9 @@ npm start
 Server will start on `http://localhost:3000`
 
 ### 3. Verify API Endpoint
+
 The components expect the backend at: `http://localhost:8000`
+
 - Adjust in environment variables if different
 - Check network tab to see actual API calls
 
@@ -25,7 +29,9 @@ The components expect the backend at: `http://localhost:8000`
 ## Navigation to New Pages
 
 ### From OversightHub
+
 The main navigation bar now has:
+
 - **💬 Chat** (Position 2) - Access multi-model AI chat
 - **🤖 Agents** (Position 3) - Monitor specialized agents
 - **📈 Workflow** (Position 7) - View execution history
@@ -37,8 +43,10 @@ Click any navigation item to load that page.
 ## Testing Each Page
 
 ### Chat Page (💬)
+
 **URL:** Click "Chat" in navigation  
 **Test Checklist:**
+
 - [ ] Page loads with welcome message
 - [ ] Model dropdown shows available models
 - [ ] Can type and send messages
@@ -50,6 +58,7 @@ Click any navigation item to load that page.
 - [ ] Page is responsive on mobile
 
 **Expected Data Flow:**
+
 1. User types message
 2. Message appears in UI immediately
 3. Fetch request to `POST /api/chat` with JSON payload
@@ -59,8 +68,10 @@ Click any navigation item to load that page.
 ---
 
 ### Agents Page (🤖)
+
 **URL:** Click "Agents" in navigation  
 **Test Checklist:**
+
 - [ ] Page loads with 5 agents listed in sidebar
 - [ ] Clicking agent shows details on right
 - [ ] Agent status badge displays (running/idle/error)
@@ -73,6 +84,7 @@ Click any navigation item to load that page.
 - [ ] Page is responsive on mobile
 
 **Expected Agent List:**
+
 1. 📝 Content Agent - Content generation
 2. 📊 Financial Agent - Business metrics
 3. 🔍 Market Insight Agent - Market analysis
@@ -80,6 +92,7 @@ Click any navigation item to load that page.
 5. 🧠 Co-Founder Orchestrator - Multi-agent coordination
 
 **Expected Data Flow:**
+
 1. User clicks agent in sidebar
 2. Agent details panel populates
 3. Fetch requests to:
@@ -92,8 +105,10 @@ Click any navigation item to load that page.
 ---
 
 ### Workflow History Page (📈)
+
 **URL:** Click "Workflow" in navigation  
 **Test Checklist:**
+
 - [ ] Page loads with execution list
 - [ ] Each execution shows as expandable card
 - [ ] Status badges show (completed/running/failed)
@@ -110,6 +125,7 @@ Click any navigation item to load that page.
 - [ ] Page is responsive on mobile
 
 **Expected Execution Details When Expanded:**
+
 - Involved agents list
 - Task statistics (✅ completed, ❌ failed)
 - Start/end timestamps
@@ -119,6 +135,7 @@ Click any navigation item to load that page.
 - Action buttons (Retry, Export)
 
 **Expected Data Flow:**
+
 1. Page loads with execution history
 2. User searches/filters/sorts
 3. Click card to expand
@@ -130,7 +147,9 @@ Click any navigation item to load that page.
 ## Debugging
 
 ### Network Inspector (F12 → Network Tab)
+
 Look for these requests:
+
 - `POST http://localhost:8000/api/chat` - Chat messages
 - `GET http://localhost:8000/api/chat/history/{id}` - Chat history
 - `GET http://localhost:8000/api/agents/{id}/status` - Agent status
@@ -139,12 +158,14 @@ Look for these requests:
 - `GET http://localhost:8000/api/workflow/history` - Workflow history
 
 ### Console Errors (F12 → Console)
+
 - Check for missing imports
 - Check for undefined variables
 - Check for API response errors
 - Auth token issues (401 Unauthorized)
 
 ### React DevTools
+
 - Component tree shows: OversightHub → [ChatPage/AgentsPage/WorkflowHistoryPage]
 - Props passing verified
 - State updates tracked
@@ -154,11 +175,13 @@ Look for these requests:
 ## Mock Data Reference
 
 ### Chat
+
 - Models: OpenAI GPT-4, Claude Opus, Gemini Pro, Ollama Mistral
 - Conversation stored with ID "default"
 - Messages persist in component state
 
 ### Agents
+
 ```javascript
 predefinedAgents = [
   { id: 'content', name: '📝 Content Agent', ... },
@@ -170,6 +193,7 @@ predefinedAgents = [
 ```
 
 ### Workflow
+
 ```javascript
 mockExecutions = [
   {
@@ -179,7 +203,7 @@ mockExecutions = [
     // ... more fields
   },
   // 4 more execution examples
-]
+];
 ```
 
 ---
@@ -187,29 +211,38 @@ mockExecutions = [
 ## Common Issues & Solutions
 
 ### Issue: "Cannot find module ChatPage"
+
 **Solution:** Verify file exists at `src/components/pages/ChatPage.jsx`
 
 ### Issue: Pages don't load / blank screen
-**Solution:** 
+
+**Solution:**
+
 1. Check browser console (F12)
 2. Check React DevTools component tree
 3. Verify OversightHub.jsx has correct import
 4. Verify currentPage state is being set
 
 ### Issue: API calls fail with 404
+
 **Solution:**
+
 1. Backend service not running
 2. Wrong API endpoint (check REACT_APP_API_URL)
 3. Backend doesn't have `/api/chat`, `/api/agents`, `/api/workflow` endpoints
 
 ### Issue: Styling looks broken
+
 **Solution:**
+
 1. CSS file not loaded - check network tab
 2. CSS file path incorrect
 3. Browser cache - hard refresh (Ctrl+Shift+R)
 
 ### Issue: Auth errors (401)
+
 **Solution:**
+
 1. No auth token in localStorage
 2. Token expired - login again
 3. API requires `Authorization: Bearer {token}` header
@@ -230,16 +263,19 @@ mockExecutions = [
 ## Browser DevTools Tips
 
 ### For Chat Page
+
 - Set breakpoint in `handleSendMessage` to debug message flow
 - Watch `chatMessages` state in React DevTools
 - Check localStorage for saved model selection
 
 ### For Agents Page
+
 - Watch auto-refresh interval (should be 5000ms by default)
 - Check `selectedAgent` state
 - Monitor log entries as they accumulate
 
 ### For Workflow Page
+
 - Track filter state (`filterStatus`, `sortBy`, `sortOrder`)
 - Watch `expandedExecutionId` for expand/collapse logic
 - Monitor search query filtering
@@ -249,6 +285,7 @@ mockExecutions = [
 ## Features Checklist
 
 ### Chat ✅
+
 - [x] Multi-model selection
 - [x] Conversation mode
 - [x] Agent delegation mode
@@ -257,6 +294,7 @@ mockExecutions = [
 - [x] Responsive design
 
 ### Agents ✅
+
 - [x] Agent list sidebar
 - [x] Real-time status
 - [x] Command interface
@@ -265,6 +303,7 @@ mockExecutions = [
 - [x] Responsive design
 
 ### Workflow ✅
+
 - [x] Execution history
 - [x] Expandable details
 - [x] Search filtering
@@ -279,6 +318,7 @@ mockExecutions = [
 ## Next Testing Phase
 
 After manual testing passes:
+
 1. **Backend Integration:** Connect to real `/api/chat`, `/api/agents`, `/api/workflow` endpoints
 2. **Performance Testing:** Load test with many executions/logs
 3. **Accessibility Testing:** Keyboard navigation, screen readers
@@ -293,6 +333,7 @@ After manual testing passes:
 All endpoints require `Authorization: Bearer {token}` header (JWT auth).
 
 ### Chat Endpoints
+
 ```
 POST   /api/chat
        Payload: { message, model, conversation_id }
@@ -309,6 +350,7 @@ GET    /api/chat/models
 ```
 
 ### Agent Endpoints
+
 ```
 GET    /api/agents/{agent_id}/status
        Response: { status, tasks_completed, current_task, ... }
@@ -325,6 +367,7 @@ GET    /api/agents/{agent_id}/metrics
 ```
 
 ### Workflow Endpoints
+
 ```
 GET    /api/workflow/history?limit=50&offset=0
        Response: [{ id, workflowName, status, ... }, ...]

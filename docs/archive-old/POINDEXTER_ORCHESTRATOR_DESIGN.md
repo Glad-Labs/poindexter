@@ -31,6 +31,7 @@ Publication + Metrics + Cost Report
 ## 🏗️ Architecture Overview
 
 ### Layer 1: Request Processing
+
 ```
 POST /api/v2/orchestrate
 Body: {
@@ -50,6 +51,7 @@ Body: {
 ```
 
 ### Layer 2: Poindexter Reasoning Engine
+
 ```python
 Poindexter Agent (ReAct Loop)
 ├─ Observation: Parse command & constraints
@@ -62,6 +64,7 @@ Poindexter Agent (ReAct Loop)
 ```
 
 ### Layer 3: Existing Agents as Tools
+
 ```
 Poindexter calls:
 ├─ research_tool()     → ResearchAgent (semantic search, fact gathering)
@@ -74,6 +77,7 @@ Poindexter calls:
 ```
 
 ### Layer 4: MCP Server Discovery & Bridging
+
 ```
 MCP Registry
 ├─ web-search-server     → Google search, news, trends
@@ -87,6 +91,7 @@ Poindexter can discover & use any available MCP server as a tool
 ```
 
 ### Layer 5: Response & Tracking
+
 ```json
 {
   "status": "success",
@@ -120,7 +125,7 @@ Poindexter can discover & use any available MCP server as a tool
 class Poindexter:
     """
     Autonomous orchestrator using smolagents ReAct reasoning.
-    
+
     Key features:
     - ReAct (Reasoning + Acting) decision loops
     - Dynamic tool discovery (agents + MCP servers)
@@ -128,17 +133,17 @@ class Poindexter:
     - Self-critique loops
     - Multi-provider LLM support
     """
-    
+
     def __init__(self, model_router, agent_factory):
         self.model_router = model_router  # Your existing router (Ollama-first)
         self.agent_factory = agent_factory  # Creates specialized agents
         self.mcp_registry = MCPRegistry()   # Discovers & caches MCP servers
         self.tool_registry = ToolRegistry() # Maps tools & constraints
-    
+
     async def orchestrate(self, command: str, constraints: Dict) -> OrchestrationResult:
         """
         Main entry point. Takes raw command and executes autonomously.
-        
+
         Poindexter's reasoning:
         1. Parse command → Extract intent & requirements
         2. Discover tools → What can I use? (agents + MCP servers)
@@ -156,6 +161,7 @@ class Poindexter:
 **File:** `services/poindexter_tools.py`
 
 Each tool includes:
+
 - Clear description (for LLM reasoning)
 - Input validation
 - Constraint checking (budget, time, quality)
@@ -167,16 +173,16 @@ Each tool includes:
 def research_tool(topic: str, depth: str = "comprehensive") -> str:
     """
     Research a topic using web search, semantic analysis, and knowledge bases.
-    
+
     Constraints:
     - Cost: ~$0.01 per search
     - Time: ~5-10 seconds
     - Quality: Returns structured data with sources
-    
+
     Args:
         topic: What to research
         depth: "quick" (1 source), "comprehensive" (5+ sources)
-    
+
     Returns:
         JSON with research findings, sources, and confidence scores
     """
@@ -186,24 +192,24 @@ def research_tool(topic: str, depth: str = "comprehensive") -> str:
 def generate_content_tool(topic: str, research: str, style: str, length: int) -> str:
     """
     Generate original content using self-critique loop.
-    
+
     Self-critique process:
     1. Generate initial draft
     2. Critique for clarity, accuracy, engagement
     3. Refine based on feedback
     4. Final quality check
-    
+
     Constraints:
     - Cost: Depends on model (Ollama free, others $0.02-0.10)
     - Time: 30-120 seconds depending on length
     - Quality: Uses self-critique to ensure 90%+ quality
-    
+
     Args:
         topic: Blog post topic
         research: Research findings
         style: "professional", "casual", "technical"
         length: Word count target
-    
+
     Returns:
         Markdown content with quality score
     """
@@ -213,21 +219,21 @@ def generate_content_tool(topic: str, research: str, style: str, length: int) ->
 def critique_content_tool(content: str, criteria: List[str]) -> Dict[str, Any]:
     """
     Critique content against specific criteria.
-    
+
     Used by:
     - Self-critique loop in generate_content_tool
     - Quality validation before publishing
     - User feedback integration
-    
+
     Constraints:
     - Cost: ~$0.01 per critique
     - Time: ~10 seconds
     - Quality: Returns structured feedback
-    
+
     Args:
         content: Text to critique
         criteria: ["clarity", "accuracy", "engagement", "seo"]
-    
+
     Returns:
         {
             "overall_score": 0.93,
@@ -245,22 +251,22 @@ def critique_content_tool(content: str, criteria: List[str]) -> Dict[str, Any]:
 def publish_tool(content: str, metadata: Dict, platforms: List[str]) -> Dict[str, str]:
     """
     Publish content to configured platforms (Strapi, Twitter, LinkedIn, etc).
-    
+
     Dynamic MCP integration:
     - Poindexter discovers available publishing MCP servers
     - Selects appropriate platform based on content type
     - Publishes with platform-specific formatting
-    
+
     Constraints:
     - Cost: Platform-specific (usually free)
     - Time: 5-30 seconds per platform
     - Quality: Validates content before publishing
-    
+
     Args:
         content: Published content
         metadata: Title, excerpt, tags, etc.
         platforms: ["strapi", "twitter", "linkedin"]
-    
+
     Returns:
         {"strapi": "https://...", "twitter": "tweet_id", ...}
     """
@@ -270,16 +276,16 @@ def publish_tool(content: str, metadata: Dict, platforms: List[str]) -> Dict[str
 def discover_mcp_servers_tool(capability: str) -> List[Dict]:
     """
     Discover available MCP servers by capability.
-    
+
     Poindexter uses this to find on-the-fly tools:
     - "web_search" → Returns available search servers
     - "image_generation" → Returns image gen servers
     - "social_media" → Returns Twitter, LinkedIn, etc. servers
     - "analytics" → Returns metrics & tracking servers
-    
+
     Args:
         capability: What capability needed ("web_search", "image_gen", etc)
-    
+
     Returns:
         [
             {
@@ -298,14 +304,14 @@ def discover_mcp_servers_tool(capability: str) -> List[Dict]:
 def track_metrics_tool(task_id: str, metrics: Dict) -> Dict:
     """
     Track business metrics: costs, quality, performance.
-    
+
     Poindexter automatically tracks:
     - LLM calls (planning vs execution)
     - Tool usage patterns
     - Quality scores
     - Cost per task
     - Critique loop effectiveness
-    
+
     Args:
         task_id: Unique task identifier
         metrics: {
@@ -315,7 +321,7 @@ def track_metrics_tool(task_id: str, metrics: Dict) -> Dict:
             "total_cost": 2.34,
             "critique_loops": 2
         }
-    
+
     Returns:
         {"tracked": True, "metrics_id": "metrics_789"}
     """
@@ -330,7 +336,7 @@ def track_metrics_tool(task_id: str, metrics: Dict) -> Dict:
 class MCPRegistry:
     """
     Discovers, caches, and manages available MCP servers.
-    
+
     Responsibilities:
     - Query MCP registry/servers
     - Parse capabilities
@@ -338,11 +344,11 @@ class MCPRegistry:
     - Expose as Poindexter tools
     - Handle failures gracefully
     """
-    
+
     async def discover_servers(self, capability: str) -> List[MCPServer]:
         """
         Discover MCP servers that provide specific capability.
-        
+
         Example flow:
         1. Poindexter: "I need web_search capability"
         2. MCPRegistry: Query registry for web_search servers
@@ -351,11 +357,11 @@ class MCPRegistry:
         5. Execute: Use selected server
         """
         pass
-    
+
     async def get_server_capabilities(self, server_name: str) -> Dict:
         """Get detailed capabilities of specific server"""
         pass
-    
+
     async def call_mcp_server(self, server_name: str, method: str, params: Dict) -> Any:
         """Execute method on MCP server with error handling"""
         pass
@@ -369,7 +375,7 @@ class MCPRegistry:
 class ConstraintReasoner:
     """
     Helps Poindexter reason about constraints.
-    
+
     Constraints tracked:
     - Budget: Total cost limit for task
     - Quality threshold: Minimum acceptable quality
@@ -377,7 +383,7 @@ class ConstraintReasoner:
     - Model preferences: Ollama-first, then Claude, GPT, Gemini
     - Critique requirements: Must include self-critique loops
     """
-    
+
     async def can_execute_workflow(
         self,
         workflow: List[str],
@@ -385,25 +391,25 @@ class ConstraintReasoner:
     ) -> Tuple[bool, str]:
         """
         Check if proposed workflow meets constraints.
-        
+
         Example:
         Workflow: [research, generate, critique, refine, publish]
         Constraints: budget=$5, max_time=300s, quality>=0.90
-        
+
         Returns: (True, "Workflow OK: est. cost $2.34, quality 0.93")
         or
         Returns: (False, "Budget exceeded: est. cost $6.50 > $5.00")
         """
         pass
-    
+
     async def estimate_cost(self, workflow: List[str]) -> float:
         """Estimate total cost for workflow"""
         pass
-    
+
     async def estimate_time(self, workflow: List[str]) -> float:
         """Estimate execution time"""
         pass
-    
+
     async def check_quality_feasibility(self, target_quality: float) -> bool:
         """Can we achieve target quality with available tools?"""
         pass
@@ -417,7 +423,7 @@ class ConstraintReasoner:
 class SelfCritiqueManager:
     """
     Manages critique loops within Poindexter workflows.
-    
+
     Key pattern:
     1. Generate content
     2. Critique automatically
@@ -425,7 +431,7 @@ class SelfCritiqueManager:
     4. Track loop iterations
     5. Stop after max iterations
     """
-    
+
     async def critique_with_refinement(
         self,
         content: str,
@@ -435,7 +441,7 @@ class SelfCritiqueManager:
     ) -> Tuple[str, float, int]:
         """
         Run critique loop until quality target met or max iterations.
-        
+
         Returns:
             content: Final refined content
             quality_score: Achieved quality
@@ -569,14 +575,26 @@ POST /api/v2/orchestrate
   },
   "workflow_trace": {
     "command_parsed": "Generate multi-channel AI content",
-    "tools_discovered": ["research", "generate", "critique", "refine", "publish"],
-    "mcp_servers_discovered": ["web-search-serper", "image-gen-pexels", "twitter-api"],
-    "workflow_planned": ["research_tool → generate_tool → critique_tool → IF quality<0.90 refine → publish_tool"],
+    "tools_discovered": [
+      "research",
+      "generate",
+      "critique",
+      "refine",
+      "publish"
+    ],
+    "mcp_servers_discovered": [
+      "web-search-serper",
+      "image-gen-pexels",
+      "twitter-api"
+    ],
+    "workflow_planned": [
+      "research_tool → generate_tool → critique_tool → IF quality<0.90 refine → publish_tool"
+    ],
     "steps_executed": [
       {
         "step": 1,
         "tool": "research_tool",
-        "input": {"topic": "AI trends", "depth": "comprehensive"},
+        "input": { "topic": "AI trends", "depth": "comprehensive" },
         "output": "Found 47 recent sources, compiled 15 key trends",
         "time": 8.2,
         "cost": 0.05
@@ -584,7 +602,7 @@ POST /api/v2/orchestrate
       {
         "step": 2,
         "tool": "generate_tool",
-        "input": {"research": "...", "style": "professional", "length": 2000},
+        "input": { "research": "...", "style": "professional", "length": 2000 },
         "output": "Generated 2147 word post",
         "time": 45.3,
         "cost": 0.12
@@ -592,7 +610,10 @@ POST /api/v2/orchestrate
       {
         "step": 3,
         "tool": "critique_tool",
-        "input": {"content": "...", "criteria": ["clarity", "accuracy", "engagement"]},
+        "input": {
+          "content": "...",
+          "criteria": ["clarity", "accuracy", "engagement"]
+        },
         "output": "Quality score: 0.93",
         "time": 5.1,
         "cost": 0.03,
@@ -605,10 +626,10 @@ POST /api/v2/orchestrate
       {
         "step": 4,
         "tool": "publish_tool",
-        "input": {"platforms": ["strapi", "twitter", "linkedin"]},
+        "input": { "platforms": ["strapi", "twitter", "linkedin"] },
         "output": "Published to 3 platforms",
         "time": 3.2,
-        "cost": 0.00
+        "cost": 0.0
       }
     ],
     "critique_loops": 0,
@@ -699,27 +720,32 @@ if remaining_time < 10s:
 ## 🚀 Implementation Phases
 
 ### Phase 1: Core Poindexter Engine (Week 1)
+
 - [ ] Set up smolagents integration
 - [ ] Define tool registry
 - [ ] Implement ReAct reasoning loop
 - [ ] Build constraint checker
 
 ### Phase 2: Agent-to-Tool Conversion (Week 2)
+
 - [ ] Wrap existing agents as tools
 - [ ] Integrate self-critique loops
 - [ ] Test tool chaining
 
 ### Phase 3: MCP Discovery (Week 2-3)
+
 - [ ] Build MCP discovery service
 - [ ] Integrate with Poindexter
 - [ ] Add dynamic tool selection
 
 ### Phase 4: Proof of Concept (Week 3)
+
 - [ ] Create /api/v2/orchestrate endpoint
 - [ ] E2E test with real commands
 - [ ] Performance tracking
 
 ### Phase 5: Production Ready (Week 4)
+
 - [ ] Error recovery & fallbacks
 - [ ] Comprehensive testing
 - [ ] Documentation & deployment

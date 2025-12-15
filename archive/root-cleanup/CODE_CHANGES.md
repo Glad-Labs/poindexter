@@ -5,11 +5,12 @@
 ### Location: Lines 774-809 (Method: `create_post()`)
 
 ### BEFORE (BROKEN)
+
 ```python
 async def create_post(self, post_data: Dict[str, Any]) -> Dict[str, Any]:
     """Create new post"""
     post_id = post_data.get("id") or str(uuid4())
-    
+
     async with self.pool.acquire() as conn:
         # Check if posts table exists, if not create it (temporary fix for dev)
         await conn.execute("""
@@ -26,7 +27,7 @@ async def create_post(self, post_data: Dict[str, Any]) -> Dict[str, Any]:
                 updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
             )
         """)
-        
+
         row = await conn.fetchrow(
             """
             INSERT INTO posts (
@@ -48,6 +49,7 @@ async def create_post(self, post_data: Dict[str, Any]) -> Dict[str, Any]:
 ```
 
 **Problems:**
+
 - ❌ Tries to insert into non-existent `category` column
 - ❌ Tries to insert into non-existent `featured_image` column
 - ❌ Missing SEO fields (`seo_title`, `seo_description`, `seo_keywords`)
@@ -55,26 +57,27 @@ async def create_post(self, post_data: Dict[str, Any]) -> Dict[str, Any]:
 - ❌ Returns all columns (including NULL fields for non-existent columns)
 
 ### AFTER (FIXED)
+
 ```python
 async def create_post(self, post_data: Dict[str, Any]) -> Dict[str, Any]:
     """Create new post in posts table"""
     post_id = post_data.get("id") or str(uuid4())
-    
+
     async with self.pool.acquire() as conn:
         row = await conn.fetchrow(
             """
             INSERT INTO posts (
-                id, 
-                title, 
-                slug, 
-                content, 
-                excerpt, 
+                id,
+                title,
+                slug,
+                content,
+                excerpt,
                 featured_image_url,
-                status, 
+                status,
                 seo_title,
                 seo_description,
                 seo_keywords,
-                created_at, 
+                created_at,
                 updated_at
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
@@ -95,6 +98,7 @@ async def create_post(self, post_data: Dict[str, Any]) -> Dict[str, Any]:
 ```
 
 **Fixes:**
+
 - ✅ Uses `featured_image_url` column (correct name)
 - ✅ Includes `seo_title`, `seo_description`, `seo_keywords` fields
 - ✅ Removed non-existent `category` field
@@ -109,19 +113,20 @@ async def create_post(self, post_data: Dict[str, Any]) -> Dict[str, Any]:
 ### Location: Lines 661-691 (Function: `_execute_and_publish_task()` Step 5)
 
 ### BEFORE (BROKEN)
+
 ```python
         # Step 5: Create post from generated content
         logger.info(f"[BG_TASK] Creating post from generated content...")
         try:
             # Extract topic or use default title
             post_title = topic or task.get('task_name', 'Generated Content')
-            
+
             # Create slug from title (replace spaces with hyphens, lowercase)
             import re
             slug = re.sub(r'[^\w\s-]', '', post_title.lower())
             slug = re.sub(r'[-\s]+', '-', slug)
             slug = slug.strip('-')
-            
+
             # Create post data structure
             post_data = {
                 "id": str(uuid_lib.uuid4()),
@@ -133,34 +138,36 @@ async def create_post(self, post_data: Dict[str, Any]) -> Dict[str, Any]:
                 "status": "published",  # Auto-publish generated posts
                 "featured_image": task.get('featured_image'),
             }
-            
+
             logger.info(f"[BG_TASK] Creating post: {post_title} (slug: {slug})")
             post_result = await db_service.create_post(post_data)
             logger.info(f"[BG_TASK] Post created successfully! Post ID: {post_result.get('id')}")
-            
+
         except Exception as post_err:
             logger.error(f"[BG_TASK] Error creating post: {str(post_err)}", exc_info=True)
 ```
 
 **Problems:**
+
 - ❌ Uses `category` field (posts table doesn't have this)
 - ❌ Missing SEO fields (`seo_title`, `seo_description`, `seo_keywords`)
 - ❌ No default SEO field values
 
 ### AFTER (FIXED)
+
 ```python
         # Step 5: Create post from generated content
         logger.info(f"[BG_TASK] Creating post from generated content...")
         try:
             # Extract topic or use default title
             post_title = topic or task.get('task_name', 'Generated Content')
-            
+
             # Create slug from title (replace spaces with hyphens, lowercase)
             import re
             slug = re.sub(r'[^\w\s-]', '', post_title.lower())
             slug = re.sub(r'[-\s]+', '-', slug)
             slug = slug.strip('-')
-            
+
             # Create post data structure matching actual posts table schema
             post_data = {
                 "id": str(uuid_lib.uuid4()),
@@ -174,16 +181,17 @@ async def create_post(self, post_data: Dict[str, Any]) -> Dict[str, Any]:
                 "status": "published",  # Auto-publish generated posts
                 "featured_image": task.get('featured_image'),
             }
-            
+
             logger.info(f"[BG_TASK] Creating post: {post_title} (slug: {slug})")
             post_result = await db_service.create_post(post_data)
             logger.info(f"[BG_TASK] Post created successfully! Post ID: {post_result.get('id')}")
-            
+
         except Exception as post_err:
             logger.error(f"[BG_TASK] Error creating post: {str(post_err)}", exc_info=True)
 ```
 
 **Fixes:**
+
 - ✅ Removed incorrect `category` field
 - ✅ Added `seo_title` field (defaults to post title)
 - ✅ Added `seo_description` field (defaults to excerpt)
@@ -195,21 +203,24 @@ async def create_post(self, post_data: Dict[str, Any]) -> Dict[str, Any]:
 ## Summary of Changes
 
 ### Column Mapping
-| Old Field | New Field | Type | Default |
-|-----------|-----------|------|---------|
-| category | seo_title | TEXT | title |
-| (missing) | seo_description | TEXT | excerpt |
-| (missing) | seo_keywords | TEXT | "generated,content,ai" |
-| featured_image | featured_image_url | VARCHAR | NULL |
-| category (removed) | (removed) | - | - |
+
+| Old Field          | New Field          | Type    | Default                |
+| ------------------ | ------------------ | ------- | ---------------------- |
+| category           | seo_title          | TEXT    | title                  |
+| (missing)          | seo_description    | TEXT    | excerpt                |
+| (missing)          | seo_keywords       | TEXT    | "generated,content,ai" |
+| featured_image     | featured_image_url | VARCHAR | NULL                   |
+| category (removed) | (removed)          | -       | -                      |
 
 ### Impact
+
 - **Queries affected**: 2 methods in 2 files
 - **Lines modified**: ~40 lines total
 - **Backward compatibility**: Breaking (corrects schema)
 - **Data migration**: Not needed (posts table already has correct schema)
 
 ### Testing
+
 - ✅ Direct function test: Creates posts successfully
 - ✅ End-to-end task test: Posts created and retrieved
 - ✅ Database verification: Posts appear in query results
@@ -261,10 +272,12 @@ After deploying, verify:
 ## Files Affected
 
 **Modified:**
+
 - ✅ `src/cofounder_agent/services/database_service.py`
 - ✅ `src/cofounder_agent/routes/task_routes.py`
 
 **Related (no changes needed):**
+
 - `src/cofounder_agent/main.py` - No changes
 - `src/cofounder_agent/orchestrator_logic.py` - No changes
 - Database schema - No changes (already correct)

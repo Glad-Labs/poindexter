@@ -11,18 +11,21 @@
 Successfully consolidated all duplicated functionality into unified services architecture:
 
 ### What Was Consolidated
+
 1. **ImageService** - Unified Pexels + SDXL + ImageAgent into single service
 2. **ContentQualityService** - Unified QAAgent + QualityEvaluator + UnifiedOrchestrator into single service
 3. **ContentRouterService** - Updated to use unified services with PostgreSQL persistence
 4. **Database Persistence** - All quality evaluations, training data, and metrics now stored in PostgreSQL
 
 ### What Was Preserved
+
 - ✅ All oversight-hub functionality (manual + AI pipelines)
-- ✅ All API endpoints (/api/content/*, /api/orchestrator/*)
+- ✅ All API endpoints (/api/content/_, /api/orchestrator/_)
 - ✅ All database relationships and data integrity
 - ✅ Zero breaking changes to frontend or API contracts
 
 ### Results
+
 - **Code Reduction:** ~40% (removed duplicates)
 - **New Services:** 2 major unified services
 - **Database Tables:** 6 tables now actively used for persistence
@@ -34,10 +37,11 @@ Successfully consolidated all duplicated functionality into unified services arc
 ## Architecture - New vs Old
 
 ### OLD ARCHITECTURE (Duplicated)
+
 ```
 Legacy Stack                          New Stack (Before Consolidation)
 ├── Pexels Client (A)                 ├── Pexels Client (B) - Different!
-├── ImageAgent                        ├── ImageGenClient  
+├── ImageAgent                        ├── ImageGenClient
 ├── ImageGenClient                    ├── FeaturedImageService
 └── 3 competing image implementations └── 3 different Pexel wrappers
 
@@ -48,6 +52,7 @@ QA Pipeline (Duplicated)
 ```
 
 ### NEW ARCHITECTURE (Unified)
+
 ```
 Unified Services Layer
 ├── ImageService
@@ -82,11 +87,13 @@ Unified Services Layer
 **Size:** ~430 lines  
 **Purpose:** Unified image processing service  
 **Consolidates:**
+
 - PexelsClient (2 implementations - legacy agents + new cofounder)
 - ImageGenClient (Stable Diffusion XL generation)
 - ImageAgent (orchestration logic)
 
 **Key Classes:**
+
 ```python
 class FeaturedImageMetadata:
     """Image metadata with photographer attribution"""
@@ -108,6 +115,7 @@ class ImageService:
 ```
 
 **Benefits:**
+
 - Free image sourcing (Pexels unlimited)
 - Automatic photographer attribution
 - SDXL generation as fallback (GPU-dependent)
@@ -118,11 +126,13 @@ class ImageService:
 **Size:** ~550 lines  
 **Purpose:** Unified quality evaluation service  
 **Consolidates:**
+
 - QAAgent (binary approval + feedback)
 - QualityEvaluator (7-criteria framework)
 - UnifiedQualityOrchestrator (hybrid scoring)
 
 **Key Classes:**
+
 ```python
 class QualityScore:
     """Complete evaluation result"""
@@ -150,11 +160,13 @@ class ContentQualityService:
 ```
 
 **Evaluation Methods:**
+
 - **Pattern-based** (EvaluationMethod.PATTERN_BASED): Fast, deterministic, no LLM calls
 - **LLM-based** (EvaluationMethod.LLM_BASED): Accurate, requires model access
 - **Hybrid** (EvaluationMethod.HYBRID): 40% pattern + 60% LLM = balanced
 
 **7-Criteria Framework:**
+
 1. Clarity - Sentence structure, vocabulary complexity
 2. Accuracy - Citations, data, references
 3. Completeness - Length, sections, depth (target 800-2000 words, 3-5 sections)
@@ -262,6 +274,7 @@ Stage 7: Capture training data
    - Used for all AI-generated content
 
 ### Connection Pool
+
 - Uses `DatabaseService.pool` (asyncpg connection pool)
 - Async/await pattern throughout
 - Proper error handling and logging
@@ -284,6 +297,7 @@ from .content_quality_service import ContentQualityService, get_content_quality_
 ### Key Changes in process_content_generation_task()
 
 **Stage 3: Image Search**
+
 ```python
 # OLD - Using different PexelsClient
 image_service = FeaturedImageService()
@@ -296,6 +310,7 @@ image_metadata = featured_image.to_dict()  # Stores in posts.metadata
 ```
 
 **Stage 5: Quality Evaluation**
+
 ```python
 # OLD - Using old evaluate function
 quality_result = await _evaluate_content_quality(...)
@@ -311,6 +326,7 @@ quality_result = await quality_service.evaluate(
 ```
 
 **Stage 6: Post Creation**
+
 ```python
 # OLD - Manual author lookup
 author_id = await get_raw_author_id(...)
@@ -353,11 +369,13 @@ author_id = await _get_or_create_default_author(database_service)
 ## Legacy Code Status
 
 ### Archive Location
+
 - **Path:** `src/agents/archive/README.md`
 - **Status:** DEPRECATED - Do not use for new features
 - **Reference:** Migration guide provided
 
 ### Files to Eventually Archive
+
 - `src/agents/content_agent/services/pexels_client.py` - Use ImageService instead
 - `src/agents/content_agent/services/image_gen_client.py` - Use ImageService instead
 - `src/agents/content_agent/agents/image_agent.py` - Use ImageService instead
@@ -366,6 +384,7 @@ author_id = await _get_or_create_default_author(database_service)
 - `src/cofounder_agent/services/unified_quality_orchestrator.py` - Use ContentQualityService instead
 
 ### Why Keep Legacy Code Available
+
 - Reference implementations (educational)
 - Emergency fallback if issues discovered
 - 1-month transition period for any custom code
@@ -376,6 +395,7 @@ author_id = await _get_or_create_default_author(database_service)
 ## Verification Checklist
 
 ### ✅ Code Quality
+
 - [x] All new files compile without syntax errors
 - [x] No import errors
 - [x] Type hints complete
@@ -383,6 +403,7 @@ author_id = await _get_or_create_default_author(database_service)
 - [x] Error handling in place
 
 ### ✅ Functionality
+
 - [x] ImageService searches Pexels correctly
 - [x] ContentQualityService evaluates using 7 criteria
 - [x] ContentRouterService integrates both services
@@ -390,6 +411,7 @@ author_id = await _get_or_create_default_author(database_service)
 - [x] Training data captured correctly
 
 ### ✅ Database
+
 - [x] PostgreSQL schema supports all new data
 - [x] Foreign key relationships intact
 - [x] No data loss from consolidation
@@ -397,6 +419,7 @@ author_id = await _get_or_create_default_author(database_service)
 - [x] Async queries operating correctly
 
 ### ✅ API Compatibility
+
 - [x] Content creation endpoints unchanged
 - [x] Orchestrator endpoints unchanged
 - [x] Quality scores returned correctly
@@ -408,11 +431,13 @@ author_id = await _get_or_create_default_author(database_service)
 ## Next Steps
 
 ### Phase 2: (Not started)
+
 1. Archive legacy agent code completely
 2. Update deployment configurations if needed
 3. Document new services in API reference
 
 ### Testing (Ready to Execute)
+
 1. Start backend server
 2. Create test blog post via API
 3. Verify quality scores calculated
@@ -421,6 +446,7 @@ author_id = await _get_or_create_default_author(database_service)
 6. Verify oversight-hub integration
 
 ### Production Readiness
+
 - All code compiled and verified
 - Database schema fully compatible
 - API contracts unchanged
@@ -432,12 +458,14 @@ author_id = await _get_or_create_default_author(database_service)
 ## Consolidation Benefits Realized
 
 ### ✅ Code Cleanup
+
 - Removed duplicate Pexels implementations (saved ~200 lines)
 - Removed duplicate quality evaluation logic (saved ~400 lines)
 - Removed OrchestrationLogic duplication (saved ~300 lines)
 - **Total: ~900 lines eliminated**
 
 ### ✅ Maintenance Improvements
+
 - Single source of truth for each service
 - Easier to find and fix bugs
 - Consistent error handling
@@ -445,6 +473,7 @@ author_id = await _get_or_create_default_author(database_service)
 - Better testability
 
 ### ✅ Feature Enhancements
+
 - Hybrid quality evaluation (pattern + LLM)
 - Image metadata persistence
 - Automatic photographer attribution
@@ -452,11 +481,13 @@ author_id = await _get_or_create_default_author(database_service)
 - Comprehensive PostgreSQL audit trail
 
 ### ✅ Cost Savings
+
 - Pexels: FREE (unlimited)
 - DALL-E: $0.02/image (now eliminated)
 - Annual savings: ~$500-1000+ depending on usage
 
 ### ✅ Database Persistence
+
 - Complete consolidation to PostgreSQL
 - No data silos or inconsistencies
 - Training data available for fine-tuning
@@ -513,12 +544,12 @@ author_id = await _get_or_create_default_author(database_service)
 ✅ **Phase 1 Consolidation COMPLETE**
 
 Successfully unified all duplicated services into a single, cohesive architecture:
+
 - ImageService consolidates 3 competing implementations
-- ContentQualityService consolidates 3 competing implementations  
+- ContentQualityService consolidates 3 competing implementations
 - ContentRouterService now uses unified services
 - PostgreSQL database fully utilized for persistence
 - Zero API breaking changes
 - Ready for production deployment
 
 **All oversight-hub functionality preserved and enhanced.**
-

@@ -189,44 +189,44 @@ STAGE 4/4: Mark Complete
 
 ### ✅ Request Parameters (Frontend → Backend)
 
-| Parameter | Source | Type | Validation | Status |
-|-----------|--------|------|-----------|--------|
-| task_type | Form dropdown | Enum | Required, default=blog_post | ✅ |
-| topic | Form input | String | Required, ≥3 chars | ✅ |
-| style | Form select | Enum | Required, validates against list | ✅ |
-| tone | Form select | Enum | Required | ✅ |
-| target_length | Form input | Integer | Default 1500 | ✅ |
-| tags | Form input (csv) | Array[String] | Optional, parsed from comma-separated | ✅ |
-| generate_featured_image | Form checkbox | Boolean | Default true | ✅ |
-| enhanced | Form checkbox | Boolean | Default false | ✅ |
-| publish_mode | Form select | Enum | Default "draft" | ✅ |
-| target_environment | Fixed | String | Default "production" | ✅ |
+| Parameter               | Source           | Type          | Validation                            | Status |
+| ----------------------- | ---------------- | ------------- | ------------------------------------- | ------ |
+| task_type               | Form dropdown    | Enum          | Required, default=blog_post           | ✅     |
+| topic                   | Form input       | String        | Required, ≥3 chars                    | ✅     |
+| style                   | Form select      | Enum          | Required, validates against list      | ✅     |
+| tone                    | Form select      | Enum          | Required                              | ✅     |
+| target_length           | Form input       | Integer       | Default 1500                          | ✅     |
+| tags                    | Form input (csv) | Array[String] | Optional, parsed from comma-separated | ✅     |
+| generate_featured_image | Form checkbox    | Boolean       | Default true                          | ✅     |
+| enhanced                | Form checkbox    | Boolean       | Default false                         | ✅     |
+| publish_mode            | Form select      | Enum          | Default "draft"                       | ✅     |
+| target_environment      | Fixed            | String        | Default "production"                  | ✅     |
 
 ### ✅ Response Parameters (Backend → Frontend)
 
-| Parameter | Source | Type | Purpose | Status |
-|-----------|--------|------|---------|--------|
-| task_id | Backend generated | String | Unique task identifier | ✅ |
-| task_type | From request | String | Content type classification | ✅ |
-| status | Default | String | Starts as "pending" | ✅ |
-| topic | From request | String | User's content topic | ✅ |
-| created_at | Timestamp | ISO String | Task creation time | ✅ |
-| polling_url | Generated | String | Endpoint to check progress | ✅ |
+| Parameter   | Source            | Type       | Purpose                     | Status |
+| ----------- | ----------------- | ---------- | --------------------------- | ------ |
+| task_id     | Backend generated | String     | Unique task identifier      | ✅     |
+| task_type   | From request      | String     | Content type classification | ✅     |
+| status      | Default           | String     | Starts as "pending"         | ✅     |
+| topic       | From request      | String     | User's content topic        | ✅     |
+| created_at  | Timestamp         | ISO String | Task creation time          | ✅     |
+| polling_url | Generated         | String     | Endpoint to check progress  | ✅     |
 
 ### ✅ Database Persistence
 
-| Field | Layer 2 Passes | Layer 3 Accepts | Database Stores | Status |
-|-------|---|---|---|---|
-| task_id | ✅ Generated | ✅ Used as PK | ✅ Primary key | ✅ |
-| task_type | ✅ From request | ✅ task_type param | ✅ VARCHAR column | ✅ |
-| request_type | ✅ basic/enhanced | ✅ request_type param | ✅ VARCHAR column | ✅ |
-| status | ✅ pending | ✅ status param | ✅ VARCHAR column | ✅ |
-| topic | ✅ From request | ✅ topic param | ✅ VARCHAR column | ✅ |
-| style | ✅ From request.style.value | ✅ style param | ✅ VARCHAR column | ✅ |
-| tone | ✅ From request.tone.value | ✅ tone param | ✅ VARCHAR column | ✅ |
-| target_length | ✅ From request | ✅ target_length param | ✅ INTEGER column | ✅ |
-| tags | ✅ From request | ✅ tags param | ✅ JSON column | ✅ |
-| metadata | ✅ feature img flag | ✅ metadata param | ✅ JSON column | ✅ |
+| Field         | Layer 2 Passes              | Layer 3 Accepts        | Database Stores   | Status |
+| ------------- | --------------------------- | ---------------------- | ----------------- | ------ |
+| task_id       | ✅ Generated                | ✅ Used as PK          | ✅ Primary key    | ✅     |
+| task_type     | ✅ From request             | ✅ task_type param     | ✅ VARCHAR column | ✅     |
+| request_type  | ✅ basic/enhanced           | ✅ request_type param  | ✅ VARCHAR column | ✅     |
+| status        | ✅ pending                  | ✅ status param        | ✅ VARCHAR column | ✅     |
+| topic         | ✅ From request             | ✅ topic param         | ✅ VARCHAR column | ✅     |
+| style         | ✅ From request.style.value | ✅ style param         | ✅ VARCHAR column | ✅     |
+| tone          | ✅ From request.tone.value  | ✅ tone param          | ✅ VARCHAR column | ✅     |
+| target_length | ✅ From request             | ✅ target_length param | ✅ INTEGER column | ✅     |
+| tags          | ✅ From request             | ✅ tags param          | ✅ JSON column    | ✅     |
+| metadata      | ✅ feature img flag         | ✅ metadata param      | ✅ JSON column    | ✅     |
 
 ---
 
@@ -280,6 +280,7 @@ Returns: Full task object with current status
 ### Verified Parameter Flow
 
 **task_type**: `"blog_post"`
+
 ```
 Frontend (CreateTaskModal.jsx)
   → task_type: 'blog_post' in payload
@@ -293,6 +294,7 @@ Frontend (CreateTaskModal.jsx)
 ```
 
 **metadata**: `{"generate_featured_image": true}`
+
 ```
 Frontend (CreateTaskModal.jsx)
   → Not sent in payload (handled by form checkbox)
@@ -309,11 +311,13 @@ Frontend (CreateTaskModal.jsx)
 ## ⚠️ Known Limitations & Design Notes
 
 ### Backwards Compatibility
+
 - **Removed:** `/api/content/blog-posts` deprecated endpoint (no longer needed)
 - **Single Endpoint:** All content creation now goes through `/api/content/tasks`
 - **Reason:** Only one user (you), no need for legacy support
 
 ### Enum Field Handling
+
 ```python
 # Routes convert enums to string values before passing to service layer
 style_value = request.style.value  # "technical", "narrative", etc.
@@ -327,6 +331,7 @@ task_store.create_task(
 ```
 
 ### Task ID Generation
+
 ```python
 # Format: {task_type}_{date}_{random_hash}
 task_id = f"blog_{datetime.now().strftime('%Y%m%d')}_{uuid.uuid4().hex[:8]}"
@@ -344,10 +349,12 @@ task_id = f"blog_{datetime.now().strftime('%Y%m%d')}_{uuid.uuid4().hex[:8]}"
 ## 📝 Current Outstanding Items
 
 ### In Progress
+
 - ⏳ Async background processing (may show "pending" status longer)
 - ⏳ Featured image download from Pexels (if enabled)
 
 ### Not Yet Implemented
+
 - ❌ Strapi publishing integration (requires Strapi rebuild)
 - ❌ Email notifications (planned)
 - ❌ Advanced SEO features (enhanced request_type)
@@ -356,16 +363,16 @@ task_id = f"blog_{datetime.now().strftime('%Y%m%d')}_{uuid.uuid4().hex[:8]}"
 
 ## 🚀 Production Readiness Assessment
 
-| Aspect | Status | Notes |
-|--------|--------|-------|
-| API Endpoint | ✅ Ready | Tested with HTTP 201 response |
-| Database | ✅ Ready | PostgreSQL, auto-table creation |
-| Data Validation | ✅ Ready | Pydantic models validate all input |
-| Error Handling | ✅ Ready | Try/catch with detailed logging |
-| Background Processing | ✅ Ready | FastAPI background_tasks |
-| Task Polling | ✅ Ready | /api/content/tasks/{id} endpoint |
-| Strapi Integration | ⏳ Blocked | Awaiting Strapi rebuild decision |
-| Email Publishing | ❌ Not Ready | Not yet implemented |
+| Aspect                | Status       | Notes                              |
+| --------------------- | ------------ | ---------------------------------- |
+| API Endpoint          | ✅ Ready     | Tested with HTTP 201 response      |
+| Database              | ✅ Ready     | PostgreSQL, auto-table creation    |
+| Data Validation       | ✅ Ready     | Pydantic models validate all input |
+| Error Handling        | ✅ Ready     | Try/catch with detailed logging    |
+| Background Processing | ✅ Ready     | FastAPI background_tasks           |
+| Task Polling          | ✅ Ready     | /api/content/tasks/{id} endpoint   |
+| Strapi Integration    | ⏳ Blocked   | Awaiting Strapi rebuild decision   |
+| Email Publishing      | ❌ Not Ready | Not yet implemented                |
 
 ---
 
@@ -376,6 +383,7 @@ task_id = f"blog_{datetime.now().strftime('%Y%m%d')}_{uuid.uuid4().hex[:8]}"
 The entire pipeline from React Oversight Hub → FastAPI backend → PostgreSQL database works correctly. All 3 layers pass parameters properly, task records are created successfully, and the async processing pipeline is ready to execute.
 
 **Next Steps:**
+
 1. ✅ Test complete UI flow (click button → see task in list)
 2. 🔄 Monitor background task execution (content generation)
 3. ⏳ Decide on Strapi rebuild approach

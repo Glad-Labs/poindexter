@@ -32,6 +32,7 @@ Response (Chat Response)
 ## 🔧 HOW TO USE
 
 ### User Perspective
+
 1. Open Oversight Hub
 2. Locate chat panel at bottom of screen
 3. Type a natural language message, e.g.:
@@ -46,6 +47,7 @@ Response (Chat Response)
 ### Developer Perspective
 
 #### Component: LayoutWrapper.jsx
+
 ```jsx
 import { sendChatMessage } from '../services/cofounderAgentClient';
 
@@ -67,6 +69,7 @@ const response = await sendChatMessage(
 ```
 
 #### API Client Method: cofounderAgentClient.js
+
 ```javascript
 export async function sendChatMessage(
   message,
@@ -87,6 +90,7 @@ export async function sendChatMessage(
 ## 🚀 FEATURES
 
 ### Supported Models
+
 - ✅ `ollama` - Local Ollama inference (free, fast)
 - ✅ `ollama-mistral` - Mistral model via Ollama
 - ✅ `openai` - OpenAI API (requires key)
@@ -94,12 +98,14 @@ export async function sendChatMessage(
 - ✅ `gemini` - Google Gemini API (requires key)
 
 ### Conversation Management
+
 - ✅ Multi-turn conversations - Messages maintain context
 - ✅ Conversation ID - Group related messages
 - ✅ History retrieval - Get past conversations
 - ✅ History clearing - Delete old conversations
 
 ### Model Selection
+
 - ✅ Temperature control - Creativity level (0.0-2.0)
 - ✅ Max tokens - Response length control
 - ✅ Model fallback - Automatic fallback to available models
@@ -110,6 +116,7 @@ export async function sendChatMessage(
 ## 📊 CHAT ENDPOINTS
 
 ### 1. Send Message
+
 ```
 POST /api/chat
 Content-Type: application/json
@@ -135,6 +142,7 @@ Response:
 ```
 
 ### 2. Get Conversation History
+
 ```
 GET /api/chat/history/{conversationId}
 Authorization: Bearer [token] (optional)
@@ -161,6 +169,7 @@ Response:
 ```
 
 ### 3. Clear Conversation
+
 ```
 DELETE /api/chat/history/{conversationId}
 Authorization: Bearer [token] (optional)
@@ -177,6 +186,7 @@ Response:
 ## 🎯 NATURAL LANGUAGE EXAMPLES
 
 ### Task Creation
+
 ```
 User: "Create a blog post about machine learning"
 → System understands intent and creates task
@@ -184,6 +194,7 @@ User: "Create a blog post about machine learning"
 ```
 
 ### Metrics Analysis
+
 ```
 User: "What's our Q4 financial performance?"
 → System analyzes business metrics
@@ -191,6 +202,7 @@ User: "What's our Q4 financial performance?"
 ```
 
 ### Status Queries
+
 ```
 User: "How many tasks are currently running?"
 → System queries orchestrator
@@ -198,6 +210,7 @@ User: "How many tasks are currently running?"
 ```
 
 ### Agent Commands
+
 ```
 User: "Have the content agent generate 5 blog posts"
 → System routes to content agent
@@ -209,6 +222,7 @@ User: "Have the content agent generate 5 blog posts"
 ## 🔄 FLOW EXAMPLES
 
 ### Example 1: Simple Chat
+
 ```
 User Input: "Hello, how are you?"
     ↓
@@ -224,6 +238,7 @@ Display in chat panel
 ```
 
 ### Example 2: Multi-turn Conversation
+
 ```
 Message 1: "Create a task"
 → conversationId: "default"
@@ -236,6 +251,7 @@ Message 2: "What was that task about?"
 ```
 
 ### Example 3: Task via Chat
+
 ```
 User: "Generate a blog post on AI trends"
     ↓
@@ -255,6 +271,7 @@ User can monitor progress in UI
 ## 🛡️ ERROR HANDLING
 
 ### Model Not Available
+
 ```json
 {
   "response": "❌ Model 'mistral' not available.\nAvailable models: llama2, neural-chat",
@@ -265,6 +282,7 @@ User can monitor progress in UI
 ```
 
 ### Ollama Not Running
+
 ```json
 {
   "response": "⚠️ Ollama Error: Connection refused\n\nTroubleshooting:\n1. Is Ollama running? Start: ollama serve\n2. Check model exists: ollama list",
@@ -275,6 +293,7 @@ User can monitor progress in UI
 ```
 
 ### Invalid Provider
+
 ```json
 {
   "status": 400,
@@ -287,6 +306,7 @@ User can monitor progress in UI
 ## 🧪 TESTING
 
 ### Manual Testing Steps
+
 1. Open browser DevTools (F12)
 2. Go to Network tab
 3. Open Oversight Hub
@@ -299,6 +319,7 @@ User can monitor progress in UI
    - ✅ Message appears in UI
 
 ### Test Scenarios
+
 ```
 Test 1: Simple Query
 Input: "Hello"
@@ -327,16 +348,19 @@ Expected: Error message with available options
 ## 🔐 SECURITY
 
 ### Authentication
+
 - JWT tokens automatically injected by API client
 - Optional for public queries
 - Required for sensitive operations
 
 ### Rate Limiting
+
 - Potential rate limiting on backend
 - Timeouts: 60 seconds for chat operations
 - Graceful error messages on timeout
 
 ### Input Validation
+
 - Messages validated on backend
 - XSS prevention via React
 - SQL injection prevention (no direct DB access)
@@ -346,12 +370,14 @@ Expected: Error message with available options
 ## 📈 MONITORING
 
 ### Chat Metrics
+
 - Token usage tracked per message
 - Cost estimation available
 - Model performance tracked
 - Success/failure rates logged
 
 ### Debugging
+
 ```
 Enable logging in browser console:
 1. Open DevTools (F12)
@@ -361,6 +387,7 @@ Enable logging in browser console:
 ```
 
 ### Logs Available
+
 - `[Chat] Incoming request - model: ...`
 - `[Chat] Processing message with: provider=...`
 - `[Chat] Calling Ollama with model: ...`
@@ -372,30 +399,32 @@ Enable logging in browser console:
 ## 🚀 ADVANCED FEATURES
 
 ### Setting Model Parameters
+
 ```javascript
 // Custom temperature and max tokens
 await sendChatMessage(
-  "Generate creative content",
-  "ollama-mistral",
-  "default",
-  temperature = 1.5,      // More creative
-  max_tokens = 2000       // Longer response
+  'Generate creative content',
+  'ollama-mistral',
+  'default',
+  (temperature = 1.5), // More creative
+  (max_tokens = 2000) // Longer response
 );
 ```
 
 ### Conversation Management
+
 ```javascript
 // Get history
-const history = await getChatHistory("default");
+const history = await getChatHistory('default');
 
 // Clear conversation
-await clearChatHistory("default");
+await clearChatHistory('default');
 
 // Start new conversation
 const response = await sendChatMessage(
-  "New topic",
-  "ollama",
-  "unique-id-123"  // Different conversation ID
+  'New topic',
+  'ollama',
+  'unique-id-123' // Different conversation ID
 );
 ```
 
@@ -404,29 +433,27 @@ const response = await sendChatMessage(
 ## 📚 INTEGRATION EXAMPLES
 
 ### Example 1: Task Creation via Chat
+
 ```jsx
 // User types: "Create a blog post on AI"
 // System recognizes intent and:
 
 const task = await createTask({
-  task_name: "Blog: AI Trends",
-  topic: "AI Trends",
-  category: "blog_post",
+  task_name: 'Blog: AI Trends',
+  topic: 'AI Trends',
+  category: 'blog_post',
   metadata: {
-    source: "chat_request",
-    conversation_id: "default"
-  }
+    source: 'chat_request',
+    conversation_id: 'default',
+  },
 });
 
 // Respond to user:
-await sendChatMessage(
-  "Task created: " + task.id,
-  "ollama",
-  "default"
-);
+await sendChatMessage('Task created: ' + task.id, 'ollama', 'default');
 ```
 
 ### Example 2: Metrics Query via Chat
+
 ```jsx
 // User types: "Show me cost metrics"
 // System recognizes and:
@@ -440,19 +467,16 @@ Cost Breakdown:
 `;
 
 // Respond with formatted metrics:
-await sendChatMessage(
-  summary,
-  "ollama",
-  "default"
-);
+await sendChatMessage(summary, 'ollama', 'default');
 ```
 
 ### Example 3: Task Status via Chat
+
 ```jsx
 // User types: "Status of task ABC123"
 // System recognizes and:
 
-const task = await getTaskById("ABC123");
+const task = await getTaskById('ABC123');
 
 const status = `
 Task: ${task.task_name}
@@ -462,11 +486,7 @@ Created: ${task.created_at}
 `;
 
 // Respond with status:
-await sendChatMessage(
-  status,
-  "ollama",
-  "default"
-);
+await sendChatMessage(status, 'ollama', 'default');
 ```
 
 ---
@@ -478,6 +498,7 @@ await sendChatMessage(
 **File Location:** `src/cofounder_agent/routes/chat_routes.py`
 
 **Parameters:**
+
 - `message` (string, required) - User message
 - `model` (string) - AI model to use
 - `conversationId` (string) - Conversation group ID
@@ -485,6 +506,7 @@ await sendChatMessage(
 - `max_tokens` (int) - Max response length
 
 **Returns:**
+
 - `response` - AI's text response
 - `model` - Model used
 - `conversationId` - Conversation ID
@@ -507,4 +529,3 @@ The chat feature is **fully integrated and ready for use**:
 - ✅ Full history management
 
 **Status: PRODUCTION READY** 🚀
-

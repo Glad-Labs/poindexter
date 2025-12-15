@@ -11,6 +11,7 @@
 ### 1. Input Validation (Prevent XSS & Injection)
 
 #### Example: Create a Blog Post
+
 ```python
 from fastapi import HTTPException
 from src.cofounder_agent.services.validation_service import InputValidator, ValidationError
@@ -26,7 +27,7 @@ async def create_post(request: dict):
             max_length=200,
             allow_html=False
         )
-        
+
         # Validate content (allow markdown but not scripts)
         content = InputValidator.validate_string(
             request["content"],
@@ -34,26 +35,27 @@ async def create_post(request: dict):
             max_length=50000,
             allow_html=False  # No <script> tags allowed
         )
-        
+
         # Validate slug (alphanumeric + dashes only)
         slug = InputValidator.validate_string(
             request["slug"],
             "slug",
             pattern=r"^[a-z0-9\-]+$"
         )
-        
+
         # Safe to use - no injection possible
         post = Post(title=title, content=content, slug=slug)
         db.session.add(post)
         db.session.commit()
-        
+
         return {"id": post.id}
-        
+
     except ValidationError as e:
         raise HTTPException(status_code=400, detail=str(e))
 ```
 
 #### Available Validators
+
 ```python
 InputValidator.validate_string()     # With XSS/SQL injection detection
 InputValidator.validate_email()      # RFC 5322 compliant
@@ -68,6 +70,7 @@ InputValidator.validate_list()       # With item type checking
 ### 2. Webhook Security (Prevent Spoofing & Tampering)
 
 #### Example: Handle Stripe Webhook
+
 ```python
 import json
 from fastapi import Request, HTTPException
@@ -79,13 +82,13 @@ STRIPE_WEBHOOK_SECRET = "whsec_test123..."
 async def handle_stripe_webhook(request: Request):
     # Get signature from header
     signature = request.headers.get("stripe-signature")
-    
+
     # Get timestamp from header
     timestamp = request.headers.get("stripe-timestamp")
-    
+
     # Read the raw body (important for signature verification)
     body = await request.body()
-    
+
     # Verify signature
     try:
         WebhookSecurity.verify_signature(
@@ -98,17 +101,18 @@ async def handle_stripe_webhook(request: Request):
     except WebhookSignatureError as e:
         # Signature verification failed - reject webhook
         raise HTTPException(status_code=401, detail="Invalid signature")
-    
+
     # Signature verified - safe to process
     data = json.loads(body)
-    
+
     if data["type"] == "payment_intent.succeeded":
         process_payment(data["data"]["object"])
-    
+
     return {"status": "ok"}
 ```
 
 #### What Signature Verification Does
+
 ```
 ✅ Verifies webhook came from Stripe (not an attacker)
 ✅ Detects if webhook was modified in transit
@@ -121,6 +125,7 @@ async def handle_stripe_webhook(request: Request):
 ### 3. Rate Limiting (Prevent DDoS)
 
 #### Example: Limit Webhook Processing
+
 ```python
 from src.cofounder_agent.services.webhook_security import WebhookRateLimiter
 
@@ -131,22 +136,23 @@ webhook_limiter = WebhookRateLimiter(max_requests_per_minute=100)
 async def handle_github_webhook(request: Request):
     # Get source identifier (IP, user ID, etc.)
     source = request.client.host
-    
+
     # Check rate limit
     if not webhook_limiter.is_allowed(source):
         # Too many requests from this source
         raise HTTPException(status_code=429, detail="Too many requests")
-    
+
     # Process webhook safely
     body = await request.body()
     data = json.loads(body)
-    
+
     process_webhook(data)
-    
+
     return {"status": "ok"}
 ```
 
 #### Common Rate Limits
+
 ```python
 WebhookRateLimiter(max_requests_per_minute=10)    # Strict (critical ops)
 WebhookRateLimiter(max_requests_per_minute=100)   # Normal (webhooks)
@@ -158,6 +164,7 @@ WebhookRateLimiter(max_requests_per_minute=1000)  # High volume (APIs)
 ### 4. Authentication (Verify User Identity)
 
 #### Example: Create JWT Token
+
 ```python
 from src.cofounder_agent.services.auth_service import JWTService
 
@@ -166,20 +173,21 @@ jwt_service = JWTService(secret_key="your-secret-key", algorithm="HS256")
 @app.post("/api/login")
 async def login(email: str, password: str):
     user = find_user_by_email(email)
-    
+
     if not user or not verify_password(password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
+
     # Create token that expires in 1 hour
     token = jwt_service.create_token(
         subject=user.id,
         expires_delta=timedelta(hours=1)
     )
-    
+
     return {"access_token": token, "token_type": "bearer"}
 ```
 
 #### Example: Use JWT in Protected Routes
+
 ```python
 from fastapi import Depends, HTTPException, status
 
@@ -187,14 +195,14 @@ from fastapi import Depends, HTTPException, status
 async def get_profile(token: str = Header(None)):
     if not token:
         raise HTTPException(status_code=401, detail="Missing token")
-    
+
     # Verify token
     try:
         payload = jwt_service.verify_token(token)
         user_id = payload["sub"]
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid token")
-    
+
     user = get_user(user_id)
     return {"id": user.id, "email": user.email}
 ```
@@ -204,6 +212,7 @@ async def get_profile(token: str = Header(None)):
 ### 5. Authorization (Verify User Permissions)
 
 #### Example: Role-Based Access Control
+
 ```python
 from enum import Enum
 
@@ -245,6 +254,7 @@ async def list_posts():
 ## 🛡️ Common Attack Scenarios & How Security Features Prevent Them
 
 ### Scenario 1: SQL Injection Attack
+
 **Attack:** User enters `"admin' OR '1'='1"` in login form  
 **Without Protection:** Query becomes `SELECT * FROM users WHERE email = 'admin' OR '1'='1'` → All users returned!  
 **With InputValidator:** Detects SQL pattern, rejects with error
@@ -261,6 +271,7 @@ cursor.execute(query, (email,))
 ```
 
 ### Scenario 2: XSS (Cross-Site Scripting)
+
 **Attack:** User enters `<script>alert('xss')</script>` in comment  
 **Without Protection:** Script executes when comment is viewed  
 **With InputValidator:** Detects HTML/JavaScript, rejects
@@ -278,6 +289,7 @@ comment = InputValidator.validate_string(
 ```
 
 ### Scenario 3: Fake Webhook from Attacker
+
 **Attack:** Attacker sends webhook pretending to be Stripe  
 **Without Protection:** System processes it as real order  
 **With WebhookSecurity:** Signature verification fails
@@ -294,15 +306,16 @@ async def handle_webhook(data: dict):
 async def handle_webhook(request: Request):
     body = await request.body()
     signature = request.headers["stripe-signature"]
-    
+
     # Verify signature - will fail for fake webhooks
     WebhookSecurity.verify_signature(body, signature, STRIPE_SECRET)
-    
+
     data = json.loads(body)
     mark_order_paid(data["order_id"])
 ```
 
 ### Scenario 4: DDoS Attack via Webhooks
+
 **Attack:** Attacker sends 10,000 webhooks/second  
 **Without Protection:** System crashes from overload  
 **With WebhookRateLimiter:** Excess requests rejected
@@ -317,6 +330,7 @@ async def handle_event(request: Request):
 ```
 
 ### Scenario 5: Session Hijacking
+
 **Attack:** Attacker steals user's session cookie, uses it forever  
 **Without Protection:** Attacker has permanent access  
 **With JWT Expiration:** Token expires after 1 hour
@@ -330,6 +344,7 @@ token = jwt_service.create_token(
 ```
 
 ### Scenario 6: Unauthorized Access
+
 **Attack:** Non-admin user tries to delete all posts  
 **Without Protection:** User can delete any post  
 **With RBAC:** Route checks user role
@@ -384,6 +399,7 @@ async def delete_post(id: int, user: User = require_role(Role.ADMIN)):
 ## 🚀 Common Code Patterns
 
 ### Pattern 1: Validate & Store
+
 ```python
 # Always validate before storing
 title = InputValidator.validate_string(request["title"], min_length=3)
@@ -392,6 +408,7 @@ db.save(task)
 ```
 
 ### Pattern 2: Verify Webhook
+
 ```python
 # Always verify webhook signature first
 WebhookSecurity.verify_signature(body, signature, secret)
@@ -400,6 +417,7 @@ data = json.loads(body)
 ```
 
 ### Pattern 3: Protect Sensitive Routes
+
 ```python
 # Always check auth and role
 @app.delete("/api/admin/users/{id}")
@@ -409,6 +427,7 @@ async def delete_user(id: int, user: User = require_role(Role.ADMIN)):
 ```
 
 ### Pattern 4: Rate Limit External Input
+
 ```python
 # Always rate limit webhooks
 if not limiter.is_allowed(request.client.host):
@@ -421,6 +440,7 @@ if not limiter.is_allowed(request.client.host):
 ## 🔧 Configuration Recommendations
 
 ### Development
+
 ```python
 InputValidator.MAX_STRING_LENGTH = 50000
 WebhookRateLimiter.max_requests_per_minute = 1000  # Lenient for testing
@@ -428,6 +448,7 @@ JWT_EXPIRATION_MINUTES = 1440  # 1 day for development
 ```
 
 ### Production
+
 ```python
 InputValidator.MAX_STRING_LENGTH = 10000  # Stricter
 WebhookRateLimiter.max_requests_per_minute = 100  # Strict
@@ -440,6 +461,7 @@ PAYLOAD_MAX_SIZE_MB = 10  # Prevent memory exhaustion
 ## ⚠️ Common Mistakes to Avoid
 
 ### ❌ DON'T: Trust User Input Directly
+
 ```python
 # WRONG - Vulnerable to XSS
 comment = request.data["comment"]
@@ -447,6 +469,7 @@ html = f"<p>{comment}</p>"  # User can inject HTML/JS
 ```
 
 ### ✅ DO: Always Validate
+
 ```python
 # CORRECT - Protected
 comment = InputValidator.validate_string(
@@ -457,6 +480,7 @@ html = f"<p>{comment}</p>"  # Safe - no HTML/JS possible
 ```
 
 ### ❌ DON'T: Skip Signature Verification
+
 ```python
 # WRONG - Accepts fake webhooks
 @app.post("/api/webhooks/stripe")
@@ -465,6 +489,7 @@ def webhook(data: dict):
 ```
 
 ### ✅ DO: Always Verify Signatures
+
 ```python
 # CORRECT - Rejects fake webhooks
 @app.post("/api/webhooks/stripe")
@@ -474,6 +499,7 @@ def webhook(request: Request):
 ```
 
 ### ❌ DON'T: Store Plaintext Passwords
+
 ```python
 # WRONG - Huge security risk
 user.password = raw_password
@@ -481,6 +507,7 @@ db.save(user)
 ```
 
 ### ✅ DO: Hash with Bcrypt
+
 ```python
 # CORRECT - Secure hashing
 user.password = bcrypt.hashpw(raw_password, salt)
@@ -488,12 +515,14 @@ db.save(user)
 ```
 
 ### ❌ DON'T: Trust Token Without Verification
+
 ```python
 # WRONG - Token could be forged
 user_id = jwt.decode(token)  # Without verification!
 ```
 
 ### ✅ DO: Always Verify Tokens
+
 ```python
 # CORRECT - Verified token
 payload = jwt_service.verify_token(token)  # Signature checked
@@ -507,6 +536,7 @@ user_id = payload["sub"]
 ### If You Suspect a Security Breach
 
 1. **Immediately Stop Processing**
+
    ```python
    # Disable webhook endpoints
    @app.post("/api/webhooks/stripe")
@@ -515,6 +545,7 @@ user_id = payload["sub"]
    ```
 
 2. **Check Logs**
+
    ```bash
    # Look for suspicious activity
    grep "invalid signature" logs/webhook.log
@@ -522,6 +553,7 @@ user_id = payload["sub"]
    ```
 
 3. **Rotate Secrets**
+
    ```python
    # Update webhook secret in environment
    NEW_WEBHOOK_SECRET = "new-secret-generated-securely"

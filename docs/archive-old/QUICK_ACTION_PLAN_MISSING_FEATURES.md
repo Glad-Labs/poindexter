@@ -10,7 +10,9 @@
 ### 🔴 CRITICAL - Create These Pages
 
 #### 1. OrchestratorPage.jsx
+
 **Backend Routes Waiting:**
+
 ```
 POST /api/orchestrator/process
 GET /api/orchestrator/status/{task_id}
@@ -25,6 +27,7 @@ GET /api/orchestrator/tools
 ```
 
 **Features to Implement:**
+
 - [ ] Process task through orchestrator
 - [ ] Display orchestration status for each task
 - [ ] Approval workflow UI (approve/reject tasks)
@@ -39,7 +42,9 @@ GET /api/orchestrator/tools
 ---
 
 #### 2. CommandQueuePage.jsx
+
 **Backend Routes Waiting:**
+
 ```
 POST /api/commands
 GET /api/commands/{command_id}
@@ -52,6 +57,7 @@ POST /api/commands/cleanup/clear-old
 ```
 
 **Features to Implement:**
+
 - [ ] Command queue status view (pending/in-progress/completed/failed)
 - [ ] Queue statistics dashboard
 - [ ] Command detail view with logs
@@ -68,7 +74,9 @@ POST /api/commands/cleanup/clear-old
 ### 🟠 HIGH - Enhance Existing Pages
 
 #### 3. TaskManagement.jsx - Add Bulk Operations
+
 **New Features Needed:**
+
 - [ ] Bulk select checkboxes for tasks
 - [ ] "Select All" checkbox with smart filtering
 - [ ] Bulk action toolbar:
@@ -87,7 +95,9 @@ POST /api/commands/cleanup/clear-old
 ---
 
 #### 4. TaskManagement.jsx - Add Subtasks UI
+
 **New Features Needed:**
+
 - [ ] Subtask button/link on task detail modal
 - [ ] Subtask execution modal with type selection:
   - [ ] Research subtask
@@ -100,6 +110,7 @@ POST /api/commands/cleanup/clear-old
 - [ ] Subtask history
 
 **Backend Endpoints:**
+
 ```
 POST /api/subtasks/research
 POST /api/subtasks/creative
@@ -114,7 +125,9 @@ POST /api/subtasks/format
 ---
 
 #### 5. SettingsManager.jsx - Add Advanced Settings
+
 **New Features Needed:**
+
 - [ ] Webhook configuration section:
   - [ ] Add/edit/delete webhooks
   - [ ] Webhook event type selector
@@ -128,6 +141,7 @@ POST /api/subtasks/format
   - [ ] Connection testing UI
 
 **Backend Endpoints:**
+
 ```
 POST /api/settings/webhooks
 GET /api/settings/integrations
@@ -141,7 +155,9 @@ GET /api/settings/integrations
 ### 🟡 MEDIUM - Optional Enhancements
 
 #### 6. WorkflowHistoryPage.jsx - Add Orchestrator Filters
+
 **Enhancement:**
+
 - [ ] Add orchestrator-specific workflow view
 - [ ] Filter by orchestrator vs manual workflows
 - [ ] Display learning patterns impact
@@ -157,6 +173,7 @@ GET /api/settings/integrations
 ## Implementation Roadmap
 
 ### Phase 1 (Week 1) - Critical Pages
+
 ```
 Day 1-2: CommandQueuePage.jsx
   ├── Create page structure
@@ -177,6 +194,7 @@ Day 5: Testing & bug fixes
 ```
 
 ### Phase 2 (Week 2) - Advanced Features
+
 ```
 Day 1-3: OrchestratorPage.jsx
   ├── Create page structure
@@ -201,6 +219,7 @@ Day 5: Testing & refinement
 ## Code Scaffolds
 
 ### Template: New Page Component
+
 ```javascript
 // pages/CommandQueuePage.jsx
 import React, { useState, useEffect } from 'react';
@@ -236,9 +255,7 @@ export default function CommandQueuePage() {
   // TODO: Implement component JSX
 
   return (
-    <div className="command-queue-page">
-      {/* Component content here */}
-    </div>
+    <div className="command-queue-page">{/* Component content here */}</div>
   );
 }
 ```
@@ -268,9 +285,11 @@ export default function CommandQueuePage() {
 ## Backend Endpoint Status
 
 ### Ready to Use (No Backend Changes Needed)
+
 ✅ All 97+ endpoints are implemented and ready
 
 ### Recommended Enhancements (Optional)
+
 - [ ] Add pagination to `/api/commands` (currently no pagination)
 - [ ] Add filtering to `/api/commands` (by status, date range, etc.)
 - [ ] Add sorting options to all list endpoints
@@ -282,6 +301,7 @@ export default function CommandQueuePage() {
 ## Testing Strategy
 
 ### Unit Testing
+
 ```javascript
 // hooks/useCommandQueue.test.js
 describe('useCommandQueue', () => {
@@ -302,6 +322,7 @@ describe('useCommandQueue', () => {
 ```
 
 ### Integration Testing
+
 ```javascript
 // pages/CommandQueuePage.test.js
 describe('CommandQueuePage', () => {
@@ -323,11 +344,13 @@ describe('CommandQueuePage', () => {
 ## Performance Considerations
 
 ### Current Implementation
+
 - Polling interval: 5 seconds ✅
 - Token expiration: 15 minutes ✅
 - Pagination: Implemented for tasks ✅
 
 ### Recommendations for New Pages
+
 1. **Use same polling interval** (5s) as TaskManagement
 2. **Implement pagination** from day 1 for scalability
 3. **Cache data locally** to reduce API calls
@@ -363,6 +386,7 @@ touch web/oversight-hub/src/pages/CommandQueuePage.jsx
 ## Success Criteria
 
 ### Per Page/Feature:
+
 - [ ] All backend endpoints called successfully
 - [ ] Data displays correctly in UI
 - [ ] Error handling works

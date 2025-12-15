@@ -241,7 +241,7 @@
 │  │                    ↓
 │  │                    mockTokenGenerator.js
 │  │                    - Generate header
-│  │                    - Create payload  
+│  │                    - Create payload
 │  │                    - Sign with HS256
 │  │                    - Return 3-part JWT
 │  │                    ↓
@@ -748,6 +748,7 @@ FRONTEND          NETWORK            BACKEND         DATABASE
 **Visual documentation complete** ✅
 
 These diagrams provide:
+
 - System architecture overview
 - Data flow visualization
 - Component hierarchy

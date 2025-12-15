@@ -13,7 +13,7 @@
 ### Root Folder: 17 files
 
 - ✅ Active: README.md, LICENSE.md (keep)
-- ✅ Active: 8 core audit docs (AUDIT*\*, CODEBASE*_, SCRIPT\__, PHASE*1*_, PHASE*2*_)
+- ✅ Active: 8 core audit docs (AUDIT*\*, CODEBASE*\_, SCRIPT\__, PHASE*1*_, PHASE*2*\_)
 - ⚠️ Duplicates:
   - CURRENT_PROGRESS.md (also in session 2 progress)
   - DOCUMENTATION_CONSOLIDATION_PLAN.md (strategy doc, can archive)
@@ -46,7 +46,7 @@
   - root-cleanup/ (subfolder)
   - session-files/ (subfolder)
   - sessions/ (subfolder)
-- **Non-timestamp files (83):** PHASE*\*, CLEANUP*_, SESSION\__, ARCHITECTURE\_\*, etc.
+- **Non-timestamp files (83):** PHASE*\*, CLEANUP*\_, SESSION\_\_, ARCHITECTURE\_\*, etc.
 
 ---
 
@@ -175,7 +175,7 @@ All 2025-11-05\_\*.md files from docs/archive/
 
 ### Step 4: Delete Non-Timestamp Duplicates (70 files)
 
-PHASE*\*, SESSION*_, CLEANUP\__, CONSOLIDATION*\*, IMPLEMENTATION*\*, etc. duplicates
+PHASE*\*, SESSION*\_, CLEANUP\_\_, CONSOLIDATION*\*, IMPLEMENTATION*\*, etc. duplicates
 
 ### Step 5: Keep Strategic Files (13 files)
 

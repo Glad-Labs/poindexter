@@ -8,6 +8,7 @@
 ## TL;DR - Deploy in 5 Minutes
 
 ### Pre-Flight Check (2 min)
+
 ```bash
 # Verify everything is ready
 bash scripts/pre-deployment-verify.sh
@@ -16,6 +17,7 @@ bash scripts/pre-deployment-verify.sh
 ```
 
 ### Stage to Staging (2 min)
+
 ```bash
 git checkout dev
 git merge --no-ff feat/bugs -m "Merge: Task-to-post pipeline with frontend verification"
@@ -24,6 +26,7 @@ git push origin dev
 ```
 
 ### Stage to Production (1 min)
+
 ```bash
 git checkout main
 git merge --no-ff dev -m "Release: v1.0.0 - Complete system end-to-end working"
@@ -33,6 +36,7 @@ git push origin main && git push origin v1.0.0
 ```
 
 ### Verify Production (Ongoing)
+
 ```bash
 # Health check
 curl https://api.glad-labs.com/api/health
@@ -48,18 +52,19 @@ open https://glad-labs.com/
 
 ## Key Documents
 
-| Document | Purpose | Read Time |
-|----------|---------|-----------|
-| **[PRODUCTION_DEPLOYMENT_PREP.md](./PRODUCTION_DEPLOYMENT_PREP.md)** | Complete deployment guide with all procedures | 15 min |
-| **[DEPLOYMENT_APPROVAL.md](./DEPLOYMENT_APPROVAL.md)** | Executive summary for stakeholder approval | 5 min |
-| **[scripts/pre-deployment-verify.sh](./scripts/pre-deployment-verify.sh)** | Automated system verification (run before deploy) | 3 min to run |
-| **[scripts/pre-deployment-verify.ps1](./scripts/pre-deployment-verify.ps1)** | Same as above (PowerShell for Windows) | 3 min to run |
+| Document                                                                     | Purpose                                           | Read Time    |
+| ---------------------------------------------------------------------------- | ------------------------------------------------- | ------------ |
+| **[PRODUCTION_DEPLOYMENT_PREP.md](./PRODUCTION_DEPLOYMENT_PREP.md)**         | Complete deployment guide with all procedures     | 15 min       |
+| **[DEPLOYMENT_APPROVAL.md](./DEPLOYMENT_APPROVAL.md)**                       | Executive summary for stakeholder approval        | 5 min        |
+| **[scripts/pre-deployment-verify.sh](./scripts/pre-deployment-verify.sh)**   | Automated system verification (run before deploy) | 3 min to run |
+| **[scripts/pre-deployment-verify.ps1](./scripts/pre-deployment-verify.ps1)** | Same as above (PowerShell for Windows)            | 3 min to run |
 
 ---
 
 ## System Status
 
 ✅ **All Components Ready:**
+
 - Backend API: All endpoints tested (7/7 PASSED)
 - Database: Schema verified, 8 test posts created
 - Frontend: Posts displaying correctly
@@ -72,6 +77,7 @@ open https://glad-labs.com/
 ## If Something Goes Wrong
 
 ### Immediate Action
+
 ```bash
 # Revert deployment
 git revert HEAD --no-edit
@@ -81,6 +87,7 @@ git push origin main
 ```
 
 ### Check Logs
+
 ```bash
 # Railway backend logs
 railway logs --service=cofounder-agent
@@ -90,6 +97,7 @@ vercel logs [project-id]
 ```
 
 ### Rollback to Specific Version
+
 ```bash
 # See available versions
 git tag --list
@@ -115,6 +123,7 @@ git push origin HEAD:main --force  # Only if authorized
 ## Monitoring During Deploy
 
 **Timeline:**
+
 - T+0: Deploy starts
 - T+5 min: Health check
 - T+15 min: Frontend test
@@ -154,7 +163,7 @@ A: 15-25 minutes (5 min deploy + 10-15 min verification)
 A: This is the first production deployment, so it establishes the baseline.
 
 **Q: What if I find a bug after deploy?**
-A: Use rollback procedure in PRODUCTION_DEPLOYMENT_PREP.md or create hotfix on hotfix/* branch.
+A: Use rollback procedure in PRODUCTION_DEPLOYMENT_PREP.md or create hotfix on hotfix/\* branch.
 
 **Q: Do I need to backup data?**
 A: Yes, backup database before deploy (procedure in PRODUCTION_DEPLOYMENT_PREP.md).
