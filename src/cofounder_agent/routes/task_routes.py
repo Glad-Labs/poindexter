@@ -639,18 +639,18 @@ Start writing the blog post now:"""
             logger.error(f"[BG_TASK] Error creating post: {str(post_err)}", exc_info=True)
             # Don't fail the task if post creation fails, just log it
         
-        # Step 6: Final status update
-        logger.info(f"[BG_TASK] Content generation complete, marking task as completed...")
+        # Step 6: Final status update - set to awaiting_approval (human review required)
+        logger.info(f"[BG_TASK] Content generation complete, setting task to awaiting_approval...")
         
         final_result = json.dumps({
             "content": generated_content,
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "content_length": len(generated_content),
-            "status": "success",
+            "status": "awaiting_human_review",
             "post_created": True
         })
-        await db_service.update_task_status(task_id, "completed", result=final_result)
-        logger.info(f"[BG_TASK] Task completed successfully!")
+        await db_service.update_task_status(task_id, "awaiting_approval", result=final_result)
+        logger.info(f"[BG_TASK] Task awaiting human approval!")
         
     except Exception as e:
         logger.error(f"[BG_TASK] Unhandled error: {str(e)}", exc_info=True)

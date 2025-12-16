@@ -174,7 +174,7 @@ class ImageService:
                 "stabilityai/stable-diffusion-xl-base-1.0",
                 torch_dtype=torch_dtype,
                 use_safetensors=True,
-                variant="fp32" if torch_dtype == torch.float32 else "fp16",
+                variant="fp16" if torch_dtype == torch.float16 else None,
             ).to("cuda")
 
             # Load refinement model for production quality
@@ -184,7 +184,7 @@ class ImageService:
                 "stabilityai/stable-diffusion-xl-refiner-1.0",
                 torch_dtype=torch_dtype,
                 use_safetensors=True,
-                variant="fp32" if torch_dtype == torch.float32 else "fp16",
+                variant="fp16" if torch_dtype == torch.float16 else None,
             ).to("cuda")
 
             self.sdxl_available = True
