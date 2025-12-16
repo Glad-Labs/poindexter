@@ -31,6 +31,7 @@ pyotp>=2.9.0
 # ===== MEMORY & SEMANTIC SEARCH =====
 # Advanced memory system with semantic similarity
 sentence-transformers>=2.2.0
+torch>=2.0.0  # PyTorch (REQUIRED for SDXL/diffusers)
 
 # ===== DATABASE & STORAGE =====
 # PostgreSQL with asyncpg driver (REQUIRED - no SQLite fallback)
@@ -46,6 +47,8 @@ aioredis>=2.0.1
 # Data handling, parsing, and web scraping
 beautifulsoup4>=4.12.0
 requests>=2.32.4
+httpx>=0.25.0  # Async HTTP client (used in image_service)
+Pillow>=10.0.0  # Image processing (PIL.Image for SDXL output)
 markdown>=3.5.0
 pydantic>=2.5.0
 python-dotenv>=1.0.0
@@ -78,9 +81,7 @@ typer>=0.9.0
 
 # ===== SECURITY & AUTHENTICATION =====
 # Security and authentication
-cryptography>=41.0.0
 PyJWT>=2.8.0
-pyotp>=2.9.0
 python-jose>=3.3.0
 email-validator>=2.1.0
 passlib>=1.7.4
@@ -91,3 +92,11 @@ click>=8.1.0
 tqdm>=4.66.0
 pyyaml>=6.0.0
 urllib3>=2.5.0
+
+# ===== IMAGE GENERATION (SDXL) =====
+# Stable Diffusion XL with refinement pipeline
+diffusers>=0.36.0  # Diffusion models (SDXL base and refiner)
+transformers>=4.50.0  # Model weights and tokenizers
+accelerate>=0.24.0  # Distributed training and inference
+safetensors>=0.4.0  # Fast model serialization
+invisible_watermark>=0.2.0  # Watermarking for generated images

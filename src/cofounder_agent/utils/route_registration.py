@@ -118,6 +118,17 @@ def register_all_routes(
         status['content_router'] = False
     
     try:
+        # ===== MEDIA & IMAGE MANAGEMENT =====
+        from routes.media_routes import media_router
+        # Image service injected via Depends(get_image_service) in routes
+        app.include_router(media_router)
+        logger.info(" media_router registered (image generation & search)")
+        status['media_router'] = True
+    except Exception as e:
+        logger.error(f" media_router failed: {e}")
+        status['media_router'] = False
+    
+    try:
         # ===== CMS (Simple CMS - replaces Strapi) =====
         from routes.cms_routes import router as cms_router
         app.include_router(cms_router)
