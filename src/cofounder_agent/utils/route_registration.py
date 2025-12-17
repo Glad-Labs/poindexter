@@ -272,6 +272,16 @@ def register_all_routes(
         status['orchestrator_routes'] = False
     
     try:
+        # ===== WEBSOCKET - Real-time progress tracking =====
+        from routes.websocket_routes import websocket_router
+        app.include_router(websocket_router)
+        logger.info(" websocket_router registered (real-time progress tracking)")
+        status['websocket_router'] = True
+    except Exception as e:
+        logger.error(f" websocket_router failed: {e}")
+        status['websocket_router'] = False
+    
+    try:
         # ===== TRAINING DATA MANAGEMENT (Phase 6) =====
         from routes.training_routes import router as training_router, set_services as set_training_services
         

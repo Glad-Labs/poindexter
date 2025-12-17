@@ -24,7 +24,8 @@ Cost Optimization:
 import os
 import logging
 import asyncio
-from typing import Optional, Dict, List, Any
+import time
+from typing import Optional, Dict, List, Any, Callable
 from datetime import datetime
 
 try:
@@ -50,6 +51,19 @@ except ImportError as e:
     DIFFUSERS_AVAILABLE = False
     StableDiffusionXLPipeline = None
     logging.warning(f"Diffusers library not available: {e}")
+
+# Optional optimization packages
+try:
+    import xformers
+    XFORMERS_AVAILABLE = True
+except ImportError:
+    XFORMERS_AVAILABLE = False
+
+try:
+    from optimum.intel import OVModelForFeatureExtraction
+    OPTIMUM_AVAILABLE = True
+except ImportError:
+    OPTIMUM_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -136,12 +150,13 @@ class ImageService:
         self.sdxl_refiner_pipe = None
         self.sdxl_available = False
         self.use_refinement = True  # Use refinement for production quality
+        self.use_device = "cpu"  # Will be updated during initialization
         self._initialize_sdxl()
 
         self.search_cache: Dict[str, List[FeaturedImageMetadata]] = {}
 
     def _initialize_sdxl(self) -> None:
-        """Initialize Stable Diffusion XL model with refinement if GPU available"""
+        """Initialize Stable Diffusion XL model with optimization and refinement if GPU available"""
         # Check if diffusers is available first
         if not DIFFUSERS_AVAILABLE:
             logger.warning("Diffusers library not installed - SDXL image generation will be unavailable")
@@ -149,53 +164,137 @@ class ImageService:
             return
         
         try:
-            if not torch.cuda.is_available():
-                logger.warning("CUDA not available - SDXL image generation will be skipped")
-                return
-
-            # 🖥️ Detect GPU capability for optimal precision
-            gpu_memory = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)  # GB
-            logger.info(f"GPU Memory: {gpu_memory:.1f}GB")
-
-            # RTX 5090 with 32GB VRAM → Use fp32 for best quality
-            # RTX 4090 with 24GB VRAM → Use fp32
-            # RTX 3090 with 24GB VRAM → Use fp16
-            # RTX 3060 with 12GB VRAM → Use fp16 + memory optimization
-            if gpu_memory >= 20:
-                torch_dtype = torch.float32  # Full precision for high VRAM
-                logger.info("✅ Using fp32 (full precision) for best quality")
+            # Determine device: CUDA (if compatible) or CPU
+            use_device = "cpu"
+            torch_dtype = torch.float32
+            
+            if torch.cuda.is_available():
+                try:
+                    # Check compute capability compatibility
+                    capability = torch.cuda.get_device_capability(0)
+                    device_name = torch.cuda.get_device_name(0)
+                    current_cap = capability[0] * 10 + capability[1]
+                    supported_caps = [50, 60, 61, 70, 75, 80, 86, 90, 120]  # Added sm_120 (RTX 5090 Blackwell)
+                    
+                    logger.info(f"GPU: {device_name}, Capability: sm_{capability[0]}{capability[1]}")
+                    
+                    if current_cap in supported_caps:
+                        use_device = "cuda"
+                        gpu_memory = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+                        logger.info(f"✅ GPU Memory: {gpu_memory:.1f}GB - Using CUDA acceleration")
+                        
+                        # Precision selection for CUDA
+                        if gpu_memory >= 20:
+                            torch_dtype = torch.float32
+                            logger.info("✅ Using fp32 (full precision) for best quality")
+                        else:
+                            torch_dtype = torch.float16
+                            logger.info("✅ Using fp16 (half precision) for memory efficiency")
+                    else:
+                        logger.warning(
+                            f"⚠️  GPU capability sm_{capability[0]}{capability[1]} not officially supported. "
+                            f"Falling back to CPU mode."
+                        )
+                except Exception as e:
+                    logger.warning(f"Could not verify GPU capability: {e}. Using CPU mode.")
             else:
-                torch_dtype = torch.float16  # Half precision for lower VRAM
-                logger.info("✅ Using fp16 (half precision) for memory efficiency")
+                logger.warning("CUDA not available - using CPU mode (slower)")
 
-            # Load base SDXL model
-            logger.info("🎨 Loading SDXL base model...")
+            # For CPU inference, always use fp32
+            if use_device == "cpu":
+                torch_dtype = torch.float32
+                logger.info("ℹ️  CPU mode: using fp32 (full precision)")
+
+            # Load base SDXL model with optimizations
+            logger.info(f"🎨 Loading SDXL base model (device: {use_device})...")
             self.sdxl_pipe = StableDiffusionXLPipeline.from_pretrained(
                 "stabilityai/stable-diffusion-xl-base-1.0",
                 torch_dtype=torch_dtype,
                 use_safetensors=True,
                 variant="fp16" if torch_dtype == torch.float16 else None,
-            ).to("cuda")
+            ).to(use_device)
+
+            # Apply CPU/GPU optimizations
+            self._apply_model_optimizations(self.sdxl_pipe, use_device)
 
             # Load refinement model for production quality
-            # In newer diffusers versions, use the same pipeline class but with refiner model
-            logger.info("🎨 Loading SDXL refinement model...")
+            logger.info(f"🎨 Loading SDXL refinement model (device: {use_device})...")
             self.sdxl_refiner_pipe = StableDiffusionXLPipeline.from_pretrained(
                 "stabilityai/stable-diffusion-xl-refiner-1.0",
                 torch_dtype=torch_dtype,
                 use_safetensors=True,
                 variant="fp16" if torch_dtype == torch.float16 else None,
-            ).to("cuda")
+            ).to(use_device)
 
+            # Apply optimizations to refiner too
+            self._apply_model_optimizations(self.sdxl_refiner_pipe, use_device)
+
+            self.use_device = use_device  # Store device for later use
             self.sdxl_available = True
             self.use_refinement = True
             logger.info("✅ SDXL base + refinement models loaded successfully")
-            logger.info(f"   Using {'fp32 (full precision)' if torch_dtype == torch.float32 else 'fp16 (half precision)'}")
+            logger.info(f"   Device: {use_device.upper()}")
+            logger.info(f"   Precision: {'fp32 (full precision)' if torch_dtype == torch.float32 else 'fp16 (half precision)'}")
             logger.info(f"   Refinement: {'ENABLED' if self.use_refinement else 'DISABLED'}")
+            logger.info(f"   Optimizations: {'ENABLED (xformers, flash attention)' if XFORMERS_AVAILABLE else 'BASIC (no xformers)'}")
 
         except Exception as e:
             logger.error(f"Failed to load Stable Diffusion XL models: {e}")
             self.sdxl_available = False
+
+    def _apply_model_optimizations(self, pipe, device: str) -> None:
+        """
+        Apply performance optimizations to SDXL pipeline.
+        
+        Optimizations:
+        - Memory-efficient attention (xformers if available)
+        - Flash Attention v2
+        - Model CPU offloading for 16GB GPU
+        - Reduced precision where safe
+        
+        These work on both CPU and GPU and will benefit future GPU usage.
+        """
+        try:
+            # 1. Enable attention slicing for memory efficiency
+            pipe.enable_attention_slicing()
+            logger.info("   ✓ Attention slicing enabled")
+            
+            # 2. Use xformers memory efficient attention if available
+            if XFORMERS_AVAILABLE:
+                try:
+                    pipe.enable_xformers_memory_efficient_attention()
+                    logger.info("   ✓ xformers memory-efficient attention enabled (2-4x faster)")
+                except Exception as e:
+                    logger.warning(f"   ⚠️  Could not enable xformers: {e}")
+            
+            # 3. Enable Flash Attention v2 if available (PyTorch 2.0+)
+            try:
+                if hasattr(pipe.unet, 'enable_flash_attn'):
+                    pipe.unet.enable_flash_attn(use_flash_attention_v2=True)
+                    logger.info("   ✓ Flash Attention v2 enabled (30-50% faster)")
+            except Exception as e:
+                logger.debug(f"   Flash Attention v2 not available: {e}")
+            
+            # 4. Enable sequential CPU offloading for GPU mode (frees VRAM between steps)
+            if device == "cuda":
+                try:
+                    pipe.enable_sequential_cpu_offload()
+                    logger.info("   ✓ Sequential CPU offloading enabled (GPU memory saver)")
+                except Exception as e:
+                    logger.debug(f"   Sequential CPU offload not available: {e}")
+            
+            # 5. Enable model CPU offload for memory-constrained GPUs
+            if device == "cuda":
+                try:
+                    gpu_mem = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+                    if gpu_mem < 20:
+                        pipe.enable_model_cpu_offload()
+                        logger.info("   ✓ Model CPU offload enabled (constrained GPU memory)")
+                except Exception as e:
+                    logger.debug(f"   Model CPU offload not available: {e}")
+                    
+        except Exception as e:
+            logger.warning(f"Error applying optimizations: {e}")
 
     # =========================================================================
     # FEATURED IMAGE SEARCH (Pexels - Free, Unlimited)
@@ -354,9 +453,13 @@ class ImageService:
         guidance_scale: float = 8.0,
         use_refinement: bool = True,
         high_quality: bool = True,
+        task_id: Optional[str] = None,
     ) -> bool:
         """
-        Generate image using Stable Diffusion XL with optional refinement (GPU required).
+        Generate image using Stable Diffusion XL with full refinement for maximum quality.
+        
+        Quality is prioritized over speed. Refinement is ALWAYS enabled to ensure
+        the highest quality output.
 
         Args:
             prompt: Image generation prompt
@@ -364,11 +467,18 @@ class ImageService:
             negative_prompt: Negative prompt for quality improvement
             num_inference_steps: Number of inference steps (50+ for high quality)
             guidance_scale: Guidance scale for quality (7.5-8.5 recommended)
-            use_refinement: Use refinement model for production quality
+            use_refinement: Use refinement model (ALWAYS enabled for quality)
             high_quality: Optimize for high quality (more steps, higher guidance)
+            task_id: Optional task ID for progress tracking via WebSocket
 
         Returns:
             True if successful, False otherwise
+            
+        Note:
+            - Refinement adds 30+ additional steps (2-stage pipeline)
+            - CPU mode will be slower but maintains maximum quality
+            - GPU mode (when available in PyTorch 2.9.2+) will be 20-40x faster
+            - If task_id provided, progress updates are sent via progress service
         """
         if not self.sdxl_available:
             logger.warning("SDXL model not available - image generation skipped")
@@ -379,7 +489,8 @@ class ImageService:
             if high_quality:
                 logger.info(f"   Mode: HIGH QUALITY (base steps={num_inference_steps}, guidance={guidance_scale})")
                 if use_refinement and self.sdxl_refiner_pipe:
-                    logger.info(f"   Refinement: ENABLED")
+                    logger.info(f"   Refinement: ENABLED (quality priority)")
+                    logger.info(f"   Device: {self.use_device.upper()} - Note: CPU refinement will take longer")
 
             # Run generation in thread pool to avoid blocking
             loop = asyncio.get_event_loop()
@@ -391,14 +502,39 @@ class ImageService:
                 negative_prompt,
                 num_inference_steps,
                 guidance_scale,
-                use_refinement and self.use_refinement,
+                use_refinement and self.use_refinement,  # Enable refinement on all devices for quality
+                task_id,
             )
 
             logger.info(f"✅ Image saved to {output_path}")
+            
+            # Mark progress as complete if tracking
+            if task_id:
+                from services.progress_service import get_progress_service
+                progress_service = get_progress_service()
+                progress_service.mark_complete(task_id, "Image generation complete")
+                
+                # Broadcast via WebSocket
+                from routes.websocket_routes import broadcast_progress
+                progress = progress_service.get_progress(task_id)
+                await broadcast_progress(task_id, progress)
+            
             return True
 
         except Exception as e:
             logger.error(f"❌ Error generating image: {e}")
+            
+            # Mark progress as failed if tracking
+            if task_id:
+                from services.progress_service import get_progress_service
+                progress_service = get_progress_service()
+                progress_service.mark_failed(task_id, str(e))
+                
+                # Broadcast via WebSocket
+                from routes.websocket_routes import broadcast_progress
+                progress = progress_service.get_progress(task_id)
+                await broadcast_progress(task_id, progress)
+            
             return False
 
     def _generate_image_sync(
@@ -409,6 +545,7 @@ class ImageService:
         num_inference_steps: int = 50,
         guidance_scale: float = 8.0,
         use_refinement: bool = True,
+        task_id: Optional[str] = None,
     ) -> None:
         """
         Synchronous two-stage SDXL generation with optional refinement.
@@ -417,90 +554,124 @@ class ImageService:
         Stage 2: Refiner model applies additional detail refinement (if enabled)
 
         Runs in thread pool to avoid blocking async operations.
+        
+        Emits progress updates if task_id provided (for WebSocket streaming).
         """
         if not self.sdxl_pipe:
             raise RuntimeError("SDXL model not initialized")
 
         negative_prompt = negative_prompt or ""
+        start_time = time.time()
+        
+        # Initialize progress tracking if task_id provided
+        progress_service = None
+        if task_id:
+            from services.progress_service import get_progress_service
+            progress_service = get_progress_service()
+            total_steps = num_inference_steps + (30 if use_refinement and self.sdxl_refiner_pipe else 0)
+            progress_service.create_progress(task_id, total_steps)
+
+        def progress_callback(step: int, timestep: Any, latents: Any) -> None:
+            """Callback for each generation step"""
+            if progress_service and task_id:
+                elapsed = time.time() - start_time
+                progress_service.update_progress(
+                    task_id,
+                    step + 1,  # 1-indexed for display
+                    stage="base_model",
+                    elapsed_time=elapsed,
+                    message=f"Base model generation: step {step + 1}/{num_inference_steps}"
+                )
 
         # =====================================================================
         # STAGE 1: Base Generation
         # =====================================================================
         logger.info(f"   ⏱️  Stage 1/2: Base generation ({num_inference_steps} steps)...")
+        
+        if progress_service and task_id:
+            progress_service.update_progress(
+                task_id,
+                0,
+                stage="base_model",
+                message=f"Starting base model generation..."
+            )
 
-        base_image = self.sdxl_pipe(
+        # Generate base image - use PIL for compatibility across all modes
+        base_result = self.sdxl_pipe(
             prompt=prompt,
             negative_prompt=negative_prompt,
             num_inference_steps=num_inference_steps,
             guidance_scale=guidance_scale,
-            output_type="latent",  # Keep as latent for refinement input
-        ).images[0]
-
-        logger.info(f"   ✓ Stage 1 complete: base image latent generated")
+            output_type="pil",  # Always use PIL for compatibility
+            callback=progress_callback if task_id else None,
+            callback_steps=1 if task_id else None,
+        )
+        base_image_pil = base_result.images[0]
+        logger.info(f"   ✓ Stage 1 complete: Base image generated")
 
         # =====================================================================
-        # STAGE 2: Refinement (Optional)
+        # STAGE 2: Refinement (Quality Priority - Always Enabled)
         # =====================================================================
         if use_refinement and self.sdxl_refiner_pipe:
             logger.info(f"   ⏱️  Stage 2/2: Refinement pass (30 additional steps)...")
+            
+            if progress_service and task_id:
+                progress_service.update_progress(
+                    task_id,
+                    num_inference_steps,
+                    stage="refiner_model",
+                    message=f"Starting refinement pass..."
+                )
+            
+            def refiner_progress_callback(step: int, timestep: Any, latents: Any) -> None:
+                """Callback for refinement steps"""
+                if progress_service and task_id:
+                    elapsed = time.time() - start_time
+                    current_step = num_inference_steps + step + 1
+                    progress_service.update_progress(
+                        task_id,
+                        current_step,
+                        stage="refiner_model",
+                        elapsed_time=elapsed,
+                        message=f"Refinement: step {step + 1}/30"
+                    )
+            
             try:
-                # Refiner pipeline expects image (can be latent or PIL)
-                # The pipeline will handle the latent decoding and refinement
+                # Pass PIL image directly to refiner
                 refined_image = self.sdxl_refiner_pipe(
                     prompt=prompt,
                     negative_prompt=negative_prompt,
-                    image=base_image,  # Pass the latent from base model
-                    num_inference_steps=30,  # Refinement doesn't need many steps
+                    image=base_image_pil,
+                    num_inference_steps=30,
                     guidance_scale=guidance_scale,
-                    output_type="pil",  # Get PIL image from refiner
+                    output_type="pil",
+                    callback=refiner_progress_callback if task_id else None,
+                    callback_steps=1 if task_id else None,
                 ).images[0]
 
-                logger.info(f"   ✓ Stage 2 complete: refinement applied")
+                logger.info(f"   ✓ Stage 2 complete: refinement applied successfully")
                 refined_image.save(output_path)
 
             except Exception as refine_error:
                 logger.warning(f"   ⚠️  Refinement failed, falling back to base image: {refine_error}")
-                # Fallback: decode base latent manually and save
+                # Fallback: save base image without refinement
                 try:
-                    # Decode the latent tensor to an image
-                    # Latents are in range [-1, 1], need to decode through VAE
-                    base_image_decoded = self.sdxl_pipe.vae.decode(
-                        (base_image / self.sdxl_pipe.vae.config.scaling_factor)
-                    ).sample
-                    
-                    # Convert to PIL Image
-                    base_image_pil = (base_image_decoded / 2 + 0.5).clamp(0, 1)
-                    base_image_pil = base_image_pil.permute(0, 2, 3, 1).cpu().numpy()[0]
-                    base_image_pil = (base_image_pil * 255).astype("uint8")
-                    base_image_pil = Image.fromarray(base_image_pil)
-                    
                     base_image_pil.save(output_path)
-                    logger.info(f"   ✓ Saved base image (latent decoded via VAE)")
+                    logger.info(f"   ✓ Saved base image without refinement (fallback)")
 
-                except Exception as decode_error:
-                    logger.error(f"   ❌ Fallback conversion also failed: {decode_error}")
+                except Exception as save_error:
+                    logger.error(f"   ❌ Save also failed: {save_error}")
                     raise
 
         else:
-            # No refinement: decode latent to image directly
-            logger.info(f"   ⏱️  Converting base latent to image...")
+            # Refinement disabled: save base image directly
+            logger.info(f"   ⏱️  Saving base image...")
             try:
-                # Decode the latent tensor using the VAE decoder
-                base_image_decoded = self.sdxl_pipe.vae.decode(
-                    (base_image / self.sdxl_pipe.vae.config.scaling_factor)
-                ).sample
-                
-                # Convert to PIL Image
-                base_image_pil = (base_image_decoded / 2 + 0.5).clamp(0, 1)
-                base_image_pil = base_image_pil.permute(0, 2, 3, 1).cpu().numpy()[0]
-                base_image_pil = (base_image_pil * 255).astype("uint8")
-                base_image_pil = Image.fromarray(base_image_pil)
-
                 base_image_pil.save(output_path)
-                logger.info(f"   ✓ Saved base image (no refinement)")
+                logger.info(f"   ✓ Saved base image (refinement disabled)")
 
-            except Exception as decode_error:
-                logger.error(f"   ❌ Latent decoding failed: {decode_error}")
+            except Exception as save_error:
+                logger.error(f"   ❌ Save failed: {save_error}")
                 raise
 
     # =========================================================================

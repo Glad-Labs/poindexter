@@ -42,6 +42,7 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
 import logging
+import json
 
 from services.content_router_service import (
     ContentStyle,
@@ -412,6 +413,21 @@ async def approve_and_publish_task(
         current_status = task.get("status")
         approval_status = task.get("approval_status", "pending")
         
+        # Handle already-published/approved tasks - return success instead of error
+        if current_status in ["published", "approved", "completed"]:
+            logger.info(f"ℹ️  Task {task_id} is already {current_status}")
+            logger.info(f"   Returning success response (idempotent operation)")
+            
+            return ApprovalResponse(
+                task_id=task_id,
+                approval_status="approved",
+                strapi_post_id=task.get("strapi_id"),
+                published_url=task.get("strapi_url", f"/posts/{task_id}"),
+                approval_timestamp=task.get("updated_at", datetime.now().isoformat()),
+                reviewer_id=task.get("task_metadata", {}).get("approved_by", "system"),
+                message=f"Task {task_id} is already {current_status}"
+            )
+        
         if current_status != "awaiting_approval":
             logger.error(
                 f"❌ Approval: Task {task_id} not awaiting approval (status={current_status})"
@@ -441,16 +457,36 @@ async def approve_and_publish_task(
         if request.approved:
             logger.info(f"✅ APPROVED: Marking task {task_id} as approved...")
             
-            # Get content from task_metadata (where orchestrator stores it)
+            # Get content from multiple possible locations
             task_metadata = task.get("task_metadata", {})
-            content = task_metadata.get("content")
+            
+            # Try to find content in order of priority:
+            # 1. Top-level content field
+            # 2. task_metadata.content (where orchestrator stores it)
+            # 3. result field (if it contains content)
+            content = task.get("content")
+            content_location = "top-level"
+            
+            if not content and isinstance(task_metadata, dict):
+                content = task_metadata.get("content")
+                content_location = "task_metadata.content"
+            
             if not content:
-                logger.error(f"❌ Task {task_id} has no content")
+                result = task.get("result", {})
+                if isinstance(result, dict):
+                    content = result.get("content")
+                    content_location = "result.content"
+            
+            if not content:
+                logger.error(f"❌ Task {task_id} has no content in any field (checked: content, task_metadata.content, result.content)")
+                logger.debug(f"Task fields available: {list(task.keys())}")
                 raise ValidationError(
                     "Task content is empty",
                     field="content",
                     constraint="required"
                 )
+            
+            logger.debug(f"✅ Found content from {content_location} ({len(content)} chars)")
 
             # ✅ Update task with approval metadata
             await task_store.update_task(
@@ -487,19 +523,50 @@ async def approve_and_publish_task(
                     slug = f"{slug}-{unique_suffix}" if slug else f"post-{unique_suffix}"
                     logger.info(f"📝 Generated unique slug from title: '{title}' → '{slug}'")
                 
+                # Extract featured image URL from multiple possible locations
+                featured_image_url = None
+                
+                # Try different field names/locations where image might be stored
+                if "featured_image_url" in task_metadata:
+                    featured_image_url = task_metadata.get("featured_image_url")
+                elif "image" in task_metadata and isinstance(task_metadata["image"], dict):
+                    featured_image_url = task_metadata["image"].get("url")
+                elif "image_url" in task_metadata:
+                    featured_image_url = task_metadata.get("image_url")
+                elif "featured_image" in task_metadata and isinstance(task_metadata["featured_image"], dict):
+                    featured_image_url = task_metadata["featured_image"].get("url")
+                
+                if featured_image_url:
+                    logger.debug(f"✅ Found featured image URL: {featured_image_url[:100]}...")
+                else:
+                    logger.debug(f"ℹ️  No featured image URL found in task metadata")
+                
+                # Extract author, category, tags, and other metadata from task
+                author_id = task_metadata.get("author_id")
+                category_id = task_metadata.get("category_id")
+                tag_ids = task_metadata.get("tag_ids") or task_metadata.get("tags") or []
+                
+                # Build post data with all metadata fields
                 post_data = {
-                    "id": task_metadata.get("post_id"),  # Link to original task
+                    "id": task_metadata.get("post_id"),
                     "title": title,
                     "slug": slug,
                     "content": content,
                     "excerpt": task_metadata.get("excerpt", ""),
-                    "featured_image_url": task_metadata.get("featured_image_url"),  # ✅ FIXED: Use correct key name
+                    "featured_image_url": featured_image_url,
                     "cover_image_url": task_metadata.get("cover_image_url"),
+                    "author_id": author_id,  # Author who created the content
+                    "category_id": category_id,
+                    "tag_ids": tag_ids if isinstance(tag_ids, list) else [tag_ids] if tag_ids else None,
                     "status": "published",
                     "seo_title": task_metadata.get("seo_title"),
                     "seo_description": task_metadata.get("seo_description"),
                     "seo_keywords": task_metadata.get("seo_keywords", ""),
+                    "created_by": request.reviewer_id,  # Human reviewer who approved
+                    "updated_by": request.reviewer_id,  # Human reviewer who approved
                 }
+                
+                logger.debug(f"📝 Post data prepared: {json.dumps({k: str(v)[:50] + '...' if isinstance(v, str) and len(str(v)) > 50 else v for k, v in post_data.items()}, default=str)}")
                 
                 post_result = await db_service.create_post(post_data)
                 post_id = post_result.get("id")

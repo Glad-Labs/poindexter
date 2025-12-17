@@ -127,6 +127,7 @@ async def lifespan(app: FastAPI):
         
         # Inject services into app state for access in routes
         app.state.database = services['database']
+        app.state.redis_cache = services['redis_cache']
         app.state.orchestrator = services['orchestrator']
         app.state.task_executor = services['task_executor']
         app.state.intelligent_orchestrator = services['intelligent_orchestrator']

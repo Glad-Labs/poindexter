@@ -28,6 +28,7 @@ class StartupManager:
     def __init__(self):
         """Initialize startup manager with empty service references"""
         self.database_service = None
+        self.redis_cache = None
         self.orchestrator = None
         self.task_executor = None
         self.intelligent_orchestrator = None
@@ -98,6 +99,7 @@ class StartupManager:
             
             return {
                 'database': self.database_service,
+                'redis_cache': self.redis_cache,
                 'orchestrator': self.orchestrator,
                 'task_executor': self.task_executor,
                 'intelligent_orchestrator': self.intelligent_orchestrator,
@@ -164,10 +166,10 @@ class StartupManager:
         """Initialize Redis cache for query optimization"""
         logger.info("  🚀 Initializing Redis cache for query optimization...")
         try:
-            from services.redis_cache import setup_redis_cache
+            from services.redis_cache import RedisCache
             
-            redis_initialized = await setup_redis_cache()
-            if redis_initialized:
+            self.redis_cache = await RedisCache.create()
+            if self.redis_cache._enabled:
                 logger.info("   ✅ Redis cache initialized (query performance optimization enabled)")
             else:
                 logger.info("   ℹ️  Redis cache not available (system will continue without caching)")
@@ -332,6 +334,7 @@ class StartupManager:
     def _log_startup_summary(self) -> None:
         """Log summary of startup state"""
         logger.info(f"  - Database Service: {self.database_service is not None}")
+        logger.info(f"  - Redis Cache: {self.redis_cache is not None and self.redis_cache._enabled}")
         logger.info(f"  - Orchestrator: {self.orchestrator is not None}")
         logger.info(f"  - Task Executor: {self.task_executor is not None and self.task_executor.running}")
         logger.info(f"  - Intelligent Orchestrator: {self.intelligent_orchestrator is not None}")
@@ -359,6 +362,15 @@ class StartupManager:
                     )
             except Exception as e:
                 logger.error(f"   Error stopping task executor: {e}", exc_info=True)
+            
+            # Close Redis connection
+            if self.redis_cache:
+                try:
+                    logger.info("  Closing Redis cache connection...")
+                    await self.redis_cache.close()
+                    logger.info("   Redis cache connection closed")
+                except Exception as e:
+                    logger.error(f"   Error closing Redis cache: {e}", exc_info=True)
             
             # Close database connection
             if self.database_service:

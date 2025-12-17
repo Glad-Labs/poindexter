@@ -24,7 +24,7 @@ The system will work normally but without cache benefits.
 import os
 import json
 import logging
-from typing import Optional, Any, Dict, List, Callable
+from typing import Optional, Any, Dict, List, Callable, TYPE_CHECKING
 from datetime import datetime, timedelta
 import asyncio
 
@@ -35,7 +35,11 @@ try:
     REDIS_AVAILABLE = True
 except ImportError:
     REDIS_AVAILABLE = False
-    Redis = None  # Type placeholder when Redis is not available
+    # Type placeholder when Redis is not available
+    if TYPE_CHECKING:
+        from redis.asyncio import Redis  # type: ignore
+    else:
+        Redis = None  # type: ignore
     logging.warning("Redis SDK not installed. Caching disabled. Install with: pip install redis aioredis")
 
 logger = logging.getLogger(__name__)
@@ -68,29 +72,39 @@ class RedisCache:
     
     Handles async Redis operations with automatic fallback when Redis is unavailable.
     Provides convenience methods for common cache operations.
+    
+    Uses dependency injection instead of singleton pattern:
+        redis_cache = await RedisCache.create()
+        app.state.redis_cache = redis_cache
+        
+        # Then in routes/services:
+        async def my_route(request: Request):
+            redis_cache = request.app.state.redis_cache
+            value = await redis_cache.get(key)
     """
     
-    _instance: Optional[Redis] = None
-    _initialized = False
-    _enabled = False
-    _health_check_scheduled = False
+    def __init__(self, redis_instance: Optional[Redis] = None, enabled: bool = False):
+        """
+        Initialize RedisCache with a Redis instance.
+        
+        Args:
+            redis_instance: Connected Redis instance (or None if disabled)
+            enabled: Whether caching is enabled
+        """
+        self._instance: Optional[Redis] = redis_instance
+        self._enabled = enabled
     
     @classmethod
-    async def initialize(cls) -> bool:
+    async def create(cls) -> "RedisCache":
         """
-        Initialize Redis connection.
+        Factory method to create a RedisCache instance with environment configuration.
         
         Returns:
-            bool: True if successfully connected, False if Redis unavailable or disabled
+            RedisCache: Instance with Redis connection if available, disabled otherwise
         """
         if not REDIS_AVAILABLE:
             logger.warning("❌ Redis not available - caching disabled")
-            cls._initialized = True
-            cls._enabled = False
-            return False
-        
-        if cls._initialized:
-            return cls._enabled
+            return cls(redis_instance=None, enabled=False)
         
         # Get configuration from environment
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -98,13 +112,11 @@ class RedisCache:
         
         if not redis_enabled:
             logger.info("ℹ️  Redis disabled via REDIS_ENABLED=false")
-            cls._initialized = True
-            cls._enabled = False
-            return False
+            return cls(redis_instance=None, enabled=False)
         
         try:
             # Create async Redis connection
-            cls._instance = await aioredis.from_url(
+            redis_instance = await aioredis.from_url(
                 redis_url,
                 encoding="utf-8",
                 decode_responses=True,
@@ -114,33 +126,25 @@ class RedisCache:
             )
             
             # Test the connection
-            await cls._instance.ping()
+            await redis_instance.ping()
             
             logger.info(f"✅ Redis cache initialized successfully")
             logger.info(f"   URL: {redis_url.split('@')[0] if '@' in redis_url else redis_url}...")
             logger.info(f"   Default TTL: {CacheConfig.DEFAULT_TTL}s")
             
-            cls._initialized = True
-            cls._enabled = True
-            return True
+            return cls(redis_instance=redis_instance, enabled=True)
             
         except Exception as e:
             logger.warning(f"⚠️  Failed to connect to Redis: {str(e)}")
             logger.info("   System will continue without caching")
             logger.info(f"   To enable caching, ensure Redis is running at: {redis_url}")
-            cls._initialized = True
-            cls._enabled = False
-            return False
+            return cls(redis_instance=None, enabled=False)
     
-    @classmethod
-    async def is_available(cls) -> bool:
+    async def is_available(self) -> bool:
         """Check if Redis is initialized and available."""
-        if not cls._initialized:
-            await cls.initialize()
-        return cls._enabled and cls._instance is not None
+        return self._enabled and self._instance is not None
     
-    @classmethod
-    async def get(cls, key: str) -> Optional[Any]:
+    async def get(self, key: str) -> Optional[Any]:
         """
         Get value from cache.
         
@@ -150,11 +154,12 @@ class RedisCache:
         Returns:
             Cached value or None if not found or Redis unavailable
         """
-        if not await cls.is_available():
+        if not await self.is_available():
             return None
         
         try:
-            value = await cls._instance.get(key)
+            # Type guard: we know _instance is not None here due to is_available check
+            value = await self._instance.get(key)  # type: ignore
             if value:
                 logger.debug(f"Cache hit: {key}")
                 # Try to parse JSON
@@ -167,8 +172,7 @@ class RedisCache:
             logger.warning(f"Cache get error for {key}: {e}")
             return None
     
-    @classmethod
-    async def set(cls, key: str, value: Any, ttl: int = None) -> bool:
+    async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
         """
         Set value in cache.
         
@@ -180,11 +184,11 @@ class RedisCache:
         Returns:
             bool: True if successful, False otherwise
         """
-        if not await cls.is_available():
+        if not await self.is_available():
             return False
         
         try:
-            ttl = ttl or CacheConfig.DEFAULT_TTL
+            ttl_val = ttl or CacheConfig.DEFAULT_TTL
             
             # Serialize value to JSON
             if isinstance(value, (dict, list)):
@@ -192,15 +196,15 @@ class RedisCache:
             else:
                 cached_value = str(value)
             
-            await cls._instance.setex(key, ttl, cached_value)
-            logger.debug(f"Cache set: {key} (TTL: {ttl}s)")
+            # Type guard: we know _instance is not None here due to is_available check
+            await self._instance.setex(key, ttl_val, cached_value)  # type: ignore
+            logger.debug(f"Cache set: {key} (TTL: {ttl_val}s)")
             return True
         except Exception as e:
             logger.warning(f"Cache set error for {key}: {e}")
             return False
     
-    @classmethod
-    async def delete(cls, key: str) -> bool:
+    async def delete(self, key: str) -> bool:
         """
         Delete key from cache.
         
@@ -210,11 +214,12 @@ class RedisCache:
         Returns:
             bool: True if key was deleted, False otherwise
         """
-        if not await cls.is_available():
+        if not await self.is_available():
             return False
         
         try:
-            result = await cls._instance.delete(key)
+            # Type guard: we know _instance is not None here due to is_available check
+            result = await self._instance.delete(key)  # type: ignore
             if result:
                 logger.debug(f"Cache deleted: {key}")
             return bool(result)
@@ -222,8 +227,7 @@ class RedisCache:
             logger.warning(f"Cache delete error for {key}: {e}")
             return False
     
-    @classmethod
-    async def delete_pattern(cls, pattern: str) -> int:
+    async def delete_pattern(self, pattern: str) -> int:
         """
         Delete all keys matching a pattern.
         Useful for cache invalidation.
@@ -234,13 +238,14 @@ class RedisCache:
         Returns:
             Number of keys deleted
         """
-        if not await cls.is_available():
+        if not await self.is_available():
             return 0
         
         try:
-            keys = await cls._instance.keys(pattern)
+            # Type guard: we know _instance is not None here due to is_available check
+            keys = await self._instance.keys(pattern)  # type: ignore
             if keys:
-                deleted = await cls._instance.delete(*keys)
+                deleted = await self._instance.delete(*keys)  # type: ignore
                 logger.debug(f"Cache invalidated {deleted} keys matching {pattern}")
                 return deleted
             return 0
@@ -248,20 +253,19 @@ class RedisCache:
             logger.warning(f"Cache delete pattern error for {pattern}: {e}")
             return 0
     
-    @classmethod
-    async def exists(cls, key: str) -> bool:
+    async def exists(self, key: str) -> bool:
         """Check if key exists in cache."""
-        if not await cls.is_available():
+        if not await self.is_available():
             return False
         
         try:
-            return bool(await cls._instance.exists(key))
+            # Type guard: we know _instance is not None here due to is_available check
+            return bool(await self._instance.exists(key))  # type: ignore
         except Exception as e:
             logger.warning(f"Cache exists error for {key}: {e}")
             return False
     
-    @classmethod
-    async def get_or_set(cls, key: str, fetch_fn: Callable, ttl: int = None) -> Optional[Any]:
+    async def get_or_set(self, key: str, fetch_fn: Callable, ttl: Optional[int] = None) -> Optional[Any]:
         """
         Get value from cache, or fetch and cache if missing.
         
@@ -276,18 +280,18 @@ class RedisCache:
             Cached or fetched value, or None if fetch failed
             
         Example:
-            data = await RedisCache.get_or_set(
+            data = await redis_cache.get_or_set(
                 "query:tasks:pending",
                 fetch_fn=lambda: database_service.get_pending_tasks(),
                 ttl=300
             )
         """
-        if not await cls.is_available():
+        if not await self.is_available():
             # Redis unavailable, just fetch directly
             return await fetch_fn() if asyncio.iscoroutinefunction(fetch_fn) else fetch_fn()
         
         # Try to get from cache
-        cached = await cls.get(key)
+        cached = await self.get(key)
         if cached is not None:
             logger.debug(f"Cache hit: {key}")
             return cached
@@ -302,15 +306,14 @@ class RedisCache:
             
             # Cache the result
             if value is not None:
-                await cls.set(key, value, ttl)
+                await self.set(key, value, ttl)
             
             return value
         except Exception as e:
             logger.error(f"Error fetching value for {key}: {e}")
             return None
     
-    @classmethod
-    async def incr(cls, key: str, amount: int = 1) -> int:
+    async def incr(self, key: str, amount: int = 1) -> int:
         """
         Increment a counter in cache.
         
@@ -321,24 +324,24 @@ class RedisCache:
         Returns:
             New value of counter
         """
-        if not await cls.is_available():
+        if not await self.is_available():
             return amount
         
         try:
-            return await cls._instance.incrby(key, amount)
+            # Type guard: we know _instance is not None here due to is_available check
+            return await self._instance.incrby(key, amount)  # type: ignore
         except Exception as e:
             logger.warning(f"Cache incr error for {key}: {e}")
             return amount
     
-    @classmethod
-    async def health_check(cls) -> Dict[str, Any]:
+    async def health_check(self) -> Dict[str, Any]:
         """
         Check Redis health status.
         
         Returns:
             Dictionary with health information
         """
-        if not await cls.is_available():
+        if not await self.is_available():
             return {
                 "status": "disabled",
                 "available": False,
@@ -346,11 +349,12 @@ class RedisCache:
             }
         
         try:
+            # Type guard: we know _instance is not None here due to is_available check
             # Ping Redis
-            await cls._instance.ping()
+            await self._instance.ping()  # type: ignore
             
             # Get info
-            info = await cls._instance.info()
+            info = await self._instance.info()  # type: ignore
             
             return {
                 "status": "healthy",
@@ -368,46 +372,52 @@ class RedisCache:
                 "error": str(e)
             }
     
-    @classmethod
-    async def clear_all(cls) -> bool:
+    async def clear_all(self) -> bool:
         """
         Clear all cache (use with caution!).
         
         Returns:
             bool: True if successful
         """
-        if not await cls.is_available():
+        if not await self.is_available():
             return False
         
         try:
-            await cls._instance.flushdb()
+            # Type guard: we know _instance is not None here due to is_available check
+            await self._instance.flushdb()  # type: ignore
             logger.warning("Cache cleared (all keys deleted)")
             return True
         except Exception as e:
             logger.warning(f"Cache clear error: {e}")
             return False
     
-    @classmethod
-    async def close(cls):
+    async def close(self):
         """Close Redis connection."""
-        if cls._instance:
+        if self._instance:
             try:
-                await cls._instance.close()
+                await self._instance.close()
                 logger.info("Redis connection closed")
             except Exception as e:
                 logger.warning(f"Error closing Redis connection: {e}")
 
 
-# Convenience function for one-time setup
+# Convenience function for backward compatibility
 async def setup_redis_cache() -> bool:
     """
-    Initialize Redis cache service.
+    Initialize Redis cache service (backward compatibility).
     
-    Usage in main.py:
-        from services.redis_cache import setup_redis_cache
+    DEPRECATED: Use RedisCache.create() instead in main startup code.
+    This function is kept for compatibility but doesn't follow DI pattern.
+    
+    Usage (old way - do not use):
         await setup_redis_cache()
+    
+    Usage (new way - recommended):
+        redis_cache = await RedisCache.create()
+        app.state.redis_cache = redis_cache
     """
-    return await RedisCache.initialize()
+    redis_cache = await RedisCache.create()
+    return redis_cache._enabled
 
 
 # Decorator for automatic caching
@@ -415,9 +425,13 @@ def cached(ttl: int = CacheConfig.DEFAULT_TTL, key_prefix: str = ""):
     """
     Decorator for automatic caching of async function results.
     
+    IMPORTANT: This decorator requires redis_cache to be injected as the first argument
+    or to be available via dependency injection. The function signature must include
+    redis_cache parameter.
+    
     Usage:
         @cached(ttl=300, key_prefix="tasks:")
-        async def get_pending_tasks():
+        async def get_pending_tasks(redis_cache: RedisCache):
             return await database.get_pending_tasks()
     
     Args:
@@ -426,11 +440,25 @@ def cached(ttl: int = CacheConfig.DEFAULT_TTL, key_prefix: str = ""):
     """
     def decorator(func: Callable):
         async def wrapper(*args, **kwargs):
+            # Extract redis_cache from kwargs or args
+            redis_cache = kwargs.get('redis_cache')
+            if not redis_cache and args:
+                # Try to find it in args (it should be first argument with type RedisCache)
+                for arg in args:
+                    if isinstance(arg, RedisCache):
+                        redis_cache = arg
+                        break
+            
+            if not redis_cache:
+                # Fallback: create a disabled cache instance
+                logger.warning(f"@cached decorator: redis_cache not found in {func.__name__}, caching disabled")
+                return await func(*args, **kwargs)
+            
             # Build cache key from function name and arguments
             cache_key = f"{key_prefix or func.__name__}:{json.dumps(str(args) + str(kwargs))}"
             
             # Try to get from cache
-            cached_result = await RedisCache.get(cache_key)
+            cached_result = await redis_cache.get(cache_key)
             if cached_result is not None:
                 return cached_result
             
@@ -438,7 +466,7 @@ def cached(ttl: int = CacheConfig.DEFAULT_TTL, key_prefix: str = ""):
             result = await func(*args, **kwargs)
             
             # Cache the result
-            await RedisCache.set(cache_key, result, ttl)
+            await redis_cache.set(cache_key, result, ttl)
             
             return result
         

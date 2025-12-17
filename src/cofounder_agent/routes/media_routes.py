@@ -16,11 +16,175 @@ from typing import Optional, List
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Query
 import time
+import os
+import uuid
+import base64
+from datetime import datetime
+from io import BytesIO
 
-from services.image_service import ImageService
+# Cloud storage imports
+try:
+    import cloudinary
+    import cloudinary.uploader
+    CLOUDINARY_AVAILABLE = True
+except ImportError:
+    CLOUDINARY_AVAILABLE = False
+
+try:
+    import boto3
+    from botocore.config import Config
+    S3_AVAILABLE = True
+except ImportError:
+    S3_AVAILABLE = False
+
+from services.image_service import ImageService, FeaturedImageMetadata
 
 logger = logging.getLogger(__name__)
 media_router = APIRouter(prefix="/api/media", tags=["Media"])
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CLOUDINARY SETUP (Primary - Free Tier)
+# ═══════════════════════════════════════════════════════════════════════════
+
+if CLOUDINARY_AVAILABLE and os.getenv('CLOUDINARY_CLOUD_NAME'):
+    cloudinary.config(
+        cloud_name=os.getenv('CLOUDINARY_CLOUD_NAME'),
+        api_key=os.getenv('CLOUDINARY_API_KEY'),
+        api_secret=os.getenv('CLOUDINARY_API_SECRET')
+    )
+    logger.info("✅ Cloudinary configured for image storage")
+else:
+    logger.info("ℹ️ Cloudinary not configured (use for local dev or production)")
+
+
+async def upload_to_cloudinary(file_path: str, task_id: Optional[str] = None) -> Optional[str]:
+    """
+    Upload generated image to Cloudinary and return public URL.
+    
+    Args:
+        file_path: Local path to image file
+        task_id: Task ID for metadata (optional)
+        
+    Returns:
+        Public URL if successful, None if Cloudinary not configured or upload fails
+    """
+    if not CLOUDINARY_AVAILABLE or not os.getenv('CLOUDINARY_CLOUD_NAME'):
+        return None
+    
+    try:
+        result = cloudinary.uploader.upload(
+            file_path,
+            folder="generated",  # Organize in folder
+            resource_type="image",
+            invalidate=True,  # Invalidate CDN cache
+            tags=["blog-generated"] + ([task_id] if task_id else []),
+            context={
+                "task_id": task_id or "unknown",
+                "generated_date": datetime.now().isoformat()
+            }
+        )
+        
+        public_url = result['secure_url']  # HTTPS URL
+        logger.info(f"✅ Uploaded to Cloudinary: {public_url}")
+        return public_url
+        
+    except Exception as e:
+        logger.error(f"❌ Cloudinary upload failed: {e}", exc_info=True)
+        return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# S3 CLIENT SETUP (Fallback/Future)
+# ═══════════════════════════════════════════════════════════════════════════
+
+_s3_client = None
+
+def get_s3_client():
+    """Get or create S3 client for image uploads (fallback option)"""
+    global _s3_client
+    if _s3_client is None:
+        # Check if AWS credentials are configured
+        if S3_AVAILABLE and os.getenv('AWS_ACCESS_KEY_ID') and os.getenv('AWS_S3_BUCKET'):
+            try:
+                _s3_client = boto3.client(
+                    's3',
+                    aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+                    aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+                    region_name=os.getenv('AWS_S3_REGION', 'us-east-1'),
+                    config=Config(signature_version='s3v4') if S3_AVAILABLE else None
+                )
+                logger.info("✅ S3 client initialized (fallback)")
+            except Exception as e:
+                logger.warning(f"⚠️ S3 client initialization failed: {e}")
+                _s3_client = False  # Mark as explicitly disabled
+        else:
+            logger.info("ℹ️ AWS S3 not configured (optional fallback)")
+            _s3_client = False
+    
+    return _s3_client if _s3_client else None
+
+async def upload_to_s3(file_path: str, task_id: Optional[str] = None) -> Optional[str]:
+    """
+    Upload generated image to S3 and return public URL.
+    
+    Args:
+        file_path: Local path to image file
+        task_id: Task ID for metadata (optional)
+        
+    Returns:
+        Public URL if successful, None if S3 not configured
+    """
+    s3 = get_s3_client()
+    if not s3:
+        return None
+    
+    try:
+        bucket = os.getenv('AWS_S3_BUCKET')
+        if not bucket:
+            logger.warning("S3 bucket not configured")
+            return None
+        
+        # Generate unique key
+        image_key = f"generated/{int(time.time())}-{uuid.uuid4()}.png"
+        
+        # Read file
+        with open(file_path, 'rb') as f:
+            file_data = f.read()
+        
+        # Prepare metadata
+        metadata = {'generated-date': datetime.now().isoformat()}
+        if task_id:
+            metadata['task-id'] = task_id
+        
+        # Upload to S3
+        s3.upload_fileobj(
+            BytesIO(file_data),
+            bucket,
+            image_key,
+            ExtraArgs={
+                'ContentType': 'image/png',
+                'CacheControl': 'max-age=31536000, immutable',  # Cache 1 year
+                'Metadata': metadata
+            }
+        )
+        
+        logger.info(f"✅ Uploaded to S3: s3://{bucket}/{image_key}")
+        
+        # Return CloudFront URL if configured, otherwise S3 URL
+        cdn_domain = os.getenv('AWS_CLOUDFRONT_DOMAIN')
+        if cdn_domain:
+            public_url = f"https://{cdn_domain}/{image_key}"
+            logger.info(f"✅ CloudFront URL: {public_url}")
+        else:
+            public_url = f"https://s3.amazonaws.com/{bucket}/{image_key}"
+            logger.info(f"✅ S3 URL: {public_url}")
+        
+        return public_url
+        
+    except Exception as e:
+        logger.error(f"❌ S3 upload failed: {e}", exc_info=True)
+        return None
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -72,6 +236,10 @@ class ImageGenerationRequest(BaseModel):
         ge=1.0,
         le=20.0,
         description="Guidance scale for quality (7.5-8.5 recommended)"
+    )
+    task_id: Optional[str] = Field(
+        None,
+        description="Optional task ID for WebSocket progress tracking"
     )
 
 
@@ -212,22 +380,79 @@ async def generate_featured_image(request: ImageGenerationRequest):
                     guidance_scale=request.guidance_scale,
                     use_refinement=request.use_refinement,
                     high_quality=request.high_quality,
+                    task_id=request.task_id,  # Pass task_id for progress tracking
                 )
                 
                 if success and os.path.exists(output_path):
-                    # In production, would upload to CDN and get public URL
-                    # For now, document that generation succeeded
+                    # Generated image successfully - create metadata for it
                     logger.info(f"✅ Generated image: {output_path}")
-                    image = await image_service.search_featured_image(
-                        topic=request.prompt,
-                        keywords=request.keywords or []
+                    
+                    # Get file size for metadata
+                    file_size = os.path.getsize(output_path)
+                    logger.info(f"   File size: {file_size} bytes")
+                    
+                    # ═══════════════════════════════════════════════════════════
+                    # UPLOAD TO CLOUDINARY (Primary) or S3 (Fallback)
+                    # ═══════════════════════════════════════════════════════════
+                    
+                    task_id_str = request.task_id if request.task_id else None
+                    
+                    # Try Cloudinary first (free tier for dev, fast)
+                    image_url_path = await upload_to_cloudinary(output_path, task_id_str)
+                    image_source = "sdxl-cloudinary"
+                    
+                    # Fall back to S3 if Cloudinary not available
+                    if not image_url_path:
+                        logger.info("ℹ️ Cloudinary not available, trying S3...")
+                        image_url_path = await upload_to_s3(output_path, task_id_str)
+                        image_source = "sdxl-s3"
+                    
+                    # Fall back to local filesystem as last resort
+                    if not image_url_path:
+                        logger.info("ℹ️ Cloud storage not available, using local filesystem fallback")
+                        image_filename = f"post-{uuid.uuid4()}.png"
+                        image_url_path = f"/images/generated/{image_filename}"
+                        full_disk_path = f"web/public-site/public{image_url_path}"
+                        
+                        # Ensure directory exists
+                        os.makedirs(os.path.dirname(full_disk_path), exist_ok=True)
+                        
+                        # Copy from temp location to persistent storage
+                        with open(output_path, 'rb') as f:
+                            image_bytes = f.read()
+                        
+                        with open(full_disk_path, 'wb') as f:
+                            f.write(image_bytes)
+                        
+                        logger.info(f"💾 Saved image to: {full_disk_path}")
+                        image_source = "sdxl-local"
+                    
+                    # Create metadata object for generated image
+                    image = FeaturedImageMetadata(
+                        url=image_url_path,  # Return URL (Cloudinary/S3 or local)
+                        thumbnail=image_url_path,
+                        photographer="SDXL (AI Generated)",
+                        photographer_url="",
+                        width=1024,  # SDXL standard output
+                        height=1024,
+                        alt_text=request.prompt,
+                        source=image_source,
+                        search_query=request.prompt,
                     )
+                    logger.info(f"✅ Created image metadata: {image_url_path}")
             except Exception as e:
                 logger.warning(f"⚠️ SDXL generation failed: {e}")
         
         # Return result
         if image:
             elapsed = time.time() - start_time
+            
+            # ═══════════════════════════════════════════════════════════
+            # NOTE: Image URL is returned to frontend
+            # Frontend should store this in task metadata when saving the task
+            # Approval endpoint will find it in task_metadata and write to posts table
+            # ═══════════════════════════════════════════════════════════
+            
             return ImageGenerationResponse(
                 success=True,
                 image_url=image.url,

@@ -38,6 +38,15 @@ torch>=2.0.0  # PyTorch (REQUIRED for SDXL/diffusers)
 # asyncpg: High-performance async PostgreSQL driver (direct SQL, no ORM)
 asyncpg>=0.29.0
 
+# ===== CLOUD IMAGE STORAGE =====
+# Cloudinary: Free tier (75 GB/month) with global CDN
+# OR AWS S3 + CloudFront for production
+cloudinary>=1.36.0
+
+# AWS S3 (optional, for fallback or later use)
+boto3>=1.28.0
+botocore>=1.31.0
+
 # ===== CACHING =====
 # Redis client for distributed caching and session management
 redis>=5.0.0

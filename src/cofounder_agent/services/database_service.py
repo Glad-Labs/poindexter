@@ -887,7 +887,7 @@ class DatabaseService:
     # ========================================================================
 
     async def create_post(self, post_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Create new post in posts table"""
+        """Create new post in posts table with all metadata fields"""
         post_id = post_data.get("id") or str(uuid4())
         
         async with self.pool.acquire() as conn:
@@ -900,26 +900,39 @@ class DatabaseService:
                     content, 
                     excerpt, 
                     featured_image_url,
+                    cover_image_url,
+                    author_id,
+                    category_id,
+                    tag_ids,
                     status, 
                     seo_title,
                     seo_description,
                     seo_keywords,
+                    created_by,
+                    updated_by,
                     created_at, 
                     updated_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
-                RETURNING id, title, slug, content, excerpt, status, created_at, updated_at
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW())
+                RETURNING id, title, slug, content, excerpt, featured_image_url, cover_image_url, 
+                          author_id, category_id, tag_ids, status, created_at, updated_at
                 """,
                 post_id,
                 post_data.get("title"),
                 post_data.get("slug"),
                 post_data.get("content"),
                 post_data.get("excerpt"),
-                post_data.get("featured_image"),
+                post_data.get("featured_image_url"),  # Fixed: was "featured_image"
+                post_data.get("cover_image_url"),
+                post_data.get("author_id"),
+                post_data.get("category_id"),
+                post_data.get("tag_ids"),  # Array of tag IDs
                 post_data.get("status", "draft"),
                 post_data.get("seo_title") or post_data.get("title"),  # Default to title if not provided
                 post_data.get("seo_description") or post_data.get("excerpt"),  # Default to excerpt if not provided
                 post_data.get("seo_keywords", ""),
+                post_data.get("created_by"),  # User who created the post
+                post_data.get("updated_by"),  # User who updated the post
             )
             return self._convert_row_to_dict(row)
 
