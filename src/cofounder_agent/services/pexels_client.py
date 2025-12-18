@@ -49,6 +49,31 @@ class PexelsClient:
     # DEPRECATED: Sync search_images removed - use async search_images_async() instead
     # Enforces async-first patterns to prevent blocking I/O in FastAPI event loop
     
+    def _is_content_appropriate(self, photo: Dict[str, Any]) -> bool:
+        """
+        Filter out inappropriate content based on available metadata.
+        
+        Returns:
+            True if image is appropriate for blog content, False otherwise
+        """
+        # Check alt text and photographer for content warnings
+        alt = (photo.get("alt", "") or "").lower()
+        photographer = (photo.get("photographer", "") or "").lower()
+        
+        # Block known NSFW/inappropriate patterns
+        inappropriate_patterns = [
+            "nsfw", "adult", "nude", "sexy", "lingerie", "bikini",
+            "swimsuit", "erotic", "sensual", "intimate", "private",
+            "naked", "bare", "exposed", "provocative", "risque"
+        ]
+        
+        for pattern in inappropriate_patterns:
+            if pattern in alt or pattern in photographer:
+                logger.debug(f"Filtering inappropriate image: {alt}")
+                return False
+        
+        return True
+    
     async def search_images(
         self, 
         query: str, 
@@ -66,7 +91,7 @@ class PexelsClient:
             size: Image size
         
         Returns:
-            List of image dictionaries
+            List of filtered, appropriate image dictionaries
         """
         if not self.api_key:
             logger.warning("Pexels API key not configured")
@@ -75,7 +100,7 @@ class PexelsClient:
         try:
             params = {
                 "query": query,
-                "per_page": min(per_page, 80),
+                "per_page": min(per_page * 2, 80),  # Fetch more to filter out inappropriate ones
                 "orientation": orientation,
                 "size": size
             }
@@ -92,6 +117,16 @@ class PexelsClient:
                 photos = data.get("photos", [])
                 logger.info(f"Pexels search for '{query}' returned {len(photos)} results")
                 
+                # Filter for appropriate content
+                appropriate_photos = [
+                    photo for photo in photos 
+                    if self._is_content_appropriate(photo)
+                ]
+                
+                filtered_count = len(photos) - len(appropriate_photos)
+                if filtered_count > 0:
+                    logger.info(f"Filtered out {filtered_count} inappropriate images")
+                
                 return [
                     {
                         "url": photo["src"]["large"],
@@ -104,7 +139,7 @@ class PexelsClient:
                         "source": "pexels",
                         "searched_query": query
                     }
-                    for photo in photos
+                    for photo in appropriate_photos[:per_page]
                 ]
                 
         except Exception as e:

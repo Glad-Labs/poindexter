@@ -262,6 +262,8 @@ class ImageGenerationResponse(BaseModel):
     image: Optional[ImageMetadata] = Field(None, description="Image metadata")
     message: Optional[str] = Field(None, description="Status message or error")
     generation_time: Optional[float] = Field(None, description="Time taken in seconds")
+    local_path: Optional[str] = Field(None, description="Local file path (for generated images in Downloads)")
+    preview_mode: Optional[bool] = Field(False, description="Whether this is a preview (not yet in CDN)")
 
 
 class HealthResponse(BaseModel):
@@ -287,6 +289,51 @@ async def get_image_service() -> ImageService:
         _image_service = ImageService()
         logger.info("✅ ImageService initialized")
     return _image_service
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# HELPER FUNCTIONS
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_enhanced_search_prompt(
+    base_prompt: str,
+    keywords: Optional[List[str]] = None,
+) -> str:
+    """
+    Build an enhanced search prompt by combining title with SEO keywords.
+    
+    This creates more specific, targeted search queries that are more likely
+    to find relevant images.
+    
+    Args:
+        base_prompt: Main prompt (usually the title)
+        keywords: Optional SEO keywords to enhance the prompt
+        
+    Returns:
+        Enhanced prompt string optimized for image search
+        
+    Examples:
+        >>> build_enhanced_search_prompt("Best Eats in Northeast USA", ["seafood", "boston", "food"])
+        "Best Eats in Northeast USA seafood"
+        
+        >>> build_enhanced_search_prompt("AI Gaming NPCs")
+        "AI Gaming NPCs"
+    """
+    if not keywords or len(keywords) == 0:
+        return base_prompt
+    
+    # Take top keyword for specificity
+    primary_keyword = keywords[0] if keywords else None
+    
+    if not primary_keyword:
+        return base_prompt
+    
+    # Combine title with primary keyword for more specific search
+    enhanced = f"{base_prompt} {primary_keyword}"
+    
+    logger.debug(f"📝 Enhanced prompt: '{base_prompt}' → '{enhanced}' (using keyword: {primary_keyword})")
+    
+    return enhanced
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -342,39 +389,69 @@ async def generate_featured_image(request: ImageGenerationRequest):
     try:
         image = None
         
+        # Log the request configuration
+        logger.info(f"📸 Image generation request: use_pexels={request.use_pexels}, use_generation={request.use_generation}")
+        
         # Step 1: Try Pexels search first (recommended)
         if request.use_pexels:
-            logger.info(f"🔍 Searching Pexels for: {request.prompt}")
             keywords = request.keywords or []
+            
+            # Build enhanced search prompt using keywords if available
+            search_prompt = build_enhanced_search_prompt(request.prompt, keywords)
+            
+            logger.info(f"🔍 STEP 1: Searching Pexels for: {search_prompt}")
+            if keywords:
+                logger.debug(f"   Keywords: {', '.join(keywords)}")
             
             try:
                 image = await image_service.search_featured_image(
-                    topic=request.prompt,
+                    topic=search_prompt,
                     keywords=keywords
                 )
                 
                 if image:
-                    logger.info(f"✅ Found image via Pexels: {image.url}")
+                    logger.info(f"✅ STEP 1 SUCCESS: Found image via Pexels: {image.url}")
+                else:
+                    logger.warning(f"⚠️ STEP 1 FAILED: No Pexels image found for: {search_prompt}")
             except Exception as e:
-                logger.warning(f"⚠️ Pexels search failed: {e}")
+                logger.warning(f"⚠️ STEP 1 ERROR: Pexels search failed: {e}")
+        else:
+            logger.info(f"ℹ️ STEP 1 SKIPPED: use_pexels=false")
         
         # Step 2: Fall back to SDXL generation
         if not image and request.use_generation:
-            logger.info(f"🎨 Generating image with SDXL: {request.prompt}")
+            keywords = request.keywords or []
+            
+            # Build enhanced generation prompt using keywords if available
+            generation_prompt = build_enhanced_search_prompt(request.prompt, keywords)
+            
+            logger.info(f"🎨 STEP 2: Generating image with SDXL: {generation_prompt}")
+            if keywords:
+                logger.debug(f"   Keywords: {', '.join(keywords)}")
             if request.use_refinement:
                 logger.info(f"   Refinement: ENABLED (base {request.num_inference_steps} steps + 30 refinement steps)")
             
             try:
-                import tempfile
                 import os
+                from pathlib import Path
                 
-                # Create temp directory if needed
-                temp_dir = tempfile.gettempdir()
-                output_file = f"generated_image_{int(time.time())}.png"
-                output_path = os.path.join(temp_dir, output_file)
+                # ═══════════════════════════════════════════════════════════
+                # SAVE TO USER'S DOWNLOADS FOLDER (For Preview & Approval)
+                # ═══════════════════════════════════════════════════════════
+                # Instead of temp folder, save to Downloads for user access
+                downloads_path = str(Path.home() / "Downloads" / "glad-labs-generated-images")
+                os.makedirs(downloads_path, exist_ok=True)
+                
+                # Create filename with timestamp and task_id for traceability
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                task_id_str = request.task_id if request.task_id else "no-task"
+                output_file = f"sdxl_{timestamp}_{task_id_str}.png"
+                output_path = os.path.join(downloads_path, output_file)
+                
+                logger.info(f"📁 Will save generated image to: {output_path}")
                 
                 success = await image_service.generate_image(
-                    prompt=request.prompt,
+                    prompt=generation_prompt,
                     output_path=output_path,
                     num_inference_steps=request.num_inference_steps,
                     guidance_scale=request.guidance_scale,
@@ -385,77 +462,58 @@ async def generate_featured_image(request: ImageGenerationRequest):
                 
                 if success and os.path.exists(output_path):
                     # Generated image successfully - create metadata for it
-                    logger.info(f"✅ Generated image: {output_path}")
+                    logger.info(f"✅ STEP 2 SUCCESS: Generated image: {output_path}")
                     
                     # Get file size for metadata
                     file_size = os.path.getsize(output_path)
                     logger.info(f"   File size: {file_size} bytes")
                     
                     # ═══════════════════════════════════════════════════════════
-                    # UPLOAD TO CLOUDINARY (Primary) or S3 (Fallback)
+                    # FOR NOW: Keep locally in Downloads (for preview & approval)
                     # ═══════════════════════════════════════════════════════════
+                    # The local path will be stored in task metadata
+                    # On approval, the image will be uploaded to Cloudinary
+                    # This allows users to preview and iterate before publishing
                     
-                    task_id_str = request.task_id if request.task_id else None
-                    
-                    # Try Cloudinary first (free tier for dev, fast)
-                    image_url_path = await upload_to_cloudinary(output_path, task_id_str)
-                    image_source = "sdxl-cloudinary"
-                    
-                    # Fall back to S3 if Cloudinary not available
-                    if not image_url_path:
-                        logger.info("ℹ️ Cloudinary not available, trying S3...")
-                        image_url_path = await upload_to_s3(output_path, task_id_str)
-                        image_source = "sdxl-s3"
-                    
-                    # Fall back to local filesystem as last resort
-                    if not image_url_path:
-                        logger.info("ℹ️ Cloud storage not available, using local filesystem fallback")
-                        image_filename = f"post-{uuid.uuid4()}.png"
-                        image_url_path = f"/images/generated/{image_filename}"
-                        full_disk_path = f"web/public-site/public{image_url_path}"
-                        
-                        # Ensure directory exists
-                        os.makedirs(os.path.dirname(full_disk_path), exist_ok=True)
-                        
-                        # Copy from temp location to persistent storage
-                        with open(output_path, 'rb') as f:
-                            image_bytes = f.read()
-                        
-                        with open(full_disk_path, 'wb') as f:
-                            f.write(image_bytes)
-                        
-                        logger.info(f"💾 Saved image to: {full_disk_path}")
-                        image_source = "sdxl-local"
+                    logger.info(f"📁 Image saved locally to: {output_path}")
+                    logger.info(f"⏳ Image will be uploaded to CDN after approval")
                     
                     # Create metadata object for generated image
+                    # URL is local file path for now (frontend can construct file:// URL)
                     image = FeaturedImageMetadata(
-                        url=image_url_path,  # Return URL (Cloudinary/S3 or local)
-                        thumbnail=image_url_path,
+                        url=output_path,  # Local path for preview
+                        thumbnail=output_path,  # Local path for preview
                         photographer="SDXL (AI Generated)",
                         photographer_url="",
                         width=1024,  # SDXL standard output
                         height=1024,
                         alt_text=request.prompt,
-                        source=image_source,
+                        source="sdxl-local-preview",  # Mark as local preview
                         search_query=request.prompt,
                     )
-                    logger.info(f"✅ Created image metadata: {image_url_path}")
+                    logger.info(f"✅ Created image metadata (local preview): {output_path}")
             except Exception as e:
                 logger.warning(f"⚠️ SDXL generation failed: {e}")
+        elif image and not request.use_generation:
+            logger.info(f"ℹ️ STEP 2 SKIPPED: Pexels found image, use_generation=false")
+        elif not image and not request.use_generation:
+            logger.info(f"ℹ️ STEP 2 SKIPPED: use_generation=false (Pexels search failed but SDXL disabled)")
         
         # Return result
         if image:
             elapsed = time.time() - start_time
             
             # ═══════════════════════════════════════════════════════════
-            # NOTE: Image URL is returned to frontend
-            # Frontend should store this in task metadata when saving the task
-            # Approval endpoint will find it in task_metadata and write to posts table
+            # NOTE: Image is in Downloads folder for preview/approval
+            # Frontend should store local_path in task metadata
+            # Approval endpoint will upload to Cloudinary and update posts table
             # ═══════════════════════════════════════════════════════════
             
             return ImageGenerationResponse(
                 success=True,
-                image_url=image.url,
+                image_url=image.url,  # Local path for preview
+                local_path=image.url if image.source == "sdxl-local-preview" else None,  # Path to local file
+                preview_mode=image.source == "sdxl-local-preview",  # Mark as preview mode
                 image=ImageMetadata(
                     url=image.url,
                     source=image.source,
@@ -464,7 +522,7 @@ async def generate_featured_image(request: ImageGenerationRequest):
                     width=image.width,
                     height=image.height,
                 ),
-                message=f"✅ Image found via {image.source}",
+                message=f"✅ Image generated and saved locally (preview mode). Review and approve to publish.",
                 generation_time=elapsed,
             )
         else:
@@ -475,6 +533,7 @@ async def generate_featured_image(request: ImageGenerationRequest):
                 image=None,
                 message="❌ No image found. Ensure PEXELS_API_KEY is set in environment or GPU available for SDXL.",
                 generation_time=elapsed,
+                preview_mode=False,
             )
     
     except Exception as e:

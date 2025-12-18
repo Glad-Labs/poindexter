@@ -323,16 +323,36 @@ class ImageService:
             logger.warning("Pexels API key not configured")
             return None
 
+        # Build search queries prioritizing concept/topic over people
         search_queries = [topic]
+        
+        # Add concept-based fallbacks (no people)
+        concept_keywords = [
+            "technology", "digital", "abstract", "modern", "innovation",
+            "data", "network", "background", "desktop", "workspace",
+            "object", "product", "design", "pattern", "texture",
+            "nature", "landscape", "environment", "system", "interface"
+        ]
+        
+        # Add user keywords but avoid person/people related terms
         if keywords:
-            search_queries.extend(keywords[:3])
+            for kw in keywords[:3]:
+                # Avoid portrait/people searches
+                if not any(term in kw.lower() for term in ["person", "people", "portrait", "face", "human"]):
+                    search_queries.append(kw)
+        
+        # Add combined searches (topic + concept)
+        search_queries.append(f"{topic} technology")
+        search_queries.append(f"{topic} abstract")
+        search_queries.extend(concept_keywords[:2])
 
         for query in search_queries:
             try:
-                images = await self._pexels_search(query, per_page=1, orientation=orientation, size=size)
+                logger.info(f"Searching Pexels for: '{query}'")
+                images = await self._pexels_search(query, per_page=3, orientation=orientation, size=size)
                 if images:
                     metadata = images[0]
-                    logger.info(f"Found featured image for '{topic}' using query '{query}'")
+                    logger.info(f"✅ Found featured image for '{topic}' using query '{query}'")
                     return metadata
             except Exception as e:
                 logger.warning(f"Error searching for '{query}': {e}")

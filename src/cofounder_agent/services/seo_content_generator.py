@@ -183,9 +183,14 @@ Requirements:
 - Professional and visually appealing
 - Relevant to the topic
 - High quality, suitable for blog thumbnail
-- Include subtle branding elements if possible
 - Modern design aesthetic
 - 1200x630px optimal ratio
+- ⚠️  NO PEOPLE - Do not include any human figures, faces, or portraits
+- Focus on: objects, nature, technology, abstract concepts, landscapes
+- If must show scale, use non-human elements (buildings, vehicles, props)
+
+Absolutely NO: People, faces, portraits, humans of any kind
+Focus on: The topic/concept, not people
 
 Create an image that would work well for social media sharing and blog display."""
         

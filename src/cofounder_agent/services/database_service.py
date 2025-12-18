@@ -890,6 +890,19 @@ class DatabaseService:
         """Create new post in posts table with all metadata fields"""
         post_id = post_data.get("id") or str(uuid4())
         
+        # Validate and fix data types before insert
+        seo_keywords = post_data.get("seo_keywords", "")
+        if isinstance(seo_keywords, list):
+            logger.warning(f"⚠️  seo_keywords is list, converting to string: {seo_keywords}")
+            seo_keywords = ", ".join(seo_keywords)
+        elif not isinstance(seo_keywords, str):
+            seo_keywords = str(seo_keywords) if seo_keywords else ""
+        
+        tag_ids = post_data.get("tag_ids")
+        if tag_ids and isinstance(tag_ids, str):
+            logger.warning(f"⚠️  tag_ids is string, converting to list: {tag_ids}")
+            tag_ids = [tag_ids]
+        
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
@@ -926,15 +939,89 @@ class DatabaseService:
                 post_data.get("cover_image_url"),
                 post_data.get("author_id"),
                 post_data.get("category_id"),
-                post_data.get("tag_ids"),  # Array of tag IDs
+                tag_ids,  # Array of tag IDs
                 post_data.get("status", "draft"),
                 post_data.get("seo_title") or post_data.get("title"),  # Default to title if not provided
                 post_data.get("seo_description") or post_data.get("excerpt"),  # Default to excerpt if not provided
-                post_data.get("seo_keywords", ""),
+                seo_keywords,  # String of comma-separated keywords
                 post_data.get("created_by"),  # User who created the post
                 post_data.get("updated_by"),  # User who updated the post
             )
             return self._convert_row_to_dict(row)
+
+    async def get_post_by_slug(self, slug: str) -> Optional[Dict[str, Any]]:
+        """
+        Get post by slug - used to check for existing posts before creation.
+        
+        Args:
+            slug: The slug to search for
+            
+        Returns:
+            Post dict if found, None otherwise
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    SELECT id, title, slug, content, excerpt, featured_image_url,
+                           status, created_at, updated_at
+                    FROM posts
+                    WHERE slug = $1
+                    LIMIT 1
+                    """,
+                    slug
+                )
+                return self._convert_row_to_dict(row) if row else None
+        except Exception as e:
+            logger.error(f"❌ Error getting post by slug '{slug}': {e}")
+            return None
+
+    async def update_post(self, post_id: int, updates: Dict[str, Any]) -> bool:
+        """Update a post with new values (e.g., featured_image_url, status)"""
+        try:
+            # Build SET clause dynamically
+            set_clauses = []
+            values = []
+            param_count = 1
+            
+            for key, value in updates.items():
+                # Validate column exists
+                if key not in ['title', 'slug', 'content', 'excerpt', 'featured_image_url', 'status', 'tags']:
+                    logger.warning(f"Skipping invalid column for update: {key}")
+                    continue
+                
+                set_clauses.append(f"{key} = ${param_count}")
+                values.append(value)
+                param_count += 1
+            
+            if not set_clauses:
+                logger.warning(f"No valid columns to update for post {post_id}")
+                return False
+            
+            # Add post_id as final parameter
+            values.append(post_id)
+            param_count += 1
+            
+            query = f"""
+                UPDATE posts
+                SET {', '.join(set_clauses)}, updated_at = NOW()
+                WHERE id = ${param_count - 1}
+                RETURNING id, title, slug, featured_image_url, status
+            """
+            
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchrow(query, *values)
+                
+                if result:
+                    logger.info(f"✅ Updated post {post_id}: {dict(result)}")
+                    return True
+                else:
+                    logger.warning(f"⚠️ Post not found for update: {post_id}")
+                    return False
+                    
+        except Exception as e:
+            logger.error(f"❌ Error updating post {post_id}: {e}")
+            return False
 
     @staticmethod
     def _convert_row_to_dict(row: Any) -> Dict[str, Any]:
@@ -1122,6 +1209,47 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"❌ Error creating quality_improvement_log: {e}")
             raise
+
+    # ========================================================================
+    # CATEGORY, TAG, AUTHOR LOOKUPS (For metadata extraction)
+    # ========================================================================
+
+    async def get_all_categories(self) -> List[Dict[str, str]]:
+        """Get all categories for matching"""
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT id, name, slug, description FROM categories ORDER BY name"
+                )
+                return [self._convert_row_to_dict(row) for row in rows]
+        except Exception as e:
+            logger.warning(f"Could not fetch categories: {e}")
+            return []
+
+    async def get_all_tags(self) -> List[Dict[str, str]]:
+        """Get all tags for matching"""
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT id, name, slug, description FROM tags ORDER BY name"
+                )
+                return [self._convert_row_to_dict(row) for row in rows]
+        except Exception as e:
+            logger.warning(f"Could not fetch tags: {e}")
+            return []
+
+    async def get_author_by_name(self, name: str) -> Optional[Dict[str, Any]]:
+        """Get author by name"""
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT id, name, slug, email FROM authors WHERE LOWER(name) = LOWER($1)",
+                    name
+                )
+                return self._convert_row_to_dict(row) if row else None
+        except Exception as e:
+            logger.warning(f"Could not fetch author by name: {e}")
+            return None
 
     # ========================================================================
     # ORCHESTRATOR_TRAINING_DATA TABLE METHODS

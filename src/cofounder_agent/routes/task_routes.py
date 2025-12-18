@@ -617,23 +617,32 @@ Start writing the blog post now:"""
             slug = re.sub(r'[-\s]+', '-', slug)
             slug = slug.strip('-')
             
-            # Create post data structure matching actual posts table schema
-            post_data = {
-                "id": str(uuid_lib.uuid4()),
-                "title": post_title,
-                "slug": slug,
-                "content": generated_content,
-                "excerpt": (generated_content[:200] + "...") if len(generated_content) > 200 else generated_content,
-                "seo_title": post_title,
-                "seo_description": (generated_content[:150] + "...") if len(generated_content) > 150 else generated_content,
-                "seo_keywords": topic or "generated,content,ai",
-                "status": "published",  # Auto-publish generated posts
-                "featured_image": task.get('featured_image'),
-            }
-            
-            logger.info(f"[BG_TASK] Creating post: {post_title} (slug: {slug})")
-            post_result = await db_service.create_post(post_data)
-            logger.info(f"[BG_TASK] Post created successfully! Post ID: {post_result.get('id')}")
+            # ═══════════════════════════════════════════════════════════════════════
+            # CHECK FOR DUPLICATE SLUG (FIX FOR DUPLICATE KEY VIOLATION)
+            # ═══════════════════════════════════════════════════════════════════════
+            existing_post = await db_service.get_post_by_slug(slug)
+            if existing_post:
+                logger.warning(f"[BG_TASK] Post with slug '{slug}' already exists (ID: {existing_post.get('id')})")
+                logger.warning(f"[BG_TASK] Skipping post creation to avoid duplicate key violation")
+                post_result = existing_post
+            else:
+                # Create post data structure matching actual posts table schema
+                post_data = {
+                    "id": str(uuid_lib.uuid4()),
+                    "title": post_title,
+                    "slug": slug,
+                    "content": generated_content,
+                    "excerpt": (generated_content[:200] + "...") if len(generated_content) > 200 else generated_content,
+                    "seo_title": post_title,
+                    "seo_description": (generated_content[:150] + "...") if len(generated_content) > 150 else generated_content,
+                    "seo_keywords": topic or "generated,content,ai",
+                    "status": "published",  # Auto-publish generated posts
+                    "featured_image": task.get('featured_image'),
+                }
+                
+                logger.info(f"[BG_TASK] Creating post: {post_title} (slug: {slug})")
+                post_result = await db_service.create_post(post_data)
+                logger.info(f"[BG_TASK] Post created successfully! Post ID: {post_result.get('id')}")
             
         except Exception as post_err:
             logger.error(f"[BG_TASK] Error creating post: {str(post_err)}", exc_info=True)

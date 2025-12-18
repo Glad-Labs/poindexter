@@ -43,6 +43,7 @@ from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
 import logging
 import json
+from uuid import UUID, uuid4
 
 from services.content_router_service import (
     ContentStyle,
@@ -507,26 +508,15 @@ async def approve_and_publish_task(
             
             # ✅ PUBLISH TO CMS DATABASE
             try:
-                # Generate slug from title if not provided
-                title = task_metadata.get("title", "Untitled")
-                slug = task_metadata.get("slug", "")
-                if not slug:
-                    # Generate slug from title
-                    import re
-                    import uuid
-                    slug = title.lower()
-                    slug = re.sub(r'[^a-z0-9]+', '-', slug)
-                    slug = slug.strip('-')
-                    slug = slug[:80]  # Limit length to allow room for uniqueness suffix
-                    # Add short UUID to ensure uniqueness
-                    unique_suffix = str(uuid.uuid4())[:8]
-                    slug = f"{slug}-{unique_suffix}" if slug else f"post-{unique_suffix}"
-                    logger.info(f"📝 Generated unique slug from title: '{title}' → '{slug}'")
+                # ============================================================================
+                # USE UNIFIED METADATA SERVICE (Single source of truth)
+                # ============================================================================
+                from services.unified_metadata_service import get_unified_metadata_service
+                
+                metadata_service = get_unified_metadata_service()
                 
                 # Extract featured image URL from multiple possible locations
                 featured_image_url = None
-                
-                # Try different field names/locations where image might be stored
                 if "featured_image_url" in task_metadata:
                     featured_image_url = task_metadata.get("featured_image_url")
                 elif "image" in task_metadata and isinstance(task_metadata["image"], dict):
@@ -538,32 +528,51 @@ async def approve_and_publish_task(
                 
                 if featured_image_url:
                     logger.debug(f"✅ Found featured image URL: {featured_image_url[:100]}...")
-                else:
-                    logger.debug(f"ℹ️  No featured image URL found in task metadata")
                 
-                # Extract author, category, tags, and other metadata from task
-                author_id = task_metadata.get("author_id")
-                category_id = task_metadata.get("category_id")
-                tag_ids = task_metadata.get("tag_ids") or task_metadata.get("tags") or []
+                # Get available categories and tags for matching
+                categories = await db_service.get_all_categories()
+                tags = await db_service.get_all_tags()
                 
-                # Build post data with all metadata fields
+                # ============================================================================
+                # BATCH GENERATE ALL METADATA (Most efficient)
+                # ============================================================================
+                logger.info("🔄 Generating complete metadata...")
+                metadata = await metadata_service.generate_all_metadata(
+                    content=content,
+                    topic=task_metadata.get("topic"),
+                    title=task_metadata.get("title"),
+                    excerpt=task_metadata.get("excerpt"),
+                    featured_image_url=featured_image_url,
+                    available_categories=categories if categories else None,
+                    available_tags=tags if tags else None,
+                    author_id=task_metadata.get("author_id")
+                )
+                
+                logger.info(f"✅ Metadata generated: title={metadata.title[:50]}, "
+                           f"category={metadata.category_name}, tags={len(metadata.tag_ids)}")
+                
+                # Use Poindexter AI UUID as default reviewer/system user
+                DEFAULT_SYSTEM_AUTHOR_ID = "14c9cad6-57ca-474a-8a6d-fab897388ea8"
+                reviewer_author_id = DEFAULT_SYSTEM_AUTHOR_ID
+                
+                # Build post data from unified metadata
                 post_data = {
                     "id": task_metadata.get("post_id"),
-                    "title": title,
-                    "slug": slug,
+                    "title": metadata.title,  # ✅ Extracted/generated
+                    "slug": metadata.slug,  # ✅ Generated from title
                     "content": content,
-                    "excerpt": task_metadata.get("excerpt", ""),
-                    "featured_image_url": featured_image_url,
+                    "excerpt": metadata.excerpt,  # ✅ Generated
+                    "featured_image_url": metadata.featured_image_url,
                     "cover_image_url": task_metadata.get("cover_image_url"),
-                    "author_id": author_id,  # Author who created the content
-                    "category_id": category_id,
-                    "tag_ids": tag_ids if isinstance(tag_ids, list) else [tag_ids] if tag_ids else None,
+                    "author_id": metadata.author_id,  # ✅ Matched or default
+                    "category_id": metadata.category_id,  # ✅ Matched intelligently
+                    "tag_ids": metadata.tag_ids if metadata.tag_ids else None,  # ✅ Extracted
                     "status": "published",
-                    "seo_title": task_metadata.get("seo_title"),
-                    "seo_description": task_metadata.get("seo_description"),
-                    "seo_keywords": task_metadata.get("seo_keywords", ""),
-                    "created_by": request.reviewer_id,  # Human reviewer who approved
-                    "updated_by": request.reviewer_id,  # Human reviewer who approved
+                    "seo_title": metadata.seo_title,  # ✅ Generated
+                    "seo_description": metadata.seo_description,  # ✅ Generated
+                    "seo_keywords": metadata.seo_keywords,  # ✅ Generated
+                    "created_by": reviewer_author_id,  # System UUID for created_by (reviewer who approved)
+                    "updated_by": reviewer_author_id,  # System UUID for updated_by (reviewer who approved)
                 }
                 
                 logger.debug(f"📝 Post data prepared: {json.dumps({k: str(v)[:50] + '...' if isinstance(v, str) and len(str(v)) > 50 else v for k, v in post_data.items()}, default=str)}")

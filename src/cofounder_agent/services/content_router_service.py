@@ -695,84 +695,15 @@ async def process_content_generation_task(
 # ================================================================================
 # HELPER FUNCTIONS FOR CONTENT PIPELINE
 # ================================================================================
-
-async def _extract_seo_keywords(
-    content: str,
-    topic: str,
-    tags: Optional[List[str]] = None
-) -> List[str]:
-    """
-    Extract SEO keywords from content
-    
-    Returns top 5-10 keywords from content and topic
-    """
-    import re
-    
-    # Start with provided tags
-    keywords = set(tags or [])
-    
-    # Add topic and variations
-    topic_words = topic.lower().split()
-    keywords.update(topic_words)
-    
-    # Extract common phrases and keywords from content
-    # Look for capitalized terms (likely proper nouns/keywords)
-    proper_nouns = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', content)
-    keywords.update([noun.lower() for noun in proper_nouns[:5]])
-    
-    # Return unique keywords (max 10)
-    return list(keywords)[:10]
-
-
-async def _generate_seo_title(topic: str, style: str) -> str:
-    """
-    Generate SEO-optimized title (50-60 chars)
-    
-    Format: "Topic | Style" or "Topic - Best Guide"
-    """
-    # Ensure title is 50-60 characters
-    base_title = topic
-    
-    if len(base_title) > 60:
-        base_title = base_title[:57] + "..."
-    elif len(base_title) < 30:
-        # Add style modifier
-        modifiers = {
-            'technical': 'Complete Guide to',
-            'narrative': 'The Ultimate Guide:',
-            'listicle': f'{topic}: 10',
-            'educational': f'Learn {topic}:',
-            'thought-leadership': f'{topic}: Expert Insights'
-        }
-        base_title = modifiers.get(style, f'{topic}: Guide')
-    
-    return base_title
-
-
-async def _generate_seo_description(content: str, topic: str) -> str:
-    """
-    Generate SEO meta description (155-160 chars)
-    
-    Extract first meaningful sentence from content
-    """
-    # Look for first paragraph/sentence
-    lines = [line.strip() for line in content.split('\n') if line.strip()]
-    
-    # Find first substantive paragraph (skip title/headers)
-    description = None
-    for line in lines:
-        if not line.startswith('#') and len(line) > 20:
-            description = line
-            break
-    
-    if not description:
-        description = f"Learn about {topic} with our comprehensive guide."
-    
-    # Trim to 155-160 characters
-    if len(description) > 160:
-        description = description[:157] + "..."
-    
-    return description
+# NOTE: Metadata functions moved to unified_metadata_service.py
+# For SEO keyword extraction, title generation, description generation,
+# use get_unified_metadata_service() from unified_metadata_service.py
+# 
+# Example:
+#   from services.unified_metadata_service import get_unified_metadata_service
+#   service = get_unified_metadata_service()
+#   seo_metadata = await service.generate_seo_metadata(title, content)
+# ================================================================================
 
 
 async def _evaluate_content_quality(

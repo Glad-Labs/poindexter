@@ -1,7 +1,7 @@
 # 📚 Glad Labs Documentation Hub
 
-**Last Updated:** December 12, 2025 (Subfolder Cleanup Complete)  
-**Status:** ✅ All 8 Core Docs Complete | HIGH-LEVEL ONLY Policy 100% Enforced (73 Files Archived) | Production Ready  
+**Last Updated:** December 17, 2025 (Root-Level Cleanup Complete)  
+**Status:** ✅ All 8 Core Docs Complete | HIGH-LEVEL ONLY Policy 100% Enforced (142 Files Archived) | Production Ready  
 **Documentation Policy:** 🎯 HIGH-LEVEL ONLY (Architecture-Focused, Zero Maintenance Burden)
 
 > **Policy:** This hub contains only high-level, architecture-stable documentation. Implementation details belong in code. Feature how-tos belong in code comments. Status updates are not maintained. This keeps documentation focused on what matters: system design, deployment, operations, and AI agent orchestration.
@@ -55,9 +55,10 @@ Start with any doc that matches your role, then use cross-links to explore. Each
 ### Historical Documentation
 
 - **[Archive (Old Files)](../archive-old/)** - Historical session notes, status updates, and superseded guides
-  - **Root archive:** 46 files (session summaries, implementation reports, deprecated guides)
-  - **Subfolder archives:** 27 files (src/cofounder_agent: 25 analysis/status docs; web/oversight-hub: 2 implementation notes)
-  - **Total archived:** 73 violation files eliminated from active codebase
+  - **Root archive:** 69 files (session summaries, implementation reports, Cloudinary/S3 guides, image storage documentation)
+  - **Previous archives:** 73 files (from October-December sessions)
+  - **Total archived:** 142 violation files eliminated from active codebase
+  - **Session tagged:** `20251217_SESSION_IMAGE_STORAGE_AND_DOCS_*` (69 new files from today)
   - **Marked as:** "Not maintained—reference only"
 
 ### Technical References
