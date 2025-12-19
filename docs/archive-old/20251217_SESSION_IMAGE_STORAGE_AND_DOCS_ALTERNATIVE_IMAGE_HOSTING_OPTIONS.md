@@ -7,7 +7,9 @@ Your S3 + CloudFront solution costs ~$45/month. There ARE cheaper/free alternati
 ## 🆓 FREE OPTIONS
 
 ### 1. Firebase Storage (Google)
+
 **Free Tier**: 5 GB storage, 1 GB/month download
+
 ```
 Pros:
 ✅ Completely free (5 GB limit)
@@ -28,7 +30,9 @@ Cons:
 ---
 
 ### 2. Supabase (PostgreSQL + Storage)
+
 **Free Tier**: 500 MB storage, 2 GB/month bandwidth
+
 ```
 Pros:
 ✅ Completely free (500 MB limit)
@@ -49,7 +53,9 @@ Cons:
 ---
 
 ### 3. Imgur (API)
+
 **Free Tier**: 1250 images/hour upload limit, no account needed
+
 ```
 Pros:
 ✅ Free with generous API limits
@@ -72,7 +78,9 @@ Cons:
 ---
 
 ### 4. Cloudinary (Free Tier)
+
 **Free Tier**: 75 GB/month storage + bandwidth, unlimited images
+
 ```
 Pros:
 ✅ Generous free tier (75 GB!)
@@ -96,7 +104,9 @@ Cons:
 ## 💰 CHEAP ALTERNATIVES (< $5/month)
 
 ### 5. Bunny CDN
+
 **Pricing**: $0.01 per GB (vs CloudFront $0.085)
+
 ```
 Pros:
 ✅ SUPER cheap ($0.01/GB)
@@ -110,7 +120,8 @@ Cons:
 ❌ Less mature than CloudFront
 ```
 
-**Monthly cost for your usage**: 
+**Monthly cost for your usage**:
+
 - 100 GB downloads = $1
 - 1000 images stored (S3) = $2.30
 - **Total: $3.30/month** ← 10x cheaper!
@@ -120,7 +131,9 @@ Cons:
 ---
 
 ### 6. Wasabi (S3 Alternative)
+
 **Pricing**: $5.99/month for 1 TB (vs S3 $23/month)
+
 ```
 Pros:
 ✅ Much cheaper than S3 ($5.99 flat for 1 TB)
@@ -135,6 +148,7 @@ Cons:
 ```
 
 **Monthly cost for your usage**:
+
 - Storage: $5.99/month (flat)
 - CDN (Bunny): $1/month (100 GB)
 - **Total: $6.99/month** ← 6x cheaper!
@@ -144,7 +158,9 @@ Cons:
 ---
 
 ### 7. DigitalOcean Spaces
+
 **Pricing**: $5/month for 250 GB
+
 ```
 Pros:
 ✅ Simple pricing ($5 flat)
@@ -159,6 +175,7 @@ Cons:
 ```
 
 **Monthly cost for your usage**:
+
 - 100 GB usage (under 250 GB limit): $5
 - **Total: $5/month** ← 9x cheaper!
 
@@ -169,6 +186,7 @@ Cons:
 ## 🚫 NOT RECOMMENDED: Instagram/Facebook
 
 ### Why NOT to use Instagram/Facebook for hosting:
+
 ```
 ❌ Not designed for this use case
 ❌ No official API for image hosting
@@ -190,22 +208,23 @@ Cons:
 
 ### For 1000 images (3GB storage), 100 GB monthly downloads:
 
-| Option | Storage | CDN | Total | Notes |
-|--------|---------|-----|-------|-------|
-| **Free Tier Cloudinary** | Free (75GB cap) | Included | **FREE** | Limited to 75 GB/month total |
-| **Firebase** | $0 (5GB free) | $0.19 | **$19** | Exceeded free tier |
-| **Supabase** | $0 (500MB free) | $0.19 | **$19** | Exceeded free tier |
-| **DigitalOcean Spaces** | $5 (250GB) | Included | **$5** | Within tier |
-| **Wasabi + Bunny** | $5.99 | $1 | **$6.99** | Very cheap |
-| **Bunny Origin + S3** | $2.30 | $1 | **$3.30** | Cheapest S3 option |
-| **S3 + CloudFront** | $2.30 | $8.50 | **$10.80** | Current setup |
-| **S3 + CloudFront** | $2.30 | $42.50 | **$44.80** | At scale (500 GB/month) |
+| Option                   | Storage         | CDN      | Total      | Notes                        |
+| ------------------------ | --------------- | -------- | ---------- | ---------------------------- |
+| **Free Tier Cloudinary** | Free (75GB cap) | Included | **FREE**   | Limited to 75 GB/month total |
+| **Firebase**             | $0 (5GB free)   | $0.19    | **$19**    | Exceeded free tier           |
+| **Supabase**             | $0 (500MB free) | $0.19    | **$19**    | Exceeded free tier           |
+| **DigitalOcean Spaces**  | $5 (250GB)      | Included | **$5**     | Within tier                  |
+| **Wasabi + Bunny**       | $5.99           | $1       | **$6.99**  | Very cheap                   |
+| **Bunny Origin + S3**    | $2.30           | $1       | **$3.30**  | Cheapest S3 option           |
+| **S3 + CloudFront**      | $2.30           | $8.50    | **$10.80** | Current setup                |
+| **S3 + CloudFront**      | $2.30           | $42.50   | **$44.80** | At scale (500 GB/month)      |
 
 ---
 
 ## 🎯 RECOMMENDATIONS BY USE CASE
 
 ### Development/Testing
+
 ```
 Use: Supabase or Firebase free tier
 Cost: $0
@@ -213,6 +232,7 @@ Why: Good enough for dev, easy integration, no setup needed
 ```
 
 ### Small Hobby Project (< 10 images/month)
+
 ```
 Use: Cloudinary free tier
 Cost: $0
@@ -221,6 +241,7 @@ Limit: 75 GB/month shared
 ```
 
 ### Medium Project (< 100 images/month, < 250 GB traffic)
+
 ```
 Use: DigitalOcean Spaces
 Cost: $5/month
@@ -229,6 +250,7 @@ Limit: 250 GB/month
 ```
 
 ### Your Project NOW (Fast Growing Blog)
+
 ```
 Use: Bunny CDN + S3 (instead of CloudFront + S3)
 Cost: $3-10/month
@@ -237,6 +259,7 @@ Change: Just swap CloudFront domain for Bunny URL
 ```
 
 ### Production at Scale (> 500 GB/month traffic)
+
 ```
 Use: S3 + CloudFront (current)
 Cost: $45-100+/month
@@ -248,6 +271,7 @@ Why: Enterprise-grade, unlimited scale, best performance
 ## 🔧 QUICK MIGRATION OPTIONS
 
 ### Option A: Use Cloudinary (FREE)
+
 Cloudinary can be a drop-in replacement for S3 + CloudFront:
 
 ```python
@@ -273,6 +297,7 @@ def upload_to_cloudinary(file_path: str) -> str:
 ---
 
 ### Option B: Use DigitalOcean Spaces ($5/month)
+
 Also works with your current boto3 code:
 
 ```python
@@ -296,6 +321,7 @@ s3_client = boto3.client(
 ---
 
 ### Option C: Use Wasabi + Bunny ($6.99/month)
+
 Again, works with existing boto3 code:
 
 ```python
@@ -324,21 +350,21 @@ Choose based on your priorities:
 IF: "I want completely free"
     → Use Cloudinary free tier
     → BUT: Limited to 75 GB/month
-    
+
 IF: "I want cheapest (under $10)"
     → Use Wasabi + Bunny CDN ($6.99)
     → OR DigitalOcean Spaces ($5)
-    
+
 IF: "I want simplest setup"
     → Stay with S3 + CloudFront ($45)
     → OR swap to DigitalOcean Spaces ($5)
-    
+
 IF: "I want most reliable"
     → Stay with S3 + CloudFront ($45)
-    
+
 IF: "I want best for videos"
     → Use Cloudinary (video optimization)
-    
+
 IF: "I want free with room to grow"
     → Start with Cloudinary free (75 GB)
     → Then migrate to S3 + Bunny when you exceed it
@@ -351,17 +377,20 @@ IF: "I want free with room to grow"
 **Don't change anything yet, but here's what I'd do:**
 
 ### Right Now (Keep current setup):
+
 - S3 + CloudFront: $45/month
 - Works great, proven, reliable
 - Your code is ready
 
 ### After 3 Months (When you have real usage data):
+
 - Switch to Bunny CDN instead of CloudFront
 - Keep S3 for storage
 - Save $40/month ($5 instead of $45)
 - Still enterprise-grade quality
 
 ### If You Hit 75 GB/month Limit:
+
 - Current setup becomes better value
 - S3 + Bunny = $1-10/month for 75 GB
 - S3 + CloudFront = cost depends on usage

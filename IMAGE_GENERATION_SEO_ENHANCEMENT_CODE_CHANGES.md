@@ -10,6 +10,7 @@
 **Purpose:** Extract SEO keywords from metadata and pass them to backend for enhanced image generation
 
 **Code Change:**
+
 ```javascript
 // Helper function to generate featured image using Pexels or SDXL
 const generateFeaturedImage = async () => {
@@ -60,6 +61,7 @@ const generateFeaturedImage = async () => {
 ```
 
 **What It Does:**
+
 1. Checks if `editedSEO.keywords` exists
 2. Converts string format (comma-separated) to array if needed
 3. Limits to 5 keywords to avoid noise
@@ -78,6 +80,7 @@ const generateFeaturedImage = async () => {
 **Purpose:** Combine title with keywords to create more specific search queries
 
 **Code Added:**
+
 ```python
 # ═══════════════════════════════════════════════════════════════════════════
 # HELPER FUNCTIONS
@@ -89,42 +92,43 @@ def build_enhanced_search_prompt(
 ) -> str:
     """
     Build an enhanced search prompt by combining title with SEO keywords.
-    
+
     This creates more specific, targeted search queries that are more likely
     to find relevant images.
-    
+
     Args:
         base_prompt: Main prompt (usually the title)
         keywords: Optional SEO keywords to enhance the prompt
-        
+
     Returns:
         Enhanced prompt string optimized for image search
-        
+
     Examples:
         >>> build_enhanced_search_prompt("Best Eats in Northeast USA", ["seafood", "boston", "food"])
         "Best Eats in Northeast USA seafood"
-        
+
         >>> build_enhanced_search_prompt("AI Gaming NPCs")
         "AI Gaming NPCs"
     """
     if not keywords or len(keywords) == 0:
         return base_prompt
-    
+
     # Take top keyword for specificity
     primary_keyword = keywords[0] if keywords else None
-    
+
     if not primary_keyword:
         return base_prompt
-    
+
     # Combine title with primary keyword for more specific search
     enhanced = f"{base_prompt} {primary_keyword}"
-    
+
     logger.debug(f"📝 Enhanced prompt: '{base_prompt}' → '{enhanced}' (using keyword: {primary_keyword})")
-    
+
     return enhanced
 ```
 
 **What It Does:**
+
 1. Takes the first (most important) keyword from the SEO list
 2. Appends it to the base prompt (title)
 3. Returns combined string for more specific search
@@ -139,17 +143,18 @@ def build_enhanced_search_prompt(
 **Purpose:** Use enhanced prompt when searching Pexels
 
 **Code Changed From:**
+
 ```python
 if request.use_pexels:
     logger.info(f"🔍 STEP 1: Searching Pexels for: {request.prompt}")
     keywords = request.keywords or []
-    
+
     try:
         image = await image_service.search_featured_image(
             topic=request.prompt,  # ← Uses original prompt only
             keywords=keywords
         )
-        
+
         if image:
             logger.info(f"✅ STEP 1 SUCCESS: Found image via Pexels: {image.url}")
         else:
@@ -161,23 +166,24 @@ else:
 ```
 
 **Code Changed To:**
+
 ```python
 if request.use_pexels:
     keywords = request.keywords or []
-    
+
     # Build enhanced search prompt using keywords if available
     search_prompt = build_enhanced_search_prompt(request.prompt, keywords)
-    
+
     logger.info(f"🔍 STEP 1: Searching Pexels for: {search_prompt}")
     if keywords:
         logger.debug(f"   Keywords: {', '.join(keywords)}")
-    
+
     try:
         image = await image_service.search_featured_image(
             topic=search_prompt,  # ← Uses enhanced prompt!
             keywords=keywords
         )
-        
+
         if image:
             logger.info(f"✅ STEP 1 SUCCESS: Found image via Pexels: {image.url}")
         else:
@@ -189,6 +195,7 @@ else:
 ```
 
 **What Changed:**
+
 1. Calls `build_enhanced_search_prompt()` with title and keywords
 2. Uses enhanced prompt for Pexels search instead of original
 3. Logs keywords being used if available
@@ -202,43 +209,46 @@ else:
 **Purpose:** Use enhanced prompt when generating with SDXL
 
 **Code Changed From:**
+
 ```python
 if not image and request.use_generation:
     logger.info(f"🎨 STEP 2: Generating image with SDXL: {request.prompt}")
     if request.use_refinement:
         logger.info(f"   Refinement: ENABLED (base {request.num_inference_steps} steps + 30 refinement steps)")
-    
+
     try:
         # ... file path setup ...
-        
+
         success = await image_service.generate_image(
             prompt=request.prompt,  # ← Uses original prompt only
             output_path=output_path,
 ```
 
 **Code Changed To:**
+
 ```python
 if not image and request.use_generation:
     keywords = request.keywords or []
-    
+
     # Build enhanced generation prompt using keywords if available
     generation_prompt = build_enhanced_search_prompt(request.prompt, keywords)
-    
+
     logger.info(f"🎨 STEP 2: Generating image with SDXL: {generation_prompt}")
     if keywords:
         logger.debug(f"   Keywords: {', '.join(keywords)}")
     if request.use_refinement:
         logger.info(f"   Refinement: ENABLED (base {request.num_inference_steps} steps + 30 refinement steps)")
-    
+
     try:
         # ... file path setup ...
-        
+
         success = await image_service.generate_image(
             prompt=generation_prompt,  # ← Uses enhanced prompt!
             output_path=output_path,
 ```
 
 **What Changed:**
+
 1. Calls `build_enhanced_search_prompt()` with title and keywords
 2. Uses enhanced prompt for SDXL generation instead of original
 3. Logs keywords being used if available
@@ -252,6 +262,7 @@ if not image and request.use_generation:
 **Purpose:** Pass enhanced prompt to image generation service
 
 **Code Changed From:**
+
 ```python
 success = await image_service.generate_image(
     prompt=request.prompt,  # ← Original
@@ -259,6 +270,7 @@ success = await image_service.generate_image(
 ```
 
 **Code Changed To:**
+
 ```python
 success = await image_service.generate_image(
     prompt=generation_prompt,  # ← Enhanced with keywords
@@ -270,6 +282,7 @@ success = await image_service.generate_image(
 ## Data Flow Diagram
 
 ### Before Enhancement:
+
 ```
 ┌─────────────────────────────────────────────┐
 │ Frontend: ResultPreviewPanel.jsx            │
@@ -296,6 +309,7 @@ success = await image_service.generate_image(
 ```
 
 ### After Enhancement:
+
 ```
 ┌─────────────────────────────────────────────┐
 │ Frontend: ResultPreviewPanel.jsx            │
@@ -339,6 +353,7 @@ success = await image_service.generate_image(
 ### Example 1: With Keywords (New Capability)
 
 **Request:**
+
 ```json
 POST /api/media/generate-image
 {
@@ -350,6 +365,7 @@ POST /api/media/generate-image
 ```
 
 **Backend Processing:**
+
 ```
 🔍 STEP 1: Searching Pexels for: Best Eats in the Northeast USA seafood
    Keywords: seafood, boston, restaurants
@@ -363,6 +379,7 @@ POST /api/media/generate-image
 ### Example 2: Without Keywords (Backwards Compatible)
 
 **Request:**
+
 ```json
 POST /api/media/generate-image
 {
@@ -373,6 +390,7 @@ POST /api/media/generate-image
 ```
 
 **Backend Processing:**
+
 ```
 🔍 STEP 1: Searching Pexels for: Best Eats in the Northeast USA
 ✅ STEP 1 SUCCESS: Found image via Pexels: https://images.pexels.com/photos/...
@@ -385,6 +403,7 @@ POST /api/media/generate-image
 ### Example 3: SDXL with Keywords
 
 **Request:**
+
 ```json
 POST /api/media/generate-image
 {
@@ -396,6 +415,7 @@ POST /api/media/generate-image
 ```
 
 **Backend Processing:**
+
 ```
 🎨 STEP 2: Generating image with SDXL: AI Gaming NPCs gaming
    Keywords: gaming, NPCs, AI, virtual reality
@@ -426,9 +446,10 @@ POST /api/media/generate-image
 **No breaking changes:** ✅ Fully backwards compatible  
 **No database migrations:** ✅ Not needed  
 **No new environment variables:** ✅ Not needed  
-**No new dependencies:** ✅ Uses existing code  
+**No new dependencies:** ✅ Uses existing code
 
 **To test locally:**
+
 1. Restart backend: `python src/cofounder_agent/main.py`
 2. Restart frontend: `npm start --prefix web/oversight-hub`
 3. Generate content with AI (will include SEO keywords)
@@ -445,6 +466,6 @@ POST /api/media/generate-image
 ✅ Backwards compatible with existing requests  
 ✅ Transparent logging for debugging  
 ✅ No breaking changes to API  
-✅ No database migrations needed  
+✅ No database migrations needed
 
 **Status:** Ready for deployment

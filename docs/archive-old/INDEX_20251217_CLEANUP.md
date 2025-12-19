@@ -13,8 +13,8 @@
 The codebase had accumulated 71+ markdown files at root level, violating the HIGH-LEVEL ONLY documentation policy:
 
 - ❌ Session-specific summaries (CLOUDINARY*\*, S3*_, IMAGE*STORAGE*_, IMPLEMENTATION\_\*)
-- ❌ How-to guides (REDIS*DI*_, SDXL\__, CPU*\*, RTX_5090*\*)
-- ❌ Status update documents (COMPLETE*\*, READY*_, VERIFICATION\__)
+- ❌ How-to guides (REDIS*DI*\_, SDXL\_\_, CPU*\*, RTX_5090*\*)
+- ❌ Status update documents (COMPLETE*\*, READY*\_, VERIFICATION\_\_)
 - ❌ Feature-specific guides (WEBSOCKET*\*, CHAT*_, APPROVAL*WORKFLOW*_)
 - ❌ Outdated reference cards (QUICK*\*, REFERENCE*\*)
 

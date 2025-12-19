@@ -217,6 +217,9 @@ async def create_task(
         logger.info(f"   - task_name: {request.task_name}")
         logger.info(f"   - topic: {request.topic}")
         logger.info(f"   - category: {request.category}")
+        logger.info(f"   - model_selections: {request.model_selections}")
+        logger.info(f"   - quality_preference: {request.quality_preference}")
+        logger.info(f"   - estimated_cost: {request.estimated_cost}")
         logger.info(f"   - user_id: {current_user.get('id', 'system')}")
         
         # Create task data
@@ -228,6 +231,9 @@ async def create_task(
             "primary_keyword": (request.primary_keyword or "").strip(),
             "target_audience": (request.target_audience or "").strip(),
             "category": (request.category or "general").strip(),
+            "model_selections": request.model_selections or {},
+            "quality_preference": request.quality_preference or "balanced",
+            "estimated_cost": request.estimated_cost or 0.0,
             "status": "pending",
             "agent_id": "content-agent",
             "metadata": request.metadata or {},
@@ -235,7 +241,10 @@ async def create_task(
         }
         
         logger.info(f"🔄 [TASK_CREATE] Generated task_id: {task_id}")
-        logger.info(f"🔄 [TASK_CREATE] Task data prepared: {json.dumps({k: v for k, v in task_data.items() if k != 'metadata'}, indent=2)}")
+        logger.info(f"🔄 [TASK_CREATE] Task data prepared:")
+        logger.info(f"   - Basic: {json.dumps({k: v for k, v in task_data.items() if k not in ['metadata', 'model_selections']}, indent=2)}")
+        logger.info(f"   - Model Selections: {task_data['model_selections']}")
+        logger.info(f"   - Cost Info: quality={task_data['quality_preference']}, estimated=${task_data['estimated_cost']:.4f}")
         
         # Add task to database
         logger.info(f"💾 [TASK_CREATE] Inserting into database...")

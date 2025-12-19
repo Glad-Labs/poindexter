@@ -125,12 +125,15 @@ Loading pipeline components: 100%|##########| 5/5 [00:00<00:00, 20.73it/s]
 #### ✅ Change 4: Model Loading to Device
 
 - **Base Model:**
+
   ```python
   .to(use_device)  # Was: .to("cuda")
   ```
 
   - Test: `service.sdxl_pipe is not None` ✅
+
 - **Refiner Model:**
+
   ```python
   .to(use_device)  # Was: .to("cuda")
   ```

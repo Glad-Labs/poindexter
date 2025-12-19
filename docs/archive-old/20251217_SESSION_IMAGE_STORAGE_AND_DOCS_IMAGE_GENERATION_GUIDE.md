@@ -39,13 +39,13 @@ The image generation system is now integrated with FastAPI and ready to use. It 
 
 ### Key Files
 
-| File | Purpose | Status |
-|------|---------|--------|
-| `src/cofounder_agent/services/image_service.py` | Unified image service | ✅ Fully implemented |
-| `src/cofounder_agent/routes/media_routes.py` | API endpoints | ✅ Created |
-| `src/cofounder_agent/utils/route_registration.py` | Route registration | ✅ Updated |
-| `web/oversight-hub/src/components/tasks/ResultPreviewPanel.jsx` | Frontend integration | ✅ Updated |
-| `test_media_endpoints.py` | Test suite | ✅ Created |
+| File                                                            | Purpose               | Status               |
+| --------------------------------------------------------------- | --------------------- | -------------------- |
+| `src/cofounder_agent/services/image_service.py`                 | Unified image service | ✅ Fully implemented |
+| `src/cofounder_agent/routes/media_routes.py`                    | API endpoints         | ✅ Created           |
+| `src/cofounder_agent/utils/route_registration.py`               | Route registration    | ✅ Updated           |
+| `web/oversight-hub/src/components/tasks/ResultPreviewPanel.jsx` | Frontend integration  | ✅ Updated           |
+| `test_media_endpoints.py`                                       | Test suite            | ✅ Created           |
 
 ## Environment Setup
 
@@ -82,6 +82,7 @@ python test_media_endpoints.py
 ```
 
 Expected output:
+
 ```
 ✅ Health Check Passed
   Status: healthy
@@ -105,6 +106,7 @@ Expected output:
 Generate or search for a featured image.
 
 **Request:**
+
 ```json
 {
   "prompt": "AI gaming NPCs futuristic virtual reality",
@@ -116,6 +118,7 @@ Generate or search for a featured image.
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -134,6 +137,7 @@ Generate or search for a featured image.
 ```
 
 **Parameters:**
+
 - `prompt` (required): Image search/generation prompt
 - `title` (optional): Blog post title (used as fallback)
 - `keywords` (optional): Additional search terms (max 5)
@@ -141,11 +145,13 @@ Generate or search for a featured image.
 - `use_generation` (default: false): Fall back to SDXL if GPU available
 
 **Strategy:**
+
 1. If `use_pexels=true`: Search Pexels for free stock image
 2. If not found AND `use_generation=true`: Generate custom image with SDXL
 3. Return image URL
 
 **Cost:**
+
 - Pexels: FREE (unlimited)
 - SDXL: FREE if GPU available
 - vs DALL-E: $0.02/image
@@ -155,10 +161,12 @@ Generate or search for a featured image.
 Search-only endpoint for finding images.
 
 **Query Parameters:**
+
 - `query` (required): Search query (e.g., "AI gaming")
 - `count` (default: 1): Number of images to return (1-20)
 
 **Example:**
+
 ```bash
 curl "http://localhost:8000/api/media/images/search?query=AI%20gaming&count=1"
 ```
@@ -171,6 +179,7 @@ Same as POST endpoint but search-only.
 Check image service health.
 
 **Response:**
+
 ```json
 {
   "status": "healthy",
@@ -181,6 +190,7 @@ Check image service health.
 ```
 
 **Status Values:**
+
 - `healthy`: All services available
 - `degraded`: Some services unavailable
 - `error`: Critical error
@@ -197,6 +207,7 @@ The "Generate Featured Image" button automatically:
 4. Shows success/error messages
 
 **Button Behavior:**
+
 ```jsx
 // User clicks "Generate Featured Image"
 // → Sends POST request with article title
@@ -222,7 +233,7 @@ const generateFeaturedImage = async () => {
       }),
     }
   );
-  
+
   const result = await response.json();
   if (result.success) {
     setFeaturedImageUrl(result.image_url);
@@ -235,6 +246,7 @@ const generateFeaturedImage = async () => {
 ### Example 1: Generate Image for Blog Post
 
 **Frontend:**
+
 1. User enters article title: "How AI-Powered NPCs are Making Games More Immersive"
 2. User clicks "Generate Featured Image" button
 3. System searches Pexels and returns image in ~0.5 seconds
@@ -242,6 +254,7 @@ const generateFeaturedImage = async () => {
 5. User clicks "Approve" to save post
 
 **API Call:**
+
 ```bash
 curl -X POST http://localhost:8000/api/media/generate-image \
   -H "Content-Type: application/json" \
@@ -279,7 +292,7 @@ posts=$(curl -s http://localhost:8000/api/content/posts?has_image=false)
 for post in $posts; do
   title=$(echo $post | jq -r '.title')
   post_id=$(echo $post | jq -r '.id')
-  
+
   curl -X POST http://localhost:8000/api/media/generate-image \
     -H "Content-Type: application/json" \
     -d "{
@@ -295,6 +308,7 @@ done
 ### Issue: "PEXELS_API_KEY not set"
 
 **Solution:**
+
 ```bash
 # Add to .env.local
 PEXELS_API_KEY=your_key_here
@@ -305,6 +319,7 @@ PEXELS_API_KEY=your_key_here
 ### Issue: "Image generation failed"
 
 **Check:**
+
 ```bash
 # Test health endpoint
 curl http://localhost:8000/api/media/health
@@ -320,20 +335,24 @@ curl http://localhost:8000/api/media/health
 ### Issue: SDXL Not Available
 
 **This is normal if:**
+
 - You don't have a CUDA GPU
 - NVIDIA drivers not installed
 
 **Status:**
+
 - Pexels will still work (fall back strategy)
 - System logs: "SDXL not available (requires CUDA GPU)"
 
 ### Issue: Slow Image Generation
 
 **Expected timings:**
+
 - Pexels search: 0.3-0.5 seconds
 - SDXL generation: 10-30 seconds (depends on GPU)
 
 **Optimization:**
+
 - Use `use_pexels: true` (recommended, faster)
 - Use `use_generation: false` (unless you need custom)
 
@@ -357,11 +376,11 @@ This will update the `posts` table with the image URL.
 
 ### Cost Comparison
 
-| Service | Cost | Speed | Quality |
-|---------|------|-------|---------|
-| Pexels | FREE | ~0.5s | Very High |
-| SDXL | FREE (GPU) | 10-30s | High |
-| DALL-E 3 | $0.02/img | ~5s | Very High |
+| Service  | Cost       | Speed  | Quality   |
+| -------- | ---------- | ------ | --------- |
+| Pexels   | FREE       | ~0.5s  | Very High |
+| SDXL     | FREE (GPU) | 10-30s | High      |
+| DALL-E 3 | $0.02/img  | ~5s    | Very High |
 
 ### Architecture Benefits
 
@@ -382,13 +401,16 @@ This will update the `posts` table with the image URL.
 ## Files Modified
 
 ### Backend
+
 - ✅ `src/cofounder_agent/routes/media_routes.py` (Created)
 - ✅ `src/cofounder_agent/utils/route_registration.py` (Updated)
 
-### Frontend  
+### Frontend
+
 - ✅ `web/oversight-hub/src/components/tasks/ResultPreviewPanel.jsx` (Updated)
 
 ### Testing
+
 - ✅ `test_media_endpoints.py` (Created)
 
 ## References

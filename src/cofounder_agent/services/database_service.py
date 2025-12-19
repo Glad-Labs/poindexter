@@ -1290,3 +1290,133 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"❌ Error creating orchestrator_training_data: {e}")
             raise
+    # ========================================================================
+    # COST_LOGS TABLE METHODS (Cost tracking for model usage)
+    # ========================================================================
+
+    async def log_cost(self, cost_log: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Log cost of LLM API call to cost_logs table.
+        
+        Args:
+            cost_log: Dict with:
+                - task_id (UUID or str)
+                - user_id (UUID or str, optional)
+                - phase (str): research, outline, draft, assess, refine, finalize
+                - model (str): ollama, gpt-3.5-turbo, gpt-4, claude-3-opus, etc.
+                - provider (str): ollama, openai, anthropic, google
+                - cost_usd (float): Cost in USD
+                - input_tokens (int, optional): Input token count
+                - output_tokens (int, optional): Output token count
+                - total_tokens (int, optional): Total token count
+                - quality_score (float, optional): 1-5 star rating
+                - duration_ms (int, optional): Execution time in milliseconds
+                - success (bool, optional): Whether call succeeded (default: True)
+                - error_message (str, optional): Error details if failed
+        
+        Returns:
+            Created cost_log record
+            
+        Example:
+            >>> await db.log_cost({
+            ...     "task_id": "550e8400-e29b-41d4-a716-446655440000",
+            ...     "user_id": "user123",
+            ...     "phase": "draft",
+            ...     "model": "gpt-4",
+            ...     "provider": "openai",
+            ...     "cost_usd": 0.0015,
+            ...     "duration_ms": 2500,
+            ...     "success": True
+            ... })
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow("""
+                    INSERT INTO cost_logs (
+                        task_id, user_id, phase, model, provider,
+                        input_tokens, output_tokens, total_tokens,
+                        cost_usd, quality_score, duration_ms, success, error_message,
+                        created_at, updated_at
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())
+                    RETURNING *
+                """,
+                    str(cost_log['task_id']),
+                    str(cost_log['user_id']) if cost_log.get('user_id') else None,
+                    cost_log['phase'],
+                    cost_log['model'],
+                    cost_log['provider'],
+                    cost_log.get('input_tokens', 0),
+                    cost_log.get('output_tokens', 0),
+                    cost_log.get('total_tokens', 0),
+                    float(cost_log.get('cost_usd', 0.0)),
+                    cost_log.get('quality_score'),
+                    cost_log.get('duration_ms'),
+                    cost_log.get('success', True),
+                    cost_log.get('error_message')
+                )
+                logger.info(f"✅ Logged cost for {cost_log['phase']}: ${cost_log.get('cost_usd', 0):.6f} ({cost_log['model']})")
+                return self._convert_row_to_dict(row)
+        except Exception as e:
+            logger.error(f"❌ Error logging cost: {e}")
+            raise
+
+    async def get_task_costs(self, task_id: str) -> Dict[str, Any]:
+        """
+        Get cost breakdown for a task by phase.
+        
+        Args:
+            task_id: Task ID
+            
+        Returns:
+            {
+                "research": {"cost": 0.0, "model": "ollama", "count": 1},
+                "outline": {"cost": 0.00075, "model": "gpt-3.5-turbo", "count": 1},
+                "draft": {"cost": 0.0015, "model": "gpt-4", "count": 1},
+                "total": 0.00225,
+                "entries": [...]
+            }
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch("""
+                    SELECT * FROM cost_logs
+                    WHERE task_id = $1
+                    ORDER BY created_at ASC
+                """, str(task_id))
+                
+                if not rows:
+                    return {"total": 0.0, "entries": []}
+                
+                # Group by phase
+                breakdown = {}
+                total_cost = 0.0
+                entries = []
+                
+                for row in rows:
+                    row_dict = self._convert_row_to_dict(row)
+                    entries.append(row_dict)
+                    
+                    phase = row['phase']
+                    cost = float(row['cost_usd'] or 0.0)
+                    
+                    if phase not in breakdown:
+                        breakdown[phase] = {
+                            "cost": 0.0,
+                            "model": row['model'],
+                            "count": 0
+                        }
+                    
+                    breakdown[phase]["cost"] += cost
+                    breakdown[phase]["count"] += 1
+                    total_cost += cost
+                
+                result = breakdown
+                result["total"] = round(total_cost, 6)
+                result["entries"] = entries
+                
+                logger.info(f"✅ Retrieved costs for task {task_id}: ${total_cost:.6f} across {len(entries)} entries")
+                return result
+        except Exception as e:
+            logger.error(f"❌ Error getting task costs: {e}")
+            return {"total": 0.0, "entries": []}

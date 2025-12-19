@@ -10,6 +10,7 @@
 ## PHASE 1: CODE FIXES (✅ COMPLETED)
 
 ### Issue #1: Duplicate Slug Error Prevention
+
 - [x] Analyzed root cause (no pre-check before INSERT)
 - [x] Designed solution (check existing posts)
 - [x] Added `get_post_by_slug()` method in database_service.py
@@ -21,6 +22,7 @@
 **Status:** ✅ Ready for testing
 
 ### Issue #2: Image Local Storage
+
 - [x] Changed save location from temp to Downloads
 - [x] Updated filename format (sdxl_timestamp_taskid)
 - [x] Added `local_path` field to response model
@@ -34,6 +36,7 @@
 **Status:** ✅ Ready for testing
 
 ### Issue #3: Multi-Image Generation Design
+
 - [x] Designed endpoint architecture
 - [x] Created code templates
 - [x] Documented variation numbering scheme
@@ -48,10 +51,11 @@
 ## PHASE 1: TESTING
 
 ### Manual Testing (Do These)
+
 - [ ] Start backend: `cd src/cofounder_agent && python main.py`
 - [ ] Test 1: Generate image, check ~/Downloads/ folder
   - [ ] Image file exists
-  - [ ] Filename format: sdxl_20240112_*.png
+  - [ ] Filename format: sdxl*20240112*\*.png
   - [ ] File is readable PNG
 - [ ] Test 2: Check response includes local_path
   - [ ] Response has `local_path` field
@@ -66,6 +70,7 @@
 **Test Status:** [ ] NOT STARTED [ ] IN PROGRESS [ ] COMPLETE
 
 ### Code Review (Optional)
+
 - [ ] Review database_service.py changes
 - [ ] Review task_routes.py changes
 - [ ] Review media_routes.py changes
@@ -80,10 +85,12 @@
 ## PHASE 2: IMPLEMENTATION (⏳ READY)
 
 ### Step 1: Implement Approval Endpoint
+
 **Location:** `src/cofounder_agent/routes/media_routes.py`  
 **Time Estimate:** 15 minutes
 
 **Checklist:**
+
 - [ ] Copy template from SDXL_IMPLEMENTATION_NEXT_STEPS.md
 - [ ] Add ApproveImageRequest model
 - [ ] Add POST /api/media/approve-image endpoint
@@ -99,10 +106,12 @@
 **Status:** [ ] NOT STARTED [ ] IN PROGRESS [ ] COMPLETE
 
 ### Step 2: Implement Multi-Image Variations Endpoint
+
 **Location:** `src/cofounder_agent/routes/media_routes.py`  
 **Time Estimate:** 20 minutes
 
 **Checklist:**
+
 - [ ] Copy template from SDXL_IMPLEMENTATION_NEXT_STEPS.md
 - [ ] Add GenerateImageVariationsRequest model
 - [ ] Add POST /api/media/generate-image-variations endpoint
@@ -117,10 +126,12 @@
 **Status:** [ ] NOT STARTED [ ] IN PROGRESS [ ] COMPLETE
 
 ### Step 3: Update UI Components
+
 **Location:** `web/oversight-hub/src/components/TaskDetail.tsx`  
 **Time Estimate:** 20 minutes
 
 **Checklist:**
+
 - [ ] Add image preview component
 - [ ] Implement local image display (file:// protocol)
 - [ ] Add "Regenerate Image" button
@@ -135,9 +146,11 @@
 **Status:** [ ] NOT STARTED [ ] IN PROGRESS [ ] COMPLETE
 
 ### Step 4: End-to-End Testing
+
 **Time Estimate:** 15 minutes
 
 **Test Cases:**
+
 - [ ] Generate image → verify in Downloads
 - [ ] Check response has local_path field
 - [ ] Click approve button → upload to CDN
@@ -157,6 +170,7 @@
 ## PHASE 2: TESTING & VALIDATION
 
 ### Unit Tests
+
 - [ ] Test approve-image endpoint
 - [ ] Test generate-image-variations endpoint
 - [ ] Test database update function
@@ -164,6 +178,7 @@
 - [ ] Test error handling
 
 ### Integration Tests
+
 - [ ] Test full approval workflow
 - [ ] Test database updates
 - [ ] Test CDN upload
@@ -171,6 +186,7 @@
 - [ ] Test UI components
 
 ### Performance Tests
+
 - [ ] Single image generation (~20-30 sec)
 - [ ] Multi-image generation (~60-90 sec)
 - [ ] Cloudinary upload speed
@@ -178,6 +194,7 @@
 - [ ] UI responsiveness
 
 ### Edge Cases
+
 - [ ] Handle network errors during upload
 - [ ] Handle missing local file
 - [ ] Handle Cloudinary API failures
@@ -191,24 +208,28 @@
 ## PHASE 3: OPTIMIZATION (Optional)
 
 ### Code Cleanup
+
 - [ ] Remove debug logging
 - [ ] Add comprehensive error messages
 - [ ] Optimize database queries
 - [ ] Add caching where applicable
 
 ### Performance Optimization
+
 - [ ] Add progress bar for multi-image generation
 - [ ] Implement concurrent generation if possible
 - [ ] Optimize Cloudinary upload
 - [ ] Cache CDN URLs
 
 ### Storage Management
+
 - [ ] Implement auto-cleanup (delete after 7 days)
 - [ ] Add storage quota management
 - [ ] Log disk usage
 - [ ] Add cleanup UI control
 
 ### Monitoring & Logging
+
 - [ ] Add performance logging
 - [ ] Add error tracking
 - [ ] Add user action logging
@@ -221,6 +242,7 @@
 ## DEPLOYMENT CHECKLIST
 
 ### Pre-Deployment
+
 - [ ] All Phase 1 tests passing
 - [ ] All Phase 2 tests passing
 - [ ] Code reviewed
@@ -229,6 +251,7 @@
 - [ ] Rollback plan documented
 
 ### Deployment
+
 - [ ] Deploy database changes (if any)
 - [ ] Deploy backend changes to staging
 - [ ] Deploy UI changes to staging
@@ -237,6 +260,7 @@
 - [ ] Monitor for errors
 
 ### Post-Deployment
+
 - [ ] Check error logs
 - [ ] Verify functionality in production
 - [ ] Monitor performance metrics
@@ -252,6 +276,7 @@
 ## DOCUMENTATION STATUS
 
 ### Completed ✅
+
 - [x] QUICK_REFERENCE.md - Quick start guide
 - [x] SESSION_COMPLETION_SUMMARY.md - Project recap
 - [x] SDXL_FIXES_COMPLETE_SUMMARY.md - Detailed overview
@@ -262,6 +287,7 @@
 - [x] DOCUMENTATION_INDEX_SDXL_FIXES.md - Master index
 
 ### To Update
+
 - [ ] README.md - Add SDXL workflow section
 - [ ] API_DOCUMENTATION.md - Document new endpoints
 - [ ] DEPLOYMENT_GUIDE.md - Add Phase 2 deployment steps
@@ -272,12 +298,14 @@
 ## TIMELINE
 
 ### Phase 1 (Completed ✅)
+
 - Analysis: 30 minutes ✅
 - Implementation: 45 minutes ✅
 - Documentation: 60 minutes ✅
 - **Total: 2.5 hours** ✅
 
 ### Phase 2 (Estimate)
+
 - Approval endpoint: 15 minutes ⏳
 - Multi-image endpoint: 20 minutes ⏳
 - UI components: 20 minutes ⏳
@@ -285,11 +313,13 @@
 - **Total: 70 minutes** ⏳
 
 ### Phase 3 (Optional)
+
 - Cleanup logic: 15 minutes 📋
 - Optimization: 20 minutes 📋
 - **Total: 35 minutes** 📋
 
 ### Deployment
+
 - Testing: 20 minutes
 - Deployment: 10 minutes
 - Monitoring: Ongoing
@@ -302,6 +332,7 @@
 ## RESOURCES NEEDED
 
 ### Software & Services
+
 - [x] FastAPI - Already installed
 - [x] asyncpg - Already installed
 - [x] Cloudinary account - Already configured
@@ -310,11 +341,13 @@
 - [x] React/Next.js - Already available
 
 ### Documentation References
+
 - [x] CODE_CHANGES_DETAILED.md - Patterns & examples
 - [x] SDXL_IMPLEMENTATION_NEXT_STEPS.md - Code templates
 - [x] WORKFLOW_VISUAL_REFERENCE.md - Architecture diagrams
 
 ### Team Resources
+
 - [ ] Developer time (70 minutes for Phase 2)
 - [ ] QA time (30 minutes for testing)
 - [ ] DevOps time (20 minutes for deployment)
@@ -324,6 +357,7 @@
 ## SUCCESS CRITERIA
 
 ### Phase 1 ✅
+
 - [x] Duplicate slug errors eliminated
 - [x] Images saved to Downloads folder
 - [x] Response includes local_path field
@@ -331,6 +365,7 @@
 - [x] Testing documentation complete
 
 ### Phase 2 ⏳
+
 - [ ] Approval endpoint working
 - [ ] Images upload to CDN on approval
 - [ ] Post status updated to "published"
@@ -340,6 +375,7 @@
 - [ ] All tests passing
 
 ### Phase 3 (Optional)
+
 - [ ] Cleanup logic working
 - [ ] Auto-cleanup after 7 days
 - [ ] Performance optimized
@@ -350,30 +386,30 @@
 
 ## RISKS & MITIGATION
 
-| Risk | Impact | Mitigation |
-|------|--------|-----------|
-| Cloudinary upload fails | High | Implement retry logic, fallback storage |
-| Local disk fills up | Medium | Implement cleanup, storage quota |
-| Concurrent image generation | Medium | Queue generations, throttle GPU |
-| Database connection issues | High | Connection pooling, retry logic |
-| File permission issues | Medium | Check permissions on startup |
-| Network interruption during upload | Medium | Implement resume/retry logic |
+| Risk                               | Impact | Mitigation                              |
+| ---------------------------------- | ------ | --------------------------------------- |
+| Cloudinary upload fails            | High   | Implement retry logic, fallback storage |
+| Local disk fills up                | Medium | Implement cleanup, storage quota        |
+| Concurrent image generation        | Medium | Queue generations, throttle GPU         |
+| Database connection issues         | High   | Connection pooling, retry logic         |
+| File permission issues             | Medium | Check permissions on startup            |
+| Network interruption during upload | Medium | Implement resume/retry logic            |
 
 ---
 
 ## SIGN-OFF
 
-**Implemented By:** _________________  
-**Date Completed:** _________________  
+**Implemented By:** ********\_********  
+**Date Completed:** ********\_********
 
-**Reviewed By:** _________________  
-**Date Reviewed:** _________________  
+**Reviewed By:** ********\_********  
+**Date Reviewed:** ********\_********
 
-**Approved By:** _________________  
-**Date Approved:** _________________  
+**Approved By:** ********\_********  
+**Date Approved:** ********\_********
 
-**Deployed By:** _________________  
-**Date Deployed:** _________________  
+**Deployed By:** ********\_********  
+**Date Deployed:** ********\_********
 
 ---
 

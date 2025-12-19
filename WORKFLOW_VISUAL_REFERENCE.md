@@ -248,7 +248,7 @@
                           │
                     Continue flow
                     (Both succeed)
-                    
+
 OLD BEHAVIOR:
 ┌──────────────────────┐
 │ FIRST: INSERT ✅     │
@@ -273,6 +273,7 @@ NEW BEHAVIOR:
 ## Response Model Evolution
 
 ### Before (Minimal)
+
 ```json
 {
   "success": true,
@@ -286,6 +287,7 @@ NEW BEHAVIOR:
 ```
 
 ### After (With Local Info) ✨
+
 ```json
 {
   "success": true,

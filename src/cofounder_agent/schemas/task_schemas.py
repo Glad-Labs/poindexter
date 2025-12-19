@@ -20,6 +20,20 @@ class TaskCreateRequest(BaseModel):
                                 description="Target audience (max 100 chars)")
     category: str = Field(default="general", max_length=50, 
                          description="Content category (max 50 chars)")
+    model_selections: Optional[Dict[str, str]] = Field(
+        default_factory=dict,
+        description="Per-phase model selections (research, outline, draft, assess, refine, finalize)"
+    )
+    quality_preference: Optional[str] = Field(
+        default="balanced",
+        pattern="^(fast|balanced|quality)$",
+        description="Quality preference: fast (cheapest), balanced, or quality (best)"
+    )
+    estimated_cost: Optional[float] = Field(
+        default=0.0,
+        ge=0.0,
+        description="Estimated task cost in USD"
+    )
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, 
                                               description="Additional metadata")
     
@@ -31,6 +45,16 @@ class TaskCreateRequest(BaseModel):
                 "primary_keyword": "AI healthcare",
                 "target_audience": "Healthcare professionals",
                 "category": "healthcare",
+                "model_selections": {
+                    "research": "ollama",
+                    "outline": "ollama",
+                    "draft": "gpt-3.5-turbo",
+                    "assess": "gpt-4",
+                    "refine": "gpt-4",
+                    "finalize": "gpt-4"
+                },
+                "quality_preference": "balanced",
+                "estimated_cost": 0.015,
                 "metadata": {"priority": "high"}
             }
         }

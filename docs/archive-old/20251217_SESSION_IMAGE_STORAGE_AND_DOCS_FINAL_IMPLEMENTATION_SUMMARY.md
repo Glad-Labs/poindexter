@@ -2,16 +2,19 @@
 
 ## 🎯 Problem Solved
 
-**Original Issue**: 
+**Original Issue**:
+
 - Images not storing in posts table (featured_image_url, author_id, category_id, tags, created_by, updated_by all NULL)
 - Previous "solution" (local filesystem storage) won't work in production with Railway backend + Vercel frontend
 
 **Root Cause**:
+
 - Backend and frontend are separate services in distributed architecture
 - Local filesystem writes to Railway's ephemeral filesystem, not accessible from Vercel
 - Need persistent, globally-accessible image storage
 
 **Solution Implemented**:
+
 - AWS S3 for persistent image storage
 - CloudFront CDN for global fast delivery
 - Automatic fallback to local filesystem for development
@@ -23,6 +26,7 @@
 ### Code Changes: DONE ✓
 
 **File: `src/cofounder_agent/routes/media_routes.py`**
+
 - ✅ Added boto3 imports
 - ✅ Added S3 client initialization (`get_s3_client()`)
 - ✅ Added S3 upload function (`upload_to_s3()`)
@@ -31,10 +35,12 @@
 - ✅ No syntax errors
 
 **File: `src/cofounder_agent/requirements.txt`**
+
 - ✅ Added `boto3>=1.28.0`
 - ✅ Added `botocore>=1.31.0`
 
 **New Documentation Files: CREATED ✓**
+
 1. `S3_PRODUCTION_SETUP_GUIDE.md` - 500+ lines, complete AWS setup
 2. `S3_IMPLEMENTATION_COMPLETE.md` - 700+ lines, full technical details
 3. `S3_QUICK_REFERENCE.md` - Quick reference card
@@ -64,6 +70,7 @@ User's Browser
 ```
 
 ### Image Storage Locations:
+
 1. **S3 Bucket**: `/generated/1702851234-uuid.png` (original)
 2. **CloudFront Cache**: Global edge locations (copies)
 3. **PostgreSQL**: URL only, no image data
@@ -73,6 +80,7 @@ User's Browser
 ## 🔑 Key Features Implemented
 
 ### 1. Automatic S3 Client Initialization
+
 ```python
 get_s3_client()
 - Creates client only when first needed
@@ -82,6 +90,7 @@ get_s3_client()
 ```
 
 ### 2. S3 Upload Function
+
 ```python
 upload_to_s3(file_path, task_id)
 - Uploads image file to S3
@@ -93,6 +102,7 @@ upload_to_s3(file_path, task_id)
 ```
 
 ### 3. Integrated Image Generation
+
 ```
 generate_featured_image() endpoint:
 1. Generate image (SDXL or Pexels)
@@ -104,6 +114,7 @@ generate_featured_image() endpoint:
 ```
 
 ### 4. Intelligent Fallback
+
 - S3 configured → Use CloudFront
 - S3 not configured → Use local filesystem
 - S3 fails → Still generate image locally
@@ -114,6 +125,7 @@ generate_featured_image() endpoint:
 ## 🚀 Deployment Steps (Next 1 Hour)
 
 ### Step 1: AWS S3 Setup (10 minutes)
+
 ```bash
 1. Go to AWS S3 Console
 2. Create bucket: "glad-labs-images"
@@ -121,6 +133,7 @@ generate_featured_image() endpoint:
 ```
 
 ### Step 2: CloudFront Setup (20 minutes + 10 min wait)
+
 ```bash
 1. Go to CloudFront Console
 2. Create distribution
@@ -131,10 +144,11 @@ generate_featured_image() endpoint:
 ```
 
 ### Step 3: Railway Configuration (5 minutes)
+
 ```bash
 1. Railway Dashboard → Co-founder Agent
 2. Variables tab → Add environment variables:
-   
+
    AWS_ACCESS_KEY_ID=your_key
    AWS_SECRET_ACCESS_KEY=your_secret
    AWS_S3_REGION=us-east-1
@@ -143,6 +157,7 @@ generate_featured_image() endpoint:
 ```
 
 ### Step 4: Deploy Code (5 minutes)
+
 ```bash
 cd /path/to/glad-labs-website
 git add .
@@ -152,6 +167,7 @@ git push origin main
 ```
 
 ### Step 5: Test (10 minutes)
+
 ```bash
 # Test 1: Check configuration
 python src/cofounder_agent/tests/test_s3_integration.py
@@ -174,17 +190,20 @@ curl -X POST http://your-railway-app/api/media/generate-image \
 ## 📈 Impact & Benefits
 
 ### Performance (Before → After)
+
 - Local FS only works dev mode → Works global production
 - N/A (broken) → 50-200ms CDN response globally
 - No persistence → Persistent S3 storage
 - No scalability → Infinite scalability
 
 ### Cost (Before → After)
+
 - Railway volume: $100+/month → S3+CDN: $45/month
 - Manual scaling needed → Auto-scaling
 - No global delivery → Global CDN included
 
 ### Reliability (Before → After)
+
 - Ephemeral storage (lost on restart) → Persistent S3
 - Single point (Railway) → Distributed S3 + CloudFront
 - No backup → Automatic S3 redundancy
@@ -193,18 +212,19 @@ curl -X POST http://your-railway-app/api/media/generate-image \
 
 ## 📚 Documentation Provided
 
-| Document | Purpose | Location |
-|----------|---------|----------|
-| **S3_PRODUCTION_SETUP_GUIDE.md** | Step-by-step AWS/Railway setup | `./S3_PRODUCTION_SETUP_GUIDE.md` |
-| **S3_IMPLEMENTATION_COMPLETE.md** | Technical deep dive | `./S3_IMPLEMENTATION_COMPLETE.md` |
-| **S3_QUICK_REFERENCE.md** | Quick lookup card | `./S3_QUICK_REFERENCE.md` |
-| **test_s3_integration.py** | Verification tests | `src/cofounder_agent/tests/` |
+| Document                          | Purpose                        | Location                          |
+| --------------------------------- | ------------------------------ | --------------------------------- |
+| **S3_PRODUCTION_SETUP_GUIDE.md**  | Step-by-step AWS/Railway setup | `./S3_PRODUCTION_SETUP_GUIDE.md`  |
+| **S3_IMPLEMENTATION_COMPLETE.md** | Technical deep dive            | `./S3_IMPLEMENTATION_COMPLETE.md` |
+| **S3_QUICK_REFERENCE.md**         | Quick lookup card              | `./S3_QUICK_REFERENCE.md`         |
+| **test_s3_integration.py**        | Verification tests             | `src/cofounder_agent/tests/`      |
 
 ---
 
 ## 💾 Code Details
 
 ### New S3 Client Initialization (23 lines)
+
 ```python
 _s3_client = None
 
@@ -228,32 +248,33 @@ def get_s3_client():
         else:
             logger.info("ℹ️ AWS S3 not configured")
             _s3_client = False
-    
+
     return _s3_client if _s3_client else None
 ```
 
 ### New S3 Upload Function (59 lines)
+
 ```python
 async def upload_to_s3(file_path: str, task_id: Optional[str] = None) -> Optional[str]:
     """Upload generated image to S3 and return public URL"""
     s3 = get_s3_client()
     if not s3:
         return None
-    
+
     try:
         bucket = os.getenv('AWS_S3_BUCKET')
         if not bucket:
             return None
-        
+
         image_key = f"generated/{int(time.time())}-{uuid.uuid4()}.png"
-        
+
         with open(file_path, 'rb') as f:
             file_data = f.read()
-        
+
         metadata = {'generated-date': datetime.now().isoformat()}
         if task_id:
             metadata['task-id'] = task_id
-        
+
         s3.upload_fileobj(
             BytesIO(file_data),
             bucket,
@@ -264,19 +285,20 @@ async def upload_to_s3(file_path: str, task_id: Optional[str] = None) -> Optiona
                 'Metadata': metadata
             }
         )
-        
+
         cdn_domain = os.getenv('AWS_CLOUDFRONT_DOMAIN')
         if cdn_domain:
             return f"https://{cdn_domain}/{image_key}"
         else:
             return f"https://s3.amazonaws.com/{bucket}/{image_key}"
-        
+
     except Exception as e:
         logger.error(f"❌ S3 upload failed: {e}", exc_info=True)
         return None
 ```
 
 ### Updated Endpoint (Lines 330-365 of media_routes.py)
+
 ```python
 # New S3-aware image handling:
 s3_url = await upload_to_s3(output_path, task_id_str)
@@ -296,6 +318,7 @@ else:
 ## ⚙️ Environment Variables
 
 ### Required for Production:
+
 ```env
 AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF
 AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/...
@@ -305,6 +328,7 @@ AWS_CLOUDFRONT_DOMAIN=d1a2b3c4.cloudfront.net
 ```
 
 ### Optional:
+
 - If not set: uses S3 direct URLs (slower, but works)
 - If not set: generates images locally instead of failing
 
@@ -324,6 +348,7 @@ AWS_CLOUDFRONT_DOMAIN=d1a2b3c4.cloudfront.net
 ## 🧪 Testing Provided
 
 Test script (`test_s3_integration.py`) verifies:
+
 1. ✅ Environment variables configured
 2. ✅ boto3 module available
 3. ✅ S3 client creation works
@@ -340,17 +365,18 @@ Run: `python src/cofounder_agent/tests/test_s3_integration.py`
 
 ### Monthly Costs (1000 images, 100 GB downloads):
 
-| Component | Cost |
-|-----------|------|
-| S3 Storage (3 GB) | $0.07 |
-| S3 Requests (10k PUTs) | $0.05 |
-| CloudFront (100 GB) | $8.50 |
-| CloudFront Requests (1M) | $0.05 |
-| **TOTAL** | **~$8.67** |
+| Component                | Cost       |
+| ------------------------ | ---------- |
+| S3 Storage (3 GB)        | $0.07      |
+| S3 Requests (10k PUTs)   | $0.05      |
+| CloudFront (100 GB)      | $8.50      |
+| CloudFront Requests (1M) | $0.05      |
+| **TOTAL**                | **~$8.67** |
 
 Note: S3 storage can be reduced with lifecycle policies (archive after 30 days).
 
 ### Comparison with Alternatives:
+
 - Railway Volume: $100/month (fixed, no CDN)
 - Supabase Storage: $5-20/month (no CDN)
 - **S3 + CloudFront: $8-50/month** ← RECOMMENDED
@@ -360,6 +386,7 @@ Note: S3 storage can be reduced with lifecycle policies (archive after 30 days).
 ## ✨ What's Next
 
 ### Immediate (Next Hour):
+
 1. ✅ Code integration complete (you are here)
 2. ⏳ Create S3 bucket on AWS
 3. ⏳ Create CloudFront distribution
@@ -367,6 +394,7 @@ Note: S3 storage can be reduced with lifecycle policies (archive after 30 days).
 5. ⏳ Deploy code to Railway
 
 ### Testing (After Deployment):
+
 1. Run test script to verify connectivity
 2. Generate test image via API
 3. Verify image appears in S3
@@ -374,6 +402,7 @@ Note: S3 storage can be reduced with lifecycle policies (archive after 30 days).
 5. Check image loads in UI
 
 ### Production (Within 24 Hours):
+
 1. Monitor S3 and CloudFront costs
 2. Verify image generation works end-to-end
 3. Check performance from different regions
@@ -394,6 +423,7 @@ Note: S3 storage can be reduced with lifecycle policies (archive after 30 days).
 ## ✅ Implementation Checklist
 
 ### Code Phase (✅ COMPLETE)
+
 - [x] Add boto3 imports
 - [x] Create S3 client initialization function
 - [x] Create async S3 upload function
@@ -405,6 +435,7 @@ Note: S3 storage can be reduced with lifecycle policies (archive after 30 days).
 - [x] Verify no syntax errors
 
 ### AWS Setup Phase (⏳ TODO - 30 minutes)
+
 - [ ] Create S3 bucket
 - [ ] Configure bucket public access
 - [ ] Create CloudFront distribution
@@ -414,6 +445,7 @@ Note: S3 storage can be reduced with lifecycle policies (archive after 30 days).
 - [ ] Note CloudFront domain
 
 ### Deployment Phase (⏳ TODO - 10 minutes)
+
 - [ ] Get AWS credentials
 - [ ] Configure Railway environment variables
 - [ ] Push code to git repository
@@ -421,6 +453,7 @@ Note: S3 storage can be reduced with lifecycle policies (archive after 30 days).
 - [ ] Verify deployment successful
 
 ### Testing Phase (⏳ TODO - 20 minutes)
+
 - [ ] Run integration test script
 - [ ] Generate test image
 - [ ] Verify S3 upload

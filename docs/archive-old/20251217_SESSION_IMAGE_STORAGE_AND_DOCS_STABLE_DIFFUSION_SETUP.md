@@ -1,11 +1,13 @@
 # Stable Diffusion XL (SDXL) Setup Guide for Windows
 
 ## Overview
+
 This guide sets up SDXL locally on your Windows PC to integrate with your FastAPI image generation endpoint.
 
 ## Step 1: Install CUDA (GPU Support)
 
 ### Check Your GPU
+
 ```powershell
 # Open PowerShell as Administrator and run:
 nvidia-smi
@@ -14,6 +16,7 @@ nvidia-smi
 If you see GPU info, you have an NVIDIA GPU. If not, SDXL won't work (fall back to Pexels).
 
 ### Install CUDA Toolkit
+
 1. Download from: https://developer.nvidia.com/cuda-downloads
 2. Select: Windows → x86_64 → Windows 10/11 → exe (network)
 3. Run installer and follow prompts
@@ -23,6 +26,7 @@ If you see GPU info, you have an NVIDIA GPU. If not, SDXL won't work (fall back 
    - Visual Studio Integration ✓
 
 ### Verify Installation
+
 ```powershell
 nvcc --version
 ```
@@ -87,6 +91,7 @@ The `image_service.py` in your codebase should already have SDXL support. Let's 
 File: `src/cofounder_agent/services/image_service.py`
 
 The service should:
+
 1. ✅ Auto-detect GPU availability
 2. ✅ Load SDXL model on first use
 3. ✅ Generate images in temp directory
@@ -124,13 +129,13 @@ import asyncio
 async def test_sdxl():
     service = ImageService()
     await service.initialize()
-    
+
     # Generate a test image
     success = await service.generate_image(
         prompt="A beautiful mountain landscape at sunset",
         output_path="test_image.png"
     )
-    
+
     if success:
         print("✅ Image generated: test_image.png")
     else:
@@ -159,10 +164,12 @@ curl -X POST http://localhost:8000/api/media/generate-image \
 ```
 
 **First run will:**
+
 - Download model (~5GB) ← Takes 10-30 minutes
 - Generate image ← Takes 15-30 seconds
 
 **Subsequent runs:**
+
 - Just generate image ← Takes 15-30 seconds
 
 ## Step 8: Integrate with Oversight Hub
@@ -180,6 +187,7 @@ Once working:
 ### ❌ "CUDA not available" / `torch.cuda.is_available() = False`
 
 **Solution:**
+
 ```bash
 # Reinstall PyTorch with correct CUDA version
 pip uninstall torch torchvision torchaudio
@@ -189,6 +197,7 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 ### ❌ "Out of Memory" (OOM) Error
 
 **Solutions:**
+
 1. Use smaller batch size (already set to 1)
 2. Use fp16 (half precision) - already enabled
 3. Use memory-efficient attention: `pip install xformers`
@@ -197,6 +206,7 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 ### ❌ "Model not found" / 404 Error
 
 **Solution:**
+
 ```bash
 # Manually download model
 python << 'EOF'
@@ -215,6 +225,7 @@ EOF
 ### ❌ Slow Performance
 
 **Optimizations:**
+
 ```bash
 # Install optional speed improvements
 pip install xformers triton
@@ -228,6 +239,7 @@ pip install xformers triton
 
 **Quick Fix - Reduce Image Dimension:**
 In `ResultPreviewPanel.jsx`, change resolution default:
+
 ```javascript
 resolution: '512x512',  // Changed from 1024x1024
 ```
@@ -235,25 +247,28 @@ resolution: '512x512',  // Changed from 1024x1024
 ## Performance Expectations
 
 ### RTX 3060 (12GB VRAM)
+
 - First generation: 30-45 seconds
 - Subsequent: 20-30 seconds
 
 ### RTX 4090 (24GB VRAM)
+
 - First generation: 15-20 seconds
 - Subsequent: 8-12 seconds
 
 ### RTX 2060 (6GB VRAM)
+
 - May fail or be very slow
 - Use Pexels instead (instant, free)
 
 ## Cost Comparison
 
-| Source | Cost | Speed | Quality | Unlimited |
-|--------|------|-------|---------|-----------|
-| **Pexels** | FREE | <1s | Stock Photos | ✅ |
-| **SDXL Local GPU** | FREE (one-time setup) | 15-45s | AI Generated | ✅ |
-| **DALL-E** | $0.02/image | 10-30s | Best | ❌ |
-| **Midjourney** | $10-60/month | 30-60s | Best | ✅ |
+| Source             | Cost                  | Speed  | Quality      | Unlimited |
+| ------------------ | --------------------- | ------ | ------------ | --------- |
+| **Pexels**         | FREE                  | <1s    | Stock Photos | ✅        |
+| **SDXL Local GPU** | FREE (one-time setup) | 15-45s | AI Generated | ✅        |
+| **DALL-E**         | $0.02/image           | 10-30s | Best         | ❌        |
+| **Midjourney**     | $10-60/month          | 30-60s | Best         | ✅        |
 
 ## Recommended Strategy
 
@@ -265,6 +280,7 @@ resolution: '512x512',  // Changed from 1024x1024
 ## Final Configuration
 
 Update `.env.local`:
+
 ```bash
 # Optional Pexels fallback
 PEXELS_API_KEY=your_api_key_here

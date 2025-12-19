@@ -22,6 +22,8 @@ from schemas.metrics_schemas import (
     PerformanceMetrics,
 )
 from services.usage_tracker import get_usage_tracker
+from services.cost_aggregation_service import CostAggregationService
+from services.database_service import DatabaseService
 
 logger = logging.getLogger(__name__)
 
@@ -173,79 +175,151 @@ async def get_usage_metrics(
 
 @metrics_router.get("/costs")
 async def get_cost_metrics(
-    current_user: UserProfile = Depends(get_current_user)
+    current_user: UserProfile = Depends(get_current_user),
+    use_db: bool = Query(True, description="Use PostgreSQL database for costs (recommended)")
 ) -> Dict[str, Any]:
     """
-    Get AI model usage and cost metrics (backward compatible endpoint).
+    Get AI model usage and cost metrics from database.
     
     **Authentication:** Requires valid JWT token
     
+    **Fallback:** If use_db=false, falls back to in-memory usage tracker
+    
     **Returns:**
-    - Cost breakdown by model and provider
-    - Token usage statistics
+    - Total cost and budget status
+    - Cost breakdown by model and phase
     - Cost trends and projections
+    - Daily/weekly/monthly aggregations
+    
+    **New Fields (from database):**
+    - costs: Advanced metrics including breakdown by phase
+    - budget: Budget tracking and status
+    - trend: Cost trends (up/down/stable)
     """
     try:
-        tracker = get_usage_tracker()
-        completed_ops = tracker.completed_operations
+        # Try database-backed aggregation first
+        if use_db:
+            try:
+                db_service = DatabaseService()
+                await db_service.initialize()
+                cost_service = CostAggregationService(db_service=db_service)
+                
+                # Get comprehensive cost summary from database
+                summary = await cost_service.get_summary()
+                phase_breakdown = await cost_service.get_breakdown_by_phase(period="month")
+                model_breakdown = await cost_service.get_breakdown_by_model(period="month")
+                budget_status = await cost_service.get_budget_status(monthly_budget=150.0)
+                
+                await db_service.pool.close() if db_service.pool else None
+                
+                return {
+                    # Summary metrics
+                    "total_cost": summary.get("month_cost", 0.0),
+                    "total_tokens": 0,  # Not tracked per-token in database
+                    "period": "month",
+                    
+                    # Advanced breakdown
+                    "costs": {
+                        "today": summary.get("today_cost", 0.0),
+                        "week": summary.get("week_cost", 0.0),
+                        "month": summary.get("month_cost", 0.0),
+                        "by_phase": phase_breakdown.get("phases", []),
+                        "by_model": model_breakdown.get("models", []),
+                    },
+                    
+                    # Budget tracking
+                    "budget": {
+                        "monthly_limit": budget_status.get("monthly_budget", 150.0),
+                        "current_spent": budget_status.get("amount_spent", 0.0),
+                        "remaining": budget_status.get("amount_remaining", 150.0),
+                        "percent_used": budget_status.get("percent_used", 0.0),
+                        "projected_monthly": summary.get("projected_monthly", 0.0),
+                        "status": budget_status.get("status", "healthy"),
+                        "alerts": budget_status.get("alerts", []),
+                    },
+                    
+                    # Task metrics
+                    "tasks": {
+                        "completed": summary.get("tasks_completed", 0),
+                        "avg_cost_per_task": summary.get("avg_cost_per_task", 0.0),
+                    },
+                    
+                    # Response metadata
+                    "updated_at": summary.get("last_updated"),
+                    "source": "postgresql",
+                    
+                    # Backward compatibility fields
+                    "by_model": [{"model": m["model"], "cost": m["total_cost"]} for m in model_breakdown.get("models", [])],
+                    "by_provider": {},
+                }
+            except Exception as db_error:
+                logger.warning(f"Database costs failed, falling back to tracker: {db_error}")
+                use_db = False
         
-        if not completed_ops:
+        # Fallback to legacy usage tracker
+        if not use_db:
+            tracker = get_usage_tracker()
+            completed_ops = tracker.completed_operations
+            
+            if not completed_ops:
+                return {
+                    "total_cost": 0.0,
+                    "total_tokens": 0,
+                    "by_model": [],
+                    "by_provider": {},
+                    "period": "all_time",
+                    "updated_at": datetime.now().isoformat(),
+                    "source": "tracker",
+                }
+            
+            # Calculate totals
+            total_cost = sum(op.get("cost_estimate", 0.0) for op in completed_ops)
+            total_tokens = sum(op.get("tokens_in", 0) + op.get("tokens_out", 0) for op in completed_ops)
+            
+            # Group by model
+            by_model = {}
+            for op in completed_ops:
+                model = op.get("model", "unknown")
+                if model not in by_model:
+                    by_model[model] = {"tokens": 0, "cost": 0.0, "provider": "unknown"}
+                by_model[model]["tokens"] += op.get("tokens_in", 0) + op.get("tokens_out", 0)
+                by_model[model]["cost"] += op.get("cost_estimate", 0.0)
+                
+                # Infer provider from model name
+                if "ollama" in model.lower() or model == "mistral" or model == "llama2":
+                    by_model[model]["provider"] = "ollama"
+                elif "gpt" in model.lower():
+                    by_model[model]["provider"] = "openai"
+                elif "claude" in model.lower():
+                    by_model[model]["provider"] = "anthropic"
+            
+            by_model_list = [
+                {
+                    "model": name,
+                    "tokens": metrics["tokens"],
+                    "cost": round(metrics["cost"], 4),
+                    "provider": metrics["provider"],
+                }
+                for name, metrics in by_model.items()
+            ]
+            
+            # Group by provider
+            by_provider = {}
+            for model_data in by_model_list:
+                provider = model_data["provider"]
+                if provider not in by_provider:
+                    by_provider[provider] = 0.0
+                by_provider[provider] += model_data["cost"]
+            
             return {
-                "total_cost": 0.0,
-                "total_tokens": 0,
-                "by_model": [],
-                "by_provider": {},
+                "total_cost": round(total_cost, 4),
+                "total_tokens": int(total_tokens),
+                "by_model": by_model_list,
+                "by_provider": {provider: round(cost, 4) for provider, cost in by_provider.items()},
                 "period": "all_time",
                 "updated_at": datetime.now().isoformat(),
+                "source": "tracker",
             }
-        
-        # Calculate totals
-        total_cost = sum(op.get("cost_estimate", 0.0) for op in completed_ops)
-        total_tokens = sum(op.get("tokens_in", 0) + op.get("tokens_out", 0) for op in completed_ops)
-        
-        # Group by model
-        by_model = {}
-        for op in completed_ops:
-            model = op.get("model", "unknown")
-            if model not in by_model:
-                by_model[model] = {"tokens": 0, "cost": 0.0, "provider": "unknown"}
-            by_model[model]["tokens"] += op.get("tokens_in", 0) + op.get("tokens_out", 0)
-            by_model[model]["cost"] += op.get("cost_estimate", 0.0)
-            
-            # Infer provider from model name
-            if "ollama" in model.lower() or model == "mistral" or model == "llama2":
-                by_model[model]["provider"] = "ollama"
-            elif "gpt" in model.lower():
-                by_model[model]["provider"] = "openai"
-            elif "claude" in model.lower():
-                by_model[model]["provider"] = "anthropic"
-        
-        by_model_list = [
-            {
-                "model": name,
-                "tokens": metrics["tokens"],
-                "cost": round(metrics["cost"], 4),
-                "provider": metrics["provider"],
-            }
-            for name, metrics in by_model.items()
-        ]
-        
-        # Group by provider
-        by_provider = {}
-        for model_data in by_model_list:
-            provider = model_data["provider"]
-            if provider not in by_provider:
-                by_provider[provider] = 0.0
-            by_provider[provider] += model_data["cost"]
-        
-        return {
-            "total_cost": round(total_cost, 4),
-            "total_tokens": int(total_tokens),
-            "by_model": by_model_list,
-            "by_provider": {provider: round(cost, 4) for provider, cost in by_provider.items()},
-            "period": "all_time",
-            "updated_at": datetime.now().isoformat(),
-        }
     
     except Exception as e:
         logger.error(f"Error retrieving cost metrics: {e}", exc_info=True)
@@ -377,3 +451,132 @@ async def track_usage(
         "success": "true",
         "message": f"Tracked usage for {model}",
     }
+
+# ============================================================================
+# NEW Week 2 Cost Analytics Endpoints (Database-Backed)
+# ============================================================================
+
+@metrics_router.get("/costs/breakdown/phase")
+async def get_costs_by_phase(
+    current_user: UserProfile = Depends(get_current_user),
+    period: str = Query("week", regex="^(today|week|month)$")
+) -> Dict[str, Any]:
+    """
+    Get cost breakdown by pipeline phase for Week 2 dashboard
+    
+    **Returns:**
+    - Costs per phase (research, outline, draft, assess, refine, finalize)
+    - Task counts and averages
+    - Percentage of total spend
+    
+    **Example:** Shows research costs $0.50, outline $0.75, draft $2.00, etc.
+    """
+    try:
+        db_service = DatabaseService()
+        await db_service.initialize()
+        cost_service = CostAggregationService(db_service=db_service)
+        
+        result = await cost_service.get_breakdown_by_phase(period=period)
+        
+        await db_service.pool.close() if db_service.pool else None
+        
+        return result
+    except Exception as e:
+        logger.error(f"Error getting phase breakdown: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@metrics_router.get("/costs/breakdown/model")
+async def get_costs_by_model(
+    current_user: UserProfile = Depends(get_current_user),
+    period: str = Query("week", regex="^(today|week|month)$")
+) -> Dict[str, Any]:
+    """
+    Get cost breakdown by AI model for Week 2 dashboard
+    
+    **Returns:**
+    - Costs per model (ollama, gpt-3.5, gpt-4, claude)
+    - Provider information
+    - Average cost per task
+    - Percentage of total spend
+    
+    **Example:** Shows gpt-4 costs $1.50, gpt-3.5 $0.45, ollama $0.00
+    """
+    try:
+        db_service = DatabaseService()
+        await db_service.initialize()
+        cost_service = CostAggregationService(db_service=db_service)
+        
+        result = await cost_service.get_breakdown_by_model(period=period)
+        
+        await db_service.pool.close() if db_service.pool else None
+        
+        return result
+    except Exception as e:
+        logger.error(f"Error getting model breakdown: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@metrics_router.get("/costs/history")
+async def get_cost_history(
+    current_user: UserProfile = Depends(get_current_user),
+    period: str = Query("week", regex="^(week|month)$")
+) -> Dict[str, Any]:
+    """
+    Get cost history and trends for Week 2 dashboard
+    
+    **Returns:**
+    - Daily cost data for past 7 or 30 days
+    - Weekly average
+    - Trend direction (up/down/stable)
+    
+    **Use case:** Visualize spending patterns, detect anomalies
+    """
+    try:
+        db_service = DatabaseService()
+        await db_service.initialize()
+        cost_service = CostAggregationService(db_service=db_service)
+        
+        result = await cost_service.get_history(period=period)
+        
+        await db_service.pool.close() if db_service.pool else None
+        
+        return result
+    except Exception as e:
+        logger.error(f"Error getting cost history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@metrics_router.get("/costs/budget")
+async def get_budget_status(
+    current_user: UserProfile = Depends(get_current_user),
+    monthly_budget: float = Query(150.0, ge=10, le=10000)
+) -> Dict[str, Any]:
+    """
+    Get budget status and alerts for Week 2 dashboard
+    
+    **Parameters:**
+    - monthly_budget: Monthly limit in USD (default $150 for solopreneurs)
+    
+    **Returns:**
+    - Amount spent vs remaining
+    - Percent used with color coding
+    - Daily burn rate
+    - Projected final month cost
+    - Alerts (80%, 100% thresholds)
+    
+    **Example:** Shows spent $12.50, remaining $137.50, 8.33% used, status: healthy
+    """
+    try:
+        db_service = DatabaseService()
+        await db_service.initialize()
+        cost_service = CostAggregationService(db_service=db_service)
+        
+        result = await cost_service.get_budget_status(monthly_budget=monthly_budget)
+        
+        await db_service.pool.close() if db_service.pool else None
+        
+        return result
+    except Exception as e:
+        logger.error(f"Error getting budget status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

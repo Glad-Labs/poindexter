@@ -3,6 +3,7 @@
 ## 🚀 Basic Usage
 
 ### Import the service
+
 ```python
 from services.unified_metadata_service import get_unified_metadata_service
 
@@ -10,6 +11,7 @@ service = get_unified_metadata_service()
 ```
 
 ### Generate all metadata at once (Recommended)
+
 ```python
 metadata = await service.generate_all_metadata(
     content="Your blog post content here...",
@@ -38,6 +40,7 @@ print(f"Featured Image: {metadata.featured_image_url}")
 ## 📋 Individual Operations (If Needed)
 
 ### Extract Title
+
 ```python
 title = await service.extract_title(
     content="...",
@@ -47,6 +50,7 @@ title = await service.extract_title(
 ```
 
 ### Generate Excerpt
+
 ```python
 excerpt = await service.generate_excerpt(
     content="...",
@@ -56,6 +60,7 @@ excerpt = await service.generate_excerpt(
 ```
 
 ### Generate SEO Metadata
+
 ```python
 seo = await service.generate_seo_metadata(
     title="Blog title",
@@ -66,12 +71,14 @@ seo = await service.generate_seo_metadata(
 ```
 
 ### Generate Slug
+
 ```python
 slug = service.generate_slug("Your Blog Title Here")
 # Returns: "your-blog-title-here"
 ```
 
 ### Match Category
+
 ```python
 category = await service.match_category(
     content="...",
@@ -82,6 +89,7 @@ category = await service.match_category(
 ```
 
 ### Extract Tags
+
 ```python
 tag_ids = await service.extract_tags(
     content="...",
@@ -93,6 +101,7 @@ tag_ids = await service.extract_tags(
 ```
 
 ### Generate Featured Image Prompt
+
 ```python
 prompt = service.generate_featured_image_prompt(
     title="Blog Title",
@@ -103,6 +112,7 @@ prompt = service.generate_featured_image_prompt(
 ```
 
 ### Generate Social Metadata
+
 ```python
 social = service.generate_social_metadata(
     title="Blog Title",
@@ -117,6 +127,7 @@ social = service.generate_social_metadata(
 ## 📊 Data Structure
 
 ### UnifiedMetadata Object
+
 All metadata is returned in a single `UnifiedMetadata` dataclass:
 
 ```python
@@ -125,24 +136,24 @@ metadata = UnifiedMetadata(
     title: str
     excerpt: str
     slug: str
-    
+
     # SEO optimization
     seo_title: str
     seo_description: str
     seo_keywords: List[str]
-    
+
     # Organization
     category_id: Optional[str]
     category_name: str
     tag_ids: List[str]
     tags: List[str]
     author_id: str  # Defaults to Poindexter AI
-    
+
     # Media
     featured_image_prompt: str
     featured_image_url: Optional[str]
     featured_image_alt_text: str
-    
+
     # Social media sharing
     og_title: str
     og_description: str
@@ -150,10 +161,10 @@ metadata = UnifiedMetadata(
     twitter_title: str
     twitter_description: str
     twitter_card: str
-    
+
     # Structured data
     json_ld_schema: Optional[Dict[str, Any]]
-    
+
     # Analytics
     word_count: int
     reading_time_minutes: int
@@ -170,11 +181,11 @@ from services.unified_metadata_service import get_unified_metadata_service
 
 async def approve_and_publish(task_id: str, content: str, task_metadata: Dict):
     service = get_unified_metadata_service()
-    
+
     # Get database objects
     categories = await db_service.get_all_categories()
     tags = await db_service.get_all_tags()
-    
+
     # Generate complete metadata in one call
     metadata = await service.generate_all_metadata(
         content=content,
@@ -182,7 +193,7 @@ async def approve_and_publish(task_id: str, content: str, task_metadata: Dict):
         available_categories=categories,
         available_tags=tags
     )
-    
+
     # Build post data for database
     post_data = {
         "title": metadata.title,                  # ✅ Extracted/generated
@@ -198,10 +209,10 @@ async def approve_and_publish(task_id: str, content: str, task_metadata: Dict):
         "seo_description": metadata.seo_description,
         "seo_keywords": metadata.seo_keywords,
     }
-    
+
     # Save to database
     post = await db_service.create_post(post_data)
-    
+
     return post
 ```
 
@@ -210,12 +221,15 @@ async def approve_and_publish(task_id: str, content: str, task_metadata: Dict):
 ## ⚙️ Configuration
 
 ### LLM Selection
+
 The service automatically uses:
+
 1. Claude 3 Haiku (Anthropic) if available
 2. GPT-3.5-turbo (OpenAI) if available
 3. Falls back to simple extraction if neither available
 
 Set environment variables:
+
 ```bash
 # For Anthropic
 export ANTHROPIC_API_KEY="your-key"
@@ -225,6 +239,7 @@ export OPENAI_API_KEY="your-key"
 ```
 
 ### Model Override
+
 ```python
 from services.unified_metadata_service import UnifiedMetadataService
 
@@ -237,6 +252,7 @@ service = UnifiedMetadataService(model="claude-3-haiku-20240307")
 ## 🔍 Fallback Strategies
 
 ### For Title
+
 1. Use stored title (if not "Untitled")
 2. Use topic (if provided)
 3. Extract first meaningful line from content
@@ -244,23 +260,27 @@ service = UnifiedMetadataService(model="claude-3-haiku-20240307")
 5. Use date-based title (last resort)
 
 ### For Excerpt
+
 1. Use stored excerpt (if good)
 2. Extract first paragraph from content
 3. **Use LLM to generate** (intelligent fallback)
 4. Use content start (last resort)
 
 ### For SEO Metadata
+
 1. Use stored values (if provided)
 2. Analyze content + topic
 3. **Use LLM for enhancement** (intelligent fallback)
 4. Use simple extraction
 
 ### For Category
+
 1. **Keyword match** against category names/descriptions
 2. **Use LLM to intelligently match** (intelligent fallback)
 3. Use first available category
 
 ### For Tags
+
 1. **Keyword match** against tag names/slugs
 2. **Use LLM to intelligently extract** (intelligent fallback)
 3. Return empty list (better than random tags)
@@ -275,6 +295,7 @@ service = UnifiedMetadataService(model="claude-3-haiku-20240307")
    - Single LLM call for all operations
 
 2. **Cache results** for repeated content
+
    ```python
    # Add to your caching layer
    cache_key = f"metadata:{content_hash}"
@@ -298,13 +319,16 @@ service = UnifiedMetadataService(model="claude-3-haiku-20240307")
 ## 🐛 Debugging
 
 ### Enable detailed logging
+
 ```python
 import logging
 logging.getLogger("services.unified_metadata_service").setLevel(logging.DEBUG)
 ```
 
 ### Check what fallback was used
+
 Logs will show:
+
 - ✓ Using stored title
 - ✓ Using topic as title
 - ✓ Extracted title from content
@@ -312,6 +336,7 @@ Logs will show:
 - ✓ Using date-based fallback
 
 ### Verify LLM availability
+
 ```python
 from services.unified_metadata_service import ANTHROPIC_AVAILABLE, OPENAI_AVAILABLE
 
@@ -324,13 +349,17 @@ print(f"OpenAI available: {OPENAI_AVAILABLE}")
 ## ✅ Common Issues & Solutions
 
 ### Issue: Getting "Untitled" posts
+
 **Solution:** The old code path is still being used
+
 - Verify you're importing from `unified_metadata_service`
 - Check that `content_routes.py` has been updated
 - Restart the server
 
 ### Issue: No category/tags matched
+
 **Solution:** Categories/tags list might be empty or format wrong
+
 ```python
 # Verify format
 for cat in categories:
@@ -340,13 +369,17 @@ for cat in categories:
 ```
 
 ### Issue: Featured image URL is None
+
 **Solution:** Image URL might not be stored in task_metadata
+
 - Check task_metadata keys
 - Verify image generation completed
 - Look for URL in different field names
 
 ### Issue: SEO keywords are generic
+
 **Solution:** Content might be too short or unclear
+
 - Ensure content has substantive text
 - Topic should be specific, not generic
 - LLM will do best with clear, detailed content
@@ -356,6 +389,7 @@ for cat in categories:
 ## 🚀 Migration Guide
 
 ### Before (Old Way)
+
 ```python
 # Multiple steps, scattered logic
 from services.llm_metadata_service import get_llm_metadata_service
@@ -372,6 +406,7 @@ seo = await llm_service.generate_seo_metadata(title, content)
 ```
 
 ### After (New Way) ✨
+
 ```python
 # One call, everything organized
 from services.unified_metadata_service import get_unified_metadata_service
@@ -389,4 +424,3 @@ metadata = await service.generate_all_metadata(
 ---
 
 **For detailed API documentation, see:** [UNIFIED_METADATA_SERVICE_COMPLETE.md](UNIFIED_METADATA_SERVICE_COMPLETE.md)
-

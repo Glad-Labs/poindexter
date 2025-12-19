@@ -315,7 +315,10 @@ async def process_content_generation_task(
     tags: Optional[List[str]] = None,
     generate_featured_image: bool = True,
     database_service: Optional[DatabaseService] = None,
-    task_id: Optional[str] = None
+    task_id: Optional[str] = None,
+    # NEW: Model selection parameters (Week 1)
+    models_by_phase: Optional[Dict[str, str]] = None,
+    quality_preference: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     🚀 Complete Content Generation Pipeline with Image Sourcing & SEO Metadata
@@ -337,6 +340,7 @@ async def process_content_generation_task(
     - ✅ Quality evaluation with 7 criteria
     - ✅ Training data capture for improvement learning
     - ✅ Full relational integrity (author_id, category_id, etc.)
+    - ✅ Per-phase model selection and cost tracking (NEW - Week 1)
     
     Args:
         topic: Blog post topic
@@ -347,9 +351,11 @@ async def process_content_generation_task(
         generate_featured_image: Whether to search for featured image
         database_service: DatabaseService instance for persistence
         task_id: Optional task_id (auto-generated if not provided)
+        models_by_phase: Optional per-phase model selections
+        quality_preference: Optional quality preference (fast, balanced, quality) for auto-selection
         
     Returns:
-        Dict with complete task result including post_id, quality_score, image_url, etc.
+        Dict with complete task result including post_id, quality_score, image_url, cost_breakdown, etc.
     """
     from uuid import uuid4
     from asyncio import gather

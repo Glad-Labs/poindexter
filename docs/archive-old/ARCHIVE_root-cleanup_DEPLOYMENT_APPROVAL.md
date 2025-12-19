@@ -230,11 +230,11 @@ For deployment issues or questions:
 
 **Approved For Deployment:** ☐ YES ☐ NO
 
-**Deployment Date:** ******\_******
+**Deployment Date:** **\*\***\_**\*\***
 
-**Deployed By:** ******\_******
+**Deployed By:** **\*\***\_**\*\***
 
-**Verified By:** ******\_******
+**Verified By:** **\*\***\_**\*\***
 
 ---
 

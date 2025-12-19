@@ -11,6 +11,7 @@
 ## ❌ Local Filesystem Approach (Doesn't Work)
 
 ### Original Implementation:
+
 ```python
 # Save image to: web/public-site/public/images/generated/post-123.png
 full_disk_path = f"web/public-site/public/images/generated/{filename}"
@@ -21,6 +22,7 @@ with open(full_disk_path, 'wb') as f:
 ### Why It Failed:
 
 **1. Separate Machines Problem**
+
 ```
 Railway Server (Linux Container)              Vercel Server (Global Edge)
 ├─ /app/src/cofounder_agent/               └─ /var/task/next-app/
@@ -31,23 +33,26 @@ Railway Server (Linux Container)              Vercel Server (Global Edge)
 ```
 
 **2. Railway is Ephemeral**
+
 - Railway container can restart anytime
 - When it restarts: `/app/` directory is cleaned
 - All images written to Railway disappear ✗
 - Vercel frontend still can't see them
 
 **3. Filesystem Path Not Web Accessible**
+
 - `web/public-site/public/` is NOT accessible from Vercel
 - It's a local filesystem path on Railway
 - Vercel can't read files from Railway's filesystem
 - No HTTP URL to access the image
 
 **4. Development vs Production Mismatch**
+
 ```
 Local Dev (Works):
 Your Machine
 ├─ Backend (npm start)
-├─ Frontend (npm run dev)  
+├─ Frontend (npm run dev)
 └─ Both can access ./web/public-site/public/
    → Images visible in both ✓
 
@@ -66,9 +71,10 @@ Railway (Backend)                 Vercel (Frontend)
 ### Why It Works:
 
 **1. Persistent, Distributed Storage**
+
 ```
 Railway (Backend) ──(PUT Object)──> AWS S3 (Oregon) ──(CloudFront)──> Global CDN
-                                                                      
+
                                    ✅ Files persist
                                    ✅ Accessible globally
                                    ✅ Not tied to Railway
@@ -76,6 +82,7 @@ Railway (Backend) ──(PUT Object)──> AWS S3 (Oregon) ──(CloudFront)�
 ```
 
 **2. HTTP-Based Access**
+
 ```
 Image in S3:
 ├─ Direct: https://s3.amazonaws.com/bucket/image.png
@@ -93,6 +100,7 @@ Image via CloudFront:
 ```
 
 **3. Separate Concerns**
+
 ```
 Old Approach: Everything tightly coupled
 Backend App ─> Writes Files ─> Expects Frontend to find them ✗
@@ -177,6 +185,7 @@ Backend App ─> Uploads to S3 ─> Returns URL ─> Frontend uses URL ✓
 ## 🔄 Comparison: Data Flow
 
 ### Old Approach (BROKEN):
+
 ```
 User in Oversight Hub (Railway)
   ↓
@@ -193,6 +202,7 @@ WHERE IS IT? Not on Vercel server! ✗
 ```
 
 ### New Approach (WORKING):
+
 ```
 User in Oversight Hub (Railway)
   ↓
@@ -216,6 +226,7 @@ Image displays! ✓
 ## 💡 Key Insight: URLs vs Files
 
 ### Local Filesystem Thinking:
+
 ```
 "I have the file on disk. Can't the frontend just read it?"
 
@@ -227,6 +238,7 @@ Image displays! ✓
 ```
 
 ### S3 + URL Thinking:
+
 ```
 "I'll upload to S3 and share a URL"
 
@@ -262,11 +274,13 @@ Image displays! ✓
 ## 🎯 Why You Couldn't See Images
 
 **Your exact problem**:
+
 ```
 "I did not see an image generate in the UI or in the folders"
 ```
 
 **Why**:
+
 1. ✅ Image WAS generated (SDXL worked)
 2. ✗ Saved to /app/web/public-site/public/ (Railway filesystem)
 3. ✗ This path doesn't exist on Vercel
@@ -275,6 +289,7 @@ Image displays! ✓
 6. ✗ Result: 404 or broken image
 
 **With S3 fix**:
+
 1. ✅ Image generated (SDXL works)
 2. ✅ Uploaded to S3 (persistent storage)
 3. ✅ URL returned to frontend
@@ -301,6 +316,7 @@ The S3 + CloudFront solution is production-ready because:
 ## 📊 The Real Data Model
 
 ### Before (Trying to store images):
+
 ```
 posts table:
 ├─ featured_image_url: NULL (or broken filesystem path)
@@ -315,6 +331,7 @@ posts table:
 ```
 
 ### After (Storing only URLs):
+
 ```
 posts table:
 ├─ featured_image_url: "https://d123abc.cloudfront.net/generated/..."
@@ -338,12 +355,15 @@ posts table:
 ## 🎓 Lesson Learned
 
 ### Original Assumption:
+
 "We're all one app, so let's store files locally"
 
 ### Production Reality:
+
 "Backend, database, and frontend are separate services in different locations"
 
 ### Solution:
+
 "Use cloud storage with HTTP URLs that work everywhere"
 
 ---
@@ -413,6 +433,7 @@ posts table:
 ## 🎉 What Changed
 
 ### Code Level:
+
 ```python
 # BEFORE (doesn't work):
 with open('web/public-site/public/image.png', 'wb') as f:
@@ -425,6 +446,7 @@ url = await upload_to_s3(temp_image_path, task_id)
 ```
 
 ### Architecture Level:
+
 ```
 BEFORE:
 Railway Backend → Local Filesystem → ??? → Vercel Frontend ✗

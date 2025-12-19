@@ -193,6 +193,21 @@ async def lifespan(app: FastAPI):
             fine_tuning_service=services.get('fine_tuning_service')
         )
         
+        # Initialize LangGraph orchestrator
+        try:
+            from services.langgraph_orchestrator import LangGraphOrchestrator
+            langgraph_orchestrator = LangGraphOrchestrator(
+                db_service=db_service,
+                llm_service=getattr(app.state, 'model_router', None),
+                quality_service=quality_service,
+                metadata_service=getattr(app.state, 'unified_metadata_service', None)
+            )
+            app.state.langgraph_orchestrator = langgraph_orchestrator
+            logger.info("✅ LangGraphOrchestrator initialized")
+        except Exception as e:
+            logger.warning(f"⚠️  LangGraph initialization failed (non-critical): {str(e)}")
+            app.state.langgraph_orchestrator = None
+        
         logger.info("[OK] Lifespan: Yielding control to FastAPI application...")
         try:
             print("[OK] Application is now running")

@@ -25,14 +25,18 @@
 ## 🔑 Key Functions Added
 
 ### `get_s3_client()`
+
 Initializes and caches S3 client:
+
 - Reads AWS credentials from environment variables
 - Lazy-loads (only created when first needed)
 - Returns `None` if AWS not configured
 - Graceful fallback to local filesystem
 
 ### `upload_to_s3(file_path, task_id)`
+
 Uploads image to S3:
+
 - Parameters: file path and optional task ID
 - Returns: CloudFront URL or S3 URL
 - Includes metadata: task ID, generation timestamp
@@ -44,16 +48,19 @@ Uploads image to S3:
 ## 🔄 How It Works
 
 ### Production Flow (S3 Configured):
+
 ```
 Image Generated → Upload to S3 → Return CloudFront URL → Store in DB
 ```
 
 ### Development Flow (S3 Not Configured):
+
 ```
 Image Generated → Save to Local Filesystem → Return File URL → Store in DB
 ```
 
 ### Endpoint Behavior:
+
 ```python
 @router.post("/generate-image")
 async def generate_featured_image(request: ImageGenerationRequest):
@@ -87,12 +94,14 @@ AWS_CLOUDFRONT_DOMAIN=d123abc.cloudfront.net
 ## ✅ Testing
 
 ### Run Tests:
+
 ```bash
 cd src/cofounder_agent
 python tests/test_s3_integration.py
 ```
 
 ### What It Tests:
+
 - ✅ Environment variables set correctly
 - ✅ boto3 module installed
 - ✅ S3 client can be created
@@ -155,12 +164,14 @@ python tests/test_s3_integration.py
 ## 💡 Key Improvements
 
 ### Before (Local Filesystem):
+
 - ❌ Only works if backend + frontend on same machine
 - ❌ Images lost when Railway restarts
 - ❌ Can't scale across distributed services
 - ❌ No global CDN for fast delivery
 
 ### After (S3 + CloudFront):
+
 - ✅ Works across Railway + Vercel separation
 - ✅ Persistent storage in S3
 - ✅ Scales infinitely
@@ -191,6 +202,7 @@ python tests/test_s3_integration.py
    - Add AWS_CLOUDFRONT_DOMAIN
 
 4. **Deploy Code** (5 min)
+
    ```bash
    git add .
    git commit -m "feat: Add S3 + CloudFront"
@@ -206,12 +218,12 @@ python tests/test_s3_integration.py
 
 ## 📚 Documentation Files
 
-| File | Purpose |
-|------|---------|
-| `S3_PRODUCTION_SETUP_GUIDE.md` | Step-by-step AWS setup |
+| File                            | Purpose                     |
+| ------------------------------- | --------------------------- |
+| `S3_PRODUCTION_SETUP_GUIDE.md`  | Step-by-step AWS setup      |
 | `S3_IMPLEMENTATION_COMPLETE.md` | Full implementation details |
-| `S3_QUICK_REFERENCE.md` | This file (quick overview) |
-| `test_s3_integration.py` | Test script |
+| `S3_QUICK_REFERENCE.md`         | This file (quick overview)  |
+| `test_s3_integration.py`        | Test script                 |
 
 ---
 
@@ -228,12 +240,12 @@ python tests/test_s3_integration.py
 
 ## 💰 Expected Costs
 
-| Component | Cost |
-|-----------|------|
-| S3 Storage (1000 images) | $2.30/month |
-| CloudFront (100 GB) | $8.50/month |
-| CloudFront (500 GB) | $42.50/month |
-| **Total (typical)** | **$45-50/month** |
+| Component                | Cost             |
+| ------------------------ | ---------------- |
+| S3 Storage (1000 images) | $2.30/month      |
+| CloudFront (100 GB)      | $8.50/month      |
+| CloudFront (500 GB)      | $42.50/month     |
+| **Total (typical)**      | **$45-50/month** |
 
 ---
 

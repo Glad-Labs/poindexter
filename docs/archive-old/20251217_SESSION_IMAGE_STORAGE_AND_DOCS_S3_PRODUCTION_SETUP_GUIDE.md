@@ -1,7 +1,9 @@
 # S3 + CloudFront Production Setup Guide
 
 ## Overview
+
 Your application now supports two image storage modes:
+
 - **S3 + CloudFront** (Production): Fast, scalable, CDN-backed
 - **Local Filesystem** (Development/Fallback): For local testing
 
@@ -15,6 +17,7 @@ pip install -r requirements.txt
 ```
 
 This installs (among other things):
+
 ```
 boto3>=1.28.0
 botocore>=1.31.0
@@ -23,6 +26,7 @@ botocore>=1.31.0
 ## Step 2: Create AWS S3 Bucket
 
 ### Via AWS Console:
+
 1. Go to [AWS S3 Console](https://s3.console.aws.amazon.com/)
 2. Click "Create bucket"
 3. **Bucket name**: `glad-labs-images` (must be globally unique, modify as needed)
@@ -30,12 +34,15 @@ botocore>=1.31.0
 5. Click through to create
 
 ### Public Access Settings:
+
 For CloudFront distribution to work:
+
 1. Go to Bucket → Permissions
 2. Under "Block public access", disable all (CloudFront will handle access)
 3. Click "Save"
 
 ### Bucket Policy:
+
 Add this policy to allow CloudFront access:
 
 ```json
@@ -117,12 +124,14 @@ Railway will automatically redeploy with the new code.
 ## Step 6: Test the Setup
 
 ### Test 1: Basic Connectivity
+
 ```bash
 curl -X GET "http://your-railway-app/api/media/health"
 # Expected: 200 OK with S3 status
 ```
 
 ### Test 2: Generate Image
+
 ```bash
 curl -X POST "http://your-railway-app/api/media/generate-image" \
   -H "Content-Type: application/json" \
@@ -135,6 +144,7 @@ curl -X POST "http://your-railway-app/api/media/generate-image" \
 ```
 
 Expected response:
+
 ```json
 {
   "success": true,
@@ -145,12 +155,15 @@ Expected response:
 ```
 
 ### Test 3: Verify S3 Upload
+
 Go to [AWS S3 Console](https://s3.console.aws.amazon.com/):
+
 1. Navigate to `glad-labs-images` bucket
 2. Look for `generated/` folder with PNG files
 3. Verify file size and upload time
 
 ### Test 4: Verify CloudFront Delivery
+
 ```bash
 curl -I "https://d123abc.cloudfront.net/generated/YOUR-IMAGE-NAME.png"
 # Expected: 200 OK with cache headers
@@ -166,42 +179,48 @@ In your React app (public-site):
 4. Check browser DevTools Network tab for cache hits
 
 Expected URL format:
+
 ```
 https://d123abc.cloudfront.net/generated/1702851234-abc123.png
 ```
 
 ## Cost Estimation
 
-| Component | Monthly Cost | Notes |
-|-----------|--------------|-------|
-| S3 Storage | $0.02 per GB | 1,000 images ≈ $2.30 |
+| Component  | Monthly Cost  | Notes                    |
+| ---------- | ------------- | ------------------------ |
+| S3 Storage | $0.02 per GB  | 1,000 images ≈ $2.30     |
 | CloudFront | $0.085 per GB | 100 GB downloads ≈ $8.50 |
-| **Total** | **~$45** | For 100 GB traffic/month |
+| **Total**  | **~$45**      | For 100 GB traffic/month |
 
 Scale increases linearly:
+
 - 10,000 images: +$23/month (S3)
 - 1 TB downloads: ~$80/month (CloudFront)
 
 ## Troubleshooting
 
 ### Images Not Uploading to S3
+
 - ✅ Check AWS credentials in Railway environment
 - ✅ Verify S3 bucket name matches environment variable
 - ✅ Confirm IAM user has `PutObject` permission
 - ✅ Check S3 bucket public access isn't blocked
 
 ### CloudFront Returns 403 Forbidden
+
 - ✅ Verify Origin Access Identity is created
 - ✅ Check S3 bucket policy has correct OAI ARN
 - ✅ Wait for CloudFront distribution to fully deploy
 - ✅ Clear CloudFront cache manually
 
 ### Images Not Displaying in Frontend
+
 - ✅ Verify CloudFront domain is correct in Railway environment
 - ✅ Check browser console for CORS errors
 - ✅ Verify S3 bucket CORS policy (if needed)
 
 ### S3 Upload Slow
+
 - ✅ CloudFront caching should speed up subsequent requests
 - ✅ Consider enabling S3 Transfer Acceleration for faster uploads
 - ✅ Use multi-part upload for large files (>100 MB)
@@ -236,18 +255,22 @@ This allows development without AWS setup while enabling production deployment.
 ## Performance Optimizations
 
 ### Cache Headers
+
 - **1 year expiration**: `max-age=31536000, immutable`
 - Images are uniquely named: Changing image doesn't break old URLs
 - Perfect for blog posts (images don't change after publication)
 
 ### CDN Distribution
+
 CloudFront automatically caches in 200+ edge locations globally:
+
 - **US**: 50ms response time
 - **Europe**: 100ms response time
 - **Asia**: 150ms response time
 - **Australia**: 200ms response time
 
 ### Recommended Reading
+
 - [AWS S3 Best Practices](https://docs.aws.amazon.com/AmazonS3/latest/userguide/BestPractices.html)
 - [CloudFront Optimization Guide](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Introduction.html)
 - [boto3 S3 Documentation](https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/s3.html)
@@ -267,6 +290,7 @@ CloudFront automatically caches in 200+ edge locations globally:
 ## Support
 
 For issues:
+
 1. Check CloudWatch logs in Railway dashboard
 2. Verify S3 bucket policy and OAI configuration
 3. Test CloudFront distribution directly with curl

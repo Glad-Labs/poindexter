@@ -1,4 +1,4 @@
-# í¾¯ IMAGE GENERATION - START HERE
+# ï¿½ï¿½ï¿½ IMAGE GENERATION - START HERE
 
 ## Status: âœ… FULLY IMPLEMENTED & READY TO USE
 
@@ -27,20 +27,20 @@ python test_media_endpoints.py
 # âœ… Image Generation Passed
 ```
 
-## í³š Documentation
+## ï¿½ï¿½ï¿½ Documentation
 
 **Choose based on your needs:**
 
-| If You Want... | Read This | Time |
-|---|---|---|
-| To get started immediately | [IMAGE_GENERATION_QUICKSTART.md](IMAGE_GENERATION_QUICKSTART.md) | 3-5 min |
-| Complete setup guide | [IMAGE_GENERATION_GUIDE.md](IMAGE_GENERATION_GUIDE.md) | 15-20 min |
-| Implementation details | [IMAGE_GENERATION_IMPLEMENTATION.md](IMAGE_GENERATION_IMPLEMENTATION.md) | 10-15 min |
-| Document index/navigation | [IMAGE_GENERATION_INDEX.md](IMAGE_GENERATION_INDEX.md) | 5-10 min |
+| If You Want...             | Read This                                                                | Time      |
+| -------------------------- | ------------------------------------------------------------------------ | --------- |
+| To get started immediately | [IMAGE_GENERATION_QUICKSTART.md](IMAGE_GENERATION_QUICKSTART.md)         | 3-5 min   |
+| Complete setup guide       | [IMAGE_GENERATION_GUIDE.md](IMAGE_GENERATION_GUIDE.md)                   | 15-20 min |
+| Implementation details     | [IMAGE_GENERATION_IMPLEMENTATION.md](IMAGE_GENERATION_IMPLEMENTATION.md) | 10-15 min |
+| Document index/navigation  | [IMAGE_GENERATION_INDEX.md](IMAGE_GENERATION_INDEX.md)                   | 5-10 min  |
 
 ---
 
-## íº€ Using in Oversight Hub
+## ï¿½ï¿½ï¿½ Using in Oversight Hub
 
 1. Start FastAPI backend: `python src/cofounder_agent/main.py`
 2. Open http://localhost:3000 (Oversight Hub)
@@ -51,7 +51,7 @@ python test_media_endpoints.py
 
 ---
 
-## í²° Features
+## ï¿½ï¿½ï¿½ Features
 
 âœ… **FREE Unlimited Images** from Pexels (~0.5 seconds)
 âœ… **Optional SDXL Generation** if you have a GPU
@@ -61,7 +61,7 @@ python test_media_endpoints.py
 
 ---
 
-## í³‹ What's Implemented
+## ï¿½ï¿½ï¿½ What's Implemented
 
 âœ… 3 new FastAPI endpoints for image generation
 âœ… Frontend "Generate Featured Image" button
@@ -71,9 +71,10 @@ python test_media_endpoints.py
 
 ---
 
-## í´§ One-Time Setup
+## ï¿½ï¿½ï¿½ One-Time Setup
 
 Add this to `.env.local`:
+
 ```bash
 PEXELS_API_KEY=your_key_from_pexels.com/api
 ```
@@ -92,7 +93,7 @@ Get free key: https://www.pexels.com/api/
 
 ---
 
-## í¾‰ Next Steps
+## ï¿½ï¿½ï¿½ Next Steps
 
 1. **Verify** - Run `python verify_image_setup.py` âœ“
 2. **Start** - Run `python src/cofounder_agent/main.py` âœ“
@@ -102,7 +103,7 @@ Get free key: https://www.pexels.com/api/
 
 ---
 
-## í³– Read Documentation
+## ï¿½ï¿½ï¿½ Read Documentation
 
 - New? â†’ [IMAGE_GENERATION_QUICKSTART.md](IMAGE_GENERATION_QUICKSTART.md)
 - Detailed? â†’ [IMAGE_GENERATION_GUIDE.md](IMAGE_GENERATION_GUIDE.md)
@@ -113,6 +114,7 @@ Get free key: https://www.pexels.com/api/
 ## âœ… Verification Status
 
 All setup checks passed:
+
 - âœ… Environment variables
 - âœ… Backend files
 - âœ… Frontend integration
@@ -121,4 +123,3 @@ All setup checks passed:
 - âœ… Documentation
 
 **Ready to use!**
-

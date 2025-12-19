@@ -1,6 +1,7 @@
 # Image Generation Debugging - Pexels vs SDXL Investigation
 
 ## Issue Reported
+
 User reported that when clicking "Generate" to generate an image in the Oversight Hub with the "Pexels" option selected, it appears to be triggering an SDXL call instead of using Pexels.
 
 ---
@@ -10,12 +11,13 @@ User reported that when clicking "Generate" to generate an image in the Oversigh
 ### 1. Frontend Code Review (ResultPreviewPanel.jsx)
 
 **Image Source Selection:** ✅ Correct
+
 ```javascript
 const [imageSource, setImageSource] = useState('pexels');
 
 // When user selects "Pexels":
-const usePexels = imageSource === 'pexels' || imageSource === 'both';    // true
-const useSDXL = imageSource === 'sdxl' || imageSource === 'both';         // false
+const usePexels = imageSource === 'pexels' || imageSource === 'both'; // true
+const useSDXL = imageSource === 'sdxl' || imageSource === 'both'; // false
 
 // Sends to backend:
 const requestPayload = {
@@ -32,6 +34,7 @@ const requestPayload = {
 ### 2. Backend Logic Review (media_routes.py)
 
 **Image Generation Request Model:** ✅ Correct defaults
+
 ```python
 class ImageGenerationRequest:
     use_pexels: bool = Field(True, description="Search Pexels first")
@@ -39,6 +42,7 @@ class ImageGenerationRequest:
 ```
 
 **Backend Processing Logic:** ✅ Correct fallback strategy
+
 ```python
 # STEP 1: Try Pexels if requested
 if request.use_pexels:
@@ -56,10 +60,12 @@ if not image and request.use_generation:
 ```
 
 **Result:** ✅ Logic is correct - SDXL will ONLY be called if both conditions are met:
+
 1. Pexels search returned None (no image found)
 2. `use_generation` is True
 
 When user selects "Pexels":
+
 - `use_generation = false`
 - SDXL will **NOT** be called even if Pexels fails
 
@@ -68,17 +74,19 @@ When user selects "Pexels":
 ### 3. Possible Scenarios
 
 #### Scenario A: "Pexels" option selected (use_generation = false)
+
 ```
 ✅ STEP 1: Try Pexels
    ↓
    If successful → Return Pexels image (source="pexels")
    ↓
    If failed → Return error (source=null, no SDXL call)
-   
+
 ❌ STEP 2: Skipped (use_generation = false, so SDXL NOT called)
 ```
 
 #### Scenario B: "SDXL" option selected (use_generation = true, use_pexels = false)
+
 ```
 ❌ STEP 1: Skipped (use_pexels = false)
    ↓
@@ -88,6 +96,7 @@ When user selects "Pexels":
 ```
 
 #### Scenario C: "Both" option selected (use_generation = true, use_pexels = true)
+
 ```
 ✅ STEP 1: Try Pexels first
    ↓
@@ -190,6 +199,7 @@ elif not image and not request.use_generation:
 ## Code Files Modified
 
 **media_routes.py** - Lines 340-450
+
 - Added step-by-step logging
 - Clear indication when SDXL is/isn't being called
 - Shows request configuration at start
@@ -208,6 +218,7 @@ elif not image and not request.use_generation:
    - Click: **Generate**
 
 4. Watch backend logs - Should see:
+
    ```
    📸 Image generation request: use_pexels=true, use_generation=false
    🔍 STEP 1: Searching Pexels for: <title>

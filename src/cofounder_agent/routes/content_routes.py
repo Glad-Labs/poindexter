@@ -37,7 +37,7 @@ Backward Compatible Endpoints (DEPRECATED):
 - POST   /api/v1/content/enhanced/blog-posts/create-seo-optimized
 """
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, Depends
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, Depends, Request, WebSocketDisconnect, WebSocket
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
@@ -45,6 +45,7 @@ import logging
 import json
 from uuid import UUID, uuid4
 
+from routes.auth_unified import get_current_user
 from services.content_router_service import (
     ContentStyle,
     ContentTone,
@@ -191,13 +192,49 @@ async def create_content_task(
             tags=request.tags,
             generate_featured_image=request.generate_featured_image,
             database_service=db,
-            task_id=task_id
+            task_id=task_id,
+            # NEW: Model selection parameters (Week 1 cost tracking)
+            models_by_phase=request.models_by_phase,
+            quality_preference=request.quality_preference
         )
         logger.debug(f"  ✓ Background task queued with complete parameters")
 
+        # ========================================================================
+        # Calculate estimated costs based on model selection
+        # ========================================================================
+        estimated_cost = 0.0
+        cost_breakdown = {}
+        models_used = {}
+        
+        if request.models_by_phase:
+            # Use specified models
+            from services.model_selector_service import ModelSelector
+            selector = ModelSelector()
+            
+            for phase, model in request.models_by_phase.items():
+                cost = selector.estimate_cost(phase, model)
+                cost_breakdown[phase] = cost
+                models_used[phase] = model
+                estimated_cost += cost
+        elif request.quality_preference:
+            # Auto-select based on quality preference
+            from services.model_selector_service import ModelSelector, QualityPreference
+            selector = ModelSelector()
+            
+            quality_enum = QualityPreference[request.quality_preference.upper()]
+            phases = ["research", "outline", "draft", "assess", "refine", "finalize"]
+            
+            for phase in phases:
+                model = selector.auto_select(phase, quality_enum)
+                cost = selector.estimate_cost(phase, model)
+                cost_breakdown[phase] = cost
+                models_used[phase] = model
+                estimated_cost += cost
+
         logger.info(
             f"✅✅ CONTENT TASK CREATED: {task_id} - Type: {request.task_type} - Topic: {request.topic} - "
-            f"Image Search: {request.generate_featured_image} - Ready for polling at /api/content/tasks/{task_id}"
+            f"Image Search: {request.generate_featured_image} - Estimated cost: ${estimated_cost:.6f} - "
+            f"Ready for polling at /api/content/tasks/{task_id}"
         )
 
         return CreateBlogPostResponse(
@@ -207,6 +244,9 @@ async def create_content_task(
             topic=request.topic,
             created_at=datetime.now().isoformat(),
             polling_url=f"/api/content/tasks/{task_id}",
+            estimated_cost=round(estimated_cost, 6),
+            cost_breakdown=cost_breakdown,
+            models_used=models_used
         )
 
     except ValidationError as e:
@@ -976,3 +1016,173 @@ async def generate_and_publish_content(request: GenerateAndPublishRequest, backg
         error = handle_error(e)
         raise error.to_http_exception()
 
+
+# ============================================================================
+# LANGGRAPH ENDPOINTS (NEW - Graph-based orchestration)
+# ============================================================================
+
+class BlogPostLangGraphRequest(BaseModel):
+    """LangGraph blog post creation request"""
+    topic: str = Field(..., description="Blog post topic")
+    keywords: List[str] = Field(default_factory=list, description="SEO keywords")
+    audience: str = Field(default="general", description="Target audience")
+    tone: str = Field(default="professional", description="Writing tone")
+    word_count: int = Field(default=800, description="Target word count")
+
+
+class BlogPostLangGraphResponse(BaseModel):
+    """LangGraph blog post creation response"""
+    request_id: str
+    task_id: str
+    status: str
+    message: str
+    ws_endpoint: str
+
+
+@content_router.post(
+    "/langgraph/blog-posts",
+    response_model=BlogPostLangGraphResponse,
+    status_code=202,
+    tags=["langgraph"],
+    description="Create blog post using LangGraph workflow engine"
+)
+async def create_blog_post_langgraph(
+    request: BlogPostLangGraphRequest,
+    http_request: Request
+):
+    """
+    Create blog post using LangGraph pipeline.
+    
+    Returns WebSocket endpoint for streaming progress.
+    
+    Features:
+    - Graph-based workflow with automatic state management
+    - Quality assessment with refinement loops
+    - Real-time progress streaming
+    - Metadata generation
+    """
+    logger.info(f"Creating blog post via LangGraph: {request.topic}")
+    
+    # Get the FastAPI app from the request
+    app = http_request.app if http_request else None
+    langgraph = getattr(app.state, 'langgraph_orchestrator', None) if app else None
+    
+    if not langgraph:
+        logger.error("LangGraph orchestrator not available")
+        raise HTTPException(
+            status_code=503,
+            detail="LangGraph orchestrator not available"
+        )
+    
+    # Get user info from token if available, otherwise use anonymous
+    auth_header = http_request.headers.get("Authorization", "")
+    user_id = "anonymous"
+    
+    if auth_header.startswith("Bearer "):
+        try:
+            from services.token_validator import JWTTokenValidator
+            token = auth_header[7:]
+            claims = JWTTokenValidator.verify_token(token)
+            user_id = claims.get("user_id", "anonymous")
+        except Exception as e:
+            logger.warning(f"Token validation failed: {str(e)}, using anonymous user")
+    
+    # Execute pipeline (non-streaming)
+    try:
+        result = await langgraph.execute_content_pipeline(
+            request_data=request.dict(),
+            user_id=user_id,
+            stream=False
+        )
+    except Exception as e:
+        logger.error(f"Pipeline execution error: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Pipeline execution failed: {str(e)}"
+        )
+    
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=500,
+            detail=result.get("error", "Pipeline execution failed")
+        )
+    
+    return BlogPostLangGraphResponse(
+        request_id=result["request_id"],
+        task_id=result["task_id"],
+        status=result["status"],
+        message=f"Pipeline completed with {result['refinement_count']} refinements",
+        ws_endpoint=f"/api/content/langgraph/ws/blog-posts/{result['request_id']}"
+    )
+
+
+@content_router.websocket("/langgraph/ws/blog-posts/{request_id}")
+async def websocket_blog_creation(
+    websocket: WebSocket,
+    request_id: str
+):
+    """
+    WebSocket endpoint for real-time blog creation progress.
+    
+    Stream events:
+    - type: "progress" - Current phase and progress percentage
+    - type: "complete" - Pipeline finished
+    - type: "error" - Pipeline failed
+    """
+    await websocket.accept()
+    logger.info(f"WebSocket connected for blog request {request_id}")
+    
+    try:
+        # Get LangGraph from app state
+        langgraph = getattr(websocket.app.state, 'langgraph_orchestrator', None)
+        
+        if not langgraph:
+            await websocket.send_json({
+                "type": "error",
+                "error": "LangGraph orchestrator not available"
+            })
+            await websocket.close()
+            return
+        
+        # Mock streaming (in production, fetch from database and stream)
+        # For now, simulate phases
+        phases = [
+            {"node": "research", "progress": 15},
+            {"node": "outline", "progress": 30},
+            {"node": "draft", "progress": 50},
+            {"node": "assess", "progress": 70},
+            {"node": "finalize", "progress": 100}
+        ]
+        
+        import asyncio
+        for phase in phases:
+            await websocket.send_json({
+                "type": "progress",
+                "node": phase["node"],
+                "progress": phase["progress"],
+                "status": "processing"
+            })
+            await asyncio.sleep(1)  # Simulate processing
+        
+        await websocket.send_json({
+            "type": "complete",
+            "request_id": request_id,
+            "status": "completed"
+        })
+    
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket disconnected: {request_id}")
+    except Exception as e:
+        logger.error(f"WebSocket error: {str(e)}", exc_info=True)
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "error": str(e)
+            })
+        except:
+            pass
+    finally:
+        try:
+            await websocket.close()
+        except:
+            pass

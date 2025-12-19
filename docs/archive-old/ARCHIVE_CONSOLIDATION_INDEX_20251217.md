@@ -167,7 +167,7 @@ Various prefixes from earlier archival operations
 - ARCHIVE*phase-5_PHASE_5*\*.md (15+ files)
 - ARCHIVE_phase-4_PHASE_4_COMPLETE.md
 - ARCHIVE*phase-plans*\*.md (8+ files)
-- PHASE*1_1*_.md, PHASE*2*_.md, PHASE*3*_, PHASE*6*_, PHASE*7*_, SPRINT\__.md (40+ total)
+- PHASE*1_1*_.md, PHASE*2*_.md, PHASE*3*_, PHASE*6*_, PHASE*7*\_, SPRINT\_\_.md (40+ total)
 
 ### Architecture & Decisions (Pre-consolidation)
 
@@ -235,7 +235,7 @@ Various prefixes from earlier archival operations
 ### Error Handling & Fixes
 
 - ERROR\_\*.md files (8+ files)
-- BUG*FIX*_.md, DEBUG\__.md files
+- BUG*FIX*\_.md, DEBUG\_\_.md files
 - FIX\_\*.md files (20+ files)
 
 ### Miscellaneous

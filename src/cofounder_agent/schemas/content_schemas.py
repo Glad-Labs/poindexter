@@ -77,6 +77,29 @@ class CreateBlogPostRequest(BaseModel):
         description="Optional: Specific model to use (e.g., 'ollama/mistral', 'gpt-4', 'claude-opus'). If not specified, uses default from config.",
         examples=["ollama/mistral", "ollama/phi", "gpt-4", "claude-opus"]
     )
+    
+    # Model Selection Fields (NEW - for Week 1 cost tracking)
+    models_by_phase: Optional[Dict[str, str]] = Field(
+        None,
+        description="Optional: Per-phase model selection. Allows fine-grained control over which model is used for each pipeline step.",
+        examples=[{
+            "research": "ollama",
+            "outline": "gpt-3.5-turbo",
+            "draft": "gpt-4",
+            "assess": "gpt-4",
+            "refine": "gpt-4",
+            "finalize": "gpt-4"
+        }],
+        json_schema_extra={
+            "phases": ["research", "outline", "draft", "assess", "refine", "finalize"],
+            "available_models": ["ollama", "gpt-3.5-turbo", "gpt-4", "claude-3-opus", "claude-3-sonnet"]
+        }
+    )
+    quality_preference: Optional[Literal["fast", "balanced", "quality"]] = Field(
+        "balanced",
+        description="Quality vs cost preference. Used for auto-selecting models if models_by_phase not specified.",
+        examples=["fast", "balanced", "quality"]
+    )
 
     class Config:
         """Pydantic configuration"""
@@ -94,7 +117,16 @@ class CreateBlogPostRequest(BaseModel):
                 "enhanced": True,
                 "target_environment": "production",
                 "llm_provider": "ollama",
-                "model": "ollama/mistral"
+                "model": "ollama/mistral",
+                "models_by_phase": {
+                    "research": "ollama",
+                    "outline": "gpt-3.5-turbo",
+                    "draft": "gpt-4",
+                    "assess": "gpt-4",
+                    "refine": "gpt-4",
+                    "finalize": "gpt-4"
+                },
+                "quality_preference": "balanced"
             }
         }
 
@@ -108,6 +140,20 @@ class CreateBlogPostResponse(BaseModel):
     topic: str
     created_at: str
     polling_url: str
+    
+    # Cost tracking (NEW - Week 1)
+    estimated_cost: Optional[float] = Field(
+        None,
+        description="Estimated total cost in USD for this task (based on models_by_phase or quality_preference)"
+    )
+    cost_breakdown: Optional[Dict[str, float]] = Field(
+        None,
+        description="Breakdown of estimated costs by phase: {research: 0.0, draft: 0.0015, ...}"
+    )
+    models_used: Optional[Dict[str, str]] = Field(
+        None,
+        description="Models selected for each phase: {research: ollama, draft: gpt-4, ...}"
+    )
 
 
 class TaskStatusResponse(BaseModel):

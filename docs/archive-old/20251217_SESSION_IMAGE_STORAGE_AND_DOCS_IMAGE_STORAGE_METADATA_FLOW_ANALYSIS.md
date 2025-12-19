@@ -39,6 +39,7 @@ The `posts` table in PostgreSQL has these relevant columns:
 ## 2. Current Image Storage Flow
 
 ### Step 1: Image Generation (media_routes.py)
+
 ```
 User calls: POST /api/media/generate
 ┌─────────────────────────────────────┐
@@ -72,11 +73,13 @@ User calls: POST /api/media/generate
 ```
 
 **ISSUE**: Image is stored as base64 data URI, which:
+
 - Cannot be easily stored in database (too large)
 - Cannot be displayed efficiently by public site
 - Not suitable for CDN distribution
 
 ### Step 2: Image Storage During Task Creation
+
 ```
 Task metadata receives:
 {
@@ -91,11 +94,13 @@ Task metadata receives:
 ```
 
 **STORED IN**: content_tasks table in task_metadata (JSONB field)
+
 - Can store data up to 1GB per row
 - Works for now but not scalable
 - Base64 data is ~33% larger than binary
 
 ### Step 3: Image Storage During Approval (content_routes.py)
+
 ```
 When approving task:
 1. Retrieves image from task_metadata
@@ -110,6 +115,7 @@ When approving task:
 ```
 
 **ISSUE**: Base64 data URI stored directly in posts table
+
 - Database bloat (base64 ≈ 4-5MB per image)
 - Cannot be used by static site generator
 - Not cacheable by CDN
@@ -117,31 +123,35 @@ When approving task:
 ## 3. What's Missing / Broken
 
 ### ❌ Image Column Issues
-| Field | Status | Issue |
-|-------|--------|-------|
-| `featured_image_url` | ✅ Exists | Storing base64 instead of URL |
-| `cover_image_url` | ✅ Exists | Not being used |
-| Storage location | ❌ Wrong | Should be CDN or file system, not database |
+
+| Field                | Status    | Issue                                      |
+| -------------------- | --------- | ------------------------------------------ |
+| `featured_image_url` | ✅ Exists | Storing base64 instead of URL              |
+| `cover_image_url`    | ✅ Exists | Not being used                             |
+| Storage location     | ❌ Wrong  | Should be CDN or file system, not database |
 
 ### ❌ Metadata Column Issues
-| Field | Status | Current Value | Should Be |
-|-------|--------|---|---|
-| `author_id` | ✅ Exists | NULL | AI agent user ID or system ID |
-| `category_id` | ✅ Exists | NULL | From task_metadata.category_id |
-| `tag_ids` | ✅ Exists | NULL | From task_metadata.tags or tags_id |
-| `created_by` | ✅ Exists | NULL | Reviewer who approved |
-| `updated_by` | ✅ Exists | NULL | Reviewer who approved |
+
+| Field         | Status    | Current Value | Should Be                          |
+| ------------- | --------- | ------------- | ---------------------------------- |
+| `author_id`   | ✅ Exists | NULL          | AI agent user ID or system ID      |
+| `category_id` | ✅ Exists | NULL          | From task_metadata.category_id     |
+| `tag_ids`     | ✅ Exists | NULL          | From task_metadata.tags or tags_id |
+| `created_by`  | ✅ Exists | NULL          | Reviewer who approved              |
+| `updated_by`  | ✅ Exists | NULL          | Reviewer who approved              |
 
 ### ❌ Content Issues
-| Issue | Current | Fixed By |
-|-------|---------|----------|
-| Title parsing | Uses topic as title | Extract from content or use seo_title |
-| Content extraction | Uses full content | Need to strip metadata from content |
-| Preview generation | Not done | Extract first 150 chars as excerpt |
+
+| Issue              | Current             | Fixed By                              |
+| ------------------ | ------------------- | ------------------------------------- |
+| Title parsing      | Uses topic as title | Extract from content or use seo_title |
+| Content extraction | Uses full content   | Need to strip metadata from content   |
+| Preview generation | Not done            | Extract first 150 chars as excerpt    |
 
 ## 4. How Public Site Displays Images
 
 ### Current Flow (BROKEN)
+
 ```
 Public Site (Next.js)
     ↓
@@ -159,6 +169,7 @@ Can display in HTML <img src="data:...">
 ```
 
 ### What Should Happen (FIX)
+
 ```
 Public Site (Next.js)
     ↓
@@ -203,7 +214,8 @@ image = FeaturedImageMetadata(
 )
 ```
 
-**Result**: 
+**Result**:
+
 - Frontend gets small URL string instead of multi-MB base64
 - Image stored in public web directory
 - Can be cached and served by CDN
@@ -218,21 +230,21 @@ post_data = {
     # Images
     "featured_image_url": featured_image_url,  # NOW: URL not base64
     "cover_image_url": task_metadata.get("cover_image_url"),
-    
+
     # Metadata
     "author_id": task_metadata.get("author_id") or system_author_id,
     "category_id": task_metadata.get("category_id"),
     "tag_ids": task_metadata.get("tag_ids") or [],
-    
+
     # Tracking
     "created_by": request.reviewer_id,  # Human reviewer
     "updated_by": request.reviewer_id,
-    
+
     # Content
     "title": title,
     "content": content,
     "excerpt": excerpt or content[:200],  # Auto-generate if missing
-    
+
     # SEO
     "seo_title": task_metadata.get("seo_title"),
     "seo_description": task_metadata.get("seo_description"),
@@ -249,18 +261,16 @@ post_data = {
 const parseContent = (fullContent) => {
   const lines = fullContent.split('\n');
   const title = lines[0] // First line is title
-    .replace(/^#+\s/, '')  // Remove markdown headers
+    .replace(/^#+\s/, '') // Remove markdown headers
     .trim();
-  
+
   // Remove first line and get body
-  const body = lines.slice(1)
-    .join('\n')
-    .trim();
-  
+  const body = lines.slice(1).join('\n').trim();
+
   return {
     title,
     content: body,
-    excerpt: body.substring(0, 200) + '...'
+    excerpt: body.substring(0, 200) + '...',
   };
 };
 
@@ -323,20 +333,14 @@ CREATE INDEX idx_post_images_post_id ON post_images(post_id);
 ## 8. Implementation Priority
 
 **CRITICAL (Do First)**:
+
 1. Fix image storage location (media_routes.py) - move from base64 to file path
 2. Update create_post to handle all metadata fields ✅ DONE
 3. Update approval endpoint to pass all fields ✅ DONE
 
-**HIGH (Do Next)**:
-4. Fix frontend content parsing to extract title/excerpt
-5. Update public site template to display metadata correctly
-6. Verify image display works on public site
+**HIGH (Do Next)**: 4. Fix frontend content parsing to extract title/excerpt 5. Update public site template to display metadata correctly 6. Verify image display works on public site
 
-**MEDIUM (Optimization)**:
-7. Add CDN configuration for images
-8. Add image optimization/resizing
-9. Migrate existing base64 images to files
-10. Set up automated image cleanup
+**MEDIUM (Optimization)**: 7. Add CDN configuration for images 8. Add image optimization/resizing 9. Migrate existing base64 images to files 10. Set up automated image cleanup
 
 ## Files to Update
 
@@ -352,7 +356,8 @@ CREATE INDEX idx_post_images_post_id ON post_images(post_id);
 
 **Current State**: Images stored as base64 in database, metadata fields not populated
 **Goal**: Images stored as file paths, all metadata populated, clean separation of concerns
-**Impact**: 
+**Impact**:
+
 - 90% reduction in database size for images
 - 20x faster public site load times
 - Scalable CDN integration

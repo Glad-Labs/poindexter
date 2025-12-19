@@ -281,6 +281,19 @@ def register_all_routes(
         logger.error(f" websocket_router failed: {e}")
         status['websocket_router'] = False
     
+    # ===== MODEL SELECTION (Week 1: Cost Tracking) =====
+    try:
+        from routes.model_selection_routes import router as model_selection_router
+        app.include_router(model_selection_router)
+        logger.info("✅ model_selection_router registered")
+        status['model_selection_router'] = True
+    except ImportError as e:
+        logger.warning(f"⚠️  model_selection_router not available: {e}")
+        status['model_selection_router'] = False
+    except Exception as e:
+        logger.error(f"❌ model_selection_router registration failed: {e}")
+        status['model_selection_router'] = False
+    
     try:
         # ===== TRAINING DATA MANAGEMENT (Phase 6) =====
         from routes.training_routes import router as training_router, set_services as set_training_services
@@ -288,16 +301,16 @@ def register_all_routes(
         if training_data_service and fine_tuning_service:
             set_training_services(training_data_service, fine_tuning_service)
             app.include_router(training_router)
-            logger.info(" training_router registered")
+            logger.info("✅ training_router registered")
             status['training_router'] = True
         else:
-            logger.warning(" training_router not available (services not initialized)")
+            logger.warning("⚠️  training_router not available (services not initialized)")
             status['training_router'] = False
     except ImportError as e:
-        logger.warning(f" training_router not available: {e}")
+        logger.warning(f"⚠️  training_router not available: {e}")
         status['training_router'] = False
     except Exception as e:
-        logger.error(f" training_router registration failed: {e}")
+        logger.error(f"❌ training_router registration failed: {e}")
         status['training_router'] = False
     
     # Log registration summary

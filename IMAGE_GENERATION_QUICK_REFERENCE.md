@@ -11,10 +11,10 @@
 
 ## Files Modified
 
-| File | Change | Impact |
-|------|--------|--------|
-| `web/oversight-hub/src/components/tasks/ResultPreviewPanel.jsx` | Extract SEO keywords from metadata | Frontend now sends keywords to backend |
-| `src/cofounder_agent/routes/media_routes.py` | Add `build_enhanced_search_prompt()` + use it | Backend combines title + keywords for better search |
+| File                                                            | Change                                        | Impact                                              |
+| --------------------------------------------------------------- | --------------------------------------------- | --------------------------------------------------- |
+| `web/oversight-hub/src/components/tasks/ResultPreviewPanel.jsx` | Extract SEO keywords from metadata            | Frontend now sends keywords to backend              |
+| `src/cofounder_agent/routes/media_routes.py`                    | Add `build_enhanced_search_prompt()` + use it | Backend combines title + keywords for better search |
 
 ---
 
@@ -58,14 +58,18 @@ Blog Post Generation:
 **Function:** `generateFeaturedImage()` (Lines 63-100)
 
 **What was added:**
+
 ```javascript
 // Extract keywords from SEO metadata
 let keywords = [];
 if (editedSEO?.keywords) {
   if (typeof editedSEO.keywords === 'string') {
-    keywords = editedSEO.keywords.split(',').map(kw => kw.trim()).slice(0, 5);
+    keywords = editedSEO.keywords
+      .split(',')
+      .map((kw) => kw.trim())
+      .slice(0, 5);
   } else if (Array.isArray(editedSEO.keywords)) {
-    keywords = editedSEO.keywords.slice(0, 5).map(kw => String(kw).trim());
+    keywords = editedSEO.keywords.slice(0, 5).map((kw) => String(kw).trim());
   }
 }
 
@@ -80,6 +84,7 @@ requestPayload.keywords = keywords.length > 0 ? keywords : undefined;
 **File:** `src/cofounder_agent/routes/media_routes.py`
 
 ### New Helper Function (Lines 313-347):
+
 ```python
 def build_enhanced_search_prompt(base_prompt, keywords=None):
     """Combine title with first keyword for specific search"""
@@ -92,6 +97,7 @@ def build_enhanced_search_prompt(base_prompt, keywords=None):
 ```
 
 ### Updated Pexels Search (Lines 408-420):
+
 ```python
 search_prompt = build_enhanced_search_prompt(request.prompt, keywords)
 image = await image_service.search_featured_image(
@@ -101,6 +107,7 @@ image = await image_service.search_featured_image(
 ```
 
 ### Updated SDXL Generation (Lines 429-461):
+
 ```python
 generation_prompt = build_enhanced_search_prompt(request.prompt, keywords)
 success = await image_service.generate_image(
@@ -115,6 +122,7 @@ success = await image_service.generate_image(
 ## API Changes
 
 ### ImageGenerationRequest (Already Existed)
+
 ```python
 class ImageGenerationRequest(BaseModel):
     prompt: str  # Title
@@ -124,10 +132,11 @@ class ImageGenerationRequest(BaseModel):
 ```
 
 ### Request Payload Example
+
 ```json
 {
   "prompt": "Best Eats in Northeast USA",
-  "keywords": ["seafood", "boston", "restaurants"],  // ← Now populated
+  "keywords": ["seafood", "boston", "restaurants"], // ← Now populated
   "use_pexels": true,
   "use_generation": false
 }
@@ -138,6 +147,7 @@ class ImageGenerationRequest(BaseModel):
 ## Testing
 
 ### Quick Test (5 minutes)
+
 1. Restart backend: `python src/cofounder_agent/main.py`
 2. Restart frontend: `npm start --prefix web/oversight-hub`
 3. Generate content with AI
@@ -145,6 +155,7 @@ class ImageGenerationRequest(BaseModel):
 5. Check backend logs for: `"Best Eats in Northeast USA seafood"` (enhanced prompt)
 
 ### Verify Image Quality
+
 - **Pexels:** Check if image is more relevant (seafood/restaurant)
 - **SDXL:** Check if generated image shows better focus
 
@@ -160,6 +171,7 @@ class ImageGenerationRequest(BaseModel):
 - No environment variable changes
 
 **Example without keywords:**
+
 ```json
 {
   "prompt": "Best Eats in Northeast USA",
@@ -173,6 +185,7 @@ class ImageGenerationRequest(BaseModel):
 ## Logging Examples
 
 ### With Keywords (New)
+
 ```
 🔍 STEP 1: Searching Pexels for: Best Eats in Northeast USA seafood
    Keywords: seafood, boston, restaurants
@@ -180,6 +193,7 @@ class ImageGenerationRequest(BaseModel):
 ```
 
 ### Without Keywords (Old - Still Works)
+
 ```
 🔍 STEP 1: Searching Pexels for: Best Eats in Northeast USA
 ✅ STEP 1 SUCCESS: Found image via Pexels: https://...
@@ -189,12 +203,12 @@ class ImageGenerationRequest(BaseModel):
 
 ## Benefits Summary
 
-| Before | After |
-|--------|-------|
-| ❌ Generic images | ✅ Specific images matching keywords |
-| ❌ Broad search query | ✅ Targeted search query |
-| ❌ Limited context for SDXL | ✅ Rich context with keywords |
-| ✅ Simple | ✅ Still simple (backwards compatible) |
+| Before                      | After                                  |
+| --------------------------- | -------------------------------------- |
+| ❌ Generic images           | ✅ Specific images matching keywords   |
+| ❌ Broad search query       | ✅ Targeted search query               |
+| ❌ Limited context for SDXL | ✅ Rich context with keywords          |
+| ✅ Simple                   | ✅ Still simple (backwards compatible) |
 
 ---
 
@@ -213,14 +227,17 @@ class ImageGenerationRequest(BaseModel):
 ## Troubleshooting
 
 ### Issue: No keywords being sent
+
 **Solution:** Check that content was generated with AI (SEO keywords set)  
 **Verify:** `editedSEO?.keywords` has values
 
 ### Issue: Keywords not improving results
+
 **Solution:** First keyword may not be optimal  
 **Next:** Check other keywords in the list
 
 ### Issue: Backwards compatibility broken
+
 **Solution:** Not possible - keywords are optional  
 **Debug:** Check that keywords are undefined/absent in logs
 
@@ -228,12 +245,12 @@ class ImageGenerationRequest(BaseModel):
 
 ## Code Locations Quick Links
 
-| Component | File | Lines |
-|-----------|------|-------|
-| Frontend keyword extraction | ResultPreviewPanel.jsx | 63-100 |
-| Backend prompt builder | media_routes.py | 313-347 |
-| Pexels enhanced search | media_routes.py | 408-420 |
-| SDXL enhanced generation | media_routes.py | 429-461 |
+| Component                   | File                   | Lines   |
+| --------------------------- | ---------------------- | ------- |
+| Frontend keyword extraction | ResultPreviewPanel.jsx | 63-100  |
+| Backend prompt builder      | media_routes.py        | 313-347 |
+| Pexels enhanced search      | media_routes.py        | 408-420 |
+| SDXL enhanced generation    | media_routes.py        | 429-461 |
 
 ---
 
@@ -243,7 +260,7 @@ class ImageGenerationRequest(BaseModel):
 ✅ **Code Compiles**  
 ✅ **Backwards Compatible**  
 ✅ **Ready for Testing**  
-✅ **Ready for Deployment**  
+✅ **Ready for Deployment**
 
 ---
 
