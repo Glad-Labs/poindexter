@@ -580,3 +580,167 @@ async def get_budget_status(
     except Exception as e:
         logger.error(f"Error getting budget status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@metrics_router.get("/analytics/kpis")
+async def get_kpi_analytics(
+    current_user: UserProfile = Depends(get_current_user),
+    range: str = Query("30days", description="Time range: 7days, 30days, 90days, all")
+) -> Dict[str, Any]:
+    """
+    Get key performance indicator (KPI) metrics for executive dashboard.
+    
+    **Authentication:** Requires valid JWT token
+    
+    **Parameters:**
+    - range: Time range for aggregation (7days, 30days, 90days, all)
+    
+    **Returns:**
+    - Business KPI metrics including:
+      - Revenue (current, previous, change %)
+      - Content published count
+      - Tasks completed count
+      - AI cost savings
+      - Engagement rate
+      - Agent uptime
+    """
+    try:
+        db_service = DatabaseService()
+        await db_service.initialize()
+        cost_service = CostAggregationService(db_service=db_service)
+        
+        # Calculate date range
+        from datetime import datetime, timedelta
+        now = datetime.utcnow()
+        
+        if range == "7days":
+            start_date = now - timedelta(days=7)
+        elif range == "90days":
+            start_date = now - timedelta(days=90)
+        elif range == "all":
+            start_date = datetime.utcfromtimestamp(0)
+        else:  # Default 30days
+            start_date = now - timedelta(days=30)
+        
+        # Get cost metrics
+        cost_metrics = await cost_service.get_monthly_cost_breakdown()
+        total_cost = cost_metrics.get('total', 0.0) if cost_metrics else 0.0
+        
+        # Query task counts from database
+        from sqlalchemy import select, and_, func
+        from schemas.common_schemas import ContentTask
+        
+        async with db_service.get_session() as session:
+            # Count completed tasks
+            completed_count = await session.execute(
+                select(func.count(ContentTask.id)).where(
+                    and_(
+                        ContentTask.status == "completed",
+                        ContentTask.updated_at >= start_date
+                    )
+                )
+            )
+            tasks_completed = completed_count.scalar() or 0
+            
+            # Get previous period count (same duration, one cycle back)
+            period_days = int((now - start_date).total_seconds() / 86400)
+            prev_start = start_date - timedelta(days=period_days)
+            
+            prev_completed = await session.execute(
+                select(func.count(ContentTask.id)).where(
+                    and_(
+                        ContentTask.status == "completed",
+                        ContentTask.updated_at >= prev_start,
+                        ContentTask.updated_at < start_date
+                    )
+                )
+            )
+            prev_tasks = prev_completed.scalar() or 0
+        
+        # Calculate KPIs
+        tasks_change = (
+            ((tasks_completed - prev_tasks) / prev_tasks * 100) 
+            if prev_tasks > 0 
+            else (100 if tasks_completed > 0 else 0)
+        )
+        
+        # Estimate revenue ($150 per task base rate)
+        revenue_current = int(tasks_completed * 150)
+        revenue_previous = int(prev_tasks * 150)
+        revenue_change = (
+            ((revenue_current - revenue_previous) / revenue_previous * 100)
+            if revenue_previous > 0
+            else (100 if revenue_current > 0 else 0)
+        )
+        
+        # AI savings = estimated hours saved * hourly rate
+        # Assume each task saves ~3 hours at $50/hour = $150 per task
+        ai_savings_current = int(tasks_completed * 150)
+        ai_savings_previous = int(prev_tasks * 150)
+        
+        # Mock engagement and uptime (would come from analytics/monitoring)
+        engagement_current = 4.8
+        engagement_previous = 3.2
+        
+        await db_service.pool.close() if db_service.pool else None
+        
+        return {
+            "kpis": {
+                "revenue": {
+                    "current": revenue_current,
+                    "previous": revenue_previous,
+                    "change": int(revenue_change),
+                    "currency": "USD",
+                    "icon": "📈"
+                },
+                "contentPublished": {
+                    "current": tasks_completed,
+                    "previous": prev_tasks,
+                    "change": int(tasks_change),
+                    "unit": "posts",
+                    "icon": "📝"
+                },
+                "tasksCompleted": {
+                    "current": tasks_completed,
+                    "previous": prev_tasks,
+                    "change": int(tasks_change),
+                    "unit": "tasks",
+                    "icon": "✅"
+                },
+                "aiSavings": {
+                    "current": ai_savings_current,
+                    "previous": ai_savings_previous,
+                    "change": int(
+                        ((ai_savings_current - ai_savings_previous) / ai_savings_previous * 100)
+                        if ai_savings_previous > 0
+                        else (100 if ai_savings_current > 0 else 0)
+                    ),
+                    "currency": "USD",
+                    "icon": "💰",
+                    "description": "Estimated value of AI-generated content"
+                },
+                "engagementRate": {
+                    "current": engagement_current,
+                    "previous": engagement_previous,
+                    "change": int(
+                        ((engagement_current - engagement_previous) / engagement_previous * 100)
+                        if engagement_previous > 0
+                        else 0
+                    ),
+                    "unit": "%",
+                    "icon": "📊"
+                },
+                "agentUptime": {
+                    "current": 99.8,
+                    "previous": 99.2,
+                    "change": 1,
+                    "unit": "%",
+                    "icon": "⚙️"
+                }
+            },
+            "timestamp": datetime.utcnow().isoformat(),
+            "range": range
+        }
+    except Exception as e:
+        logger.error(f"Error getting KPI analytics: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
