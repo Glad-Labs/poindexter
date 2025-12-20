@@ -142,14 +142,20 @@ async def get_post_by_slug(
             post["created_at"] = post["created_at"].isoformat() if post["created_at"] else None
             post["updated_at"] = post["updated_at"].isoformat() if post["updated_at"] else None
             
-            # Get tags
-            tag_rows = await conn.fetch("""
-                SELECT t.id, t.name, t.slug, t.color
-                FROM tags t
-                JOIN post_tags pt ON t.id = pt.tag_id
-                WHERE pt.post_id = $1
-            """, post_id)
-            tags = [dict(row) for row in tag_rows]
+            # Get tags (gracefully handle missing table)
+            tags = []
+            try:
+                tag_rows = await conn.fetch("""
+                    SELECT t.id, t.name, t.slug, t.color
+                    FROM tags t
+                    JOIN post_tags pt ON t.id = pt.tag_id
+                    WHERE pt.post_id = $1
+                """, post_id)
+                tags = [dict(row) for row in tag_rows]
+            except Exception as tag_error:
+                # If tags table doesn't exist or query fails, just return empty tags
+                logger.warning(f"Could not fetch tags for post {post_id}: {str(tag_error)}")
+                tags = []
             
             # Get category
             category = None
