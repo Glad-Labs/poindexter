@@ -1,10 +1,13 @@
 # 📚 Glad Labs Documentation Hub
 
-**Last Updated:** December 17, 2025 (Root-Level Cleanup Complete)  
-**Status:** ✅ All 8 Core Docs Complete | HIGH-LEVEL ONLY Policy 100% Enforced (142 Files Archived) | Production Ready  
+**Last Updated:** December 19, 2025 (Enterprise Framework & Session Consolidation Complete)  
+**Status:** ✅ All 8 Core Docs Complete | Enterprise Framework Established | 260 Files Archived | Production Ready  
 **Documentation Policy:** 🎯 HIGH-LEVEL ONLY (Architecture-Focused, Zero Maintenance Burden)
+**Latest Framework:** [Enterprise Documentation Framework](./ENTERPRISE_DOCUMENTATION_FRAMEWORK.md)
 
 > **Policy:** This hub contains only high-level, architecture-stable documentation. Implementation details belong in code. Feature how-tos belong in code comments. Status updates are not maintained. This keeps documentation focused on what matters: system design, deployment, operations, and AI agent orchestration.
+
+**Session Consolidation (Dec 19):** 118 session/analysis files archived from root directory to `archive-old/`. All documented with timestamp prefix for historical reference.
 
 ---
 
@@ -39,7 +42,32 @@ Start with any doc that matches your role, then use cross-links to explore. Each
 
 ---
 
+## 🏛️ Enterprise Documentation Framework
+
+**New (Dec 19):** [Enterprise Documentation Framework](./ENTERPRISE_DOCUMENTATION_FRAMEWORK.md)
+
+This document outlines the professional documentation standards used at Glad Labs:
+- ✅ Documentation strategy and philosophy (HIGH-LEVEL ONLY)
+- ✅ Folder structure and organization
+- ✅ Documentation categories and maintenance responsibilities
+- ✅ Decision record template for architectural decisions
+- ✅ Quality metrics and success criteria
+- ✅ Maintenance schedule and governance
+- ✅ Anti-patterns to avoid
+- ✅ Future documentation roadmap
+
+**For documentation maintainers:** Start here to understand policy and standards.
+
+---
+
 ## 📚 Additional Resources
+
+### Architectural Decisions (What We Decided & Why)
+
+- **[Master Decision Index](./decisions/DECISIONS.md)** - All major decisions at a glance
+- **[Why FastAPI?](./decisions/WHY_FASTAPI.md)** - Framework selection rationale
+- **[Why PostgreSQL?](./decisions/WHY_POSTGRESQL.md)** - Database selection rationale
+- **[Frontend-Backend Integration Status (Dec 19)](./decisions/FRONTEND_BACKEND_INTEGRATION_STATUS_DEC19.md)** - Current architecture, implementation status, and scaling considerations
 
 ### Components
 
@@ -50,16 +78,15 @@ Start with any doc that matches your role, then use cross-links to explore. Each
 ### Troubleshooting & Support
 
 - **[Troubleshooting Guides](./troubleshooting/README.md)** - Common issues and solutions
-- **[Decisions Log](./decisions/)** - Why we chose PostgreSQL, FastAPI, and other key decisions
+- **[Decisions Log](./decisions/)** - Architectural decisions and trade-offs
 
 ### Historical Documentation
 
-- **[Archive (Old Files)](../archive-old/)** - Historical session notes, status updates, and superseded guides
-  - **Root archive:** 69 files (session summaries, implementation reports, Cloudinary/S3 guides, image storage documentation)
-  - **Previous archives:** 73 files (from October-December sessions)
-  - **Total archived:** 142 violation files eliminated from active codebase
-  - **Session tagged:** `20251217_SESSION_IMAGE_STORAGE_AND_DOCS_*` (69 new files from today)
-  - **Marked as:** "Not maintained—reference only"
+- **[Archive (Old Files)](./archive-old/)** - Historical session notes, status updates, and superseded guides
+  - **December 19 Session:** 118 files (session summaries, implementation plans, analysis documents)
+  - **Previous sessions:** 142 files (from October-December sessions)
+  - **Total archived:** 260+ files with timestamp prefixes for audit trail
+  - **Status:** "Not maintained—reference only for historical context"
 
 ### Technical References
 
@@ -74,22 +101,23 @@ Start with any doc that matches your role, then use cross-links to explore. Each
 
 ## 🏗️ Documentation Structure Overview
 
-**Clean, Maintainable Documentation** (December 12, 2025 - Subfolder Cleanup Complete)
+**Enterprise-Grade Documentation** (December 19, 2025 - High-Level Only Consolidation Complete)
 
 - ✅ **Core Docs (00-07):** 8 files, 100% high-level architecture
-- ✅ **Technical Reference:** 8 essential specs (no duplicates)
-- ✅ **Troubleshooting:** 4 focused guides + component-specific
-- ✅ **Root Level:** 0 violation files (73 archived across root + subfolders)
-- ✅ **src/cofounder_agent/:** 0 violation files (25 archived to local archive/)
-- ✅ **web/oversight-hub/:** 0 violation files (2 archived to local archive/)
-- ✅ **docs/ Subfolders:** 100% compliant (decisions, reference, troubleshooting verified)
-- ✅ **Policy Enforcement:** Complete across entire codebase
-- ✅ **Components:** 3 service docs + architecture guides
-- ✅ **Decisions:** 3 architectural decision records
-- ✅ **Root Directory:** Clean - 2 files only (README.md, LICENSE.md) **[VERIFIED]**
-- ✅ **Archive:** 46 root violation files + 70+ historical files archived **[NEW]**
-- 📊 **Total Active:** 28 essential files
-- 🎯 **Maintenance:** MINIMAL (stable, non-duplicated content only, policy enforced)
+- ✅ **Technical Reference:** 8+ essential specs (no duplicates)
+- ✅ **Troubleshooting:** 4-5 focused guides + component-specific
+- ✅ **Decisions:** 3+ architectural decision records
+- ✅ **Root Level:** Clean - 2 files only (README.md, LICENSE.md)
+- ✅ **Archive:** 260+ files (118 from Dec 19 + previous sessions)
+- ✅ **Enterprise Framework:** Defined and published
+- ✅ **Policy Enforcement:** 100% - HIGH-LEVEL ONLY across entire project
+- 📊 **Total Active:** 30-35 essential files
+- 🎯 **Maintenance:** MINIMAL (stable, non-duplicated content only)
+
+**Session Consolidation (Dec 19):** 
+- 118 session/analysis files from root moved to `archive-old/20251219_ARCHIVE_*`
+- Decision record created: Frontend-Backend Integration Status
+- Enterprise framework document created for future documentation governance
 
 ### 👨‍💻 For Developers (First Week)
 
