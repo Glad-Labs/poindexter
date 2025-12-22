@@ -792,10 +792,9 @@ Write the thought-leadership post without title or heading markers:"""
         try:
             async with aiohttp.ClientSession() as session:
                 # Determine LLM provider and endpoint based on model
-                if model.startswith('ollama/') or model in ['llama2', 'mistral', 'phi', 'mixtral']:
-                    # Ollama model
+                if model.startswith('ollama/') or model in ['llama2', 'mistral', 'phi', 'mixtral', 'neural-chat', 'orca-mini']:
+                    # Native Ollama model
                     ollama_url = "http://localhost:11434/api/generate"
-                    # Extract model name if it has provider prefix
                     model_name = model.split('/')[-1] if '/' in model else model
                     
                     ollama_payload = {
@@ -817,8 +816,46 @@ Write the thought-leadership post without title or heading markers:"""
                         else:
                             logger.error(f"[BG_TASK] Ollama returned status {resp.status}")
                             generated_content = f"Error generating content. Status: {resp.status}"
+                elif any(provider in model for provider in ['qwen', 'deepseek', 'coder', 'codestral']):
+                    # Try to use with Ollama if installed, otherwise fallback
+                    ollama_url = "http://localhost:11434/api/generate"
+                    # Try model as-is first (may be installed)
+                    ollama_payload = {
+                        "model": model,
+                        "prompt": prompt,
+                        "stream": False,
+                        "temperature": 0.7,
+                        "top_p": 0.9,
+                        "top_k": 40,
+                    }
+                    
+                    logger.info(f"[BG_TASK] Attempting to use model via Ollama: {model}")
+                    try:
+                        async with session.post(ollama_url, json=ollama_payload, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                            if resp.status == 200:
+                                result = await resp.json()
+                                generated_content = result.get('response', '').strip()
+                                logger.info(f"[BG_TASK] Content generation successful via Ollama ({model})! ({len(generated_content)} chars)")
+                            else:
+                                # Model not available, fall back to mistral
+                                logger.warning(f"[BG_TASK] Model '{model}' not available in Ollama. Using fallback model.")
+                                ollama_payload['model'] = 'mistral'
+                                async with session.post(ollama_url, json=ollama_payload, timeout=aiohttp.ClientTimeout(total=300)) as fallback_resp:
+                                    if fallback_resp.status == 200:
+                                        result = await fallback_resp.json()
+                                        generated_content = result.get('response', '').strip()
+                                        logger.info(f"[BG_TASK] Content generation successful via Ollama fallback! ({len(generated_content)} chars)")
+                    except Exception as e:
+                        logger.warning(f"[BG_TASK] Failed to connect to Ollama for {model}: {str(e)}. Using fallback.")
+                        # Fallback to mistral
+                        ollama_payload['model'] = 'mistral'
+                        async with session.post(ollama_url, json=ollama_payload, timeout=aiohttp.ClientTimeout(total=300)) as fallback_resp:
+                            if fallback_resp.status == 200:
+                                result = await fallback_resp.json()
+                                generated_content = result.get('response', '').strip()
+                                logger.info(f"[BG_TASK] Content generation successful via Ollama fallback! ({len(generated_content)} chars)")
                 else:
-                    # For OpenAI/other providers (future enhancement)
+                    # For OpenAI/Anthropic/other providers (future enhancement)
                     logger.warning(f"[BG_TASK] Model provider '{model}' not yet implemented. Using Ollama fallback.")
                     ollama_url = "http://localhost:11434/api/generate"
                     ollama_payload = {

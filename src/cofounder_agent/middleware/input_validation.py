@@ -239,17 +239,42 @@ class PayloadInspectionMiddleware(BaseHTTPMiddleware):
     def _check_payload(self, payload: dict, path: str) -> None:
         """Check payload for suspicious patterns"""
         
+        import re
+        
         # Convert to string for pattern matching
         payload_str = json.dumps(payload)
         
-        # Check for SQL injection patterns
-        if any(pattern in payload_str.upper() for pattern in [
-            "UNION", "SELECT", "INSERT", "DROP", "DELETE", "--"
-        ]):
+        # Check for SQL injection patterns with word boundaries
+        # Only flag if SQL keywords appear with suspicious context
+        # (e.g., "SELECT * FROM", not just the word in text)
+        sql_injection_patterns = [
+            r"(?i)\bUNION\s+SELECT\b",  # UNION SELECT
+            r"(?i)\bSELECT\s+\*\s+FROM\b",  # SELECT * FROM
+            r"(?i)\bDROP\s+(TABLE|DATABASE)\b",  # DROP TABLE/DATABASE
+            r"(?i)\bDELETE\s+FROM\b",  # DELETE FROM
+            r"(?i)--\s*['\"]",  # SQL comment with quote
+            r"(?i);\s*(DROP|DELETE|TRUNCATE)\b",  # ; DROP/DELETE
+            r"(?i)\bOR\s+['\"]?\d+['\"]?\s*=\s*['\"]?\d+['\"]?",  # OR 1=1 type
+        ]
+        
+        has_sql_injection = False
+        for pattern in sql_injection_patterns:
+            if re.search(pattern, payload_str):
+                has_sql_injection = True
+                break
+        
+        if has_sql_injection:
             logger.warning(f"Suspicious SQL pattern detected in {path}")
         
-        # Check for XSS patterns
-        if any(pattern in payload_str for pattern in [
-            "<script", "javascript:", "onerror=", "onclick="
-        ]):
-            logger.warning(f"Suspicious XSS pattern detected in {path}")
+        # Check for XSS patterns (these are less likely to be false positives)
+        xss_patterns = [
+            r"<\s*script[^>]*>",  # <script tag
+            r"javascript\s*:",  # javascript: protocol
+            r"on(load|error|click|mouseover|focus)\s*=",  # Event handlers
+            r"<\s*iframe[^>]*>",  # <iframe tag
+        ]
+        
+        for pattern in xss_patterns:
+            if re.search(pattern, payload_str, re.IGNORECASE):
+                logger.warning(f"Suspicious XSS pattern detected in {path}")
+                break
