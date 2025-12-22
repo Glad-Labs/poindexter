@@ -573,6 +573,7 @@ class DatabaseService:
                         stage, percentage, message,
                         tags, task_metadata, model_used, error_message,
                         approval_status, publish_mode,
+                        model_selections, quality_preference,
                         created_at, updated_at
                     ) VALUES (
                         $1, $2, $3, $4, $5, $6,
@@ -584,7 +585,8 @@ class DatabaseService:
                         $24, $25, $26,
                         $27, $28, $29, $30,
                         $31, $32,
-                        $33, $34
+                        $33, $34,
+                        $35, $36
                     )
                     RETURNING task_id
                     """,
@@ -620,6 +622,8 @@ class DatabaseService:
                     task_data.get("error_message"),
                     task_data.get("approval_status", "pending"),
                     task_data.get("publish_mode", "draft"),
+                    json.dumps(task_data.get("model_selections", {})),
+                    task_data.get("quality_preference", "balanced"),
                     now,
                     now,
                 )

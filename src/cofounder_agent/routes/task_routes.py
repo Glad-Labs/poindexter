@@ -561,18 +561,88 @@ def clean_generated_content(content: str, title: str = "") -> str:
 
 
 # ============================================================================
+# MODEL SELECTION HELPER
+# ============================================================================
+
+def get_model_for_phase(
+    phase: str,
+    model_selections: Dict[str, str],
+    quality_preference: str
+) -> str:
+    """
+    Get the appropriate LLM model for a given generation phase.
+    
+    Args:
+        phase: Generation phase ('draft', 'assess', 'refine', 'finalize')
+        model_selections: User's per-phase model selections (e.g., {"draft": "gpt-4", ...})
+        quality_preference: Fallback preference if specific model not selected (fast, balanced, quality)
+    
+    Returns:
+        Model identifier string (e.g., "gpt-4", "ollama/llama2")
+    """
+    # Phase-specific model defaults by quality preference
+    defaults_by_phase = {
+        # FAST (cheapest options)
+        'fast': {
+            'research': 'ollama/phi',
+            'outline': 'ollama/phi',
+            'draft': 'ollama/mistral',
+            'assess': 'ollama/mistral',
+            'refine': 'ollama/mistral',
+            'finalize': 'ollama/phi',
+        },
+        # BALANCED (mix of cost and quality)
+        'balanced': {
+            'research': 'ollama/mistral',
+            'outline': 'ollama/mistral',
+            'draft': 'ollama/mistral',
+            'assess': 'ollama/mistral',
+            'refine': 'ollama/mistral',
+            'finalize': 'ollama/mistral',
+        },
+        # QUALITY (best models)
+        'quality': {
+            'research': 'gpt-3.5-turbo',
+            'outline': 'gpt-3.5-turbo',
+            'draft': 'gpt-4',
+            'assess': 'gpt-4',
+            'refine': 'gpt-4',
+            'finalize': 'gpt-4',
+        }
+    }
+    
+    # Try to get specific model selection for this phase
+    if model_selections and phase in model_selections:
+        selected = model_selections[phase]
+        # If user selected a specific model (not "auto"), use it
+        if selected and selected != "auto":
+            logger.info(f"[BG_TASK] Using selected model for {phase}: {selected}")
+            return selected
+    
+    # Fall back to quality preference default
+    quality = quality_preference or "balanced"
+    if quality not in defaults_by_phase:
+        quality = "balanced"
+    
+    model = defaults_by_phase[quality].get(phase, "ollama/mistral")
+    logger.info(f"[BG_TASK] Using {quality} quality model for {phase}: {model}")
+    return model
+
+
+# ============================================================================
 # BACKGROUND TASK EXECUTION
 # ============================================================================
 
 async def _execute_and_publish_task(task_id: str, db_service: DatabaseService):
     """
-    Background task to execute content generation.
+    Background task to execute content generation with model-aware pipeline.
     
     This function:
-    1. Retrieves the task from database
-    2. Generates content using Ollama (or other LLM)
-    3. Stores generated content in task result JSON
-    4. Updates task status to "completed" or "failed"
+    1. Retrieves the task from database (including model selections)
+    2. Uses model selections to pick appropriate LLM for each phase
+    3. Generates content using the selected models
+    4. Stores generated content in task result JSON
+    5. Updates task status to "completed" or "failed"
     
     This runs in the background after task creation returns to the client.
     """
@@ -592,12 +662,26 @@ async def _execute_and_publish_task(task_id: str, db_service: DatabaseService):
         logger.info(f"   - Status: {task.get('status')}")
         logger.info(f"   - Category: {task.get('category')}")
         
+        # Extract model selections and quality preference
+        model_selections = task.get('model_selections', {})
+        quality_preference = task.get('quality_preference', 'balanced')
+        
+        if isinstance(model_selections, str):
+            try:
+                model_selections = json.loads(model_selections)
+            except (json.JSONDecodeError, TypeError):
+                model_selections = {}
+        
+        logger.info(f"[BG_TASK] Model Configuration:")
+        logger.info(f"   - Model Selections: {model_selections}")
+        logger.info(f"   - Quality Preference: {quality_preference}")
+        
         # Step 2: Update status to "in_progress"
         logger.info(f"[BG_TASK] Updating task status to 'in_progress'...")
         await db_service.update_task_status(task_id, "in_progress")
         
-        # Step 3: Generate content using Ollama
-        logger.info(f"[BG_TASK] Starting content generation with Ollama...")
+        # Step 3: Generate content using LLM with model-aware selection
+        logger.info(f"[BG_TASK] Starting content generation...")
         
         topic = task.get('topic', '')
         keyword = task.get('primary_keyword', '')
@@ -693,35 +777,67 @@ Write the thought-leadership post without title or heading markers:"""
         
         logger.info(f"[BG_TASK] Using writing style: {style}")
         
-        logger.info(f"[BG_TASK] Calling Ollama with prompt...")
+        # ═══════════════════════════════════════════════════════════════════════
+        # MODEL SELECTION: Get appropriate model for draft phase
+        # ═══════════════════════════════════════════════════════════════════════
+        model = get_model_for_phase('draft', model_selections, quality_preference)
+        
+        logger.info(f"[BG_TASK] Selected model for content generation: {model}")
+        logger.info(f"[BG_TASK] Calling LLM with prompt...")
         logger.debug(f"Prompt:\n{prompt[:200]}...")
         
-        # Call Ollama directly via HTTP
+        # Call LLM (supports both ollama and other providers)
         import aiohttp
         generated_content = None
         try:
             async with aiohttp.ClientSession() as session:
-                ollama_url = "http://localhost:11434/api/generate"
-                ollama_payload = {
-                    "model": "llama2",
-                    "prompt": prompt,
-                    "stream": False,
-                    "temperature": 0.7,
-                    "top_p": 0.9,
-                    "top_k": 40,
-                }
-                
-                logger.info(f"[BG_TASK] Connecting to Ollama at {ollama_url}...")
-                async with session.post(ollama_url, json=ollama_payload, timeout=aiohttp.ClientTimeout(total=300)) as resp:
-                    if resp.status == 200:
-                        result = await resp.json()
-                        generated_content = result.get('response', '').strip()
-                        logger.info(f"[BG_TASK] Content generation successful! ({len(generated_content)} chars)")
-                    else:
-                        logger.error(f"[BG_TASK] Ollama returned status {resp.status}")
-                        generated_content = f"Error generating content. Status: {resp.status}"
+                # Determine LLM provider and endpoint based on model
+                if model.startswith('ollama/') or model in ['llama2', 'mistral', 'phi', 'mixtral']:
+                    # Ollama model
+                    ollama_url = "http://localhost:11434/api/generate"
+                    # Extract model name if it has provider prefix
+                    model_name = model.split('/')[-1] if '/' in model else model
+                    
+                    ollama_payload = {
+                        "model": model_name,
+                        "prompt": prompt,
+                        "stream": False,
+                        "temperature": 0.7,
+                        "top_p": 0.9,
+                        "top_k": 40,
+                    }
+                    
+                    logger.info(f"[BG_TASK] Connecting to Ollama at {ollama_url}...")
+                    logger.info(f"[BG_TASK] Using Ollama model: {model_name}")
+                    async with session.post(ollama_url, json=ollama_payload, timeout=aiohttp.ClientTimeout(total=300)) as resp:
+                        if resp.status == 200:
+                            result = await resp.json()
+                            generated_content = result.get('response', '').strip()
+                            logger.info(f"[BG_TASK] Content generation successful via Ollama! ({len(generated_content)} chars)")
+                        else:
+                            logger.error(f"[BG_TASK] Ollama returned status {resp.status}")
+                            generated_content = f"Error generating content. Status: {resp.status}"
+                else:
+                    # For OpenAI/other providers (future enhancement)
+                    logger.warning(f"[BG_TASK] Model provider '{model}' not yet implemented. Using Ollama fallback.")
+                    ollama_url = "http://localhost:11434/api/generate"
+                    ollama_payload = {
+                        "model": "mistral",
+                        "prompt": prompt,
+                        "stream": False,
+                        "temperature": 0.7,
+                        "top_p": 0.9,
+                        "top_k": 40,
+                    }
+                    async with session.post(ollama_url, json=ollama_payload, timeout=aiohttp.ClientTimeout(total=300)) as resp:
+                        if resp.status == 200:
+                            result = await resp.json()
+                            generated_content = result.get('response', '').strip()
+                            logger.info(f"[BG_TASK] Content generation successful via Ollama fallback! ({len(generated_content)} chars)")
+                        else:
+                            generated_content = f"Error generating content. Status: {resp.status}"
         except Exception as ollama_err:
-            logger.error(f"[BG_TASK] Ollama error: {str(ollama_err)}")
+            logger.error(f"[BG_TASK] LLM error: {str(ollama_err)}")
             generated_content = f"Content generation failed: {str(ollama_err)}"
         
         if not generated_content:
