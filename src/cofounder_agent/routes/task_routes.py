@@ -510,6 +510,57 @@ async def get_metrics(
 
 
 # ============================================================================
+# CONTENT CLEANING UTILITIES
+# ============================================================================
+
+def clean_generated_content(content: str, title: str = "") -> str:
+    """
+    Clean up LLM-generated content by removing:
+    - Leading markdown titles (# Title, ## Title)
+    - "Introduction:" prefixes
+    - Duplicate title text
+    - Extra whitespace
+    
+    Args:
+        content: Raw generated content from LLM
+        title: Blog post title to remove if it appears in content
+        
+    Returns:
+        Cleaned content ready for publishing
+    """
+    import re
+    
+    if not content:
+        return content
+    
+    # Remove markdown-style titles at the start
+    # Remove leading # or ## followed by space and text (with optional title match)
+    content = re.sub(r'^#+\s+[^\n]*\n?', '', content.strip())
+    
+    # Remove "Title:" or "Title: " at the very beginning
+    content = re.sub(r'^Title:\s*', '', content)
+    
+    # Remove common section prefixes if they appear as standalone lines
+    content = re.sub(r'^\s*Introduction:\s*\n?', '', content, flags=re.MULTILINE)
+    content = re.sub(r'^\s*Conclusion:\s*\n?', '', content, flags=re.MULTILINE)
+    
+    # If a title was provided, remove it if it appears as a standalone paragraph
+    if title:
+        # Escape special regex characters in title
+        title_escaped = re.escape(title)
+        # Remove the title if it appears on its own line
+        content = re.sub(rf'^\s*{title_escaped}\s*\n+', '', content, flags=re.MULTILINE | re.IGNORECASE)
+    
+    # Remove extra blank lines (more than 2 consecutive newlines)
+    content = re.sub(r'\n{3,}', '\n\n', content)
+    
+    # Strip leading/trailing whitespace
+    content = content.strip()
+    
+    return content
+
+
+# ============================================================================
 # BACKGROUND TASK EXECUTION
 # ============================================================================
 
@@ -552,20 +603,95 @@ async def _execute_and_publish_task(task_id: str, db_service: DatabaseService):
         keyword = task.get('primary_keyword', '')
         audience = task.get('target_audience', '')
         
-        # Build prompt for Ollama
-        prompt = f"""Write a professional blog post about: {topic}
+        # Get writing style from task metadata
+        metadata = task.get('metadata', {})
+        style = metadata.get('style', 'technical').lower() if isinstance(metadata, dict) else 'technical'
         
-Target Audience: {audience if audience else 'General audience'}
+        # Build style-specific prompts for better content variety
+        style_prompts = {
+            'technical': f"""Write a technical blog post about: {topic}
+
+Target Audience: {audience if audience else 'Technical professionals'}
 Primary Keyword: {keyword if keyword else topic}
+Writing Style: Technical - Use industry terminology, explain complex concepts clearly
 
 The post should be:
-- Well-structured with clear headings
-- 800-1200 words
-- Include an introduction, main points, and conclusion
-- Professional and informative
+- Well-structured with clear headings and subheadings (but NO markdown # symbols)
+- 1000-1500 words
+- Include key technical details and best practices
+- Use code examples or technical references where appropriate
+- Professional tone with technical depth
 - SEO-optimized
 
-Start writing the blog post now:"""
+Write the blog post content directly without title or heading markers:""",
+            'narrative': f"""Write a narrative blog post about: {topic}
+
+Target Audience: {audience if audience else 'General readers'}
+Primary Keyword: {keyword if keyword else topic}
+Writing Style: Narrative - Tell a compelling story with engaging language
+
+The post should be:
+- Well-structured with natural transitions between sections
+- 1200-1800 words
+- Use storytelling techniques to engage readers
+- Include real-world examples and anecdotes
+- Conversational yet professional tone
+- SEO-optimized
+
+Write the blog post content as a flowing narrative without title or heading markers:""",
+            'listicle': f"""Write a listicle blog post about: {topic}
+
+Target Audience: {audience if audience else 'Busy professionals seeking quick insights'}
+Primary Keyword: {keyword if keyword else topic}
+Writing Style: Listicle - Format as numbered or bulleted list with explanations
+
+The post should be:
+- 8-12 main points or tips about {topic}
+- 800-1200 words total
+- Each point with brief explanation (2-3 sentences)
+- Scannable and easy to read
+- Professional but accessible tone
+- SEO-optimized
+
+Format as a numbered list starting with "1." without title markers:""",
+            'educational': f"""Write an educational blog post about: {topic}
+
+Target Audience: {audience if audience else 'Learners wanting to understand the subject'}
+Primary Keyword: {keyword if keyword else topic}
+Writing Style: Educational - Teach and inform with clear explanations
+
+The post should be:
+- Well-structured with progressive learning path
+- 1000-1500 words
+- Include definitions, context, and practical applications
+- Use examples to illustrate concepts
+- Include actionable takeaways
+- Professional educational tone
+- SEO-optimized
+
+Write the educational content without title or heading markers:""",
+            'thought-leadership': f"""Write a thought-leadership blog post about: {topic}
+
+Target Audience: {audience if audience else 'Industry professionals and decision makers'}
+Primary Keyword: {keyword if keyword else topic}
+Writing Style: Thought-leadership - Share expert insights and forward-thinking perspective
+
+The post should be:
+- Well-structured with compelling insights
+- 1200-1800 words
+- Present unique perspectives or trends about {topic}
+- Include expert opinions or industry analysis
+- Thought-provoking and authoritative tone
+- Call to action for further engagement
+- SEO-optimized
+
+Write the thought-leadership post without title or heading markers:"""
+        }
+        
+        # Select prompt based on style, fallback to technical
+        prompt = style_prompts.get(style, style_prompts['technical'])
+        
+        logger.info(f"[BG_TASK] Using writing style: {style}")
         
         logger.info(f"[BG_TASK] Calling Ollama with prompt...")
         logger.debug(f"Prompt:\n{prompt[:200]}...")
@@ -593,13 +719,26 @@ Start writing the blog post now:"""
                         logger.info(f"[BG_TASK] Content generation successful! ({len(generated_content)} chars)")
                     else:
                         logger.error(f"[BG_TASK] Ollama returned status {resp.status}")
-                        generated_content = f"# {topic}\n\nError generating content. Status: {resp.status}"
+                        generated_content = f"Error generating content. Status: {resp.status}"
         except Exception as ollama_err:
             logger.error(f"[BG_TASK] Ollama error: {str(ollama_err)}")
-            generated_content = f"# {topic}\n\nContent generation failed: {str(ollama_err)}"
+            generated_content = f"Content generation failed: {str(ollama_err)}"
         
         if not generated_content:
-            generated_content = f"# {topic}\n\nContent generation returned empty result."
+            generated_content = f"Content generation returned empty result."
+        
+        # Clean up generated content - remove markdown titles, "Introduction:", etc.
+        logger.info(f"[BG_TASK] Cleaning generated content...")
+        post_title = topic or task.get('task_name', 'Generated Content')
+        generated_content = clean_generated_content(generated_content, title=post_title)
+        logger.info(f"[BG_TASK] Content cleaned! ({len(generated_content)} chars after cleanup)")
+        
+        # Also clean the post title itself - remove "Title: " prefix and extra spaces
+        import re
+        post_title = re.sub(r'^Title:\s*', '', post_title.strip()).strip()
+        if not post_title:
+            post_title = topic or task.get('task_name', 'Generated Content')
+        logger.info(f"[BG_TASK] Post title cleaned: {post_title}")
         
         # Step 4: Update task status and store result with generated content
         logger.info(f"[BG_TASK] Storing generated content in database...")
@@ -617,11 +756,7 @@ Start writing the blog post now:"""
         # Step 5: Create post from generated content
         logger.info(f"[BG_TASK] Creating post from generated content...")
         try:
-            # Extract topic or use default title
-            post_title = topic or task.get('task_name', 'Generated Content')
-            
             # Create slug from title (replace spaces with hyphens, lowercase)
-            import re
             slug = re.sub(r'[^\w\s-]', '', post_title.lower())
             slug = re.sub(r'[-\s]+', '-', slug)
             slug = slug.strip('-')
@@ -647,9 +782,13 @@ Start writing the blog post now:"""
                     "seo_keywords": topic or "generated,content,ai",
                     "status": "published",  # Auto-publish generated posts
                     "featured_image": task.get('featured_image'),
+                    "task_id": task_id,  # ✅ Link post to its task
                 }
                 
                 logger.info(f"[BG_TASK] Creating post: {post_title} (slug: {slug})")
+                logger.info(f"[BG_TASK]   Task ID: {task_id}")
+                logger.info(f"[BG_TASK]   Slug: {slug}")
+                logger.info(f"[BG_TASK]   Content length: {len(generated_content)} chars")
                 post_result = await db_service.create_post(post_data)
                 logger.info(f"[BG_TASK] Post created successfully! Post ID: {post_result.get('id')}")
             
