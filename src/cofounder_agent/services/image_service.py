@@ -149,9 +149,11 @@ class ImageService:
         self.sdxl_pipe = None
         self.sdxl_refiner_pipe = None
         self.sdxl_available = False
+        self.sdxl_initialized = False  # Track if we've attempted initialization
         self.use_refinement = True  # Use refinement for production quality
-        self.use_device = "cpu"  # Will be updated during initialization
-        self._initialize_sdxl()
+        self.use_device = "cpu"  # Will be updated during lazy initialization
+        # NOTE: SDXL is lazily initialized only when generate_image() is called
+        # This avoids loading huge models if only Pexels search is needed
 
         self.search_cache: Dict[str, List[FeaturedImageMetadata]] = {}
 
@@ -306,6 +308,7 @@ class ImageService:
         keywords: Optional[List[str]] = None,
         orientation: str = "landscape",
         size: str = "medium",
+        page: int = 1,
     ) -> Optional[FeaturedImageMetadata]:
         """
         Search for featured image using Pexels API.
@@ -315,6 +318,7 @@ class ImageService:
             keywords: Additional keywords to try if topic search fails
             orientation: Image orientation (landscape, portrait, square)
             size: Image size (small, medium, large)
+            page: Results page number for pagination (default 1, use higher for different results)
 
         Returns:
             FeaturedImageMetadata or None if no image found
@@ -348,11 +352,11 @@ class ImageService:
 
         for query in search_queries:
             try:
-                logger.info(f"Searching Pexels for: '{query}'")
-                images = await self._pexels_search(query, per_page=3, orientation=orientation, size=size)
+                logger.info(f"Searching Pexels for: '{query}' (page {page})")
+                images = await self._pexels_search(query, per_page=3, orientation=orientation, size=size, page=page)
                 if images:
                     metadata = images[0]
-                    logger.info(f"✅ Found featured image for '{topic}' using query '{query}'")
+                    logger.info(f"✅ Found featured image for '{topic}' using query '{query}' (page {page})")
                     return metadata
             except Exception as e:
                 logger.warning(f"Error searching for '{query}': {e}")
@@ -408,6 +412,7 @@ class ImageService:
         per_page: int = 5,
         orientation: str = "landscape",
         size: str = "medium",
+        page: int = 1,
     ) -> List[FeaturedImageMetadata]:
         """
         Internal method to search Pexels API (async-only).
@@ -417,6 +422,7 @@ class ImageService:
             per_page: Results per page
             orientation: Image orientation
             size: Image size
+            page: Results page number (for pagination)
 
         Returns:
             List of FeaturedImageMetadata objects
@@ -427,6 +433,7 @@ class ImageService:
                 "per_page": min(per_page, 80),
                 "orientation": orientation,
                 "size": size,
+                "page": page,
             }
 
             async with httpx.AsyncClient(timeout=10.0) as client:
@@ -439,7 +446,7 @@ class ImageService:
                 data = response.json()
 
                 photos = data.get("photos", [])
-                logger.info(f"Pexels search for '{query}' returned {len(photos)} results")
+                logger.info(f"Pexels search for '{query}' (page {page}) returned {len(photos)} results")
 
                 return [
                     FeaturedImageMetadata(
@@ -500,6 +507,12 @@ class ImageService:
             - GPU mode (when available in PyTorch 2.9.2+) will be 20-40x faster
             - If task_id provided, progress updates are sent via progress service
         """
+        # Lazy initialize SDXL only when actually needed for generation
+        if not self.sdxl_initialized:
+            logger.info("🎨 First generation request detected - initializing SDXL models...")
+            self._initialize_sdxl()
+            self.sdxl_initialized = True
+        
         if not self.sdxl_available:
             logger.warning("SDXL model not available - image generation skipped")
             return False
@@ -616,7 +629,18 @@ class ImageService:
                 message=f"Starting base model generation..."
             )
 
-        # Generate base image - use PIL for compatibility across all modes
+        # Generate base image - always output PIL for safety
+        # We'll pass PIL to refiner which handles it correctly
+        logger.info(f"   ⏱️  Stage 1/2: Base generation ({num_inference_steps} steps)...")
+        
+        if progress_service and task_id:
+            progress_service.update_progress(
+                task_id,
+                0,
+                stage="base_model",
+                message=f"Starting base model generation..."
+            )
+
         base_result = self.sdxl_pipe(
             prompt=prompt,
             negative_prompt=negative_prompt,
@@ -630,7 +654,7 @@ class ImageService:
         logger.info(f"   ✓ Stage 1 complete: Base image generated")
 
         # =====================================================================
-        # STAGE 2: Refinement (Quality Priority - Always Enabled)
+        # STAGE 2: Refinement (Quality Priority - Per HuggingFace Recommendation)
         # =====================================================================
         if use_refinement and self.sdxl_refiner_pipe:
             logger.info(f"   ⏱️  Stage 2/2: Refinement pass (30 additional steps)...")
@@ -657,11 +681,12 @@ class ImageService:
                     )
             
             try:
-                # Pass PIL image directly to refiner
+                # Pass PIL image to refiner
+                # The refiner will internally convert to latents if needed
                 refined_image = self.sdxl_refiner_pipe(
                     prompt=prompt,
                     negative_prompt=negative_prompt,
-                    image=base_image_pil,
+                    image=base_image_pil,  # Pass PIL image directly
                     num_inference_steps=30,
                     guidance_scale=guidance_scale,
                     output_type="pil",
@@ -669,18 +694,18 @@ class ImageService:
                     callback_steps=1 if task_id else None,
                 ).images[0]
 
-                logger.info(f"   ✓ Stage 2 complete: refinement applied successfully")
+                logger.info(f"   ✓ Stage 2 complete: Refinement applied successfully")
                 refined_image.save(output_path)
 
             except Exception as refine_error:
                 logger.warning(f"   ⚠️  Refinement failed, falling back to base image: {refine_error}")
-                # Fallback: save base image without refinement
+                # Fallback: save base PIL image without refinement
                 try:
                     base_image_pil.save(output_path)
                     logger.info(f"   ✓ Saved base image without refinement (fallback)")
 
                 except Exception as save_error:
-                    logger.error(f"   ❌ Save also failed: {save_error}")
+                    logger.error(f"   ❌ Save failed: {save_error}")
                     raise
 
         else:

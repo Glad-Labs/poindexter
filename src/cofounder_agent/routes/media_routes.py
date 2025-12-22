@@ -198,16 +198,16 @@ class ImageGenerationRequest(BaseModel):
         ...,
         min_length=3,
         max_length=500,
-        description="Search prompt or generation prompt (e.g., 'AI gaming NPCs futuristic')"
+        description="Primary search/generation prompt (e.g., primary keyword 'AI' for better Pexels results than full title)"
     )
     title: Optional[str] = Field(
         None,
         max_length=200,
-        description="Content title (used as fallback search term)"
+        description="Content title (full title for metadata, used as fallback search term)"
     )
     keywords: Optional[List[str]] = Field(
         default=None,
-        description="Additional keywords for search refinement"
+        description="Additional keywords for search refinement (first keyword is primary topic)"
     )
     use_pexels: bool = Field(
         True,
@@ -218,12 +218,12 @@ class ImageGenerationRequest(BaseModel):
         description="Generate custom image with SDXL if Pexels fails (requires GPU)"
     )
     use_refinement: bool = Field(
-        True,
-        description="Apply SDXL refinement model for production quality (adds ~15 seconds)"
+        False,
+        description="Apply SDXL refinement model (DISABLED - known tensor incompatibility between base/refiner models; base model at 50 steps produces excellent quality)"
     )
     high_quality: bool = Field(
         True,
-        description="Optimize for high quality: 50 base steps + 30 refinement steps (vs 30 base steps)"
+        description="Optimize for high quality: 50 base steps (refinement disabled due to model compatibility)"
     )
     num_inference_steps: int = Field(
         50,
@@ -240,6 +240,12 @@ class ImageGenerationRequest(BaseModel):
     task_id: Optional[str] = Field(
         None,
         description="Optional task ID for WebSocket progress tracking"
+    )
+    page: int = Field(
+        1,
+        ge=1,
+        le=100,
+        description="Pexels search results page (for fetching different images on retry)"
     )
 
 
@@ -406,7 +412,8 @@ async def generate_featured_image(request: ImageGenerationRequest):
             try:
                 image = await image_service.search_featured_image(
                     topic=search_prompt,
-                    keywords=keywords
+                    keywords=keywords,
+                    page=request.page
                 )
                 
                 if image:

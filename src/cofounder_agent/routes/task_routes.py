@@ -906,48 +906,15 @@ Write the thought-leadership post without title or heading markers:"""
         await db_service.update_task_status(task_id, "ready_to_publish", result=result_json)
         logger.info(f"[BG_TASK] Content stored in task result")
         
-        # Step 5: Create post from generated content
-        logger.info(f"[BG_TASK] Creating post from generated content...")
-        try:
-            # Create slug from title (replace spaces with hyphens, lowercase)
-            slug = re.sub(r'[^\w\s-]', '', post_title.lower())
-            slug = re.sub(r'[-\s]+', '-', slug)
-            slug = slug.strip('-')
-            
-            # ═══════════════════════════════════════════════════════════════════════
-            # CHECK FOR DUPLICATE SLUG (FIX FOR DUPLICATE KEY VIOLATION)
-            # ═══════════════════════════════════════════════════════════════════════
-            existing_post = await db_service.get_post_by_slug(slug)
-            if existing_post:
-                logger.warning(f"[BG_TASK] Post with slug '{slug}' already exists (ID: {existing_post.get('id')})")
-                logger.warning(f"[BG_TASK] Skipping post creation to avoid duplicate key violation")
-                post_result = existing_post
-            else:
-                # Create post data structure matching actual posts table schema
-                post_data = {
-                    "id": str(uuid_lib.uuid4()),
-                    "title": post_title,
-                    "slug": slug,
-                    "content": generated_content,
-                    "excerpt": (generated_content[:200] + "...") if len(generated_content) > 200 else generated_content,
-                    "seo_title": post_title,
-                    "seo_description": (generated_content[:150] + "...") if len(generated_content) > 150 else generated_content,
-                    "seo_keywords": topic or "generated,content,ai",
-                    "status": "published",  # Auto-publish generated posts
-                    "featured_image": task.get('featured_image'),
-                    "task_id": task_id,  # ✅ Link post to its task
-                }
-                
-                logger.info(f"[BG_TASK] Creating post: {post_title} (slug: {slug})")
-                logger.info(f"[BG_TASK]   Task ID: {task_id}")
-                logger.info(f"[BG_TASK]   Slug: {slug}")
-                logger.info(f"[BG_TASK]   Content length: {len(generated_content)} chars")
-                post_result = await db_service.create_post(post_data)
-                logger.info(f"[BG_TASK] Post created successfully! Post ID: {post_result.get('id')}")
-            
-        except Exception as post_err:
-            logger.error(f"[BG_TASK] Error creating post: {str(post_err)}", exc_info=True)
-            # Don't fail the task if post creation fails, just log it
+        # Step 5: DO NOT create post automatically - wait for human review and approval
+        # ═══════════════════════════════════════════════════════════════════════════════════
+        # Posts should ONLY be created after human review in the approval UI
+        # This ensures quality control and prevents auto-publishing unreviewed content
+        # ═══════════════════════════════════════════════════════════════════════════════════
+        logger.info(f"[BG_TASK] ✅ Content generation complete!")
+        logger.info(f"[BG_TASK] Task is now 'ready_to_publish' - waiting for human review and approval")
+        logger.info(f"[BG_TASK] When approved in the UI, the post will be created and published")
+        logger.info(f"[BG_TASK] Generated content ({len(generated_content)} chars) is stored in task.result")
         
         # Step 6: Final status update - set to awaiting_approval (human review required)
         logger.info(f"[BG_TASK] Content generation complete, setting task to awaiting_approval...")
