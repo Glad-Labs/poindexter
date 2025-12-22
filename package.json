@@ -11,16 +11,14 @@
     "src/cofounder_agent"
   ],
   "scripts": {
-    "//": "=== DEVELOPMENT ===",
+    "//": "=== TESTING ===",
     "dev": "npm run env:select && concurrently \"npm run dev:cofounder\" \"npm run dev:frontend\"",
     "dev:backend": "npm run dev:cofounder",
     "dev:cofounder": "python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000 --log-level info --reload-dir src/cofounder_agent",
     "dev:frontend": "concurrently \"npm run dev --workspace=web/public-site\" \"npm start --workspace=web/oversight-hub\"",
     "dev:oversight": "npm start --workspace=web/oversight-hub",
     "dev:public": "npm run dev --workspace=web/public-site",
-    "//": "=== BUILD ===",
     "build": "npm run build --workspaces --if-present",
-    "//": "=== UTILITIES ===",
     "clean": "rimraf node_modules package-lock.json **/node_modules **/dist **/.next **/build .venv __pycache__ **/__pycache__",
     "clean:install": "npm run clean && npm install && npm install --workspaces",
     "env:select": "node scripts/select-env.js",
@@ -30,13 +28,13 @@
     "lint": "npm run lint --workspaces --if-present",
     "lint:fix": "npm run lint:fix --workspaces --if-present",
     "setup": "npm run install:all && pip install -r requirements.txt && pip install -r src/cofounder_agent/requirements.txt",
-    "//": "=== TESTING ===",
     "test": "npm run test --workspaces --if-present",
     "test:ci": "npm run test --workspaces --if-present -- --ci --coverage --watchAll=false",
     "test:python": "cd src/cofounder_agent && python -m pytest tests/ -v",
     "test:python:smoke": "cd src/cofounder_agent && python -m pytest tests/test_e2e_fixed.py -v"
   },
   "devDependencies": {
+    "baseline-browser-mapping": "^2.9.11",
     "concurrently": "^9.2.1",
     "cross-env": "^7.0.3",
     "markdownlint-cli": "^0.42.0",
