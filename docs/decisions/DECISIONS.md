@@ -1,6 +1,6 @@
 # 🎯 Active Decisions - Glad Labs
 
-**Last Updated:** November 14, 2025  
+**Last Updated:** December 23, 2025  
 **Purpose:** Document key architectural and strategic decisions  
 **Status:** Living Document
 
@@ -169,24 +169,33 @@
 
 ### Process Decisions
 
-#### Decision 10: Pragmatic Documentation Strategy
+#### Decision 10: HIGH-LEVEL ONLY Documentation Policy
 
 **Status:** ✅ ACTIVE  
-**Date Decided:** November 14, 2025  
-**Impact:** Documentation maintenance, developer experience
+**Date Decided:** December 2025  
+**Impact:** Documentation maintenance, developer experience, documentation structure
+
+**Policy:**
+
+- ✅ **Keep:** Architecture overviews, deployment procedures, operations basics, architectural decisions
+- ❌ **Archive:** Session summaries, implementation checklists, status updates, feature guides, meta-documentation
+- 🎯 **Result:** Stable, maintainable documentation that survives code evolution
 
 **Categories:**
 
-- Maintain Actively: Architecture, decisions, technical reference
-- Maintain Minimally: How-to guides (only valuable topics)
-- Never Maintain: Archive (historical preservation)
+- Maintain Actively: 8 core architecture docs (00-07), 3 architectural decisions, technical references
+- Archive Immediately: Session notes, status updates, implementation guides, meta-documentation
+- Never Create: Feature how-tos (use code), session summaries (historical only)
 
 **Key Benefits:**
 
-- Reduced maintenance burden
-- Better developer experience
-- Encourages troubleshooting documentation
-- Sustainable long-term
+- Reduced maintenance burden (from MEDIUM to MINIMAL)
+- Documentation stays relevant as code evolves
+- Focus on stable, high-level architecture
+- Zero duplication
+- Clear policy for what to document
+
+**Implementation:** December 23, 2025 - 271 files archived, 100% policy compliance achieved
 
 ---
 
@@ -213,6 +222,7 @@ _None currently. All decisions are active._
 | Decisions with rationale   | 100%      | ✅ 100%   |
 | Decision revisit frequency | Quarterly | ✅ Active |
 | Trade-offs analyzed        | 100%      | ✅ 100%   |
+| Documentation compliance   | 100%      | ✅ 100%   |
 
 ---
 
@@ -248,5 +258,5 @@ When making a significant decision:
 
 **Maintained by:** Tech Leads  
 **Review Schedule:** Quarterly (Q1, Q2, Q3, Q4)  
-**Last Reviewed:** November 14, 2025  
-**Next Review:** February 14, 2026
+**Last Reviewed:** December 23, 2025  
+**Next Review:** March 23, 2026

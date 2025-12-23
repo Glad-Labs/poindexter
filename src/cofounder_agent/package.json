@@ -1,0 +1,48 @@
+{
+  "name": "glad-labs-cofounder-agent",
+  "version": "3.0.1",
+  "private": true,
+  "description": "AI Co-Founder System - FastAPI backend with autonomous agents and orchestration",
+  "license": "AGPL-3.0-or-later",
+  "author": "Matthew M. Gladding (Glad Labs, LLC)",
+  "scripts": {
+    "//": "=== DEVELOPMENT ===",
+    "dev": "python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000 --log-level info",
+    "dev:debug": "python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000 --log-level debug",
+    "start": "python -m uvicorn main:app --host 0.0.0.0 --port 8000 --log-level info --workers 4",
+    "//": "=== TESTING ===",
+    "test": "python -m pytest tests/ -v --tb=short",
+    "test:smoke": "python -m pytest tests/test_e2e_fixed.py -v --tb=short",
+    "test:coverage": "python -m pytest tests/ -v --cov --cov-report=html --cov-report=term",
+    "test:watch": "python -m pytest tests/ -v --tb=short -k",
+    "test:parallel": "python -m pytest tests/ -v --tb=short -n auto",
+    "//": "=== CODE QUALITY ===",
+    "lint": "python -m pylint src/ --exit-zero",
+    "lint:strict": "python -m pylint src/",
+    "format": "python -m black . && python -m isort .",
+    "format:check": "python -m black . --check && python -m isort . --check-only",
+    "typecheck": "python -m mypy src/ --ignore-missing-imports",
+    "//": "=== DATABASE ===",
+    "db:migrate": "python -m alembic upgrade head",
+    "db:rollback": "python -m alembic downgrade -1",
+    "db:reset": "python -m alembic downgrade base && python -m alembic upgrade head",
+    "//": "=== UTILITIES ===",
+    "env:check": "python -c 'import os; print(os.getenv(\\\"DATABASE_URL\\\", \\\"NOT SET\\\"))'",
+    "deps:check": "python -m pip check",
+    "deps:update": "python -m pip install --upgrade -r requirements.txt",
+    "security:audit": "python -m bandit -r src/ -ll"
+  },
+  "engines": {
+    "python": ">=3.10",
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "fastapi",
+    "postgresql",
+    "asyncio",
+    "orchestration",
+    "content-generation"
+  ]
+}

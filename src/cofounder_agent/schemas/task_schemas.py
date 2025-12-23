@@ -4,8 +4,57 @@ Task Management Schemas
 Consolidates all Pydantic models for task management endpoints
 """
 
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Literal
 from pydantic import BaseModel, Field
+from schemas.unified_task_response import UnifiedTaskResponse
+
+
+class ContentConstraints(BaseModel):
+    """Content generation constraints - Tier 1 & 2 features"""
+    # Tier 1: Basic constraints
+    word_count: int = Field(
+        default=1500,
+        ge=300,
+        le=5000,
+        description="Target word count for entire content (300-5000)"
+    )
+    writing_style: Literal[
+        "technical", "narrative", "listicle", 
+        "educational", "thought-leadership"
+    ] = Field(
+        default="technical",
+        description="Writing style preference"
+    )
+    
+    # Tier 2: Fine-grained control
+    word_count_tolerance: int = Field(
+        default=10,
+        ge=5,
+        le=20,
+        description="Acceptable variance from target word count (percentage, 5-20%)"
+    )
+    per_phase_overrides: Optional[Dict[str, int]] = Field(
+        default=None,
+        description="Override word count targets per phase (research, outline, draft, etc.)"
+    )
+    strict_mode: bool = Field(
+        default=False,
+        description="If True, fail task if constraints not met; if False, warn but continue"
+    )
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "word_count": 2000,
+                "writing_style": "narrative",
+                "word_count_tolerance": 10,
+                "per_phase_overrides": {
+                    "research": 300,
+                    "draft": 1200
+                },
+                "strict_mode": False
+            }
+        }
 
 
 class TaskCreateRequest(BaseModel):
@@ -33,6 +82,11 @@ class TaskCreateRequest(BaseModel):
         default=0.0,
         ge=0.0,
         description="Estimated task cost in USD"
+    )
+    # NEW: Content constraints
+    content_constraints: Optional[ContentConstraints] = Field(
+        default_factory=ContentConstraints,
+        description="Content generation constraints (word count, writing style, etc.)"
     )
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, 
                                               description="Additional metadata")
@@ -128,7 +182,7 @@ class TaskResponse(BaseModel):
 
 class TaskListResponse(BaseModel):
     """Schema for task list response with pagination"""
-    tasks: List[TaskResponse]
+    tasks: List[UnifiedTaskResponse]
     total: int
     offset: int
     limit: int

@@ -109,3 +109,18 @@ transformers>=4.50.0  # Model weights and tokenizers
 accelerate>=0.24.0  # Distributed training and inference
 safetensors>=0.4.0  # Fast model serialization
 invisible_watermark>=0.2.0  # Watermarking for generated images
+
+# ===== DEVELOPMENT & QUALITY TOOLS =====
+# Code quality, testing, and development tools
+pytest>=7.4.0  # Testing framework
+pytest-asyncio>=0.21.0  # Async test support
+pytest-cov>=4.1.0  # Coverage reporting
+pytest-timeout>=2.1.0  # Test timeouts
+pytest-xdist>=3.5.0  # Parallel test execution
+black>=24.0.0  # Code formatter
+isort>=5.13.0  # Import sorter
+pylint>=3.0.0  # Code linter
+mypy>=1.8.0  # Static type checker
+bandit>=1.7.5  # Security linter
+flake8>=7.0.0  # Style guide enforcement
+ruff>=0.3.0  # Fast Python linter (alternative to pylint)

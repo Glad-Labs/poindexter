@@ -221,6 +221,16 @@ def register_all_routes(
         status['metrics_router'] = False
     
     try:
+        # ===== ANALYTICS - KPI Dashboard =====
+        from routes.analytics_routes import analytics_router
+        app.include_router(analytics_router)
+        logger.info(" analytics_router registered (KPI dashboard)")
+        status['analytics_router'] = True
+    except Exception as e:
+        logger.error(f" analytics_router failed: {e}")
+        status['analytics_router'] = False
+    
+    try:
         # ===== AI AGENT MANAGEMENT =====
         from routes.agents_routes import router as agents_router
         app.include_router(agents_router)
@@ -235,12 +245,13 @@ def register_all_routes(
     try:
         # ===== WORKFLOW HISTORY (Phase 5) =====
         from services.workflow_history import WorkflowHistoryService
-        from routes.workflow_history import router as workflow_history_router, initialize_history_service
+        from routes.workflow_history import router as workflow_history_router, alias_router as workflow_history_alias_router, initialize_history_service
         
         if database_service and workflow_history_service:
             initialize_history_service(database_service.pool)
             app.include_router(workflow_history_router)
-            logger.info(" workflow_history_router registered")
+            app.include_router(workflow_history_alias_router)
+            logger.info(" workflow_history_router registered (both /api/workflow/* and /api/workflows/* paths)")
             status['workflow_history_router'] = True
         else:
             logger.warning(" workflow_history not available (dependencies missing)")

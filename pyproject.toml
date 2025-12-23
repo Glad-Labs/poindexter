@@ -1,20 +1,29 @@
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
-
-[project]
-name = "glad-labs-agents"
+[tool.poetry]
+name = "glad-labs"
 version = "0.1.0"
-description = "Python agents for Glad Labs"
-dependencies = [
-    "pytest>=8.0.0",
-    "google-generativeai>=0.x.x"
-]
+description = "Production-ready AI orchestration system with autonomous agents, multi-provider LLM routing, and full-stack web applications"
 authors = [
   { name="Matthew M. Gladding", email="mattg@gladlabs.io" },
 ]
 readme = "README.md"
-requires-python = ">=3.8"
+packages = []
+
+[tool.poetry.dependencies]
+python = ">=3.10,<3.13"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[project]
+name = "glad-labs"
+version = "0.1.0"
+description = "Python agents for Glad Labs"
+authors = [
+  { name="Matthew M. Gladding", email="mattg@gladlabs.io" },
+]
+readme = "README.md"
+requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",

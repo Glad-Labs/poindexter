@@ -33,8 +33,12 @@ from schemas.workflow_history_schemas import (
 
 logger = logging.getLogger(__name__)
 
-# Initialize router
-router = APIRouter(prefix="/api/workflows", tags=["workflow-history"])
+# Initialize router - using /api/workflow prefix
+# NOTE: Also creates alias /api/workflows for backward compatibility
+router = APIRouter(prefix="/api/workflow", tags=["workflow-history"])
+
+# Also create alias router for backward compatibility with /api/workflows
+alias_router = APIRouter(prefix="/api/workflows", tags=["workflow-history"])
 
 # Workflow history service (initialized with db_pool from main)
 _history_service: Optional[WorkflowHistoryService] = None
@@ -299,3 +303,33 @@ async def get_workflow_type_history(
             status_code=500,
             detail=f"Failed to retrieve workflow history: {str(e)}"
         )
+
+
+# ============================================================================
+# BACKWARD COMPATIBILITY ALIAS ROUTES (/api/workflows/*)
+# ============================================================================
+
+@alias_router.get("/history", response_model=WorkflowHistoryResponse)
+async def get_workflow_history_alias(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    status: Optional[str] = Query(None),
+    history_service: WorkflowHistoryService = Depends(get_history_service),
+):
+    """Alias for /api/workflow/history - maintains backward compatibility"""
+    user_id = current_user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User ID not found in token")
+    
+    result = await history_service.get_user_workflow_history(
+        user_id=user_id, limit=limit, offset=offset, status_filter=status
+    )
+    
+    return WorkflowHistoryResponse(
+        executions=result["executions"],
+        total=result["total"],
+        limit=limit,
+        offset=offset,
+        status_filter=status,
+    )

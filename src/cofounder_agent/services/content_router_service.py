@@ -412,7 +412,7 @@ async def process_content_generation_task(
         
         result['content_task_id'] = task_id_created
         result['stages']['1_content_task_created'] = True
-        logger.info(f"✅ Content task created: {content_task['task_id']}\n")
+        logger.info(f"✅ Content task created: {task_id_created}\n")
         
         # ================================================================================
         # STAGE 2: GENERATE BLOG CONTENT
@@ -652,14 +652,30 @@ async def process_content_generation_task(
         logger.info(f"✅ Training data captured for learning pipeline\n")
         
         # ================================================================================
-        # UPDATE CONTENT_TASK WITH FINAL STATUS
+        # UPDATE CONTENT_TASK WITH FINAL STATUS AND ALL METADATA
         # ================================================================================
+        # 🔑 CRITICAL: Store featured_image_url and all other metadata so approval endpoint can find it
         await database_service.update_task(
             task_id=task_id,
             updates={
                 'status': 'completed',
                 'approval_status': 'pending_human_review',
-                'quality_score': int(quality_result.overall_score)
+                'quality_score': int(quality_result.overall_score),
+                # 🖼️ Store featured_image_url in task_metadata for later retrieval by approval endpoint
+                'task_metadata': {
+                    'featured_image_url': result.get('featured_image_url'),
+                    'featured_image_photographer': result.get('featured_image_photographer'),
+                    'featured_image_source': result.get('featured_image_source'),
+                    'content': content_text,
+                    'seo_title': seo_title,
+                    'seo_description': seo_description,
+                    'seo_keywords': seo_keywords,
+                    'topic': topic,
+                    'style': style,
+                    'tone': tone,
+                    'post_id': result.get('post_id'),
+                    'quality_score': quality_result.overall_score
+                }
             }
         )
         
@@ -671,6 +687,7 @@ async def process_content_generation_task(
         logger.info(f"{'='*80}")
         logger.info(f"   Task ID: {task_id}")
         logger.info(f"   Post ID: {post['id']}")
+        logger.info(f"   Featured Image: {result.get('featured_image_url', 'NONE')[:100] if result.get('featured_image_url') else 'NONE'}")
         logger.info(f"   Quality Score: {quality_result.overall_score:.1f}/10")
         logger.info(f"   Status: {result['status']}")
         logger.info(f"   Next: Human review & approval")

@@ -141,6 +141,12 @@ async def lifespan(app: FastAPI):
         # Initialize new consolidated services
         db_service = services['database']
         
+        # Initialize task store for content orchestrator
+        from services.content_router_service import get_content_task_store
+        task_store = get_content_task_store(db_service)
+        app.state.task_store = task_store
+        logger.info("✅ ContentTaskStore initialized")
+        
         # Initialize quality service
         quality_service = UnifiedQualityService(
             model_router=getattr(app.state, 'model_router', None),
@@ -152,9 +158,10 @@ async def lifespan(app: FastAPI):
         
         # Initialize content orchestrator for use in unified system
         content_orchestrator = ContentOrchestrator(
-            task_store=getattr(app.state, 'task_store', None)
+            task_store=task_store  # Now uses the initialized task_store
         )
-        logger.info("✅ ContentOrchestrator initialized")
+        app.state.content_orchestrator = content_orchestrator
+        logger.info("✅ ContentOrchestrator initialized with task_store")
         
         # Initialize unified orchestrator with all available agents
         unified_orchestrator = UnifiedOrchestrator(

@@ -18,6 +18,30 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["cms"])
 
+
+def map_featured_image_to_coverimage(post: dict) -> dict:
+    """
+    Map database featured_image_url to Strapi-compatible coverImage format.
+    
+    Frontend expects: coverImage.data.attributes.url
+    Database returns: featured_image_url
+    
+    This ensures compatibility with existing frontend components.
+    """
+    if post.get("featured_image_url"):
+        post["coverImage"] = {
+            "data": {
+                "attributes": {
+                    "url": post["featured_image_url"],
+                    "alternativeText": f"Cover image for {post.get('title', 'post')}"
+                }
+            }
+        }
+    else:
+        post["coverImage"] = None
+    
+    return post
+
 # Global database service instance
 _db_service: Optional[DatabaseService] = None
 
@@ -91,11 +115,12 @@ async def list_posts(
             
             posts = [dict(row) for row in rows]
             
-            # Format timestamps
+            # Format timestamps and map featured_image_url to coverImage for frontend compatibility
             for post in posts:
                 post["published_at"] = post["published_at"].isoformat() if post["published_at"] else None
                 post["created_at"] = post["created_at"].isoformat() if post["created_at"] else None
                 post["updated_at"] = post["updated_at"].isoformat() if post["updated_at"] else None
+                map_featured_image_to_coverimage(post)
             
             return {
                 "data": posts,
@@ -141,6 +166,9 @@ async def get_post_by_slug(
             post["published_at"] = post["published_at"].isoformat() if post["published_at"] else None
             post["created_at"] = post["created_at"].isoformat() if post["created_at"] else None
             post["updated_at"] = post["updated_at"].isoformat() if post["updated_at"] else None
+            
+            # Map featured_image_url to coverImage in Strapi-compatible format
+            map_featured_image_to_coverimage(post)
             
             # Get tags (gracefully handle missing table)
             tags = []

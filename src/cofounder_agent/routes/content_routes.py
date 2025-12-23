@@ -53,6 +53,8 @@ from services.content_router_service import (
     get_content_task_store,
     process_content_generation_task,
 )
+from services.model_validator import ModelValidator
+from schemas.task_status import TaskStatus
 from services.database_service import DatabaseService
 from services.error_handler import (
     ValidationError,
@@ -66,7 +68,6 @@ from utils.route_utils import get_database_dependency
 from utils.error_responses import ErrorResponseBuilder
 from schemas.content_schemas import (
     CreateBlogPostRequest,
-    CreateBlogPostResponse,
     TaskStatusResponse,
     BlogDraftResponse,
     DraftsListResponse,
@@ -76,6 +77,7 @@ from schemas.content_schemas import (
     PublishDraftResponse,
     GenerateAndPublishRequest,
 )
+from schemas.unified_task_response import UnifiedTaskResponse, CreateBlogPostResponse, ProgressInfo
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +94,7 @@ content_router = APIRouter(prefix="/api/content", tags=["content"])
 
 @content_router.post(
     "/tasks",
-    response_model=CreateBlogPostResponse,
+    response_model=UnifiedTaskResponse,
     status_code=201,
     description="Create a content task (blog post, social media, email, etc.)",
 )
@@ -142,6 +144,37 @@ async def create_content_task(
             )
 
         logger.debug(f"  ✓ Topic validation passed")
+        
+        # ========================================================================
+        # VALIDATE MODEL SELECTION
+        # ========================================================================
+        logger.debug(f"  🤖 Validating model selection...")
+        model_validator = ModelValidator()
+        
+        # Validate models_by_phase if provided
+        if request.models_by_phase:
+            is_valid, errors = model_validator.validate_models_by_phase(request.models_by_phase)
+            if not is_valid:
+                error_details = "; ".join([f"{phase}: {msg}" for phase, msg in errors.items()])
+                raise ValidationError(
+                    f"Invalid model selection: {error_details}",
+                    field="models_by_phase",
+                    constraint="valid_models_required",
+                    value=request.models_by_phase
+                )
+            logger.debug(f"  ✅ Model selection valid: {list(request.models_by_phase.keys())}")
+        
+        # Validate quality_preference (auto-select uses this)
+        if request.quality_preference:
+            valid_preferences = {"budget", "balanced", "quality", "premium"}
+            if request.quality_preference.lower() not in valid_preferences:
+                raise ValidationError(
+                    f"Invalid quality preference: {request.quality_preference}. Valid options: {', '.join(valid_preferences)}",
+                    field="quality_preference",
+                    constraint="valid_preference",
+                    value=request.quality_preference
+                )
+            logger.debug(f"  ✅ Quality preference valid: {request.quality_preference}")
         
         task_store = get_content_task_store(db)
         logger.debug(f"  ✓ Got task store")
@@ -260,7 +293,7 @@ async def create_content_task(
 
 @content_router.get(
     "/tasks/{task_id}",
-    response_model=TaskStatusResponse,
+    response_model=UnifiedTaskResponse,
     description="Get content task status",
 )
 async def get_content_task_status(task_id: str):
@@ -315,13 +348,25 @@ async def get_content_task_status(task_id: str):
                 "task_metadata": task.get("task_metadata", {}),
             }
         
-        return TaskStatusResponse(
+        return UnifiedTaskResponse(
             task_id=task_id,
+            id=task_id,
             status=task.get("status", "unknown"),
-            progress=task.get("progress"),
+            progress=ProgressInfo(
+                stage=task.get("stage", "pending"),
+                percentage=task.get("percentage", 0),
+                message=task.get("message"),
+                node=task.get("stage")
+            ) if task.get("stage") else None,
             result=result,  # ✅ Now populated with actual data from database
-            error={"message": task.get("error_message")} if task.get("error_message") else None,
+            error_details={"message": task.get("error_message")} if task.get("error_message") else None,
             created_at=task.get("created_at", ""),
+            updated_at=task.get("updated_at", ""),
+            content=result.get("content") if result else None,
+            featured_image_url=result.get("featured_image_url") if result else None,
+            task_type=task.get("task_type", "blog_post"),
+            topic=task.get("topic", ""),
+            task_name=task.get("topic", ""),
         )
 
     except NotFoundError as e:
@@ -552,22 +597,44 @@ async def approve_and_publish_task(
                 # USE UNIFIED METADATA SERVICE (Single source of truth)
                 # ============================================================================
                 from services.unified_metadata_service import get_unified_metadata_service
+                from services.cloudinary_cms_service import get_cloudinary_cms_service
                 
                 metadata_service = get_unified_metadata_service()
+                cloudinary_service = get_cloudinary_cms_service()
                 
                 # Extract featured image URL from multiple possible locations
                 featured_image_url = None
+                logger.debug(f"🔍 Searching for featured_image_url in task_metadata...")
+                logger.debug(f"   Available task_metadata keys: {list(task_metadata.keys())}")
+                
                 if "featured_image_url" in task_metadata:
                     featured_image_url = task_metadata.get("featured_image_url")
+                    logger.info(f"✅ Found featured_image_url in task_metadata: {featured_image_url[:100] if featured_image_url else 'EMPTY'}")
                 elif "image" in task_metadata and isinstance(task_metadata["image"], dict):
                     featured_image_url = task_metadata["image"].get("url")
+                    logger.info(f"✅ Found featured_image_url in task_metadata.image.url: {featured_image_url[:100] if featured_image_url else 'EMPTY'}")
                 elif "image_url" in task_metadata:
                     featured_image_url = task_metadata.get("image_url")
+                    logger.info(f"✅ Found featured_image_url in task_metadata.image_url: {featured_image_url[:100] if featured_image_url else 'EMPTY'}")
                 elif "featured_image" in task_metadata and isinstance(task_metadata["featured_image"], dict):
                     featured_image_url = task_metadata["featured_image"].get("url")
+                    logger.info(f"✅ Found featured_image_url in task_metadata.featured_image.url: {featured_image_url[:100] if featured_image_url else 'EMPTY'}")
+                else:
+                    logger.warning(f"⚠️  No featured_image_url found in task_metadata at any location")
                 
+                # ✅ Optimize featured image on Cloudinary for CDN delivery
+                featured_image_metadata = {}
                 if featured_image_url:
-                    logger.debug(f"✅ Found featured image URL: {featured_image_url[:100]}...")
+                    logger.debug(f"🎨 Optimizing featured image: {featured_image_url[:100]}...")
+                    optimized_url, cloudinary_meta = await cloudinary_service.optimize_featured_image(
+                        featured_image_url,
+                        content_title=task_metadata.get("topic")
+                    )
+                    featured_image_url = optimized_url
+                    featured_image_metadata = cloudinary_meta
+                    logger.info(f"✅ Featured image optimized: {cloudinary_meta.get('source')} - {cloudinary_meta.get('optimized')}")
+                else:
+                    logger.warning(f"⚠️  No featured_image_url to optimize - image will be empty in post")
                 
                 # Get available categories and tags for matching
                 categories = await db_service.get_all_categories()
@@ -615,7 +682,7 @@ async def approve_and_publish_task(
                     "updated_by": reviewer_author_id,  # System UUID for updated_by (reviewer who approved)
                 }
                 
-                logger.debug(f"📝 Post data prepared: {json.dumps({k: str(v)[:50] + '...' if isinstance(v, str) and len(str(v)) > 50 else v for k, v in post_data.items()}, default=str)}")
+                logger.debug(f"📝 Post data prepared (featured_image_url={post_data.get('featured_image_url')[:100] if post_data.get('featured_image_url') else 'EMPTY'}):")
                 
                 post_result = await db_service.create_post(post_data)
                 post_id = post_result.get("id")
@@ -1119,10 +1186,13 @@ async def create_blog_post_langgraph(
 @content_router.websocket("/langgraph/ws/blog-posts/{request_id}")
 async def websocket_blog_creation(
     websocket: WebSocket,
-    request_id: str
+    request_id: str,
+    db: DatabaseService = Depends(get_database_dependency)
 ):
     """
     WebSocket endpoint for real-time blog creation progress.
+    
+    Streams real task progress from PostgreSQL database.
     
     Stream events:
     - type: "progress" - Current phase and progress percentage
@@ -1130,50 +1200,111 @@ async def websocket_blog_creation(
     - type: "error" - Pipeline failed
     """
     await websocket.accept()
-    logger.info(f"WebSocket connected for blog request {request_id}")
+    logger.info(f"🔌 WebSocket connected for request {request_id}")
     
     try:
-        # Get LangGraph from app state
-        langgraph = getattr(websocket.app.state, 'langgraph_orchestrator', None)
+        import asyncio
         
-        if not langgraph:
+        # Map task phases to expected pipeline stages
+        phase_mapping = {
+            "pending": 5,
+            "research": 15,
+            "outline": 25,
+            "draft": 50,
+            "assess": 70,
+            "refine": 85,
+            "finalize": 95,
+            "completed": 100,
+            "published": 100,
+            "approved": 80,
+            "awaiting_approval": 75
+        }
+        
+        last_progress = 0
+        poll_interval = 1  # Check database every 1 second
+        timeout = 600  # 10 minutes max wait
+        elapsed = 0
+        
+        while elapsed < timeout:
+            try:
+                # Fetch real task progress from database
+                task = await db.get_task(request_id)
+                
+                if not task:
+                    # Task not found - may still be created
+                    await asyncio.sleep(poll_interval)
+                    elapsed += poll_interval
+                    continue
+                
+                # Extract real progress data from database
+                current_stage = task.get("stage", "pending")
+                current_percentage = task.get("percentage", 0)
+                task_status = task.get("status", "pending")
+                message = task.get("message", f"Processing {current_stage}")
+                
+                # Send progress if it changed
+                if current_percentage != last_progress or elapsed == 0:
+                    await websocket.send_json({
+                        "type": "progress",
+                        "node": current_stage,
+                        "progress": current_percentage,
+                        "status": task_status,
+                        "message": message,
+                        "timestamp": datetime.utcnow().isoformat()
+                    })
+                    logger.debug(f"📤 WebSocket progress: {current_stage} {current_percentage}%")
+                    last_progress = current_percentage
+                
+                # Check if task is complete
+                if task_status in ["completed", "published", "approved"]:
+                    await websocket.send_json({
+                        "type": "complete",
+                        "request_id": request_id,
+                        "status": task_status,
+                        "percentage": 100,
+                        "content": task.get("content"),
+                        "featured_image_url": task.get("featured_image_url"),
+                        "timestamp": datetime.utcnow().isoformat()
+                    })
+                    logger.info(f"✅ Task completed via WebSocket: {request_id}")
+                    break
+                
+                # Check if task failed
+                elif task_status in ["failed", "rejected"]:
+                    await websocket.send_json({
+                        "type": "error",
+                        "request_id": request_id,
+                        "status": task_status,
+                        "error": task.get("error_message", "Task execution failed"),
+                        "timestamp": datetime.utcnow().isoformat()
+                    })
+                    logger.warning(f"⚠️ Task failed via WebSocket: {request_id}")
+                    break
+                
+                # Poll database again
+                await asyncio.sleep(poll_interval)
+                elapsed += poll_interval
+                
+            except Exception as e:
+                logger.error(f"❌ Error fetching task progress: {e}", exc_info=True)
+                await websocket.send_json({
+                    "type": "error",
+                    "error": f"Failed to fetch progress: {str(e)}"
+                })
+                break
+        
+        # Timeout occurred
+        if elapsed >= timeout:
+            logger.warning(f"⏱️ WebSocket timeout for request {request_id}")
             await websocket.send_json({
                 "type": "error",
-                "error": "LangGraph orchestrator not available"
+                "error": "Task execution timeout - check task status manually"
             })
-            await websocket.close()
-            return
-        
-        # Mock streaming (in production, fetch from database and stream)
-        # For now, simulate phases
-        phases = [
-            {"node": "research", "progress": 15},
-            {"node": "outline", "progress": 30},
-            {"node": "draft", "progress": 50},
-            {"node": "assess", "progress": 70},
-            {"node": "finalize", "progress": 100}
-        ]
-        
-        import asyncio
-        for phase in phases:
-            await websocket.send_json({
-                "type": "progress",
-                "node": phase["node"],
-                "progress": phase["progress"],
-                "status": "processing"
-            })
-            await asyncio.sleep(1)  # Simulate processing
-        
-        await websocket.send_json({
-            "type": "complete",
-            "request_id": request_id,
-            "status": "completed"
-        })
     
     except WebSocketDisconnect:
-        logger.info(f"WebSocket disconnected: {request_id}")
+        logger.info(f"🔌 WebSocket disconnected: {request_id}")
     except Exception as e:
-        logger.error(f"WebSocket error: {str(e)}", exc_info=True)
+        logger.error(f"🔌 WebSocket error: {str(e)}", exc_info=True)
         try:
             await websocket.send_json({
                 "type": "error",
@@ -1184,5 +1315,6 @@ async def websocket_blog_creation(
     finally:
         try:
             await websocket.close()
+            logger.info(f"🔌 WebSocket closed: {request_id}")
         except:
             pass

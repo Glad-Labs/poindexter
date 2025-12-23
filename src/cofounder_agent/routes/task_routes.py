@@ -125,6 +125,13 @@ def convert_db_row_to_dict(row):
     if not data.get('error_message') and data.get('task_metadata', {}).get('error_message'):
         data['error_message'] = data['task_metadata']['error_message']
     
+    # Extract constraint_compliance from task_metadata to top level for API response
+    # This allows the frontend to access compliance metrics directly from the task response
+    if 'constraint_compliance' not in data or data.get('constraint_compliance') is None:
+        if data.get('task_metadata') and isinstance(data['task_metadata'], dict):
+            if 'constraint_compliance' in data['task_metadata']:
+                data['constraint_compliance'] = data['task_metadata']['constraint_compliance']
+    
     return data
 
 # Import async database service
@@ -133,7 +140,6 @@ from routes.auth_unified import get_current_user
 from schemas.task_schemas import (
     TaskCreateRequest,
     TaskStatusUpdateRequest,
-    TaskResponse,
     TaskListResponse,
     MetricsResponse,
     IntentTaskRequest,
@@ -141,6 +147,7 @@ from schemas.task_schemas import (
     TaskConfirmRequest,
     TaskConfirmResponse,
 )
+from schemas.unified_task_response import UnifiedTaskResponse
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -342,7 +349,7 @@ async def list_tasks(
         
         # Convert to response schema with proper type conversions
         task_responses = [
-            TaskResponse(**convert_db_row_to_dict(task))
+            UnifiedTaskResponse(**convert_db_row_to_dict(task))
             for task in tasks
         ]
         
@@ -358,7 +365,7 @@ async def list_tasks(
         raise HTTPException(status_code=500, detail=f"Failed to fetch tasks: {str(e)}")
 
 
-@router.get("/{task_id}", response_model=TaskResponse, summary="Get task details")
+@router.get("/{task_id}", response_model=UnifiedTaskResponse, summary="Get task details")
 async def get_task(
     task_id: str,
     current_user: dict = Depends(get_current_user),
@@ -393,7 +400,7 @@ async def get_task(
             raise HTTPException(status_code=404, detail="Task not found")
         
         # Convert to response schema with proper type conversions
-        return TaskResponse(**convert_db_row_to_dict(task))
+        return UnifiedTaskResponse(**convert_db_row_to_dict(task))
         
     except HTTPException:
         raise
@@ -401,7 +408,7 @@ async def get_task(
         raise HTTPException(status_code=500, detail=f"Failed to fetch task: {str(e)}")
 
 
-@router.patch("/{task_id}", response_model=TaskResponse, summary="Update task status")
+@router.patch("/{task_id}", response_model=UnifiedTaskResponse, summary="Update task status")
 async def update_task(
     task_id: str,
     update_data: TaskStatusUpdateRequest,
@@ -471,7 +478,7 @@ async def update_task(
         updated_task = await db_service.get_task(task_id)
         
         # Convert to response schema with proper type conversions
-        return TaskResponse(**convert_db_row_to_dict(updated_task))
+        return UnifiedTaskResponse(**convert_db_row_to_dict(updated_task))
         
     except HTTPException:
         raise
