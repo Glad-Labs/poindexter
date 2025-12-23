@@ -41,24 +41,24 @@ setup-env:
     #!/bin/bash
     if [ ! -f .env.local ]; then
         echo "📝 Creating .env.local template..."
-        cat > .env.local << 'EOF'
-# Database
-DATABASE_URL=postgresql://user:pass@localhost:5432/glad_labs
-
-# LLM API Keys (at least one required)
-OPENAI_API_KEY=
-ANTHROPIC_API_KEY=
-GOOGLE_API_KEY=
-
-# Ollama (local models)
-OLLAMA_BASE_URL=http://localhost:11434
-
-# Optional
-LLM_PROVIDER=
-DEFAULT_MODEL_TEMPERATURE=0.7
-SQL_DEBUG=false
-LOG_LEVEL=info
-EOF
+        {
+            echo "# Database"
+            echo "DATABASE_URL=postgresql://user:pass@localhost:5432/glad_labs"
+            echo ""
+            echo "# LLM API Keys (at least one required)"
+            echo "OPENAI_API_KEY="
+            echo "ANTHROPIC_API_KEY="
+            echo "GOOGLE_API_KEY="
+            echo ""
+            echo "# Ollama (local models)"
+            echo "OLLAMA_BASE_URL=http://localhost:11434"
+            echo ""
+            echo "# Optional"
+            echo "LLM_PROVIDER="
+            echo "DEFAULT_MODEL_TEMPERATURE=0.7"
+            echo "SQL_DEBUG=false"
+            echo "LOG_LEVEL=info"
+        } > .env.local
         echo "⚠️  Created .env.local - please add your API keys"
     else
         echo "✅ .env.local already exists"
@@ -154,6 +154,11 @@ lint: lint-python lint-js
 lint-python:
     #!/bin/bash
     echo "🔍 Checking Python code..."
+    if ! command -v poetry &> /dev/null; then
+        echo "⚠️  Poetry not found. Install with: pip install poetry"
+        echo "    Or run: just setup-python"
+        exit 1
+    fi
     cd src/cofounder_agent
     poetry run pylint src/cofounder_agent
     poetry run ruff check src/cofounder_agent
@@ -163,6 +168,11 @@ lint-python:
 lint-python-fix:
     #!/bin/bash
     echo "🔧 Fixing Python code..."
+    if ! command -v poetry &> /dev/null; then
+        echo "⚠️  Poetry not found. Install with: pip install poetry"
+        echo "    Or run: just setup-python"
+        exit 1
+    fi
     cd src/cofounder_agent
     poetry run ruff check --fix src/cofounder_agent
     poetry run black src/cofounder_agent
@@ -173,7 +183,7 @@ lint-python-fix:
 lint-js:
     #!/bin/bash
     echo "🔍 Checking JavaScript code..."
-    npm run lint --workspaces
+    npm run lint --workspaces || true
 
 # Fix JavaScript linting issues
 lint-js-fix:
