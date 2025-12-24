@@ -2,9 +2,7 @@
 name = "glad-labs"
 version = "0.1.0"
 description = "Production-ready AI orchestration system with autonomous agents, multi-provider LLM routing, and full-stack web applications"
-authors = [
-  { name="Matthew M. Gladding", email="mattg@gladlabs.io" },
-]
+authors = ["Matthew M. Gladding <mattg@gladlabs.io>"]
 readme = "README.md"
 packages = []
 

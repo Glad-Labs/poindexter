@@ -1,15 +1,18 @@
 import os
 import logging
-from opentelemetry import trace, _events, _logs
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
-from opentelemetry.sdk._events import EventLoggerProvider
-from opentelemetry.sdk._logs import LoggerProvider
-from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
+# Try to import OpenTelemetry - it's optional for development
+try:
+    from opentelemetry import trace
+    from opentelemetry.sdk.resources import Resource
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+    OPENTELEMETRY_AVAILABLE = True
+except (ImportError, AttributeError) as e:
+    OPENTELEMETRY_AVAILABLE = False
+    logging.warning(f"OpenTelemetry not fully available: {e}. Tracing disabled.")
 
 # Suppress verbose OTLP exporter logs in development
 logging.getLogger("opentelemetry.exporter.otlp.proto.http.trace_exporter").setLevel(logging.CRITICAL)
@@ -33,6 +36,11 @@ def setup_telemetry(app, service_name="cofounder-agent"):
         app: The FastAPI application instance.
         service_name: The name of the service to appear in traces.
     """
+    # Skip if OpenTelemetry is not available
+    if not OPENTELEMETRY_AVAILABLE:
+        logging.warning(f"[TELEMETRY] OpenTelemetry not available - tracing disabled for {service_name}")
+        return
+    
     # Check if tracing is enabled via environment variable
     if os.getenv("ENABLE_TRACING", "false").lower() != "true":
         print(f"[TELEMETRY] OpenTelemetry tracing disabled for {service_name}")
