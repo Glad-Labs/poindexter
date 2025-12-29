@@ -30,6 +30,8 @@ __pycache__/
 .env.*.local
 .env.production
 .env.development
+.env.test
+.env.staging
 
 # Environment & Credentials
 credentials.json
