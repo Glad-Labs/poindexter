@@ -2,6 +2,7 @@
   "version": "2.0.0",
   "tasks": [
     {
+<<<<<<< HEAD
       "label": "1️⃣ Start Strapi CMS (Port 1337)",
       "type": "shell",
       "command": "npm run develop",
@@ -21,6 +22,13 @@
           "beginsPattern": "^.*npm.*develop.*",
           "endsPattern": "(Server is running|Strapi has started|Listening|✨ Server started)"
         }
+=======
+      "label": "Start Oversight Hub",
+      "type": "shell",
+      "command": "npm start",
+      "options": {
+        "cwd": "${workspaceFolder}/web/oversight-hub"
+>>>>>>> feat/refine
       },
       "presentation": {
         "group": "services",
@@ -32,10 +40,21 @@
     {
       "label": "2️⃣ Start Co-founder Agent (Port 8000)",
       "type": "shell",
-      "command": "python start_server.py",
+      "command": "poetry",
+      "args": [
+        "run",
+        "uvicorn",
+        "main:app",
+        "--reload",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000"
+      ],
       "options": {
         "cwd": "${workspaceFolder}/src/cofounder_agent"
       },
+<<<<<<< HEAD
       "isBackground": true,
       "dependsOn": ["1️⃣ Start Strapi CMS (Port 1337)"],
       "problemMatcher": {
@@ -57,6 +76,16 @@
         "showReuseMessage": false,
         "clear": false
       }
+=======
+      "problemMatcher": ["$python"],
+      "presentation": {
+        "group": "services",
+        "panel": "dedicated",
+        "reveal": "always",
+        "clear": false
+      },
+      "isBackground": false
+>>>>>>> feat/refine
     },
     {
       "label": "3️⃣ Start Public Site (Port 3000)",
@@ -120,15 +149,22 @@
     {
       "label": "🚀 Start All Services (Sequential)",
       "dependsOn": [
+<<<<<<< HEAD
         "1️⃣ Start Strapi CMS (Port 1337)",
         "2️⃣ Start Co-founder Agent (Port 8000)",
         "3️⃣ Start Public Site (Port 3000)",
         "4️⃣ Start Oversight Hub (Port 3001)"
+=======
+        "Start Co-founder Agent",
+        "Start Oversight Hub",
+        "Start Public Site"
+>>>>>>> feat/refine
       ],
       "problemMatcher": [],
       "group": {
         "kind": "build",
         "isDefault": true
+<<<<<<< HEAD
       },
       "presentation": {
         "group": "services",
@@ -166,6 +202,9 @@
         "reveal": "silent"
       },
       "problemMatcher": []
+=======
+      }
+>>>>>>> feat/refine
     },
     {
       "type": "Live Preview",

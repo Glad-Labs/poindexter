@@ -1,8 +1,13 @@
 # 05 - AI Agents & Integration
 
 **Last Updated:** November 5, 2025  
+<<<<<<< HEAD
 **Version:** 3.0  
 **Status:** ✅ Production Ready | CrewAI Tools Integrated | Self-Critiquing Pipeline Active
+=======
+**Version:** 1.1  
+**Status:** ✅ Production Ready
+>>>>>>> feat/refine
 
 ---
 
@@ -137,7 +142,7 @@ Glad Labs includes both general-purpose agents (Financial, Market, Compliance) a
 
 #### 6. Publishing Agent
 
-- Formats content for Strapi CMS
+- Formats content for Database/CMS
 - Adds SEO metadata (title, description, keywords)
 - Creates structured frontmatter
 - Handles markdown/rich text conversion
@@ -191,7 +196,7 @@ async def generate_blog_post(topic: str):
             "title": topic,
             "seo_keywords": ["key", "words"]
         },
-        "target": "strapi-cms"
+        "target": "database"
     })
 
     return published

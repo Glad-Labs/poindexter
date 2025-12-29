@@ -1,6 +1,10 @@
 import logging
+<<<<<<< HEAD
 from src.agents.content_agent.services.llm_client import LLMClient
 from src.agents.content_agent.utils.tools import CrewAIToolsFactory
+=======
+from ..services.llm_client import LLMClient
+>>>>>>> feat/refine
 
 logger = logging.getLogger(__name__)
 

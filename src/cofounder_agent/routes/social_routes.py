@@ -4,54 +4,26 @@ Handles integration with social media platforms, content generation, posting, an
 """
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
-from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import logging
 from datetime import datetime
 
+from schemas.social_schemas import (
+    SocialPlatformEnum,
+    ToneEnum,
+    SocialPlatformConnection,
+    SocialPost,
+    SocialAnalytics,
+    GenerateContentRequest,
+    CrossPostRequest,
+)
+
 logger = logging.getLogger(__name__)
 
-# Define request/response models
-class SocialPlatformConnection(BaseModel):
-    """Model for connecting social platforms"""
-    platform: str  # twitter, facebook, instagram, linkedin, tiktok, youtube
 
-
-class SocialPost(BaseModel):
-    """Model for social media posts"""
-    content: str
-    platforms: List[str]
-    scheduled_time: Optional[str] = None
-    tone: str = "professional"
-    include_hashtags: bool = True
-    include_emojis: bool = True
-
-
-class SocialAnalytics(BaseModel):
-    """Model for social media analytics"""
-    post_id: str
-    platform: str
-    views: int = 0
-    likes: int = 0
-    shares: int = 0
-    comments: int = 0
-    engagement_rate: float = 0.0
-
-
-class GenerateContentRequest(BaseModel):
-    """Model for AI content generation"""
-    topic: str
-    platform: str
-    tone: str = "professional"
-    include_hashtags: bool = True
-    include_emojis: bool = True
-
-
-class CrossPostRequest(BaseModel):
-    """Model for cross-posting to multiple platforms"""
-    content: str
-    platforms: List[str]
-
+# ============================================================================
+# Router and Storage
+# ============================================================================
 
 # Create router
 social_router = APIRouter(prefix="/api/social", tags=["social"])
@@ -72,14 +44,17 @@ _platform_connections: Dict[str, bool] = {
 async def get_platforms() -> Dict[str, Any]:
     """
     Get connected social media platforms
-    
+
     Returns:
         Dictionary with platform status
     """
     return {
         "twitter": {"connected": _platform_connections.get("twitter", False), "name": "Twitter/X"},
         "facebook": {"connected": _platform_connections.get("facebook", False), "name": "Facebook"},
-        "instagram": {"connected": _platform_connections.get("instagram", False), "name": "Instagram"},
+        "instagram": {
+            "connected": _platform_connections.get("instagram", False),
+            "name": "Instagram",
+        },
         "linkedin": {"connected": _platform_connections.get("linkedin", False), "name": "LinkedIn"},
         "tiktok": {"connected": _platform_connections.get("tiktok", False), "name": "TikTok"},
         "youtube": {"connected": _platform_connections.get("youtube", False), "name": "YouTube"},
@@ -90,22 +65,22 @@ async def get_platforms() -> Dict[str, Any]:
 async def connect_platform(request: SocialPlatformConnection) -> Dict[str, Any]:
     """
     Connect a social media platform
-    
+
     Args:
         request: Platform connection request
-        
+
     Returns:
         Connection status
     """
     platform = request.platform.lower()
-    
+
     if platform not in _platform_connections:
         raise HTTPException(status_code=400, detail=f"Unknown platform: {platform}")
-    
+
     # Mark as connected (in real implementation, would initiate OAuth flow)
     _platform_connections[platform] = True
     logger.info(f"✅ Platform connected: {platform}")
-    
+
     return {
         "success": True,
         "platform": platform,
@@ -118,18 +93,17 @@ async def connect_platform(request: SocialPlatformConnection) -> Dict[str, Any]:
 async def get_posts() -> Dict[str, Any]:
     """
     Get all social media posts
-    
+
     Returns:
         List of posts and analytics
     """
     posts = list(_posts_store.values())
-    
+
     # Calculate basic analytics
     total_engagement = sum(
-        p.get("likes", 0) + p.get("shares", 0) + p.get("comments", 0) 
-        for p in posts
+        p.get("likes", 0) + p.get("shares", 0) + p.get("comments", 0) for p in posts
     )
-    
+
     return {
         "posts": posts,
         "analytics": {
@@ -145,23 +119,23 @@ async def get_posts() -> Dict[str, Any]:
 async def create_post(request: SocialPost, background_tasks: BackgroundTasks) -> Dict[str, Any]:
     """
     Create a new social media post
-    
+
     Args:
         request: Post creation request
         background_tasks: FastAPI background tasks
-        
+
     Returns:
         Created post details
     """
     if not request.content.strip():
         raise HTTPException(status_code=400, detail="Post content cannot be empty")
-    
+
     if not request.platforms:
         raise HTTPException(status_code=400, detail="At least one platform must be selected")
-    
+
     # Generate post ID
     post_id = f"post_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    
+
     post_data = {
         "id": post_id,
         "content": request.content,
@@ -176,10 +150,10 @@ async def create_post(request: SocialPost, background_tasks: BackgroundTasks) ->
         "shares": 0,
         "comments": 0,
     }
-    
+
     _posts_store[post_id] = post_data
     logger.info(f"✅ Post created: {post_id} on {', '.join(request.platforms)}")
-    
+
     return {
         "success": True,
         "post_id": post_id,
@@ -192,19 +166,19 @@ async def create_post(request: SocialPost, background_tasks: BackgroundTasks) ->
 async def delete_post(post_id: str) -> Dict[str, Any]:
     """
     Delete a social media post
-    
+
     Args:
         post_id: Post identifier
-        
+
     Returns:
         Deletion status
     """
     if post_id not in _posts_store:
         raise HTTPException(status_code=404, detail=f"Post not found: {post_id}")
-    
+
     del _posts_store[post_id]
     logger.info(f"✅ Post deleted: {post_id}")
-    
+
     return {
         "success": True,
         "post_id": post_id,
@@ -216,22 +190,22 @@ async def delete_post(post_id: str) -> Dict[str, Any]:
 async def get_post_analytics(post_id: str) -> Dict[str, Any]:
     """
     Get analytics for a specific post
-    
+
     Args:
         post_id: Post identifier
-        
+
     Returns:
         Post analytics
     """
     if post_id not in _posts_store:
         raise HTTPException(status_code=404, detail=f"Post not found: {post_id}")
-    
+
     post = _posts_store[post_id]
-    
+
     # Calculate engagement rate
     total_interactions = post.get("likes", 0) + post.get("shares", 0) + post.get("comments", 0)
     engagement_rate = (total_interactions / 1000) * 100  # Assuming 1k impressions
-    
+
     return {
         "post_id": post_id,
         "platforms": post["platforms"],
@@ -249,19 +223,19 @@ async def get_post_analytics(post_id: str) -> Dict[str, Any]:
 async def generate_content(request: GenerateContentRequest) -> Dict[str, Any]:
     """
     Generate AI-powered social media content
-    
+
     Args:
         request: Content generation request
-        
+
     Returns:
         Generated content
     """
     if not request.topic.strip():
         raise HTTPException(status_code=400, detail="Topic cannot be empty")
-    
+
     # In production, this would call the orchestrator to generate content
     # For now, return a template response
-    
+
     generated_content = f"""
 📱 {request.topic.upper()}
 
@@ -274,9 +248,9 @@ Here's an engaging post about this topic! This would be generated by our AI mode
 
 #ArtificialIntelligence #TechInnovation #FutureReady
 """
-    
+
     logger.info(f"✅ Content generated for platform: {request.platform}")
-    
+
     return {
         "success": True,
         "content": generated_content,
@@ -291,10 +265,10 @@ Here's an engaging post about this topic! This would be generated by our AI mode
 async def get_trending_topics(platform: str = "twitter") -> Dict[str, Any]:
     """
     Get trending topics for a platform
-    
+
     Args:
         platform: Social platform name
-        
+
     Returns:
         List of trending topics
     """
@@ -329,9 +303,9 @@ async def get_trending_topics(platform: str = "twitter") -> Dict[str, Any]:
             "#B2B",
         ],
     }
-    
+
     topics = trending_examples.get(platform.lower(), [])
-    
+
     return {
         "platform": platform,
         "topics": topics,
@@ -340,23 +314,27 @@ async def get_trending_topics(platform: str = "twitter") -> Dict[str, Any]:
 
 
 @social_router.post("/cross-post")
-async def cross_post(request: CrossPostRequest, background_tasks: BackgroundTasks) -> Dict[str, Any]:
+async def cross_post(
+    request: CrossPostRequest, background_tasks: BackgroundTasks
+) -> Dict[str, Any]:
     """
     Cross-post content to multiple platforms
-    
+
     Args:
         request: Cross-posting request
         background_tasks: FastAPI background tasks
-        
+
     Returns:
         Cross-posting status
     """
     if not request.content.strip():
         raise HTTPException(status_code=400, detail="Content cannot be empty")
-    
+
     if not request.platforms or len(request.platforms) < 2:
-        raise HTTPException(status_code=400, detail="At least 2 platforms required for cross-posting")
-    
+        raise HTTPException(
+            status_code=400, detail="At least 2 platforms required for cross-posting"
+        )
+
     # Create posts for each platform
     post_ids = []
     for platform in request.platforms:
@@ -372,9 +350,11 @@ async def cross_post(request: CrossPostRequest, background_tasks: BackgroundTask
             "comments": 0,
         }
         post_ids.append(post_id)
-    
-    logger.info(f"✅ Cross-posted to {len(request.platforms)} platforms: {', '.join(request.platforms)}")
-    
+
+    logger.info(
+        f"✅ Cross-posted to {len(request.platforms)} platforms: {', '.join(request.platforms)}"
+    )
+
     return {
         "success": True,
         "post_ids": post_ids,

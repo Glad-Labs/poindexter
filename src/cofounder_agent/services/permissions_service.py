@@ -20,6 +20,7 @@ from enum import Enum
 
 class UserRole(str, Enum):
     """User roles for permission checking"""
+
     ADMIN = "admin"
     EDITOR = "editor"
     VIEWER = "viewer"
@@ -28,6 +29,7 @@ class UserRole(str, Enum):
 
 class PermissionAction(str, Enum):
     """Permission actions for settings"""
+
     CREATE = "create"
     READ = "read"
     UPDATE = "update"
@@ -38,6 +40,7 @@ class PermissionAction(str, Enum):
 
 class SettingSensitivity(str, Enum):
     """Setting sensitivity levels for access control"""
+
     PUBLIC = "public"
     INTERNAL = "internal"
     RESTRICTED = "restricted"
@@ -255,7 +258,7 @@ class PermissionsService:
             if cls.can_access_setting(
                 user_role,
                 setting.category,
-                setting.sensitivity if hasattr(setting, 'sensitivity') else None,
+                setting.sensitivity if hasattr(setting, "sensitivity") else None,
             ):
                 filtered.append(setting)
 

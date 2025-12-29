@@ -1,19 +1,34 @@
 # 02 - Architecture & Design
 
+<<<<<<< HEAD
 **Last Updated:** November 5, 2025  
 **Version:** 3.0  
 **Status:** ✅ Production Ready | Multi-Agent System Live | CrewAI Integration Complete
+=======
+**Last Updated:** November 24, 2025  
+**Version:** 2.0  
+**Status:** ✅ Production Ready | PostgreSQL-First Architecture
+>>>>>>> feat/refine
 
 ---
 
 ## 🎯 Quick Links
 
+<<<<<<< HEAD
 - **[Vision & Mission](#vision--mission)** - What Glad Labs does
 - **[System Architecture](#system-architecture)** - High-level overview
 - **[Technology Stack](#technology-stack)** - Tools and platforms
 - **[Component Design](#component-design)** - Each system explained
 - **[Data Architecture](#data-architecture)** - Database and storage
 - **[Roadmap](#roadmap)** - Phase 1-3 implementation plan
+=======
+- **[Vision & Mission](#-vision--mission)** - What Glad Labs does
+- **[System Architecture](#-system-architecture)** - High-level overview
+- **[Technology Stack](#-technology-stack)** - Tools and platforms
+- **[Component Design](#-component-design)** - Each system explained
+- **[Data Architecture](#-data-architecture)** - Database and storage
+- **[Roadmap](#-roadmap)** - Phase 1-3 implementation plan
+>>>>>>> feat/refine
 
 ---
 
@@ -91,16 +106,16 @@
 ┌──────────────────────────────────────────────────────────────────┐
 │                EXTERNAL INTEGRATIONS                             │
 │  ┌─────────────┐ ┌──────────┐ ┌────────────┐ ┌───────────┐     │
-│  │  Strapi v5  │ │ External │ │  Social    │ │  AI       │     │
-│  │     CMS     │ │ Services │ │   Media    │ │  Models   │     │
+│  │  PostgreSQL │ │ External │ │  Social    │ │  AI       │     │
+│  │  (Direct)   │ │ Services │ │   Media    │ │  Models   │     │
 │  └─────────────┘ └──────────┘ └────────────┘ └───────────┘     │
 └──────────────────────────────────────────────────────────────────┘
                               ↕️ Network/API Calls
 ┌──────────────────────────────────────────────────────────────────┐
 │              DATA & STORAGE LAYER                                │
 │  ┌────────────┐ ┌────────────┐ ┌──────────┐ ┌──────────┐       │
-│  │  Strapi    │ │ PostgreSQL │ │  Redis   │ │ Storage  │       │
-│  │  Database  │ │ (Production)│ │  Cache   │ │ (Media)  │       │
+│  │  PostgreSQL│ │            │ │  Redis   │ │ Storage  │       │
+│  │ (Production)│ │            │ │  Cache   │ │ (Media)  │       │
 │  └────────────┘ └────────────┘ └──────────┘ └──────────┘       │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -124,7 +139,7 @@
    ↓
 8. Response aggregation
    ↓
-9. Result stored in Strapi CMS
+9. Result stored in PostgreSQL
    ↓
 10. Response sent back to UI
 ```
@@ -154,8 +169,8 @@
 
 | Component         | Technology                      | Port | Status        |
 | ----------------- | ------------------------------- | ---- | ------------- |
-| **Strapi CMS**    | Strapi v5 + TypeScript          | 1337 | ✅ Production |
 | **AI Co-Founder** | FastAPI + Python 3.12 + Uvicorn | 8000 | ✅ Production |
+| **CMS Data**      | PostgreSQL (Direct Access)      | 5432 | ✅ Production |
 
 **Backend Features:**
 
@@ -226,7 +241,7 @@ public-site/
 │   ├── Footer.js          # Footer
 │   └── SEO.js             # SEO metadata
 ├── lib/
-│   ├── api.js             # Strapi API client
+│   ├── api.js             # FastAPI client
 │   ├── constants.js       # App constants
 │   └── utils.js           # Helper functions
 ├── styles/
@@ -239,7 +254,7 @@ public-site/
 
 ```text
 Build Time:
-  pages/posts/[slug].js → getStaticPaths → Strapi API
+  pages/posts/[slug].js → getStaticPaths → FastAPI
   ↓
   getStaticProps → Fetch post data
   ↓
@@ -273,7 +288,7 @@ Runtime:
 ```text
 Dashboard/
 ├── System Health
-│   ├── Service Status (Strapi, Backend, Services)
+│   ├── Service Status (Backend, Services)
 │   ├── Active Agents
 │   ├── Recent Errors
 │   └── Performance Metrics
@@ -310,15 +325,15 @@ Dashboard/
 - Axios for API communication
 - WebSocket integration (ready for real-time updates)
 
-### 3. Strapi v5 CMS
+### 3. CMS Data Layer (PostgreSQL)
 
-**Location:** `cms/strapi-main/`
+**Location:** `src/cofounder_agent/routes/cms_routes.py`
 
-**Purpose:** Headless content management system and data store
+**Purpose:** Database-driven content management via FastAPI routes (No separate CMS service)
 
-**Content Types:**
+**Data Models (PostgreSQL Tables):**
 
-1. **Posts** (`api::post.post`)
+1. **Posts** (`posts` table)
    - title, slug, content (markdown/rich text)
    - excerpt, featured image, cover image
    - category (relation), tags (relation)
@@ -326,31 +341,31 @@ Dashboard/
    - SEO metadata (title, description, keywords)
    - Status (draft, published, archived)
 
-2. **Categories** (`api::category.category`)
+2. **Categories** (`categories` table)
    - name, slug, description
    - Featured image
    - Posts relation
    - Meta description
 
-3. **Tags** (`api::tag.tag`)
+3. **Tags** (`tags` table)
    - name, slug, description
    - Posts relation
    - Color/icon (for UI)
 
-4. **Pages** (`api::page.page`)
+4. **Pages** (`pages` table)
    - title, slug, content
    - Featured image
    - SEO metadata
    - Visibility settings
 
-5. **Tasks** (Custom)
+5. **Tasks** (`tasks` table)
    - Title, description, type
    - Status (pending, in-progress, completed, failed)
    - Assigned agents
    - Created/updated timestamps
    - Result data
 
-**API Endpoints (Example):**
+**API Endpoints (FastAPI):**
 
 ```bash
 GET  /api/posts                    # List posts
@@ -375,7 +390,7 @@ GET  /api/tags                     # List tags
 - Individual agent capabilities: Research, Creative, Images, Publishing, QA, Summarizer
 - Model fallback chain: Claude 3 Opus → GPT-4 → Gemini → Ollama (local, zero-cost)
 - Modular usage: End-to-end blog generation OR individual agent access
-- Output formatting: Markdown + SEO assets + Strapi CMS compatible
+- Output formatting: Markdown + SEO assets + Database compatible
 
 **Core Agents:**
 
@@ -384,7 +399,7 @@ GET  /api/tags                     # List tags
 - CreativeAgent: Content generation with style consistency
 - ResearchAgent: Topic research and fact gathering
 - ImageAgent: Image selection and optimization
-- PublishingAgent: Strapi CMS formatting and publishing
+- PublishingAgent: Database formatting and publishing
 - QAAgent: Quality evaluation and improvement suggestions
 - SummarizerAgent: Extract key points and outline creation
 ```
@@ -623,11 +638,11 @@ CREATE TABLE memories (
 
 **Status:** 🔄 In Progress
 
-#### 1.3 Strapi v5 Optimization
+#### 1.3 Database & CMS Optimization
 
-- [x] Content types setup
-- [ ] Custom plugin development
-- [ ] Performance tuning
+- [x] Content types setup (PostgreSQL tables)
+- [ ] Direct database access optimization
+- [ ] Performance tuning (indexing, query optimization)
 - [ ] Backup and recovery procedures
 - [ ] Multi-language support (optional)
 

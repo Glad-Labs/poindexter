@@ -1,5 +1,5 @@
 """
-MCP-Enhanced Content Agent Orchestrator for GLAD Labs
+MCP-Enhanced Content Agent Orchestrator for Glad Labs
 
 This orchestrator integrates with MCP servers to provide flexible AI model selection
 and standardized content management operations.

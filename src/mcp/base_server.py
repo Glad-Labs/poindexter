@@ -1,5 +1,5 @@
 """
-Base MCP Server Class for GLAD Labs
+Base MCP Server Class for Glad Labs
 
 Provides a foundation for creating MCP servers with standardized
 tool registration, error handling, and logging.

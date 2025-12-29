@@ -1,0 +1,59 @@
+[run]
+# Coverage configuration for Glad Labs project
+branch = True
+parallel = True
+
+# Source code to measure
+source = 
+    src/cofounder_agent
+    web/oversight-hub/src
+    web/public-site/lib
+
+# Files/paths to omit from coverage
+omit = 
+    */tests/*
+    */test_*.py
+    */__pycache__/*
+    */site-packages/*
+    */.venv/*
+    */venv/*
+    */conftest.py
+    */migrations/*
+    */node_modules/*
+
+[report]
+# Report settings
+precision = 2
+show_missing = True
+skip_covered = False
+skip_empty = True
+
+# Coverage thresholds
+fail_under = 80
+exclude_lines = 
+    pragma: no cover
+    def __repr__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    @abstractmethod
+    @abc.abstractmethod
+    except ImportError:
+    except AttributeError:
+    class .*\bProtocol\):
+    @overload
+
+[html]
+# HTML report configuration
+directory = htmlcov
+title = Glad Labs Test Coverage Report
+
+[json]
+# JSON report configuration
+output = coverage.json
+pretty_print = True
+
+[xml]
+# XML report configuration (for CI/CD)
+output = coverage.xml

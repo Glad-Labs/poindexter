@@ -1,4 +1,4 @@
-# MCP Integration Setup for GLAD Labs
+# MCP Integration Setup for Glad Labs
 
 ## Overview
 

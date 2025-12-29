@@ -1,8 +1,8 @@
-import requests
+import httpx
 import json
 import logging
-from config import config
-from utils.data_models import StrapiPost, BlogPost
+from ..config import config
+from ..utils.data_models import StrapiPost, BlogPost
 from typing import Optional
 import os
 
@@ -12,6 +12,8 @@ logger = logging.getLogger(__name__)
 class StrapiClient:
     """
     A client for interacting with the Strapi CMS API.
+    
+    ASYNC-FIRST: All HTTP operations use httpx (no blocking I/O)
     """
 
     def __init__(self):
@@ -35,11 +37,11 @@ class StrapiClient:
         )
         logging.info(f"Strapi client initialized. Using token: {token_preview}")
 
-    def upload_image(
+    async def upload_image(
         self, file_path: str, alt_text: str, caption: str
     ) -> Optional[int]:
         """
-        Uploads an image to the Strapi media library.
+        Uploads an image to the Strapi media library (async).
 
         Args:
             file_path (str): The local path to the image file.
@@ -52,13 +54,17 @@ class StrapiClient:
         upload_url = f"{self.api_url}/upload"
         try:
             with open(file_path, "rb") as f:
-                files = {"files": (os.path.basename(file_path), f, "image/jpeg")}
-                data = {
-                    "fileInfo": json.dumps(
-                        {"alternativeText": alt_text, "caption": caption}
-                    )
-                }
-                response = requests.post(
+                file_content = f.read()
+            
+            files = {"files": (os.path.basename(file_path), file_content, "image/jpeg")}
+            data = {
+                "fileInfo": json.dumps(
+                    {"alternativeText": alt_text, "caption": caption}
+                )
+            }
+            
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.post(
                     upload_url,
                     headers={"Authorization": f"Bearer {self.api_token}"},
                     files=files,
@@ -67,15 +73,15 @@ class StrapiClient:
                 response.raise_for_status()
                 logger.info(f"Successfully uploaded image {file_path} to Strapi.")
                 return response.json()[0]["id"]
-        except requests.exceptions.RequestException as e:
+        except httpx.HTTPError as e:
             logger.error(f"Error uploading image to Strapi: {e}")
             return None
 
-    def _make_request(
+    async def _make_request(
         self, method: str, endpoint: str, data: Optional[dict] = None
     ) -> Optional[dict]:
         """
-        Generic method to make HTTP requests to Strapi API.
+        Generic method to make HTTP requests to Strapi API (async).
 
         Args:
             method (str): HTTP method (GET, POST, PUT, DELETE)
@@ -89,36 +95,37 @@ class StrapiClient:
         headers = self.headers.copy()
 
         try:
-            if method.upper() == "GET":
-                response = requests.get(url, headers=headers)
-            elif method.upper() == "POST":
-                headers["Content-Type"] = "application/json"
-                response = requests.post(
-                    url, headers=headers, data=json.dumps(data) if data else None
-                )
-            elif method.upper() == "PUT":
-                headers["Content-Type"] = "application/json"
-                response = requests.put(
-                    url, headers=headers, data=json.dumps(data) if data else None
-                )
-            elif method.upper() == "DELETE":
-                response = requests.delete(url, headers=headers)
-            else:
-                raise ValueError(f"Unsupported HTTP method: {method}")
+            async with httpx.AsyncClient(timeout=30) as client:
+                if method.upper() == "GET":
+                    response = await client.get(url, headers=headers)
+                elif method.upper() == "POST":
+                    headers["Content-Type"] = "application/json"
+                    response = await client.post(
+                        url, headers=headers, json=data if data else None
+                    )
+                elif method.upper() == "PUT":
+                    headers["Content-Type"] = "application/json"
+                    response = await client.put(
+                        url, headers=headers, json=data if data else None
+                    )
+                elif method.upper() == "DELETE":
+                    response = await client.delete(url, headers=headers)
+                else:
+                    raise ValueError(f"Unsupported HTTP method: {method}")
 
-            response.raise_for_status()
-            return response.json()
+                response.raise_for_status()
+                return response.json()
 
-        except requests.exceptions.RequestException as e:
+        except httpx.HTTPError as e:
             logger.error(f"Error making {method} request to {endpoint}: {e}")
             if hasattr(e, "response") and e.response is not None:
                 logger.error(f"Response status: {e.response.status_code}")
                 logger.error(f"Response text: {e.response.text}")
             return None
 
-    def create_post(self, post_data: BlogPost) -> tuple[Optional[int], Optional[str]]:
+    async def create_post(self, post_data: BlogPost) -> tuple[Optional[int], Optional[str]]:
         """
-        Creates a new post in Strapi using the final processed data.
+        Creates a new post in Strapi using the final processed data (async).
 
         Args:
             post_data (BlogPost): The BlogPost object containing all necessary data.
@@ -149,8 +156,9 @@ class StrapiClient:
         }
 
         try:
-            response = requests.post(endpoint, headers=self.headers, json=payload)
-            response.raise_for_status()
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.post(endpoint, headers=self.headers, json=payload)
+                response.raise_for_status()
 
             data = response.json()
             post_id = data.get("data", {}).get("id")
@@ -159,22 +167,17 @@ class StrapiClient:
             logging.info(f"Successfully created post in Strapi with ID: {post_id}")
             return post_id, post_url
 
-        except requests.exceptions.HTTPError as e:
-            logging.error(f"Error creating post in Strapi: {e.response.text}")
-            return None, None
-        except requests.exceptions.RequestException as e:
-            logging.error(
-                f"A network error occurred while creating a post in Strapi: {e}"
-            )
+        except httpx.HTTPError as e:
+            logging.error(f"Error creating post in Strapi: {str(e)}")
             return None, None
 
-    def get_all_published_posts(self) -> dict[str, str]:
+    async def get_all_published_posts(self) -> dict[str, str]:
         """
         Fetches all published posts from Strapi to build a map of titles to URLs
-        for internal linking purposes.
+        for internal linking purposes (async).
         """
         try:
-            response = self._make_request(
+            response = await self._make_request(
                 "GET",
                 "/posts?fields[0]=Title&fields[1]=Slug&filters[PostStatus][$eq]=Published",
             )
@@ -200,29 +203,35 @@ class StrapiClient:
 
 # Example of how to use the client
 if __name__ == "__main__":
-    # This is a simple test block. For a real application, this should be in a separate test file.
-    logging.info("Running StrapiClient test...")
-    strapi_client = StrapiClient()
+    import asyncio
 
-    # Create a sample BlogPost object for testing
-    sample_post = BlogPost(
-        topic="Test Topic",
-        primary_keyword="test",
-        target_audience="testers",
-        category="testing",
-        title="Test Post Title",
-        slug="test-post-title",
-        body_content_blocks=[
-            {
-                "type": "paragraph",
-                "children": [{"type": "text", "text": "This is a test."}],
-            }
-        ],
-        meta_description="This is a test meta description.",
-    )
+    async def main():
+        # This is a simple test block. For a real application, this should be in a separate test file.
+        logging.info("Running StrapiClient test...")
+        strapi_client = StrapiClient()
 
-    strapi_client.create_post(sample_post)
+        # Create a sample BlogPost object for testing
+        sample_post = BlogPost(
+            topic="Test Topic",
+            primary_keyword="test",
+            target_audience="testers",
+            category="testing",
+            title="Test Post Title",
+            slug="test-post-title",
+            body_content_blocks=[
+                {
+                    "type": "paragraph",
+                    "children": [{"type": "text", "text": "This is a test."}],
+                }
+            ],
+            meta_description="This is a test meta description.",
+        )
 
-    # Fetch all published posts for internal linking
-    published_posts = strapi_client.get_all_published_posts()
-    print("Published Posts:", published_posts)
+        post_id, post_url = await strapi_client.create_post(sample_post)
+        print(f"Created post: ID={post_id}, URL={post_url}")
+
+        # Fetch all published posts for internal linking
+        published_posts = await strapi_client.get_all_published_posts()
+        print("Published Posts:", published_posts)
+
+    asyncio.run(main())

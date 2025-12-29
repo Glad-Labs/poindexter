@@ -1,8 +1,14 @@
 # 01 - Setup & Overview
 
+<<<<<<< HEAD
 **Last Updated:** November 5, 2025  
 **Version:** 3.0  
 **Status:** ✅ Production Ready | Testing Infrastructure Complete | 267/267 Tests Passing
+=======
+**Last Updated:** November 24, 2025  
+**Version:** 2.0  
+**Status:** ✅ Production Ready | PostgreSQL-First
+>>>>>>> feat/refine
 
 ---
 
@@ -22,7 +28,7 @@ Welcome to Glad Labs! This guide covers everything from initial setup through pr
 **This document will get you:**
 
 - ✅ Local development environment running in 15 minutes
-- ✅ All services (Strapi, FastAPI, Next.js) operational
+- ✅ All services (FastAPI, Next.js) operational
 - ✅ Ready to test the end-to-end pipeline
 - ✅ Connected to AI models (free Ollama or paid APIs)
 
@@ -112,16 +118,13 @@ npm run dev
 #### Option C: Manual (one terminal per service)
 
 ```bash
-# Terminal 1: Strapi CMS
-cd cms/strapi-main && npm run develop
-
-# Terminal 2: AI Co-Founder Backend
+# Terminal 1: AI Co-Founder Backend (FastAPI)
 cd src/cofounder_agent && python -m uvicorn main:app --reload
 
-# Terminal 3: Public Site
+# Terminal 2: Public Site (Next.js)
 cd web/public-site && npm run dev
 
-# Terminal 4: Oversight Hub (optional)
+# Terminal 3: Oversight Hub (React)
 cd web/oversight-hub && npm start
 ```
 
@@ -131,7 +134,6 @@ Access these URLs to confirm everything is running:
 
 - **Public Site**: [http://localhost:3000](http://localhost:3000)
 - **Oversight Hub**: [http://localhost:3001](http://localhost:3001)
-- **Strapi CMS Admin**: [http://localhost:1337/admin](http://localhost:1337/admin)
 - **Backend API Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
 
 **✅ If all URLs work, you're ready to use Glad Labs!**
@@ -147,12 +149,9 @@ glad-labs-website/
 ├── web/
 │   ├── public-site/          # Next.js public website (port 3000)
 │   └── oversight-hub/        # React admin dashboard (port 3001)
-├── cms/
-│   └── strapi-main/    # Strapi CMS (port 1337)
 ├── src/
 │   ├── agents/               # Specialized AI agents
 │   └── cofounder_agent/      # FastAPI backend (port 8000)
-├── cloud-functions/          # GCP cloud functions
 ├── scripts/                  # Helper scripts
 ├── docs/                     # Documentation
 └── .env                      # Environment configuration
@@ -172,7 +171,6 @@ npm install --workspaces
 # Or install individually:
 cd web/public-site && npm install
 cd ../oversight-hub && npm install
-cd ../../cms/strapi-main && npm install
 ```
 
 #### 2. Install Python Dependencies
@@ -208,13 +206,6 @@ GOOGLE_API_KEY=your-google-key-here
 # OR use free local Ollama
 USE_OLLAMA=true
 OLLAMA_HOST=http://localhost:11434
-```
-
-**Strapi `.env` file:**
-
-```bash
-cd cms/strapi-main
-cp .env.example .env
 
 # Generated secrets - replace with actual values:
 ADMIN_JWT_SECRET=your-secret-here
@@ -235,29 +226,7 @@ ENVIRONMENT=development
 DEBUG=True
 ```
 
-#### 4. Setup Strapi CMS (First Time)
-
-```bash
-cd cms/strapi-main
-
-# Build Strapi
-npm run build
-
-# Start in development mode
-npm run develop
-```
-
-1. Open browser: [http://localhost:1337/admin](http://localhost:1337/admin)
-2. Create admin account (first-time setup)
-3. Set username: `admin`
-4. Set email and password
-5. Generate API Token:
-   - Settings → API Tokens → Create new API Token
-   - Name: `Next.js Public Site`
-   - Type: `Full access` (for development)
-   - Copy the token and add to `.env`: `STRAPI_API_TOKEN=your-token`
-
-#### 5. Start All Services
+#### 4. Start All Services
 
 ```bash
 # From repository root
@@ -269,7 +238,6 @@ npm run dev
 
 Monitor each terminal for successful startup:
 
-- Strapi: "Server is running at: [http://localhost:1337](http://localhost:1337)"
 - Backend: "Application startup complete"
 - Public Site: "Local: [http://localhost:3000](http://localhost:3000)"
 - Oversight Hub: "Compiled successfully"
@@ -389,24 +357,6 @@ vercel --prod
 cd ../oversight-hub
 vercel --prod
 ```
-
-#### Strapi CMS - Railway Template
-
-Use the official Railway Strapi Template for one-click deployment:
-
-[Railway Strapi Template](https://railway.com/template/strapi)
-
-Features:
-
-- One-click deployment
-- PostgreSQL included
-- SSL/HTTPS automatic
-- Backups included
-- Full monitoring dashboard
-
-See full [Deployment Guide](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md)
-
----
 
 ## ⚙️ Environment Configuration
 

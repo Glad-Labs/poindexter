@@ -41,14 +41,14 @@ class HuggingFaceClient:
 
     def __init__(self, api_token: Optional[str] = None):
         """Initialize HuggingFace client
-        
+
         Args:
             api_token: HuggingFace API token (optional, for higher rate limits)
         """
         self.api_token = api_token or os.getenv("HUGGINGFACE_API_TOKEN")
         self.base_url = "https://api-inference.huggingface.co/models"
         self.session: Optional[aiohttp.ClientSession] = None
-        
+
         if not self.api_token:
             logger.warning("No HuggingFace API token provided. Using free tier (rate limited).")
         else:
@@ -97,14 +97,14 @@ class HuggingFaceClient:
         top_p: float = 0.9,
     ) -> str:
         """Generate text using HuggingFace model
-        
+
         Args:
             model: Model ID (e.g., "mistralai/Mistral-7B-Instruct-v0.1")
             prompt: Input prompt
             max_tokens: Maximum tokens to generate
             temperature: Creativity (0.0-1.0)
             top_p: Diversity (0.0-1.0)
-            
+
         Returns:
             Generated text
         """
@@ -137,16 +137,18 @@ class HuggingFaceClient:
             ) as response:
                 if response.status == 200:
                     data = await response.json()
-                    
+
                     # Response format: [{"generated_text": "..."}]
                     if isinstance(data, list) and len(data) > 0:
                         generated_text = data[0].get("generated_text", "")
                         # Remove the prompt from the response
                         if generated_text.startswith(prompt):
-                            generated_text = generated_text[len(prompt):].strip()
-                        logger.debug(f"HuggingFace generation complete: {len(generated_text)} chars")
+                            generated_text = generated_text[len(prompt) :].strip()
+                        logger.debug(
+                            f"HuggingFace generation complete: {len(generated_text)} chars"
+                        )
                         return generated_text
-                    
+
                     logger.error(f"Unexpected response format: {data}")
                     raise Exception(f"Unexpected response format: {data}")
                 else:
@@ -170,17 +172,17 @@ class HuggingFaceClient:
         top_p: float = 0.9,
     ) -> AsyncGenerator[str, None]:
         """Stream text generation using HuggingFace
-        
+
         Note: HuggingFace Inference API doesn't support streaming for most models,
         so this returns the full result in one chunk.
-        
+
         Args:
             model: Model ID
             prompt: Input prompt
             max_tokens: Maximum tokens
             temperature: Creativity
             top_p: Diversity
-            
+
         Yields:
             Generated text chunks
         """
@@ -200,14 +202,14 @@ class HuggingFaceClient:
         top_p: float = 0.9,
     ) -> str:
         """Chat-style completion using HuggingFace
-        
+
         Args:
             model: Model ID
             messages: List of message dicts with "role" and "content"
             max_tokens: Maximum tokens
             temperature: Creativity
             top_p: Diversity
-            
+
         Returns:
             Assistant response
         """
@@ -218,9 +220,9 @@ class HuggingFaceClient:
                 role = msg.get("role", "user").capitalize()
                 content = msg.get("content", "")
                 prompt += f"{role}: {content}\n"
-            
+
             prompt += "Assistant:"
-            
+
             return await self.generate(model, prompt, max_tokens, temperature, top_p)
 
         except Exception as e:

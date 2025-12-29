@@ -12,14 +12,11 @@
 
 ## 📚 Documentation
 
-### Agent Architecture
+### Quick Links
 
-- **[INTELLIGENT_COFOUNDER.md](./INTELLIGENT_COFOUNDER.md)** - Comprehensive co-founder agent design and features
-
-### Configuration
-
-- **`.env.example`** - Environment variables template
-- **`requirements.txt`** - Python dependencies
+- **Parent Documentation**: See [05-AI_AGENTS_AND_INTEGRATION.md](../../05-AI_AGENTS_AND_INTEGRATION.md) for overall agent architecture
+- **Troubleshooting**: See [troubleshooting/](./troubleshooting/) for common issues
+- **Source Code**: See `src/cofounder_agent/README.md` for detailed implementation
 
 ---
 

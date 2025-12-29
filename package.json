@@ -1,25 +1,37 @@
 {
   "name": "glad-labs-monorepo",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "private": true,
-  "description": "Complete AI Co-Founder system with intelligent business management, autonomous agents, voice interface, and comprehensive business intelligence",
-  "license": "MIT",
+  "description": "Complete AI orchestration system with intelligent business management and autonomous agents",
+  "license": "AGPL-3.0-or-later",
   "author": "Matthew M. Gladding (Glad Labs, LLC)",
   "workspaces": [
     "web/public-site",
+<<<<<<< HEAD
     "web/oversight-hub",
     "cms/strapi-main"
+=======
+    "web/oversight-hub"
+>>>>>>> feat/refine
   ],
   "scripts": {
-    "//": "=== DEVELOPMENT ===",
-    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
-    "dev:backend": "concurrently \"npm run dev --workspace=src/cofounder_agent\" \"npm run develop --workspace=cms/strapi-main\"",
-    "dev:cofounder": "npm run dev --workspace=src/cofounder_agent",
-    "dev:frontend": "concurrently \"npm run dev --workspace=web/public-site\" \"npm start --workspace=web/oversight-hub\"",
+    "//": "=== UTILITIES ===",
+    "dev": "npm run setup:dev && concurrently \"npm run dev:cofounder\" \"npm run dev:frontend\"",
+    "dev:all": "concurrently \"npm run dev:cofounder\" \"npm run dev:public\" \"npm run dev:oversight\"",
+    "dev:backend": "npm run dev:cofounder",
+    "dev:cofounder": "cd src/cofounder_agent && python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000 --log-level info",
+    "dev:frontend": "concurrently \"npm run dev:public\" \"npm run dev:oversight\"",
     "dev:oversight": "npm start --workspace=web/oversight-hub",
     "dev:public": "npm run dev --workspace=web/public-site",
-    "//": "=== BUILD ===",
+    "install:all": "npm install && npm install --workspaces && npm run setup:python",
+    "setup": "npm run install:all && npm run setup:env",
+    "setup:dev": "npm run setup:env && npm run health:check",
+    "setup:python": "pip install -r requirements.txt && pip install -r src/cofounder_agent/requirements.txt",
+    "setup:env": "node scripts/select-env.js",
+    "clean": "rimraf node_modules package-lock.json **/node_modules **/dist **/.next **/build .venv __pycache__ **/__pycache__ **/*.pyc",
+    "clean:install": "npm run clean && npm run install:all",
     "build": "npm run build --workspaces --if-present",
+<<<<<<< HEAD
     "//": "=== UTILITIES ===",
     "clean": "rimraf node_modules package-lock.json web/public-site/node_modules web/oversight-hub/node_modules cms/strapi-main/node_modules src/cofounder_agent/node_modules web/public-site/.next web/public-site/dist web/oversight-hub/build cms/strapi-main/build src/cofounder_agent/build .venv src/cofounder_agent/__pycache__",
     "clean:install": "npm run clean && npm install && npm install --workspaces",
@@ -34,14 +46,31 @@
     "setup:ci": "npm run install:all && pip install -r scripts/requirements-ci.txt",
     "//": "=== TESTING ===",
     "test": "npm run test --workspaces --if-present && npm run test:python",
+=======
+    "build:frontend": "npm run build --workspaces=web/public-site --workspaces=web/oversight-hub --if-present",
+    "test": "npm run test --workspaces --if-present",
+>>>>>>> feat/refine
     "test:ci": "npm run test --workspaces --if-present -- --ci --coverage --watchAll=false",
-    "test:python": "cd src/cofounder_agent && python -m pytest tests/ -v",
-    "test:python:smoke": "cd src/cofounder_agent && python -m pytest tests/test_e2e_fixed.py -v"
+    "test:python": "cd src/cofounder_agent && python -m pytest tests/ -v --tb=short",
+    "test:python:smoke": "cd src/cofounder_agent && python -m pytest tests/test_e2e_fixed.py -v --tb=short",
+    "test:python:coverage": "cd src/cofounder_agent && python -m pytest tests/ -v --cov --cov-report=html",
+    "test:all": "npm run test:python && npm run test",
+    "lint": "npm run lint --workspaces --if-present",
+    "lint:fix": "npm run lint:fix --workspaces --if-present",
+    "format": "npm run format:js && npm run format:python",
+    "format:js": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md}\" \"!**/package-lock.json\" \"!**/node_modules/**\"",
+    "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,md}\" \"!**/package-lock.json\" \"!**/node_modules/**\"",
+    "format:python": "cd src/cofounder_agent && python -m black . && python -m isort .",
+    "health:check": "echo 'Checking service health...' && node scripts/health-check.js",
+    "env:select": "node scripts/select-env.js"
   },
   "devDependencies": {
-    "@strapi/strapi": "^5.18.1",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "baseline-browser-mapping": "^2.9.11",
     "concurrently": "^9.2.1",
     "cross-env": "^7.0.3",
+    "eslint": "^9.17.0",
     "markdownlint-cli": "^0.42.0",
     "npm-run-all": "^4.1.5",
     "prettier": "^3.6.2",
@@ -62,6 +91,8 @@
     "nth-check": ">=2.1.1"
   },
   "dependencies": {
-    "psql": "^0.0.1"
+    "ajv": "^8.17.1",
+    "psql": "^0.0.1",
+    "react-refresh": "^0.14.0"
   }
 }

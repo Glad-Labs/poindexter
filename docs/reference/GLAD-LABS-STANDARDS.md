@@ -1,4 +1,4 @@
-# **GLAD LABS: AI FRONTIER FIRM MASTER PLAN V4.0**
+# **Glad LABS: AI FRONTIER FIRM MASTER PLAN V4.0**
 
 **Project Name:** Glad Labs, LLC  
 **Owner/Manager:** Matthew M. Gladding

@@ -26,7 +26,7 @@ class CreativeAgent:
         self.prompts = load_prompts_from_file(config.PROMPTS_PATH)
         self.tools = CrewAIToolsFactory.get_content_agent_tools()
 
-    def run(self, post: BlogPost, is_refinement: bool = False) -> BlogPost:
+    async def run(self, post: BlogPost, is_refinement: bool = False) -> BlogPost:
         """
         Generates or refines the blog post content. The method now directly
         uses the `research_data` and `qa_feedback` stored within the BlogPost object,
@@ -46,7 +46,7 @@ class CreativeAgent:
             logger.info(
                 f"CreativeAgent: Refining content for '{post.topic}' based on QA feedback."
             )
-            raw_draft = self.llm_client.generate_text(refinement_prompt)
+            raw_draft = await self.llm_client.generate_text(refinement_prompt)
         else:
             draft_prompt = self.prompts["initial_draft_generation"].format(
                 topic=post.topic,
@@ -55,16 +55,29 @@ class CreativeAgent:
                 research_context=post.research_data,
                 internal_link_titles=list(post.published_posts_map.keys()),
             )
+            
+            # Inject writing style guidance if provided
+            if post.writing_style:
+                style_guidance = {
+                    "technical": "Use technical language, include code examples and implementation details where appropriate.",
+                    "narrative": "Use storytelling techniques with real-world examples and anecdotes. Build a narrative arc.",
+                    "listicle": "Structure as a clear numbered or bulleted list with distinct, self-contained items.",
+                    "educational": "Focus on teaching. Use simple language and progressively build complexity with practical examples.",
+                    "thought-leadership": "Position as expert analysis. Include insights, research citations, and forward-thinking perspectives."
+                }
+                style_text = style_guidance.get(post.writing_style, "Use a professional writing style.")
+                draft_prompt += f"\n\n⭐ WRITING STYLE: {post.writing_style.upper()}\nApproach: {style_text}"
+            
             logger.info(
-                f"CreativeAgent: Starting initial content generation for '{post.topic}'."
+                f"CreativeAgent: Starting initial content generation for '{post.topic}' with style: {post.writing_style or 'default'}."
             )
-            raw_draft = self.llm_client.generate_text(draft_prompt)
+            raw_draft = await self.llm_client.generate_text(draft_prompt)
 
         # Sanitize the LLM's output and update the post object
         post.raw_content = self._clean_llm_output(raw_draft)
 
         # Generate SEO assets after the main content is finalized
-        post = self._generate_seo_assets(post)
+        post = await self._generate_seo_assets(post)
 
         logger.info(f"CreativeAgent: Finished processing for '{post.topic}'.")
         return post
@@ -83,17 +96,27 @@ class CreativeAgent:
                 return "\n".join(lines[i:])
 
         logger.warning(
-            "CreativeAgent: Could not find a starting Markdown heading ('#') in the LLM output. The content might contain unwanted preamble."
+            "CreativeAgent: No Markdown heading found in LLM output. Adding heading to ensure proper content structure."
         )
-        return text  # Return original text if no heading is found, with a warning.
+        # No heading found - extract first line as title if it looks reasonable
+        for i, line in enumerate(lines):
+            line_stripped = line.strip()
+            if line_stripped and len(line_stripped) < 100 and not line_stripped.startswith(('-', '*', ' ')):
+                # Use this line as the heading
+                heading = f"# {line_stripped}\n\n"
+                remaining_text = '\n'.join(lines[i+1:]) if i+1 < len(lines) else ""
+                return heading + remaining_text
+        
+        # Fallback: add generic heading
+        return f"# Content\n\n{text}"
 
-    def _generate_seo_assets(self, post: BlogPost) -> BlogPost:
+    async def _generate_seo_assets(self, post: BlogPost) -> BlogPost:
         """Generates and assigns SEO assets (title, meta description, slug) for the post."""
         seo_prompt = self.prompts["seo_and_social_media"].format(
             draft=post.raw_content,
         )
         logger.info(f"CreativeAgent: Generating SEO assets for '{post.topic}'.")
-        seo_assets_text = self.llm_client.generate_text(seo_prompt)
+        seo_assets_text = await self.llm_client.generate_text(seo_prompt)
 
         # Extract the JSON object from the LLM's output
         seo_assets_json = extract_json_from_string(seo_assets_text)

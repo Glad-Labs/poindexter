@@ -4,7 +4,7 @@
 
 set -e  # Exit on any error
 
-echo "🔍 GLAD Labs Content Pipeline Pre-Flight Check"
+echo "🔍 Glad Labs Content Pipeline Pre-Flight Check"
 echo "=============================================="
 
 # Color codes

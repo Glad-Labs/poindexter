@@ -1,5 +1,5 @@
 """
-AI Model MCP Server for GLAD Labs
+AI Model MCP Server for Glad Labs
 
 Provides centralized AI model access with flexible provider and model selection.
 Supports OpenAI, Google Gemini, and local Ollama models with cost optimization.

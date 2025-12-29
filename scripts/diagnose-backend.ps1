@@ -5,7 +5,11 @@ $ErrorActionPreference = "Continue"
 
 Write-Host ""
 Write-Host "=========================================" -ForegroundColor Cyan
+<<<<<<< HEAD
 Write-Host "Glad Labs - BACKEND DIAGNOSTICS" -ForegroundColor Cyan
+=======
+Write-Host "Glad LABS - BACKEND DIAGNOSTICS" -ForegroundColor Cyan
+>>>>>>> feat/refine
 Write-Host "=========================================" -ForegroundColor Cyan
 Write-Host ""
 

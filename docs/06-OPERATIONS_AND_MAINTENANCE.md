@@ -1,8 +1,13 @@
 # 06 - Operations & Maintenance
 
 **Last Updated:** November 5, 2025  
+<<<<<<< HEAD
 **Version:** 3.0  
 **Status:** ✅ Production Ready | Production Monitoring Ready | GitHub Secrets Configured
+=======
+**Version:** 1.1  
+**Status:** ✅ Production Ready
+>>>>>>> feat/refine
 
 ---
 
@@ -24,10 +29,6 @@
 # Backend API
 curl https://api.example.com/api/health
 # Expected: {"status": "healthy", "timestamp": "..."}
-
-# CMS
-curl https://cms.example.com/admin
-# Expected: 200 OK
 
 # Frontend
 curl https://example.com/

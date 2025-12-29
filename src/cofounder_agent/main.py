@@ -2,73 +2,96 @@
 Glad Labs AI Agent - Poindexter
 FastAPI application serving as the central orchestrator for the Glad Labs ecosystem
 Implements PostgreSQL database with REST API command queue integration
-Replaces Google Cloud Firestore and Pub/Sub services
 """
 
 import sys
 import os
 import logging
 import asyncio
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
 import uvicorn
+
+try:
+    import sentry_sdk
+
+    SENTRY_AVAILABLE = True
+except ImportError:
+    SENTRY_AVAILABLE = False
 
 # Load environment variables from .env.local first
 from dotenv import load_dotenv
 
 # Try to load .env.local from the project root, then from current directory
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
-env_local_path = os.path.join(project_root, '.env.local')
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+env_local_path = os.path.join(project_root, ".env.local")
 if os.path.exists(env_local_path):
     load_dotenv(env_local_path, override=True)
     print(f"[+] Loaded .env.local from {env_local_path}")
 else:
     # Fallback to .env.local in current directory
-    load_dotenv('.env.local', override=True)
+    load_dotenv(".env.local", override=True)
     print("[+] Loaded .env.local from current directory")
 
 # Add the cofounder_agent directory to the Python path for relative imports
 sys.path.insert(0, os.path.dirname(__file__))
 # Add the parent directory (src) to the Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 # Import core modules
 from multi_agent_orchestrator import MultiAgentOrchestrator
 
 # Import database_service
 from services.database_service import DatabaseService
+from services.task_executor import TaskExecutor
+from services.content_critique_loop import ContentCritiqueLoop
+from services.telemetry import setup_telemetry  #  OpenTelemetry tracing
+from services.sentry_integration import setup_sentry  #  Sentry error tracking
+from services.redis_cache import setup_redis_cache  #  Redis caching for query optimization
+from services.content_router_service import get_content_task_store  #  Inject DB service
+from services.migrations import run_migrations  #  Database schema migrations
 
-# Import route routers
-# Unified content router (consolidates content.py, content_generation.py, enhanced_content.py)
-from routes.content_routes import content_router
-from routes.models import models_router, models_list_router
-from routes.auth import router as github_oauth_router
-from routes.auth_routes import router as auth_router
-from routes.settings_routes import router as settings_router
-from routes.command_queue_routes import router as command_queue_router
-from routes.chat_routes import router as chat_router
-from routes.ollama_routes import router as ollama_router
-from routes.task_routes import router as task_router
-from routes.webhooks import webhook_router
-from routes.social_routes import social_router
-from routes.metrics_routes import metrics_router
-from routes.agents_routes import router as agents_router
+# Import new consolidated services
+from services.unified_orchestrator import UnifiedOrchestrator
+from services.quality_service import UnifiedQualityService
+from services.content_orchestrator import ContentOrchestrator
 
-# Import database initialization
+# Import new utility modules
+from utils.startup_manager import StartupManager
+from utils.exception_handlers import register_exception_handlers
+from utils.middleware_config import MiddlewareConfig
+from utils.route_registration import register_all_routes
+from utils.route_utils import initialize_services
+
+# Import workflow history service dependencies (needed for startup manager)
 try:
-    from database import init_db
-    DATABASE_AVAILABLE = True
-except ImportError:
-    init_db = None
-    DATABASE_AVAILABLE = False
-    logging.warning("Database module not available - authentication may not work")
+    from services.workflow_history import WorkflowHistoryService
+    from routes.workflow_history import initialize_history_service
+
+    WORKFLOW_HISTORY_AVAILABLE = True
+except ImportError as e:
+    WORKFLOW_HISTORY_AVAILABLE = False
+    WorkflowHistoryService = None
+    initialize_history_service = None
+    logging.warning(f"Workflow history service not available: {str(e)}")
+
+# IntelligentOrchestrator is DEPRECATED - replaced by UnifiedOrchestrator
+# Keeping as None for backward compatibility with startup_manager
+INTELLIGENT_ORCHESTRATOR_AVAILABLE = False
+IntelligentOrchestrator = None
+EnhancedMemorySystem = None
+intelligent_orchestrator_router = None
 
 # PostgreSQL database service is now the primary service
+# Legacy 'database.py' (SQLAlchemy) has been removed.
 DATABASE_SERVICE_AVAILABLE = True
 
 # Flag for Google Cloud availability (for test mocking)
@@ -81,30 +104,120 @@ firestore_client = None
 
 # Use centralized logging configuration
 from services.logger_config import get_logger
-from services.task_store_service import initialize_task_store, get_persistent_task_store
 from services.model_consolidation_service import initialize_model_consolidation_service
+from services.training_data_service import TrainingDataService
+from services.fine_tuning_service import FineTuningService
+from services.legacy_data_integration import LegacyDataIntegrationService
 
 logger = get_logger(__name__)
 
+<<<<<<< HEAD
 # Global service instances
 database_service: Optional[DatabaseService] = None
 orchestrator: Optional[MultiAgentOrchestrator] = None
 startup_error: Optional[str] = None
 startup_complete: bool = False
+=======
+
+# ============================================================================
+# LIFESPAN: Application Startup and Shutdown
+# ============================================================================
+
+>>>>>>> feat/refine
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan manager - startup and shutdown with PostgreSQL initialization"""
-    global database_service, orchestrator, startup_error, startup_complete
-    
+    """
+    Application lifespan manager - handles startup and shutdown.
+
+    Uses StartupManager to orchestrate all service initialization
+    in the correct order with proper error handling.
+    """
+    startup_manager = StartupManager()
+
     try:
-        logger.info("🚀 Starting Glad Labs AI Co-Founder application...")
-        logger.info(f"  Environment: {os.getenv('ENVIRONMENT', 'development')}")
-        logger.info(f"  Database URL: {os.getenv('DATABASE_URL', 'SQLite (local dev)')[:50]}...")
-        
-        # 1. Initialize PostgreSQL database service
-        logger.info("  📦 Connecting to PostgreSQL...")
+        # Initialize all services
+        services = await startup_manager.initialize_all_services()
+
+        # Inject services into app state for access in routes
+        app.state.database = services["database"]
+        app.state.redis_cache = services["redis_cache"]
+        app.state.orchestrator = services["orchestrator"]
+        app.state.task_executor = services["task_executor"]
+        app.state.intelligent_orchestrator = services["intelligent_orchestrator"]
+        app.state.workflow_history = services["workflow_history"]
+        app.state.training_data_service = services.get("training_data_service")
+        app.state.fine_tuning_service = services.get("fine_tuning_service")
+        app.state.legacy_data_service = services.get("legacy_data_service")
+        app.state.startup_error = services["startup_error"]
+        app.state.startup_complete = True
+
+        # Initialize new consolidated services
+        db_service = services["database"]
+
+        # Initialize task store for content orchestrator
+        from services.content_router_service import get_content_task_store
+
+        task_store = get_content_task_store(db_service)
+        app.state.task_store = task_store
+        logger.info("✅ ContentTaskStore initialized")
+
+        # Initialize quality service
+        quality_service = UnifiedQualityService(
+            model_router=getattr(app.state, "model_router", None),
+            database_service=db_service,
+            qa_agent=None,
+        )
+        app.state.quality_service = quality_service
+        logger.info("✅ UnifiedQualityService initialized")
+
+        # Initialize content orchestrator for use in unified system
+        content_orchestrator = ContentOrchestrator(
+            task_store=task_store  # Now uses the initialized task_store
+        )
+        app.state.content_orchestrator = content_orchestrator
+        logger.info("✅ ContentOrchestrator initialized with task_store")
+
+        # Initialize unified orchestrator with all available agents
+        unified_orchestrator = UnifiedOrchestrator(
+            database_service=db_service,
+            model_router=getattr(app.state, "model_router", None),
+            quality_service=quality_service,
+            memory_system=getattr(app.state, "memory_system", None),
+            content_orchestrator=content_orchestrator,
+            financial_agent=getattr(app.state, "financial_agent", None),
+            compliance_agent=getattr(app.state, "compliance_agent", None),
+        )
+        app.state.unified_orchestrator = unified_orchestrator
+        logger.info("✅ UnifiedOrchestrator initialized")
+
+        # Store db_service with alternative name for dependency injection
+        app.state.db_service = db_service
+
+        # Initialize ServiceContainer for Phase 2 utilities
+        # Provides 3 access patterns: get_services(), Depends(), Request.state
+        initialize_services(
+            app,
+            database_service=services["database"],
+            orchestrator=services["orchestrator"],
+            task_executor=services["task_executor"],
+            intelligent_orchestrator=services["intelligent_orchestrator"],
+            workflow_history=services["workflow_history"],
+        )
+
+        # Register routes with initialized services
+        register_all_routes(
+            app,
+            database_service=services["database"],
+            workflow_history_service=services["workflow_history"],
+            intelligent_orchestrator=services["intelligent_orchestrator"],
+            training_data_service=services.get("training_data_service"),
+            fine_tuning_service=services.get("fine_tuning_service"),
+        )
+
+        # Initialize LangGraph orchestrator
         try:
+<<<<<<< HEAD
             database_service = DatabaseService()
             await database_service.initialize()
             logger.info("  ✅ PostgreSQL connection established")
@@ -191,94 +304,128 @@ async def lifespan(app: FastAPI):
     
     finally:
         # ===== SHUTDOWN =====
-        try:
-            logger.info("🛑 Shutting down Glad Labs AI Co-Founder application...")
-            
-            # Close task store
-            try:
-                logger.info("  Closing persistent task store...")
-                task_store = get_persistent_task_store()
-                if task_store:
-                    task_store.close()
-                    logger.info("  ✅ Task store connection closed")
-            except Exception as e:
-                logger.error(f"  ⚠️ Error closing task store: {e}", exc_info=True)
-            
-            if database_service:
-                try:
-                    logger.info("  Closing database connection...")
-                    await database_service.close()
-                    logger.info("  ✅ Database connection closed")
-                except Exception as e:
-                    logger.error(f"  ⚠️ Error closing database: {e}", exc_info=True)
-            
-            logger.info("✅ Application shut down successfully!")
-            
+=======
+            from services.langgraph_orchestrator import LangGraphOrchestrator
+
+            langgraph_orchestrator = LangGraphOrchestrator(
+                db_service=db_service,
+                llm_service=getattr(app.state, "model_router", None),
+                quality_service=quality_service,
+                metadata_service=getattr(app.state, "unified_metadata_service", None),
+            )
+            app.state.langgraph_orchestrator = langgraph_orchestrator
+            logger.info("✅ LangGraphOrchestrator initialized")
         except Exception as e:
-            logger.error(f"❌ Error during shutdown: {e}", exc_info=True)
+            logger.warning(f"⚠️  LangGraph initialization failed (non-critical): {str(e)}")
+            app.state.langgraph_orchestrator = None
+
+        logger.info("[OK] Lifespan: Yielding control to FastAPI application...")
+>>>>>>> feat/refine
+        try:
+            print("[OK] Application is now running")
+        except UnicodeEncodeError:
+            print("[OK] Application is now running")
+
+        yield  # Application runs here
+
+    except Exception as e:
+        logger.error(f"Critical startup failure: {str(e)}", exc_info=True)
+        try:
+            print(f"[ERROR] EXCEPTION IN LIFESPAN: {str(e)}")
+        except UnicodeEncodeError:
+            print(f"[ERROR] EXCEPTION IN LIFESPAN: {str(e)}")
+        app.state.startup_error = str(e)
+        app.state.startup_complete = True
+        raise
+
+    finally:
+        try:
+            print("[STOP] Shutting down application")
+        except UnicodeEncodeError:
+            print("[STOP] Shutting down application")
+        await startup_manager.shutdown()
+
 
 app = FastAPI(
     title="Glad Labs AI Co-Founder",
-    description="Central orchestrator for Glad Labs AI-driven business operations with Google Cloud integration",
-    version="1.0.0",
-    lifespan=lifespan
+    description="""
+## Comprehensive AI-powered business co-founder system
+
+The Glad Labs AI Co-Founder provides autonomous agents and intelligent orchestration 
+for complete business operations including:
+- **Task Planning & Execution**: Intelligent task decomposition and multi-agent execution
+- **Content Generation**: AI-powered content creation with quality evaluation and multi-channel publishing
+- **Business Intelligence**: Market analysis, trend detection, and strategic recommendations
+- **CMS & Media Management**: Content management, featured image generation, and media organization
+- **Social Media Integration**: Multi-platform content distribution and engagement tracking
+- **Workflow Orchestration**: Complex business process automation with persistence and monitoring
+- **Model Management**: Unified LLM access across Ollama, HuggingFace, OpenAI, Anthropic, and Google
+
+### Quick Links
+- **Documentation**: [View Full Docs](./docs/00-README.md)
+- **Architecture**: [System Design](./docs/02-ARCHITECTURE_AND_DESIGN.md)
+- **API Base URL**: http://localhost:8000
+
+### Authentication
+Most endpoints require JWT authentication via the `Authorization: Bearer <token>` header.
+Use the `/api/auth/logout` or GitHub OAuth endpoints to obtain tokens.
+""",
+    version="3.0.1",
+    lifespan=lifespan,
+    contact={
+        "name": "Glad Labs Support",
+        "email": "support@gladlabs.io",
+        "url": "https://gladlabs.io",
+    },
+    license_info={"name": "AGPL-3.0", "url": "https://www.gnu.org/licenses/agpl-3.0.html"},
+    openapi_url="/api/openapi.json",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    swagger_ui_parameters={"defaultModelsExpandDepth": 1},
 )
 
-# CORS middleware for frontend integration
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],  # React apps
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Initialize OpenTelemetry tracing
+setup_telemetry(app)
 
-# Include route routers
-app.include_router(github_oauth_router)  # GitHub OAuth authentication
-app.include_router(auth_router)  # Traditional authentication endpoints
-app.include_router(task_router)  # Task management endpoints
-# Register unified content router (replaces 3 legacy routers)
-app.include_router(content_router)
+# ===== EXCEPTION HANDLERS =====
+# Register all exception handlers (centralized in utils.exception_handlers)
+register_exception_handlers(app)
 
-# Register models router
-app.include_router(models_router)
-app.include_router(models_list_router)  # Legacy /api/models endpoint support
-app.include_router(settings_router)  # Settings management
-app.include_router(command_queue_router)  # Command queue (replaces Pub/Sub)
-app.include_router(chat_router)  # Chat and AI model integration
-app.include_router(ollama_router)  # Ollama health checks and warm-up
-app.include_router(webhook_router)  # Webhook handlers for Strapi events
-app.include_router(social_router)  # Social media management
-app.include_router(metrics_router)  # Metrics and analytics
-app.include_router(agents_router)  # AI agent management and monitoring
+# ===== ERROR TRACKING: SENTRY INTEGRATION =====
+# Captures exceptions, performance metrics, and error tracking
+setup_sentry(app, service_name="cofounder-agent")
+
+# ===== MIDDLEWARE CONFIGURATION =====
+# Register all middleware (centralized in utils.middleware_config)
+middleware_config = MiddlewareConfig()
+middleware_config.register_all_middleware(app)
 
 # ===== UNIFIED HEALTH CHECK ENDPOINT =====
 # Consolidated from: /api/health, /status, /metrics/health, and route-specific health endpoints
+
 
 @app.get("/api/health")
 async def api_health():
     """
     Unified health check endpoint for Railway deployment and load balancers.
-    
+
     Returns comprehensive status of all critical services:
     - Startup status (starting/degraded/healthy)
     - Database connectivity and health
     - Orchestrator initialization and status
     - LLM providers availability
     - Timestamp for monitoring systems
-    
+
     This endpoint consolidates previous endpoints:
     - GET /status (StatusResponse)
     - GET /metrics/health (database health)
     - GET /settings/health (removed duplicate)
     - GET /tasks/health/status (removed duplicate)
     - GET /models/providers/status (removed duplicate)
-    
+
     Used by: Railway load balancers, monitoring systems, external health checks
     Authentication: Not required (critical for load balancers)
     """
-    global startup_error, startup_complete
-    
     try:
         # Build comprehensive health response
         health_data = {
@@ -286,10 +433,13 @@ async def api_health():
             "service": "cofounder-agent",
             "version": "1.0.0",
             "timestamp": datetime.utcnow().isoformat(),
-            "components": {}
+            "components": {},
         }
-        
+
         # Check startup status
+        startup_error = getattr(app.state, "startup_error", None)
+        startup_complete = getattr(app.state, "startup_complete", False)
+
         if startup_error:
             health_data["status"] = "degraded"
             health_data["startup_error"] = startup_error
@@ -298,8 +448,9 @@ async def api_health():
         elif not startup_complete:
             health_data["status"] = "starting"
             health_data["startup_complete"] = False
-        
+
         # Include database status if available
+        database_service = getattr(app.state, "database", None)
         if database_service:
             try:
                 db_health = await database_service.health_check()
@@ -309,27 +460,24 @@ async def api_health():
                 health_data["components"]["database"] = "degraded"
         else:
             health_data["components"]["database"] = "unavailable"
-        
+
         return health_data
     except Exception as e:
         logger.error(f"Health check failed: {e}", exc_info=True)
-        return {
-            "status": "unhealthy",
-            "service": "cofounder-agent",
-            "error": str(e)
-        }
+        return {"status": "unhealthy", "service": "cofounder-agent", "error": str(e)}
+
 
 @app.get("/api/metrics")
 async def get_metrics():
     """
     Aggregated task and system metrics endpoint.
-    
+
     Returns comprehensive metrics for the oversight dashboard:
     - Task statistics (total, completed, failed, pending)
     - Success rate percentage
     - Average execution time
     - Estimated costs
-    
+
     **Returns:**
     - total_tasks: Total number of tasks created
     - completed_tasks: Successfully completed tasks
@@ -340,6 +488,7 @@ async def get_metrics():
     - total_cost: Estimated total cost in USD
     """
     try:
+        database_service = getattr(app.state, "database", None)
         if database_service:
             metrics = await database_service.get_metrics()
             return metrics
@@ -352,7 +501,7 @@ async def get_metrics():
                 "pending_tasks": 0,
                 "success_rate": 0.0,
                 "avg_execution_time": 0.0,
-                "total_cost": 0.0
+                "total_cost": 0.0,
             }
     except Exception as e:
         logger.error(f"Metrics retrieval failed: {e}", exc_info=True)
@@ -364,8 +513,9 @@ async def get_metrics():
             "success_rate": 0.0,
             "avg_execution_time": 0.0,
             "total_cost": 0.0,
-            "error": str(e)
+            "error": str(e),
         }
+
 
 @app.get("/api/debug/startup")
 async def debug_startup():
@@ -373,8 +523,11 @@ async def debug_startup():
     Debug endpoint showing startup status and any errors
     Only available in development mode
     """
-    global startup_error, startup_complete
-    
+    database_service = getattr(app.state, "database", None)
+    orchestrator = getattr(app.state, "orchestrator", None)
+    startup_error = getattr(app.state, "startup_error", None)
+    startup_complete = getattr(app.state, "startup_complete", False)
+
     return {
         "startup_complete": startup_complete,
         "startup_error": startup_error,
@@ -385,31 +538,27 @@ async def debug_startup():
         "api_base_url": os.getenv("API_BASE_URL", "http://localhost:8000"),
     }
 
+
 class CommandRequest(BaseModel):
     """Request model for processing a command."""
+
     command: str
     context: Optional[Dict[str, Any]] = None
     priority: Optional[str] = "normal"
 
+
 class CommandResponse(BaseModel):
     """Response model for the result of a command."""
+
     response: str
     task_id: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
+
 
 class StatusResponse(BaseModel):
     status: str
     data: Dict[str, Any]
 
-class TaskRequest(BaseModel):
-    topic: str
-    task_type: str
-    metadata: Optional[Dict[str, Any]] = None
-
-class TaskResponse(BaseModel):
-    task_id: str
-    status: str
-    message: str
 
 @app.post("/command", response_model=CommandResponse)
 async def process_command(request: CommandRequest, background_tasks: BackgroundTasks):
@@ -421,73 +570,28 @@ async def process_command(request: CommandRequest, background_tasks: BackgroundT
     """
     try:
         logger.info(f"Received command: {request.command}")
-        
+
         if orchestrator is None:
             raise HTTPException(status_code=503, detail="Orchestrator not initialized")
-        
+
         # Always use async version with new database service
         response = await orchestrator.process_command_async(request.command, request.context)
-        
+
         return CommandResponse(
             response=response.get("response", "Command processed"),
             task_id=response.get("task_id"),
-            metadata=response.get("metadata")
+            metadata=response.get("metadata"),
         )
     except Exception as e:
         logger.error(f"Error processing command: {str(e)} | command={request.command}")
         raise HTTPException(status_code=500, detail=f"An internal error occurred: {str(e)}")
 
-@app.post("/tasks", response_model=TaskResponse)
-async def create_task(request: TaskRequest, background_tasks: BackgroundTasks):
-    """
-    Create a new task for content creation or business operations
-    """
-    try:
-        logger.info(f"Creating task: topic={request.topic} type={request.task_type}")
-        
-        if not database_service:
-            # Development mode - simulate task creation
-            task_id = f"dev-task-{hash(request.topic)}"
-            return TaskResponse(
-                task_id=task_id,
-                status="created",
-                message=f"Task created for '{request.topic}' (development mode)"
-            )
-        
-        # Create task in PostgreSQL database
-        task_data = {
-            "topic": request.topic,
-            "task_type": request.task_type,
-            "metadata": request.metadata or {},
-            "status": "pending"
-        }
-        
-        task_id = await database_service.add_task(task_data)
-        
-        # Optionally trigger content agent if it's a content task
-        if request.task_type == "content_creation":
-            background_tasks.add_task(
-                trigger_content_agent,
-                task_id,
-                request.topic,
-                request.metadata
-            )
-        
-        return TaskResponse(
-            task_id=task_id,
-            status="created",
-            message=f"Task created for '{request.topic}'"
-        )
-        
-    except Exception as e:
-        logger.error(f"Error creating task: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to create task: {str(e)}")
 
 @app.get("/status", response_model=StatusResponse)
 async def get_status():
     """
     DEPRECATED: Use GET /api/health instead.
-    
+
     Backward compatibility endpoint that wraps the unified /api/health endpoint.
     Maintained for clients that depend on StatusResponse model.
     Will be removed in version 2.0.
@@ -495,29 +599,29 @@ async def get_status():
     try:
         # Call the unified health endpoint
         health = await api_health()
-        
+
         # Convert to StatusResponse format for backward compatibility
         status_data = {
-            "service": "online" if health.get("status") == "healthy" else health.get("status", "unknown"),
+            "service": (
+                "online" if health.get("status") == "healthy" else health.get("status", "unknown")
+            ),
             "database_available": database_service is not None,
             "orchestrator_initialized": orchestrator is not None,
-            "timestamp": health.get("timestamp", str(asyncio.get_event_loop().time()))
+            "timestamp": health.get("timestamp", str(asyncio.get_event_loop().time())),
         }
-        
+
         # Include component statuses if available
         components = health.get("components", {})
         if isinstance(components, dict):
             for key, value in components.items():
                 status_data[f"component_{key}"] = value
-        
+
         return StatusResponse(status=health.get("status", "unknown"), data=status_data)
-        
+
     except Exception as e:
         logger.error(f"Error getting status: {e}")
-        return StatusResponse(
-            status="unhealthy", 
-            data={"error": str(e)}
-        )
+        return StatusResponse(status="unhealthy", data={"error": str(e)})
+
 
 @app.get("/tasks/pending")
 async def get_pending_tasks(limit: int = 10):
@@ -527,13 +631,14 @@ async def get_pending_tasks(limit: int = 10):
     try:
         if not database_service:
             return {"tasks": [], "message": "Running in development mode"}
-        
+
         tasks = await database_service.get_pending_tasks(limit)
         return {"tasks": tasks, "count": len(tasks)}
-        
+
     except Exception as e:
         logger.error(f"Error getting pending tasks: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get tasks: {str(e)}")
+
 
 @app.get("/metrics/performance")
 async def get_performance_metrics(hours: int = 24):
@@ -551,29 +656,31 @@ async def get_performance_metrics(hours: int = 24):
         logger.error(f"Error getting performance metrics: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get performance metrics: {str(e)}")
 
+
 @app.get("/metrics/health")
 async def get_health_metrics():
     """
     DEPRECATED: Use GET /api/health instead.
-    
+
     Backward compatibility endpoint that wraps the unified /api/health endpoint.
     Returns health metrics in the legacy format.
     Will be removed in version 2.0.
     """
     try:
         health = await api_health()
-        
+
         # Convert to legacy format for backward compatibility
         components = health.get("components", {})
         database_health = components.get("database") if isinstance(components, dict) else "unknown"
-        
+
         return {
             "health": {"status": database_health, "timestamp": health.get("timestamp")},
-            "status": "success" if health.get("status") == "healthy" else "degraded"
+            "status": "success" if health.get("status") == "healthy" else "degraded",
         }
     except Exception as e:
         logger.error(f"Error getting health metrics: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get health metrics: {str(e)}")
+
 
 @app.post("/metrics/reset")
 async def reset_performance_metrics():
@@ -583,13 +690,14 @@ async def reset_performance_metrics():
     try:
         # Performance metrics are now logged to database
         if database_service:
-            await database_service.add_log_entry("info", "Performance metrics reset")
+            await database_service.add_log_entry("system", "info", "Performance metrics reset")
             return {"message": "Performance metrics reset successfully", "status": "success"}
         else:
             return {"message": "Database not available", "status": "disabled"}
     except Exception as e:
         logger.error(f"Error resetting metrics: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to reset metrics: {str(e)}")
+
 
 @app.get("/")
 async def root():
@@ -599,32 +707,16 @@ async def root():
     return {
         "message": "Glad Labs AI Co-Founder is running",
         "version": "1.0.0",
-        "database_enabled": database_service is not None
+        "database_enabled": hasattr(app.state, 'database') and app.state.database is not None,
     }
 
-async def trigger_content_agent(task_id: str, topic: str, metadata: Optional[Dict[str, Any]]):
-    """Background task to trigger content agent via command queue API"""
-    try:
-        if orchestrator:
-            content_request = {
-                "task_id": task_id,
-                "topic": topic,
-                "type": "blog_post",
-                "metadata": metadata or {}
-            }
-            
-            # Dispatch via REST API instead of Pub/Sub
-            await orchestrator.run_content_pipeline_async(topic, metadata)
-            logger.info(f"Content agent triggered: task_id={task_id} topic={topic}")
-            
-    except Exception as e:
-        logger.error(f"Failed to trigger content agent: task_id={task_id} error={e}")
 
 if __name__ == "__main__":
-    uvicorn.run(
-        "main:app", 
-        host="0.0.0.0", 
-        port=8000, 
-        reload=True,
-        log_level="info"
-    )
+    # Watch the entire src directory for changes to support agent development
+    # NOTE: Use 'python -m uvicorn main:app --reload' instead of 'python main.py'
+    # This file is imported by uvicorn when using the module syntax, so running
+    # uvicorn.run() here creates nested server conflicts.
+    print("ERROR: Do not run 'python main.py' directly.")
+    print("Instead, use:")
+    print("  python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000")
+    sys.exit(1)

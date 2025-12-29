@@ -4,9 +4,9 @@
 param(
     [string]$Host = "localhost",
     [int]$Port = 5432,
-    [string]$User = "glad_labs_dev",
-    [string]$Password = "Glad3221",
-    [string]$Database = "glad_labs_development"
+    [string]$User = "postgres",
+    [string]$Password = "postgres",
+    [string]$Database = "glad_labs_dev"
 )
 
 Write-Host "🗄️  Initializing PostgreSQL database..." -ForegroundColor Cyan

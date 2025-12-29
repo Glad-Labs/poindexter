@@ -36,8 +36,8 @@ PRODUCTION (main branch)
 
 | Secret Name                  | Required    | Example Value                     | Purpose                                 |
 | ---------------------------- | ----------- | --------------------------------- | --------------------------------------- |
-| `STAGING_STRAPI_URL`         | ✅ Yes      | `https://staging-cms.railway.app` | Strapi endpoint for staging             |
-| `STAGING_STRAPI_TOKEN`       | ✅ Yes      | API token from Strapi admin       | Strapi API authentication               |
+| `STAGING_API_URL`            | ✅ Yes      | `https://staging-api.railway.app` | Backend endpoint for staging            |
+| `STAGING_API_TOKEN`          | ✅ Yes      | API token from Backend admin      | API authentication                      |
 | `RAILWAY_STAGING_PROJECT_ID` | ✅ Yes      | Project ID from Railway dashboard | Identify staging Railway project        |
 | `STAGING_DATABASE_URL`       | ⚠️ Optional | `postgresql://user:pass@host/db`  | Override default staging DB (if needed) |
 
@@ -47,8 +47,8 @@ PRODUCTION (main branch)
 
 | Secret Name               | Required    | Example Value                           | Purpose                                    |
 | ------------------------- | ----------- | --------------------------------------- | ------------------------------------------ |
-| `PROD_STRAPI_URL`         | ✅ Yes      | `https://cms.railway.app`               | Strapi endpoint for production             |
-| `PROD_STRAPI_TOKEN`       | ✅ Yes      | API token from Strapi admin             | Strapi API authentication                  |
+| `PROD_API_URL`            | ✅ Yes      | `https://api.railway.app`               | Backend endpoint for production            |
+| `PROD_API_TOKEN`          | ✅ Yes      | API token from Backend admin            | API authentication                         |
 | `RAILWAY_TOKEN`           | ✅ Yes      | Railway CLI token                       | Authentication for Railway deployment      |
 | `RAILWAY_PROD_PROJECT_ID` | ✅ Yes      | Project ID from Railway dashboard       | Identify production Railway project        |
 | `VERCEL_TOKEN`            | ✅ Yes      | Token from Vercel account settings      | Vercel deployment authentication           |
@@ -67,19 +67,19 @@ PRODUCTION (main branch)
 
 ## 📝 How to Create Each Secret
 
-### 1. STRAPI Tokens
+### 1. API Tokens
 
 **Where to find:**
 
-1. Go to Strapi Admin: `https://your-strapi-instance/admin`
+1. Go to Backend Admin: `https://your-api-instance/admin`
 2. Settings → API Tokens → Create new API Token
 3. Select "Full access" (for development) or "Custom" (for production)
 4. Copy the generated token
 
 **Save as:**
 
-- Staging: `STAGING_STRAPI_TOKEN`
-- Production: `PROD_STRAPI_TOKEN`
+- Staging: `STAGING_API_TOKEN`
+- Production: `PROD_API_TOKEN`
 
 ### 2. Railway Secrets
 

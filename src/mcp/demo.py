@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-GLAD Labs MCP Implementation Demonstration
+Glad Labs MCP Implementation Demonstration
 
 This script demonstrates the MCP integration with cost optimization and flexible model selection.
 """
@@ -197,7 +197,7 @@ async def main():
     # Setup minimal logging
     logging.basicConfig(level=logging.WARNING, format='%(name)s - %(levelname)s - %(message)s')
     
-    print("🚀 GLAD Labs MCP Integration Demonstration")
+    print("🚀 Glad Labs MCP Integration Demonstration")
     print("=" * 60)
     
     # Check environment

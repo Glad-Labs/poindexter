@@ -1,127 +1,71 @@
-# 🤖 GitHub Copilot Instructions for AI Agents
+# Glad Labs Copilot Instructions
 
+<<<<<<< HEAD
 **Last Updated:** November 5, 2025 (ESLint v9 Migration Complete)  
 **Project:** Glad Labs AI Co-Founder System v3.0  
 **Status:** Production Ready | PostgreSQL Backend | Ollama AI Integration | ESLint v9 Configured | Windows PowerShell Required
+=======
+**Last Updated:** December 22, 2025  
+**Project:** Glad Labs AI Co-Founder System  
+**Version:** 1.0
+
+## Project Overview
+
+Glad Labs is a **production-ready AI orchestration system** combining autonomous agents, multi-provider LLM routing, and full-stack web applications. It's a monorepo with three main services:
+
+- **Backend:** Python FastAPI server (port 8000) orchestrating specialized AI agents
+- **Admin UI:** React dashboard (port 3001) for monitoring and control
+- **Public Site:** Next.js website (port 3000) for content distribution
+
+**Key Architecture:** Multi-agent system with self-critiquing content pipeline, PostgreSQL persistence, and intelligent model router (Ollama → Claude → GPT → Gemini fallback).
+>>>>>>> feat/refine
 
 ---
 
-## 🎯 Essential Context for AI Agents
+## Critical Knowledge for Productivity
 
-### Architecture & Component Boundaries
+### 1. Service Architecture & Startup
 
-**Glad Labs** is a three-tier monorepo orchestrating AI-powered business operations:
+**Three-service startup pattern** (all async, all required for full system):
 
-```
-Web Tier (React/Next.js)
-├── Oversight Hub (port 3001): React dashboard for agent control, model management, cost tracking
-├── Public Site (port 3000): Next.js SSG site consuming Strapi content
-└── Uses Zustand for state, Material-UI for components
-
-API Tier (FastAPI + Strapi)
-├── Co-Founder Agent (port 8000): Central orchestrator routing tasks to specialized agents
-├── Multi-agent system: Content, Financial, Market, Compliance agents
-├── Model router: Automatic fallback (Ollama → OpenAI → Claude → Gemini)
-├── Memory system: Persistent context + semantic search for agent context
-└── Strapi CMS (port 1337): Headless content management with TypeScript plugins
-
-Data Tier
-├── PostgreSQL: Production data (Strapi collections, audit logs)
-├── SQLite: Local development
-├── Redis: Caching (planned)
-└── Google Cloud: Firestore + Pub/Sub (production integrations)
-```
-
-**Key Integration Patterns:**
-
-- Oversight Hub → FastAPI REST endpoints to orchestrator (tasks, models, health)
-- FastAPI → Specialized agents (parallel execution via asyncio)
-- Agents → Strapi API for content CRUD operations
-- All components → Model router for LLM calls with multi-provider fallback
-- Logging → Audit middleware captures all state changes
-
----
-
-## ⚡ Critical Development Commands (Windows PowerShell Required)
-
-### ⚠️ TERMINAL REQUIREMENTS (IMPORTANT!)
-
-**This project runs on Windows with PowerShell (5.1 or higher).**
-
-- ✅ **ALL terminal commands MUST be formatted for PowerShell** (not bash/sh)
-- ✅ **Use `;` to chain commands** (PowerShell syntax, not `&&`)
-- ✅ **Each service should run in a SEPARATE terminal window**
-- ✅ **DO NOT run multiple long-running processes in the same terminal** (causes conflicts and kills services)
-- ✅ **Background tasks can use `-Background` flag in tool calls**
-
-**Example PowerShell Commands:**
-
-```powershell
-# Correct - PowerShell syntax with semicolon
-cd c:\Users\mattm\glad-labs-website; python -m uvicorn src.cofounder_agent.main:app --host 127.0.0.1 --port 8000
-
-# Correct - Multiple commands chained
-dir; ls -la; Get-Process
-
-# Correct - Using Windows paths with backslashes
-cd c:\Users\mattm\glad-labs-website\src\cofounder_agent
-
-# Wrong - bash/sh syntax (won't work in PowerShell)
-cd ~/glad-labs-website && npm run dev
-```
-
-### Starting Services (Each in Separate Terminal Window)
-
-**Window 1 - Backend API (FastAPI)**
-
-```powershell
-cd c:\Users\mattm\glad-labs-website
-python -m uvicorn src.cofounder_agent.main:app --host 127.0.0.1 --port 8000
-```
-
-Runs on: `http://127.0.0.1:8000` (Health check: `/api/health`)
-
-**Window 2 - Strapi CMS**
-
-```powershell
-cd c:\Users\mattm\glad-labs-website\cms\strapi-v5-backend
-npm run develop
-```
-
-Runs on: `http://localhost:1337/admin`
-
-**Window 3 - React Oversight Hub**
-
-```powershell
-cd c:\Users\mattm\glad-labs-website\web\oversight-hub
-npm start
-```
-
-Runs on: `http://localhost:3001` (or next available port)
-
-**Window 4 - Next.js Public Site**
-
-```powershell
-cd c:\Users\mattm\glad-labs-website\web\public-site
+```bash
+# From repo root - ALWAYS use this command for full dev environment:
 npm run dev
+
+# This concurrently starts:
+# - python -m uvicorn main:app --reload (port 8000) @ src/cofounder_agent/
+# - npm run dev (port 3000) @ web/public-site/
+# - npm start (port 3001) @ web/oversight-hub/
 ```
 
-Runs on: `http://localhost:3000` (or next available port)
+**Services always listen together.** Client code expects all three running. If debugging one service, still keep the others running.
 
-### Alternative: Start All Services via npm workspace commands
+**Config Pattern:** All services use `.env.local` at project root (not per-service). Python agents read from `os.path.join(project_root, '.env.local')`.
 
-```powershell
-cd c:\Users\mattm\glad-labs-website
-npm run dev              # ✅ Starts multiple services (check port assignments)
-npm run dev:oversight    # React admin dashboard on http://localhost:3001
-npm run dev:public       # Next.js site on http://localhost:3000
-npm run dev:backend      # FastAPI backend on http://localhost:8000
+### 2. Backend: FastAPI + Specialized Agents
+
+**Entry Point:** [src/cofounder_agent/main.py](src/cofounder_agent/main.py) - FastAPI app with routes for tasks, agents, content, models, and health checks.
+
+**Core Pattern - Multi-Agent Orchestration:**
+
+```python
+# Typical agent execution flow:
+from orchestrator_logic import Orchestrator
+
+# Orchestrator coordinates agent fleet:
+# - Content Agent (6-stage self-critiquing pipeline: research → create → critique → refine → image → publish)
+# - Financial Agent (cost tracking, ROI analysis, budget alerts)
+# - Market Insight Agent (trend analysis, competitive intelligence)
+# - Compliance Agent (legal review, risk assessment)
+
+# Agents DON'T run independently - they're choreographed by Orchestrator
 ```
 
-**Note:** Using npm workspace commands starts services in same process. For independent operation, use separate terminal windows.
+**Database:** PostgreSQL with [services/database_service.py](src/cofounder_agent/services/database_service.py). All persistent data (tasks, results, memories) flows through PostgreSQL, not in-memory.
 
-### Code Quality (MUST run before committing)
+**Model Router Pattern:** [services/model_router.py](src/cofounder_agent/services/model_router.py) implements intelligent fallback:
 
+<<<<<<< HEAD
 ```powershell
 cd c:\Users\mattm\glad-labs-website
 
@@ -180,27 +124,36 @@ npm run lint -- --format=compact   # Compact output format
 ---
 
 ### Build & Deploy
+=======
+- **Primary:** Ollama (local, zero-cost)
+- **Fallback 1:** Claude 3 Opus
+- **Fallback 2:** GPT-4
+- **Fallback 3:** Gemini
+- **Final Fallback:** Echo/mock response
 
-```powershell
-npm run build            # Build Next.js + React production bundles
-npm run build:all        # Includes Strapi (may fail due to plugin issues)
-```
+Route selection is determined by API key availability + model configuration in `.env.local`. This is **NOT manual selection** - it's automatic based on what keys are set.
+>>>>>>> feat/refine
 
-### Key Workspace Commands
+### 3. Frontend: React (Oversight Hub) + Next.js (Public Site)
 
-```powershell
-npm run setup:all        # Install all dependencies (Node + Python)
-npm run clean:install    # Full reset: rm node_modules + fresh install
-npm run install:all      # Just npm install across all workspaces
-npm run setup:python     # Just pip install for backend
-```
+**Oversight Hub** ([web/oversight-hub/](web/oversight-hub/)) - React 18 + Material-UI + Zustand state management. This is the control center for monitoring agents, viewing tasks, configuring models. REST calls to port 8000.
 
----
+**Public Site** ([web/public-site/](web/public-site/)) - Next.js 15 with static generation for content. Consumes from PostgreSQL via FastAPI endpoints.
 
-## � Critical Development Commands (Reference for AI Implementation)
+**API Integration Pattern:** Both frontends use REST calls to `http://localhost:8000/*` endpoints. No direct database access from frontend.
 
-### Starting Services (Workspace is pre-configured)
+### 4. Development Workflow
 
+**Branch Strategy:** Four-tier system (Tier 1: local, Tier 2: feature branches, Tier 3: dev/staging, Tier 4: main/production).
+
+- **Local work:** Feature branches cost $0 (no CI/CD triggered)
+- **Feature branches:** `feature/*`, `bugfix/*`, `docs/*` - test locally with `npm run dev`
+- **Staging:** `dev` branch auto-deploys to Railway staging on push
+- **Production:** `main` branch auto-deploys to Vercel (frontend) + Railway (backend)
+
+**Testing:**
+
+<<<<<<< HEAD
 ```powershell
 npm run dev              # ✅ Starts all services concurrently (recommended)
 npm run dev:frontend     # Starts both React apps (Oversight Hub + Public Site)
@@ -208,37 +161,123 @@ npm run dev:backend      # Starts Strapi CMS + Co-founder Agent (Python)
 npm run dev:oversight    # React admin dashboard on http://localhost:3001
 npm run dev:public       # Next.js site on http://localhost:3000
 npm run dev:cofounder    # FastAPI backend on http://localhost:8000
+=======
+```bash
+# Python backend
+npm run test:python          # Full test suite
+npm run test:python:smoke    # Fast smoke tests (e2e_fixed.py)
+
+# Frontend
+npm run test                 # Runs Jest for all workspaces
+
+# Format check
+npm run format:check
+>>>>>>> feat/refine
 ```
 
-### Code Quality (MUST run before committing)
+### 5. Content Generation Pipeline (Self-Critiquing)
 
+**6-Stage Agent Flow** for content creation (located in [src/agents/content_agent/](src/agents/content_agent/)):
+
+1. **Research Agent** - Gathers background, identifies key points
+2. **Creative Agent** - Generates initial draft with brand voice
+3. **QA Agent** - Critiques quality, suggests improvements WITHOUT rewriting
+4. **Creative Agent (Refined)** - Incorporates feedback, improves draft
+5. **Image Agent** - Selects/generates visuals, alt text, metadata
+6. **Publishing Agent** - Formats for CMS, adds SEO metadata, converts to markdown
+
+**Key Pattern:** Agents **critique without rewriting.** QA provides feedback, Creative agent applies it. This loop repeats if needed for quality threshold.
+
+### 6. Multi-Provider AI Integration (MCP)
+
+**Model Context Protocol** ([src/mcp/](src/mcp/)) provides standardized tool access and cost optimization.
+
+**Cost Tiers (in MCPContentOrchestrator):**
+
+- `ultra_cheap`: Ollama (local)
+- `cheap`: Gemini (low API cost)
+- `balanced`: Claude 3.5 Sonnet / GPT-4 Turbo
+- `premium`: Claude 3 Opus
+- `ultra_premium`: Multi-model ensemble
+
+**Pattern:** Don't hardcode model names. Use cost tier selection - system automatically picks best model available for the tier.
+
+### 7. Key Files Reference
+
+| Purpose             | Path                                                                                                 | What It Does                                                    |
+| ------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| FastAPI entry       | [src/cofounder_agent/main.py](src/cofounder_agent/main.py)                                           | Route registration, middleware setup, app initialization        |
+| Agent orchestration | [src/cofounder_agent/orchestrator_logic.py](src/cofounder_agent/orchestrator_logic.py)               | Coordinates agent fleet, task distribution                      |
+| Database service    | [src/cofounder_agent/services/database_service.py](src/cofounder_agent/services/database_service.py) | PostgreSQL queries, ORM models, persistence                     |
+| Model routing       | [src/cofounder_agent/services/model_router.py](src/cofounder_agent/services/model_router.py)         | LLM provider selection with fallback chain                      |
+| Content agent       | [src/agents/content_agent/](src/agents/content_agent/)                                               | 6-stage self-critiquing pipeline                                |
+| Tasks               | [src/cofounder_agent/tasks/](src/cofounder_agent/tasks/)                                             | Task models, execution logic, status tracking                   |
+| Routes              | [src/cofounder_agent/routes/](src/cofounder_agent/routes/)                                           | `/tasks`, `/agents`, `/content`, `/models`, `/health` endpoints |
+| Oversight Hub       | [web/oversight-hub/](web/oversight-hub/)                                                             | React dashboard, agent monitoring, task management              |
+| Public Site         | [web/public-site/](web/public-site/)                                                                 | Next.js content distribution, SEO optimization                  |
+
+### 8. Common Developer Patterns
+
+**Starting fresh development:**
+
+<<<<<<< HEAD
 ```powershell
 npm run lint             # Run ESLint across all workspaces
 npm run lint -- --fix    # Auto-fix all linting issues (ESLint v9)
 npm run format           # Prettier on all files (.js, .jsx, .tsx, .json, .md)
 npm test                 # Jest frontend + pytest Python backend
 npm run test:python:smoke # Quick backend smoke tests for rapid iteration
+=======
+```bash
+npm run clean:install    # Full reset of node_modules, cache, venv
+npm run setup:all        # Install all Python + Node deps
+npm run dev              # Start all three services
+>>>>>>> feat/refine
 ```
 
-### Build & Deploy
+**Checking if services are running:**
 
+<<<<<<< HEAD
 ```powershell
 npm run build            # Build Next.js + React production bundles
 npm run clean            # Clean all build artifacts and node_modules
 npm run clean:install    # Full reset and fresh install
+=======
+```bash
+# Should return HTTP 200
+curl http://localhost:8000/health         # Backend
+curl http://localhost:3001/health         # Oversight Hub (if endpoint exists)
+curl http://localhost:3000                # Public Site
+>>>>>>> feat/refine
 ```
 
-### Key Workspace Commands
+**Debugging Python backend:**
 
+- Logs appear in terminal running `npm run dev:cofounder` or `npm run dev`
+- Set `--log-level debug` in `dev:cofounder` script for verbose output
+- PostgreSQL queries logged if `SQL_DEBUG=true` in `.env.local`
+
+**Testing agent pipeline:**
+
+<<<<<<< HEAD
 ```powershell
 npm run setup            # Install all dependencies (Node + Python)
 npm run install:all      # Just npm install across all workspaces
 npm run test:ci          # CI-mode testing (coverage, no watch)
 npm run test:python      # Full pytest backend suite
+=======
+```bash
+# Fast smoke test
+npm run test:python:smoke
+
+# Full test with coverage
+npm run test:python
+>>>>>>> feat/refine
 ```
 
 ---
 
+<<<<<<< HEAD
 ## 📋 Code Patterns & Conventions (NOT aspirational - these are discovered patterns)
 
 ### Frontend Linting & Code Quality (NEW - Nov 5, 2025)
@@ -568,225 +607,111 @@ npm run test -- [filename]
 - ❌ Avoid bare URLs (wrap in links)
 
 ### File Organization
+=======
+## Project Structure (What Goes Where)
+>>>>>>> feat/refine
 
 ```
-docs/
-├── 00-README.md                    # Hub - Main navigation
-├── 01-SETUP_AND_OVERVIEW.md        # Getting started
-├── 02-ARCHITECTURE_AND_DESIGN.md   # System design
-├── 03-DEPLOYMENT_AND_INFRASTRUCTURE.md
-├── 04-DEVELOPMENT_WORKFLOW.md      # Git & testing
-├── 05-AI_AGENTS_AND_INTEGRATION.md # Agent system
-├── 06-OPERATIONS_AND_MAINTENANCE.md
-├── 07-BRANCH_SPECIFIC_VARIABLES.md # Environment config
-├── components/                     # Per-component docs (minimal)
-├── reference/                      # Technical references (schemas, API specs)
-└── troubleshooting/                # Focused troubleshooting guides
+glad-labs-website/
+├── .env.local              # SINGLE SOURCE: All service config (Python + Node)
+├── .github/                # GitHub Actions, copilot instructions
+├── docs/                   # 7 core docs + troubleshooting/reference
+├── scripts/                # Utility scripts (setup, migrate, health checks)
+├── src/
+│   ├── cofounder_agent/    # **Main orchestrator** (FastAPI, port 8000)
+│   │   ├── main.py         # App entry point
+│   │   ├── routes/         # 50+ REST endpoints
+│   │   ├── services/       # model_router, database_service, task_executor
+│   │   ├── models/         # Pydantic schemas for requests/responses
+│   │   ├── tasks/          # Task execution and scheduling
+│   │   ├── middleware/     # Auth, logging, error handling
+│   │   └── tests/          # pytest suite
+│   ├── agents/             # Specialized agent implementations
+│   │   ├── content_agent/  # 6-stage self-critiquing content pipeline
+│   │   ├── financial_agent/
+│   │   ├── market_insight_agent/
+│   │   └── compliance_agent/
+│   └── mcp/                # Model Context Protocol integration
+└── web/
+    ├── public-site/        # **Content distribution** (Next.js, port 3000)
+    └── oversight-hub/      # **Control center** (React, port 3001)
 ```
-
-### High-Level Documentation Policy ⚠️ **IMPORTANT**
-
-**Effective: October 22, 2025**
-
-Glad Labs maintains a **HIGH-LEVEL ONLY** documentation approach to reduce maintenance burden and prevent documentation staleness as the codebase evolves.
-
-**DOCUMENTATION CREATED:**
-
-- ✅ Core docs (00-07): Architecture-level, high-level guidance
-- ✅ Components: Only when unique from core docs
-- ✅ Reference: Technical specs, schemas, API definitions
-- ✅ Troubleshooting: Focused, specific issues with solutions
-- ✅ README files: In component folders for local setup
-
-**DOCUMENTATION NOT CREATED:**
-
-- ❌ How-to guides for every feature (feature code is the guide)
-- ❌ Status updates or session-specific documents
-- ❌ Duplicate documentation (consolidate into core docs)
-- ❌ Step-by-step tutorials for changing code (too high maintenance)
-- ❌ Outdated historical guides (archive or delete)
-- ❌ Temporary project audit files
-
-**PHILOSOPHY:**
-Documentation should answer "WHAT is the architecture?" and "WHERE do I look?" — NOT "HOW do I implement X?" (That changes too fast and code is self-documenting).
-
-**MAINTENANCE:**
-
-- Update core docs (00-07) only when architecture changes
-- Delete guides that become outdated
-- Archive historical documents
-- Keep docs < 8 files in root
-- Archive > 50 files total in docs/
-
-### Update Process
-
-1. Edit documentation files (core docs 00-07 only, unless exception)
-2. Run markdown linter: `.markdownlint.json` rules applied
-3. Check links are valid: Run link checker
-4. Commit with `docs:` prefix
-5. Update "Last Updated" date
-6. DO NOT create guides or status documents
 
 ---
 
-## 🔄 Common Development Tasks
+## Environment Variables (Critical)
 
-### Add a New Feature
+Set in `.env.local` at project root:
 
-1. Create feature branch: `git checkout -b feature/my-feature`
-2. Implement feature with tests
-3. Run test suite: `npm run test`
-4. Commit with conventional message: `feat: add my feature`
-5. Push and create PR to `dev` branch
-6. After merge, feature automatically deployed to staging
-7. After verification, merge `dev` → `main` for production
+```env
+# Database (required for persistence)
+DATABASE_URL=postgresql://user:pass@localhost:5432/glad_labs
 
-### Fix a Bug
+# LLM API Keys (at least ONE required - tested in priority order)
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+GOOGLE_API_KEY=AIza-...
 
-1. Create bugfix branch: `git checkout -b bugfix/issue-description`
-2. Add test case that reproduces bug
-3. Fix bug, verify test passes
-4. Commit: `fix: resolve issue description`
-5. Follow PR process above
+# Ollama (if using local models, no key needed)
+OLLAMA_BASE_URL=http://localhost:11434
 
-### Update Documentation
+# Optional: Model preferences
+LLM_PROVIDER=claude  # Force specific provider (fallback still applies)
+DEFAULT_MODEL_TEMPERATURE=0.7
 
-1. Edit markdown files in `docs/`
-2. Verify links are correct
-3. Commit: `docs: update documentation topic`
-4. No deployment needed - docs are version-controlled
+# Optional: Debugging
+SQL_DEBUG=false
+LOG_LEVEL=info
+SENTRY_DSN=       # Error tracking (production)
+```
 
-### Deploy to Production
-
-1. Ensure all tests pass on `dev`
-2. Create PR: `dev` → `main`
-3. Code review and approval required
-4. Merge to main (triggers deployment)
-5. Verify in production environment
-6. Tag release: `git tag v1.2.3 && git push --tags`
+**Important:** Python and Node both read from same `.env.local`. No per-service env files.
 
 ---
 
-## 🐛 Troubleshooting Common Issues
+## Debugging Checklist
 
-### Node.js Version Errors
+1. **Services not starting?**
+   - Ensure Node 18+ and Python 3.12+ installed
+   - Run `npm run clean:install` to reset dependencies
+   - Check `.env.local` exists and has at least one LLM API key
 
-**Problem:** "Expected >=18.0.0 <=22.x.x, got 25.0.0"
-**Solution:** Use NVM with `.nvmrc`
+2. **PostgreSQL errors?**
+   - Verify `DATABASE_URL` in `.env.local` is correct
+   - Run migrations: See docs/reference for migration scripts
+   - Check PostgreSQL is running: `psql -U postgres`
 
-```bash
-nvm use 22
-```
+3. **Model router failing?**
+   - Check which API keys are set in `.env.local`
+   - Run `curl http://localhost:8000/health` to see model status
+   - Ollama should be running on port 11434 for local models
 
-### Strapi Build Failures
+4. **React/Next.js not loading?**
+   - Check CORS headers - FastAPI allows all origins by default
+   - Verify ports 3000 and 3001 aren't in use
+   - Clear browser cache: Hard refresh (Ctrl+Shift+R)
 
-**Problem:** Module not found, dependency errors
-**Solution:** Clear cache and reinstall
-
-```bash
-cd cms/strapi-main
-rm -rf node_modules yarn.lock package-lock.json
-npm install
-npm run develop
-```
-
-### FastAPI Import Errors
-
-**Problem:** "No module named uvicorn"
-**Solution:** Verify venv activation
-
-```bash
-# Activate venv
-source .venv/bin/activate  # Linux/Mac
-.venv\Scripts\activate     # Windows
-
-# Run from project root (not from src/cofounder_agent)
-python -m uvicorn src.cofounder_agent.main:app --reload
-```
-
-### Database Connection Issues
-
-**Problem:** Cannot connect to PostgreSQL
-**Solution:** Check connection string and credentials
-
-```bash
-# Verify .env has correct DATABASE_URL
-echo $DATABASE_URL
-# Format: postgresql://user:password@localhost:5432/dbname
-```
-
-**See:** [Documentation Hub](../docs/00-README.md)
+5. **Agent tasks not executing?**
+   - Check PostgreSQL has `tasks` table
+   - Verify Orchestrator is initialized in main.py startup
+   - Check agent logs: `tail -f server.log` in cofounder_agent/
 
 ---
 
-## 📞 Getting Help
+## When to Reference Full Documentation
 
-### Documentation Resources
-
-- **Full Docs Hub:** [docs/00-README.md](../docs/00-README.md)
-- **Architecture Deep Dive:** [docs/02-ARCHITECTURE_AND_DESIGN.md](../docs/02-ARCHITECTURE_AND_DESIGN.md)
-- **Components:** [docs/components/](../docs/components/)
-
-### Code Assistance
-
-- **Type Definitions:** Check TypeScript `.d.ts` files
-- **API Docs:** See OpenAPI/Swagger specs in Strapi and FastAPI
-- **Examples:** Look for `example/` or `demo/` folders
-- **Tests:** Test files often show usage examples
-
-### When Stuck
-
-1. Check troubleshooting guide
-2. Search existing documentation
-3. Review test files for examples
-4. Check git log for similar fixes
-5. Ask team or escalate to lead
+- **Architecture questions:** → `docs/02-ARCHITECTURE_AND_DESIGN.md`
+- **Deployment questions:** → `docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md`
+- **CI/CD and branching:** → `docs/04-DEVELOPMENT_WORKFLOW.md`
+- **Agent capabilities:** → `docs/05-AI_AGENTS_AND_INTEGRATION.md`
+- **Operations/monitoring:** → `docs/06-OPERATIONS_AND_MAINTENANCE.md`
+- **Troubleshooting:** → `docs/troubleshooting/` folder
 
 ---
 
-## 🎓 Learning Resources
+## Key Principles
 
-### For New Team Members
-
-1. Start: [Setup Guide](../docs/01-SETUP_AND_OVERVIEW.md)
-2. Read: [Architecture Overview](../docs/02-ARCHITECTURE_AND_DESIGN.md)
-3. Try: Set up local environment
-4. Explore: [Development Workflow](../docs/04-DEVELOPMENT_WORKFLOW.md)
-5. Study: Your component's README in [docs/components/](../docs/components/)
-
-### For Different Roles
-
-**Frontend Developers:**
-
-- [Next.js Docs](https://nextjs.org/docs)
-- [web/oversight-hub/README.md](../web/oversight-hub/README.md)
-- [web/public-site/README.md](../web/public-site/README.md)
-- [Component Documentation](../docs/components/)
-
-**Backend Developers:**
-
-- [FastAPI Documentation](https://fastapi.tiangolo.com)
-- [Strapi Documentation](https://docs.strapi.io)
-- [src/cofounder_agent/README.md](../src/cofounder_agent/README.md)
-- [AI Agents Guide](../docs/05-AI_AGENTS_AND_INTEGRATION.md)
-
-**DevOps / Infrastructure:**
-
-- [Deployment Guide](../docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md)
-- [Operations Guide](../docs/06-OPERATIONS_AND_MAINTENANCE.md)
-- [Branch Variables](../docs/07-BRANCH_SPECIFIC_VARIABLES.md)
-- [Reference Docs](../docs/reference/)
-
-**QA / Testing:**
-
-- [Testing Guide](../docs/reference/TESTING.md)
-- [Reference Docs](../docs/reference/)
-- Test files in each component
-
----
-
-## ✅ Before You Start Coding
-
+<<<<<<< HEAD
 - [ ] Read this file
 - [ ] Clone repository: `git clone <repo-url>`
 - [ ] Run setup: `npm run setup:all`
@@ -911,3 +836,12 @@ Track these to keep documentation healthy:
 ---
 
 **🚀 Ready to code? Start with the [Setup Guide](../docs/01-SETUP_AND_OVERVIEW.md)!**
+=======
+1. **API-First Design:** Everything exposed via REST, no direct database access from frontend
+2. **Async-Everywhere:** Python uses FastAPI + async/await, don't block event loops
+3. **Model Router First:** Never hardcode model names - use cost tiers or automatic fallback
+4. **PostgreSQL as Source of Truth:** All state (tasks, results, memories) persisted there
+5. **Monorepo with Workspace:** All services installed with single `npm install`, managed together
+6. **Self-Critiquing Quality:** Content agents critique each other's work, not manual review
+7. **Cost Optimization:** Ollama → cheap APIs → premium APIs (intelligent fallback)
+>>>>>>> feat/refine

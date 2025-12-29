@@ -1,4 +1,4 @@
-# **Data Schemas for GLAD Labs Content Platform v2.0**
+# **Data Schemas for Glad Labs Content Platform v2.0**
 
 This document defines the data schemas for the content platform, including Strapi v5 content types, API structures, and supporting data models used throughout the system.
 
@@ -294,6 +294,6 @@ GET /api/posts?filters[slug][$eq]=post-slug&populate=*
 
 ---
 
-**Schema Documentation maintained by:** GLAD Labs Development Team  
+**Schema Documentation maintained by:** Glad Labs Development Team  
 **Contact:** Matthew M. Gladding (Glad Labs, LLC)  
 **Last Review:** October 13, 2025

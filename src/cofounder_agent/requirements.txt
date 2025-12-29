@@ -21,6 +21,7 @@ fastapi>=0.104.0
 uvicorn>=0.24.0
 websockets>=12.0
 starlette>=0.27.0
+slowapi>=0.1.8  # SECURITY: Rate limiting middleware
 
 # ===== SECURITY & AUTHENTICATION =====
 # Encryption and TOTP authentication
@@ -30,28 +31,33 @@ pyotp>=2.9.0
 # ===== MEMORY & SEMANTIC SEARCH =====
 # Advanced memory system with semantic similarity
 sentence-transformers>=2.2.0
+torch>=2.0.0  # PyTorch (REQUIRED for SDXL/diffusers)
 
 # ===== DATABASE & STORAGE =====
-# Database connectivity and storage
-# Async SQLAlchemy with asyncpg driver for Railway (no psycopg2 needed)
-aiosqlite>=0.19.0
-sqlalchemy[asyncio]>=2.0.0
+# PostgreSQL with asyncpg driver (REQUIRED - no SQLite fallback)
+# asyncpg: High-performance async PostgreSQL driver (direct SQL, no ORM)
 asyncpg>=0.29.0
-alembic>=1.13.0
 
-# ===== REMOVED GOOGLE CLOUD SERVICES =====
-# Migrated from Firestore/Pub/Sub to PostgreSQL + API-based commands
-# Previous services removed:
-# - google-cloud-firestore (→ PostgreSQL)
-# - google-cloud-pubsub (→ FastAPI endpoints)
-# - google-cloud-storage (→ Vercel CDN)
-# - firebase-admin (→ Not needed)
-# This saves ~$30-50/month in GCP costs!
+# ===== CLOUD IMAGE STORAGE =====
+# Cloudinary: Free tier (75 GB/month) with global CDN
+# OR AWS S3 + CloudFront for production
+cloudinary>=1.36.0
+
+# AWS S3 (optional, for fallback or later use)
+boto3>=1.28.0
+botocore>=1.31.0
+
+# ===== CACHING =====
+# Redis client for distributed caching and session management
+redis>=5.0.0
+aioredis>=2.0.1
 
 # ===== DATA PROCESSING =====
 # Data handling, parsing, and web scraping
 beautifulsoup4>=4.12.0
 requests>=2.32.4
+httpx>=0.25.0  # Async HTTP client (used in image_service)
+Pillow>=10.0.0  # Image processing (PIL.Image for SDXL output)
 markdown>=3.5.0
 pydantic>=2.5.0
 python-dotenv>=1.0.0
@@ -60,9 +66,23 @@ pypdf>=6.0.0
 # ===== TESTING FRAMEWORK =====
 # Comprehensive testing infrastructure
 pytest>=7.4.0
+
+# ===== OBSERVABILITY & TRACING =====
+# OpenTelemetry for tracing and monitoring
+# Pin setuptools<81 to avoid pkg_resources deprecation (see: setuptools#3932)
+setuptools<81
+opentelemetry-api>=1.27.0
+opentelemetry-sdk>=1.27.0
+opentelemetry-exporter-otlp>=1.27.0
+opentelemetry-instrumentation-fastapi>=0.48b0
+opentelemetry-instrumentation>=0.48b0
 pytest-asyncio>=0.21.0
 pytest-cov>=4.1.0
 pytest-timeout>=2.1.0
+
+# ===== ERROR TRACKING & MONITORING =====
+# Sentry for error tracking and performance monitoring
+sentry-sdk[fastapi]>=1.40.0
 
 # ===== DEVELOPMENT & MONITORING =====
 # Development tools and logging
@@ -72,9 +92,7 @@ typer>=0.9.0
 
 # ===== SECURITY & AUTHENTICATION =====
 # Security and authentication
-cryptography>=41.0.0
 PyJWT>=2.8.0
-pyotp>=2.9.0
 python-jose>=3.3.0
 email-validator>=2.1.0
 passlib>=1.7.4
@@ -85,3 +103,26 @@ click>=8.1.0
 tqdm>=4.66.0
 pyyaml>=6.0.0
 urllib3>=2.5.0
+
+# ===== IMAGE GENERATION (SDXL) =====
+# Stable Diffusion XL with refinement pipeline
+diffusers>=0.36.0  # Diffusion models (SDXL base and refiner)
+transformers>=4.50.0  # Model weights and tokenizers
+accelerate>=0.24.0  # Distributed training and inference
+safetensors>=0.4.0  # Fast model serialization
+invisible_watermark>=0.2.0  # Watermarking for generated images
+
+# ===== DEVELOPMENT & QUALITY TOOLS =====
+# Code quality, testing, and development tools
+pytest>=7.4.0  # Testing framework
+pytest-asyncio>=0.21.0  # Async test support
+pytest-cov>=4.1.0  # Coverage reporting
+pytest-timeout>=2.1.0  # Test timeouts
+pytest-xdist>=3.5.0  # Parallel test execution
+black>=24.0.0  # Code formatter
+isort>=5.13.0  # Import sorter
+pylint>=3.0.0  # Code linter
+mypy>=1.8.0  # Static type checker
+bandit>=1.7.5  # Security linter
+flake8>=7.0.0  # Style guide enforcement
+ruff>=0.3.0  # Fast Python linter (alternative to pylint)

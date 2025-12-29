@@ -1,8 +1,13 @@
 # 03 - Deployment & Infrastructure
 
 **Last Updated:** November 5, 2025  
+<<<<<<< HEAD
 **Version:** 3.0  
 **Status:** ✅ Production Ready | GitHub Actions CI/CD Active | Railway + Vercel Integration
+=======
+**Version:** 1.1  
+**Status:** ✅ Production Ready
+>>>>>>> feat/refine
 
 ---
 
@@ -19,21 +24,23 @@
 
 ## 📋 Deployment Overview
 
+<<<<<<< HEAD
 Glad Labs uses a three-tier deployment architecture:
+=======
+Glad Labs uses a two-tier deployment architecture:
+>>>>>>> feat/refine
 
 ```text
-1. CMS Backend (Strapi v5)
+1. AI Co-Founder (FastAPI Backend + PostgreSQL)
    ↓ (REST API)
-2. AI Co-Founder (FastAPI Backend)
-   ↓ (REST API)
-3. Web Frontends (Next.js)
+2. Web Frontends (Next.js)
    ├── Public Site (http://example.com)
    └── Oversight Hub (http://admin.example.com)
 ```
 
 **Recommended Platforms:**
 
-- **Backend:** Railway (PostgreSQL + Python/Node.js)
+- **Backend:** Railway (PostgreSQL + Python)
 - **Frontends:** Vercel (optimized for Next.js)
 - **Database:** PostgreSQL (production) / SQLite (dev)
 
@@ -99,18 +106,11 @@ USE_OLLAMA=true
 # Database
 DATABASE_URL=postgresql://user:pass@host:5432/dbname
 
-# Strapi
-ADMIN_JWT_SECRET=your-secret-here
-API_TOKEN_SALT=your-salt-here
-APP_KEYS=key1,key2,key3,key4
-JWT_SECRET=your-jwt-secret
-
 # Backend
 ENVIRONMENT=production
 DEBUG=False
 
 # Frontend URLs
-NEXT_PUBLIC_STRAPI_API_URL=https://cms.example.com
 NEXT_PUBLIC_BACKEND_URL=https://api.example.com
 ```
 
@@ -121,15 +121,6 @@ NEXT_PUBLIC_BACKEND_URL=https://api.example.com
 ## 🚀 Backend Deployment (Railway)
 
 ### Option 1: Railway Template (Recommended - Fastest)
-
-**For Strapi CMS:**
-
-1. Visit: [Railway Strapi Template](https://railway.com/template/strapi)
-2. Click "Deploy Now"
-3. Connect GitHub account
-4. Select repository branch
-5. Configure environment variables
-6. Deploy
 
 **For FastAPI Co-Founder:**
 
@@ -175,31 +166,6 @@ docker push your-registry/glad-labs-backend:latest
 railway service create --dockerfile Dockerfile
 ```
 
-### Strapi Production Configuration
-
-```javascript
-// cms/strapi-main/config/server.ts
-export default ({ env }) => ({
-  host: env('HOST', '0.0.0.0'),
-  port: env.int('PORT', 1337),
-  app: {
-    keys: env.array('APP_KEYS'),
-  },
-  admin: {
-    auth: {
-      secret: env('ADMIN_JWT_SECRET'),
-    },
-  },
-  api: {
-    rest: {
-      prefix: '/api',
-      defaultLimit: 25,
-      maxLimit: 100,
-    },
-  },
-});
-```
-
 ### FastAPI Production Configuration
 
 ```python
@@ -236,7 +202,6 @@ app.add_middleware(
 5. Add environment variables:
 
 ```bash
-NEXT_PUBLIC_STRAPI_API_URL=https://cms.example.com
 NEXT_PUBLIC_BACKEND_URL=https://api.example.com
 ```
 
@@ -288,7 +253,7 @@ ls -la .next/
 
 ---
 
-## 🛢️ CMS Deployment (Strapi)
+## 🛢️ Database Deployment (PostgreSQL)
 
 ### Database Setup (PostgreSQL)
 
@@ -299,8 +264,9 @@ createdb glad_labs_production
 # Set environment variable
 export DATABASE_URL="postgresql://user:password@localhost:5432/glad_labs_production"
 
-# Run migrations
-npm run strapi migrations:run
+# Run migrations (using Alembic or custom script)
+# cd src/cofounder_agent
+# alembic upgrade head
 ```
 
 ### Strapi Media Upload Configuration
@@ -389,9 +355,6 @@ Development: dev branch → local or dev servers
 # Backend health
 curl https://api.example.com/api/health
 
-# CMS health
-curl https://cms.example.com/admin
-
 # Frontend
 curl https://example.com/
 ```
@@ -451,7 +414,7 @@ For a complete, authoritative list of all secrets with examples and detailed set
 
 **Quick Summary:**
 
-```
+```text
 # Railway
 RAILWAY_TOKEN
 RAILWAY_STAGING_PROJECT_ID
@@ -461,12 +424,6 @@ RAILWAY_PROD_PROJECT_ID
 VERCEL_TOKEN
 VERCEL_PROJECT_ID
 VERCEL_ORG_ID
-
-# Strapi/CMS (⚠️ IMPORTANT: Don't forget the URLs!)
-STAGING_STRAPI_URL
-STAGING_STRAPI_TOKEN
-PROD_STRAPI_URL
-PROD_STRAPI_TOKEN
 
 # Database (if needed)
 STAGING_DATABASE_URL
@@ -480,7 +437,7 @@ PROD_DATABASE_URL
 - `deploy-staging.yml` - Triggers on `dev` branch push
 - `deploy-production.yml` - Triggers on `main` branch push
 
-**3. What Happens Automatically**
+### 3. What Happens Automatically
 
 On `dev` push:
 

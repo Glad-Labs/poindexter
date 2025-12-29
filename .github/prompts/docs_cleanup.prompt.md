@@ -1,6 +1,6 @@
 📌 Glad LABS DOCUMENTATION CLEANUP PROMPT - HIGH-LEVEL ONLY POLICY
 
-**Last Updated:** October 23, 2025
+**Last Updated:** December 8, 2025
 **Policy Status:** HIGH-LEVEL DOCUMENTATION ONLY - Effective Immediately
 **Documentation Philosophy:** Architecture-level, stable documentation that survives code evolution
 
@@ -39,9 +39,11 @@ You will:
 4. Maintain clean documentation structure
    - 8 core docs (00-07) - only these get updated
    - components/ - minimal, linked to core docs
+   - decisions/ - architectural & technical decision records
    - reference/ - technical specs only, no guides
    - troubleshooting/ - focused troubleshooting only
-   - NO guides/ folder, NO archive-old/, NO dated files
+   - archive-old/ - historical files, clearly marked
+   - NO guides/ folder, NO dated files in root or docs/
      Documentation Structure Template
      Glad Labs documentation follows a HIGH-LEVEL ONLY approach to maintain quality and prevent staleness.
 
@@ -55,25 +57,35 @@ docs/
 ├── 05-AI_AGENTS_AND_INTEGRATION.md ✅ AI agents architecture & MCP orchestration
 ├── 06-OPERATIONS_AND_MAINTENANCE.md ✅ Production operations (monitoring, maintenance)
 ├── 07-BRANCH_SPECIFIC_VARIABLES.md ✅ Environment configuration
-├── components/ # Minimal component documentation (only when essential)
-│   ├── README.md (optional)
-│   └── [component-specific architecture if needed]
+├── components/ # Minimal component documentation
+│   ├── cofounder-agent/ ✅
+│   ├── oversight-hub/ ✅
+│   └── public-site/ ✅
+├── decisions/ # Architectural & technical decision records
+│   ├── DECISIONS.md ✅ Master decision log
+│   ├── WHY_FASTAPI.md ✅ Why FastAPI over Django/Flask
+│   └── WHY_POSTGRESQL.md ✅ Why PostgreSQL over alternatives
 ├── reference/ # Technical reference only (API specs, schemas, standards)
-│   ├── DATABASE_SCHEMA.md
-│   ├── Glad-LABS-STANDARDS.md
-│   └── API_CONTRACTS.md
-└── troubleshooting/ # Focused troubleshooting (common issues with solutions)
-    ├── README.md
-    └── [specific issues]
+│   ├── API_CONTRACTS.md ✅
+│   ├── data_schemas.md ✅
+│   ├── Glad-LABS-STANDARDS.md ✅
+│   ├── TESTING.md ✅
+│   ├── GITHUB_SECRETS_SETUP.md ✅
+│   └── ci-cd/ ✅ GitHub Actions workflows
+├── troubleshooting/ # Focused troubleshooting (common issues with solutions)
+│   ├── README.md ✅
+│   ├── 01-railway-deployment.md ✅
+│   ├── 04-build-fixes.md ✅
+│   └── 05-compilation.md ✅
+└── archive-old/ ✅ Historical files (100+ files, clearly marked)
 ```
 
 **DO NOT CREATE:**
 
 - docs/guides/ (no feature guides or how-to guides)
-- docs/archive-old/ (don't accumulate historical files)
-- Status update documents
+- Status update documents at root or in docs/
 - Session-specific audit files
-- Dated or temporary documentation
+- Dated or temporary documentation (e.g., "FASTAPI_DEBUG_FIXES.md", "FIX_COMPLETE_SUMMARY.md")
 - Duplicate content that belongs in core docs
 
 **WHY High-Level Only:**
@@ -92,17 +104,23 @@ After any documentation work, verify:
 - ✅ **Core Documentation:** 8 files (00-07) - COMPLETE and high-level
 - ✅ **Reference Docs:** API specs, schemas, standards - MAINTAINED
 - ✅ **Troubleshooting:** Focused, common issues only - CONCISE
-- ❌ **Unnecessary Files:** Guides, status updates, duplicates - DELETED
-- 📊 **Total Files:** < 20 in docs/ (core 8 + minimal components + reference + troubleshooting)
-- 📊 **Maintenance Burden:** Low (only core docs updated, no guides to maintain)
+- ✅ **Decisions:** Architectural decisions documented - PRESENT
+- ✅ **Components:** 3 services documented - MINIMAL
+- ❌ **Unnecessary Files:** Guides, status updates, duplicates - PARTIALLY CLEANED
+- 📊 **Current Files in docs/:** ~25-30 (includes 7 violation files to archive)
+- 📊 **Current Files at Root:** 30+ (all violation files, need cleanup)
+- 📊 **Maintenance Burden:** MEDIUM (7 guide files in docs/ + 30 session files at root)
 
-**Assessment:** [CLEAN & MAINTAINABLE / READY FOR PRODUCTION]
+**Assessment:** [GOOD FOUNDATION / CLEANUP NEEDED / ~4-6 HOURS TO PRODUCTION-READY]
 
-Phase Status: Documentation Complete & Clean
+Phase Status: Documentation Foundation Complete, Cleanup in Progress
 ✅ **Core Documentation:** All 8 files (00-07) populated with high-level content
-✅ **Unnecessary Files:** Guides, archives, status updates DELETED (52+ files removed)
-✅ **Policy:** HIGH-LEVEL ONLY approach active
-✅ **Maintenance:** Reduced burden - only core docs maintained going forward
+✅ **Decisions Folder:** Architectural decisions documented and organized
+✅ **Reference Docs:** Technical specs, API contracts, standards in place
+✅ **Troubleshooting:** Common issues with solutions documented
+⚠️ **Unnecessary Files:** 37 violation files remain (30 at root + 7 in docs/)
+⚠️ **Policy:** HIGH-LEVEL ONLY approach defined, partial enforcement needed
+⚠️ **Maintenance:** Burden MEDIUM - cleanup actions required below
 
 Documentation Policy Questions
 
@@ -125,8 +143,42 @@ Documentation Policy Questions
    - If no: Reconsider whether it should exist
 
 **If the answer to any question is "this is a how-to guide for developers,"** the response should be: **"This belongs in code examples/comments, not documentation. Let the code be the guide."**
-Consolidation Checklist
-For each consolidation action, report:
+
+**Guide vs Reference vs Archive Decision Tree:**
+
+```
+Is this documentation?
+├─ NO → Don't create it (code is the guide)
+└─ YES → Is it architecture-level?
+    ├─ NO → Violates policy, reconsider
+    └─ YES → Will it stay relevant as code changes?
+        ├─ NO → Don't create it
+        └─ YES → Is it a high-level overview?
+            ├─ YES → Belongs in core docs (00-07) or decisions/
+            └─ NO → Is it a technical specification?
+                ├─ YES → Belongs in reference/
+                └─ NO → Is it a focused troubleshooting guide?
+                    ├─ YES (specific issue with solution) → Belongs in troubleshooting/
+                    └─ NO → Archive or delete
+```
+
+**Examples of WHAT TO ARCHIVE (don't fit policy):**
+
+- ERROR_HANDLING_GUIDE.md (1,200 lines = implementation detail, not architecture)
+- REDIS_CACHING_GUIDE.md (feature-specific how-to, code shows how to use Redis)
+- SENTRY_INTEGRATION_GUIDE.md (setup detail, belongs in code comments)
+- SESSION_COMPLETE_SUMMARY.md (session-specific, not stable architecture)
+- FASTAPI_DEBUG_FIXES.md (implementation notes, not high-level)
+
+**Examples of WHAT TO KEEP (fit policy):**
+
+- 02-ARCHITECTURE_AND_DESIGN.md (monorepo, AI agent system architecture)
+- decisions/WHY_FASTAPI.md (architectural decision, stable)
+- reference/API_CONTRACTS.md (technical specification, stable)
+- troubleshooting/01-railway-deployment.md (specific issue: how to fix Railway deploys)
+- 03-DEPLOYMENT_AND_INFRASTRUCTURE.md (deployment procedures, high-level)
+  Consolidation Checklist
+  For each consolidation action, report:
 
 ### Action: [TITLE]
 
@@ -265,49 +317,86 @@ Use this format for the documentation review report:
 
 ## ✅ Consolidation Checklist
 
-### File Operations
+### IMMEDIATE CLEANUP (REQUIRED - ~4-6 hours)
 
-- [ ] Create guides/troubleshooting/ folder
-- [ ] Move 4-5 troubleshooting files
-- [ ] Archive 6-8 outdated guides
-- [ ] Create 4 component README files
-- [ ] Update 00-README.md with new links
-- [ ] Delete DOCUMENTATION_REVIEW.md (this report)
+#### 1. Root Directory Cleanup (30 files)
 
-### Verification
+- [ ] Archive to `archive-old/` all 30+ root-level .md files:
+  - `AUTH_FIX_*.md`, `COMPREHENSIVE_*.md`, `CONTENT_DISPLAY_*.md`
+  - `ENTERPRISE_SITE_ANALYSIS.md`, `ERROR_HANDLING_*.md`, `FASTAPI_*.md`
+  - `FIX_*.md`, `FRONTEND_BACKEND_*.md`, `IMPLEMENTATION_*.md`
+  - `JWT_*.md`, `QA_FAILURE_*.md`, `QUICK_*.md`, `SWAGGER_*.md`
+  - `UI_FIXES_*.md`, `VERIFICATION_*.md`, and all other session-specific files
+- [ ] Keep only: `README.md`, `LICENSE.md`, configuration files, source folders
+- [ ] Verification: `ls docs/*.md | wc -l` shows < 30 files in root
 
-- [ ] No broken links in 00-README.md
-- [ ] All guides/ files listed in README
-- [ ] All component docs in place
-- [ ] archive-old/ contains only historical files
-- [ ] No orphaned .md files
+#### 2. Docs/ Directory Cleanup (7 files)
+
+- [ ] Archive to `archive-old/` these violation files:
+  - [ ] `docs/ERROR_HANDLING_GUIDE.md` (1,200-line feature guide)
+  - [ ] `docs/REDIS_CACHING_GUIDE.md` (feature how-to)
+  - [ ] `docs/DOCUMENTATION_INDEX_NEW.md` (outdated meta-doc)
+  - [ ] `docs/ERROR_HANDLING_INDEX.md` (duplicate index)
+  - [ ] `docs/ERROR_HANDLING_QUICK_REFERENCE.md` (feature reference)
+- [ ] DECIDE (keep or archive):
+  - [ ] `docs/SENTRY_INTEGRATION_GUIDE.md` - if critical setup, move to `reference/setup/`; otherwise archive
+  - [ ] `docs/API_DOCUMENTATION.md` - consolidate into `reference/API_CONTRACTS.md` or archive
+- [ ] Verification: `ls docs/ | grep -E '.md$' | wc -l` should be < 20
+
+#### 3. Update Core Documentation (1 hour)
+
+- [ ] Update `docs/00-README.md` to reflect actual structure including:
+  - [ ] Add link to `decisions/` folder
+  - [ ] Add link to `archive-old/` (for historical context)
+  - [ ] Update file count metrics (currently incorrect)
+- [ ] Verify all links in 00-README.md work
+
+### VERIFICATION
+
+- [ ] No broken links in `docs/00-README.md`
+- [ ] Root directory contains ONLY: `README.md`, `LICENSE.md`, config files, source folders
+- [ ] `docs/` contains 8 core + 3 components + 3 decisions + 6 reference + 4 troubleshooting = ~24 files max
+- [ ] All violation files archived to `archive-old/`
+- [ ] `archive-old/` contains 100+ files with clear dating/naming
+- [ ] No orphaned .md files in `docs/`
 
 ## 📞 Next Steps
 
-1. Review plan with team
-2. Confirm critical files to keep
-3. Execute consolidation step-by-step
-4. Verify all links work
-5. Commit changes with "docs: consolidate documentation"
-6. Schedule next review (quarterly)
-   🎯 CONSOLIDATION BEST PRACTICES
-   Naming Conventions
-   Core docs: [NUMBER]-[TITLE].md (00, 01, 02...)
-   Guides: [TITLE].md (no number)
-   Troubleshooting: [NUMBER]-[ISSUE].md (01, 02, 03...)
-   Component docs: [component]/README.md
-   Reference: [TOPIC].md (no number)
-   Archive: [ORIGINAL_NAME].md (preserve original name)
-   Folder Organization
-   docs/
-   ├── (8 numbered core files here)
-   ├── components/ (one folder per component)
-   ├── guides/ (5-8 key guides)
-   │ └── troubleshooting/ (5-10 common issues)
-   ├── reference/ (5-10 spec docs)
-   └── archive-old/ (historical, marked clearly)
-   Link Standards
-   Every documentation file should:
+1. **IMMEDIATE:** Execute root directory cleanup (move 30 files to archive-old/)
+2. **IMMEDIATE:** Execute docs/ cleanup (archive 7 violation files)
+3. **IMMEDIATE:** Update docs/00-README.md with correct metrics and links
+4. **VERIFY:** Test all links in documentation
+5. **COMMIT:** Use message "docs: enforce HIGH-LEVEL ONLY policy (archive session files)"
+6. **DOCUMENT:** Update this prompt to reflect completion
+7. **SCHEDULE:** Quarterly review to maintain compliance
+
+### Commit Messages to Use
+
+```bash
+git commit -m "docs: archive 30 root-level session/status files to archive-old/"
+git commit -m "docs: archive 7 feature guides from docs/ (ERROR_HANDLING_GUIDE, etc.)"
+git commit -m "docs: update 00-README.md with correct structure and metrics"
+git commit -m "docs: enforce HIGH-LEVEL ONLY policy - cleanup complete"
+```
+
+🎯 CONSOLIDATION BEST PRACTICES
+Naming Conventions
+Core docs: [NUMBER]-[TITLE].md (00, 01, 02...)
+Guides: [TITLE].md (no number)
+Troubleshooting: [NUMBER]-[ISSUE].md (01, 02, 03...)
+Component docs: [component]/README.md
+Reference: [TOPIC].md (no number)
+Archive: [ORIGINAL_NAME].md (preserve original name)
+Folder Organization
+docs/
+├── (8 numbered core files here)
+├── components/ (one folder per component)
+├── guides/ (5-8 key guides)
+│ └── troubleshooting/ (5-10 common issues)
+├── reference/ (5-10 spec docs)
+└── archive-old/ (historical, marked clearly)
+Link Standards
+Every documentation file should:
 
 ✅ Appear in a README.md or index file
 ✅ Have a clear purpose (component, guide, reference, etc.)
@@ -369,10 +458,61 @@ Review recommendations before executing
 Execute step-by-step (don't do everything at once)
 Test links after each major change
 Commit frequently with clear messages
-Example commit messages:
 
-git commit -m "docs: consolidate troubleshooting guides"
-git commit -m "docs: archive outdated setup documentation"
-git commit -m "docs: move package manager strategy to guides"
-git commit -m "docs: create component README files"
-git commit -m "docs: update main hub with new documentation links"
+### Updated Commit Messages
+
+```bash
+git commit -m "docs: archive 30 root-level session/status files to archive-old/"
+git commit -m "docs: archive 7 feature guides from docs/ (ERROR_HANDLING_GUIDE, etc.)"
+git commit -m "docs: update 00-README.md with correct structure and metrics"
+git commit -m "docs: enforce HIGH-LEVEL ONLY policy - cleanup complete"
+```
+
+### Naming Conventions
+
+- **Core docs:** [NUMBER]-[TITLE].md (00, 01, 02...)
+- **Decisions:** [DECISION_TITLE].md (no number, in decisions/ folder)
+- **Troubleshooting:** [NUMBER]-[ISSUE].md (01, 02, 03...)
+- **Component docs:** [component]/README.md
+- **Reference:** [TOPIC].md (no number, in reference/ folder)
+- **Archive:** [ORIGINAL_NAME].md (preserve original name, in archive-old/)
+- **Root level:** NO .md files except README.md and LICENSE.md
+
+### Folder Organization (Actual Current State)
+
+```
+docs/
+├── (8 numbered core files: 00-07-*.md)
+├── components/ (cofounder-agent/, oversight-hub/, public-site/)
+├── decisions/ (architectural decision records)
+│   ├── DECISIONS.md (master index)
+│   ├── WHY_FASTAPI.md
+│   └── WHY_POSTGRESQL.md
+├── reference/ (technical specs, no feature guides)
+│   ├── API_CONTRACTS.md
+│   ├── data_schemas.md
+│   ├── TESTING.md
+│   └── ci-cd/ (GitHub Actions)
+├── troubleshooting/ (5-10 focused, specific issues)
+│   ├── 01-railway-deployment.md
+│   ├── 04-build-fixes.md
+│   └── 05-compilation.md
+└── archive-old/ (100+ historical files, clearly marked)
+
+Root: ONLY README.md + LICENSE.md + config files + source folders
+```
+
+### Decision Matrix: Keep vs Archive
+
+| Type                    | Keep?    | Example                                            | Location               |
+| ----------------------- | -------- | -------------------------------------------------- | ---------------------- |
+| Architecture decisions  | ✅ YES   | Why FastAPI, Why PostgreSQL                        | `decisions/`           |
+| API specifications      | ✅ YES   | API contracts, data schemas                        | `reference/`           |
+| Technical standards     | ✅ YES   | Code quality, naming conventions                   | `reference/`           |
+| Focused troubleshooting | ✅ YES   | How to fix Railway deploys (1 specific issue)      | `troubleshooting/`     |
+| Implementation guides   | ❌ NO    | How to implement error handling                    | ARCHIVE                |
+| Feature how-tos         | ❌ NO    | How to use Redis/Sentry                            | ARCHIVE                |
+| Setup guides            | ❌ MAYBE | If critical setup only, move to `reference/setup/` | ARCHIVE if > 200 lines |
+| Session summaries       | ❌ NO    | Session notes, fix summaries                       | ARCHIVE                |
+| Status updates          | ❌ NO    | Project completion status                          | DELETE                 |
+| Dated analysis          | ❌ NO    | Enterprise analysis from sprint                    | ARCHIVE                |

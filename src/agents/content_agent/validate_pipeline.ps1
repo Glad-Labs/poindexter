@@ -3,7 +3,7 @@
 
 $ErrorActionPreference = "Continue"
 
-Write-Host "🔍 GLAD Labs Content Pipeline Pre-Flight Check" -ForegroundColor Cyan
+Write-Host "🔍 Glad Labs Content Pipeline Pre-Flight Check" -ForegroundColor Cyan
 Write-Host "==============================================" -ForegroundColor Cyan
 Write-Host ""
 
