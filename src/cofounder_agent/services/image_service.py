@@ -474,6 +474,11 @@ class ImageService:
         Returns:
             List of FeaturedImageMetadata objects
         """
+        # Skip search if API key is not configured
+        if not self.pexels_api_key:
+            logger.debug(f"Pexels API key not configured - skipping search for '{query}'")
+            return []
+        
         try:
             params = {
                 "query": query,

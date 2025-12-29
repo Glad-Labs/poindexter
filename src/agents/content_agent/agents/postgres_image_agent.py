@@ -244,20 +244,9 @@ Only return the JSON array, no other text."""
             except Exception as e:
                 logger.warning(f"⚠️  Pexels search failed for '{query}': {e}")
             
-            # Fallback: Use placeholder if Pexels fails
-            logger.info(f"ℹ️  Using placeholder URL for '{query}'")
-            image_url = f"https://via.placeholder.com/800x600?text={query.replace(' ', '+')}"
-            
-            image_details = ImageDetails(
-                query=query,
-                source="placeholder",
-                path=None,
-                public_url=image_url,
-                alt_text=alt_text,
-                caption=f"Related to: {title}",
-                description=alt_text,
-            )
-            return image_details
+            # No fallback placeholder - return None instead
+            logger.info(f"ℹ️  No image available for '{query}' - skipping")
+            return None
 
         except Exception as e:
             logger.error(f"❌ Error processing image at index {index}: {e}", exc_info=True)
@@ -294,41 +283,12 @@ Only return the JSON array, no other text."""
             # The image search happens asynchronously via the image_agent workflow
             # This method handles fallback/placeholder URL generation only
             
-            # Use placeholder URL as fallback (images will be processed async if needed)
-            image_url = f"https://via.placeholder.com/800x600?text={query.replace(' ', '+')}"
+            # Return None - no placeholder images (external service not available)
+            logger.info(f"ℹ️  Skipping placeholder for '{query}' (async search happens separately)")
             
-            logger.info(f"ℹ️  Using placeholder URL for '{query}' (async search happens separately)")
-            
-            # Create ImageDetails object with placeholder
-            image_details = ImageDetails(
-                query=query,
-                source="pexels",
-                path=None,
-                public_url=image_url,
-                alt_text=alt_text,
-                caption=f"Related to: {title}",
-                description=alt_text,
-            )
-            
-            logger.info(f"✅ Image {index} metadata created: '{alt_text}')")
-            return image_details
+            return None
 
         except Exception as e:
             logger.error(f"Error processing image at index {index}: {e}")
-            # Return fallback image details instead of None
-            slug = post.slug or (post.title or post.topic).lower().replace(" ", "-")
-            title = post.title or post.topic
-            query = metadata.get("query", f"blog image {index}") if metadata else f"blog image {index}"
-            alt_text = metadata.get("alt_text", f"Image for {title}") if metadata else f"Image for {title}"
-            
-            fallback_image = ImageDetails(
-                query=query,
-                source="placeholder",
-                path=None,
-                public_url=f"https://via.placeholder.com/800x600?text={query.replace(' ', '+')[:50]}",
-                alt_text=alt_text,
-                caption=f"Related to: {title}",
-                description=alt_text,
-            )
-            logger.info(f"📋 Using fallback placeholder image for index {index}")
-            return fallback_image
+            # Return None instead of fallback image
+            return None

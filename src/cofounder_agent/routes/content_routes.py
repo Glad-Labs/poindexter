@@ -624,11 +624,19 @@ async def approve_and_publish_task(
                 cloudinary_service = get_cloudinary_cms_service()
 
                 # Extract featured image URL from multiple possible locations
+                # Priority: 1) Approval request (from UI), 2) task_metadata, 3) fallback to null
                 featured_image_url = None
-                logger.debug(f"🔍 Searching for featured_image_url in task_metadata...")
-                logger.debug(f"   Available task_metadata keys: {list(task_metadata.keys())}")
+                logger.debug(f"🔍 Searching for featured_image_url...")
+                logger.debug(f"   Request featured_image_url: {request.featured_image_url}")
 
-                if "featured_image_url" in task_metadata:
+                # 1️⃣ First check if provided in the approval request (highest priority)
+                if request.featured_image_url:
+                    featured_image_url = request.featured_image_url
+                    logger.info(
+                        f"✅ Using featured_image_url from approval request: {featured_image_url[:100]}"
+                    )
+                # 2️⃣ Then check task_metadata (fallback)
+                elif "featured_image_url" in task_metadata:
                     featured_image_url = task_metadata.get("featured_image_url")
                     logger.info(
                         f"✅ Found featured_image_url in task_metadata: {featured_image_url[:100] if featured_image_url else 'EMPTY'}"
@@ -652,7 +660,7 @@ async def approve_and_publish_task(
                     )
                 else:
                     logger.warning(
-                        f"⚠️  No featured_image_url found in task_metadata at any location"
+                        f"⚠️  No featured_image_url found in approval request or task_metadata"
                     )
 
                 # ✅ Optimize featured image on Cloudinary for CDN delivery
@@ -723,12 +731,20 @@ async def approve_and_publish_task(
                 }
 
                 logger.debug(
-                    f"📝 Post data prepared (featured_image_url={post_data.get('featured_image_url')[:100] if post_data.get('featured_image_url') else 'EMPTY'}):"
+                    f"📝 Post data prepared:"
+                    f"\n  - featured_image_url={post_data.get('featured_image_url')}"
+                    f"\n  - title={post_data.get('title')[:50]}"
+                    f"\n  - slug={post_data.get('slug')}"
                 )
 
                 post_result = await db_service.create_post(post_data)
                 post_id = post_result.get("id")
-                logger.info(f"✅ Post published to CMS database with ID: {post_id}")
+                
+                # ✅ Verify featured_image_url was persisted
+                logger.info(
+                    f"✅ Post published to CMS database with ID: {post_id}"
+                    f"\n  - Featured image in DB: {post_result.get('featured_image_url')}"
+                )
 
                 # Update task with CMS post ID and published timestamp
                 await task_store.update_task(
@@ -1058,8 +1074,8 @@ async def generate_and_publish_content(
                         slug,
                         generated_content["content"],
                         generated_content["excerpt"],
-                        f"https://via.placeholder.com/600x400?text={slug}",
-                        f"https://via.placeholder.com/1200x400?text={slug}",
+                        None,  # featured_image_url - None instead of placeholder
+                        None,  # featured_image_alt - None instead of placeholder
                         None,  # author_id - set to None for now
                         category_id,
                         tag_ids,

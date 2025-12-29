@@ -300,13 +300,12 @@ class ImageFallbackHandler:
             )
 
     def _get_placeholder(self, prompt: str, alt_text: str) -> ImageFallbackResult:
-        """Return a placeholder image (always available)"""
-        # Use placeholder.com service for consistent placeholder
-        placeholder_url = (
-            f"https://via.placeholder.com/1200x800?text={prompt[:50].replace(' ', '+')}"
-        )
+        """Return no placeholder - skip placeholder images since they require external API"""
+        # via.placeholder.com requires authentication and is not reliable
+        # Instead, return None to gracefully skip image display
+        placeholder_url = None
 
-        logger.info(f"   Using placeholder: {placeholder_url}")
+        logger.info(f"   Skipping placeholder image (external service not available)")
 
         return ImageFallbackResult(
             success=True,

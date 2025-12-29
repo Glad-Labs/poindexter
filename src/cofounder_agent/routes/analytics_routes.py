@@ -245,8 +245,9 @@ async def get_kpi_metrics(
         task_types = {}
 
         for task in tasks:
-            # Cost calculation
-            cost = task.get("estimated_cost") or task.get("actual_cost") or 0.0
+            # Cost calculation (convert Decimal to float if needed)
+            cost_raw = task.get("estimated_cost") or task.get("actual_cost") or 0.0
+            cost = float(cost_raw) if cost_raw else 0.0
             total_cost += cost
 
             # Model tracking

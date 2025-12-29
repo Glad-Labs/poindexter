@@ -107,7 +107,8 @@ async def list_posts(
             if where_clauses:
                 query += " WHERE " + " AND ".join(where_clauses)
 
-            query += " ORDER BY published_at DESC NULLS LAST"
+            # Sort by published_at (newest first), fallback to created_at if not published
+            query += " ORDER BY COALESCE(published_at, created_at) DESC NULLS LAST"
             query += f" OFFSET {skip} LIMIT {limit}"
 
             if params:

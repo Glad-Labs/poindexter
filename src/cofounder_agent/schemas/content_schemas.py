@@ -216,6 +216,10 @@ class ApprovalRequest(BaseModel):
         pattern="^[a-zA-Z0-9._-]+$",
         description="Reviewer username or ID (alphanumeric, dots, dashes, underscores)",
     )
+    featured_image_url: Optional[str] = Field(
+        None,
+        description="Featured image URL to use for the post (optional)",
+    )
 
     class Config:
         """Pydantic configuration"""
