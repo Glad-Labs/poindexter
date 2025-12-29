@@ -22,10 +22,10 @@ router = APIRouter(tags=["cms"])
 def map_featured_image_to_coverimage(post: dict) -> dict:
     """
     Map database featured_image_url to Strapi-compatible coverImage format.
-    
+
     Frontend expects: coverImage.data.attributes.url
     Database returns: featured_image_url
-    
+
     This ensures compatibility with existing frontend components.
     """
     if post.get("featured_image_url"):
@@ -33,14 +33,15 @@ def map_featured_image_to_coverimage(post: dict) -> dict:
             "data": {
                 "attributes": {
                     "url": post["featured_image_url"],
-                    "alternativeText": f"Cover image for {post.get('title', 'post')}"
+                    "alternativeText": f"Cover image for {post.get('title', 'post')}",
                 }
             }
         }
     else:
         post["coverImage"] = None
-    
+
     return post
+
 
 # Global database service instance
 _db_service: Optional[DatabaseService] = None
@@ -59,6 +60,7 @@ async def get_db_pool():
 # POSTS ENDPOINTS
 # ============================================================================
 
+
 @router.get("/api/posts")
 async def list_posts(
     skip: int = Query(0, ge=0, le=10000),
@@ -76,24 +78,24 @@ async def list_posts(
             count_query = "SELECT COUNT(*) as total FROM posts"
             where_clauses = []
             params = []
-            
+
             if published_only:
                 where_clauses.append("status = 'published'")
-            
+
             # if featured is not None:
             #     where_clauses.append(f"featured = ${len(params) + 1}")
             #     params.append(featured)
-            
+
             if where_clauses:
                 count_query += " WHERE " + " AND ".join(where_clauses)
-            
+
             if params:
                 total_row = await conn.fetchrow(count_query, *params)
             else:
                 total_row = await conn.fetchrow(count_query)
-                
-            total = total_row['total'] if total_row else 0
-            
+
+            total = total_row["total"] if total_row else 0
+
             # Get paginated posts
             query = """
                 SELECT id, title, slug, excerpt, featured_image_url, cover_image_url, 
@@ -101,27 +103,29 @@ async def list_posts(
                        seo_title, seo_description, seo_keywords, status, content, author_id, view_count
                 FROM posts
             """
-            
+
             if where_clauses:
                 query += " WHERE " + " AND ".join(where_clauses)
-                
+
             query += " ORDER BY published_at DESC NULLS LAST"
             query += f" OFFSET {skip} LIMIT {limit}"
-            
+
             if params:
                 rows = await conn.fetch(query, *params)
             else:
                 rows = await conn.fetch(query)
-            
+
             posts = [dict(row) for row in rows]
-            
+
             # Format timestamps and map featured_image_url to coverImage for frontend compatibility
             for post in posts:
-                post["published_at"] = post["published_at"].isoformat() if post["published_at"] else None
+                post["published_at"] = (
+                    post["published_at"].isoformat() if post["published_at"] else None
+                )
                 post["created_at"] = post["created_at"].isoformat() if post["created_at"] else None
                 post["updated_at"] = post["updated_at"].isoformat() if post["updated_at"] else None
                 map_featured_image_to_coverimage(post)
-            
+
             return {
                 "data": posts,
                 "meta": {
@@ -131,7 +135,7 @@ async def list_posts(
                         "total": total,
                         "pageCount": (total + limit - 1) // limit,
                     }
-                }
+                },
             }
     except Exception as e:
         logger.error(f"Error fetching posts: {str(e)}", exc_info=True)
@@ -150,58 +154,69 @@ async def get_post_by_slug(
         pool = await get_db_pool()
         async with pool.acquire() as conn:
             # Get post
-            post_row = await conn.fetchrow("""
+            post_row = await conn.fetchrow(
+                """
                 SELECT id, title, slug, content, excerpt, featured_image_url, cover_image_url, 
                        category_id, published_at, created_at, updated_at,
                        seo_title, seo_description, seo_keywords, status, author_id, view_count
                 FROM posts
                 WHERE slug = $1
-            """, slug)
-            
+            """,
+                slug,
+            )
+
             if not post_row:
                 raise HTTPException(status_code=404, detail="Post not found")
-            
+
             post = dict(post_row)
             post_id = post["id"]
-            post["published_at"] = post["published_at"].isoformat() if post["published_at"] else None
+            post["published_at"] = (
+                post["published_at"].isoformat() if post["published_at"] else None
+            )
             post["created_at"] = post["created_at"].isoformat() if post["created_at"] else None
             post["updated_at"] = post["updated_at"].isoformat() if post["updated_at"] else None
-            
+
             # Map featured_image_url to coverImage in Strapi-compatible format
             map_featured_image_to_coverimage(post)
-            
+
             # Get tags (gracefully handle missing table)
             tags = []
             try:
-                tag_rows = await conn.fetch("""
+                tag_rows = await conn.fetch(
+                    """
                     SELECT t.id, t.name, t.slug, t.color
                     FROM tags t
                     JOIN post_tags pt ON t.id = pt.tag_id
                     WHERE pt.post_id = $1
-                """, post_id)
+                """,
+                    post_id,
+                )
                 tags = [dict(row) for row in tag_rows]
             except Exception as tag_error:
                 # If tags table doesn't exist or query fails, just return empty tags
                 logger.warning(f"Could not fetch tags for post {post_id}: {str(tag_error)}")
                 tags = []
-            
+
             # Get category
             category = None
             if post.get("category_id"):
-                cat_row = await conn.fetchrow("""
+                cat_row = await conn.fetchrow(
+                    """
                     SELECT id, name, slug
                     FROM categories
                     WHERE id = $1
-                """, post["category_id"])
+                """,
+                    post["category_id"],
+                )
                 if cat_row:
                     category = dict(cat_row)
-            
+
             return {
                 "data": post,
                 "meta": {
                     "tags": tags,
                     "category": category,
-                }
+                },
             }
     except HTTPException:
         raise
@@ -214,6 +229,7 @@ async def get_post_by_slug(
 # CATEGORIES ENDPOINTS
 # ============================================================================
 
+
 @router.get("/api/categories")
 async def list_categories():
     """
@@ -223,23 +239,22 @@ async def list_categories():
     try:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
-            rows = await conn.fetch("""
+            rows = await conn.fetch(
+                """
                 SELECT id, name, slug, description, created_at, updated_at
                 FROM categories
                 ORDER BY name
-            """)
-            
+            """
+            )
+
             categories = []
             for row in rows:
                 cat = dict(row)
                 cat["created_at"] = cat["created_at"].isoformat() if cat["created_at"] else None
                 cat["updated_at"] = cat["updated_at"].isoformat() if cat["updated_at"] else None
                 categories.append(cat)
-            
-            return {
-                "data": categories,
-                "meta": {}
-            }
+
+            return {"data": categories, "meta": {}}
     except Exception as e:
         logger.error(f"Error fetching categories: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error fetching categories: {str(e)}")
@@ -248,6 +263,7 @@ async def list_categories():
 # ============================================================================
 # TAGS ENDPOINTS
 # ============================================================================
+
 
 @router.get("/api/tags")
 async def list_tags():
@@ -258,23 +274,22 @@ async def list_tags():
     try:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
-            rows = await conn.fetch("""
+            rows = await conn.fetch(
+                """
                 SELECT id, name, slug, description, color, created_at, updated_at
                 FROM tags
                 ORDER BY name
-            """)
-            
+            """
+            )
+
             tags = []
             for row in rows:
                 tag = dict(row)
                 tag["created_at"] = tag["created_at"].isoformat() if tag["created_at"] else None
                 tag["updated_at"] = tag["updated_at"].isoformat() if tag["updated_at"] else None
                 tags.append(tag)
-            
-            return {
-                "data": tags,
-                "meta": {}
-            }
+
+            return {"data": tags, "meta": {}}
     except Exception as e:
         logger.error(f"Error fetching tags: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error fetching tags: {str(e)}")
@@ -283,6 +298,7 @@ async def list_tags():
 # ============================================================================
 # HEALTH CHECK
 # ============================================================================
+
 
 @router.get("/api/cms/status")
 async def cms_status():
@@ -297,23 +313,26 @@ async def cms_status():
             tables = {}
             for table_name in ["posts", "categories", "tags", "post_tags"]:
                 # Check if table exists
-                exists_row = await conn.fetchrow("""
+                exists_row = await conn.fetchrow(
+                    """
                     SELECT EXISTS(
                         SELECT 1 FROM information_schema.tables 
                         WHERE table_name = $1
                     ) as exists
-                """, table_name)
-                exists = exists_row['exists'] if exists_row else False
-                
+                """,
+                    table_name,
+                )
+                exists = exists_row["exists"] if exists_row else False
+
                 if exists:
                     count_row = await conn.fetchrow(f"SELECT COUNT(*) as cnt FROM {table_name}")
-                    count = count_row['cnt'] if count_row else 0
+                    count = count_row["cnt"] if count_row else 0
                     tables[table_name] = {"exists": True, "count": count}
                 else:
                     tables[table_name] = {"exists": False, "count": 0}
-            
+
             all_exist = all(t["exists"] for t in tables.values())
-            
+
             return {
                 "status": "healthy" if all_exist else "degraded",
                 "tables": tables,

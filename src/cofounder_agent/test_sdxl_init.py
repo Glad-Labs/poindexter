@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Test SDXL initialization"""
 import warnings
-warnings.filterwarnings('ignore', category=UserWarning)
+
+warnings.filterwarnings("ignore", category=UserWarning)
 
 print("Testing SDXL initialization...")
 from services.image_service import ImageService

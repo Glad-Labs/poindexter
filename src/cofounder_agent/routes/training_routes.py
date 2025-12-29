@@ -38,11 +38,9 @@ def set_services(tds, fts):
 # TRAINING DATA ENDPOINTS
 # ============================================================================
 
+
 @router.get("/data")
-async def list_training_data(
-    limit: int = Query(100, ge=1, le=1000),
-    offset: int = Query(0, ge=0)
-):
+async def list_training_data(limit: int = Query(100, ge=1, le=1000), offset: int = Query(0, ge=0)):
     """Get all training data with pagination"""
     try:
         data = await training_data_service.get_all_training_data(limit=limit, offset=offset)
@@ -58,10 +56,10 @@ async def list_training_data(
                     "quality_score": d.quality_score,
                     "success": d.success,
                     "tags": d.tags,
-                    "created_at": d.created_at
+                    "created_at": d.created_at,
                 }
                 for d in data
-            ]
+            ],
         }
     except Exception as e:
         logger.error(f"Error listing training data: {e}")
@@ -78,11 +76,11 @@ async def filter_training_data(
     include_tags: Optional[str] = Query(None),
     date_after: Optional[str] = Query(None),
     date_before: Optional[str] = Query(None),
-    limit: int = Query(100, ge=1, le=1000)
+    limit: int = Query(100, ge=1, le=1000),
 ):
     """
     Filter training data by multiple criteria.
-    
+
     Query params:
     - quality_min/max: Quality score range (0.0-1.0)
     - intent_filter: Single intent or comma-separated intents
@@ -104,15 +102,17 @@ async def filter_training_data(
             include_tags=include_list,
             date_after=date_after,
             date_before=date_before,
-            limit=limit
+            limit=limit,
         )
 
-        stats = await training_data_service.get_statistics({
-            "quality_min": quality_min,
-            "quality_max": quality_max,
-            "exclude_tags": exclude_list,
-            "include_tags": include_list
-        })
+        stats = await training_data_service.get_statistics(
+            {
+                "quality_min": quality_min,
+                "quality_max": quality_max,
+                "exclude_tags": exclude_list,
+                "include_tags": include_list,
+            }
+        )
 
         return {
             "success": True,
@@ -128,10 +128,10 @@ async def filter_training_data(
                     "quality_score": d.quality_score,
                     "success": d.success,
                     "tags": d.tags,
-                    "created_at": d.created_at
+                    "created_at": d.created_at,
                 }
                 for d in data
-            ]
+            ],
         }
     except Exception as e:
         logger.error(f"Error filtering training data: {e}")
@@ -142,7 +142,7 @@ async def filter_training_data(
 async def tag_training_data(body: Dict[str, Any]):
     """
     Add tags to training data.
-    
+
     Body:
     {
         "execution_ids": ["exec-123", "exec-456"],
@@ -161,7 +161,7 @@ async def tag_training_data(body: Dict[str, Any]):
         return {
             "success": True,
             "tagged_count": count,
-            "message": f"Tagged {count} examples with {tags}"
+            "message": f"Tagged {count} examples with {tags}",
         }
     except Exception as e:
         logger.error(f"Error tagging training data: {e}")
@@ -172,7 +172,7 @@ async def tag_training_data(body: Dict[str, Any]):
 async def tag_by_date_range(body: Dict[str, Any]):
     """
     Tag all data within a date range.
-    
+
     Body:
     {
         "date_after": "2025-12-01T00:00:00Z",
@@ -193,7 +193,7 @@ async def tag_by_date_range(body: Dict[str, Any]):
         return {
             "success": True,
             "tagged_count": count,
-            "message": f"Tagged {count} examples in date range"
+            "message": f"Tagged {count} examples in date range",
         }
     except Exception as e:
         logger.error(f"Error tagging by date: {e}")
@@ -204,7 +204,7 @@ async def tag_by_date_range(body: Dict[str, Any]):
 async def tag_by_quality(body: Dict[str, Any]):
     """
     Tag low-quality data.
-    
+
     Body:
     {
         "quality_max": 0.7,
@@ -223,7 +223,7 @@ async def tag_by_quality(body: Dict[str, Any]):
         return {
             "success": True,
             "tagged_count": count,
-            "message": f"Tagged {count} examples with quality < {quality_max}"
+            "message": f"Tagged {count} examples with quality < {quality_max}",
         }
     except Exception as e:
         logger.error(f"Error tagging by quality: {e}")
@@ -234,15 +234,14 @@ async def tag_by_quality(body: Dict[str, Any]):
 # STATISTICS ENDPOINTS
 # ============================================================================
 
+
 @router.get("/stats")
 async def get_statistics(exclude_tags: Optional[str] = Query(None)):
     """Get statistics about training data"""
     try:
         exclude_list = exclude_tags.split(",") if exclude_tags else None
 
-        stats = await training_data_service.get_statistics({
-            "exclude_tags": exclude_list
-        })
+        stats = await training_data_service.get_statistics({"exclude_tags": exclude_list})
 
         return {
             "success": True,
@@ -253,7 +252,7 @@ async def get_statistics(exclude_tags: Optional[str] = Query(None)):
             "by_tag": stats.by_tag,
             "by_intent": stats.by_intent,
             "quality_distribution": stats.quality_score_distribution,
-            "date_range": stats.date_range
+            "date_range": stats.date_range,
         }
     except Exception as e:
         logger.error(f"Error getting statistics: {e}")
@@ -264,11 +263,12 @@ async def get_statistics(exclude_tags: Optional[str] = Query(None)):
 # DATASET ENDPOINTS
 # ============================================================================
 
+
 @router.post("/datasets")
 async def create_dataset(body: Dict[str, Any]):
     """
     Create a versioned dataset for fine-tuning.
-    
+
     Body:
     {
         "name": "production",
@@ -289,10 +289,7 @@ async def create_dataset(body: Dict[str, Any]):
 
         dataset = await training_data_service.create_dataset(name, description, filters)
 
-        return {
-            "success": True,
-            "dataset": dataset
-        }
+        return {"success": True, "dataset": dataset}
     except Exception as e:
         logger.error(f"Error creating dataset: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -304,11 +301,7 @@ async def list_datasets():
     try:
         datasets = await training_data_service.list_datasets()
 
-        return {
-            "success": True,
-            "count": len(datasets),
-            "datasets": datasets
-        }
+        return {"success": True, "count": len(datasets), "datasets": datasets}
     except Exception as e:
         logger.error(f"Error listing datasets: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -323,10 +316,7 @@ async def get_dataset(dataset_id: int):
         if not dataset:
             raise HTTPException(status_code=404, detail="Dataset not found")
 
-        return {
-            "success": True,
-            "dataset": dataset
-        }
+        return {"success": True, "dataset": dataset}
     except Exception as e:
         logger.error(f"Error getting dataset: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -336,7 +326,7 @@ async def get_dataset(dataset_id: int):
 async def export_dataset(body: Dict[str, Any]):
     """
     Export dataset as JSONL for fine-tuning.
-    
+
     Body:
     {
         "filters": {
@@ -356,8 +346,8 @@ async def export_dataset(body: Dict[str, Any]):
                 "file_path": export_result["file_path"],
                 "file_size": export_result["file_size"],
                 "example_count": export_result["example_count"],
-                "avg_quality": export_result["avg_quality"]
-            }
+                "avg_quality": export_result["avg_quality"],
+            },
         }
     except Exception as e:
         logger.error(f"Error exporting dataset: {e}")
@@ -368,11 +358,12 @@ async def export_dataset(body: Dict[str, Any]):
 # FINE-TUNING ENDPOINTS
 # ============================================================================
 
+
 @router.post("/fine-tune")
 async def start_fine_tuning(body: Dict[str, Any]):
     """
     Start a fine-tuning job.
-    
+
     Body:
     {
         "target": "ollama|gemini|claude|gpt4",
@@ -390,8 +381,7 @@ async def start_fine_tuning(body: Dict[str, Any]):
 
         if target == "ollama":
             result = await fine_tuning_service.fine_tune_ollama(
-                dataset_path=dataset_path,
-                base_model=base_model
+                dataset_path=dataset_path, base_model=base_model
             )
         elif target == "gemini":
             result = await fine_tuning_service.fine_tune_gemini(dataset_path)
@@ -402,10 +392,7 @@ async def start_fine_tuning(body: Dict[str, Any]):
         else:
             raise HTTPException(status_code=400, detail=f"Unknown target: {target}")
 
-        return {
-            "success": result.get("status") != "failed",
-            "job": result
-        }
+        return {"success": result.get("status") != "failed", "job": result}
     except Exception as e:
         logger.error(f"Error starting fine-tuning: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -417,11 +404,7 @@ async def list_fine_tuning_jobs():
     try:
         jobs = await fine_tuning_service.list_jobs()
 
-        return {
-            "success": True,
-            "count": len(jobs),
-            "jobs": jobs
-        }
+        return {"success": True, "count": len(jobs), "jobs": jobs}
     except Exception as e:
         logger.error(f"Error listing jobs: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -433,10 +416,7 @@ async def get_job_status(job_id: str):
     try:
         status = await fine_tuning_service.get_job_status(job_id)
 
-        return {
-            "success": True,
-            "job": status
-        }
+        return {"success": True, "job": status}
     except Exception as e:
         logger.error(f"Error getting job status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -450,7 +430,7 @@ async def cancel_job(job_id: str):
 
         return {
             "success": result["success"],
-            "message": result.get("message", result.get("error", "Job cancelled"))
+            "message": result.get("message", result.get("error", "Job cancelled")),
         }
     except Exception as e:
         logger.error(f"Error cancelling job: {e}")
@@ -461,11 +441,12 @@ async def cancel_job(job_id: str):
 # MODEL REGISTRY ENDPOINTS
 # ============================================================================
 
+
 @router.post("/jobs/{job_id}/deploy")
 async def deploy_model(job_id: str, body: Dict[str, Any]):
     """
     Deploy a completed fine-tuning job as a model.
-    
+
     Body:
     {
         "model_name": "orchestrator-v1",
@@ -480,15 +461,10 @@ async def deploy_model(job_id: str, body: Dict[str, Any]):
             raise HTTPException(status_code=400, detail="model_name required")
 
         result = await fine_tuning_service.deploy_model(
-            model_name=model_name,
-            job_id=job_id,
-            set_active=set_active
+            model_name=model_name, job_id=job_id, set_active=set_active
         )
 
-        return {
-            "success": result["success"],
-            "deployment": result
-        }
+        return {"success": result["success"], "deployment": result}
     except Exception as e:
         logger.error(f"Error deploying model: {e}")
         raise HTTPException(status_code=500, detail=str(e))

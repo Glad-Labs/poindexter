@@ -34,6 +34,7 @@ client = TestClient(app)
 # FIXTURES
 # ============================================================================
 
+
 @pytest.fixture
 def db_service():
     """Mock database service"""
@@ -53,7 +54,7 @@ def sample_task_data() -> Dict[str, Any]:
         "primary_keyword": "AI healthcare",
         "target_audience": "Healthcare professionals",
         "category": "healthcare",
-        "metadata": {"priority": "high", "rush": False}
+        "metadata": {"priority": "high", "rush": False},
     }
 
 
@@ -71,13 +72,14 @@ def sample_task_response() -> Dict[str, Any]:
         "category": "healthcare",
         "created_at": "2025-12-04T12:00:00Z",
         "updated_at": "2025-12-04T12:00:00Z",
-        "metadata": {"priority": "high", "rush": False}
+        "metadata": {"priority": "high", "rush": False},
     }
 
 
 # ============================================================================
 # BASIC FUNCTIONALITY TESTS
 # ============================================================================
+
 
 class TestBasicTaskCreation:
     """Test basic task creation workflows"""
@@ -94,10 +96,7 @@ class TestBasicTaskCreation:
 
     def test_create_task_with_minimal_fields(self):
         """Should create task with only required fields"""
-        task_data = {
-            "task_name": "Minimal Task",
-            "topic": "Test Topic"
-        }
+        task_data = {"task_name": "Minimal Task", "topic": "Test Topic"}
         response = client.post("/api/tasks", json=task_data)
         assert response.status_code == 201
         data = response.json()
@@ -124,6 +123,7 @@ class TestBasicTaskCreation:
 # EDGE CASE TESTS
 # ============================================================================
 
+
 class TestEdgeCases:
     """Test edge cases and boundary conditions"""
 
@@ -131,17 +131,14 @@ class TestEdgeCases:
         """Should handle unicode in task data"""
         task_data = {
             "task_name": "测试任务 🚀 Test Task",
-            "topic": "Über alles über Künstliche Intelligenz"
+            "topic": "Über alles über Künstliche Intelligenz",
         }
         response = client.post("/api/tasks", json=task_data)
         assert response.status_code == 201
 
     def test_task_with_very_long_strings(self):
         """Should handle maximum length strings"""
-        task_data = {
-            "task_name": "a" * 200,  # Max 200 chars
-            "topic": "b" * 200
-        }
+        task_data = {"task_name": "a" * 200, "topic": "b" * 200}  # Max 200 chars
         response = client.post("/api/tasks", json=task_data)
         assert response.status_code == 201
 
@@ -153,8 +150,8 @@ class TestEdgeCases:
             "metadata": {
                 "special": "!@#$%^&*()",
                 "quotes": 'He said "Hello"',
-                "newlines": "Line 1\nLine 2\nLine 3"
-            }
+                "newlines": "Line 1\nLine 2\nLine 3",
+            },
         }
         response = client.post("/api/tasks", json=task_data)
         assert response.status_code == 201
@@ -168,17 +165,14 @@ class TestEdgeCases:
             "topic": "Topic",
             "primary_keyword": None,
             "target_audience": None,
-            "metadata": None
+            "metadata": None,
         }
         response = client.post("/api/tasks", json=task_data)
         assert response.status_code == 201
 
     def test_task_with_empty_strings(self):
         """Should reject empty required fields"""
-        task_data = {
-            "task_name": "",
-            "topic": "Topic"
-        }
+        task_data = {"task_name": "", "topic": "Topic"}
         response = client.post("/api/tasks", json=task_data)
         assert response.status_code == 422  # Validation error
 
@@ -204,11 +198,11 @@ class TestEdgeCases:
         # Very high skip
         response = client.get("/api/posts?skip=999999&limit=10")
         assert response.status_code == 200
-        
+
         # Max limit
         response = client.get("/api/posts?skip=0&limit=100")
         assert response.status_code == 200
-        
+
         # Beyond max limit should be clamped
         response = client.get("/api/posts?skip=0&limit=1000")
         assert response.status_code == 200
@@ -217,6 +211,7 @@ class TestEdgeCases:
 # ============================================================================
 # CONTENT GENERATION WORKFLOW TESTS
 # ============================================================================
+
 
 class TestContentPipeline:
     """Test complete content generation workflow"""
@@ -228,7 +223,7 @@ class TestContentPipeline:
             "task_name": "Generate Healthcare Article",
             "topic": "AI Applications in Medical Diagnosis",
             "primary_keyword": "AI medical diagnosis",
-            "target_audience": "Healthcare professionals"
+            "target_audience": "Healthcare professionals",
         }
         task_response = client.post("/api/tasks", json=task_data)
         assert task_response.status_code == 201
@@ -246,19 +241,16 @@ class TestContentPipeline:
                 "excerpt": "How AI is revolutionizing medical diagnosis",
                 "seo_title": "AI Medical Diagnosis - Modern Healthcare Solutions",
                 "seo_description": "Discover how AI is transforming medical diagnosis",
-                "seo_keywords": "AI, medical diagnosis, healthcare, technology"
-            }
+                "seo_keywords": "AI, medical diagnosis, healthcare, technology",
+            },
         }
         update_response = client.patch(f"/api/tasks/{task_id}", json=completion_data)
         assert update_response.status_code in [200, 404]
 
     def test_concurrent_task_execution(self):
         """Test creating multiple tasks concurrently"""
-        tasks = [
-            {"task_name": f"Task {i}", "topic": f"Topic {i}"}
-            for i in range(5)
-        ]
-        
+        tasks = [{"task_name": f"Task {i}", "topic": f"Topic {i}"} for i in range(5)]
+
         responses = [client.post("/api/tasks", json=task) for task in tasks]
         assert all(r.status_code == 201 for r in responses)
 
@@ -294,6 +286,7 @@ class TestContentPipeline:
 # POST CREATION TESTS
 # ============================================================================
 
+
 class TestPostCreation:
     """Test blog post creation and management"""
 
@@ -307,26 +300,20 @@ class TestPostCreation:
             "status": "published",
             "seo_title": "Test Post - SEO Title",
             "seo_description": "Description for SEO",
-            "seo_keywords": "test, post, seo"
+            "seo_keywords": "test, post, seo",
         }
         response = client.post("/api/posts", json=post_data)
         assert response.status_code in [201, 200]
 
     def test_create_post_with_minimal_fields(self):
         """Should create post with only required fields"""
-        post_data = {
-            "title": "Minimal Post",
-            "content": "Content"
-        }
+        post_data = {"title": "Minimal Post", "content": "Content"}
         response = client.post("/api/posts", json=post_data)
         assert response.status_code in [201, 200]
 
     def test_post_slug_auto_generation(self):
         """Should auto-generate slug if not provided"""
-        post_data = {
-            "title": "Post Without Slug",
-            "content": "Content"
-        }
+        post_data = {"title": "Post Without Slug", "content": "Content"}
         response = client.post("/api/posts", json=post_data)
         assert response.status_code in [201, 200]
         # Slug should be auto-generated from title
@@ -349,10 +336,7 @@ class TestPostCreation:
 
     def test_update_post(self):
         """Should update existing post"""
-        post_data = {
-            "title": "Updated Title",
-            "content": "Updated content"
-        }
+        post_data = {"title": "Updated Title", "content": "Updated content"}
         response = client.patch("/api/posts/test-id", json=post_data)
         assert response.status_code in [200, 404]
 
@@ -366,6 +350,7 @@ class TestPostCreation:
 # ERROR HANDLING TESTS
 # ============================================================================
 
+
 class TestErrorHandling:
     """Test error handling and recovery"""
 
@@ -373,19 +358,13 @@ class TestErrorHandling:
         """Should reject malformed JSON"""
         # This is handled by FastAPI's JSON parsing
         response = client.post(
-            "/api/tasks",
-            data="not valid json",
-            headers={"Content-Type": "application/json"}
+            "/api/tasks", data="not valid json", headers={"Content-Type": "application/json"}
         )
         assert response.status_code in [422, 400]
 
     def test_invalid_content_type(self):
         """Should handle invalid content type"""
-        response = client.post(
-            "/api/tasks",
-            data="test",
-            headers={"Content-Type": "text/plain"}
-        )
+        response = client.post("/api/tasks", data="test", headers={"Content-Type": "text/plain"})
         assert response.status_code in [415, 422]
 
     def test_database_connection_error(self):
@@ -406,6 +385,7 @@ class TestErrorHandling:
 # PERFORMANCE TESTS
 # ============================================================================
 
+
 class TestPerformance:
     """Test performance under various conditions"""
 
@@ -418,29 +398,27 @@ class TestPerformance:
     def test_create_many_tasks(self):
         """Should handle creating many tasks"""
         for i in range(10):
-            task_data = {
-                "task_name": f"Perf Test Task {i}",
-                "topic": f"Perf Test Topic {i}"
-            }
+            task_data = {"task_name": f"Perf Test Task {i}", "topic": f"Perf Test Topic {i}"}
             response = client.post("/api/tasks", json=task_data)
             assert response.status_code == 201
 
     def test_concurrent_api_calls(self):
         """Should handle concurrent requests"""
         import concurrent.futures
-        
+
         def make_request():
             return client.get("/api/tasks?skip=0&limit=10")
-        
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
             responses = list(executor.map(make_request, range(5)))
-        
+
         assert all(r.status_code == 200 for r in responses)
 
 
 # ============================================================================
 # SYSTEM HEALTH TESTS
 # ============================================================================
+
 
 class TestSystemHealth:
     """Test system health and status endpoints"""
@@ -470,16 +448,14 @@ class TestSystemHealth:
 # INTEGRATION TESTS
 # ============================================================================
 
+
 class TestIntegration:
     """Test integration between components"""
 
     def test_task_and_post_creation_flow(self):
         """Test creating task and associated post"""
         # Create task
-        task_data = {
-            "task_name": "Integration Test",
-            "topic": "Test Topic"
-        }
+        task_data = {"task_name": "Integration Test", "topic": "Test Topic"}
         task_resp = client.post("/api/tasks", json=task_data)
         assert task_resp.status_code == 201
 
@@ -488,7 +464,7 @@ class TestIntegration:
             "title": "Test Topic",
             "slug": "test-topic",
             "content": "Generated content",
-            "status": "published"
+            "status": "published",
         }
         post_resp = client.post("/api/posts", json=post_data)
         assert post_resp.status_code in [201, 200]
@@ -497,7 +473,7 @@ class TestIntegration:
         """Test listing both tasks and posts"""
         tasks = client.get("/api/tasks")
         posts = client.get("/api/posts")
-        
+
         assert tasks.status_code == 200
         assert posts.status_code == 200
 

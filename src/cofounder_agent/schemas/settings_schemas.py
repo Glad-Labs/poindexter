@@ -11,6 +11,7 @@ from enum import Enum
 
 class SettingDataTypeEnum(str, Enum):
     """Setting data type"""
+
     STRING = "string"
     INT = "int"
     FLOAT = "float"
@@ -20,6 +21,7 @@ class SettingDataTypeEnum(str, Enum):
 
 class SettingCategoryEnum(str, Enum):
     """Setting category"""
+
     GENERAL = "general"
     API = "api"
     DATABASE = "database"
@@ -32,6 +34,7 @@ class SettingCategoryEnum(str, Enum):
 
 class SettingEnvironmentEnum(str, Enum):
     """Environment scope"""
+
     ALL = "all"
     DEVELOPMENT = "development"
     STAGING = "staging"
@@ -40,64 +43,96 @@ class SettingEnvironmentEnum(str, Enum):
 
 class SettingBase(BaseModel):
     """Base model for setting data"""
+
     key: str = Field(..., min_length=1, max_length=255, description="Unique setting identifier")
     value: str = Field(..., description="Setting value (can be complex JSON)")
-    data_type: SettingDataTypeEnum = Field(default=SettingDataTypeEnum.STRING, description="Data type of value")
+    data_type: SettingDataTypeEnum = Field(
+        default=SettingDataTypeEnum.STRING, description="Data type of value"
+    )
     category: SettingCategoryEnum = Field(..., description="Setting category for organization")
-    environment: SettingEnvironmentEnum = Field(default=SettingEnvironmentEnum.ALL, description="Environment applicability")
-    description: Optional[str] = Field(None, max_length=1000, description="Human-readable description")
-    is_encrypted: bool = Field(default=False, description="Whether value is encrypted (secrets, passwords)")
+    environment: SettingEnvironmentEnum = Field(
+        default=SettingEnvironmentEnum.ALL, description="Environment applicability"
+    )
+    description: Optional[str] = Field(
+        None, max_length=1000, description="Human-readable description"
+    )
+    is_encrypted: bool = Field(
+        default=False, description="Whether value is encrypted (secrets, passwords)"
+    )
     is_read_only: bool = Field(default=False, description="Whether this setting can be modified")
     tags: List[str] = Field(default_factory=list, description="Tags for filtering and organization")
 
 
 class SettingCreate(BaseModel):
     """Model for creating new settings - supports both detailed and simple formats"""
-    key: Optional[str] = Field(None, min_length=1, max_length=255, description="Unique setting identifier")
+
+    key: Optional[str] = Field(
+        None, min_length=1, max_length=255, description="Unique setting identifier"
+    )
     value: Optional[str] = Field(None, description="Setting value (can be complex JSON)")
-    data_type: Optional[SettingDataTypeEnum] = Field(default=SettingDataTypeEnum.STRING, description="Data type of value")
-    category: Optional[SettingCategoryEnum] = Field(None, description="Setting category for organization")
-    environment: Optional[SettingEnvironmentEnum] = Field(default=SettingEnvironmentEnum.ALL, description="Environment applicability")
-    description: Optional[str] = Field(None, max_length=1000, description="Human-readable description")
-    is_encrypted: Optional[bool] = Field(default=False, description="Whether value is encrypted (secrets, passwords)")
-    is_read_only: Optional[bool] = Field(default=False, description="Whether this setting can be modified")
-    tags: Optional[List[str]] = Field(default_factory=list, description="Tags for filtering and organization")
-    
+    data_type: Optional[SettingDataTypeEnum] = Field(
+        default=SettingDataTypeEnum.STRING, description="Data type of value"
+    )
+    category: Optional[SettingCategoryEnum] = Field(
+        None, description="Setting category for organization"
+    )
+    environment: Optional[SettingEnvironmentEnum] = Field(
+        default=SettingEnvironmentEnum.ALL, description="Environment applicability"
+    )
+    description: Optional[str] = Field(
+        None, max_length=1000, description="Human-readable description"
+    )
+    is_encrypted: Optional[bool] = Field(
+        default=False, description="Whether value is encrypted (secrets, passwords)"
+    )
+    is_read_only: Optional[bool] = Field(
+        default=False, description="Whether this setting can be modified"
+    )
+    tags: Optional[List[str]] = Field(
+        default_factory=list, description="Tags for filtering and organization"
+    )
+
     class Config:
         extra = "allow"  # Allow additional fields for flexible key-value storage
 
 
 class SettingUpdate(BaseModel):
     """Model for updating settings (partial update allowed)"""
+
     value: Optional[str] = Field(None, description="New setting value")
     description: Optional[str] = Field(None, max_length=1000, description="Updated description")
     is_encrypted: Optional[bool] = Field(None, description="Update encryption flag")
     is_read_only: Optional[bool] = Field(None, description="Update read-only flag")
     tags: Optional[List[str]] = Field(None, description="Updated tags")
-    
+
     class Config:
         extra = "allow"  # Allow additional fields for simple key-value updates
         validate_assignment = True
 
     def has_updates(self) -> bool:
         """Check if any fields have been provided for update"""
-        return any([
-            self.value is not None,
-            self.description is not None,
-            self.is_encrypted is not None,
-            self.is_read_only is not None,
-            self.tags is not None,
-        ])
+        return any(
+            [
+                self.value is not None,
+                self.description is not None,
+                self.is_encrypted is not None,
+                self.is_read_only is not None,
+                self.tags is not None,
+            ]
+        )
 
 
 class SettingResponse(SettingBase):
     """Model for returning setting data"""
+
     id: int = Field(..., description="Setting database ID")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
     created_by_id: int = Field(..., description="User ID who created this setting")
     updated_by_id: Optional[int] = Field(None, description="User ID who last updated this setting")
-    value_preview: Optional[str] = Field(None, description="Preview of value (for encrypted values)")
+    value_preview: Optional[str] = Field(
+        None, description="Preview of value (for encrypted values)"
+    )
 
     class Config:
         from_attributes = True
@@ -105,6 +140,7 @@ class SettingResponse(SettingBase):
 
 class SettingListResponse(BaseModel):
     """Model for list endpoint response"""
+
     total: int = Field(..., description="Total number of settings")
     page: int = Field(..., description="Current page number")
     per_page: int = Field(..., description="Items per page")
@@ -114,6 +150,7 @@ class SettingListResponse(BaseModel):
 
 class SettingHistoryResponse(BaseModel):
     """Model for audit log entry"""
+
     id: int
     setting_id: int
     changed_by_id: int
@@ -126,11 +163,13 @@ class SettingHistoryResponse(BaseModel):
 
 class SettingBulkUpdateRequest(BaseModel):
     """Model for bulk updating multiple settings"""
+
     updates: List[dict] = Field(..., description="List of {setting_id, value} objects")
 
 
 class ErrorResponse(BaseModel):
     """Standard error response"""
+
     status: str = Field(..., description="Error status")
     message: str = Field(..., description="Error message")
     code: Optional[str] = Field(None, description="Error code for debugging")

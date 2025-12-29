@@ -10,13 +10,13 @@ logger = logging.getLogger(__name__)
 class FinancialAnalysisTask(PureTask):
     """
     Financial analysis: Calculate costs, ROI, and projections.
-    
+
     Input:
         - workflow_type: str - Type of workflow analyzed
         - content_created: int - Number of pieces created
         - platforms: list - Social platforms used
         - time_period: str - Analysis period (monthly, quarterly, yearly)
-    
+
     Output:
         - total_cost: float - Total cost for workflow
         - cost_breakdown: dict - Cost per component
@@ -39,12 +39,12 @@ class FinancialAnalysisTask(PureTask):
     ) -> Dict[str, Any]:
         """Execute financial analysis task."""
         from src.cofounder_agent.services.model_router import model_router
-        
+
         workflow_type = input_data["workflow_type"]
         content_created = input_data.get("content_created", 1)
         platforms = input_data.get("platforms", [])
         time_period = input_data.get("time_period", "monthly")
-        
+
         # Cost estimation
         cost_breakdown = {
             "llm_calls": content_created * 0.50,  # ~$0.50 per blog post
@@ -53,14 +53,14 @@ class FinancialAnalysisTask(PureTask):
             "storage": 0.10,  # Monthly storage
             "api_calls": content_created * 0.15,  # ~$0.15 misc API calls
         }
-        
+
         total_cost = sum(cost_breakdown.values())
-        
+
         # ROI estimation (assumes traffic monetization)
         estimated_traffic = content_created * 500  # ~500 visitors per content
         estimated_revenue = estimated_traffic * 0.02  # 2% conversion at $10 avg
         roi = ((estimated_revenue - total_cost) / total_cost * 100) if total_cost > 0 else 0
-        
+
         prompt = f"""Analyze financial impact of this content workflow:
 
 Workflow Type: {workflow_type}
@@ -86,15 +86,16 @@ Provide:
 4. 3-month projection
 
 Format as JSON with keys: recommendations, opportunities, breakeven_units, projection"""
-        
+
         response = await model_router.query_with_fallback(
             prompt=prompt,
             temperature=0.3,
             max_tokens=800,
         )
-        
+
         try:
             import json
+
             analysis = json.loads(response)
         except:
             analysis = {
@@ -102,7 +103,7 @@ Format as JSON with keys: recommendations, opportunities, breakeven_units, proje
                 "opportunities": [],
                 "projection": {},
             }
-        
+
         return {
             "workflow_type": workflow_type,
             "total_cost": round(total_cost, 2),
@@ -119,12 +120,12 @@ Format as JSON with keys: recommendations, opportunities, breakeven_units, proje
 class MarketAnalysisTask(PureTask):
     """
     Market analysis: Analyze market trends and opportunities.
-    
+
     Input:
         - topic: str - Market/topic to analyze
         - competitors: list - Competitor URLs (optional)
         - target_audience: str - Target market segment
-    
+
     Output:
         - market_size: str - Estimated market size
         - trends: list - Current trends
@@ -147,11 +148,11 @@ class MarketAnalysisTask(PureTask):
     ) -> Dict[str, Any]:
         """Execute market analysis task."""
         from src.cofounder_agent.services.model_router import model_router
-        
+
         topic = input_data["topic"]
         competitors = input_data.get("competitors", [])
         target_audience = input_data.get("target_audience", "general")
-        
+
         prompt = f"""Perform detailed market analysis for: {topic}
 
 Target Audience: {target_audience}
@@ -168,15 +169,16 @@ Analyze:
 Provide specific, data-driven insights.
 
 Format as JSON with keys: market_size, growth_rate, trends, gaps, customer_insights, positioning"""
-        
+
         response = await model_router.query_with_fallback(
             prompt=prompt,
             temperature=0.4,
             max_tokens=1200,
         )
-        
+
         try:
             import json
+
             analysis = json.loads(response)
         except:
             analysis = {
@@ -184,7 +186,7 @@ Format as JSON with keys: market_size, growth_rate, trends, gaps, customer_insig
                 "trends": [],
                 "gaps": [],
             }
-        
+
         return {
             "topic": topic,
             "market_size": analysis.get("market_size", "Unknown"),
@@ -201,11 +203,11 @@ Format as JSON with keys: market_size, growth_rate, trends, gaps, customer_insig
 class PerformanceReviewTask(PureTask):
     """
     Performance review: Analyze content and campaign performance.
-    
+
     Input:
         - period: str - Review period (weekly, monthly, quarterly)
         - metrics: dict - Performance metrics (views, clicks, conversions)
-    
+
     Output:
         - summary: str - Performance summary
         - insights: list - Key insights
@@ -228,15 +230,17 @@ class PerformanceReviewTask(PureTask):
     ) -> Dict[str, Any]:
         """Execute performance review task."""
         from src.cofounder_agent.services.model_router import model_router
-        
+
         period = input_data["period"]
         metrics = input_data.get("metrics", {})
-        
+
         # Format metrics for analysis
-        metrics_str = "\n".join(
-            f"- {k}: {v}" for k, v in metrics.items()
-        ) if metrics else "No metrics provided"
-        
+        metrics_str = (
+            "\n".join(f"- {k}: {v}" for k, v in metrics.items())
+            if metrics
+            else "No metrics provided"
+        )
+
         prompt = f"""Analyze performance for {period} period:
 
 Metrics:
@@ -250,15 +254,16 @@ Provide:
 5. Action items for next period
 
 Format as JSON with keys: summary, insights, improvements, trend, trend_percentage, action_items"""
-        
+
         response = await model_router.query_with_fallback(
             prompt=prompt,
             temperature=0.4,
             max_tokens=1000,
         )
-        
+
         try:
             import json
+
             analysis = json.loads(response)
         except:
             analysis = {
@@ -267,7 +272,7 @@ Format as JSON with keys: summary, insights, improvements, trend, trend_percenta
                 "improvements": [],
                 "trend": "stable",
             }
-        
+
         return {
             "period": period,
             "summary": analysis.get("summary", ""),

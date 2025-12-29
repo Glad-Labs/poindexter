@@ -30,6 +30,7 @@ class TestPoindexterRoutes:
         """FastAPI test client."""
         try:
             from main import app
+
             return TestClient(app)
         except ImportError:
             pytest.skip("FastAPI app not available")
@@ -40,16 +41,19 @@ class TestPoindexterRoutes:
 
     def test_create_workflow_blog_post(self, client):
         """POST /api/poindexter/workflows should create blog post workflow."""
-        response = client.post("/api/poindexter/workflows", json={
-            "type": "blog_post",
-            "parameters": {
-                "topic": "AI Trends in 2025",
-                "length": "2000 words",
-                "style": "professional",
-                "include_images": True,
-                "auto_publish": True
-            }
-        })
+        response = client.post(
+            "/api/poindexter/workflows",
+            json={
+                "type": "blog_post",
+                "parameters": {
+                    "topic": "AI Trends in 2025",
+                    "length": "2000 words",
+                    "style": "professional",
+                    "include_images": True,
+                    "auto_publish": True,
+                },
+            },
+        )
 
         assert response.status_code in [200, 201, 202]  # Accepts async patterns
         data = response.json()
@@ -58,55 +62,60 @@ class TestPoindexterRoutes:
 
     def test_create_workflow_with_research(self, client):
         """Create workflow should handle research parameter."""
-        response = client.post("/api/poindexter/workflows", json={
-            "type": "blog_post",
-            "parameters": {
-                "topic": "market trends",
-                "require_research": True,
-                "sources_limit": 5
-            }
-        })
+        response = client.post(
+            "/api/poindexter/workflows",
+            json={
+                "type": "blog_post",
+                "parameters": {
+                    "topic": "market trends",
+                    "require_research": True,
+                    "sources_limit": 5,
+                },
+            },
+        )
 
         assert response.status_code in [200, 201, 202]
 
     def test_create_workflow_with_constraints(self, client):
         """Create workflow should accept cost and quality constraints."""
-        response = client.post("/api/poindexter/workflows", json={
-            "type": "blog_post",
-            "parameters": {"topic": "test"},
-            "constraints": {
-                "max_cost": 2.0,
-                "quality_threshold": 0.85,
-                "max_execution_time": 300
-            }
-        })
+        response = client.post(
+            "/api/poindexter/workflows",
+            json={
+                "type": "blog_post",
+                "parameters": {"topic": "test"},
+                "constraints": {
+                    "max_cost": 2.0,
+                    "quality_threshold": 0.85,
+                    "max_execution_time": 300,
+                },
+            },
+        )
 
         assert response.status_code in [200, 201, 202]
 
     def test_create_workflow_missing_parameters(self, client):
         """Create workflow should validate required parameters."""
-        response = client.post("/api/poindexter/workflows", json={
-            "type": "blog_post",
-            "parameters": {}  # Missing required topic
-        })
+        response = client.post(
+            "/api/poindexter/workflows",
+            json={"type": "blog_post", "parameters": {}},  # Missing required topic
+        )
 
         assert response.status_code == 422  # Validation error
 
     def test_create_workflow_invalid_type(self, client):
         """Create workflow should validate workflow type."""
-        response = client.post("/api/poindexter/workflows", json={
-            "type": "invalid_type",
-            "parameters": {"topic": "test"}
-        })
+        response = client.post(
+            "/api/poindexter/workflows",
+            json={"type": "invalid_type", "parameters": {"topic": "test"}},
+        )
 
         assert response.status_code == 422
 
     def test_create_workflow_returns_task_id(self, client):
         """Create workflow should return workflow ID for tracking."""
-        response = client.post("/api/poindexter/workflows", json={
-            "type": "blog_post",
-            "parameters": {"topic": "test"}
-        })
+        response = client.post(
+            "/api/poindexter/workflows", json={"type": "blog_post", "parameters": {"topic": "test"}}
+        )
 
         data = response.json()
         assert any(key in data for key in ["workflow_id", "id", "task_id"])
@@ -119,13 +128,12 @@ class TestPoindexterRoutes:
     def test_get_workflow_status_running(self, client):
         """GET /api/poindexter/workflows/:id should return workflow status."""
         # First create a workflow
-        create_response = client.post("/api/poindexter/workflows", json={
-            "type": "blog_post",
-            "parameters": {"topic": "test"}
-        })
-        
+        create_response = client.post(
+            "/api/poindexter/workflows", json={"type": "blog_post", "parameters": {"topic": "test"}}
+        )
+
         workflow_id = create_response.json().get("workflow_id") or create_response.json().get("id")
-        
+
         # Get status
         response = client.get(f"/api/poindexter/workflows/{workflow_id}")
 
@@ -136,13 +144,12 @@ class TestPoindexterRoutes:
 
     def test_get_workflow_status_completed(self, client):
         """Get workflow should show results when completed."""
-        create_response = client.post("/api/poindexter/workflows", json={
-            "type": "blog_post",
-            "parameters": {"topic": "test"}
-        })
-        
+        create_response = client.post(
+            "/api/poindexter/workflows", json={"type": "blog_post", "parameters": {"topic": "test"}}
+        )
+
         workflow_id = create_response.json().get("workflow_id") or create_response.json().get("id")
-        
+
         response = client.get(f"/api/poindexter/workflows/{workflow_id}")
 
         data = response.json()
@@ -159,11 +166,10 @@ class TestPoindexterRoutes:
 
     def test_get_workflow_progress(self, client):
         """Get workflow should include progress information."""
-        create_response = client.post("/api/poindexter/workflows", json={
-            "type": "blog_post",
-            "parameters": {"topic": "test"}
-        })
-        
+        create_response = client.post(
+            "/api/poindexter/workflows", json={"type": "blog_post", "parameters": {"topic": "test"}}
+        )
+
         workflow_id = create_response.json().get("workflow_id") or create_response.json().get("id")
         response = client.get(f"/api/poindexter/workflows/{workflow_id}")
 
@@ -195,7 +201,7 @@ class TestPoindexterRoutes:
             tools = response.json()["tools"]
 
         tool_names = [t["name"] for t in tools]
-        
+
         expected_tools = [
             "research_tool",
             "generate_content_tool",
@@ -203,9 +209,9 @@ class TestPoindexterRoutes:
             "publish_tool",
             "track_metrics_tool",
             "fetch_images_tool",
-            "refine_tool"
+            "refine_tool",
         ]
-        
+
         for expected in expected_tools:
             assert expected in tool_names
 
@@ -236,13 +242,12 @@ class TestPoindexterRoutes:
     def test_get_execution_plan(self, client):
         """GET /api/poindexter/plans/:id should return execution plan."""
         # Create workflow first
-        create_response = client.post("/api/poindexter/workflows", json={
-            "type": "blog_post",
-            "parameters": {"topic": "test"}
-        })
-        
+        create_response = client.post(
+            "/api/poindexter/workflows", json={"type": "blog_post", "parameters": {"topic": "test"}}
+        )
+
         workflow_id = create_response.json().get("workflow_id") or create_response.json().get("id")
-        
+
         response = client.get(f"/api/poindexter/plans/{workflow_id}")
 
         assert response.status_code == 200
@@ -251,33 +256,31 @@ class TestPoindexterRoutes:
 
     def test_plan_includes_step_order(self, client):
         """Execution plan should show step order."""
-        create_response = client.post("/api/poindexter/workflows", json={
-            "type": "blog_post",
-            "parameters": {"topic": "test"}
-        })
-        
+        create_response = client.post(
+            "/api/poindexter/workflows", json={"type": "blog_post", "parameters": {"topic": "test"}}
+        )
+
         workflow_id = create_response.json().get("workflow_id") or create_response.json().get("id")
         response = client.get(f"/api/poindexter/plans/{workflow_id}")
 
         data = response.json()
         steps = data.get("steps") or data.get("plan")
-        
+
         for i, step in enumerate(steps):
             assert "order" in step or step.get("order") == i
 
     def test_plan_includes_tool_information(self, client):
         """Execution plan should identify tools."""
-        create_response = client.post("/api/poindexter/workflows", json={
-            "type": "blog_post",
-            "parameters": {"topic": "test"}
-        })
-        
+        create_response = client.post(
+            "/api/poindexter/workflows", json={"type": "blog_post", "parameters": {"topic": "test"}}
+        )
+
         workflow_id = create_response.json().get("workflow_id") or create_response.json().get("id")
         response = client.get(f"/api/poindexter/plans/{workflow_id}")
 
         data = response.json()
         steps = data.get("steps") or data.get("plan")
-        
+
         assert all("tool" in s for s in steps)
 
     # ========================================================================
@@ -286,14 +289,13 @@ class TestPoindexterRoutes:
 
     def test_estimate_workflow_cost(self, client):
         """POST /api/poindexter/cost-estimate should estimate cost."""
-        response = client.post("/api/poindexter/cost-estimate", json={
-            "type": "blog_post",
-            "parameters": {
-                "topic": "test",
-                "length": "2000 words",
-                "include_images": True
-            }
-        })
+        response = client.post(
+            "/api/poindexter/cost-estimate",
+            json={
+                "type": "blog_post",
+                "parameters": {"topic": "test", "length": "2000 words", "include_images": True},
+            },
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -303,29 +305,31 @@ class TestPoindexterRoutes:
 
     def test_cost_estimate_with_different_models(self, client):
         """Cost estimate should vary by model choice."""
-        response_cheap = client.post("/api/poindexter/cost-estimate", json={
-            "type": "blog_post",
-            "parameters": {"topic": "test"},
-            "model": "gpt-3.5-turbo"
-        })
+        response_cheap = client.post(
+            "/api/poindexter/cost-estimate",
+            json={"type": "blog_post", "parameters": {"topic": "test"}, "model": "gpt-3.5-turbo"},
+        )
 
-        response_expensive = client.post("/api/poindexter/cost-estimate", json={
-            "type": "blog_post",
-            "parameters": {"topic": "test"},
-            "model": "gpt-4"
-        })
+        response_expensive = client.post(
+            "/api/poindexter/cost-estimate",
+            json={"type": "blog_post", "parameters": {"topic": "test"}, "model": "gpt-4"},
+        )
 
-        cheap_cost = response_cheap.json().get("estimated_cost") or response_cheap.json().get("cost")
-        expensive_cost = response_expensive.json().get("estimated_cost") or response_expensive.json().get("cost")
+        cheap_cost = response_cheap.json().get("estimated_cost") or response_cheap.json().get(
+            "cost"
+        )
+        expensive_cost = response_expensive.json().get(
+            "estimated_cost"
+        ) or response_expensive.json().get("cost")
 
         assert expensive_cost >= cheap_cost
 
     def test_cost_estimate_breakdown(self, client):
         """Cost estimate should show breakdown by tool."""
-        response = client.post("/api/poindexter/cost-estimate", json={
-            "type": "blog_post",
-            "parameters": {"topic": "test"}
-        })
+        response = client.post(
+            "/api/poindexter/cost-estimate",
+            json={"type": "blog_post", "parameters": {"topic": "test"}},
+        )
 
         data = response.json()
         assert "breakdown" in data or "cost_per_tool" in data
@@ -337,13 +341,12 @@ class TestPoindexterRoutes:
     def test_cancel_workflow(self, client):
         """DELETE /api/poindexter/workflows/:id should cancel workflow."""
         # Create workflow
-        create_response = client.post("/api/poindexter/workflows", json={
-            "type": "blog_post",
-            "parameters": {"topic": "test"}
-        })
-        
+        create_response = client.post(
+            "/api/poindexter/workflows", json={"type": "blog_post", "parameters": {"topic": "test"}}
+        )
+
         workflow_id = create_response.json().get("workflow_id") or create_response.json().get("id")
-        
+
         # Cancel it
         response = client.delete(f"/api/poindexter/workflows/{workflow_id}")
 
@@ -353,16 +356,15 @@ class TestPoindexterRoutes:
 
     def test_cancel_completed_workflow(self, client):
         """Cancel should handle already-completed workflows."""
-        create_response = client.post("/api/poindexter/workflows", json={
-            "type": "blog_post",
-            "parameters": {"topic": "test"}
-        })
-        
+        create_response = client.post(
+            "/api/poindexter/workflows", json={"type": "blog_post", "parameters": {"topic": "test"}}
+        )
+
         workflow_id = create_response.json().get("workflow_id") or create_response.json().get("id")
-        
+
         # Get status first (ensure it's complete)
         client.get(f"/api/poindexter/workflows/{workflow_id}")
-        
+
         # Try to cancel
         response = client.delete(f"/api/poindexter/workflows/{workflow_id}")
 
@@ -384,27 +386,33 @@ class TestPoindexterRoutes:
         response = client.post(
             "/api/poindexter/workflows",
             data="invalid json",
-            headers={"Content-Type": "application/json"}
+            headers={"Content-Type": "application/json"},
         )
 
         assert response.status_code in [400, 422]
 
     def test_missing_required_fields(self, client):
         """Routes should validate required fields."""
-        response = client.post("/api/poindexter/workflows", json={
-            # Missing 'type' field
-            "parameters": {"topic": "test"}
-        })
+        response = client.post(
+            "/api/poindexter/workflows",
+            json={
+                # Missing 'type' field
+                "parameters": {"topic": "test"}
+            },
+        )
 
         assert response.status_code == 422
 
     def test_workflow_timeout_handling(self, client):
         """Routes should handle workflow timeouts."""
-        response = client.post("/api/poindexter/workflows", json={
-            "type": "blog_post",
-            "parameters": {"topic": "test"},
-            "constraints": {"max_execution_time": 1}  # 1 second timeout
-        })
+        response = client.post(
+            "/api/poindexter/workflows",
+            json={
+                "type": "blog_post",
+                "parameters": {"topic": "test"},
+                "constraints": {"max_execution_time": 1},  # 1 second timeout
+            },
+        )
 
         # Should accept but may timeout during execution
         assert response.status_code in [200, 201, 202]
@@ -415,14 +423,13 @@ class TestPoindexterRoutes:
 
     def test_workflow_response_format(self, client):
         """Workflow responses should have consistent format."""
-        response = client.post("/api/poindexter/workflows", json={
-            "type": "blog_post",
-            "parameters": {"topic": "test"}
-        })
+        response = client.post(
+            "/api/poindexter/workflows", json={"type": "blog_post", "parameters": {"topic": "test"}}
+        )
 
         assert response.status_code in [200, 201, 202]
         data = response.json()
-        
+
         # Check required fields
         assert any(k in data for k in ["workflow_id", "id", "task_id"])
         assert "status" in data
@@ -430,10 +437,9 @@ class TestPoindexterRoutes:
 
     def test_error_response_format(self, client):
         """Error responses should be consistent."""
-        response = client.post("/api/poindexter/workflows", json={
-            "type": "invalid",
-            "parameters": {"topic": "test"}
-        })
+        response = client.post(
+            "/api/poindexter/workflows", json={"type": "invalid", "parameters": {"topic": "test"}}
+        )
 
         data = response.json()
         assert "detail" in data or "error" in data or "message" in data
@@ -457,6 +463,7 @@ class TestPoindexterRoutesIntegration:
         """FastAPI test client."""
         try:
             from main import app
+
             return TestClient(app)
         except ImportError:
             pytest.skip("FastAPI app not available")
@@ -468,17 +475,17 @@ class TestPoindexterRoutesIntegration:
         assert tools_response.status_code == 200
 
         # 2. Estimate cost
-        estimate_response = client.post("/api/poindexter/cost-estimate", json={
-            "type": "blog_post",
-            "parameters": {"topic": "AI"}
-        })
+        estimate_response = client.post(
+            "/api/poindexter/cost-estimate",
+            json={"type": "blog_post", "parameters": {"topic": "AI"}},
+        )
         assert estimate_response.status_code == 200
 
         # 3. Create workflow
-        create_response = client.post("/api/poindexter/workflows", json={
-            "type": "blog_post",
-            "parameters": {"topic": "AI Trends"}
-        })
+        create_response = client.post(
+            "/api/poindexter/workflows",
+            json={"type": "blog_post", "parameters": {"topic": "AI Trends"}},
+        )
         assert create_response.status_code in [200, 201, 202]
         workflow_id = create_response.json().get("workflow_id") or create_response.json().get("id")
 
@@ -497,12 +504,12 @@ class TestPoindexterRoutesIntegration:
     def test_concurrent_workflows(self, client):
         """Test handling multiple concurrent workflows."""
         workflow_ids = []
-        
+
         for i in range(3):
-            response = client.post("/api/poindexter/workflows", json={
-                "type": "blog_post",
-                "parameters": {"topic": f"Topic {i}"}
-            })
+            response = client.post(
+                "/api/poindexter/workflows",
+                json={"type": "blog_post", "parameters": {"topic": f"Topic {i}"}},
+            )
             assert response.status_code in [200, 201, 202]
             workflow_ids.append(response.json().get("workflow_id") or response.json().get("id"))
 

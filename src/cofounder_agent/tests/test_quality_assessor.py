@@ -54,10 +54,7 @@ class QualityAssessor:
         self.min_word_variety = 0.5  # Unique words / total words
 
     async def assess_content(
-        self,
-        content: str,
-        context: Optional[Dict[str, Any]] = None,
-        detailed: bool = True
+        self, content: str, context: Optional[Dict[str, Any]] = None, detailed: bool = True
     ) -> Dict[str, Any]:
         """
         Comprehensive content quality assessment
@@ -81,14 +78,14 @@ class QualityAssessor:
         try:
             # Calculate all dimensions
             scores = {
-                'coherence': self._assess_coherence(content),
-                'relevance': self._assess_relevance(content, context),
-                'completeness': self._assess_completeness(content, context),
-                'clarity': self._assess_clarity(content),
-                'accuracy': self._assess_accuracy(content),
-                'structure': self._assess_structure(content),
-                'engagement': self._assess_engagement(content),
-                'grammar': self._assess_grammar(content)
+                "coherence": self._assess_coherence(content),
+                "relevance": self._assess_relevance(content, context),
+                "completeness": self._assess_completeness(content, context),
+                "clarity": self._assess_clarity(content),
+                "accuracy": self._assess_accuracy(content),
+                "structure": self._assess_structure(content),
+                "engagement": self._assess_engagement(content),
+                "grammar": self._assess_grammar(content),
             }
 
             # Calculate overall score
@@ -101,22 +98,22 @@ class QualityAssessor:
             recommendations = self._generate_recommendations(scores, metrics, context)
 
             result = {
-                'overall_score': round(overall_score, 1),
-                'dimension_scores': {k: round(v, 1) for k, v in scores.items()},
-                'metrics': metrics,
-                'recommendations': recommendations,
-                'assessment_timestamp': datetime.now().isoformat(),
-                'pass_quality_check': overall_score >= 70,
-                'quality_level': self._score_to_level(overall_score)
+                "overall_score": round(overall_score, 1),
+                "dimension_scores": {k: round(v, 1) for k, v in scores.items()},
+                "metrics": metrics,
+                "recommendations": recommendations,
+                "assessment_timestamp": datetime.now().isoformat(),
+                "pass_quality_check": overall_score >= 70,
+                "quality_level": self._score_to_level(overall_score),
             }
 
             if detailed:
-                result['detailed_analysis'] = {
-                    'coherence_details': self._detailed_coherence(content),
-                    'readability': self._calculate_readability(content),
-                    'keyword_analysis': self._analyze_keywords(content, context),
-                    'structure_analysis': self._analyze_structure(content),
-                    'engagement_analysis': self._analyze_engagement(content)
+                result["detailed_analysis"] = {
+                    "coherence_details": self._detailed_coherence(content),
+                    "readability": self._calculate_readability(content),
+                    "keyword_analysis": self._analyze_keywords(content, context),
+                    "structure_analysis": self._analyze_structure(content),
+                    "engagement_analysis": self._analyze_engagement(content),
                 }
 
             # Log summary
@@ -134,9 +131,9 @@ class QualityAssessor:
         except Exception as e:
             logger.error(f"❌ Assessment error: {e}")
             return {
-                'overall_score': 0,
-                'error': str(e),
-                'assessment_timestamp': datetime.now().isoformat()
+                "overall_score": 0,
+                "error": str(e),
+                "assessment_timestamp": datetime.now().isoformat(),
             }
 
     def _assess_coherence(self, content: str) -> float:
@@ -157,11 +154,27 @@ class QualityAssessor:
 
         # Check for transition words (good sign of coherence)
         transition_words = [
-            'furthermore', 'however', 'therefore', 'moreover', 'thus',
-            'meanwhile', 'consequently', 'nevertheless', 'additionally',
-            'similarly', 'in contrast', 'on the other hand', 'as a result',
-            'finally', 'in summary', 'in conclusion', 'specifically',
-            'generally', 'for example', 'such as', 'notably'
+            "furthermore",
+            "however",
+            "therefore",
+            "moreover",
+            "thus",
+            "meanwhile",
+            "consequently",
+            "nevertheless",
+            "additionally",
+            "similarly",
+            "in contrast",
+            "on the other hand",
+            "as a result",
+            "finally",
+            "in summary",
+            "in conclusion",
+            "specifically",
+            "generally",
+            "for example",
+            "such as",
+            "notably",
         ]
 
         text_lower = content.lower()
@@ -169,7 +182,7 @@ class QualityAssessor:
         score += min(20, transition_count * 2)
 
         # Check paragraph structure
-        paragraphs = [p for p in content.split('\n\n') if p.strip()]
+        paragraphs = [p for p in content.split("\n\n") if p.strip()]
         if len(paragraphs) >= 2:
             score += 10
 
@@ -194,7 +207,7 @@ class QualityAssessor:
         if not context:
             return score
 
-        topic = context.get('topic', '').lower()
+        topic = context.get("topic", "").lower()
         if topic:
             topic_keywords = set(topic.split())
             content_words = set(content.lower().split())
@@ -205,13 +218,10 @@ class QualityAssessor:
             score += int(keyword_ratio * 30)
 
         # Check if content addresses expected points
-        if 'expected_points' in context:
-            points = context['expected_points']
+        if "expected_points" in context:
+            points = context["expected_points"]
             if isinstance(points, list):
-                points_addressed = sum(
-                    1 for point in points
-                    if point.lower() in content.lower()
-                )
+                points_addressed = sum(1 for point in points if point.lower() in content.lower())
                 score += int((points_addressed / len(points)) * 20) if points else 0
 
         return min(100, max(0, score))
@@ -231,8 +241,8 @@ class QualityAssessor:
         content_length = len(content)
         word_count = len(content.split())
 
-        if context and 'expected_length' in context:
-            min_len, max_len = self._parse_length_range(context['expected_length'])
+        if context and "expected_length" in context:
+            min_len, max_len = self._parse_length_range(context["expected_length"])
             if min_len <= word_count <= max_len:
                 score += 25
             elif word_count >= min_len * 0.8:
@@ -245,8 +255,8 @@ class QualityAssessor:
                 score += 15
 
         # Check for introduction/conclusion markers
-        intro_markers = ['introduction', 'overview', 'background', 'about', 'this']
-        conclusion_markers = ['conclusion', 'summary', 'finally', 'in conclusion', 'in summary']
+        intro_markers = ["introduction", "overview", "background", "about", "this"]
+        conclusion_markers = ["conclusion", "summary", "finally", "in conclusion", "in summary"]
 
         has_intro = any(marker in content.lower() for marker in intro_markers)
         has_conclusion = any(marker in content.lower() for marker in conclusion_markers)
@@ -257,7 +267,7 @@ class QualityAssessor:
             score += 15
 
         # Check for multiple sections/paragraphs
-        paragraphs = [p for p in content.split('\n\n') if p.strip()]
+        paragraphs = [p for p in content.split("\n\n") if p.strip()]
         if len(paragraphs) >= 3:
             score += 10
 
@@ -287,10 +297,9 @@ class QualityAssessor:
             score += 10
 
         # Check for passive voice (higher is worse for clarity)
-        passive_patterns = [r'\b(is|are|was|were|been|being)\s+\w+ed\b']
+        passive_patterns = [r"\b(is|are|was|were|been|being)\s+\w+ed\b"]
         passive_count = sum(
-            len(re.findall(pattern, content, re.IGNORECASE))
-            for pattern in passive_patterns
+            len(re.findall(pattern, content, re.IGNORECASE)) for pattern in passive_patterns
         )
         passive_ratio = passive_count / max(len(sentences), 1)
         if passive_ratio < 0.2:
@@ -316,13 +325,16 @@ class QualityAssessor:
 
         # Deduct for extreme language
         extreme_words = [
-            'always', 'never', 'definitely', 'absolutely', 'certainly',
-            'undoubtedly', 'obviously', 'unquestionably'
+            "always",
+            "never",
+            "definitely",
+            "absolutely",
+            "certainly",
+            "undoubtedly",
+            "obviously",
+            "unquestionably",
         ]
-        extreme_count = sum(
-            1 for word in extreme_words
-            if f' {word} ' in f' {content.lower()} '
-        )
+        extreme_count = sum(1 for word in extreme_words if f" {word} " in f" {content.lower()} ")
 
         if extreme_count > 5:
             score -= 15
@@ -331,13 +343,20 @@ class QualityAssessor:
 
         # Check for hedging language (good for accuracy)
         hedging_words = [
-            'may', 'might', 'could', 'possibly', 'perhaps', 'likely',
-            'suggests', 'indicates', 'appears', 'seems', 'often', 'sometimes'
+            "may",
+            "might",
+            "could",
+            "possibly",
+            "perhaps",
+            "likely",
+            "suggests",
+            "indicates",
+            "appears",
+            "seems",
+            "often",
+            "sometimes",
         ]
-        hedging_count = sum(
-            1 for word in hedging_words
-            if f' {word} ' in f' {content.lower()} '
-        )
+        hedging_count = sum(1 for word in hedging_words if f" {word} " in f" {content.lower()} ")
 
         if hedging_count > 5:
             score += 10
@@ -356,22 +375,22 @@ class QualityAssessor:
         """
         score = 50
 
-        lines = content.split('\n')
+        lines = content.split("\n")
 
         # Check for headings
-        heading_count = sum(1 for line in lines if line.strip().startswith('#'))
+        heading_count = sum(1 for line in lines if line.strip().startswith("#"))
         if heading_count >= 2:
             score += 20
         elif heading_count >= 1:
             score += 10
 
         # Check for lists
-        list_count = sum(1 for line in lines if line.strip().startswith(('-', '*', '•')))
+        list_count = sum(1 for line in lines if line.strip().startswith(("-", "*", "•")))
         if list_count >= 3:
             score += 15
 
         # Check paragraph structure
-        paragraphs = [p for p in content.split('\n\n') if p.strip()]
+        paragraphs = [p for p in content.split("\n\n") if p.strip()]
         if len(paragraphs) >= 3:
             score += 15
 
@@ -402,18 +421,18 @@ class QualityAssessor:
                 score += 15
 
         # Check for examples/specific details
-        if 'example' in content.lower() or 'such as' in content.lower():
+        if "example" in content.lower() or "such as" in content.lower():
             score += 10
-        if any(marker in content.lower() for marker in ['specifically', 'particularly', 'notably']):
+        if any(marker in content.lower() for marker in ["specifically", "particularly", "notably"]):
             score += 10
 
         # Check for questions
-        question_count = content.count('?')
+        question_count = content.count("?")
         if question_count >= 1:
             score += 10
 
         # Check for call to action
-        cta_words = ['explore', 'discover', 'learn', 'try', 'experiment', 'consider']
+        cta_words = ["explore", "discover", "learn", "try", "experiment", "consider"]
         if any(cta in content.lower() for cta in cta_words):
             score += 10
 
@@ -432,22 +451,21 @@ class QualityAssessor:
 
         # Check for common errors
         common_errors = [
-            (r'\btheir\s+is\b', 'there/their confusion'),
-            (r'\byour\s+(going|coming)\b', 'you\'re confusion'),
-            (r'\bits\s+is\b', 'it\'s confusion'),
-            (r'\ba\s+\w+\s+by\b', 'potential a/an error'),
+            (r"\btheir\s+is\b", "there/their confusion"),
+            (r"\byour\s+(going|coming)\b", "you're confusion"),
+            (r"\bits\s+is\b", "it's confusion"),
+            (r"\ba\s+\w+\s+by\b", "potential a/an error"),
         ]
 
         error_count = sum(
-            len(re.findall(pattern, content, re.IGNORECASE))
-            for pattern, _ in common_errors
+            len(re.findall(pattern, content, re.IGNORECASE)) for pattern, _ in common_errors
         )
 
         score -= error_count * 5
 
         # Check punctuation balance
-        open_parens = content.count('(')
-        close_parens = content.count(')')
+        open_parens = content.count("(")
+        close_parens = content.count(")")
         if open_parens != close_parens:
             score -= 5
 
@@ -461,46 +479,45 @@ class QualityAssessor:
         """Extract raw metrics from content"""
         words = content.split()
         sentences = self._get_sentences(content)
-        paragraphs = [p for p in content.split('\n\n') if p.strip()]
+        paragraphs = [p for p in content.split("\n\n") if p.strip()]
 
         return {
-            'character_count': len(content),
-            'word_count': len(words),
-            'sentence_count': len(sentences),
-            'paragraph_count': len(paragraphs),
-            'average_word_length': sum(len(w) for w in words) / max(len(words), 1),
-            'average_sentence_length': sum(len(s.split()) for s in sentences) / max(len(sentences), 1),
-            'average_paragraph_length': sum(len(p.split()) for p in paragraphs) / max(len(paragraphs), 1),
-            'unique_word_count': len(set(w.lower() for w in words)),
-            'word_variety_ratio': len(set(w.lower() for w in words)) / max(len(words), 1),
+            "character_count": len(content),
+            "word_count": len(words),
+            "sentence_count": len(sentences),
+            "paragraph_count": len(paragraphs),
+            "average_word_length": sum(len(w) for w in words) / max(len(words), 1),
+            "average_sentence_length": sum(len(s.split()) for s in sentences)
+            / max(len(sentences), 1),
+            "average_paragraph_length": sum(len(p.split()) for p in paragraphs)
+            / max(len(paragraphs), 1),
+            "unique_word_count": len(set(w.lower() for w in words)),
+            "word_variety_ratio": len(set(w.lower() for w in words)) / max(len(words), 1),
         }
 
     def _generate_recommendations(
-        self,
-        scores: Dict[str, float],
-        metrics: Dict[str, Any],
-        context: Optional[Dict] = None
+        self, scores: Dict[str, float], metrics: Dict[str, Any], context: Optional[Dict] = None
     ) -> List[str]:
         """Generate specific improvement recommendations"""
         recommendations = []
 
         # Coherence recommendations
-        if scores['coherence'] < 70:
+        if scores["coherence"] < 70:
             recommendations.append(
                 "🔗 Improve coherence: Add transition words between sentences "
                 "(e.g., 'Furthermore', 'However', 'As a result')"
             )
 
         # Relevance recommendations
-        if scores['relevance'] < 70:
+        if scores["relevance"] < 70:
             recommendations.append(
                 "🎯 Increase relevance: Ensure all content directly addresses the main topic. "
                 "Consider focusing on the key points."
             )
 
         # Completeness recommendations
-        if scores['completeness'] < 70:
-            if metrics['word_count'] < 300:
+        if scores["completeness"] < 70:
+            if metrics["word_count"] < 300:
                 recommendations.append(
                     "📝 Add more detail: Expand the content to be more thorough. "
                     f"Current: {metrics['word_count']} words, Target: 300+ words"
@@ -511,27 +528,27 @@ class QualityAssessor:
                 )
 
         # Clarity recommendations
-        if scores['clarity'] < 70:
+        if scores["clarity"] < 70:
             recommendations.append(
                 "📖 Improve clarity: Use shorter sentences and simpler vocabulary. "
                 f"Current average sentence length: {metrics['average_sentence_length']:.0f} words"
             )
 
         # Structure recommendations
-        if scores['structure'] < 70:
+        if scores["structure"] < 70:
             recommendations.append(
                 "🏗️ Improve structure: Add headings and organize content into clear sections"
             )
 
         # Engagement recommendations
-        if scores['engagement'] < 70:
+        if scores["engagement"] < 70:
             recommendations.append(
                 "✨ Increase engagement: Add examples, specific details, or questions to "
                 "capture reader attention"
             )
 
         # Grammar recommendations
-        if scores['grammar'] < 85:
+        if scores["grammar"] < 85:
             recommendations.append(
                 "✏️ Proofread: Review for grammatical errors and punctuation mistakes"
             )
@@ -555,7 +572,7 @@ class QualityAssessor:
 
     def _get_sentences(self, content: str) -> List[str]:
         """Extract sentences from content"""
-        sentences = re.split(r'[.!?]+', content)
+        sentences = re.split(r"[.!?]+", content)
         return [s.strip() for s in sentences if s.strip()]
 
     def _calculate_readability(self, content: str) -> Dict[str, float]:
@@ -571,15 +588,15 @@ class QualityAssessor:
 
         # Flesch-Kincaid grade level
         flesch_kincaid = (
-            0.39 * avg_sentence_length +
-            11.8 * (sum(1 for w in words if len(w) > 2) / len(words)) -
-            15.59
+            0.39 * avg_sentence_length
+            + 11.8 * (sum(1 for w in words if len(w) > 2) / len(words))
+            - 15.59
         )
 
         return {
-            'flesch_kincaid_grade': round(max(0, flesch_kincaid), 1),
-            'avg_sentence_length': round(avg_sentence_length, 1),
-            'avg_word_length': round(avg_word_length, 1),
+            "flesch_kincaid_grade": round(max(0, flesch_kincaid), 1),
+            "avg_sentence_length": round(avg_sentence_length, 1),
+            "avg_word_length": round(avg_word_length, 1),
         }
 
     def _find_complex_words(self, content: str) -> List[str]:
@@ -591,7 +608,7 @@ class QualityAssessor:
         """Estimate syllable count"""
         word = word.lower()
         count = 0
-        vowels = 'aeiou'
+        vowels = "aeiou"
         prev_was_vowel = False
 
         for char in word:
@@ -600,9 +617,9 @@ class QualityAssessor:
                 count += 1
             prev_was_vowel = is_vowel
 
-        if word.endswith('e'):
+        if word.endswith("e"):
             count -= 1
-        if word.endswith('le') and len(word) > 2 and word[-3] not in vowels:
+        if word.endswith("le") and len(word) > 2 and word[-3] not in vowels:
             count += 1
 
         return max(1, count)
@@ -611,14 +628,16 @@ class QualityAssessor:
         """Detailed coherence analysis"""
         sentences = self._get_sentences(content)
         return {
-            'sentence_count': len(sentences),
-            'transitions_present': any(
+            "sentence_count": len(sentences),
+            "transitions_present": any(
                 word in content.lower()
-                for word in ['furthermore', 'however', 'therefore', 'moreover']
+                for word in ["furthermore", "however", "therefore", "moreover"]
             ),
-            'avg_sentence_length': round(
-                sum(len(s.split()) for s in sentences) / max(len(sentences), 1), 1
-            ) if sentences else 0,
+            "avg_sentence_length": (
+                round(sum(len(s.split()) for s in sentences) / max(len(sentences), 1), 1)
+                if sentences
+                else 0
+            ),
         }
 
     def _analyze_keywords(self, content: str, context: Optional[Dict] = None) -> Dict[str, Any]:
@@ -627,43 +646,44 @@ class QualityAssessor:
         word_freq = Counter(words)
 
         # Remove common words
-        common = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of'}
+        common = {"the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of"}
         filtered_freq = {w: count for w, count in word_freq.items() if w not in common}
         top_keywords = dict(sorted(filtered_freq.items(), key=lambda x: x[1], reverse=True)[:10])
 
         return {
-            'top_keywords': top_keywords,
-            'unique_words': len(set(words)),
-            'total_words': len(words),
-            'keyword_diversity': len(set(words)) / max(len(words), 1)
+            "top_keywords": top_keywords,
+            "unique_words": len(set(words)),
+            "total_words": len(words),
+            "keyword_diversity": len(set(words)) / max(len(words), 1),
         }
 
     def _analyze_structure(self, content: str) -> Dict[str, Any]:
         """Analyze content structure"""
-        lines = content.split('\n')
-        paragraphs = [p for p in content.split('\n\n') if p.strip()]
+        lines = content.split("\n")
+        paragraphs = [p for p in content.split("\n\n") if p.strip()]
 
-        heading_count = sum(1 for line in lines if line.strip().startswith('#'))
-        list_count = sum(1 for line in lines if line.strip().startswith(('-', '*', '•')))
+        heading_count = sum(1 for line in lines if line.strip().startswith("#"))
+        list_count = sum(1 for line in lines if line.strip().startswith(("-", "*", "•")))
 
         return {
-            'headings': heading_count,
-            'lists': list_count,
-            'paragraphs': len(paragraphs),
-            'avg_para_length': round(
-                sum(len(p.split()) for p in paragraphs) / max(len(paragraphs), 1), 1
-            ) if paragraphs else 0,
+            "headings": heading_count,
+            "lists": list_count,
+            "paragraphs": len(paragraphs),
+            "avg_para_length": (
+                round(sum(len(p.split()) for p in paragraphs) / max(len(paragraphs), 1), 1)
+                if paragraphs
+                else 0
+            ),
         }
 
     def _analyze_engagement(self, content: str) -> Dict[str, Any]:
         """Analyze engagement elements"""
         return {
-            'questions': content.count('?'),
-            'exclamations': content.count('!'),
-            'examples_mentioned': 'example' in content.lower() or 'such as' in content.lower(),
-            'has_cta': any(
-                cta in content.lower()
-                for cta in ['explore', 'discover', 'learn', 'try']
+            "questions": content.count("?"),
+            "exclamations": content.count("!"),
+            "examples_mentioned": "example" in content.lower() or "such as" in content.lower(),
+            "has_cta": any(
+                cta in content.lower() for cta in ["explore", "discover", "learn", "try"]
             ),
         }
 
@@ -671,7 +691,8 @@ class QualityAssessor:
         """Parse expected length specification"""
         # Handle formats like "500-1000 words", "500 words", "1000+"
         import re
-        numbers = re.findall(r'\d+', length_spec)
+
+        numbers = re.findall(r"\d+", length_spec)
         if len(numbers) >= 2:
             return int(numbers[0]), int(numbers[1])
         elif len(numbers) == 1:
@@ -691,14 +712,16 @@ def generate_quality_report(assessment: Dict[str, Any]) -> str:
     report += f"{'─' * 80}\n"
     report += f"Score: {assessment['overall_score']}/100\n"
     report += f"Level: {assessment.get('quality_level', 'Unknown')}\n"
-    report += f"Pass Quality Check: {'✅ Yes' if assessment.get('pass_quality_check') else '❌ No'}\n"
+    report += (
+        f"Pass Quality Check: {'✅ Yes' if assessment.get('pass_quality_check') else '❌ No'}\n"
+    )
     report += "\n"
 
     # Dimension scores
-    if 'dimension_scores' in assessment:
+    if "dimension_scores" in assessment:
         report += "📈 DIMENSION SCORES\n"
         report += f"{'─' * 80}\n"
-        scores = assessment['dimension_scores']
+        scores = assessment["dimension_scores"]
         for dimension, score in scores.items():
             bar_length = int(score / 5)
             bar = "█" * bar_length + "░" * (20 - bar_length)
@@ -706,10 +729,10 @@ def generate_quality_report(assessment: Dict[str, Any]) -> str:
         report += "\n"
 
     # Metrics
-    if 'metrics' in assessment:
+    if "metrics" in assessment:
         report += "📋 CONTENT METRICS\n"
         report += f"{'─' * 80}\n"
-        metrics = assessment['metrics']
+        metrics = assessment["metrics"]
         report += f"Word Count: {metrics.get('word_count', 'N/A')}\n"
         report += f"Sentence Count: {metrics.get('sentence_count', 'N/A')}\n"
         report += f"Paragraph Count: {metrics.get('paragraph_count', 'N/A')}\n"
@@ -718,10 +741,10 @@ def generate_quality_report(assessment: Dict[str, Any]) -> str:
         report += "\n"
 
     # Recommendations
-    if 'recommendations' in assessment and assessment['recommendations']:
+    if "recommendations" in assessment and assessment["recommendations"]:
         report += "💡 RECOMMENDATIONS\n"
         report += f"{'─' * 80}\n"
-        for i, rec in enumerate(assessment['recommendations'], 1):
+        for i, rec in enumerate(assessment["recommendations"], 1):
             report += f"{i}. {rec}\n"
         report += "\n"
 
@@ -748,9 +771,9 @@ async def main():
     """
 
     context = {
-        'topic': 'artificial intelligence applications',
-        'target_audience': 'business professionals',
-        'expected_length': '400-600 words'
+        "topic": "artificial intelligence applications",
+        "target_audience": "business professionals",
+        "expected_length": "400-600 words",
     }
 
     result = await assessor.assess_content(sample_content, context=context)

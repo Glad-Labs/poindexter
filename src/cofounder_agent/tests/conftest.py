@@ -9,15 +9,17 @@ import sys
 
 # Ensure .env.local is loaded before any imports
 from dotenv import load_dotenv
+
 # Get the project root: conftest is at src/cofounder_agent/tests/, need to go up 3 levels to root
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
-env_local_path = os.path.join(project_root, '.env.local')
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
+env_local_path = os.path.join(project_root, ".env.local")
 if os.path.exists(env_local_path):
     load_dotenv(env_local_path, override=True)
     print(f"[conftest] Loaded .env.local from {env_local_path}", flush=True)
     print(f"[conftest] JWT_SECRET after load_dotenv: {os.getenv('JWT_SECRET')}", flush=True)
 else:
     print(f"[conftest] ENV file not found at {env_local_path}", flush=True)
+
 
 # Register custom pytest markers
 def pytest_configure(config):
@@ -32,6 +34,8 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "websocket: WebSocket functionality tests")
     config.addinivalue_line("markers", "resilience: System resilience tests")
     config.addinivalue_line("markers", "smoke: Smoke tests for basic functionality")
+
+
 import asyncio
 import json
 import os
@@ -43,7 +47,7 @@ import tempfile
 import shutil
 
 # Add project paths
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(os.path.dirname(__file__))
 
 # Test configuration
@@ -52,21 +56,22 @@ TEST_CONFIG = {
     "mock_responses": True,
     "test_timeout": 30,
     "api_base_url": "http://localhost:8000",
-    "websocket_url": "ws://localhost:8000/ws/chat/test_client"
+    "websocket_url": "ws://localhost:8000/ws/chat/test_client",
 }
+
 
 class TestDataManager:
     """Manages test data and fixtures"""
-    
+
     def __init__(self):
         self.test_data_dir = TEST_CONFIG["test_data_dir"]
         self.ensure_test_data_dir()
-    
+
     def ensure_test_data_dir(self):
         """Ensure test data directory exists"""
         if not os.path.exists(self.test_data_dir):
             os.makedirs(self.test_data_dir)
-    
+
     def get_sample_business_data(self) -> Dict[str, Any]:
         """Get sample business data for testing"""
         return {
@@ -77,9 +82,9 @@ class TestDataManager:
             "content_pieces": 25,
             "engagement_rate": 0.045,
             "active_customers": 120,
-            "churn_rate": 0.03
+            "churn_rate": 0.03,
         }
-    
+
     def get_sample_tasks(self) -> List[Dict[str, Any]]:
         """Get sample tasks for testing"""
         return [
@@ -89,15 +94,15 @@ class TestDataManager:
                 "description": "Write comprehensive blog post about AI automation",
                 "requirements": ["blog_writing", "content_optimization"],
                 "priority": "high",
-                "status": "pending"
+                "status": "pending",
             },
             {
-                "id": "task_002", 
+                "id": "task_002",
                 "name": "Market research analysis",
                 "description": "Conduct market research for Q4 strategy",
                 "requirements": ["market_analysis", "competitor_analysis"],
                 "priority": "medium",
-                "status": "in_progress"
+                "status": "in_progress",
             },
             {
                 "id": "task_003",
@@ -105,50 +110,55 @@ class TestDataManager:
                 "description": "Generate monthly BI report",
                 "requirements": ["business_intelligence", "data_visualization"],
                 "priority": "low",
-                "status": "completed"
-            }
+                "status": "completed",
+            },
         ]
-    
+
     def get_sample_voice_commands(self) -> List[Dict[str, Any]]:
         """Get sample voice commands for testing"""
         return [
             {
                 "text": "Show me business metrics",
                 "intent": "get_business_metrics",
-                "confidence": 0.95
+                "confidence": 0.95,
             },
             {
                 "text": "Create a new blog post about machine learning",
                 "intent": "create_content",
                 "confidence": 0.88,
-                "entities": {"content_type": "blog_post", "topic": "machine learning"}
+                "entities": {"content_type": "blog_post", "topic": "machine learning"},
             },
             {
                 "text": "What is our revenue this month",
-                "intent": "get_business_metrics", 
-                "confidence": 0.92
-            }
+                "intent": "get_business_metrics",
+                "confidence": 0.92,
+            },
         ]
+
 
 @pytest.fixture
 def test_data_manager():
     """Test data manager fixture"""
     return TestDataManager()
 
+
 @pytest.fixture
 def mock_business_data(test_data_manager):
     """Mock business data fixture"""
     return test_data_manager.get_sample_business_data()
+
 
 @pytest.fixture
 def mock_tasks(test_data_manager):
     """Mock tasks fixture"""
     return test_data_manager.get_sample_tasks()
 
+
 @pytest.fixture
 def mock_voice_commands(test_data_manager):
     """Mock voice commands fixture"""
     return test_data_manager.get_sample_voice_commands()
+
 
 @pytest.fixture
 def temp_directory():
@@ -157,33 +167,36 @@ def temp_directory():
     yield temp_dir
     shutil.rmtree(temp_dir)
 
+
 @pytest.fixture
 async def async_mock_manager():
     """Async mock manager for testing async operations"""
+
     class AsyncMockManager:
         def __init__(self):
             self.mocks = {}
-        
+
         def create_async_mock(self, name: str, return_value=None):
             mock = AsyncMock()
             if return_value:
                 mock.return_value = return_value
             self.mocks[name] = mock
             return mock
-        
+
         def reset_all(self):
             for mock in self.mocks.values():
                 mock.reset_mock()
-    
+
     return AsyncMockManager()
+
 
 # Performance testing utilities
 class PerformanceMonitor:
     """Monitor performance metrics during testing"""
-    
+
     def __init__(self):
         self.metrics = []
-    
+
     async def measure_async_operation(self, operation_name: str, operation_func):
         """Measure performance of async operation"""
         start_time = datetime.now()
@@ -195,30 +208,36 @@ class PerformanceMonitor:
             result = None
             success = False
             error = str(e)
-        
+
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
-        
-        self.metrics.append({
-            "operation": operation_name,
-            "duration": duration,
-            "success": success,
-            "error": error,
-            "timestamp": start_time.isoformat()
-        })
-        
+
+        self.metrics.append(
+            {
+                "operation": operation_name,
+                "duration": duration,
+                "success": success,
+                "error": error,
+                "timestamp": start_time.isoformat(),
+            }
+        )
+
         return result, duration, success
-    
+
     def get_performance_summary(self) -> Dict[str, Any]:
         """Get performance summary"""
         if not self.metrics:
             return {"message": "No metrics collected"}
-        
+
         successful_ops = [m for m in self.metrics if m["success"]]
         failed_ops = [m for m in self.metrics if not m["success"]]
-        
-        avg_duration = sum(m["duration"] for m in successful_ops) / len(successful_ops) if successful_ops else 0
-        
+
+        avg_duration = (
+            sum(m["duration"] for m in successful_ops) / len(successful_ops)
+            if successful_ops
+            else 0
+        )
+
         return {
             "total_operations": len(self.metrics),
             "successful_operations": len(successful_ops),
@@ -226,59 +245,63 @@ class PerformanceMonitor:
             "success_rate": len(successful_ops) / len(self.metrics),
             "average_duration": avg_duration,
             "max_duration": max(m["duration"] for m in self.metrics),
-            "min_duration": min(m["duration"] for m in self.metrics)
+            "min_duration": min(m["duration"] for m in self.metrics),
         }
+
 
 @pytest.fixture
 def performance_monitor():
     """Performance monitor fixture"""
     return PerformanceMonitor()
 
+
 # Test utilities
 class TestUtils:
     """Utility functions for testing"""
-    
+
     @staticmethod
     def assert_valid_response_structure(response: Dict[str, Any], required_fields: List[str]):
         """Assert response has required structure"""
         assert isinstance(response, dict), "Response must be a dictionary"
-        
+
         for field in required_fields:
             assert field in response, f"Response missing required field: {field}"
-    
+
     @staticmethod
     def assert_business_metrics_valid(metrics: Dict[str, Any]):
         """Assert business metrics have valid structure"""
         required_sections = ["revenue", "operations", "content", "predictions"]
-        
+
         for section in required_sections:
             assert section in metrics, f"Metrics missing section: {section}"
-        
+
         # Validate revenue section
         revenue = metrics["revenue"]
         assert "monthly_recurring" in revenue
         assert "growth_rate" in revenue
         assert isinstance(revenue["monthly_recurring"], (int, float))
         assert isinstance(revenue["growth_rate"], (int, float))
-    
+
     @staticmethod
     def assert_task_structure_valid(task: Dict[str, Any]):
         """Assert task has valid structure"""
         required_fields = ["id", "name", "description", "requirements", "priority", "status"]
-        
+
         for field in required_fields:
             assert field in task, f"Task missing required field: {field}"
-        
+
         valid_priorities = ["low", "medium", "high", "critical"]
         valid_statuses = ["pending", "assigned", "in_progress", "completed", "failed", "cancelled"]
-        
+
         assert task["priority"] in valid_priorities, f"Invalid priority: {task['priority']}"
         assert task["status"] in valid_statuses, f"Invalid status: {task['status']}"
+
 
 @pytest.fixture
 def test_utils():
     """Test utilities fixture"""
     return TestUtils()
+
 
 # Async test utilities
 async def run_with_timeout(coro, timeout=30):
@@ -288,6 +311,7 @@ async def run_with_timeout(coro, timeout=30):
     except asyncio.TimeoutError:
         pytest.fail(f"Operation timed out after {timeout} seconds")
 
+
 # Mock API responses
 MOCK_API_RESPONSES = {
     "chat_response": {
@@ -295,46 +319,38 @@ MOCK_API_RESPONSES = {
         "response": "I understand your request and will help you with that.",
         "command_detected": True,
         "actions_taken": ["analyzed_request", "generated_response"],
-        "confidence": 0.95
+        "confidence": 0.95,
     },
     "business_metrics": {
         "success": True,
         "metrics": {
             "timestamp": "2025-10-14T10:00:00Z",
-            "revenue": {
-                "monthly_recurring": 8450,
-                "growth_rate": 0.125,
-                "churn_rate": 0.035
-            },
+            "revenue": {"monthly_recurring": 8450, "growth_rate": 0.125, "churn_rate": 0.035},
             "operations": {
                 "task_completion_rate": 0.78,
                 "automation_level": 0.65,
-                "efficiency_score": 0.82
+                "efficiency_score": 0.82,
             },
-            "content": {
-                "pieces_published": 23,
-                "engagement_rate": 0.045,
-                "seo_performance": 0.78
-            },
+            "content": {"pieces_published": 23, "engagement_rate": 0.045, "seo_performance": 0.78},
             "predictions": {
                 "next_month_revenue": 9200,
                 "growth_opportunities": [
                     "AI automation expansion",
-                    "Content strategy optimization"
-                ]
-            }
-        }
+                    "Content strategy optimization",
+                ],
+            },
+        },
     },
     "task_delegation": {
         "success": True,
         "task_id": "task_12345",
-        "message": "Task delegated successfully. Tracking ID: task_12345"
+        "message": "Task delegated successfully. Tracking ID: task_12345",
     },
     "workflow_creation": {
         "success": True,
         "workflow_id": "workflow_67890",
         "steps_created": 3,
-        "message": "Strategic workflow created with 3 steps"
+        "message": "Strategic workflow created with 3 steps",
     },
     "orchestration_status": {
         "success": True,
@@ -347,30 +363,26 @@ MOCK_API_RESPONSES = {
                     "status": "idle",
                     "current_task": None,
                     "capabilities": 3,
-                    "performance": {"success_rate": 0.92}
+                    "performance": {"success_rate": 0.92},
                 }
             },
-            "tasks": {
-                "total": 15,
-                "pending": 3,
-                "in_progress": 2,
-                "completed": 10,
-                "failed": 0
-            },
+            "tasks": {"total": 15, "pending": 3, "in_progress": 2, "completed": 10, "failed": 0},
             "metrics": {
                 "total_tasks": 15,
                 "completed_tasks": 10,
                 "success_rate": 0.91,
-                "agent_utilization": 0.45
-            }
-        }
-    }
+                "agent_utilization": 0.45,
+            },
+        },
+    },
 }
+
 
 @pytest.fixture
 def mock_api_responses():
     """Mock API responses fixture"""
     return MOCK_API_RESPONSES
+
 
 # Test markers
 pytest_marks = {
@@ -381,8 +393,9 @@ pytest_marks = {
     "performance": pytest.mark.performance,
     "slow": pytest.mark.slow,
     "voice": pytest.mark.voice,
-    "websocket": pytest.mark.websocket
+    "websocket": pytest.mark.websocket,
 }
+
 
 # FastAPI Test Client
 @pytest.fixture(scope="function", autouse=True)
@@ -392,12 +405,14 @@ def init_task_store():
     # No separate initialization needed
     yield
 
+
 import tempfile
 import os as os_module
 
 # Create a temp directory for test database
 _test_db_dir = tempfile.mkdtemp(prefix="pytest_", suffix="_cofounder")
 _test_db_path = os_module.path.join(_test_db_dir, "test_tasks.db")
+
 
 @pytest.fixture
 def app():
@@ -406,29 +421,35 @@ def app():
     # Simply import and return the app
     import sys
     import os
-    
+
     # Add parent directory to path for imports to work properly
     parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if parent_dir not in sys.path:
         sys.path.insert(0, parent_dir)
-    
+
     from main import app as fastapi_app
+
     return fastapi_app
+
 
 @pytest.fixture
 def client(app, initialize_subtask_db_service):
     """FastAPI TestClient fixture"""
     from fastapi.testclient import TestClient
+
     return TestClient(app)
+
 
 @pytest.fixture
 def async_client(app):
     """Async test client fixture using httpx.AsyncClient"""
     try:
         import httpx
+
         return httpx.AsyncClient(base_url="http://test")
     except ImportError:
         pytest.skip("httpx not installed")
+
 
 # Event loop fixture for async tests
 @pytest.fixture(scope="function")
@@ -437,6 +458,7 @@ def event_loop():
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
+
 
 # Mock environment variables
 @pytest.fixture
@@ -449,62 +471,67 @@ def mock_env_vars(monkeypatch):
         "DATABASE_URL": "sqlite:///:memory:",
         "REDIS_URL": "redis://localhost:6379/1",
         "OPENAI_API_KEY": "sk-test-key",
-        "OLLAMA_HOST": "http://localhost:11434"
+        "OLLAMA_HOST": "http://localhost:11434",
     }
-    
+
     for key, value in test_env_vars.items():
         monkeypatch.setenv(key, value)
-    
+
     return test_env_vars
+
 
 # Mock database
 @pytest.fixture
 def mock_database():
     """Mock database fixture"""
+
     class MockDatabase:
         def __init__(self):
             self.data = {}
-        
+
         async def get(self, key: str):
             return self.data.get(key)
-        
+
         async def set(self, key: str, value: Any):
             self.data[key] = value
-        
+
         async def delete(self, key: str):
             if key in self.data:
                 del self.data[key]
-        
+
         async def exists(self, key: str):
             return key in self.data
-        
+
         def clear(self):
             self.data.clear()
-    
+
     return MockDatabase()
+
 
 # Mock cache
 @pytest.fixture
 def mock_cache():
     """Mock cache fixture"""
+
     class MockCache:
         def __init__(self):
             self.cache = {}
-        
+
         async def get(self, key: str):
             return self.cache.get(key)
-        
+
         async def set(self, key: str, value: Any, ttl: int | None = None):
             self.cache[key] = value
-        
+
         async def delete(self, key: str):
             if key in self.cache:
                 del self.cache[key]
-        
+
         def clear(self):
             self.cache.clear()
-    
+
     return MockCache()
+
 
 # Mock logger
 @pytest.fixture
@@ -517,81 +544,99 @@ def mock_logger():
     logger.debug = Mock()
     return logger
 
+
 # ========================================================================
 # POINDEXTER TEST FIXTURES
 # ========================================================================
+
 
 @pytest.fixture
 def mock_tools_service():
     """Mock PoindexterTools service with all tool methods."""
     tools = AsyncMock()
-    
+
     # Mock all 7 Poindexter tools
-    tools.research_tool = AsyncMock(return_value={
-        "success": True,
-        "data": {"research_data": "test"},
-        "cost": 0.15,
-        "quality_score": 0.90
-    })
-    
-    tools.generate_content_tool = AsyncMock(return_value={
-        "success": True,
-        "data": {"content": "Generated content"},
-        "cost": 0.25,
-        "quality_score": 0.85,
-        "iterations": 1
-    })
-    
-    tools.critique_content_tool = AsyncMock(return_value={
-        "success": True,
-        "data": {"feedback": "Great content"},
-        "cost": 0.10,
-        "quality_score": 0.92
-    })
-    
-    tools.publish_tool = AsyncMock(return_value={
-        "success": True,
-        "data": {"published_id": "pub_001"},
-        "cost": 0.0,
-        "quality_score": 1.0
-    })
-    
-    tools.track_metrics_tool = AsyncMock(return_value={
-        "success": True,
-        "data": {"recorded": True},
-        "cost": 0.0,
-        "quality_score": 1.0
-    })
-    
-    tools.fetch_images_tool = AsyncMock(return_value={
-        "success": True,
-        "data": {"images": ["img1.jpg", "img2.jpg", "img3.jpg"]},
-        "cost": 0.05,
-        "quality_score": 0.88
-    })
-    
-    tools.refine_tool = AsyncMock(return_value={
-        "success": True,
-        "data": {"refined_content": "Improved content"},
-        "cost": 0.12,
-        "quality_score": 0.93
-    })
-    
+    tools.research_tool = AsyncMock(
+        return_value={
+            "success": True,
+            "data": {"research_data": "test"},
+            "cost": 0.15,
+            "quality_score": 0.90,
+        }
+    )
+
+    tools.generate_content_tool = AsyncMock(
+        return_value={
+            "success": True,
+            "data": {"content": "Generated content"},
+            "cost": 0.25,
+            "quality_score": 0.85,
+            "iterations": 1,
+        }
+    )
+
+    tools.critique_content_tool = AsyncMock(
+        return_value={
+            "success": True,
+            "data": {"feedback": "Great content"},
+            "cost": 0.10,
+            "quality_score": 0.92,
+        }
+    )
+
+    tools.publish_tool = AsyncMock(
+        return_value={
+            "success": True,
+            "data": {"published_id": "pub_001"},
+            "cost": 0.0,
+            "quality_score": 1.0,
+        }
+    )
+
+    tools.track_metrics_tool = AsyncMock(
+        return_value={
+            "success": True,
+            "data": {"recorded": True},
+            "cost": 0.0,
+            "quality_score": 1.0,
+        }
+    )
+
+    tools.fetch_images_tool = AsyncMock(
+        return_value={
+            "success": True,
+            "data": {"images": ["img1.jpg", "img2.jpg", "img3.jpg"]},
+            "cost": 0.05,
+            "quality_score": 0.88,
+        }
+    )
+
+    tools.refine_tool = AsyncMock(
+        return_value={
+            "success": True,
+            "data": {"refined_content": "Improved content"},
+            "cost": 0.12,
+            "quality_score": 0.93,
+        }
+    )
+
     # Utility methods
-    tools.get_all_tools = Mock(return_value=[
-        {"name": "research_tool", "description": "Research information"},
-        {"name": "generate_content_tool", "description": "Generate content"},
-        {"name": "critique_content_tool", "description": "Critique content"},
-        {"name": "publish_tool", "description": "Publish content"},
-        {"name": "track_metrics_tool", "description": "Track metrics"},
-        {"name": "fetch_images_tool", "description": "Fetch images"},
-        {"name": "refine_tool", "description": "Refine content"}
-    ])
-    
+    tools.get_all_tools = Mock(
+        return_value=[
+            {"name": "research_tool", "description": "Research information"},
+            {"name": "generate_content_tool", "description": "Generate content"},
+            {"name": "critique_content_tool", "description": "Critique content"},
+            {"name": "publish_tool", "description": "Publish content"},
+            {"name": "track_metrics_tool", "description": "Track metrics"},
+            {"name": "fetch_images_tool", "description": "Fetch images"},
+            {"name": "refine_tool", "description": "Refine content"},
+        ]
+    )
+
     tools.get_tool_descriptions = Mock(return_value="Tool descriptions")
     tools.estimate_tool_cost = Mock(return_value=(0.10, 0.50))
     tools.estimate_tool_time = Mock(return_value=(5, 30))
-    
+
     return tools
 
 
@@ -599,10 +644,9 @@ def mock_tools_service():
 def mock_research_agent():
     """Mock ResearchAgent."""
     agent = AsyncMock()
-    agent.execute = AsyncMock(return_value={
-        "success": True,
-        "data": {"research": "Sample research data"}
-    })
+    agent.execute = AsyncMock(
+        return_value={"success": True, "data": {"research": "Sample research data"}}
+    )
     return agent
 
 
@@ -610,10 +654,9 @@ def mock_research_agent():
 def mock_creative_agent():
     """Mock CreativeAgent."""
     agent = AsyncMock()
-    agent.execute = AsyncMock(return_value={
-        "success": True,
-        "data": {"content": "Generated creative content"}
-    })
+    agent.execute = AsyncMock(
+        return_value={"success": True, "data": {"content": "Generated creative content"}}
+    )
     return agent
 
 
@@ -621,10 +664,9 @@ def mock_creative_agent():
 def mock_qa_agent():
     """Mock QAAgent for quality assessment."""
     agent = AsyncMock()
-    agent.execute = AsyncMock(return_value={
-        "success": True,
-        "data": {"quality_score": 0.90, "feedback": "Good content"}
-    })
+    agent.execute = AsyncMock(
+        return_value={"success": True, "data": {"quality_score": 0.90, "feedback": "Good content"}}
+    )
     return agent
 
 
@@ -638,15 +680,11 @@ def sample_pipeline_state():
             {"tool": "research_tool", "params": {}},
             {"tool": "generate_content_tool", "params": {}},
             {"tool": "critique_content_tool", "params": {}},
-            {"tool": "publish_tool", "params": {}}
+            {"tool": "publish_tool", "params": {}},
         ],
-        "constraints": {
-            "quality_threshold": 0.85,
-            "max_iterations": 3,
-            "max_cost": 2.0
-        },
+        "constraints": {"quality_threshold": 0.85, "max_iterations": 3, "max_cost": 2.0},
         "results": [],
-        "metadata": {}
+        "metadata": {},
     }
 
 
@@ -660,13 +698,14 @@ def sample_tool_result():
         "quality_score": 0.92,
         "critique_notes": None,
         "iterations": 1,
-        "error": None
+        "error": None,
     }
 
 
 # ============================================================================
 # SUBTASK API TEST FIXTURES
 # ============================================================================
+
 
 @pytest.fixture
 def auth_headers():
@@ -676,68 +715,58 @@ def auth_headers():
     from datetime import datetime, timedelta
     import sys
     import tempfile
-    
+
     # Try multiple environment variable names for JWT secret
     # Priority: JWT_SECRET_KEY > JWT_SECRET > fallback default
-    secret = (
-        os.getenv("JWT_SECRET_KEY") or 
-        os.getenv("JWT_SECRET") or 
-        "change-this-in-production"
-    )
-    
+    secret = os.getenv("JWT_SECRET_KEY") or os.getenv("JWT_SECRET") or "change-this-in-production"
+
     # DEBUG: Write to file to bypass pytest output capture (use tempfile for cross-platform compatibility)
-    debug_log_path = os.path.join(tempfile.gettempdir(), 'auth_headers_debug.log')
-    with open(debug_log_path, 'a') as f:
+    debug_log_path = os.path.join(tempfile.gettempdir(), "auth_headers_debug.log")
+    with open(debug_log_path, "a") as f:
         f.write(f"\n[auth_headers] Called with secret: {secret[:30]}...\n")
         f.write(f"[auth_headers] JWT_SECRET from env: {os.getenv('JWT_SECRET')}\n")
-    
+
     # Create payload matching BOTH token_validator.py and auth_unified.py expectations
     payload = {
         "sub": "test-user",
         "user_id": "test-user-123",  # REQUIRED: auth_unified.py checks for this
         "type": "access",  # REQUIRED: token_validator.py validates this field
         "exp": datetime.utcnow() + timedelta(hours=1),
-        "iat": datetime.utcnow()
+        "iat": datetime.utcnow(),
     }
-    
+
     try:
         token = jwt.encode(payload, secret, algorithm="HS256")
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
-        }
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         # Debug logging
-        debug_log_path = os.path.join(tempfile.gettempdir(), 'auth_headers_debug.log')
-        with open(debug_log_path, 'a') as f:
+        debug_log_path = os.path.join(tempfile.gettempdir(), "auth_headers_debug.log")
+        with open(debug_log_path, "a") as f:
             f.write(f"[auth_headers] JWT.encode succeeded\n")
             f.write(f"[auth_headers] Token: {token[:50]}...\n")
         return headers
     except Exception as e:
         # Fallback: use a simple test token if JWT encoding fails
-        debug_log_path = os.path.join(tempfile.gettempdir(), 'auth_headers_debug.log')
-        with open(debug_log_path, 'a') as f:
+        debug_log_path = os.path.join(tempfile.gettempdir(), "auth_headers_debug.log")
+        with open(debug_log_path, "a") as f:
             f.write(f"[auth_headers] JWT encoding FAILED: {type(e).__name__}: {e}\n")
         token = "test-token-12345"
-        return {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
-        }
+        return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
 
 @pytest.fixture
 def invalid_auth_headers():
     """Generate invalid authentication headers for testing"""
-    return {
-        "Authorization": "Bearer invalid-token-xyz",
-        "Content-Type": "application/json"
-    }
+    return {"Authorization": "Bearer invalid-token-xyz", "Content-Type": "application/json"}
+
 
 @pytest.fixture
 def sample_research_request():
     """Sample research subtask request"""
     return {
         "topic": "Artificial Intelligence trends in 2025",
-        "keywords": ["machine learning", "transformers", "LLMs"]
+        "keywords": ["machine learning", "transformers", "LLMs"],
     }
+
 
 @pytest.fixture
 def sample_creative_request():
@@ -746,8 +775,9 @@ def sample_creative_request():
         "topic": "AI trends in 2025",
         "research_output": "Research findings about AI trends...",
         "style": "professional",
-        "tone": "informative"
+        "tone": "informative",
     }
+
 
 @pytest.fixture
 def sample_qa_request():
@@ -755,16 +785,15 @@ def sample_qa_request():
     return {
         "topic": "AI trends in 2025",
         "creative_output": "Generated content about AI trends...",
-        "max_iterations": 2
+        "max_iterations": 2,
     }
+
 
 @pytest.fixture
 def sample_image_request():
     """Sample image subtask request"""
-    return {
-        "topic": "AI and machine learning",
-        "number_of_images": 3
-    }
+    return {"topic": "AI and machine learning", "number_of_images": 3}
+
 
 @pytest.fixture
 def sample_format_request():
@@ -773,8 +802,9 @@ def sample_format_request():
         "topic": "The Future of AI",
         "content": "# The Future of AI\n\nArtificial Intelligence is evolving rapidly...",
         "tags": ["AI", "technology", "future"],
-        "category": "technology"
+        "category": "technology",
     }
+
 
 @pytest.fixture(autouse=True)
 def initialize_subtask_db_service():
@@ -783,45 +813,46 @@ def initialize_subtask_db_service():
     from services.database_service import DatabaseService
     from unittest.mock import AsyncMock, MagicMock
     import uuid
-    
+
     # Create a mock DatabaseService for testing
     mock_db = MagicMock(spec=DatabaseService)
-    
+
     # Track created tasks for retrieval
     created_tasks = {}
-    
+
     async def mock_add_task(task_data):
         """Mock add_task - store and return the task data"""
         task_id = str(uuid.uuid4())
         # Include created_at and updated_at timestamps
         from datetime import datetime, timezone
+
         now = datetime.now(timezone.utc).isoformat()
         task_with_meta = {
             **task_data,
             "id": task_id,
             "created_at": now,
             "updated_at": now,
-            "status": "pending"
+            "status": "pending",
         }
         created_tasks[task_id] = task_with_meta
         return task_id
-    
+
     async def mock_get_task(task_id):
         """Mock get_task - retrieve task by ID"""
         return created_tasks.get(task_id)
-    
+
     async def mock_get_tasks_paginated(offset=0, limit=20, status=None, category=None):
         """Mock get_tasks_paginated - return paginated tasks with optional filtering"""
         tasks = list(created_tasks.values())
         # Filter by status if provided
         if status:
-            tasks = [t for t in tasks if t.get('status') == status]
+            tasks = [t for t in tasks if t.get("status") == status]
         # Filter by category if provided
         if category:
-            tasks = [t for t in tasks if t.get('category') == category]
+            tasks = [t for t in tasks if t.get("category") == category]
         # Return paginated results and total count
-        return tasks[offset:offset+limit], len(tasks)
-    
+        return tasks[offset : offset + limit], len(tasks)
+
     # Mock the core database methods
     mock_db.execute = AsyncMock(return_value=None)
     mock_db.fetch = AsyncMock(return_value=None)
@@ -829,20 +860,20 @@ def initialize_subtask_db_service():
     mock_db.insert = AsyncMock(return_value={"id": "test-subtask-id"})
     mock_db.update = AsyncMock(return_value=None)
     mock_db.delete = AsyncMock(return_value=None)
-    
+
     # Mock task-specific methods with proper behavior
     mock_db.add_task = mock_add_task
     mock_db.get_task = mock_get_task
     mock_db.get_tasks_paginated = mock_get_tasks_paginated
     mock_db.update_task = AsyncMock(return_value=True)
     mock_db.delete_task = AsyncMock(return_value=True)
-    
+
     # Set the global db_service in both routes
     subtask_routes.db_service = mock_db
     task_routes.db_service = mock_db
-    
+
     yield
-    
+
     # Cleanup
     subtask_routes.db_service = None
     task_routes.db_service = None
@@ -890,5 +921,5 @@ __all__ = [
     "mock_creative_agent",
     "mock_qa_agent",
     "sample_pipeline_state",
-    "sample_tool_result"
+    "sample_tool_result",
 ]

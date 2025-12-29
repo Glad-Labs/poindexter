@@ -9,6 +9,7 @@ from typing import Optional, Dict, List, Any
 
 class CostMetric(BaseModel):
     """Individual cost metric"""
+
     model_name: str
     provider: str
     tokens_used: int
@@ -18,6 +19,7 @@ class CostMetric(BaseModel):
 
 class CostsResponse(BaseModel):
     """Cost metrics response"""
+
     total_cost: float
     total_tokens: int
     by_model: List[Dict[str, Any]]
@@ -28,6 +30,7 @@ class CostsResponse(BaseModel):
 
 class HealthMetrics(BaseModel):
     """Health check metrics"""
+
     status: str
     uptime_seconds: float
     active_tasks: int
@@ -38,6 +41,7 @@ class HealthMetrics(BaseModel):
 
 class PerformanceMetrics(BaseModel):
     """Performance metrics"""
+
     avg_response_time_ms: float
     requests_per_minute: float
     error_rate: float

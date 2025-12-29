@@ -28,7 +28,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/tasks", tags=["tasks-bulk"])
 
 
-@router.post("/bulk", response_model=BulkTaskResponse, summary="Perform bulk operations on multiple tasks")
+@router.post(
+    "/bulk", response_model=BulkTaskResponse, summary="Perform bulk operations on multiple tasks"
+)
 async def bulk_task_operations(
     request: BulkTaskRequest,
     current_user: dict = Depends(get_current_user),
@@ -36,26 +38,26 @@ async def bulk_task_operations(
 ):
     """
     Perform bulk operations on multiple tasks.
-    
+
     **Actions:**
     - `pause`: Set status to paused (pause execution)
     - `resume`: Resume paused tasks (set to in_progress)
     - `cancel`: Cancel pending/running tasks (set to cancelled)
     - `delete`: Mark tasks as deleted (set to deleted)
-    
+
     **Authentication:** Required (JWT token)
-    
+
     **Parameters:**
     - task_ids: List of task UUIDs to operate on
     - action: The action to perform on all tasks
-    
+
     **Returns:**
     - message: Status message
     - updated: Number of tasks successfully updated
     - failed: Number of tasks that failed
     - total: Total tasks in request
     - errors: List of errors if any occurred
-    
+
     **Example Request:**
     ```json
     {
@@ -66,7 +68,7 @@ async def bulk_task_operations(
       "action": "cancel"
     }
     ```
-    
+
     **Example Response:**
     ```json
     {
@@ -80,80 +82,76 @@ async def bulk_task_operations(
     """
     # Validate request
     if not request.task_ids:
-        error_response = (ErrorResponseBuilder()
+        error_response = (
+            ErrorResponseBuilder()
             .error_code("VALIDATION_ERROR")
             .message("No task IDs provided in request")
             .with_field_error("task_ids", "At least one task ID required", "REQUIRED")
-            .build())
+            .build()
+        )
         raise HTTPException(status_code=400, detail=error_response.model_dump())
-    
+
     if request.action not in ["pause", "resume", "cancel", "delete"]:
-        error_response = (ErrorResponseBuilder()
+        error_response = (
+            ErrorResponseBuilder()
             .error_code("VALIDATION_ERROR")
             .message("Invalid action specified")
-            .with_field_error("action", f"Must be one of: pause, resume, cancel, or delete. Got: {request.action}", "INVALID_CHOICE")
-            .build())
+            .with_field_error(
+                "action",
+                f"Must be one of: pause, resume, cancel, or delete. Got: {request.action}",
+                "INVALID_CHOICE",
+            )
+            .build()
+        )
         raise HTTPException(status_code=400, detail=error_response.model_dump())
-    
+
     # Map actions to statuses
     status_map = {
         "pause": "paused",
         "resume": "in_progress",
         "cancel": "cancelled",
-        "delete": "deleted"
+        "delete": "deleted",
     }
     new_status = status_map[request.action]
-    
+
     updated_count = 0
     failed_count = 0
     errors = []
-    
+
     for task_id in request.task_ids:
         try:
             # Validate UUID format
             try:
                 UUID(task_id)
             except ValueError:
-                errors.append({
-                    "task_id": task_id,
-                    "error": "Invalid UUID format"
-                })
+                errors.append({"task_id": task_id, "error": "Invalid UUID format"})
                 failed_count += 1
                 continue
-            
+
             # Check if task exists
             task = await db_service.get_task(task_id)
             if not task:
-                errors.append({
-                    "task_id": task_id,
-                    "error": "Task not found"
-                })
+                errors.append({"task_id": task_id, "error": "Task not found"})
                 failed_count += 1
                 continue
-            
+
             # Update task status
             await db_service.update_task_status(task_id, new_status)
             updated_count += 1
             logger.info(f"Updated task {task_id} status to {new_status}")
-            
+
         except HTTPException as e:
-            errors.append({
-                "task_id": task_id,
-                "error": e.detail
-            })
+            errors.append({"task_id": task_id, "error": e.detail})
             failed_count += 1
         except Exception as e:
-            errors.append({
-                "task_id": task_id,
-                "error": str(e)
-            })
+            errors.append({"task_id": task_id, "error": str(e)})
             failed_count += 1
             logger.error(f"Failed to update task {task_id}: {str(e)}")
-    
+
     return BulkTaskResponse(
         message=f"Bulk {request.action} completed: {updated_count} updated, {failed_count} failed",
         updated=updated_count,
         failed=failed_count,
         total=len(request.task_ids),
-        errors=errors if errors else None
+        errors=errors if errors else None,
     )

@@ -13,10 +13,10 @@ from src.cofounder_agent.tasks.base import TaskResult
 @dataclass
 class WorkflowRequest:
     """Unified request schema for all workflow types.
-    
+
     Supports form submissions, natural language input, and voice commands.
     Single source of truth for all request types.
-    
+
     Attributes:
         workflow_type: Type of workflow ('content_generation', 'social_campaign', etc.)
         input_data: Task-specific input data
@@ -27,21 +27,23 @@ class WorkflowRequest:
         workflow_id: Optional pre-assigned workflow ID (for resuming paused workflows)
         request_id: Unique request identifier for tracing
     """
-    
+
     workflow_type: str
     input_data: Dict[str, Any]
     user_id: str
     source: str = "api"
     custom_pipeline: Optional[List[str]] = None
-    execution_options: Dict[str, Any] = field(default_factory=lambda: {
-        "timeout": 300,
-        "max_retries": 3,
-        "fail_on_error": False,
-        "skip_on_error": False,
-    })
+    execution_options: Dict[str, Any] = field(
+        default_factory=lambda: {
+            "timeout": 300,
+            "max_retries": 3,
+            "fail_on_error": False,
+            "skip_on_error": False,
+        }
+    )
     workflow_id: Optional[str] = None
     request_id: Optional[str] = None
-    
+
     def __post_init__(self):
         """Validate request on creation."""
         if not self.workflow_type:
@@ -50,15 +52,17 @@ class WorkflowRequest:
             raise ValueError("user_id is required")
         if not isinstance(self.input_data, dict):
             raise ValueError("input_data must be a dict")
-        
+
         # Auto-generate IDs if not provided
         if not self.request_id:
             import uuid
+
             self.request_id = str(uuid.uuid4())
         if not self.workflow_id and self.source != "resume":
             import uuid
+
             self.workflow_id = str(uuid.uuid4())
-    
+
     @property
     def is_custom_pipeline(self) -> bool:
         """Check if request specifies a custom pipeline."""
@@ -68,10 +72,10 @@ class WorkflowRequest:
 @dataclass
 class WorkflowResponse:
     """Unified response schema for all workflow executions.
-    
+
     Provides consistent format for all workflow results regardless
     of pipeline type or task composition.
-    
+
     Attributes:
         workflow_id: Unique workflow identifier
         workflow_type: Type of workflow executed
@@ -86,7 +90,7 @@ class WorkflowResponse:
         task_count: Number of tasks executed
         execution_metadata: Additional metadata
     """
-    
+
     workflow_id: str
     workflow_type: str
     status: str  # COMPLETED, FAILED, PENDING, AWAITING_INPUT
@@ -99,7 +103,7 @@ class WorkflowResponse:
     task_count: int
     errors: List[str] = field(default_factory=list)
     execution_metadata: Dict[str, Any] = field(default_factory=dict)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert response to dictionary for JSON serialization."""
         return {
@@ -131,10 +135,10 @@ class WorkflowResponse:
 @dataclass
 class WorkflowCheckpoint:
     """Checkpoint for paused/approval workflows.
-    
+
     Stores workflow execution state for later resumption,
     particularly useful for approval gate workflows.
-    
+
     Attributes:
         workflow_id: Workflow being paused
         task_index: Which task in pipeline we're paused at
@@ -144,7 +148,7 @@ class WorkflowCheckpoint:
         created_at: When checkpoint was created
         expires_at: When checkpoint expires (optional)
     """
-    
+
     workflow_id: str
     task_index: int
     accumulated_data: Dict[str, Any]
@@ -152,7 +156,7 @@ class WorkflowCheckpoint:
     pending_actions: List[str]
     created_at: datetime = field(default_factory=datetime.utcnow)
     expires_at: Optional[datetime] = None
-    
+
     def is_expired(self) -> bool:
         """Check if checkpoint has expired."""
         if not self.expires_at:
@@ -163,7 +167,7 @@ class WorkflowCheckpoint:
 @dataclass
 class WorkflowApprovalRequest:
     """Request to approve or reject a workflow checkpoint.
-    
+
     Attributes:
         workflow_id: Workflow to approve/reject
         action: 'approve' or 'reject'
@@ -171,16 +175,16 @@ class WorkflowApprovalRequest:
         comment: Optional approval comment
         modifications: Optional modifications to pending approval data
     """
-    
+
     workflow_id: str
     action: str  # 'approve' or 'reject'
     user_id: str
     comment: Optional[str] = None
     modifications: Optional[Dict[str, Any]] = None
-    
+
     def __post_init__(self):
         """Validate approval request."""
-        if self.action not in ['approve', 'reject']:
+        if self.action not in ["approve", "reject"]:
             raise ValueError("action must be 'approve' or 'reject'")
         if not self.workflow_id or not self.user_id:
             raise ValueError("workflow_id and user_id are required")

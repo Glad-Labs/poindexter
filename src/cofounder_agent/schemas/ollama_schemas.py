@@ -9,6 +9,7 @@ from typing import Optional, List
 
 class OllamaHealthResponse(BaseModel):
     """Response for Ollama health check"""
+
     connected: bool
     status: str
     models: Optional[list] = None
@@ -18,6 +19,7 @@ class OllamaHealthResponse(BaseModel):
 
 class OllamaWarmupResponse(BaseModel):
     """Response for Ollama warm-up"""
+
     status: str
     model: str
     message: str
@@ -27,4 +29,5 @@ class OllamaWarmupResponse(BaseModel):
 
 class OllamaModelSelection(BaseModel):
     """Request body for model selection"""
+
     model: str

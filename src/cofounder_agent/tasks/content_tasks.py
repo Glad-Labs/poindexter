@@ -10,11 +10,11 @@ logger = logging.getLogger(__name__)
 class ResearchTask(PureTask):
     """
     Research task: Gather information about a topic.
-    
+
     Input:
         - topic: str - Topic to research
         - depth: str - "shallow", "medium", "deep" (default: "medium")
-    
+
     Output:
         - research_data: dict - Gathered research findings
         - sources: list - Source materials/URLs
@@ -35,30 +35,30 @@ class ResearchTask(PureTask):
         context: ExecutionContext,
     ) -> Dict[str, Any]:
         """Execute research task."""
-        from src.cofounder_agent.services.model_consolidation_service import get_model_consolidation_service
+        from src.cofounder_agent.services.model_consolidation_service import (
+            get_model_consolidation_service,
+        )
         from src.cofounder_agent.services.serper_client import SerperClient
-        
+
         model_service = get_model_consolidation_service()
 
-
-        
         topic = input_data["topic"]
         depth = input_data.get("depth", "medium")
-        
+
         # 1. Perform Web Search (ASYNC)
         serper = SerperClient()
         search_results = await serper.search(topic, num=10)
-        
+
         # Extract organic results
         organic_results = search_results.get("organic", [])
-        
+
         # Format search context for LLM
         search_context = ""
         for idx, result in enumerate(organic_results[:5]):  # Top 5 results
             search_context += f"{idx+1}. {result.get('title', 'No Title')}\n"
             search_context += f"   URL: {result.get('link', 'No URL')}\n"
             search_context += f"   Snippet: {result.get('snippet', 'No snippet')}\n\n"
-            
+
         # Build research prompt with REAL search data
         prompt = f"""Analyze the following search results for the topic: "{topic}"
         
@@ -74,7 +74,7 @@ Based ONLY on the search results above (and your general knowledge to fill gaps)
 4. Recommended sources (use the URLs provided)
 
 Format as JSON with keys: key_points, trends, statistics, sources"""
-        
+
         # Query LLM with fallback chain
         response_obj = await model_service.generate(
             prompt=prompt,
@@ -83,10 +83,10 @@ Format as JSON with keys: key_points, trends, statistics, sources"""
         )
         response = response_obj.text
 
-        
         # Parse response (assuming LLM returns structured data)
         try:
             import json
+
             # Clean up potential markdown code blocks
             cleaned_response = response.replace("```json", "").replace("```", "").strip()
             research_data = json.loads(cleaned_response)
@@ -98,31 +98,31 @@ Format as JSON with keys: key_points, trends, statistics, sources"""
                 "statistics": [],
                 "sources": [],
             }
-        
+
         # Ensure sources from search are included if LLM missed them
         if not research_data.get("sources"):
             research_data["sources"] = [r.get("link") for r in organic_results[:3]]
-        
+
         return {
             "topic": topic,
             "research_data": research_data,
             "sources": research_data.get("sources", []),
             "key_points": research_data.get("key_points", []),
             "depth_used": depth,
-            "raw_search_results": organic_results  # Keep raw data for reference
+            "raw_search_results": organic_results,  # Keep raw data for reference
         }
 
 
 class CreativeTask(PureTask):
     """
     Creative task: Generate high-quality content.
-    
+
     Input:
         - topic: str - Content topic
         - research_data: dict - From ResearchTask
         - style: str - "professional", "casual", "technical" (default: "professional")
         - length: int - Word count (default: 1500)
-    
+
     Output:
         - content: str - Generated content in markdown
         - outline: list - Content structure
@@ -143,15 +143,17 @@ class CreativeTask(PureTask):
         context: ExecutionContext,
     ) -> Dict[str, Any]:
         """Execute creative task."""
-        from src.cofounder_agent.services.model_consolidation_service import get_model_consolidation_service
-        
+        from src.cofounder_agent.services.model_consolidation_service import (
+            get_model_consolidation_service,
+        )
+
         model_service = get_model_consolidation_service()
-        
+
         topic = input_data["topic"]
         research_data = input_data.get("research_data", {})
         style = input_data.get("style", "professional")
         length = input_data.get("length", 1500)
-        
+
         # Build creative prompt
         research_context = ""
         if research_data:
@@ -161,7 +163,7 @@ Research Context:
 - Trends: {research_data.get('trends', [])}
 - Statistics: {research_data.get('statistics', [])}
 """
-        
+
         prompt = f"""Create a high-quality {style} blog post about:
 
 Topic: {topic}
@@ -177,7 +179,7 @@ Include:
 5. Strong conclusion with call-to-action
 
 Format: Markdown with proper headings and formatting"""
-        
+
         # Query LLM
         response_obj = await model_service.generate(
             prompt=prompt,
@@ -186,16 +188,11 @@ Format: Markdown with proper headings and formatting"""
         )
         response = response_obj.text
 
-        
         # Extract title and outline
         lines = response.split("\n")
         title = lines[0].replace("# ", "").strip() if lines else "Untitled"
-        outline = [
-            line.replace("## ", "").strip()
-            for line in lines
-            if line.startswith("## ")
-        ]
-        
+        outline = [line.replace("## ", "").strip() for line in lines if line.startswith("## ")]
+
         return {
             "topic": topic,
             "content": response,
@@ -209,12 +206,12 @@ Format: Markdown with proper headings and formatting"""
 class QATask(PureTask):
     """
     Quality Assurance task: Evaluate and refine content.
-    
+
     Input:
         - content: str - Content to evaluate
         - topic: str - Original topic
         - criteria: list - Evaluation criteria
-    
+
     Output:
         - feedback: str - Constructive feedback
         - score: float - Quality score (0-10)
@@ -236,23 +233,21 @@ class QATask(PureTask):
         context: ExecutionContext,
     ) -> Dict[str, Any]:
         """Execute QA task."""
-        from src.cofounder_agent.services.model_consolidation_service import get_model_consolidation_service
-        
+        from src.cofounder_agent.services.model_consolidation_service import (
+            get_model_consolidation_service,
+        )
+
         model_service = get_model_consolidation_service()
-        
+
         content = input_data["content"]
         topic = input_data.get("topic", "")
-        criteria = input_data.get("criteria", [
-            "clarity",
-            "accuracy",
-            "engagement",
-            "structure",
-            "completeness"
-        ])
-        
+        criteria = input_data.get(
+            "criteria", ["clarity", "accuracy", "engagement", "structure", "completeness"]
+        )
+
         # Build QA prompt
         criteria_str = "\n".join(f"- {c}" for c in criteria)
-        
+
         prompt = f"""Evaluate this content for quality:
 
 Topic: {topic}
@@ -269,18 +264,16 @@ For each criterion, provide:
 3. Improvement suggestions
 
 Format as JSON with keys: scores (dict), feedback (str), suggestions (list), overall_score (float)"""
-        
+
         # Query LLM
         response_obj = await model_service.generate(
-            prompt=prompt,
-            temperature=0.2,  # Analytical
-            max_tokens=1000,
-            response_format="json"
+            prompt=prompt, temperature=0.2, max_tokens=1000, response_format="json"  # Analytical
         )
-        
+
         # Parse response
         try:
             import json
+
             qa_result = json.loads(response_obj.text)
             overall_score = qa_result.get("overall_score", 5.0)
         except:
@@ -290,9 +283,9 @@ Format as JSON with keys: scores (dict), feedback (str), suggestions (list), ove
                 "suggestions": [],
                 "scores": {},
             }
-        
+
         refined = overall_score >= 7.0
-        
+
         return {
             "topic": topic,
             "quality_score": overall_score,
@@ -307,12 +300,12 @@ Format as JSON with keys: scores (dict), feedback (str), suggestions (list), ove
 class ImageSelectionTask(PureTask):
     """
     Image selection task: Find and prepare images for content.
-    
+
     Input:
         - topic: str - Topic for image search
         - content: str - Content for image context
         - count: int - Number of images (default: 3)
-    
+
     Output:
         - images: list - Image URLs and metadata
         - image_captions: dict - Image captions
@@ -332,14 +325,16 @@ class ImageSelectionTask(PureTask):
         context: ExecutionContext,
     ) -> Dict[str, Any]:
         """Execute image selection task."""
-        from src.cofounder_agent.services.model_consolidation_service import get_model_consolidation_service
-        
+        from src.cofounder_agent.services.model_consolidation_service import (
+            get_model_consolidation_service,
+        )
+
         model_service = get_model_consolidation_service()
-        
+
         topic = input_data["topic"]
         content = input_data.get("content", "")
         count = input_data.get("count", 3)
-        
+
         # Get LLM suggestions for image searches
         prompt = f"""Suggest {count} specific image searches for this content:
 
@@ -351,22 +346,20 @@ Return JSON with list of search queries.
 Each query should be specific and visual (not just text).
 
 Format: {{"search_queries": ["query1", "query2", "query3"]}}"""
-        
+
         response_obj = await model_service.generate(
-            prompt=prompt,
-            temperature=0.5,
-            max_tokens=300,
-            response_format="json"
+            prompt=prompt, temperature=0.5, max_tokens=300, response_format="json"
         )
-        
+
         # Parse search queries
         try:
             import json
+
             suggestions = json.loads(response_obj.text)
             search_queries = suggestions.get("search_queries", [topic])
         except:
             search_queries = [topic]
-        
+
         # In production, would search Pexels/Unsplash API
         # For now, return placeholder structure
         images = [
@@ -378,7 +371,7 @@ Format: {{"search_queries": ["query1", "query2", "query3"]}}"""
             }
             for q in search_queries[:count]
         ]
-        
+
         return {
             "topic": topic,
             "images": images,
@@ -390,13 +383,13 @@ Format: {{"search_queries": ["query1", "query2", "query3"]}}"""
 class PublishTask(PureTask):
     """
     Publish task: Format and publish content to CMS.
-    
+
     Input:
         - content: str - Final content
         - title: str - Content title
         - topic: str - Topic/category
         - images: list - Image data (optional)
-    
+
     Output:
         - published_url: str - CMS URL
         - cms_id: int - Content ID in CMS
@@ -418,19 +411,19 @@ class PublishTask(PureTask):
     ) -> Dict[str, Any]:
         """Execute publish task."""
         from src.cofounder_agent.services.database_service import DatabaseService
-        
+
         # Instantiate database service
         db_service = DatabaseService()
-        
+
         content = input_data["content"]
         title = input_data["title"]
         topic = input_data.get("topic", "General")
         images = input_data.get("images", [])
-        
+
         # Format for CMS (Strapi)
         slug = title.lower().replace(" ", "-").replace(".", "")[:100]
         excerpt = content.split("\n")[2][:200] if len(content.split("\n")) > 2 else content[:200]
-        
+
         try:
             # Create post in database
             post_data = {
@@ -442,18 +435,18 @@ class PublishTask(PureTask):
                 "status": "published",
                 "featured_image": images[0]["url"] if images else None,
             }
-            
+
             # Save to database
             # Note: DatabaseService.create_post might not exist, checking methods...
             # Assuming create_post exists or using generic insert
             # Let's check DatabaseService methods first to be sure
-            
+
             # Re-reading DatabaseService to check for create_post method
             # If not found, I'll use a generic query or implement it
-            
+
             # For now, assuming create_post exists based on previous code usage
             result = await db_service.create_post(post_data)
-            
+
             return {
                 "content_title": title,
                 "published_url": f"/posts/{slug}",

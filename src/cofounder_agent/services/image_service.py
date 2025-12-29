@@ -30,12 +30,14 @@ from datetime import datetime
 
 try:
     import httpx
+
     HTTPX_AVAILABLE = True
 except ImportError:
     HTTPX_AVAILABLE = False
 
 try:
     import torch
+
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
@@ -46,6 +48,7 @@ from PIL import Image
 # Try to import diffusers - optional for SDXL generation
 try:
     from diffusers import StableDiffusionXLPipeline
+
     DIFFUSERS_AVAILABLE = True
 except ImportError as e:
     DIFFUSERS_AVAILABLE = False
@@ -55,12 +58,14 @@ except ImportError as e:
 # Optional optimization packages
 try:
     import xformers
+
     XFORMERS_AVAILABLE = True
 except ImportError:
     XFORMERS_AVAILABLE = False
 
 try:
     from optimum.intel import OVModelForFeatureExtraction
+
     OPTIMUM_AVAILABLE = True
 except ImportError:
     OPTIMUM_AVAILABLE = False
@@ -70,7 +75,7 @@ logger = logging.getLogger(__name__)
 
 class FeaturedImageMetadata:
     """Metadata for a featured image"""
-    
+
     def __init__(
         self,
         url: str,
@@ -115,11 +120,11 @@ class FeaturedImageMetadata:
     def to_markdown(self, caption_override: Optional[str] = None) -> str:
         """Generate markdown with photographer attribution"""
         caption = caption_override or self.caption or self.alt_text or "Featured Image"
-        
+
         photographer_link = self.photographer
         if self.photographer_url:
             photographer_link = f"[{self.photographer}]({self.photographer_url})"
-        
+
         return f"""![{caption}]({self.url})
 *Photo by {photographer_link} on {self.source.capitalize()}*"""
 
@@ -127,12 +132,12 @@ class FeaturedImageMetadata:
 class ImageService:
     """
     Unified service for all image operations.
-    
+
     Consolidates:
     - PexelsClient functionality (featured image, gallery)
     - ImageGenClient functionality (SDXL generation)
     - ImageAgent functionality (orchestration, metadata)
-    
+
     All operations are async-first to prevent blocking in FastAPI event loop.
     """
 
@@ -140,7 +145,9 @@ class ImageService:
         """Initialize image service"""
         self.pexels_api_key = os.getenv("PEXELS_API_KEY")
         if not self.pexels_api_key:
-            logger.warning("Pexels API key not configured - featured image search will be unavailable")
+            logger.warning(
+                "Pexels API key not configured - featured image search will be unavailable"
+            )
 
         self.pexels_base_url = "https://api.pexels.com/v1"
         self.pexels_headers = {"Authorization": self.pexels_api_key} if self.pexels_api_key else {}
@@ -161,30 +168,44 @@ class ImageService:
         """Initialize Stable Diffusion XL model with optimization and refinement if GPU available"""
         # Check if diffusers is available first
         if not DIFFUSERS_AVAILABLE:
-            logger.warning("Diffusers library not installed - SDXL image generation will be unavailable")
+            logger.warning(
+                "Diffusers library not installed - SDXL image generation will be unavailable"
+            )
             self.sdxl_available = False
             return
-        
+
         try:
             # Determine device: CUDA (if compatible) or CPU
             use_device = "cpu"
             torch_dtype = torch.float32
-            
+
             if torch.cuda.is_available():
                 try:
                     # Check compute capability compatibility
                     capability = torch.cuda.get_device_capability(0)
                     device_name = torch.cuda.get_device_name(0)
                     current_cap = capability[0] * 10 + capability[1]
-                    supported_caps = [50, 60, 61, 70, 75, 80, 86, 90, 120]  # Added sm_120 (RTX 5090 Blackwell)
-                    
-                    logger.info(f"GPU: {device_name}, Capability: sm_{capability[0]}{capability[1]}")
-                    
+                    supported_caps = [
+                        50,
+                        60,
+                        61,
+                        70,
+                        75,
+                        80,
+                        86,
+                        90,
+                        120,
+                    ]  # Added sm_120 (RTX 5090 Blackwell)
+
+                    logger.info(
+                        f"GPU: {device_name}, Capability: sm_{capability[0]}{capability[1]}"
+                    )
+
                     if current_cap in supported_caps:
                         use_device = "cuda"
-                        gpu_memory = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+                        gpu_memory = torch.cuda.get_device_properties(0).total_memory / (1024**3)
                         logger.info(f"✅ GPU Memory: {gpu_memory:.1f}GB - Using CUDA acceleration")
-                        
+
                         # Precision selection for CUDA
                         if gpu_memory >= 20:
                             torch_dtype = torch.float32
@@ -236,9 +257,13 @@ class ImageService:
             self.use_refinement = True
             logger.info("✅ SDXL base + refinement models loaded successfully")
             logger.info(f"   Device: {use_device.upper()}")
-            logger.info(f"   Precision: {'fp32 (full precision)' if torch_dtype == torch.float32 else 'fp16 (half precision)'}")
+            logger.info(
+                f"   Precision: {'fp32 (full precision)' if torch_dtype == torch.float32 else 'fp16 (half precision)'}"
+            )
             logger.info(f"   Refinement: {'ENABLED' if self.use_refinement else 'DISABLED'}")
-            logger.info(f"   Optimizations: {'ENABLED (xformers, flash attention)' if XFORMERS_AVAILABLE else 'BASIC (no xformers)'}")
+            logger.info(
+                f"   Optimizations: {'ENABLED (xformers, flash attention)' if XFORMERS_AVAILABLE else 'BASIC (no xformers)'}"
+            )
 
         except Exception as e:
             logger.error(f"Failed to load Stable Diffusion XL models: {e}")
@@ -247,20 +272,20 @@ class ImageService:
     def _apply_model_optimizations(self, pipe, device: str) -> None:
         """
         Apply performance optimizations to SDXL pipeline.
-        
+
         Optimizations:
         - Memory-efficient attention (xformers if available)
         - Flash Attention v2
         - Model CPU offloading for 16GB GPU
         - Reduced precision where safe
-        
+
         These work on both CPU and GPU and will benefit future GPU usage.
         """
         try:
             # 1. Enable attention slicing for memory efficiency
             pipe.enable_attention_slicing()
             logger.info("   ✓ Attention slicing enabled")
-            
+
             # 2. Use xformers memory efficient attention if available
             if XFORMERS_AVAILABLE:
                 try:
@@ -268,15 +293,15 @@ class ImageService:
                     logger.info("   ✓ xformers memory-efficient attention enabled (2-4x faster)")
                 except Exception as e:
                     logger.warning(f"   ⚠️  Could not enable xformers: {e}")
-            
+
             # 3. Enable Flash Attention v2 if available (PyTorch 2.0+)
             try:
-                if hasattr(pipe.unet, 'enable_flash_attn'):
+                if hasattr(pipe.unet, "enable_flash_attn"):
                     pipe.unet.enable_flash_attn(use_flash_attention_v2=True)
                     logger.info("   ✓ Flash Attention v2 enabled (30-50% faster)")
             except Exception as e:
                 logger.debug(f"   Flash Attention v2 not available: {e}")
-            
+
             # 4. Enable sequential CPU offloading for GPU mode (frees VRAM between steps)
             if device == "cuda":
                 try:
@@ -284,17 +309,17 @@ class ImageService:
                     logger.info("   ✓ Sequential CPU offloading enabled (GPU memory saver)")
                 except Exception as e:
                     logger.debug(f"   Sequential CPU offload not available: {e}")
-            
+
             # 5. Enable model CPU offload for memory-constrained GPUs
             if device == "cuda":
                 try:
-                    gpu_mem = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+                    gpu_mem = torch.cuda.get_device_properties(0).total_memory / (1024**3)
                     if gpu_mem < 20:
                         pipe.enable_model_cpu_offload()
                         logger.info("   ✓ Model CPU offload enabled (constrained GPU memory)")
                 except Exception as e:
                     logger.debug(f"   Model CPU offload not available: {e}")
-                    
+
         except Exception as e:
             logger.warning(f"Error applying optimizations: {e}")
 
@@ -329,22 +354,40 @@ class ImageService:
 
         # Build search queries prioritizing concept/topic over people
         search_queries = [topic]
-        
+
         # Add concept-based fallbacks (no people)
         concept_keywords = [
-            "technology", "digital", "abstract", "modern", "innovation",
-            "data", "network", "background", "desktop", "workspace",
-            "object", "product", "design", "pattern", "texture",
-            "nature", "landscape", "environment", "system", "interface"
+            "technology",
+            "digital",
+            "abstract",
+            "modern",
+            "innovation",
+            "data",
+            "network",
+            "background",
+            "desktop",
+            "workspace",
+            "object",
+            "product",
+            "design",
+            "pattern",
+            "texture",
+            "nature",
+            "landscape",
+            "environment",
+            "system",
+            "interface",
         ]
-        
+
         # Add user keywords but avoid person/people related terms
         if keywords:
             for kw in keywords[:3]:
                 # Avoid portrait/people searches
-                if not any(term in kw.lower() for term in ["person", "people", "portrait", "face", "human"]):
+                if not any(
+                    term in kw.lower() for term in ["person", "people", "portrait", "face", "human"]
+                ):
                     search_queries.append(kw)
-        
+
         # Add combined searches (topic + concept)
         search_queries.append(f"{topic} technology")
         search_queries.append(f"{topic} abstract")
@@ -353,10 +396,14 @@ class ImageService:
         for query in search_queries:
             try:
                 logger.info(f"Searching Pexels for: '{query}' (page {page})")
-                images = await self._pexels_search(query, per_page=3, orientation=orientation, size=size, page=page)
+                images = await self._pexels_search(
+                    query, per_page=3, orientation=orientation, size=size, page=page
+                )
                 if images:
                     metadata = images[0]
-                    logger.info(f"✅ Found featured image for '{topic}' using query '{query}' (page {page})")
+                    logger.info(
+                        f"✅ Found featured image for '{topic}' using query '{query}' (page {page})"
+                    )
                     return metadata
             except Exception as e:
                 logger.warning(f"Error searching for '{query}': {e}")
@@ -446,7 +493,9 @@ class ImageService:
                 data = response.json()
 
                 photos = data.get("photos", [])
-                logger.info(f"Pexels search for '{query}' (page {page}) returned {len(photos)} results")
+                logger.info(
+                    f"Pexels search for '{query}' (page {page}) returned {len(photos)} results"
+                )
 
                 return [
                     FeaturedImageMetadata(
@@ -484,7 +533,7 @@ class ImageService:
     ) -> bool:
         """
         Generate image using Stable Diffusion XL with full refinement for maximum quality.
-        
+
         Quality is prioritized over speed. Refinement is ALWAYS enabled to ensure
         the highest quality output.
 
@@ -500,7 +549,7 @@ class ImageService:
 
         Returns:
             True if successful, False otherwise
-            
+
         Note:
             - Refinement adds 30+ additional steps (2-stage pipeline)
             - CPU mode will be slower but maintains maximum quality
@@ -512,7 +561,7 @@ class ImageService:
             logger.info("🎨 First generation request detected - initializing SDXL models...")
             self._initialize_sdxl()
             self.sdxl_initialized = True
-        
+
         if not self.sdxl_available:
             logger.warning("SDXL model not available - image generation skipped")
             return False
@@ -520,10 +569,14 @@ class ImageService:
         try:
             logger.info(f"🎨 Generating image for prompt: '{prompt}'")
             if high_quality:
-                logger.info(f"   Mode: HIGH QUALITY (base steps={num_inference_steps}, guidance={guidance_scale})")
+                logger.info(
+                    f"   Mode: HIGH QUALITY (base steps={num_inference_steps}, guidance={guidance_scale})"
+                )
                 if use_refinement and self.sdxl_refiner_pipe:
                     logger.info(f"   Refinement: ENABLED (quality priority)")
-                    logger.info(f"   Device: {self.use_device.upper()} - Note: CPU refinement will take longer")
+                    logger.info(
+                        f"   Device: {self.use_device.upper()} - Note: CPU refinement will take longer"
+                    )
 
             # Run generation in thread pool to avoid blocking
             loop = asyncio.get_event_loop()
@@ -535,39 +588,44 @@ class ImageService:
                 negative_prompt,
                 num_inference_steps,
                 guidance_scale,
-                use_refinement and self.use_refinement,  # Enable refinement on all devices for quality
+                use_refinement
+                and self.use_refinement,  # Enable refinement on all devices for quality
                 task_id,
             )
 
             logger.info(f"✅ Image saved to {output_path}")
-            
+
             # Mark progress as complete if tracking
             if task_id:
                 from services.progress_service import get_progress_service
+
                 progress_service = get_progress_service()
                 progress_service.mark_complete(task_id, "Image generation complete")
-                
+
                 # Broadcast via WebSocket
                 from routes.websocket_routes import broadcast_progress
+
                 progress = progress_service.get_progress(task_id)
                 await broadcast_progress(task_id, progress)
-            
+
             return True
 
         except Exception as e:
             logger.error(f"❌ Error generating image: {e}")
-            
+
             # Mark progress as failed if tracking
             if task_id:
                 from services.progress_service import get_progress_service
+
                 progress_service = get_progress_service()
                 progress_service.mark_failed(task_id, str(e))
-                
+
                 # Broadcast via WebSocket
                 from routes.websocket_routes import broadcast_progress
+
                 progress = progress_service.get_progress(task_id)
                 await broadcast_progress(task_id, progress)
-            
+
             return False
 
     def _generate_image_sync(
@@ -587,7 +645,7 @@ class ImageService:
         Stage 2: Refiner model applies additional detail refinement (if enabled)
 
         Runs in thread pool to avoid blocking async operations.
-        
+
         Emits progress updates if task_id provided (for WebSocket streaming).
         """
         if not self.sdxl_pipe:
@@ -595,13 +653,16 @@ class ImageService:
 
         negative_prompt = negative_prompt or ""
         start_time = time.time()
-        
+
         # Initialize progress tracking if task_id provided
         progress_service = None
         if task_id:
             from services.progress_service import get_progress_service
+
             progress_service = get_progress_service()
-            total_steps = num_inference_steps + (30 if use_refinement and self.sdxl_refiner_pipe else 0)
+            total_steps = num_inference_steps + (
+                30 if use_refinement and self.sdxl_refiner_pipe else 0
+            )
             progress_service.create_progress(task_id, total_steps)
 
         def progress_callback(step: int, timestep: Any, latents: Any) -> None:
@@ -613,32 +674,26 @@ class ImageService:
                     step + 1,  # 1-indexed for display
                     stage="base_model",
                     elapsed_time=elapsed,
-                    message=f"Base model generation: step {step + 1}/{num_inference_steps}"
+                    message=f"Base model generation: step {step + 1}/{num_inference_steps}",
                 )
 
         # =====================================================================
         # STAGE 1: Base Generation
         # =====================================================================
         logger.info(f"   ⏱️  Stage 1/2: Base generation ({num_inference_steps} steps)...")
-        
+
         if progress_service and task_id:
             progress_service.update_progress(
-                task_id,
-                0,
-                stage="base_model",
-                message=f"Starting base model generation..."
+                task_id, 0, stage="base_model", message=f"Starting base model generation..."
             )
 
         # Generate base image - always output PIL for safety
         # We'll pass PIL to refiner which handles it correctly
         logger.info(f"   ⏱️  Stage 1/2: Base generation ({num_inference_steps} steps)...")
-        
+
         if progress_service and task_id:
             progress_service.update_progress(
-                task_id,
-                0,
-                stage="base_model",
-                message=f"Starting base model generation..."
+                task_id, 0, stage="base_model", message=f"Starting base model generation..."
             )
 
         base_result = self.sdxl_pipe(
@@ -658,15 +713,15 @@ class ImageService:
         # =====================================================================
         if use_refinement and self.sdxl_refiner_pipe:
             logger.info(f"   ⏱️  Stage 2/2: Refinement pass (30 additional steps)...")
-            
+
             if progress_service and task_id:
                 progress_service.update_progress(
                     task_id,
                     num_inference_steps,
                     stage="refiner_model",
-                    message=f"Starting refinement pass..."
+                    message=f"Starting refinement pass...",
                 )
-            
+
             def refiner_progress_callback(step: int, timestep: Any, latents: Any) -> None:
                 """Callback for refinement steps"""
                 if progress_service and task_id:
@@ -677,9 +732,9 @@ class ImageService:
                         current_step,
                         stage="refiner_model",
                         elapsed_time=elapsed,
-                        message=f"Refinement: step {step + 1}/30"
+                        message=f"Refinement: step {step + 1}/30",
                     )
-            
+
             try:
                 # Pass PIL image to refiner
                 # The refiner will internally convert to latents if needed
@@ -698,7 +753,9 @@ class ImageService:
                 refined_image.save(output_path)
 
             except Exception as refine_error:
-                logger.warning(f"   ⚠️  Refinement failed, falling back to base image: {refine_error}")
+                logger.warning(
+                    f"   ⚠️  Refinement failed, falling back to base image: {refine_error}"
+                )
                 # Fallback: save base PIL image without refinement
                 try:
                     base_image_pil.save(output_path)

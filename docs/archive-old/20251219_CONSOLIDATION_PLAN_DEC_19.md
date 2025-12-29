@@ -112,7 +112,7 @@
 | IMAGE*GENERATION*\* | 8     | Quick Start, Testing Guide, Implementation, etc.      |
 | LANGGRAPH\_\*       | 12    | Implementation, Testing, Fixes, Integration, etc.     |
 | IMPLEMENTATION\_\*  | 10    | Checklist, Summary, Status, Guide, Verification, etc. |
-| WEEK*\**\*          | 15    | Week 1-2 checklists, summaries, guides                |
+| WEEK\*\*\*\*        | 15    | Week 1-2 checklists, summaries, guides                |
 | SESSION\_\*         | 8     | Session summaries and completion reports              |
 | QUICK\_\*           | 8     | Quick references, guides, summaries                   |
 | DOCUMENTATION\_\*   | 5     | Documentation indexes, guides                         |
@@ -196,7 +196,7 @@ mv *.md docs/archive-old/ (except README.md, LICENSE.md)
 # - docker-compose.yml, package.json, etc. (config files)
 ```
 
-**Affected Files:** 80 files including all IMAGE*GENERATION, LANGGRAPH, IMPLEMENTATION, WEEK*_, SESSION\__, QUICK\_\*, etc.
+**Affected Files:** 80 files including all IMAGE*GENERATION, LANGGRAPH, IMPLEMENTATION, WEEK*\_, SESSION\_\_, QUICK\_\*, etc.
 
 ### Phase 3: Archive from docs/ (10 minutes)
 

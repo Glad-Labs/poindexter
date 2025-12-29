@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 class ContentStyle(str, Enum):
     """Content styles for generation"""
+
     TECHNICAL = "technical"
     NARRATIVE = "narrative"
     LISTICLE = "listicle"
@@ -46,6 +47,7 @@ class ContentStyle(str, Enum):
 
 class ContentTone(str, Enum):
     """Content tones"""
+
     PROFESSIONAL = "professional"
     CASUAL = "casual"
     ACADEMIC = "academic"
@@ -54,6 +56,7 @@ class ContentTone(str, Enum):
 
 class PublishMode(str, Enum):
     """Publishing modes"""
+
     DRAFT = "draft"
     PUBLISH = "publish"
 
@@ -66,7 +69,7 @@ class PublishMode(str, Enum):
 class ContentTaskStore:
     """
     Unified task storage adapter for all content generation requests.
-    
+
     Now delegates to persistent database backend (PersistentTaskStore).
     Provides backward-compatible interface with enhanced persistence.
     """
@@ -74,7 +77,7 @@ class ContentTaskStore:
     def __init__(self, database_service: Optional[DatabaseService] = None):
         """
         Initialize unified task store with async DatabaseService
-        
+
         Args:
             database_service: Optional DatabaseService instance for task persistence
         """
@@ -98,7 +101,7 @@ class ContentTaskStore:
         generate_featured_image: bool = True,
         request_type: str = "basic",
         task_type: str = "blog_post",
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         Create a new task in persistent storage (async, non-blocking)
@@ -120,39 +123,41 @@ class ContentTaskStore:
         logger.info(f"   Style: {style} | Tone: {tone} | Length: {target_length}w")
         logger.info(f"   Tags: {', '.join(tags) if tags else 'none'}")
         logger.debug(f"   Type: {request_type} | Image: {generate_featured_image}")
-        
+
         # Add generate_featured_image to metadata
         metadata = {"generate_featured_image": generate_featured_image}
         logger.debug(f"   Metadata: {metadata}")
-        
+
         try:
             # Check if we have database service
             if not self.database_service:
                 raise ValueError("DatabaseService not initialized - cannot persist tasks")
-            
+
             logger.debug(f"   📝 Calling database_service.add_task() (async)...")
-            
+
             # Generate task_name from topic
             task_name = f"{topic[:50]}" if len(topic) <= 50 else f"{topic[:47]}..."
-            
-            task_id = await self.database_service.add_task({
-                "task_name": task_name,  # REQUIRED: must be provided
-                "topic": topic,
-                "style": style,
-                "tone": tone,
-                "target_length": target_length,
-                "tags": tags or [],
-                "request_type": request_type,
-                "task_type": task_type,
-                "metadata": metadata or {},
-            })
-            
+
+            task_id = await self.database_service.add_task(
+                {
+                    "task_name": task_name,  # REQUIRED: must be provided
+                    "topic": topic,
+                    "style": style,
+                    "tone": tone,
+                    "target_length": target_length,
+                    "tags": tags or [],
+                    "request_type": request_type,
+                    "task_type": task_type,
+                    "metadata": metadata or {},
+                }
+            )
+
             logger.info(f"✅ [CONTENT_TASK_STORE] Task CREATED and PERSISTED (async)")
             logger.info(f"   Task ID: {task_id}")
             logger.info(f"   Status: pending")
             logger.debug(f"   🎯 Ready for processing")
             return task_id
-            
+
         except Exception as e:
             logger.error(f"❌ [CONTENT_TASK_STORE] ERROR: {e}", exc_info=True)
             raise
@@ -167,12 +172,13 @@ class ContentTaskStore:
         """Update task data in persistent storage (async, non-blocking)"""
         if not self.database_service:
             return None
-        
+
         # Handle metadata updates by converting to JSON
         import json
+
         if "metadata" in updates:
             updates["task_metadata"] = json.dumps(updates.pop("metadata"))
-        
+
         # Call database service to update
         return await self.database_service.update_task(task_id, updates)
 
@@ -189,9 +195,7 @@ class ContentTaskStore:
         if not self.database_service:
             return []
         tasks, total = await self.database_service.get_tasks_paginated(
-            offset=offset,
-            limit=limit,
-            status=status
+            offset=offset, limit=limit, status=status
         )
         return tasks
 
@@ -217,7 +221,7 @@ def get_content_task_store(database_service: Optional[DatabaseService] = None) -
     elif database_service and _content_task_store.database_service is None:
         # Inject service if it wasn't available during first init
         _content_task_store.database_service = database_service
-        
+
     return _content_task_store
 
 
@@ -287,9 +291,7 @@ class ContentGenerationService:
             )
             return content, model_used, metrics
 
-    async def generate_featured_image_prompt(
-        self, topic: str, content: str
-    ) -> str:
+    async def generate_featured_image_prompt(self, topic: str, content: str) -> str:
         """Generate a detailed image prompt for featured image"""
         try:
             generator = get_content_generator()
@@ -318,13 +320,13 @@ async def process_content_generation_task(
     task_id: Optional[str] = None,
     # NEW: Model selection parameters (Week 1)
     models_by_phase: Optional[Dict[str, str]] = None,
-    quality_preference: Optional[str] = None
+    quality_preference: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     🚀 Complete Content Generation Pipeline with Image Sourcing & SEO Metadata
-    
+
     Process a content generation request through the full pipeline:
-    
+
     STAGE 1: 📋 Create content_task record (status='pending')
     STAGE 2: ✍️  Generate blog content
     STAGE 2B: ⭐ Early quality evaluation
@@ -333,7 +335,7 @@ async def process_content_generation_task(
     STAGE 5: 📝 Create posts record with all metadata
     STAGE 6: 🎓 Capture training data for learning
     STAGE 7: 🎓 Capture training data for learning loop
-    
+
     FEATURES:
     - ✅ Pexels API for royalty-free featured images
     - ✅ Auto-generated SEO title, description, keywords
@@ -341,7 +343,7 @@ async def process_content_generation_task(
     - ✅ Training data capture for improvement learning
     - ✅ Full relational integrity (author_id, category_id, etc.)
     - ✅ Per-phase model selection and cost tracking (NEW - Week 1)
-    
+
     Args:
         topic: Blog post topic
         style: Content style (technical, narrative, listicle, educational, thought-leadership)
@@ -353,21 +355,21 @@ async def process_content_generation_task(
         task_id: Optional task_id (auto-generated if not provided)
         models_by_phase: Optional per-phase model selections
         quality_preference: Optional quality preference (fast, balanced, quality) for auto-selection
-        
+
     Returns:
         Dict with complete task result including post_id, quality_score, image_url, cost_breakdown, etc.
     """
     from uuid import uuid4
     from asyncio import gather
-    
+
     # Generate task_id if not provided
     if not task_id:
         task_id = str(uuid4())
-    
+
     if not database_service:
         logger.error("❌ DatabaseService not provided - cannot persist content")
         raise ValueError("DatabaseService is required for content_tasks persistence")
-    
+
     logger.info(f"\n{'='*80}")
     logger.info(f"🚀 COMPLETE CONTENT GENERATION PIPELINE")
     logger.info(f"{'='*80}")
@@ -378,165 +380,153 @@ async def process_content_generation_task(
     logger.info(f"   Tags: {', '.join(tags) if tags else 'none'}")
     logger.info(f"   Image Search: {generate_featured_image}")
     logger.info(f"{'='*80}\n")
-    
-    result = {
-        'task_id': task_id,
-        'topic': topic,
-        'status': 'pending',
-        'stages': {}
-    }
-    
+
+    result = {"task_id": task_id, "topic": topic, "status": "pending", "stages": {}}
+
     try:
         # Initialize unified services
         image_service = get_image_service()
         quality_service = get_content_quality_service(database_service=database_service)
-        
+
         # ================================================================================
         # STAGE 1: CREATE CONTENT_TASK RECORD
         # ================================================================================
         logger.info("📋 STAGE 1: Creating content_task record...")
-        
+
         # Use consolidated add_task() method
-        task_id_created = await database_service.add_task({
-            'task_id': task_id,
-            'id': task_id,
-            'request_type': 'api_request',
-            'task_type': 'blog_post',
-            'status': 'pending',
-            'topic': topic,
-            'style': style,
-            'tone': tone,
-            'target_length': target_length,
-            'approval_status': 'pending'
-        })
-        
-        result['content_task_id'] = task_id_created
-        result['stages']['1_content_task_created'] = True
+        task_id_created = await database_service.add_task(
+            {
+                "task_id": task_id,
+                "id": task_id,
+                "request_type": "api_request",
+                "task_type": "blog_post",
+                "status": "pending",
+                "topic": topic,
+                "style": style,
+                "tone": tone,
+                "target_length": target_length,
+                "approval_status": "pending",
+            }
+        )
+
+        result["content_task_id"] = task_id_created
+        result["stages"]["1_content_task_created"] = True
         logger.info(f"✅ Content task created: {task_id_created}\n")
-        
+
         # ================================================================================
         # STAGE 2: GENERATE BLOG CONTENT
         # ================================================================================
         logger.info("✍️  STAGE 2: Generating blog content...")
-        
+
         content_generator = get_content_generator()
         content_text, model_used, metrics = await content_generator.generate_blog_post(
-            topic=topic,
-            style=style,
-            tone=tone,
-            target_length=target_length,
-            tags=tags or []
+            topic=topic, style=style, tone=tone, target_length=target_length, tags=tags or []
         )
-        
+
         # Validate content_text is not None
         if not content_text:
             logger.error(f"❌ Content generation returned None or empty")
             raise ValueError("Content generation failed: no content produced")
-        
+
         # Update content_task with generated content
         await database_service.update_task(
-            task_id=task_id,
-            updates={
-                'status': 'generated',
-                'content': content_text
-            }
+            task_id=task_id, updates={"status": "generated", "content": content_text}
         )
-        
-        result['content'] = content_text
-        result['content_length'] = len(content_text)
-        result['model_used'] = model_used
-        result['stages']['2_content_generated'] = True
+
+        result["content"] = content_text
+        result["content_length"] = len(content_text)
+        result["model_used"] = model_used
+        result["stages"]["2_content_generated"] = True
         logger.info(f"✅ Content generated ({len(content_text)} chars) using {model_used}\n")
-        
+
         # ================================================================================
         # STAGE 2B: QUALITY EVALUATION (Early check after content generation)
         # ================================================================================
         logger.info("⭐ STAGE 2B: Early quality evaluation...")
-        
+
         quality_result = await quality_service.evaluate(
             content=content_text,
             context={
-                'topic': topic,
-                'keywords': tags or [topic],
-                'audience': 'General',
+                "topic": topic,
+                "keywords": tags or [topic],
+                "audience": "General",
             },
-            method=EvaluationMethod.PATTERN_BASED
+            method=EvaluationMethod.PATTERN_BASED,
         )
-        
+
         # Validate quality_result is not None
         if not quality_result:
             logger.error(f"❌ Quality evaluation returned None")
             raise ValueError("Quality evaluation failed: no result produced")
-        
-        result['quality_score'] = quality_result.overall_score
-        result['quality_passing'] = quality_result.passing
-        result['quality_details_initial'] = {
-            'clarity': quality_result.clarity,
-            'accuracy': quality_result.accuracy,
-            'completeness': quality_result.completeness,
-            'relevance': quality_result.relevance,
-            'seo_quality': quality_result.seo_quality,
-            'readability': quality_result.readability,
-            'engagement': quality_result.engagement,
+
+        result["quality_score"] = quality_result.overall_score
+        result["quality_passing"] = quality_result.passing
+        result["quality_details_initial"] = {
+            "clarity": quality_result.clarity,
+            "accuracy": quality_result.accuracy,
+            "completeness": quality_result.completeness,
+            "relevance": quality_result.relevance,
+            "seo_quality": quality_result.seo_quality,
+            "readability": quality_result.readability,
+            "engagement": quality_result.engagement,
         }
-        result['stages']['2b_quality_evaluated_initial'] = True
+        result["stages"]["2b_quality_evaluated_initial"] = True
         logger.info(f"✅ Initial quality evaluation complete:")
         logger.info(f"   Overall Score: {quality_result.overall_score:.1f}/10")
         logger.info(f"   Passing: {quality_result.passing} (threshold ≥7.0)\n")
-        
+
         # ================================================================================
         # STAGE 3: SOURCE FEATURED IMAGE FROM UNIFIED IMAGE SERVICE
         # ================================================================================
         logger.info("🖼️  STAGE 3: Sourcing featured image from Pexels...")
-        
+
         featured_image = None
         image_metadata = None
-        
+
         if generate_featured_image:
             search_keywords = tags or [topic]
-            
+
             try:
                 featured_image = await image_service.search_featured_image(
-                    topic=topic,
-                    keywords=search_keywords
+                    topic=topic, keywords=search_keywords
                 )
-                
+
                 if featured_image:
                     image_metadata = featured_image.to_dict()
-                    result['featured_image_url'] = featured_image.url
-                    result['featured_image_photographer'] = featured_image.photographer
-                    result['featured_image_source'] = featured_image.source
-                    result['stages']['3_featured_image_found'] = True
-                    logger.info(f"✅ Featured image found: {featured_image.photographer} (Pexels)\n")
+                    result["featured_image_url"] = featured_image.url
+                    result["featured_image_photographer"] = featured_image.photographer
+                    result["featured_image_source"] = featured_image.source
+                    result["stages"]["3_featured_image_found"] = True
+                    logger.info(
+                        f"✅ Featured image found: {featured_image.photographer} (Pexels)\n"
+                    )
                 else:
-                    result['stages']['3_featured_image_found'] = False
+                    result["stages"]["3_featured_image_found"] = False
                     logger.warning(f"⚠️  No featured image found for '{topic}'\n")
             except Exception as e:
                 logger.error(f"❌ Image search failed: {e}")
-                result['stages']['3_featured_image_found'] = False
+                result["stages"]["3_featured_image_found"] = False
         else:
-            result['stages']['3_featured_image_found'] = False
+            result["stages"]["3_featured_image_found"] = False
             logger.info("⏭️  Image search skipped (disabled)\n")
-        
+
         # ================================================================================
         # STAGE 4: GENERATE SEO METADATA
         # ================================================================================
         logger.info("📊 STAGE 4: Generating SEO metadata...")
-        
+
         seo_generator = get_seo_content_generator(content_generator)
         # SEOOptimizedContentGenerator wraps ContentMetadataGenerator which has generate_seo_assets
         seo_assets = seo_generator.metadata_gen.generate_seo_assets(
-            title=topic,
-            content=content_text,
-            topic=topic
+            title=topic, content=content_text, topic=topic
         )
-        
+
         # Validate seo_assets is not None and is a dict
         if not seo_assets or not isinstance(seo_assets, dict):
             logger.error(f"❌ SEO generation returned None or invalid format")
             raise ValueError("SEO metadata generation failed: invalid result")
-        
-        seo_keywords = seo_assets.get('meta_keywords') or (tags or [])
+
+        seo_keywords = seo_assets.get("meta_keywords") or (tags or [])
         # Ensure seo_keywords is a list before slicing
         if isinstance(seo_keywords, list):
             seo_keywords = seo_keywords[:10]
@@ -544,113 +534,120 @@ async def process_content_generation_task(
             seo_keywords = [seo_keywords][:10]
         else:
             seo_keywords = []
-            
-        seo_title = seo_assets.get('seo_title', topic)
+
+        seo_title = seo_assets.get("seo_title", topic)
         if seo_title:
             seo_title = seo_title[:60]
         else:
             seo_title = topic[:60]
-            
-        seo_description = seo_assets.get('meta_description', '')
+
+        seo_description = seo_assets.get("meta_description", "")
         if seo_description:
             seo_description = seo_description[:160]
         else:
             seo_description = topic[:160]
-        
-        result['seo_title'] = seo_title
-        result['seo_description'] = seo_description
-        result['seo_keywords'] = seo_keywords
-        result['stages']['4_seo_metadata_generated'] = True
+
+        result["seo_title"] = seo_title
+        result["seo_description"] = seo_description
+        result["seo_keywords"] = seo_keywords
+        result["stages"]["4_seo_metadata_generated"] = True
         logger.info(f"✅ SEO metadata generated:")
         logger.info(f"   Title: {seo_title}")
         logger.info(f"   Description: {seo_description[:80]}...")
         logger.info(f"   Keywords: {', '.join(seo_keywords[:5])}...\n")
-        
+
         # ================================================================================
         # STAGE 5: CREATE POSTS RECORD
         # ================================================================================
         logger.info("📝 STAGE 5: Creating posts record...")
-        
+
         # Get default author (Poindexter AI)
         author_id = await _get_or_create_default_author(database_service)
-        
+
         # Select category based on topic
         category_id = await _select_category_for_topic(topic, database_service)
-        
+
         # Create slug from topic
         import re
-        slug = re.sub(r'[^\w\s-]', '', topic).lower().replace(' ', '-')[:50]
+
+        slug = re.sub(r"[^\w\s-]", "", topic).lower().replace(" ", "-")[:50]
         slug = f"{slug}-{task_id[:8]}"
-        
+
         # Create post with all data
-        post = await database_service.create_post({
-            'title': topic,
-            'slug': slug,
-            'content': content_text,
-            'excerpt': seo_description,
-            'featured_image_url': featured_image.url if featured_image else None,
-            'author_id': author_id,
-            'category_id': category_id,
-            'status': 'draft',  # Always draft, human must approve
-            'seo_title': seo_title,
-            'seo_description': seo_description,
-            'seo_keywords': ','.join(seo_keywords) if seo_keywords else '',
-            'metadata': image_metadata if image_metadata else {}
-        })
-        
-        result['post_id'] = str(post['id'])
-        result['post_slug'] = post['slug']
-        result['stages']['5_post_created'] = True
+        post = await database_service.create_post(
+            {
+                "title": topic,
+                "slug": slug,
+                "content": content_text,
+                "excerpt": seo_description,
+                "featured_image_url": featured_image.url if featured_image else None,
+                "author_id": author_id,
+                "category_id": category_id,
+                "status": "draft",  # Always draft, human must approve
+                "seo_title": seo_title,
+                "seo_description": seo_description,
+                "seo_keywords": ",".join(seo_keywords) if seo_keywords else "",
+                "metadata": image_metadata if image_metadata else {},
+            }
+        )
+
+        result["post_id"] = str(post["id"])
+        result["post_slug"] = post["slug"]
+        result["stages"]["5_post_created"] = True
         logger.info(f"✅ Post created: {post['id']}")
         logger.info(f"   Title: {topic}")
         logger.info(f"   Slug: {slug}")
         logger.info(f"   Author: {author_id}")
         logger.info(f"   Category: {category_id}\n")
-        
+
         # ================================================================================
         # STAGE 6: CAPTURE TRAINING DATA
         # ================================================================================
         logger.info("🎓 STAGE 6: Capturing training data...")
-        
+
         # Store quality evaluation in PostgreSQL
-        await database_service.create_quality_evaluation({
-            'content_id': task_id,
-            'task_id': task_id,
-            'overall_score': quality_result.overall_score,
-            'clarity': quality_result.clarity,
-            'accuracy': quality_result.accuracy,
-            'completeness': quality_result.completeness,
-            'relevance': quality_result.relevance,
-            'seo_quality': quality_result.seo_quality,
-            'readability': quality_result.readability,
-            'engagement': quality_result.engagement,
-            'passing': quality_result.passing,
-            'feedback': quality_result.feedback,
-            'suggestions': quality_result.suggestions,
-            'evaluated_by': 'ContentQualityService',
-            'evaluation_method': quality_result.evaluation_method
-        })
-        
-        await database_service.create_orchestrator_training_data({
-            'execution_id': task_id,
-            'user_request': f"Generate blog post on: {topic}",
-            'intent': 'content_generation',
-            'business_state': {
-                'topic': topic,
-                'style': style,
-                'tone': tone,
-                'featured_image': featured_image is not None
-            },
-            'execution_result': 'success',
-            'quality_score': quality_result.overall_score / 10,
-            'success': quality_result.passing,
-            'tags': tags or [],
-            'source_agent': 'content_router_service'
-        })
-        
-        result['stages']['6_training_data_captured'] = True
+        await database_service.create_quality_evaluation(
+            {
+                "content_id": task_id,
+                "task_id": task_id,
+                "overall_score": quality_result.overall_score,
+                "clarity": quality_result.clarity,
+                "accuracy": quality_result.accuracy,
+                "completeness": quality_result.completeness,
+                "relevance": quality_result.relevance,
+                "seo_quality": quality_result.seo_quality,
+                "readability": quality_result.readability,
+                "engagement": quality_result.engagement,
+                "passing": quality_result.passing,
+                "feedback": quality_result.feedback,
+                "suggestions": quality_result.suggestions,
+                "evaluated_by": "ContentQualityService",
+                "evaluation_method": quality_result.evaluation_method,
+            }
+        )
+
+        await database_service.create_orchestrator_training_data(
+            {
+                "execution_id": task_id,
+                "user_request": f"Generate blog post on: {topic}",
+                "intent": "content_generation",
+                "business_state": {
+                    "topic": topic,
+                    "style": style,
+                    "tone": tone,
+                    "featured_image": featured_image is not None,
+                },
+                "execution_result": "success",
+                "quality_score": quality_result.overall_score / 10,
+                "success": quality_result.passing,
+                "tags": tags or [],
+                "source_agent": "content_router_service",
+            }
+        )
+
+        result["stages"]["6_training_data_captured"] = True
         logger.info(f"✅ Training data captured for learning pipeline\n")
-        
+
         # ================================================================================
         # UPDATE CONTENT_TASK WITH FINAL STATUS AND ALL METADATA
         # ================================================================================
@@ -658,60 +655,58 @@ async def process_content_generation_task(
         await database_service.update_task(
             task_id=task_id,
             updates={
-                'status': 'completed',
-                'approval_status': 'pending_human_review',
-                'quality_score': int(quality_result.overall_score),
+                "status": "completed",
+                "approval_status": "pending_human_review",
+                "quality_score": int(quality_result.overall_score),
                 # 🖼️ Store featured_image_url in task_metadata for later retrieval by approval endpoint
-                'task_metadata': {
-                    'featured_image_url': result.get('featured_image_url'),
-                    'featured_image_photographer': result.get('featured_image_photographer'),
-                    'featured_image_source': result.get('featured_image_source'),
-                    'content': content_text,
-                    'seo_title': seo_title,
-                    'seo_description': seo_description,
-                    'seo_keywords': seo_keywords,
-                    'topic': topic,
-                    'style': style,
-                    'tone': tone,
-                    'post_id': result.get('post_id'),
-                    'quality_score': quality_result.overall_score
-                }
-            }
+                "task_metadata": {
+                    "featured_image_url": result.get("featured_image_url"),
+                    "featured_image_photographer": result.get("featured_image_photographer"),
+                    "featured_image_source": result.get("featured_image_source"),
+                    "content": content_text,
+                    "seo_title": seo_title,
+                    "seo_description": seo_description,
+                    "seo_keywords": seo_keywords,
+                    "topic": topic,
+                    "style": style,
+                    "tone": tone,
+                    "post_id": result.get("post_id"),
+                    "quality_score": quality_result.overall_score,
+                },
+            },
         )
-        
-        result['status'] = 'completed'
-        result['approval_status'] = 'pending_human_review'
-        
+
+        result["status"] = "completed"
+        result["approval_status"] = "pending_human_review"
+
         logger.info(f"{'='*80}")
         logger.info(f"✅ COMPLETE CONTENT GENERATION PIPELINE FINISHED")
         logger.info(f"{'='*80}")
         logger.info(f"   Task ID: {task_id}")
         logger.info(f"   Post ID: {post['id']}")
-        logger.info(f"   Featured Image: {result.get('featured_image_url', 'NONE')[:100] if result.get('featured_image_url') else 'NONE'}")
+        logger.info(
+            f"   Featured Image: {result.get('featured_image_url', 'NONE')[:100] if result.get('featured_image_url') else 'NONE'}"
+        )
         logger.info(f"   Quality Score: {quality_result.overall_score:.1f}/10")
         logger.info(f"   Status: {result['status']}")
         logger.info(f"   Next: Human review & approval")
         logger.info(f"{'='*80}\n")
-        
+
         return result
-        
+
     except Exception as e:
         logger.error(f"❌ Pipeline error: {e}", exc_info=True)
-        
+
         # Update content_task with failure status
         try:
             await database_service.update_task(
-                task_id=task_id,
-                updates={
-                    'status': 'failed',
-                    'approval_status': 'failed'
-                }
+                task_id=task_id, updates={"status": "failed", "approval_status": "failed"}
             )
         except Exception as db_error:
             logger.error(f"❌ Failed to update task status: {db_error}")
-        
-        result['status'] = 'failed'
-        result['error'] = str(e)
+
+        result["status"] = "failed"
+        result["error"] = str(e)
         return result
 
 
@@ -721,7 +716,7 @@ async def process_content_generation_task(
 # NOTE: Metadata functions moved to unified_metadata_service.py
 # For SEO keyword extraction, title generation, description generation,
 # use get_unified_metadata_service() from unified_metadata_service.py
-# 
+#
 # Example:
 #   from services.unified_metadata_service import get_unified_metadata_service
 #   service = get_unified_metadata_service()
@@ -730,14 +725,11 @@ async def process_content_generation_task(
 
 
 async def _evaluate_content_quality(
-    content: str,
-    topic: str,
-    seo_title: str,
-    seo_keywords: List[str]
+    content: str, topic: str, seo_title: str, seo_keywords: List[str]
 ) -> Dict[str, Any]:
     """
     Evaluate content quality on 7 criteria (0-10 each)
-    
+
     Criteria:
     1. Clarity: Easy to understand
     2. Accuracy: Factually correct
@@ -748,24 +740,24 @@ async def _evaluate_content_quality(
     7. Engagement: Interest level
     """
     import re
-    
+
     criteria = {}
-    
+
     # 1. CLARITY (check structure, headings, length)
-    heading_count = len(re.findall(r'^#{1,3} ', content, re.MULTILINE))
-    paragraph_count = len([p for p in content.split('\n\n') if p.strip()])
+    heading_count = len(re.findall(r"^#{1,3} ", content, re.MULTILINE))
+    paragraph_count = len([p for p in content.split("\n\n") if p.strip()])
     clarity = 8.0
     if heading_count < 3:
         clarity -= 1.0
     if paragraph_count < 5:
         clarity -= 1.0
-    criteria['clarity'] = max(0, min(10, clarity))
-    
+    criteria["clarity"] = max(0, min(10, clarity))
+
     # 2. ACCURACY (check for hedging language, sources)
     accuracy = 7.5
     # Assume generated content is reasonably accurate
-    criteria['accuracy'] = max(0, min(10, accuracy))
-    
+    criteria["accuracy"] = max(0, min(10, accuracy))
+
     # 3. COMPLETENESS (check word count, section coverage)
     word_count = len(content.split())
     completeness = 6.0
@@ -775,85 +767,101 @@ async def _evaluate_content_quality(
         completeness = 9.0
     if word_count < 300:
         completeness = 4.0
-    criteria['completeness'] = max(0, min(10, completeness))
-    
+    criteria["completeness"] = max(0, min(10, completeness))
+
     # 4. RELEVANCE (check topic mentions)
     topic_words = topic.lower().split()[:3]
     topic_mentions = sum(1 for word in topic_words if word.lower() in content.lower())
     relevance = 7.0 if topic_mentions >= 2 else 5.0
-    criteria['relevance'] = max(0, min(10, relevance))
-    
+    criteria["relevance"] = max(0, min(10, relevance))
+
     # 5. SEO QUALITY (check keyword usage, title)
     keyword_mentions = sum(1 for kw in seo_keywords if kw.lower() in content.lower())
     seo_quality = 7.0 if keyword_mentions >= 3 else 6.0
     if len(seo_title) < 50:
         seo_quality += 1.0
-    criteria['seo_quality'] = max(0, min(10, seo_quality))
-    
+    criteria["seo_quality"] = max(0, min(10, seo_quality))
+
     # 6. READABILITY (check sentence length, lists)
-    has_lists = '- ' in content or '* ' in content or '1. ' in content
+    has_lists = "- " in content or "* " in content or "1. " in content
     readability = 7.5 if has_lists else 6.5
-    criteria['readability'] = max(0, min(10, readability))
-    
+    criteria["readability"] = max(0, min(10, readability))
+
     # 7. ENGAGEMENT (check for examples, CTAs)
-    has_cta = any(word in content.lower() for word in ['start', 'try', 'begin', 'ready', 'action'])
-    has_examples = has_lists or 'example' in content.lower()
+    has_cta = any(word in content.lower() for word in ["start", "try", "begin", "ready", "action"])
+    has_examples = has_lists or "example" in content.lower()
     engagement = 7.0
     if has_examples:
         engagement += 1.0
     if has_cta:
         engagement += 0.5
-    criteria['engagement'] = max(0, min(10, engagement))
-    
+    criteria["engagement"] = max(0, min(10, engagement))
+
     # Calculate overall score (average of 7 criteria)
     overall_score = sum(criteria.values()) / 7
     overall_score = max(0, min(10, overall_score))
-    
+
     return {
-        'overall_score': overall_score,
-        'criteria': criteria,
-        'passing': overall_score >= 7.0,
-        'feedback': f"Overall quality: {overall_score:.1f}/10",
-        'suggestions': [
-            'Check formatting for readability',
-            'Ensure all claims are backed by data',
-            'Add more specific examples if possible'
-        ]
+        "overall_score": overall_score,
+        "criteria": criteria,
+        "passing": overall_score >= 7.0,
+        "feedback": f"Overall quality: {overall_score:.1f}/10",
+        "suggestions": [
+            "Check formatting for readability",
+            "Ensure all claims are backed by data",
+            "Add more specific examples if possible",
+        ],
     }
 
 
 async def _select_category_for_topic(
-    topic: str,
-    database_service: DatabaseService
+    topic: str, database_service: DatabaseService
 ) -> Optional[str]:
     """
     Select appropriate category based on topic keywords
-    
+
     Returns category UUID
     """
     topic_lower = topic.lower()
-    
+
     category_keywords = {
-        'technology': ['ai', 'tech', 'software', 'cloud', 'machine learning', 'data', 'coding', 'python', 'javascript'],
-        'business': ['business', 'strategy', 'management', 'entrepreneur', 'startup', 'growth', 'revenue'],
-        'marketing': ['marketing', 'seo', 'growth', 'brand', 'customer', 'social', 'campaign'],
-        'finance': ['finance', 'investment', 'cost', 'budget', 'roi', 'money', 'crypto'],
-        'entertainment': ['game', 'entertainment', 'media', 'streaming', 'music', 'film']
+        "technology": [
+            "ai",
+            "tech",
+            "software",
+            "cloud",
+            "machine learning",
+            "data",
+            "coding",
+            "python",
+            "javascript",
+        ],
+        "business": [
+            "business",
+            "strategy",
+            "management",
+            "entrepreneur",
+            "startup",
+            "growth",
+            "revenue",
+        ],
+        "marketing": ["marketing", "seo", "growth", "brand", "customer", "social", "campaign"],
+        "finance": ["finance", "investment", "cost", "budget", "roi", "money", "crypto"],
+        "entertainment": ["game", "entertainment", "media", "streaming", "music", "film"],
     }
-    
+
     # Find best matching category
-    matched_category = 'technology'  # Default
+    matched_category = "technology"  # Default
     for category, keywords in category_keywords.items():
         if any(kw in topic_lower for kw in keywords):
             matched_category = category
             break
-    
+
     # Get category ID
     try:
         async with database_service.pool.acquire() as conn:
             cat_id = await conn.fetchval(
-                "SELECT id FROM categories WHERE slug = $1",
-                matched_category
+                "SELECT id FROM categories WHERE slug = $1", matched_category
             )
         return cat_id
     except Exception as e:
@@ -864,7 +872,7 @@ async def _select_category_for_topic(
 async def _get_or_create_default_author(database_service: DatabaseService) -> Optional[str]:
     """
     Get or create the default "Poindexter AI" author
-    
+
     Returns author UUID
     """
     try:
@@ -873,10 +881,10 @@ async def _get_or_create_default_author(database_service: DatabaseService) -> Op
             author_id = await conn.fetchval(
                 "SELECT id FROM authors WHERE slug = 'poindexter-ai' LIMIT 1"
             )
-            
+
             if author_id:
                 return author_id
-            
+
             # Create if doesn't exist
             author_id = await conn.fetchval(
                 """
@@ -887,15 +895,15 @@ async def _get_or_create_default_author(database_service: DatabaseService) -> Op
                 RETURNING id
                 """
             )
-            
+
             if author_id:
                 logger.info(f"Created default author: Poindexter AI ({author_id})")
                 return author_id
-            
+
             # Fallback: return any author
             fallback_id = await conn.fetchval("SELECT id FROM authors LIMIT 1")
             return fallback_id
-            
+
     except Exception as e:
         logger.error(f"Error getting/creating default author: {e}")
         return None

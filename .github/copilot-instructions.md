@@ -58,6 +58,7 @@ from orchestrator_logic import Orchestrator
 **Database:** PostgreSQL with [services/database_service.py](src/cofounder_agent/services/database_service.py). All persistent data (tasks, results, memories) flows through PostgreSQL, not in-memory.
 
 **Model Router Pattern:** [services/model_router.py](src/cofounder_agent/services/model_router.py) implements intelligent fallback:
+
 - **Primary:** Ollama (local, zero-cost)
 - **Fallback 1:** Claude 3 Opus
 - **Fallback 2:** GPT-4
@@ -84,6 +85,7 @@ Route selection is determined by API key availability + model configuration in `
 - **Production:** `main` branch auto-deploys to Vercel (frontend) + Railway (backend)
 
 **Testing:**
+
 ```bash
 # Python backend
 npm run test:python          # Full test suite
@@ -114,6 +116,7 @@ npm run format:check
 **Model Context Protocol** ([src/mcp/](src/mcp/)) provides standardized tool access and cost optimization.
 
 **Cost Tiers (in MCPContentOrchestrator):**
+
 - `ultra_cheap`: Ollama (local)
 - `cheap`: Gemini (low API cost)
 - `balanced`: Claude 3.5 Sonnet / GPT-4 Turbo
@@ -124,21 +127,22 @@ npm run format:check
 
 ### 7. Key Files Reference
 
-| Purpose | Path | What It Does |
-|---------|------|--------------|
-| FastAPI entry | [src/cofounder_agent/main.py](src/cofounder_agent/main.py) | Route registration, middleware setup, app initialization |
-| Agent orchestration | [src/cofounder_agent/orchestrator_logic.py](src/cofounder_agent/orchestrator_logic.py) | Coordinates agent fleet, task distribution |
-| Database service | [src/cofounder_agent/services/database_service.py](src/cofounder_agent/services/database_service.py) | PostgreSQL queries, ORM models, persistence |
-| Model routing | [src/cofounder_agent/services/model_router.py](src/cofounder_agent/services/model_router.py) | LLM provider selection with fallback chain |
-| Content agent | [src/agents/content_agent/](src/agents/content_agent/) | 6-stage self-critiquing pipeline |
-| Tasks | [src/cofounder_agent/tasks/](src/cofounder_agent/tasks/) | Task models, execution logic, status tracking |
-| Routes | [src/cofounder_agent/routes/](src/cofounder_agent/routes/) | `/tasks`, `/agents`, `/content`, `/models`, `/health` endpoints |
-| Oversight Hub | [web/oversight-hub/](web/oversight-hub/) | React dashboard, agent monitoring, task management |
-| Public Site | [web/public-site/](web/public-site/) | Next.js content distribution, SEO optimization |
+| Purpose             | Path                                                                                                 | What It Does                                                    |
+| ------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| FastAPI entry       | [src/cofounder_agent/main.py](src/cofounder_agent/main.py)                                           | Route registration, middleware setup, app initialization        |
+| Agent orchestration | [src/cofounder_agent/orchestrator_logic.py](src/cofounder_agent/orchestrator_logic.py)               | Coordinates agent fleet, task distribution                      |
+| Database service    | [src/cofounder_agent/services/database_service.py](src/cofounder_agent/services/database_service.py) | PostgreSQL queries, ORM models, persistence                     |
+| Model routing       | [src/cofounder_agent/services/model_router.py](src/cofounder_agent/services/model_router.py)         | LLM provider selection with fallback chain                      |
+| Content agent       | [src/agents/content_agent/](src/agents/content_agent/)                                               | 6-stage self-critiquing pipeline                                |
+| Tasks               | [src/cofounder_agent/tasks/](src/cofounder_agent/tasks/)                                             | Task models, execution logic, status tracking                   |
+| Routes              | [src/cofounder_agent/routes/](src/cofounder_agent/routes/)                                           | `/tasks`, `/agents`, `/content`, `/models`, `/health` endpoints |
+| Oversight Hub       | [web/oversight-hub/](web/oversight-hub/)                                                             | React dashboard, agent monitoring, task management              |
+| Public Site         | [web/public-site/](web/public-site/)                                                                 | Next.js content distribution, SEO optimization                  |
 
 ### 8. Common Developer Patterns
 
 **Starting fresh development:**
+
 ```bash
 npm run clean:install    # Full reset of node_modules, cache, venv
 npm run setup:all        # Install all Python + Node deps
@@ -146,6 +150,7 @@ npm run dev              # Start all three services
 ```
 
 **Checking if services are running:**
+
 ```bash
 # Should return HTTP 200
 curl http://localhost:8000/health         # Backend
@@ -154,11 +159,13 @@ curl http://localhost:3000                # Public Site
 ```
 
 **Debugging Python backend:**
+
 - Logs appear in terminal running `npm run dev:cofounder` or `npm run dev`
 - Set `--log-level debug` in `dev:cofounder` script for verbose output
 - PostgreSQL queries logged if `SQL_DEBUG=true` in `.env.local`
 
 **Testing agent pipeline:**
+
 ```bash
 # Fast smoke test
 npm run test:python:smoke

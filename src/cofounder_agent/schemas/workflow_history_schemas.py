@@ -9,6 +9,7 @@ from typing import Optional, Dict, List, Any
 
 class WorkflowExecutionDetail(BaseModel):
     """Detailed workflow execution information."""
+
     id: str
     workflow_id: str
     workflow_type: str
@@ -28,6 +29,7 @@ class WorkflowExecutionDetail(BaseModel):
 
 class WorkflowHistoryResponse(BaseModel):
     """Response containing workflow execution history."""
+
     executions: List[WorkflowExecutionDetail]
     total: int
     limit: int
@@ -37,6 +39,7 @@ class WorkflowHistoryResponse(BaseModel):
 
 class WorkflowStatistics(BaseModel):
     """Workflow execution statistics."""
+
     user_id: str
     period_days: int
     total_executions: int
@@ -52,6 +55,7 @@ class WorkflowStatistics(BaseModel):
 
 class PerformanceMetrics(BaseModel):
     """Performance metrics and optimization suggestions."""
+
     user_id: str
     workflow_type: Optional[str]
     period_days: int

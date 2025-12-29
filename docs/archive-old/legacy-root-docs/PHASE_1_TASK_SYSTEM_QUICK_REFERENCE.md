@@ -78,7 +78,7 @@ Supporting utilities for workflow management
 | Task             | Purpose         | Use Case                   |
 | ---------------- | --------------- | -------------------------- |
 | ValidateTask     | Check content   | Before approval/publishing |
-| TransformTask    | Convert formats | markdown ↔ json ↔ html   |
+| TransformTask    | Convert formats | markdown ↔ json ↔ html     |
 | NotificationTask | Send alerts     | Keep user informed         |
 | CacheTask        | Store results   | Improve performance        |
 | MetricsTask      | Record metrics  | Track performance          |

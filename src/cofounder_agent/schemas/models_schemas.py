@@ -9,6 +9,7 @@ from typing import List, Optional
 
 class ModelInfo(BaseModel):
     """Model information for frontend"""
+
     name: str
     displayName: str
     provider: str
@@ -22,6 +23,7 @@ class ModelInfo(BaseModel):
 
 class ModelsListResponse(BaseModel):
     """Response with list of available models"""
+
     models: List[ModelInfo]
     total: int
     timestamp: str
@@ -29,6 +31,7 @@ class ModelsListResponse(BaseModel):
 
 class ProviderStatus(BaseModel):
     """Status of an LLM provider"""
+
     available: bool
     url: Optional[str] = None
     hasToken: bool = False
@@ -38,6 +41,7 @@ class ProviderStatus(BaseModel):
 
 class ProvidersStatusResponse(BaseModel):
     """Response with all provider statuses"""
+
     ollama: ProviderStatus
     huggingface: ProviderStatus
     gemini: ProviderStatus

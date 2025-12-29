@@ -28,8 +28,10 @@ router = APIRouter(prefix="/api/models", tags=["models"])
 # REQUEST/RESPONSE MODELS
 # ============================================================================
 
+
 class ModelSelection(BaseModel):
     """User's model selection for a task"""
+
     research: str = Field(default="auto", description="Model choice or 'auto'")
     outline: str = Field(default="auto", description="Model choice or 'auto'")
     draft: str = Field(default="auto", description="Model choice or 'auto'")
@@ -37,13 +39,13 @@ class ModelSelection(BaseModel):
     refine: str = Field(default="auto", description="Model choice or 'auto'")
     finalize: str = Field(default="auto", description="Model choice or 'auto'")
     quality_preference: str = Field(
-        default="balanced",
-        description="Quality preference: fast, balanced, or quality"
+        default="balanced", description="Quality preference: fast, balanced, or quality"
     )
 
 
 class CostEstimate(BaseModel):
     """Cost estimate for model selection"""
+
     phase: str
     model: str
     estimated_tokens: int
@@ -53,6 +55,7 @@ class CostEstimate(BaseModel):
 
 class FullTaskCostEstimate(BaseModel):
     """Full task cost estimate"""
+
     by_phase: Dict[str, float]
     total_cost: float
     formatted_total: str
@@ -65,6 +68,7 @@ class FullTaskCostEstimate(BaseModel):
 
 class ValidationResult(BaseModel):
     """Model validation result"""
+
     valid: bool
     message: str
     phase: str
@@ -73,12 +77,14 @@ class ValidationResult(BaseModel):
 
 class AvailableModels(BaseModel):
     """Available models for selection"""
+
     models: Dict[str, List[str]] | List[str]
     phase: Optional[str] = None
 
 
 class QualitySummary(BaseModel):
     """Summary of quality preference"""
+
     name: str
     description: str
     models: Dict[str, str]
@@ -103,6 +109,7 @@ BUDGET_LIMIT = 150.0  # $150/month
 # HELPERS
 # ============================================================================
 
+
 def format_cost(cost: float) -> str:
     """Format cost as human-readable string"""
     if cost == 0:
@@ -119,28 +126,29 @@ def format_cost(cost: float) -> str:
 # ROUTES
 # ============================================================================
 
+
 @router.post("/estimate-cost", response_model=CostEstimate)
 async def estimate_phase_cost(
     phase: str = Query(..., description="Pipeline phase"),
-    model: str = Query(..., description="Model name")
+    model: str = Query(..., description="Model name"),
 ) -> CostEstimate:
     """
     Estimate cost of using a specific model for a phase.
-    
+
     **Examples:**
-    
+
     - Free local model:
       ```
       POST /api/models/estimate-cost?phase=research&model=ollama
       ```
       Response: `{cost: 0, formatted: "Free 🎉"}`
-    
+
     - Cloud model:
       ```
       POST /api/models/estimate-cost?phase=draft&model=gpt-4
       ```
       Response: `{cost: 0.009, formatted: "$0.009"}`
-    
+
     **Quality Per Phase:**
     - Research (gathering): Can use cheap models
     - Outline (structure): Can use cheap models
@@ -153,27 +161,25 @@ async def estimate_phase_cost(
     is_valid, message = model_selector.validate_model_selection(phase, model)
     if not is_valid:
         raise HTTPException(status_code=400, detail=message)
-    
+
     # Calculate cost
     cost = model_selector.estimate_cost(phase, model)
     tokens = model_selector.PHASE_TOKEN_ESTIMATES.get(phase, 500)
-    
+
     return CostEstimate(
         phase=phase,
         model=model,
         estimated_tokens=tokens,
         estimated_cost=cost,
-        formatted_cost=format_cost(cost)
+        formatted_cost=format_cost(cost),
     )
 
 
 @router.post("/estimate-full-task", response_model=FullTaskCostEstimate)
-async def estimate_full_task(
-    selection: ModelSelection
-) -> FullTaskCostEstimate:
+async def estimate_full_task(selection: ModelSelection) -> FullTaskCostEstimate:
     """
     Estimate total cost of task with given model selections.
-    
+
     **Example Request:**
     ```json
     {
@@ -186,7 +192,7 @@ async def estimate_full_task(
         "quality_preference": "balanced"
     }
     ```
-    
+
     **Example Response:**
     ```json
     {
@@ -207,7 +213,7 @@ async def estimate_full_task(
         "budget_status": "✅ Well within budget"
     }
     ```
-    
+
     **What this means:**
     - At $150/month budget, you can create 40,000+ posts with balanced quality
     - Each post costs only $0.004 with this selection
@@ -222,23 +228,23 @@ async def estimate_full_task(
         "refine": selection.refine,
         "finalize": selection.finalize,
     }
-    
+
     # Validate all selections
     for phase, model in models_dict.items():
         if model != "auto":
             is_valid, message = model_selector.validate_model_selection(phase, model)
             if not is_valid:
                 raise HTTPException(status_code=400, detail=f"{phase}: {message}")
-    
+
     # Get cost estimate
     cost_breakdown = model_selector.estimate_full_task_cost(models_dict)
     total_cost = cost_breakdown.pop("total")
-    
+
     # Calculate budget status
     budget_remaining = BUDGET_LIMIT - total_cost
     percentage_used = (total_cost / BUDGET_LIMIT) * 100
     within_budget = total_cost <= BUDGET_LIMIT
-    
+
     if within_budget:
         if percentage_used < 1:
             budget_status = "✅ Excellent - barely noticeable"
@@ -248,7 +254,7 @@ async def estimate_full_task(
             budget_status = "✅ Good - within budget"
     else:
         budget_status = "⚠️ Warning - exceeds monthly budget"
-    
+
     return FullTaskCostEstimate(
         by_phase=cost_breakdown,
         total_cost=total_cost,
@@ -257,40 +263,39 @@ async def estimate_full_task(
         budget_remaining=budget_remaining,
         percentage_used=round(percentage_used, 3),
         within_budget=within_budget,
-        budget_status=budget_status
+        budget_status=budget_status,
     )
 
 
 @router.post("/auto-select")
 async def auto_select_models(
     quality_preference: str = Query(
-        default="balanced",
-        description="Quality preference: fast, balanced, or quality"
+        default="balanced", description="Quality preference: fast, balanced, or quality"
     )
 ) -> Dict[str, Any]:
     """
     Auto-select models for all phases based on quality preference.
-    
+
     **Three Quality Tiers:**
-    
+
     1. **Fast (Cheapest)**
        - Uses Ollama everywhere
        - Cost: $0/post
        - Quality: 3/5 stars
        - Best for: Brainstorming, drafts
-    
+
     2. **Balanced (Recommended)** ⭐
        - Mix of Ollama, GPT-3.5, and GPT-4
        - Cost: $0.004/post
        - Quality: 4.2/5 stars
        - Best for: Professional content
-    
+
     3. **Quality (Premium)**
        - GPT-4 and Claude Opus
        - Cost: $0.05/post
        - Quality: 4.7/5 stars
        - Best for: High-stakes content
-    
+
     **Example Requests:**
     ```
     POST /api/models/auto-select?quality_preference=fast
@@ -304,25 +309,25 @@ async def auto_select_models(
     except ValueError:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid quality preference. Must be: fast, balanced, or quality"
+            detail=f"Invalid quality preference. Must be: fast, balanced, or quality",
         )
-    
+
     # Auto-select for each phase
     selected = {}
     for phase in ["research", "outline", "draft", "assess", "refine", "finalize"]:
         model = model_selector.auto_select(phase, quality)
         selected[phase] = model
-    
+
     # Calculate cost
     cost_breakdown = model_selector.estimate_full_task_cost(selected)
     total_cost = cost_breakdown.pop("total")
-    
+
     # Get quality summary
     summary = model_selector.get_quality_summary(quality)
-    
+
     budget_remaining = BUDGET_LIMIT - total_cost
     percentage_used = (total_cost / BUDGET_LIMIT) * 100
-    
+
     return {
         "quality_preference": quality_preference,
         "quality_name": summary["name"],
@@ -334,32 +339,29 @@ async def auto_select_models(
         "formatted_total": format_cost(total_cost),
         "budget_remaining": budget_remaining,
         "percentage_of_budget": round(percentage_used, 2),
-        "budget_status": "✅ On track" if total_cost < BUDGET_LIMIT else "⚠️ Check budget"
+        "budget_status": "✅ On track" if total_cost < BUDGET_LIMIT else "⚠️ Check budget",
     }
 
 
 @router.get("/available-models", response_model=AvailableModels)
 async def get_available_models(
-    phase: Optional[str] = Query(
-        default=None,
-        description="Optional: specific phase to filter"
-    )
+    phase: Optional[str] = Query(default=None, description="Optional: specific phase to filter")
 ) -> AvailableModels:
     """
     Get available models for selection.
-    
+
     **Without phase parameter:**
     ```
     GET /api/models/available-models
     ```
     Returns all models grouped by phase
-    
+
     **With phase parameter:**
     ```
     GET /api/models/available-models?phase=research
     ```
     Returns: `{models: ["ollama", "gpt-3.5-turbo", "gpt-4"]}`
-    
+
     **Available Phases:**
     - research - Information gathering
     - outline - Structure design
@@ -375,17 +377,17 @@ async def get_available_models(
 @router.post("/validate-selection", response_model=ValidationResult)
 async def validate_selection(
     phase: str = Query(..., description="Pipeline phase"),
-    model: str = Query(..., description="Model to validate")
+    model: str = Query(..., description="Model to validate"),
 ) -> ValidationResult:
     """
     Validate that a model is available for a phase.
-    
+
     **Example: Valid Selection**
     ```
     POST /api/models/validate-selection?phase=research&model=ollama
     ```
     Response: `{valid: true, message: "OK"}`
-    
+
     **Example: Invalid Selection**
     ```
     POST /api/models/validate-selection?phase=assess&model=ollama
@@ -399,30 +401,24 @@ async def validate_selection(
     ```
     """
     is_valid, message = model_selector.validate_model_selection(phase, model)
-    return ValidationResult(
-        valid=is_valid,
-        message=message,
-        phase=phase,
-        model=model
-    )
+    return ValidationResult(valid=is_valid, message=message, phase=phase, model=model)
 
 
 @router.get("/quality-summary")
 async def get_quality_summary(
     quality: str = Query(
-        default="balanced",
-        description="Quality preference: fast, balanced, or quality"
+        default="balanced", description="Quality preference: fast, balanced, or quality"
     )
 ) -> QualitySummary:
     """
     Get detailed summary of what each quality preference means.
-    
+
     Includes:
     - Model selection for each phase
     - Expected quality rating
     - Estimated cost per task
     - Use case recommendations
-    
+
     **Example:**
     ```
     GET /api/models/quality-summary?quality=balanced
@@ -432,18 +428,17 @@ async def get_quality_summary(
         quality_enum = QualityPreference(quality)
     except ValueError:
         raise HTTPException(
-            status_code=400,
-            detail="Invalid quality. Must be: fast, balanced, or quality"
+            status_code=400, detail="Invalid quality. Must be: fast, balanced, or quality"
         )
-    
+
     summary = model_selector.get_quality_summary(quality_enum)
-    
+
     return QualitySummary(
         name=summary["name"],
         description=summary["description"],
         models=summary["models"],
         quality_expected=summary["quality_expected"],
-        estimated_cost_per_task=summary["estimated_cost_per_task"]
+        estimated_cost_per_task=summary["estimated_cost_per_task"],
     )
 
 
@@ -451,7 +446,7 @@ async def get_quality_summary(
 async def get_budget_status() -> Dict[str, Any]:
     """
     Get current budget information for solopreneurs.
-    
+
     **Returns:**
     - Monthly budget limit: $150
     - How many posts at different quality levels
@@ -464,11 +459,11 @@ async def get_budget_status() -> Dict[str, Any]:
         "posts_per_month": {
             "at_fast_quality": "Unlimited (Free with Ollama)",
             "at_balanced_quality": int(BUDGET_LIMIT / 0.004),
-            "at_premium_quality": int(BUDGET_LIMIT / 0.05)
+            "at_premium_quality": int(BUDGET_LIMIT / 0.05),
         },
         "recommendations": [
             "✅ Mix 'Fast' (Ollama) for brainstorming - saves money",
             "✅ Use 'Balanced' for regular posts - best value",
-            "✅ Use 'Premium' only for important/high-stakes content"
-        ]
+            "✅ Use 'Premium' only for important/high-stakes content",
+        ],
     }

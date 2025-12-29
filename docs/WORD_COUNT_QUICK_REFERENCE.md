@@ -7,6 +7,7 @@ title: Word Count & Writing Style - Quick Reference
 ## TL;DR
 
 Word count and writing style constraints are now fully implemented. Developers can:
+
 1. Send `content_constraints` in task creation requests
 2. Get compliance metrics back in responses
 3. Use advanced Tier 2-3 features for fine-grained control
@@ -18,18 +19,18 @@ Word count and writing style constraints are now fully implemented. Developers c
 ```javascript
 // In oversight-hub task creation form
 const task = {
-    topic: "AI in Healthcare",
-    content_constraints: {
-        word_count: 2000,           // Target 2000 words
-        writing_style: "educational", // educational, technical, narrative, listicle, thought-leadership
-        word_count_tolerance: 10,   // Allow ±10%
-        strict_mode: false          // If true, fail if constraints violated
-    }
+  topic: 'AI in Healthcare',
+  content_constraints: {
+    word_count: 2000, // Target 2000 words
+    writing_style: 'educational', // educational, technical, narrative, listicle, thought-leadership
+    word_count_tolerance: 10, // Allow ±10%
+    strict_mode: false, // If true, fail if constraints violated
+  },
 };
 
 // Send to backend
-POST /api/tasks
-Body: task
+POST / api / tasks;
+Body: task;
 ```
 
 ### Backend - Process Constraints
@@ -59,8 +60,10 @@ result = {
 ```javascript
 // Task now includes constraint compliance
 if (task.constraint_compliance) {
-    console.log(`Word count: ${task.constraint_compliance.word_count_actual}`);
-    console.log(`Status: ${task.constraint_compliance.word_count_within_tolerance ? '✅' : '❌'}`);
+  console.log(`Word count: ${task.constraint_compliance.word_count_actual}`);
+  console.log(
+    `Status: ${task.constraint_compliance.word_count_within_tolerance ? '✅' : '❌'}`
+  );
 }
 ```
 
@@ -70,22 +73,23 @@ if (task.constraint_compliance) {
 
 ### Basic (Tier 1)
 
-| Parameter | Type | Range | Default | Purpose |
-|-----------|------|-------|---------|---------|
-| `word_count` | int | 300-5000 | 1500 | Target word count |
-| `writing_style` | enum | technical, narrative, listicle, educational, thought-leadership | educational | Content style |
-| `word_count_tolerance` | int | 5-20 | 10 | Acceptable variance % |
+| Parameter              | Type | Range                                                           | Default     | Purpose               |
+| ---------------------- | ---- | --------------------------------------------------------------- | ----------- | --------------------- |
+| `word_count`           | int  | 300-5000                                                        | 1500        | Target word count     |
+| `writing_style`        | enum | technical, narrative, listicle, educational, thought-leadership | educational | Content style         |
+| `word_count_tolerance` | int  | 5-20                                                            | 10          | Acceptable variance % |
 
 ### Advanced (Tier 2)
 
-| Parameter | Type | Default | Purpose |
-|-----------|------|---------|---------|
-| `per_phase_overrides` | object | null | Custom targets per phase |
-| `strict_mode` | bool | false | Fail task if constraints violated |
+| Parameter             | Type   | Default | Purpose                           |
+| --------------------- | ------ | ------- | --------------------------------- |
+| `per_phase_overrides` | object | null    | Custom targets per phase          |
+| `strict_mode`         | bool   | false   | Fail task if constraints violated |
 
 ### Tier 3 (Optional)
 
 Auto-correction and optimization happen automatically:
+
 - Auto-trim if content exceeds limits
 - Style consistency scoring
 - Cost impact estimation
@@ -95,26 +99,31 @@ Auto-correction and optimization happen automatically:
 ## Writing Styles Explained
 
 **Educational** (Default)
+
 - Clear explanation from basic to advanced
 - Use analogies and examples
 - Summarize key takeaways
 
 **Technical**
+
 - Precise terminology and concepts
 - Include implementation details
 - Assume technical background
 
 **Narrative**
+
 - Tell a story with emotional arc
 - Personal examples and experiences
 - Vivid descriptions
 
 **Listicle**
+
 - Organized as numbered or bulleted list
 - Self-contained list items
 - Scannable format
 
 **Thought-Leadership**
+
 - Original insights and perspective
 - Data-backed claims
 - Industry perspective
@@ -146,10 +155,12 @@ content_constraints = {
 ## Strict Mode (Tier 2)
 
 When `strict_mode: true`:
+
 - Task FAILS if any constraint is violated
 - Not recommended for MVP (use advisory mode)
 
 When `strict_mode: false` (default):
+
 - Constraints are advisory
 - Human reviewer gets compliance metrics
 - Reviewer can approve even if constraints not met
@@ -172,22 +183,23 @@ Every task result includes compliance metrics:
 
 ```json
 {
-    "task_id": "task_12345",
-    "status": "awaiting_approval",
-    "content": "...",
-    "constraint_compliance": {
-        "word_count_actual": 1950,
-        "word_count_target": 2000,
-        "word_count_within_tolerance": true,
-        "word_count_percentage": -2.5,
-        "writing_style": "educational",
-        "strict_mode_enforced": false,
-        "violation_message": null
-    }
+  "task_id": "task_12345",
+  "status": "awaiting_approval",
+  "content": "...",
+  "constraint_compliance": {
+    "word_count_actual": 1950,
+    "word_count_target": 2000,
+    "word_count_within_tolerance": true,
+    "word_count_percentage": -2.5,
+    "writing_style": "educational",
+    "strict_mode_enforced": false,
+    "violation_message": null
+  }
 }
 ```
 
 **Fields:**
+
 - `word_count_actual` - Words actually generated
 - `word_count_target` - Target word count
 - `word_count_within_tolerance` - Pass/fail
@@ -365,6 +377,7 @@ assert result["constraint_compliance"]["writing_style"] == "technical"
 ### Q: Content never validates
 
 A: Check the tolerance percentage:
+
 ```python
 # Target 1500 ±10% = 1350-1650 words acceptable
 # If content is 1200 words, it fails
@@ -379,6 +392,7 @@ content_constraints = {
 ### Q: Writing style not applied
 
 A: Style guidance injected into prompt, but LLM may not follow:
+
 ```python
 # Check logs for style guidance in prompt
 logger.info(f"Injected prompt: {prompt}")
@@ -392,6 +406,7 @@ logger.info(f"Injected prompt: {prompt}")
 ### Q: Strict mode too strict
 
 A: Set to advisory mode instead:
+
 ```python
 "strict_mode": false  # Default - advisory mode
 # Allows human review of violations
@@ -402,14 +417,17 @@ A: Set to advisory mode instead:
 ## File Locations
 
 **Core Implementation:**
+
 - [src/cofounder_agent/utils/constraint_utils.py](../../src/cofounder_agent/utils/constraint_utils.py) - All Tier 1-3 functions
 - [src/cofounder_agent/services/content_orchestrator.py](../../src/cofounder_agent/services/content_orchestrator.py) - Integration into pipeline
 
 **Tests:**
+
 - [tests/test_constraint_utils.py](../../tests/test_constraint_utils.py) - 40+ unit tests
 - [tests/example_constraint_integration.py](../../tests/example_constraint_integration.py) - Integration examples
 
 **Documentation:**
+
 - [docs/WORD_COUNT_IMPLEMENTATION_COMPLETE.md](../WORD_COUNT_IMPLEMENTATION_COMPLETE.md) - Full implementation details
 
 ---
@@ -417,6 +435,7 @@ A: Set to advisory mode instead:
 ## Support
 
 **Issue:** Constraints not working?
+
 1. Check [WORD_COUNT_IMPLEMENTATION_COMPLETE.md](../WORD_COUNT_IMPLEMENTATION_COMPLETE.md) debugging section
 2. Review [example_constraint_integration.py](../../tests/example_constraint_integration.py)
 3. Run [test_constraint_utils.py](../../tests/test_constraint_utils.py)
@@ -426,6 +445,6 @@ See "Next Steps & Future Enhancements" in [WORD_COUNT_IMPLEMENTATION_COMPLETE.md
 
 ---
 
-*Last Updated: 2024-12-XX*
-*Status: ✅ Production Ready*
-*Tier Support: 1, 2, 3*
+_Last Updated: 2024-12-XX_
+_Status: ✅ Production Ready_
+_Tier Support: 1, 2, 3_

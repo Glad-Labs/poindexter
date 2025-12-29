@@ -16,7 +16,7 @@ Documentation at Glad Labs follows a **high-level, architecture-focused** approa
 - ❌ **Don't Keep:** Feature how-tos, implementation details, session notes, status updates
 - 📦 **Archive:** Historical files in `archive-old/` with clear dating for future reference
 
-**Rationale:** Code changes constantly; documentation should capture *why* decisions were made, not *how* to implement specific features (that's what code does).
+**Rationale:** Code changes constantly; documentation should capture _why_ decisions were made, not _how_ to implement specific features (that's what code does).
 
 ---
 
@@ -89,28 +89,30 @@ Root:
 **Purpose:** Architecture-level guidance for the entire project  
 **Maintenance:** Update when major decisions change, not for every feature
 
-| File | Purpose | Audience | Update Frequency |
-|------|---------|----------|------------------|
-| 00-README.md | Navigation hub | Everyone | Weekly |
-| 01-SETUP_AND_OVERVIEW.md | Getting started | New developers | Monthly |
-| 02-ARCHITECTURE_AND_DESIGN.md | System design | Architects | Quarterly |
-| 03-DEPLOYMENT_AND_INFRASTRUCTURE.md | Deployment | DevOps/Team Leads | As needed |
-| 04-DEVELOPMENT_WORKFLOW.md | Development process | Developers | Quarterly |
-| 05-AI_AGENTS_AND_INTEGRATION.md | AI architecture | AI team | Quarterly |
-| 06-OPERATIONS_AND_MAINTENANCE.md | Operations | Operations team | Quarterly |
-| 07-BRANCH_SPECIFIC_VARIABLES.md | Environment config | DevOps | As needed |
+| File                                | Purpose             | Audience          | Update Frequency |
+| ----------------------------------- | ------------------- | ----------------- | ---------------- |
+| 00-README.md                        | Navigation hub      | Everyone          | Weekly           |
+| 01-SETUP_AND_OVERVIEW.md            | Getting started     | New developers    | Monthly          |
+| 02-ARCHITECTURE_AND_DESIGN.md       | System design       | Architects        | Quarterly        |
+| 03-DEPLOYMENT_AND_INFRASTRUCTURE.md | Deployment          | DevOps/Team Leads | As needed        |
+| 04-DEVELOPMENT_WORKFLOW.md          | Development process | Developers        | Quarterly        |
+| 05-AI_AGENTS_AND_INTEGRATION.md     | AI architecture     | AI team           | Quarterly        |
+| 06-OPERATIONS_AND_MAINTENANCE.md    | Operations          | Operations team   | Quarterly        |
+| 07-BRANCH_SPECIFIC_VARIABLES.md     | Environment config  | DevOps            | As needed        |
 
 ### 2. Decisions (3-5 Files)
 
-**Purpose:** Record *why* major architectural decisions were made  
+**Purpose:** Record _why_ major architectural decisions were made  
 **Maintenance:** Never delete, archive when superseded
 
 **Current Decisions:**
+
 - Why FastAPI (not Django/Flask)
 - Why PostgreSQL (not MongoDB/SQLite)
 - Frontend-Backend Integration Architecture (Dec 19)
 
 **Format per decision:**
+
 - Problem/context
 - Options considered
 - Decision made
@@ -124,6 +126,7 @@ Root:
 **Maintenance:** Update when APIs change, not for implementation details
 
 **Examples:**
+
 - API endpoint specifications
 - Database schema definitions
 - Code quality standards
@@ -135,6 +138,7 @@ Root:
 **Maintenance:** Add when same issue appears 3+ times
 
 **Quality Gate:** Each entry must include:
+
 - Specific error message
 - Root cause explanation
 - Step-by-step solution
@@ -146,6 +150,7 @@ Root:
 **Maintenance:** Update when architecture changes
 
 **Content per component:**
+
 - What it does
 - Key services/modules
 - Data flow
@@ -158,6 +163,7 @@ Root:
 **Maintenance:** Never delete, only archive with clear dating
 
 **Files included:**
+
 - Session-specific work
 - Previous week summaries
 - Feature-specific implementation guides
@@ -188,11 +194,13 @@ Use this template for new architecture decisions:
 ## Options Considered
 
 ### Option 1: [Title]
+
 - Pro: ...
 - Con: ...
 - Effort: ...
 
 ### Option 2: [Title]
+
 - Pro: ...
 - Con: ...
 - Effort: ...
@@ -229,6 +237,7 @@ Use this template for new architecture decisions:
 ### When to Update Documentation
 
 ✅ **Update immediately:**
+
 - Architecture changes
 - API contracts change
 - Deployment procedures change
@@ -236,6 +245,7 @@ Use this template for new architecture decisions:
 - Troubleshooting solution found (issue appeared 3+ times)
 
 ❌ **Don't update for:**
+
 - Code refactoring
 - Feature implementation
 - Bug fixes
@@ -244,12 +254,14 @@ Use this template for new architecture decisions:
 ### When to Archive Files
 
 ✅ **Archive when:**
+
 - Session/sprint specific (contains dates, sprint numbers)
 - Superseded by newer documentation
 - Status update documents
 - Implementation guides for completed features
 
 ❌ **Don't archive:**
+
 - Core documentation (8 files)
 - Decision records (archive when superseded, not when old)
 - Reference documentation
@@ -269,30 +281,35 @@ Use this template for new architecture decisions:
 ### Success Criteria for Each Document
 
 ✅ **Core Documentation:**
+
 - Linked from 00-README.md
 - No broken links
 - Updated within last 90 days
 - Written at architecture level (not implementation)
 
 ✅ **Decision Records:**
+
 - Includes problem, decision, rationale
 - Clear trade-offs documented
 - Links to related decisions
 - Status indicator (Proposed/Decided/Implemented/Superseded)
 
 ✅ **Reference Documentation:**
+
 - Complete and accurate
 - Examples for complex specs
 - No implementation details
 - Updated when APIs change
 
 ✅ **Troubleshooting:**
+
 - Specific error message or issue title
 - Clear step-by-step solution
 - Root cause explained
 - Prevention strategies included
 
 ✅ **Component Documentation:**
+
 - Overview and key modules
 - Data flow diagrams
 - Known limitations
@@ -301,6 +318,7 @@ Use this template for new architecture decisions:
 ### Anti-Patterns to Avoid
 
 ❌ **Don't create:**
+
 - How-to guides (let code examples show how)
 - Session-specific documents (use commit messages instead)
 - Status reports (use project management tool)
@@ -322,6 +340,7 @@ Use this template for new architecture decisions:
 ### Code Examples in Documentation
 
 When including code:
+
 - Use syntax highlighting
 - Keep examples short (<20 lines)
 - Explain what the code does
@@ -363,6 +382,7 @@ When including code:
 ### Documentation as Architecture
 
 Documentation reflects architectural decisions:
+
 - Changes to documentation ≈ architectural decisions
 - Commit messages for docs include architecture intent
 - PR reviews check documentation accuracy
@@ -374,23 +394,27 @@ Documentation reflects architectural decisions:
 ### Documentation Alignment with Code
 
 ✅ **Architecture documented at high level**
+
 - Why decisions were made (decisions/)
 - How system is structured (02-ARCHITECTURE_AND_DESIGN.md)
 - What each component does (components/)
 
 ✅ **API contracts specified**
+
 - All endpoints documented
 - Request/response formats defined
 - Authentication requirements clear
 - Error handling documented
 
 ✅ **Deployment procedures clear**
+
 - Setup steps for each environment
 - Configuration requirements
 - Secrets management documented
 - Troubleshooting common issues
 
 ✅ **Maintenance responsibilities clear**
+
 - Operations procedures
 - Monitoring requirements
 - Common issues and solutions
@@ -401,6 +425,7 @@ Documentation reflects architectural decisions:
 ## 📈 Future Documentation Roadmap
 
 ### Phase 1: Enterprise Baseline (COMPLETE ✅)
+
 - [x] 8 core documentation files
 - [x] Component documentation
 - [x] Decision records framework
@@ -409,6 +434,7 @@ Documentation reflects architectural decisions:
 - [x] Archive organization
 
 ### Phase 2: Advanced Documentation (Next Quarter)
+
 - [ ] Architecture diagrams (Mermaid)
 - [ ] Sequence diagrams for complex flows
 - [ ] API testing guide
@@ -416,6 +442,7 @@ Documentation reflects architectural decisions:
 - [ ] Disaster recovery procedures
 
 ### Phase 3: Automation (Next 6 Months)
+
 - [ ] API documentation auto-generated from code
 - [ ] Architecture diagrams from code structure
 - [ ] Documentation link validation CI/CD
@@ -426,16 +453,19 @@ Documentation reflects architectural decisions:
 ## 🔗 Cross-References
 
 **Key Decision Records:**
+
 - [Why FastAPI](decisions/WHY_FASTAPI.md) - Architecture framework choice
 - [Why PostgreSQL](decisions/WHY_POSTGRESQL.md) - Database choice
 - [Frontend-Backend Integration](decisions/FRONTEND_BACKEND_INTEGRATION_STATUS_DEC19.md) - Current platform architecture
 
 **Key References:**
+
 - [API Contracts](reference/API_CONTRACTS.md) - All endpoints
 - [Data Schemas](reference/data_schemas.md) - Database structure
 - [Glad Labs Standards](reference/Glad-LABS-STANDARDS.md) - Code quality
 
 **Key Troubleshooting:**
+
 - [Deployment Issues](troubleshooting/01-railway-deployment.md) - Fixing Railway deploys
 - [Build Fixes](troubleshooting/04-build-fixes.md) - Compilation errors
 - [TypeScript](troubleshooting/05-compilation.md) - Type checking issues

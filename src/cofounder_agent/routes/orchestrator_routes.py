@@ -74,15 +74,13 @@ from utils.service_dependencies import (
 
 logger = logging.getLogger(__name__)
 
-orchestrator_router = APIRouter(
-    prefix="/api/orchestrator",
-    tags=["orchestrator-unique"]
-)
+orchestrator_router = APIRouter(prefix="/api/orchestrator", tags=["orchestrator-unique"])
 
 
 # ============================================================================
 # ENDPOINTS - ORCHESTRATION FEATURES (UNIQUE, NOT IN task_routes.py)
 # ============================================================================
+
 
 @orchestrator_router.post(
     "/process",
@@ -103,7 +101,7 @@ orchestrator_router = APIRouter(
     - "Create a blog post about AI marketing"
     - "Research machine learning applications"
     - "Analyze our Q4 financial metrics"
-    """
+    """,
 )
 async def process_request(
     body: ProcessRequestBody,
@@ -113,16 +111,15 @@ async def process_request(
     """Process natural language request through unified orchestrator"""
     try:
         logger.info(f"Processing request: {body.prompt[:100]}")
-        
+
         # Process through unified orchestrator
         result = await orchestrator.process_request(
-            user_input=body.prompt,
-            context=body.context or {}
+            user_input=body.prompt, context=body.context or {}
         )
-        
+
         # Task is created in tasks table by orchestrator
         task_id = result.get("task_id")
-        
+
         return {
             "success": True,
             "task_id": task_id,
@@ -132,7 +129,7 @@ async def process_request(
             "next_steps": [
                 f"Monitor: GET /api/tasks/{task_id}",
                 f"Approve: POST /api/orchestrator/approve/{task_id}",
-            ]
+            ],
         }
     except Exception as e:
         logger.error(f"Request processing failed: {e}")
@@ -152,7 +149,7 @@ async def process_request(
     4. Updates task status to 'published'
     
     Use GET /api/tasks/{task_id} first to review the task before approving.
-    """
+    """,
 )
 async def approve_and_publish(
     task_id: str,
@@ -163,12 +160,12 @@ async def approve_and_publish(
     """Approve and publish task result"""
     try:
         logger.info(f"Approving task {task_id}")
-        
+
         # Get task from database (uses tasks table)
         task = await db_service.get_task(task_id)
         if not task:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-        
+
         if action.approved:
             # Apply modifications if provided
             if action.modifications:
@@ -176,41 +173,35 @@ async def approve_and_publish(
                 if isinstance(result, str):
                     result = json.loads(result) if result else {}
                 result.update(action.modifications)
-                await db_service.update_task_status(
-                    task_id,
-                    "approved",
-                    result=json.dumps(result)
-                )
+                await db_service.update_task_status(task_id, "approved", result=json.dumps(result))
             else:
                 await db_service.update_task_status(task_id, "approved")
-            
+
             # Background publishing to channels
             background_tasks.add_task(
                 _publish_to_channels,
                 task_id=task_id,
                 channels=action.publish_to_channels,
-                db_service=db_service
+                db_service=db_service,
             )
-            
+
             return {
                 "success": True,
                 "task_id": task_id,
                 "status": "approved",
                 "publishing_to": action.publish_to_channels,
-                "message": "Task approved. Publishing in progress."
+                "message": "Task approved. Publishing in progress.",
             }
         else:
             rejection_reason = action.modifications.get("reason") if action.modifications else None
             await db_service.update_task_status(
-                task_id,
-                "rejected",
-                result=json.dumps({"rejection_reason": rejection_reason})
+                task_id, "rejected", result=json.dumps({"rejection_reason": rejection_reason})
             )
             return {
                 "success": True,
                 "task_id": task_id,
                 "status": "rejected",
-                "message": "Task rejected."
+                "message": "Task rejected.",
             }
     except HTTPException:
         raise
@@ -222,7 +213,7 @@ async def approve_and_publish(
 @orchestrator_router.post(
     "/training-data/export",
     summary="Export training data",
-    description="Export collected training data for model improvement and analysis"
+    description="Export collected training data for model improvement and analysis",
 )
 async def export_training_data(
     request: TrainingDataExportRequest,
@@ -231,18 +222,18 @@ async def export_training_data(
     """Export training data"""
     try:
         logger.info(f"Exporting training data ({request.format})")
-        
+
         # TODO: Implement training data export from database
         # Filter by quality_score if specified
         # Format as JSONL or CSV
         # Return download URL or data
-        
+
         return {
             "success": True,
             "format": request.format,
             "count": 0,  # TODO: Implement
             "download_url": "/api/orchestrator/training-data/download/latest",
-            "message": "Training data export prepared"
+            "message": "Training data export prepared",
         }
     except Exception as e:
         logger.error(f"Training data export failed: {e}")
@@ -252,7 +243,7 @@ async def export_training_data(
 @orchestrator_router.post(
     "/training-data/upload-model",
     summary="Upload fine-tuned model",
-    description="Upload a fine-tuned model for use by the system"
+    description="Upload a fine-tuned model for use by the system",
 )
 async def upload_training_model(
     request: TrainingModelUploadRequest,
@@ -261,17 +252,17 @@ async def upload_training_model(
     """Upload fine-tuned model"""
     try:
         logger.info(f"Uploading model: {request.model_name}")
-        
+
         # TODO: Implement model upload and registration
         # Register model in database
         # Make available for orchestrator use
-        
+
         return {
             "success": True,
             "model_name": request.model_name,
             "model_type": request.model_type,
             "status": "registered",
-            "message": f"Model {request.model_name} registered and available"
+            "message": f"Model {request.model_name} registered and available",
         }
     except Exception as e:
         logger.error(f"Model upload failed: {e}")
@@ -281,7 +272,7 @@ async def upload_training_model(
 @orchestrator_router.get(
     "/learning-patterns",
     summary="Get learning patterns",
-    description="Get patterns learned from execution history"
+    description="Get patterns learned from execution history",
 )
 async def get_learning_patterns(
     limit: int = Query(100, ge=1, le=1000),
@@ -290,17 +281,17 @@ async def get_learning_patterns(
     """Get learning patterns"""
     try:
         logger.info("Retrieving learning patterns")
-        
+
         # TODO: Implement pattern extraction from execution history
         # Analyze task success/failure rates
         # Identify common request types
         # Find optimal parameters
-        
+
         return {
             "patterns": [],
             "total_executions": 0,  # TODO
             "success_rate": 0.0,  # TODO
-            "retrieved_at": datetime.utcnow().isoformat()
+            "retrieved_at": datetime.utcnow().isoformat(),
         }
     except Exception as e:
         logger.error(f"Failed to retrieve patterns: {e}")
@@ -310,7 +301,7 @@ async def get_learning_patterns(
 @orchestrator_router.get(
     "/business-metrics-analysis",
     summary="Analyze business metrics",
-    description="Analyze collected business metrics and trends"
+    description="Analyze collected business metrics and trends",
 )
 async def analyze_business_metrics(
     db_service: DatabaseService = Depends(get_database_service),
@@ -318,17 +309,17 @@ async def analyze_business_metrics(
     """Analyze business metrics"""
     try:
         logger.info("Analyzing business metrics")
-        
+
         # TODO: Implement metrics analysis
         # Aggregate task metrics
         # Calculate trends
         # Identify improvements
-        
+
         return {
             "metrics": {},
             "trends": [],
             "recommendations": [],
-            "analyzed_at": datetime.utcnow().isoformat()
+            "analyzed_at": datetime.utcnow().isoformat(),
         }
     except Exception as e:
         logger.error(f"Metrics analysis failed: {e}")
@@ -338,20 +329,16 @@ async def analyze_business_metrics(
 @orchestrator_router.get(
     "/tools",
     summary="List available MCP tools",
-    description="List all available Model Context Protocol tools"
+    description="List all available Model Context Protocol tools",
 )
 async def list_available_tools() -> Dict[str, Any]:
     """List available MCP tools"""
     try:
         logger.info("Listing available tools")
-        
+
         # TODO: Implement MCP tool discovery
-        
-        return {
-            "tools": [],
-            "total": 0,
-            "available_at": datetime.utcnow().isoformat()
-        }
+
+        return {"tools": [], "total": 0, "available_at": datetime.utcnow().isoformat()}
     except Exception as e:
         logger.error(f"Failed to list tools: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -361,58 +348,52 @@ async def list_available_tools() -> Dict[str, Any]:
 # BACKGROUND TASKS
 # ============================================================================
 
+
 async def _publish_to_channels(
-    task_id: str,
-    channels: List[str],
-    db_service: DatabaseService
+    task_id: str, channels: List[str], db_service: DatabaseService
 ) -> None:
     """Background task: Publish result to channels"""
     try:
         logger.info(f"Publishing task {task_id} to channels: {channels}")
-        
+
         # Get task result
         task = await db_service.get_task(task_id)
         if not task:
             logger.error(f"Task {task_id} not found for publishing")
             return
-        
+
         result = task.get("result", {})
-        
+
         # TODO: Implement channel publishing
         # For each channel in channels:
         #   - LinkedIn Publisher
         #   - Twitter Publisher
         #   - Email Publisher
         #   - Blog CMS
-        
+
         # Update task status
         if isinstance(result, str):
             result_dict = json.loads(result) if result else {}
         else:
             result_dict = result or {}
-        
+
         result_dict["published_to"] = channels
-        
-        await db_service.update_task_status(
-            task_id,
-            "published",
-            result=json.dumps(result_dict)
-        )
-        
+
+        await db_service.update_task_status(task_id, "published", result=json.dumps(result_dict))
+
         logger.info(f"Task {task_id} published successfully")
-        
+
     except Exception as e:
         logger.error(f"Publishing failed for task {task_id}: {e}")
         await db_service.update_task_status(
-            task_id,
-            "publishing_failed",
-            result=json.dumps({"error": str(e)})
+            task_id, "publishing_failed", result=json.dumps({"error": str(e)})
         )
 
 
 # ============================================================================
 # REGISTRATION
 # ============================================================================
+
 
 def register_orchestrator_routes(app):
     """Register orchestrator routes with the FastAPI app"""

@@ -11,11 +11,11 @@ logger = logging.getLogger(__name__)
 class ValidateTask(PureTask):
     """
     Validation: Check content against criteria.
-    
+
     Input:
         - content: dict - Content to validate
         - criteria: list - Validation criteria
-    
+
     Output:
         - valid: bool - Validation passed
         - issues: list - Any validation issues
@@ -35,19 +35,19 @@ class ValidateTask(PureTask):
         context: ExecutionContext,
     ) -> Dict[str, Any]:
         """Execute validation task."""
-        
+
         content = input_data.get("content", {})
         criteria = input_data.get("criteria", [])
-        
+
         issues = []
-        
+
         # Check basic requirements
         if isinstance(content, dict):
             if not content.get("title"):
                 issues.append("Missing title")
             if not content.get("content"):
                 issues.append("Missing content")
-        
+
         # Check custom criteria
         for criterion in criteria:
             if isinstance(criterion, str):
@@ -55,9 +55,12 @@ class ValidateTask(PureTask):
                     issues.append("Missing call-to-action")
                 elif criterion == "has_images" and not content.get("images"):
                     issues.append("Missing images")
-                elif criterion == "word_count_min" and len(str(content.get("content", "")).split()) < 500:
+                elif (
+                    criterion == "word_count_min"
+                    and len(str(content.get("content", "")).split()) < 500
+                ):
                     issues.append("Content too short (minimum 500 words)")
-        
+
         return {
             "valid": len(issues) == 0,
             "issues": issues,
@@ -69,12 +72,12 @@ class ValidateTask(PureTask):
 class TransformTask(PureTask):
     """
     Transformation: Transform content format.
-    
+
     Input:
         - content: str or dict - Content to transform
         - from_format: str - Source format (markdown, html, json)
         - to_format: str - Target format
-    
+
     Output:
         - content: str or dict - Transformed content
         - format: str - Result format
@@ -95,11 +98,11 @@ class TransformTask(PureTask):
     ) -> Dict[str, Any]:
         """Execute transformation task."""
         from src.cofounder_agent.services.model_router import model_router
-        
+
         content = input_data["content"]
         to_format = input_data["to_format"]
         from_format = input_data.get("from_format", "auto")
-        
+
         if to_format == "json" and isinstance(content, str):
             prompt = f"""Convert this content to JSON structure:
 
@@ -107,19 +110,20 @@ Content:
 {content}
 
 Create JSON with keys: title, summary, body, metadata"""
-            
+
             response = await model_router.query_with_fallback(
                 prompt=prompt,
                 temperature=0.2,
                 max_tokens=1000,
             )
-            
+
             try:
                 import json
+
                 transformed = json.loads(response)
             except:
                 transformed = {"content": content}
-        
+
         elif to_format == "markdown" and isinstance(content, dict):
             # Convert dict to markdown
             lines = []
@@ -130,11 +134,11 @@ Create JSON with keys: title, summary, body, metadata"""
             if "body" in content:
                 lines.append(content["body"])
             transformed = "\n".join(lines)
-        
+
         else:
             # Pass through if no transformation needed
             transformed = content
-        
+
         return {
             "content": transformed,
             "from_format": from_format,
@@ -146,12 +150,12 @@ Create JSON with keys: title, summary, body, metadata"""
 class NotificationTask(PureTask):
     """
     Notification: Send workflow notifications.
-    
+
     Input:
         - message: str - Notification message
         - notification_type: str - Type (info, warning, success, error)
         - channels: list - Channels (email, webhook, slack, dashboard)
-    
+
     Output:
         - sent: bool - Send success
         - channels_notified: list - Channels successfully notified
@@ -171,19 +175,19 @@ class NotificationTask(PureTask):
         context: ExecutionContext,
     ) -> Dict[str, Any]:
         """Execute notification task."""
-        
+
         message = input_data["message"]
         notification_type = input_data.get("notification_type", "info")
         channels = input_data.get("channels", ["dashboard"])
-        
+
         channels_notified = []
-        
+
         # In production, would integrate with:
         # - Email service (SendGrid, etc.)
         # - Slack API
         # - Webhook endpoints
         # - Dashboard notifications
-        
+
         for channel in channels:
             if channel in ["dashboard", "email", "slack", "webhook"]:
                 channels_notified.append(channel)
@@ -192,9 +196,9 @@ class NotificationTask(PureTask):
                     extra={
                         "workflow_id": context.workflow_id,
                         "type": notification_type,
-                    }
+                    },
                 )
-        
+
         return {
             "sent": True,
             "message": message,
@@ -208,12 +212,12 @@ class NotificationTask(PureTask):
 class CacheTask(PureTask):
     """
     Caching: Store results for reuse.
-    
+
     Input:
         - data: dict - Data to cache
         - cache_key: str - Cache key for retrieval
         - ttl: int - Time-to-live in seconds
-    
+
     Output:
         - cached: bool - Cache success
         - cache_key: str - Key for retrieval
@@ -233,22 +237,22 @@ class CacheTask(PureTask):
         context: ExecutionContext,
     ) -> Dict[str, Any]:
         """Execute caching task."""
-        
+
         data = input_data["data"]
         cache_key = input_data["cache_key"]
         ttl = input_data.get("ttl", 3600)
-        
+
         # In production, would use Redis or similar
         # For now, just track that caching was requested
-        
+
         logger.info(
             f"Data cached with key: {cache_key}",
             extra={
                 "workflow_id": context.workflow_id,
                 "ttl": ttl,
-            }
+            },
         )
-        
+
         return {
             "cached": True,
             "cache_key": cache_key,
@@ -261,11 +265,11 @@ class CacheTask(PureTask):
 class MetricsTask(PureTask):
     """
     Metrics collection: Track workflow metrics.
-    
+
     Input:
         - metrics: dict - Metrics to record
         - workflow_type: str - Workflow type for categorization
-    
+
     Output:
         - recorded: bool - Recording success
         - metric_count: int - Number of metrics recorded
@@ -285,10 +289,10 @@ class MetricsTask(PureTask):
         context: ExecutionContext,
     ) -> Dict[str, Any]:
         """Execute metrics task."""
-        
+
         metrics = input_data.get("metrics", {})
         workflow_type = input_data.get("workflow_type", "unknown")
-        
+
         # In production, would write to metrics database/service
         logger.info(
             "Workflow metrics recorded",
@@ -296,9 +300,9 @@ class MetricsTask(PureTask):
                 "workflow_id": context.workflow_id,
                 "workflow_type": workflow_type,
                 "metrics": metrics,
-            }
+            },
         )
-        
+
         return {
             "recorded": True,
             "metric_count": len(metrics),
@@ -311,12 +315,12 @@ class MetricsTask(PureTask):
 class LogTask(PureTask):
     """
     Logging: Log workflow execution details.
-    
+
     Input:
         - message: str - Log message
         - level: str - Log level (debug, info, warning, error)
         - data: dict - Additional context data
-    
+
     Output:
         - logged: bool - Logging success
     """
@@ -335,17 +339,17 @@ class LogTask(PureTask):
         context: ExecutionContext,
     ) -> Dict[str, Any]:
         """Execute logging task."""
-        
+
         message = input_data["message"]
         level = input_data.get("level", "info").lower()
         data = input_data.get("data", {})
-        
+
         log_data = {
             "workflow_id": context.workflow_id,
             "user_id": context.user_id,
             **data,
         }
-        
+
         if level == "debug":
             logger.debug(message, extra=log_data)
         elif level == "warning":
@@ -354,7 +358,7 @@ class LogTask(PureTask):
             logger.error(message, extra=log_data)
         else:
             logger.info(message, extra=log_data)
-        
+
         return {
             "logged": True,
             "message": message,

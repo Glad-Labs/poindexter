@@ -41,9 +41,10 @@ router = APIRouter(prefix="/api/agents", tags=["agents"])
 # Helper Functions
 # ============================================================================
 
+
 def get_orchestrator(request: Request):
     """Get the orchestrator instance from app state"""
-    orchestrator = getattr(request.app.state, 'orchestrator', None)
+    orchestrator = getattr(request.app.state, "orchestrator", None)
     if not orchestrator:
         raise HTTPException(status_code=503, detail="Orchestrator not initialized")
     return orchestrator
@@ -75,20 +76,21 @@ def format_agent_status(agent_name: str, orchestrator) -> AgentStatus:
 # Endpoints
 # ============================================================================
 
+
 @router.get("/status", response_model=AllAgentsStatus)
 async def get_all_agents_status(orchestrator=Depends(get_orchestrator)):
     """
     Get status of all AI agents
-    
+
     Returns comprehensive status information for all active agents including:
     - Current state (idle, working, error)
     - Performance metrics (execution time, success rate)
     - Recent activity
     - System health metrics
-    
+
     Example:
         GET /api/agents/status
-        
+
         Response:
         {
             "status": "healthy",
@@ -119,7 +121,7 @@ async def get_all_agents_status(orchestrator=Depends(get_orchestrator)):
     try:
         # Get system status from orchestrator
         system_status = orchestrator._get_system_status()
-        
+
         # Collect status for each agent
         agents_status = {}
         for agent_name in get_agent_names():
@@ -135,7 +137,7 @@ async def get_all_agents_status(orchestrator=Depends(get_orchestrator)):
                     last_activity=None,
                     error_message=str(e),
                 )
-        
+
         # Determine overall system status
         error_count = sum(1 for s in agents_status.values() if s.status == AgentStatusEnum.ERROR)
         if error_count > 2:
@@ -144,7 +146,7 @@ async def get_all_agents_status(orchestrator=Depends(get_orchestrator)):
             overall_status = SystemHealthEnum.DEGRADED
         else:
             overall_status = SystemHealthEnum.HEALTHY
-        
+
         return AllAgentsStatus(
             status=overall_status,
             timestamp=datetime.utcnow(),
@@ -160,15 +162,15 @@ async def get_all_agents_status(orchestrator=Depends(get_orchestrator)):
 async def get_agent_status(agent_name: str, orchestrator=Depends(get_orchestrator)):
     """
     Get status of a specific agent
-    
+
     Parameters:
         agent_name: Name of the agent (content, financial, market, compliance)
-    
+
     Returns agent-specific status including current task, execution metrics, and errors.
-    
+
     Example:
         GET /api/agents/content/status
-        
+
         Response:
         {
             "name": "content",
@@ -184,9 +186,9 @@ async def get_agent_status(agent_name: str, orchestrator=Depends(get_orchestrato
     if agent_name.lower() not in get_agent_names():
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid agent name: {agent_name}. Must be one of: {', '.join(get_agent_names())}"
+            detail=f"Invalid agent name: {agent_name}. Must be one of: {', '.join(get_agent_names())}",
         )
-    
+
     try:
         agent_status = format_agent_status(agent_name, orchestrator)
         return agent_status
@@ -197,22 +199,20 @@ async def get_agent_status(agent_name: str, orchestrator=Depends(get_orchestrato
 
 @router.post("/{agent_name}/command", response_model=AgentCommandResult)
 async def send_agent_command(
-    agent_name: str,
-    command: AgentCommand,
-    orchestrator=Depends(get_orchestrator)
+    agent_name: str, command: AgentCommand, orchestrator=Depends(get_orchestrator)
 ):
     """
     Send a command to a specific agent
-    
+
     Parameters:
         agent_name: Name of the agent to command
         command: Command object with command name and optional parameters
-    
+
     Returns result of command execution.
-    
+
     Example:
         POST /api/agents/content/command
-        
+
         Request Body:
         {
             "command": "generate_content",
@@ -222,7 +222,7 @@ async def send_agent_command(
                 "length": 2000
             }
         }
-        
+
         Response:
         {
             "status": "success",
@@ -237,14 +237,14 @@ async def send_agent_command(
     if agent_name.lower() not in get_agent_names():
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid agent name: {agent_name}. Must be one of: {', '.join(get_agent_names())}"
+            detail=f"Invalid agent name: {agent_name}. Must be one of: {', '.join(get_agent_names())}",
         )
-    
+
     try:
         # Queue command through orchestrator
         # This would integrate with the actual command execution system
         logger.info(f"Received command for {agent_name}: {command.command}")
-        
+
         return AgentCommandResult(
             status="success",
             message=f"Command '{command.command}' accepted and queued",
@@ -263,24 +263,26 @@ async def send_agent_command(
 @router.get("/logs", response_model=AgentLogs)
 async def get_agent_logs(
     agent: Optional[str] = Query(None, description="Filter by agent name"),
-    level: Optional[str] = Query(None, description="Filter by log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)"),
+    level: Optional[str] = Query(
+        None, description="Filter by log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)"
+    ),
     limit: int = Query(50, ge=1, le=500, description="Maximum number of logs to return"),
     offset: int = Query(0, ge=0, description="Number of logs to skip"),
 ):
     """
     Get agent logs with optional filtering
-    
+
     Parameters:
         agent: Filter by agent name (optional)
         level: Filter by log level (optional)
         limit: Maximum number of logs (default: 50, max: 500)
         offset: Number of logs to skip for pagination (default: 0)
-    
+
     Returns collection of agent logs matching filters.
-    
+
     Example:
         GET /api/agents/logs?agent=content&level=ERROR&limit=20
-        
+
         Response:
         {
             "logs": [
@@ -303,10 +305,10 @@ async def get_agent_logs(
         # This would fetch logs from the logger service
         # For now, return structure showing what this would look like
         logs: List[AgentLog] = []
-        
+
         # In production, this would query the actual logging system
         # For now, return empty but properly structured
-        
+
         return AgentLogs(
             logs=logs,
             total=0,
@@ -326,16 +328,16 @@ async def get_agent_logs(
 async def get_memory_stats(orchestrator=Depends(get_orchestrator)):
     """
     Get agent memory system statistics
-    
+
     Returns comprehensive memory statistics including:
     - Total memories (short-term and long-term)
     - Memory usage in bytes
     - Per-agent breakdown
     - Last cleanup timestamp
-    
+
     Example:
         GET /api/agents/memory/stats
-        
+
         Response:
         {
             "total_memories": 1247,
@@ -360,8 +362,8 @@ async def get_memory_stats(orchestrator=Depends(get_orchestrator)):
     """
     try:
         # Get memory stats from orchestrator memory system
-        memory_system = getattr(orchestrator, 'memory_system', None)
-        
+        memory_system = getattr(orchestrator, "memory_system", None)
+
         if memory_system is None:
             return MemoryStats(
                 total_memories=0,
@@ -371,7 +373,7 @@ async def get_memory_stats(orchestrator=Depends(get_orchestrator)):
                 memory_usage_mb=0.0,
                 by_agent={},
             )
-        
+
         # Collect memory stats per agent
         by_agent = {}
         for agent_name in get_agent_names():
@@ -380,7 +382,7 @@ async def get_memory_stats(orchestrator=Depends(get_orchestrator)):
                 "usage_mb": 0.0,
                 "last_access": None,
             }
-        
+
         return MemoryStats(
             total_memories=0,
             short_term_count=0,
@@ -398,17 +400,17 @@ async def get_memory_stats(orchestrator=Depends(get_orchestrator)):
 async def get_agent_system_health(orchestrator=Depends(get_orchestrator)):
     """
     Get overall agent system health
-    
+
     Returns comprehensive health status including:
     - Overall status (healthy, degraded, error)
     - Number of running agents
     - Error and warning counts
     - System uptime
     - Detailed health information per component
-    
+
     Example:
         GET /api/agents/health
-        
+
         Response:
         {
             "status": "healthy",
@@ -431,12 +433,12 @@ async def get_agent_system_health(orchestrator=Depends(get_orchestrator)):
     try:
         # Get system status from orchestrator
         system_status = orchestrator._get_system_status()
-        
+
         # Count agents
         agent_names = get_agent_names()
         error_count = 0
         warning_count = 0
-        
+
         details = {}
         for agent_name in agent_names:
             try:
@@ -447,16 +449,22 @@ async def get_agent_system_health(orchestrator=Depends(get_orchestrator)):
             except Exception:
                 details[f"{agent_name}_agent"] = "error"
                 error_count += 1
-        
+
         # Add system component health
-        details.update({
-            "database_connection": "healthy",
-            "memory_system": "healthy",
-            "model_router": "healthy",
-        })
-        
-        overall_status = "error" if error_count > 1 else "degraded" if (error_count > 0 or warning_count > 0) else "healthy"
-        
+        details.update(
+            {
+                "database_connection": "healthy",
+                "memory_system": "healthy",
+                "model_router": "healthy",
+            }
+        )
+
+        overall_status = (
+            "error"
+            if error_count > 1
+            else "degraded" if (error_count > 0 or warning_count > 0) else "healthy"
+        )
+
         return AgentHealth(
             status=overall_status,
             timestamp=datetime.utcnow(),

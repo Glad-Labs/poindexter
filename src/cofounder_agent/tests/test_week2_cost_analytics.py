@@ -10,26 +10,33 @@ Validates:
 """
 
 import sys
-sys.path.insert(0, '.')
 
-print("\n" + "="*70)
+sys.path.insert(0, ".")
+
+print("\n" + "=" * 70)
 print("WEEK 2 COST ANALYTICS VALIDATION")
-print("="*70)
+print("=" * 70)
 
 # Test 1: Cost Aggregation Service
 print("\nTest 1: Cost Aggregation Service")
 try:
     from services.cost_aggregation_service import CostAggregationService
-    
+
     service = CostAggregationService()
     print("  OK CostAggregationService imported")
     print("  OK Methods available:")
-    for method in ['get_summary', 'get_breakdown_by_phase', 'get_breakdown_by_model', 'get_history', 'get_budget_status']:
+    for method in [
+        "get_summary",
+        "get_breakdown_by_phase",
+        "get_breakdown_by_model",
+        "get_history",
+        "get_budget_status",
+    ]:
         has_method = hasattr(service, method)
         print(f"    - {method}: {has_method}")
         if not has_method:
             raise ValueError(f"Missing method: {method}")
-    
+
 except Exception as e:
     print(f"  ERROR: {e}")
 
@@ -37,18 +44,18 @@ except Exception as e:
 print("\nTest 2: Enhanced Metrics Routes")
 try:
     from routes.metrics_routes import metrics_router
-    
+
     # Count new endpoints
-    cost_endpoints = [r for r in metrics_router.routes if '/costs' in str(r.path)]
+    cost_endpoints = [r for r in metrics_router.routes if "/costs" in str(r.path)]
     print(f"  OK metrics_router imported")
     print(f"  OK Cost endpoints registered: {len(cost_endpoints)}")
-    
+
     # Should have at least the original /costs + 4 new ones
     if len(cost_endpoints) >= 5:
         print(f"  OK All cost endpoints present")
     else:
         print(f"  WARNING: Expected 5+ cost endpoints, found {len(cost_endpoints)}")
-    
+
 except Exception as e:
     print(f"  ERROR: {e}")
 
@@ -56,26 +63,22 @@ except Exception as e:
 print("\nTest 3: Frontend Client Methods (Verification)")
 try:
     import os
-    client_file = 'web/oversight-hub/src/services/cofounderAgentClient.js'
-    
+
+    client_file = "web/oversight-hub/src/services/cofounderAgentClient.js"
+
     if os.path.exists(client_file):
-        with open(client_file, 'r') as f:
+        with open(client_file, "r") as f:
             content = f.read()
-        
-        methods = [
-            'getCostsByPhase',
-            'getCostsByModel', 
-            'getCostHistory',
-            'getBudgetStatus'
-        ]
-        
+
+        methods = ["getCostsByPhase", "getCostsByModel", "getCostHistory", "getBudgetStatus"]
+
         missing = []
         for method in methods:
-            if f'export async function {method}' in content:
+            if f"export async function {method}" in content:
                 print(f"  OK {method} found in client")
             else:
                 missing.append(method)
-        
+
         if missing:
             print(f"  WARNING: Missing methods: {missing}")
         else:
@@ -89,23 +92,23 @@ except Exception as e:
 # Test 4: Dashboard Component Updates
 print("\nTest 4: Dashboard Component Enhancements")
 try:
-    dashboard_file = 'web/oversight-hub/src/components/CostMetricsDashboard.jsx'
-    
+    dashboard_file = "web/oversight-hub/src/components/CostMetricsDashboard.jsx"
+
     if os.path.exists(dashboard_file):
-        with open(dashboard_file, 'r') as f:
+        with open(dashboard_file, "r") as f:
             content = f.read()
-        
+
         checks = [
-            ('getCostsByPhase', 'Phase breakdown data'),
-            ('getCostsByModel', 'Model cost comparison'),
-            ('getCostHistory', 'Cost history/trends'),
-            ('getBudgetStatus', 'Budget alerts'),
-            ('Table', 'Table visualization'),
-            ('costsByPhase', 'Phase state variable'),
-            ('costsByModel', 'Model state variable'),
-            ('costHistory', 'History state variable'),
+            ("getCostsByPhase", "Phase breakdown data"),
+            ("getCostsByModel", "Model cost comparison"),
+            ("getCostHistory", "Cost history/trends"),
+            ("getBudgetStatus", "Budget alerts"),
+            ("Table", "Table visualization"),
+            ("costsByPhase", "Phase state variable"),
+            ("costsByModel", "Model state variable"),
+            ("costHistory", "History state variable"),
         ]
-        
+
         for check_str, description in checks:
             if check_str in content:
                 print(f"  OK {description}")
@@ -121,10 +124,10 @@ except Exception as e:
 print("\nTest 5: Database Cost Logging Methods")
 try:
     from services.database_service import DatabaseService
-    
+
     db = DatabaseService()
-    
-    methods = ['log_cost', 'get_task_costs']
+
+    methods = ["log_cost", "get_task_costs"]
     for method_name in methods:
         has_method = hasattr(db, method_name)
         print(f"  OK {method_name}: {has_method}")
@@ -139,11 +142,11 @@ print("\nTest 6: Cost Analytics Data Models")
 try:
     # Check if response models are defined in metrics_routes
     from routes.metrics_routes import metrics_router
-    
+
     print("  OK Metrics routes imported successfully")
     print("  OK Response models are handled inline in endpoints")
     print("  OK Data validation happens at DB query level")
-    
+
 except Exception as e:
     print(f"  WARNING: Models check: {e}")
 
@@ -151,28 +154,30 @@ except Exception as e:
 print("\nTest 7: Full Integration Check")
 try:
     print("  Checking API endpoint structure:")
-    
+
     endpoints = [
-        ('/api/metrics/costs', 'GET', 'Main cost metrics endpoint'),
-        ('/api/metrics/costs/breakdown/phase', 'GET', 'Phase breakdown endpoint'),
-        ('/api/metrics/costs/breakdown/model', 'GET', 'Model breakdown endpoint'),
-        ('/api/metrics/costs/history', 'GET', 'Cost history endpoint'),
-        ('/api/metrics/costs/budget', 'GET', 'Budget status endpoint'),
+        ("/api/metrics/costs", "GET", "Main cost metrics endpoint"),
+        ("/api/metrics/costs/breakdown/phase", "GET", "Phase breakdown endpoint"),
+        ("/api/metrics/costs/breakdown/model", "GET", "Model breakdown endpoint"),
+        ("/api/metrics/costs/history", "GET", "Cost history endpoint"),
+        ("/api/metrics/costs/budget", "GET", "Budget status endpoint"),
     ]
-    
+
     for endpoint, method, desc in endpoints:
         print(f"  OK {method} {endpoint}")
         print(f"     - {desc}")
-    
+
     print("\n  Checking data flow:")
-    print("  OK Database (cost_logs) → CostAggregationService → Metrics Routes → API → Client → Dashboard")
+    print(
+        "  OK Database (cost_logs) → CostAggregationService → Metrics Routes → API → Client → Dashboard"
+    )
 
 except Exception as e:
     print(f"  ERROR: {e}")
 
-print("\n" + "="*70)
+print("\n" + "=" * 70)
 print("WEEK 2 VALIDATION COMPLETE")
-print("="*70)
+print("=" * 70)
 print("\nSummary:")
 print("  OK CostAggregationService with 5 methods")
 print("  OK Enhanced metrics_routes with 5 cost endpoints")

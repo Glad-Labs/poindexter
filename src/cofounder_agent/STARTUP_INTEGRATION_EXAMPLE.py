@@ -19,11 +19,12 @@ logger = logging.getLogger(__name__)
 # OPTION 1: Using FastAPI lifespan context manager (Recommended - FastAPI 0.93+)
 # ============================================================================
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     FastAPI lifespan context manager for startup and shutdown.
-    
+
     This is the recommended approach for FastAPI 0.93+ as it:
     - Provides clear separation of startup/shutdown logic
     - Automatically handles cleanup on application termination
@@ -34,23 +35,23 @@ async def lifespan(app: FastAPI):
     logger.info("=" * 60)
     logger.info("STARTUP PHASE")
     logger.info("=" * 60)
-    
+
     from utils.startup_manager import StartupManager
-    
+
     startup_manager = StartupManager()
     services = await startup_manager.initialize_all_services()
-    
+
     # Store services in app state for access in routes
-    app.state.database = services['database']
-    app.state.orchestrator = services['orchestrator']
-    app.state.task_executor = services['task_executor']
-    app.state.intelligent_orchestrator = services['intelligent_orchestrator']
-    app.state.workflow_history = services['workflow_history']
+    app.state.database = services["database"]
+    app.state.orchestrator = services["orchestrator"]
+    app.state.task_executor = services["task_executor"]
+    app.state.intelligent_orchestrator = services["intelligent_orchestrator"]
+    app.state.workflow_history = services["workflow_history"]
     app.state.startup_manager = startup_manager
-    app.state.startup_error = services['startup_error']
-    
+    app.state.startup_error = services["startup_error"]
+
     yield  # Application runs here
-    
+
     # Shutdown phase
     logger.info("=" * 60)
     logger.info("SHUTDOWN PHASE")
@@ -63,7 +64,7 @@ app = FastAPI(
     title="Glad Labs AI Co-Founder",
     description="Comprehensive AI co-founder and advisor system",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 
@@ -103,37 +104,38 @@ async def shutdown_event():
 # Helper functions for accessing services in routes
 # ============================================================================
 
+
 def get_database_service():
     """Get database service from app state"""
-    if not hasattr(app.state, 'database') or app.state.database is None:
+    if not hasattr(app.state, "database") or app.state.database is None:
         raise RuntimeError("Database service not initialized")
     return app.state.database
 
 
 def get_orchestrator():
     """Get orchestrator from app state"""
-    if not hasattr(app.state, 'orchestrator') or app.state.orchestrator is None:
+    if not hasattr(app.state, "orchestrator") or app.state.orchestrator is None:
         raise RuntimeError("Orchestrator not initialized")
     return app.state.orchestrator
 
 
 def get_intelligent_orchestrator():
     """Get intelligent orchestrator from app state"""
-    if not hasattr(app.state, 'intelligent_orchestrator'):
+    if not hasattr(app.state, "intelligent_orchestrator"):
         return None
     return app.state.intelligent_orchestrator
 
 
 def get_task_executor():
     """Get task executor from app state"""
-    if not hasattr(app.state, 'task_executor'):
+    if not hasattr(app.state, "task_executor"):
         return None
     return app.state.task_executor
 
 
 def get_workflow_history():
     """Get workflow history service from app state"""
-    if not hasattr(app.state, 'workflow_history'):
+    if not hasattr(app.state, "workflow_history"):
         return None
     return app.state.workflow_history
 
@@ -142,11 +144,12 @@ def get_workflow_history():
 # Health check endpoint to verify startup status
 # ============================================================================
 
+
 @app.get("/health")
 async def health_check():
     """
     Health check endpoint that verifies all services are initialized.
-    
+
     Returns detailed information about each component's status.
     """
     return {
@@ -156,12 +159,11 @@ async def health_check():
             "orchestrator": app.state.orchestrator is not None,
             "intelligent_orchestrator": app.state.intelligent_orchestrator is not None,
             "task_executor": (
-                app.state.task_executor is not None 
-                and app.state.task_executor.running
+                app.state.task_executor is not None and app.state.task_executor.running
             ),
             "workflow_history": app.state.workflow_history is not None,
         },
-        "startup_error": app.state.startup_error
+        "startup_error": app.state.startup_error,
     }
 
 
@@ -169,15 +171,16 @@ async def health_check():
 # Example routes using the initialized services
 # ============================================================================
 
+
 @app.get("/api/v1/tasks")
 async def list_tasks(skip: int = 0, limit: int = 10):
     """
     Example endpoint that uses the database service.
-    
+
     This demonstrates how to access initialized services in routes.
     """
     db = get_database_service()
-    
+
     try:
         # Query tasks from PostgreSQL
         query = """
@@ -187,54 +190,42 @@ async def list_tasks(skip: int = 0, limit: int = 10):
             LIMIT $1 OFFSET $2
         """
         tasks = await db.pool.fetch(query, limit, skip)
-        
-        return {
-            "status": "success",
-            "data": [dict(task) for task in tasks],
-            "total": len(tasks)
-        }
+
+        return {"status": "success", "data": [dict(task) for task in tasks], "total": len(tasks)}
     except Exception as e:
         logger.error(f"Error fetching tasks: {e}", exc_info=True)
-        return {
-            "status": "error",
-            "message": str(e)
-        }
+        return {"status": "error", "message": str(e)}
 
 
 @app.post("/api/v1/orchestrator/execute")
 async def execute_with_orchestrator(prompt: str):
     """
     Example endpoint that uses the orchestrator service.
-    
+
     Demonstrates how to execute workflows through the orchestrator.
     """
     orchestrator = get_orchestrator()
-    
+
     try:
         # Execute orchestrator workflow
         result = await orchestrator.execute(prompt)
-        
-        return {
-            "status": "success",
-            "result": result
-        }
+
+        return {"status": "success", "result": result}
     except Exception as e:
         logger.error(f"Orchestrator execution failed: {e}", exc_info=True)
-        return {
-            "status": "error",
-            "message": str(e)
-        }
+        return {"status": "error", "message": str(e)}
 
 
 # ============================================================================
 # Middleware to inject services into request state (optional)
 # ============================================================================
 
+
 @app.middleware("http")
 async def inject_services_middleware(request, call_next):
     """
     Optional middleware to inject services into request state.
-    
+
     This allows routes to access services via request.state instead of
     directly accessing app.state.
     """
@@ -243,7 +234,7 @@ async def inject_services_middleware(request, call_next):
     request.state.intelligent_orchestrator = app.state.intelligent_orchestrator
     request.state.task_executor = app.state.task_executor
     request.state.workflow_history = app.state.workflow_history
-    
+
     response = await call_next(request)
     return response
 
@@ -251,6 +242,7 @@ async def inject_services_middleware(request, call_next):
 # ============================================================================
 # Root endpoint
 # ============================================================================
+
 
 @app.get("/")
 async def root():
@@ -260,18 +252,18 @@ async def root():
         "version": "1.0.0",
         "status": "running" if not app.state.startup_error else "degraded",
         "docs": "/docs",
-        "health": "/health"
+        "health": "/health",
     }
 
 
 if __name__ == "__main__":
     import uvicorn
-    
+
     # Run the application
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
         port=8000,
         reload=False,  # Disable reload in production
-        log_level="info"
+        log_level="info",
     )

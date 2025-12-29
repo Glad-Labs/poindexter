@@ -35,35 +35,30 @@ logger = logging.getLogger(__name__)
 
 def get_unified_orchestrator(request: Request) -> UnifiedOrchestrator:
     """Get UnifiedOrchestrator from app state"""
-    orchestrator = getattr(request.app.state, 'unified_orchestrator', None)
+    orchestrator = getattr(request.app.state, "unified_orchestrator", None)
     if not orchestrator:
         logger.error("UnifiedOrchestrator not initialized in app state")
-        raise HTTPException(
-            status_code=500,
-            detail="Service not initialized: UnifiedOrchestrator"
-        )
+        raise HTTPException(status_code=500, detail="Service not initialized: UnifiedOrchestrator")
     return orchestrator
 
 
 def get_quality_service(request: Request) -> UnifiedQualityService:
     """Get UnifiedQualityService from app state"""
-    service = getattr(request.app.state, 'quality_service', None)
+    service = getattr(request.app.state, "quality_service", None)
     if not service:
         logger.error("UnifiedQualityService not initialized in app state")
         raise HTTPException(
-            status_code=500,
-            detail="Service not initialized: UnifiedQualityService"
+            status_code=500, detail="Service not initialized: UnifiedQualityService"
         )
     return service
 
 
 def get_database_service(request: Request) -> DatabaseService:
     """Get DatabaseService from app state"""
-    service = getattr(request.app.state, 'db_service', None) or getattr(request.app.state, 'database', None)
+    service = getattr(request.app.state, "db_service", None) or getattr(
+        request.app.state, "database", None
+    )
     if not service:
         logger.error("DatabaseService not initialized in app state")
-        raise HTTPException(
-            status_code=500,
-            detail="Service not initialized: DatabaseService"
-        )
+        raise HTTPException(status_code=500, detail="Service not initialized: DatabaseService")
     return service

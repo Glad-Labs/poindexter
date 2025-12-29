@@ -21,13 +21,14 @@ from ..services.ollama_client import (
     initialize_ollama_client,
     MODEL_PROFILES,
     DEFAULT_BASE_URL,
-    DEFAULT_MODEL
+    DEFAULT_MODEL,
 )
 
 
 # ============================================================================
 # HELPERS
 # ============================================================================
+
 
 async def is_ollama_available() -> bool:
     """Check if Ollama server is running and accessible."""
@@ -43,6 +44,7 @@ def ollama_available_check():
     """Synchronous check for Ollama availability (for pytest skip condition)."""
     try:
         import socket
+
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         result = sock.connect_ex(("localhost", 11434))
         sock.close()
@@ -54,14 +56,14 @@ def ollama_available_check():
 # Check if Ollama is available at test collection time
 OLLAMA_AVAILABLE = ollama_available_check()
 skip_if_no_ollama = pytest.mark.skipif(
-    not OLLAMA_AVAILABLE,
-    reason="Ollama server not running on localhost:11434"
+    not OLLAMA_AVAILABLE, reason="Ollama server not running on localhost:11434"
 )
 
 
 # ============================================================================
 # FIXTURES
 # ============================================================================
+
 
 @pytest.fixture
 async def ollama_client():
@@ -88,21 +90,9 @@ def mock_models_response():
     # Actual Ollama /api/tags response format
     mock_response.json.return_value = {
         "models": [
-            {
-                "name": "llama2:latest",
-                "size": 3826793677,
-                "modified_at": "2024-01-15T10:00:00Z"
-            },
-            {
-                "name": "mistral:latest",
-                "size": 4109865159,
-                "modified_at": "2024-01-16T10:00:00Z"
-            },
-            {
-                "name": "codellama:latest",
-                "size": 3825819519,
-                "modified_at": "2024-01-17T10:00:00Z"
-            }
+            {"name": "llama2:latest", "size": 3826793677, "modified_at": "2024-01-15T10:00:00Z"},
+            {"name": "mistral:latest", "size": 4109865159, "modified_at": "2024-01-16T10:00:00Z"},
+            {"name": "codellama:latest", "size": 3825819519, "modified_at": "2024-01-17T10:00:00Z"},
         ]
     }
     return mock_response
@@ -122,7 +112,7 @@ def mock_generate_response():
         "total_duration": 5000000000,
         "load_duration": 1000000000,
         "prompt_eval_count": 10,
-        "eval_count": 20
+        "eval_count": 20,
     }
     return mock_response
 
@@ -135,12 +125,9 @@ def mock_chat_response():
     # Actual Ollama /api/chat response format
     mock_response.json.return_value = {
         "model": "mistral",
-        "message": {
-            "role": "assistant",
-            "content": "Hello! How can I help you today?"
-        },
+        "message": {"role": "assistant", "content": "Hello! How can I help you today?"},
         "done": True,
-        "total_duration": 3000000000
+        "total_duration": 3000000000,
     }
     return mock_response
 
@@ -148,6 +135,7 @@ def mock_chat_response():
 # ============================================================================
 # TEST OLLAMA CLIENT INITIALIZATION
 # ============================================================================
+
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -166,11 +154,7 @@ class TestOllamaClientInitialization:
 
     async def test_custom_initialization(self):
         """Test OllamaClient with custom settings."""
-        client = OllamaClient(
-            base_url="http://custom:8080",
-            model="llama2:13b",
-            timeout=60
-        )
+        client = OllamaClient(base_url="http://custom:8080", model="llama2:13b", timeout=60)
 
         assert client.base_url == "http://custom:8080"
         assert client.model == "llama2:13b"
@@ -180,10 +164,7 @@ class TestOllamaClientInitialization:
 
     async def test_factory_initialization(self):
         """Test initialize_ollama_client factory function."""
-        client = await initialize_ollama_client(
-            base_url="http://localhost:11434",
-            model="mistral"
-        )
+        client = await initialize_ollama_client(base_url="http://localhost:11434", model="mistral")
 
         assert isinstance(client, OllamaClient)
         assert client.model == "mistral"
@@ -195,13 +176,16 @@ class TestOllamaClientInitialization:
 # TEST HEALTH CHECK
 # ============================================================================
 
+
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestHealthCheck:
     """Test Ollama server health check functionality."""
 
     @patch("src.cofounder_agent.services.ollama_client.httpx.AsyncClient")
-    async def test_health_check_success(self, mock_async_client_class, ollama_client, mock_health_response):
+    async def test_health_check_success(
+        self, mock_async_client_class, ollama_client, mock_health_response
+    ):
         """Test successful health check with mocked HTTP."""
         # Setup mock
         mock_client_instance = AsyncMock()
@@ -244,13 +228,16 @@ class TestHealthCheck:
 # TEST LIST MODELS
 # ============================================================================
 
+
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestListModels:
     """Test listing available Ollama models."""
 
     @patch("src.cofounder_agent.services.ollama_client.httpx.AsyncClient")
-    async def test_list_models_success(self, mock_async_client_class, ollama_client, mock_models_response):
+    async def test_list_models_success(
+        self, mock_async_client_class, ollama_client, mock_models_response
+    ):
         """Test successful model listing."""
         # Setup mock
         mock_client_instance = AsyncMock()
@@ -274,7 +261,7 @@ class TestListModels:
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"models": []}
-        
+
         mock_client_instance = AsyncMock()
         mock_async_client_class.return_value.__aenter__.return_value = mock_client_instance
         mock_client_instance.get.return_value = mock_response
@@ -304,13 +291,16 @@ class TestListModels:
 # TEST GENERATE
 # ============================================================================
 
+
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestGenerate:
     """Test text generation functionality."""
 
     @patch("src.cofounder_agent.services.ollama_client.httpx.AsyncClient")
-    async def test_generate_simple_prompt(self, mock_async_client_class, ollama_client, mock_generate_response):
+    async def test_generate_simple_prompt(
+        self, mock_async_client_class, ollama_client, mock_generate_response
+    ):
         """Test simple text generation."""
         # Setup mock
         mock_client_instance = AsyncMock()
@@ -318,10 +308,7 @@ class TestGenerate:
         mock_client_instance.post.return_value = mock_generate_response
 
         # Execute
-        response = await ollama_client.generate(
-            prompt="Tell me a joke",
-            model="mistral"
-        )
+        response = await ollama_client.generate(prompt="Tell me a joke", model="mistral")
 
         # Verify - response should be mapped to our format
         assert response["text"] == "This is a test response from Ollama."
@@ -330,7 +317,9 @@ class TestGenerate:
         assert response["cost"] == 0.0  # Ollama is free!
 
     @patch("src.cofounder_agent.services.ollama_client.httpx.AsyncClient")
-    async def test_generate_with_system_prompt(self, mock_async_client_class, ollama_client, mock_generate_response):
+    async def test_generate_with_system_prompt(
+        self, mock_async_client_class, ollama_client, mock_generate_response
+    ):
         """Test generation with system prompt."""
         # Setup mock
         mock_client_instance = AsyncMock()
@@ -339,9 +328,7 @@ class TestGenerate:
 
         # Execute
         await ollama_client.generate(
-            prompt="Explain quantum physics",
-            system="You are a physics professor",
-            model="mistral"
+            prompt="Explain quantum physics", system="You are a physics professor", model="mistral"
         )
 
         # Verify - system prompt should be in request
@@ -349,7 +336,9 @@ class TestGenerate:
         assert call_args[1]["json"]["system"] == "You are a physics professor"
 
     @patch("src.cofounder_agent.services.ollama_client.httpx.AsyncClient")
-    async def test_generate_with_temperature(self, mock_async_client_class, ollama_client, mock_generate_response):
+    async def test_generate_with_temperature(
+        self, mock_async_client_class, ollama_client, mock_generate_response
+    ):
         """Test generation with custom temperature."""
         # Setup mock
         mock_client_instance = AsyncMock()
@@ -357,18 +346,16 @@ class TestGenerate:
         mock_client_instance.post.return_value = mock_generate_response
 
         # Execute
-        await ollama_client.generate(
-            prompt="Be creative",
-            temperature=0.9,
-            model="mistral"
-        )
+        await ollama_client.generate(prompt="Be creative", temperature=0.9, model="mistral")
 
         # Verify - temperature should be in request options
         call_args = mock_client_instance.post.call_args
         assert call_args[1]["json"]["options"]["temperature"] == 0.9
 
     @patch("src.cofounder_agent.services.ollama_client.httpx.AsyncClient")
-    async def test_generate_with_max_tokens(self, mock_async_client_class, ollama_client, mock_generate_response):
+    async def test_generate_with_max_tokens(
+        self, mock_async_client_class, ollama_client, mock_generate_response
+    ):
         """Test generation with token limit."""
         # Setup mock
         mock_client_instance = AsyncMock()
@@ -376,11 +363,7 @@ class TestGenerate:
         mock_client_instance.post.return_value = mock_generate_response
 
         # Execute
-        await ollama_client.generate(
-            prompt="Write a story",
-            max_tokens=500,
-            model="mistral"
-        )
+        await ollama_client.generate(prompt="Write a story", max_tokens=500, model="mistral")
 
         # Verify - max_tokens should map to num_predict
         call_args = mock_client_instance.post.call_args
@@ -391,13 +374,16 @@ class TestGenerate:
 # TEST CHAT
 # ============================================================================
 
+
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestChat:
     """Test chat completion functionality."""
 
     @patch("src.cofounder_agent.services.ollama_client.httpx.AsyncClient")
-    async def test_chat_single_message(self, mock_async_client_class, ollama_client, mock_chat_response):
+    async def test_chat_single_message(
+        self, mock_async_client_class, ollama_client, mock_chat_response
+    ):
         """Test chat with single message."""
         # Setup mock
         mock_client_instance = AsyncMock()
@@ -415,7 +401,9 @@ class TestChat:
         assert response["cost"] == 0.0
 
     @patch("src.cofounder_agent.services.ollama_client.httpx.AsyncClient")
-    async def test_chat_conversation_history(self, mock_async_client_class, ollama_client, mock_chat_response):
+    async def test_chat_conversation_history(
+        self, mock_async_client_class, ollama_client, mock_chat_response
+    ):
         """Test chat with conversation history."""
         # Setup mock
         mock_client_instance = AsyncMock()
@@ -426,7 +414,7 @@ class TestChat:
         messages = [
             {"role": "user", "content": "What's the weather?"},
             {"role": "assistant", "content": "I don't have weather data."},
-            {"role": "user", "content": "Can you tell me a joke?"}
+            {"role": "user", "content": "Can you tell me a joke?"},
         ]
         response = await ollama_client.chat(messages=messages, model="mistral")
 
@@ -435,7 +423,9 @@ class TestChat:
         assert len(call_args[1]["json"]["messages"]) == 3
 
     @patch("src.cofounder_agent.services.ollama_client.httpx.AsyncClient")
-    async def test_chat_with_temperature(self, mock_async_client_class, ollama_client, mock_chat_response):
+    async def test_chat_with_temperature(
+        self, mock_async_client_class, ollama_client, mock_chat_response
+    ):
         """Test chat with custom temperature."""
         # Setup mock
         mock_client_instance = AsyncMock()
@@ -444,11 +434,7 @@ class TestChat:
 
         # Execute
         messages = [{"role": "user", "content": "Be creative"}]
-        await ollama_client.chat(
-            messages=messages,
-            temperature=0.8,
-            model="mistral"
-        )
+        await ollama_client.chat(messages=messages, temperature=0.8, model="mistral")
 
         # Verify
         call_args = mock_client_instance.post.call_args
@@ -458,6 +444,7 @@ class TestChat:
 # ============================================================================
 # TEST MODEL PROFILES
 # ============================================================================
+
 
 @pytest.mark.unit
 class TestModelProfiles:
@@ -514,12 +501,13 @@ class TestModelProfiles:
 # TEST INTEGRATION SCENARIOS
 # ============================================================================
 
+
 @pytest.mark.integration
 @pytest.mark.asyncio
 @pytest.mark.slow
 class TestIntegrationScenarios:
     """Integration tests against actual Ollama server.
-    
+
     These tests ONLY skip if Ollama is not available on localhost:11434.
     If Ollama is running, these tests will execute and validate real functionality.
     """
@@ -541,10 +529,7 @@ class TestIntegrationScenarios:
         client = OllamaClient(model="mistral")
 
         try:
-            response = await client.generate(
-                prompt="Say 'test' and nothing else",
-                max_tokens=10
-            )
+            response = await client.generate(prompt="Say 'test' and nothing else", max_tokens=10)
 
             assert "text" in response
             assert response["done"] is True
@@ -569,6 +554,7 @@ class TestIntegrationScenarios:
 # ============================================================================
 # TEST ERROR HANDLING
 # ============================================================================
+
 
 @pytest.mark.unit
 @pytest.mark.asyncio

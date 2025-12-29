@@ -31,10 +31,10 @@ class TestPoindexterE2EBlogPostGeneration:
         try:
             from services.poindexter_orchestrator import PoindexterOrchestrator
             from services.poindexter_tools import PoindexterTools
-            
+
             orchestrator = PoindexterOrchestrator()
             orchestrator.tools = PoindexterTools()
-            
+
             result = await orchestrator.execute_workflow(
                 workflow_type="blog_post",
                 parameters={
@@ -42,8 +42,8 @@ class TestPoindexterE2EBlogPostGeneration:
                     "length": "2000 words",
                     "style": "professional",
                     "include_images": True,
-                    "auto_publish": False  # Don't actually publish in test
-                }
+                    "auto_publish": False,  # Don't actually publish in test
+                },
             )
 
             assert result["success"] is True
@@ -51,7 +51,7 @@ class TestPoindexterE2EBlogPostGeneration:
             assert result["quality_score"] >= 0.70
             assert result["total_cost"] >= 0
             assert result["total_cost"] <= 5.0  # Sanity check on cost
-            
+
         except ImportError:
             pytest.skip("Poindexter modules not available")
 
@@ -60,23 +60,23 @@ class TestPoindexterE2EBlogPostGeneration:
         """Test blog post generation with mandatory research step."""
         try:
             from services.poindexter_orchestrator import PoindexterOrchestrator
-            
+
             orchestrator = PoindexterOrchestrator()
-            
+
             result = await orchestrator.execute_workflow(
                 workflow_type="blog_post",
                 parameters={
                     "topic": "Latest AI Breakthroughs",
                     "require_research": True,
                     "sources_limit": 5,
-                    "length": "1500 words"
-                }
+                    "length": "1500 words",
+                },
             )
 
             assert result["success"] is True
             # Should have research data in result
             assert result["research_data"] is not None or "research" in result
-            
+
         except ImportError:
             pytest.skip("Poindexter modules not available")
 
@@ -85,21 +85,17 @@ class TestPoindexterE2EBlogPostGeneration:
         """Test blog post generation with image inclusion."""
         try:
             from services.poindexter_orchestrator import PoindexterOrchestrator
-            
+
             orchestrator = PoindexterOrchestrator()
-            
+
             result = await orchestrator.execute_workflow(
                 workflow_type="blog_post",
-                parameters={
-                    "topic": "AI Trends",
-                    "include_images": True,
-                    "image_count": 5
-                }
+                parameters={"topic": "AI Trends", "include_images": True, "image_count": 5},
             )
 
             assert result["success"] is True
             assert "images" in result or "visual_assets" in result
-            
+
         except ImportError:
             pytest.skip("Poindexter modules not available")
 
@@ -108,22 +104,22 @@ class TestPoindexterE2EBlogPostGeneration:
         """Test blog generation with self-critique refinement."""
         try:
             from services.poindexter_orchestrator import PoindexterOrchestrator
-            
+
             orchestrator = PoindexterOrchestrator()
-            
+
             result = await orchestrator.execute_workflow(
                 workflow_type="blog_post",
                 parameters={
                     "topic": "test",
                     "quality_threshold": 0.90,  # High threshold triggers critique
-                    "max_critique_iterations": 3
-                }
+                    "max_critique_iterations": 3,
+                },
             )
 
             assert result["success"] is True
             assert result["iterations"] >= 1
             assert result["quality_score"] >= 0.70
-            
+
         except ImportError:
             pytest.skip("Poindexter modules not available")
 
@@ -137,21 +133,20 @@ class TestPoindexterE2ECostTracking:
         """Test that costs are accurately tracked across all tools."""
         try:
             from services.poindexter_orchestrator import PoindexterOrchestrator
-            
+
             orchestrator = PoindexterOrchestrator()
-            
+
             result = await orchestrator.execute_workflow(
-                workflow_type="blog_post",
-                parameters={"topic": "test"}
+                workflow_type="blog_post", parameters={"topic": "test"}
             )
 
             assert result["success"] is True
             assert "total_cost" in result
             assert "cost_breakdown" in result or "tool_costs" in result
-            
+
             # Cost should be reasonable
             assert 0 < result["total_cost"] <= 10.0
-            
+
         except ImportError:
             pytest.skip("Poindexter modules not available")
 
@@ -160,26 +155,22 @@ class TestPoindexterE2ECostTracking:
         """Test cost differences between optimization strategies."""
         try:
             from services.poindexter_orchestrator import PoindexterOrchestrator
-            
+
             orchestrator = PoindexterOrchestrator()
-            
+
             # Cheap optimization
             cheap_result = await orchestrator.execute_workflow(
-                workflow_type="blog_post",
-                parameters={"topic": "test"},
-                optimize_for="cost"
+                workflow_type="blog_post", parameters={"topic": "test"}, optimize_for="cost"
             )
 
             # Quality optimization
             quality_result = await orchestrator.execute_workflow(
-                workflow_type="blog_post",
-                parameters={"topic": "test"},
-                optimize_for="quality"
+                workflow_type="blog_post", parameters={"topic": "test"}, optimize_for="quality"
             )
 
             assert cheap_result["total_cost"] <= quality_result["total_cost"]
             assert quality_result["quality_score"] >= cheap_result["quality_score"]
-            
+
         except ImportError:
             pytest.skip("Poindexter modules not available")
 
@@ -188,13 +179,13 @@ class TestPoindexterE2ECostTracking:
         """Test that cost constraints are enforced."""
         try:
             from services.poindexter_orchestrator import PoindexterOrchestrator
-            
+
             orchestrator = PoindexterOrchestrator()
-            
+
             result = await orchestrator.execute_workflow(
                 workflow_type="blog_post",
                 parameters={"topic": "test"},
-                constraints={"max_cost": 0.50}
+                constraints={"max_cost": 0.50},
             )
 
             # Should either complete within budget or fail gracefully
@@ -202,7 +193,7 @@ class TestPoindexterE2ECostTracking:
                 assert result["total_cost"] <= 0.50
             else:
                 assert "cost_exceeded" in result or "exceeded_budget" in str(result)
-                
+
         except ImportError:
             pytest.skip("Poindexter modules not available")
 
@@ -216,21 +207,20 @@ class TestPoindexterE2EErrorRecovery:
         """Test recovery when single tool fails."""
         try:
             from services.poindexter_orchestrator import PoindexterOrchestrator
-            
+
             orchestrator = PoindexterOrchestrator()
-            
+
             # Mock a tool failure
-            with patch.object(orchestrator.tools, 'research_tool', 
-                             side_effect=Exception("API error")):
+            with patch.object(
+                orchestrator.tools, "research_tool", side_effect=Exception("API error")
+            ):
                 result = await orchestrator.execute_workflow(
-                    workflow_type="blog_post",
-                    parameters={"topic": "test"},
-                    allow_fallback=True
+                    workflow_type="blog_post", parameters={"topic": "test"}, allow_fallback=True
                 )
 
                 # Should either recover or fail gracefully
                 assert "error" in result or result.get("fallback_executed")
-                
+
         except ImportError:
             pytest.skip("Poindexter modules not available")
 
@@ -239,10 +229,10 @@ class TestPoindexterE2EErrorRecovery:
         """Test automatic retry on transient failures."""
         try:
             from services.poindexter_orchestrator import PoindexterOrchestrator
-            
+
             orchestrator = PoindexterOrchestrator()
             call_count = 0
-            
+
             async def flaky_tool(*args, **kwargs):
                 nonlocal call_count
                 call_count += 1
@@ -250,18 +240,17 @@ class TestPoindexterE2EErrorRecovery:
                     raise Exception("Temporary error")
                 return {"success": True, "data": {}}
 
-            with patch.object(orchestrator.tools, 'research_tool', 
-                             side_effect=flaky_tool):
+            with patch.object(orchestrator.tools, "research_tool", side_effect=flaky_tool):
                 result = await orchestrator.execute_workflow(
                     workflow_type="blog_post",
                     parameters={"topic": "test"},
                     allow_retries=True,
-                    max_retries=2
+                    max_retries=2,
                 )
 
                 # Should succeed after retry
                 assert call_count > 1
-                
+
         except ImportError:
             pytest.skip("Poindexter modules not available")
 
@@ -270,25 +259,22 @@ class TestPoindexterE2EErrorRecovery:
         """Test handling of workflow timeouts."""
         try:
             from services.poindexter_orchestrator import PoindexterOrchestrator
-            
+
             orchestrator = PoindexterOrchestrator()
-            
+
             async def slow_tool(*args, **kwargs):
                 await asyncio.sleep(10)  # 10 seconds
                 return {"success": True, "data": {}}
 
-            with patch.object(orchestrator.tools, 'research_tool', 
-                             side_effect=slow_tool):
+            with patch.object(orchestrator.tools, "research_tool", side_effect=slow_tool):
                 # Timeout after 1 second
                 result = await orchestrator.execute_workflow(
-                    workflow_type="blog_post",
-                    parameters={"topic": "test"},
-                    timeout=1
+                    workflow_type="blog_post", parameters={"topic": "test"}, timeout=1
                 )
 
                 # Should timeout gracefully
                 assert result.get("timed_out") or "timeout" in str(result).lower()
-                
+
         except ImportError:
             pytest.skip("Poindexter modules not available")
 
@@ -302,13 +288,12 @@ class TestPoindexterE2EConcurrency:
         """Test running multiple workflows concurrently."""
         try:
             from services.poindexter_orchestrator import PoindexterOrchestrator
-            
+
             orchestrator = PoindexterOrchestrator()
-            
+
             tasks = [
                 orchestrator.execute_workflow(
-                    workflow_type="blog_post",
-                    parameters={"topic": f"Topic {i}"}
+                    workflow_type="blog_post", parameters={"topic": f"Topic {i}"}
                 )
                 for i in range(3)
             ]
@@ -317,7 +302,7 @@ class TestPoindexterE2EConcurrency:
 
             assert len(results) == 3
             assert all(r["success"] for r in results)
-            
+
         except ImportError:
             pytest.skip("Poindexter modules not available")
 
@@ -326,13 +311,12 @@ class TestPoindexterE2EConcurrency:
         """Test accurate cost tracking with concurrent workflows."""
         try:
             from services.poindexter_orchestrator import PoindexterOrchestrator
-            
+
             orchestrator = PoindexterOrchestrator()
-            
+
             tasks = [
                 orchestrator.execute_workflow(
-                    workflow_type="blog_post",
-                    parameters={"topic": "test"}
+                    workflow_type="blog_post", parameters={"topic": "test"}
                 )
                 for _ in range(2)
             ]
@@ -341,7 +325,7 @@ class TestPoindexterE2EConcurrency:
 
             total_cost = sum(r.get("total_cost", 0) for r in results)
             assert total_cost > 0
-            
+
         except ImportError:
             pytest.skip("Poindexter modules not available")
 
@@ -356,20 +340,19 @@ class TestPoindexterE2EPerformance:
         """Benchmark workflow execution time."""
         try:
             from services.poindexter_orchestrator import PoindexterOrchestrator
-            
+
             orchestrator = PoindexterOrchestrator()
-            
+
             start_time = time.time()
             result = await orchestrator.execute_workflow(
-                workflow_type="blog_post",
-                parameters={"topic": "test", "length": "500 words"}
+                workflow_type="blog_post", parameters={"topic": "test", "length": "500 words"}
             )
             elapsed = time.time() - start_time
 
             assert result["success"] is True
             # Should complete in reasonable time (adjust based on actual performance)
             assert elapsed < 60  # 60 seconds max for test
-            
+
         except ImportError:
             pytest.skip("Poindexter modules not available")
 
@@ -380,24 +363,23 @@ class TestPoindexterE2EPerformance:
         try:
             import psutil
             from services.poindexter_orchestrator import PoindexterOrchestrator
-            
+
             orchestrator = PoindexterOrchestrator()
-            
+
             process = psutil.Process()
             start_memory = process.memory_info().rss / 1024 / 1024  # MB
-            
+
             result = await orchestrator.execute_workflow(
-                workflow_type="blog_post",
-                parameters={"topic": "test"}
+                workflow_type="blog_post", parameters={"topic": "test"}
             )
-            
+
             end_memory = process.memory_info().rss / 1024 / 1024  # MB
             memory_increase = end_memory - start_memory
 
             assert result["success"] is True
             # Memory increase should be reasonable
             assert memory_increase < 500  # Less than 500 MB increase
-            
+
         except ImportError:
             pytest.skip("psutil or Poindexter modules not available")
 
@@ -411,18 +393,17 @@ class TestPoindexterE2EQualityMetrics:
         """Test quality score is calculated correctly."""
         try:
             from services.poindexter_orchestrator import PoindexterOrchestrator
-            
+
             orchestrator = PoindexterOrchestrator()
-            
+
             result = await orchestrator.execute_workflow(
-                workflow_type="blog_post",
-                parameters={"topic": "test"}
+                workflow_type="blog_post", parameters={"topic": "test"}
             )
 
             assert result["success"] is True
             assert "quality_score" in result
             assert 0 <= result["quality_score"] <= 1.0
-            
+
         except ImportError:
             pytest.skip("Poindexter modules not available")
 
@@ -431,30 +412,24 @@ class TestPoindexterE2EQualityMetrics:
         """Test that critique loop improves quality score."""
         try:
             from services.poindexter_orchestrator import PoindexterOrchestrator
-            
+
             orchestrator = PoindexterOrchestrator()
-            
+
             # Without critique
             no_critique = await orchestrator.execute_workflow(
                 workflow_type="blog_post",
-                parameters={
-                    "topic": "test",
-                    "max_critique_iterations": 0
-                }
+                parameters={"topic": "test", "max_critique_iterations": 0},
             )
 
             # With critique
             with_critique = await orchestrator.execute_workflow(
                 workflow_type="blog_post",
-                parameters={
-                    "topic": "test",
-                    "max_critique_iterations": 2
-                }
+                parameters={"topic": "test", "max_critique_iterations": 2},
             )
 
             # Quality should improve with critique
             assert with_critique["quality_score"] >= no_critique["quality_score"]
-            
+
         except ImportError:
             pytest.skip("Poindexter modules not available")
 
@@ -470,10 +445,10 @@ class TestPoindexterE2EIntegration:
             from services.poindexter_orchestrator import PoindexterOrchestrator
             from services.poindexter_tools import PoindexterTools
             from routes.poindexter_routes import router
-            
+
             orchestrator = PoindexterOrchestrator()
             orchestrator.tools = PoindexterTools()
-            
+
             # Execute full workflow
             result = await orchestrator.execute_workflow(
                 workflow_type="blog_post",
@@ -482,8 +457,8 @@ class TestPoindexterE2EIntegration:
                     "require_research": True,
                     "include_images": True,
                     "quality_threshold": 0.80,
-                    "auto_publish": False
-                }
+                    "auto_publish": False,
+                },
             )
 
             assert result["success"] is True
@@ -491,7 +466,7 @@ class TestPoindexterE2EIntegration:
             assert result["total_cost"] >= 0
             assert result["quality_score"] >= 0.70
             assert result["execution_steps"] > 0
-            
+
         except ImportError:
             pytest.skip("Poindexter modules not available")
 
@@ -500,9 +475,9 @@ class TestPoindexterE2EIntegration:
         """Test workflow with maximum configuration options."""
         try:
             from services.poindexter_orchestrator import PoindexterOrchestrator
-            
+
             orchestrator = PoindexterOrchestrator()
-            
+
             result = await orchestrator.execute_workflow(
                 workflow_type="blog_post",
                 parameters={
@@ -514,19 +489,15 @@ class TestPoindexterE2EIntegration:
                     "include_images": True,
                     "image_count": 5,
                     "quality_threshold": 0.85,
-                    "max_critique_iterations": 3
+                    "max_critique_iterations": 3,
                 },
-                constraints={
-                    "max_cost": 5.0,
-                    "max_execution_time": 300,
-                    "quality_threshold": 0.85
-                },
-                optimize_for="quality"
+                constraints={"max_cost": 5.0, "max_execution_time": 300, "quality_threshold": 0.85},
+                optimize_for="quality",
             )
 
             assert result["success"] is True
             assert result["quality_score"] >= 0.80
             assert result["total_cost"] <= 5.0
-            
+
         except ImportError:
             pytest.skip("Poindexter modules not available")

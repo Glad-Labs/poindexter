@@ -22,6 +22,7 @@ import uvicorn
 
 try:
     import sentry_sdk
+
     SENTRY_AVAILABLE = True
 except ImportError:
     SENTRY_AVAILABLE = False
@@ -30,20 +31,20 @@ except ImportError:
 from dotenv import load_dotenv
 
 # Try to load .env.local from the project root, then from current directory
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
-env_local_path = os.path.join(project_root, '.env.local')
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+env_local_path = os.path.join(project_root, ".env.local")
 if os.path.exists(env_local_path):
     load_dotenv(env_local_path, override=True)
     print(f"[+] Loaded .env.local from {env_local_path}")
 else:
     # Fallback to .env.local in current directory
-    load_dotenv('.env.local', override=True)
+    load_dotenv(".env.local", override=True)
     print("[+] Loaded .env.local from current directory")
 
 # Add the cofounder_agent directory to the Python path for relative imports
 sys.path.insert(0, os.path.dirname(__file__))
 # Add the parent directory (src) to the Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from orchestrator_logic import Orchestrator
 from services.database_service import DatabaseService
@@ -71,6 +72,7 @@ from utils.route_utils import initialize_services
 try:
     from services.workflow_history import WorkflowHistoryService
     from routes.workflow_history import initialize_history_service
+
     WORKFLOW_HISTORY_AVAILABLE = True
 except ImportError as e:
     WORKFLOW_HISTORY_AVAILABLE = False
@@ -111,118 +113,121 @@ logger = get_logger(__name__)
 # LIFESPAN: Application Startup and Shutdown
 # ============================================================================
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     Application lifespan manager - handles startup and shutdown.
-    
+
     Uses StartupManager to orchestrate all service initialization
     in the correct order with proper error handling.
     """
     startup_manager = StartupManager()
-    
+
     try:
         # Initialize all services
         services = await startup_manager.initialize_all_services()
-        
+
         # Inject services into app state for access in routes
-        app.state.database = services['database']
-        app.state.redis_cache = services['redis_cache']
-        app.state.orchestrator = services['orchestrator']
-        app.state.task_executor = services['task_executor']
-        app.state.intelligent_orchestrator = services['intelligent_orchestrator']
-        app.state.workflow_history = services['workflow_history']
-        app.state.training_data_service = services.get('training_data_service')
-        app.state.fine_tuning_service = services.get('fine_tuning_service')
-        app.state.legacy_data_service = services.get('legacy_data_service')
-        app.state.startup_error = services['startup_error']
+        app.state.database = services["database"]
+        app.state.redis_cache = services["redis_cache"]
+        app.state.orchestrator = services["orchestrator"]
+        app.state.task_executor = services["task_executor"]
+        app.state.intelligent_orchestrator = services["intelligent_orchestrator"]
+        app.state.workflow_history = services["workflow_history"]
+        app.state.training_data_service = services.get("training_data_service")
+        app.state.fine_tuning_service = services.get("fine_tuning_service")
+        app.state.legacy_data_service = services.get("legacy_data_service")
+        app.state.startup_error = services["startup_error"]
         app.state.startup_complete = True
-        
+
         # Initialize new consolidated services
-        db_service = services['database']
-        
+        db_service = services["database"]
+
         # Initialize task store for content orchestrator
         from services.content_router_service import get_content_task_store
+
         task_store = get_content_task_store(db_service)
         app.state.task_store = task_store
         logger.info("✅ ContentTaskStore initialized")
-        
+
         # Initialize quality service
         quality_service = UnifiedQualityService(
-            model_router=getattr(app.state, 'model_router', None),
+            model_router=getattr(app.state, "model_router", None),
             database_service=db_service,
-            qa_agent=None
+            qa_agent=None,
         )
         app.state.quality_service = quality_service
         logger.info("✅ UnifiedQualityService initialized")
-        
+
         # Initialize content orchestrator for use in unified system
         content_orchestrator = ContentOrchestrator(
             task_store=task_store  # Now uses the initialized task_store
         )
         app.state.content_orchestrator = content_orchestrator
         logger.info("✅ ContentOrchestrator initialized with task_store")
-        
+
         # Initialize unified orchestrator with all available agents
         unified_orchestrator = UnifiedOrchestrator(
             database_service=db_service,
-            model_router=getattr(app.state, 'model_router', None),
+            model_router=getattr(app.state, "model_router", None),
             quality_service=quality_service,
-            memory_system=getattr(app.state, 'memory_system', None),
+            memory_system=getattr(app.state, "memory_system", None),
             content_orchestrator=content_orchestrator,
-            financial_agent=getattr(app.state, 'financial_agent', None),
-            compliance_agent=getattr(app.state, 'compliance_agent', None),
+            financial_agent=getattr(app.state, "financial_agent", None),
+            compliance_agent=getattr(app.state, "compliance_agent", None),
         )
         app.state.unified_orchestrator = unified_orchestrator
         logger.info("✅ UnifiedOrchestrator initialized")
-        
+
         # Store db_service with alternative name for dependency injection
         app.state.db_service = db_service
-        
+
         # Initialize ServiceContainer for Phase 2 utilities
         # Provides 3 access patterns: get_services(), Depends(), Request.state
         initialize_services(
             app,
-            database_service=services['database'],
-            orchestrator=services['orchestrator'],
-            task_executor=services['task_executor'],
-            intelligent_orchestrator=services['intelligent_orchestrator'],
-            workflow_history=services['workflow_history']
+            database_service=services["database"],
+            orchestrator=services["orchestrator"],
+            task_executor=services["task_executor"],
+            intelligent_orchestrator=services["intelligent_orchestrator"],
+            workflow_history=services["workflow_history"],
         )
-        
+
         # Register routes with initialized services
         register_all_routes(
             app,
-            database_service=services['database'],
-            workflow_history_service=services['workflow_history'],
-            intelligent_orchestrator=services['intelligent_orchestrator'],
-            training_data_service=services.get('training_data_service'),
-            fine_tuning_service=services.get('fine_tuning_service')
+            database_service=services["database"],
+            workflow_history_service=services["workflow_history"],
+            intelligent_orchestrator=services["intelligent_orchestrator"],
+            training_data_service=services.get("training_data_service"),
+            fine_tuning_service=services.get("fine_tuning_service"),
         )
-        
+
         # Initialize LangGraph orchestrator
         try:
             from services.langgraph_orchestrator import LangGraphOrchestrator
+
             langgraph_orchestrator = LangGraphOrchestrator(
                 db_service=db_service,
-                llm_service=getattr(app.state, 'model_router', None),
+                llm_service=getattr(app.state, "model_router", None),
                 quality_service=quality_service,
-                metadata_service=getattr(app.state, 'unified_metadata_service', None)
+                metadata_service=getattr(app.state, "unified_metadata_service", None),
             )
             app.state.langgraph_orchestrator = langgraph_orchestrator
             logger.info("✅ LangGraphOrchestrator initialized")
         except Exception as e:
             logger.warning(f"⚠️  LangGraph initialization failed (non-critical): {str(e)}")
             app.state.langgraph_orchestrator = None
-        
+
         logger.info("[OK] Lifespan: Yielding control to FastAPI application...")
         try:
             print("[OK] Application is now running")
         except UnicodeEncodeError:
             print("[OK] Application is now running")
-        
+
         yield  # Application runs here
-        
+
     except Exception as e:
         logger.error(f"Critical startup failure: {str(e)}", exc_info=True)
         try:
@@ -232,13 +237,14 @@ async def lifespan(app: FastAPI):
         app.state.startup_error = str(e)
         app.state.startup_complete = True
         raise
-    
+
     finally:
         try:
             print("[STOP] Shutting down application")
         except UnicodeEncodeError:
             print("[STOP] Shutting down application")
         await startup_manager.shutdown()
+
 
 app = FastAPI(
     title="Glad Labs AI Co-Founder",
@@ -269,16 +275,13 @@ Use the `/api/auth/logout` or GitHub OAuth endpoints to obtain tokens.
     contact={
         "name": "Glad Labs Support",
         "email": "support@gladlabs.io",
-        "url": "https://gladlabs.io"
+        "url": "https://gladlabs.io",
     },
-    license_info={
-        "name": "AGPL-3.0",
-        "url": "https://www.gnu.org/licenses/agpl-3.0.html"
-    },
+    license_info={"name": "AGPL-3.0", "url": "https://www.gnu.org/licenses/agpl-3.0.html"},
     openapi_url="/api/openapi.json",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
-    swagger_ui_parameters={"defaultModelsExpandDepth": 1}
+    swagger_ui_parameters={"defaultModelsExpandDepth": 1},
 )
 
 # Initialize OpenTelemetry tracing
@@ -300,25 +303,26 @@ middleware_config.register_all_middleware(app)
 # ===== UNIFIED HEALTH CHECK ENDPOINT =====
 # Consolidated from: /api/health, /status, /metrics/health, and route-specific health endpoints
 
+
 @app.get("/api/health")
 async def api_health():
     """
     Unified health check endpoint for Railway deployment and load balancers.
-    
+
     Returns comprehensive status of all critical services:
     - Startup status (starting/degraded/healthy)
     - Database connectivity and health
     - Orchestrator initialization and status
     - LLM providers availability
     - Timestamp for monitoring systems
-    
+
     This endpoint consolidates previous endpoints:
     - GET /status (StatusResponse)
     - GET /metrics/health (database health)
     - GET /settings/health (removed duplicate)
     - GET /tasks/health/status (removed duplicate)
     - GET /models/providers/status (removed duplicate)
-    
+
     Used by: Railway load balancers, monitoring systems, external health checks
     Authentication: Not required (critical for load balancers)
     """
@@ -329,13 +333,13 @@ async def api_health():
             "service": "cofounder-agent",
             "version": "1.0.0",
             "timestamp": datetime.utcnow().isoformat(),
-            "components": {}
+            "components": {},
         }
-        
+
         # Check startup status
-        startup_error = getattr(app.state, 'startup_error', None)
-        startup_complete = getattr(app.state, 'startup_complete', False)
-        
+        startup_error = getattr(app.state, "startup_error", None)
+        startup_complete = getattr(app.state, "startup_complete", False)
+
         if startup_error:
             health_data["status"] = "degraded"
             health_data["startup_error"] = startup_error
@@ -344,9 +348,9 @@ async def api_health():
         elif not startup_complete:
             health_data["status"] = "starting"
             health_data["startup_complete"] = False
-        
+
         # Include database status if available
-        database_service = getattr(app.state, 'database', None)
+        database_service = getattr(app.state, "database", None)
         if database_service:
             try:
                 db_health = await database_service.health_check()
@@ -356,27 +360,24 @@ async def api_health():
                 health_data["components"]["database"] = "degraded"
         else:
             health_data["components"]["database"] = "unavailable"
-        
+
         return health_data
     except Exception as e:
         logger.error(f"Health check failed: {e}", exc_info=True)
-        return {
-            "status": "unhealthy",
-            "service": "cofounder-agent",
-            "error": str(e)
-        }
+        return {"status": "unhealthy", "service": "cofounder-agent", "error": str(e)}
+
 
 @app.get("/api/metrics")
 async def get_metrics():
     """
     Aggregated task and system metrics endpoint.
-    
+
     Returns comprehensive metrics for the oversight dashboard:
     - Task statistics (total, completed, failed, pending)
     - Success rate percentage
     - Average execution time
     - Estimated costs
-    
+
     **Returns:**
     - total_tasks: Total number of tasks created
     - completed_tasks: Successfully completed tasks
@@ -387,7 +388,7 @@ async def get_metrics():
     - total_cost: Estimated total cost in USD
     """
     try:
-        database_service = getattr(app.state, 'database', None)
+        database_service = getattr(app.state, "database", None)
         if database_service:
             metrics = await database_service.get_metrics()
             return metrics
@@ -400,7 +401,7 @@ async def get_metrics():
                 "pending_tasks": 0,
                 "success_rate": 0.0,
                 "avg_execution_time": 0.0,
-                "total_cost": 0.0
+                "total_cost": 0.0,
             }
     except Exception as e:
         logger.error(f"Metrics retrieval failed: {e}", exc_info=True)
@@ -412,8 +413,9 @@ async def get_metrics():
             "success_rate": 0.0,
             "avg_execution_time": 0.0,
             "total_cost": 0.0,
-            "error": str(e)
+            "error": str(e),
         }
+
 
 @app.get("/api/debug/startup")
 async def debug_startup():
@@ -421,11 +423,11 @@ async def debug_startup():
     Debug endpoint showing startup status and any errors
     Only available in development mode
     """
-    database_service = getattr(app.state, 'database', None)
-    orchestrator = getattr(app.state, 'orchestrator', None)
-    startup_error = getattr(app.state, 'startup_error', None)
-    startup_complete = getattr(app.state, 'startup_complete', False)
-    
+    database_service = getattr(app.state, "database", None)
+    orchestrator = getattr(app.state, "orchestrator", None)
+    startup_error = getattr(app.state, "startup_error", None)
+    startup_complete = getattr(app.state, "startup_complete", False)
+
     return {
         "startup_complete": startup_complete,
         "startup_error": startup_error,
@@ -436,21 +438,27 @@ async def debug_startup():
         "api_base_url": os.getenv("API_BASE_URL", "http://localhost:8000"),
     }
 
+
 class CommandRequest(BaseModel):
     """Request model for processing a command."""
+
     command: str
     context: Optional[Dict[str, Any]] = None
     priority: Optional[str] = "normal"
 
+
 class CommandResponse(BaseModel):
     """Response model for the result of a command."""
+
     response: str
     task_id: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
 
+
 class StatusResponse(BaseModel):
     status: str
     data: Dict[str, Any]
+
 
 @app.post("/command", response_model=CommandResponse)
 async def process_command(request: CommandRequest, background_tasks: BackgroundTasks):
@@ -462,27 +470,28 @@ async def process_command(request: CommandRequest, background_tasks: BackgroundT
     """
     try:
         logger.info(f"Received command: {request.command}")
-        
+
         if orchestrator is None:
             raise HTTPException(status_code=503, detail="Orchestrator not initialized")
-        
+
         # Always use async version with new database service
         response = await orchestrator.process_command_async(request.command, request.context)
-        
+
         return CommandResponse(
             response=response.get("response", "Command processed"),
             task_id=response.get("task_id"),
-            metadata=response.get("metadata")
+            metadata=response.get("metadata"),
         )
     except Exception as e:
         logger.error(f"Error processing command: {str(e)} | command={request.command}")
         raise HTTPException(status_code=500, detail=f"An internal error occurred: {str(e)}")
 
+
 @app.get("/status", response_model=StatusResponse)
 async def get_status():
     """
     DEPRECATED: Use GET /api/health instead.
-    
+
     Backward compatibility endpoint that wraps the unified /api/health endpoint.
     Maintained for clients that depend on StatusResponse model.
     Will be removed in version 2.0.
@@ -490,29 +499,29 @@ async def get_status():
     try:
         # Call the unified health endpoint
         health = await api_health()
-        
+
         # Convert to StatusResponse format for backward compatibility
         status_data = {
-            "service": "online" if health.get("status") == "healthy" else health.get("status", "unknown"),
+            "service": (
+                "online" if health.get("status") == "healthy" else health.get("status", "unknown")
+            ),
             "database_available": database_service is not None,
             "orchestrator_initialized": orchestrator is not None,
-            "timestamp": health.get("timestamp", str(asyncio.get_event_loop().time()))
+            "timestamp": health.get("timestamp", str(asyncio.get_event_loop().time())),
         }
-        
+
         # Include component statuses if available
         components = health.get("components", {})
         if isinstance(components, dict):
             for key, value in components.items():
                 status_data[f"component_{key}"] = value
-        
+
         return StatusResponse(status=health.get("status", "unknown"), data=status_data)
-        
+
     except Exception as e:
         logger.error(f"Error getting status: {e}")
-        return StatusResponse(
-            status="unhealthy", 
-            data={"error": str(e)}
-        )
+        return StatusResponse(status="unhealthy", data={"error": str(e)})
+
 
 @app.get("/tasks/pending")
 async def get_pending_tasks(limit: int = 10):
@@ -522,13 +531,14 @@ async def get_pending_tasks(limit: int = 10):
     try:
         if not database_service:
             return {"tasks": [], "message": "Running in development mode"}
-        
+
         tasks = await database_service.get_pending_tasks(limit)
         return {"tasks": tasks, "count": len(tasks)}
-        
+
     except Exception as e:
         logger.error(f"Error getting pending tasks: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get tasks: {str(e)}")
+
 
 @app.get("/metrics/performance")
 async def get_performance_metrics(hours: int = 24):
@@ -546,29 +556,31 @@ async def get_performance_metrics(hours: int = 24):
         logger.error(f"Error getting performance metrics: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get performance metrics: {str(e)}")
 
+
 @app.get("/metrics/health")
 async def get_health_metrics():
     """
     DEPRECATED: Use GET /api/health instead.
-    
+
     Backward compatibility endpoint that wraps the unified /api/health endpoint.
     Returns health metrics in the legacy format.
     Will be removed in version 2.0.
     """
     try:
         health = await api_health()
-        
+
         # Convert to legacy format for backward compatibility
         components = health.get("components", {})
         database_health = components.get("database") if isinstance(components, dict) else "unknown"
-        
+
         return {
             "health": {"status": database_health, "timestamp": health.get("timestamp")},
-            "status": "success" if health.get("status") == "healthy" else "degraded"
+            "status": "success" if health.get("status") == "healthy" else "degraded",
         }
     except Exception as e:
         logger.error(f"Error getting health metrics: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get health metrics: {str(e)}")
+
 
 @app.post("/metrics/reset")
 async def reset_performance_metrics():
@@ -586,6 +598,7 @@ async def reset_performance_metrics():
         logger.error(f"Error resetting metrics: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to reset metrics: {str(e)}")
 
+
 @app.get("/")
 async def root():
     """
@@ -594,8 +607,9 @@ async def root():
     return {
         "message": "Glad Labs AI Co-Founder is running",
         "version": "1.0.0",
-        "database_enabled": database_service is not None
+        "database_enabled": database_service is not None,
     }
+
 
 if __name__ == "__main__":
     # Watch the entire src directory for changes to support agent development

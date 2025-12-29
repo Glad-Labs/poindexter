@@ -14,6 +14,7 @@
 **Root Cause:** The pattern matching in `PayloadInspectionMiddleware._check_payload()` was too broad. It checked for bare keywords like "SELECT", "UNION", "INSERT", etc. without context. Task creation payloads contain model names, descriptions, and other text that might coincidentally contain these words.
 
 **Example False Positive:**
+
 - User selects a model containing "select" in its name
 - Payload becomes: `{"model_selections": {"draft": "qwen3-coder:30b"}, ...}`
 - Middleware converts to JSON string and checks if string contains "SELECT" (case-insensitive)
@@ -33,6 +34,7 @@ r"(?i)\bOR\s+['\"]?\d+['\"]?\s*=\s*['\"]?\d+['\"]?",  # Only matches OR 1=1 patt
 ```
 
 **Changes Made:**
+
 - Replaced simple substring checks with regex patterns that detect actual SQL injection syntax
 - Patterns now require word boundaries and typical SQL structure
 - XSS patterns also improved for accuracy
@@ -45,12 +47,14 @@ r"(?i)\bOR\s+['\"]?\d+['\"]?\s*=\s*['\"]?\d+['\"]?",  # Only matches OR 1=1 patt
 **Status:** This is **expected behavior**, not actually a problem.
 
 **What's Happening:**
+
 1. User selects `qwen3-coder:30b` model in UI
 2. Backend receives the selection and tries to use it
 3. Ollama doesn't have this model installed (it's a specialized Alibaba/CodeStarAI model)
 4. System gracefully falls back to `mistral` and continues
 
 **Why This is Good:**
+
 - ✅ User can select any model name they want
 - ✅ System attempts to use it if available
 - ✅ Gracefully falls back to a working model if not found
@@ -59,12 +63,14 @@ r"(?i)\bOR\s+['\"]?\d+['\"]?\s*=\s*['\"]?\d+['\"]?",  # Only matches OR 1=1 patt
 
 **Improved Handling:**
 Updated the model selection logic to:
+
 1. Recognize specialized model families (qwen, deepseek, codestral, neural-chat)
 2. Try the model first with a short timeout
 3. If unavailable, fall back to mistral with full timeout
 4. Provide informative logging at each step
 
 **New Behavior:**
+
 ```
 [BG_TASK] Attempting to use model via Ollama: qwen3-coder:30b
 [BG_TASK] Model 'qwen3-coder:30b' not available in Ollama. Using fallback model.
@@ -80,6 +86,7 @@ Updated the model selection logic to:
 **Changed:** `PayloadInspectionMiddleware._check_payload()` method
 
 **Before:**
+
 ```python
 # Check for SQL injection patterns
 if any(pattern in payload_str.upper() for pattern in [
@@ -89,6 +96,7 @@ if any(pattern in payload_str.upper() for pattern in [
 ```
 
 **After:**
+
 ```python
 # Check for SQL injection patterns with word boundaries
 sql_injection_patterns = [
@@ -103,6 +111,7 @@ sql_injection_patterns = [
 ```
 
 **Impact:**
+
 - Eliminates false positives from innocent keywords
 - Maintains security by detecting actual SQL injection attempts
 - Cleaner logs without spurious warnings
@@ -114,12 +123,14 @@ sql_injection_patterns = [
 **Changed:** LLM model selection and invocation logic in `_execute_and_publish_task()`
 
 **Improvements:**
+
 1. Added recognition for specialized model families (qwen, deepseek, codestral, neural-chat, coder)
 2. Attempt to use requested model with short timeout (10 seconds)
 3. If not available, gracefully fall back to mistral
 4. Better logging to track fallback behavior
 
 **New Model Detection:**
+
 ```python
 elif any(provider in model for provider in ['qwen', 'deepseek', 'coder', 'codestral']):
     # Try to use with Ollama if installed, otherwise fallback
@@ -128,6 +139,7 @@ elif any(provider in model for provider in ['qwen', 'deepseek', 'coder', 'codest
 ```
 
 **Impact:**
+
 - Users can select any model name; system will try to use it
 - No errors or failures if model not installed
 - Graceful degradation with informative logging
@@ -144,6 +156,7 @@ elif any(provider in model for provider in ['qwen', 'deepseek', 'coder', 'codest
 3. Content should generate successfully
 
 Expected:
+
 ```
 ✅ No false positive warnings
 ✅ Task created successfully
@@ -163,6 +176,7 @@ Expected:
 3. Content should generate successfully using mistral
 
 Expected:
+
 ```
 ✅ Attempts qwen model first
 ✅ Falls back gracefully
@@ -182,6 +196,7 @@ Expected:
 4. Content generated with qwen2 model
 
 Expected:
+
 ```
 ✅ Uses requested model
 ✅ No fallback needed
@@ -193,11 +208,13 @@ Expected:
 ## Security Implications
 
 ### Improved Security
+
 - ✅ Still detects real SQL injection attempts
 - ✅ Fewer false positives = better signal-to-noise ratio
 - ✅ Developers can trust the warnings
 
 ### No Regression
+
 - ✅ All actual SQL injection patterns still caught
 - ✅ XSS patterns still detected
 - ✅ Input validation middleware still active and protecting
@@ -207,12 +224,14 @@ Expected:
 ## Logging Examples
 
 ### Before Fix
+
 ```
 WARNING: Suspicious SQL pattern detected in /api/tasks
 [BG_TASK] Model provider 'qwen3-coder:30b' not yet implemented. Using Ollama fallback.
 ```
 
 ### After Fix
+
 ```
 ✅ No spurious warnings for legitimate requests
 [BG_TASK] Attempting to use model via Ollama: qwen3-coder:30b
@@ -224,10 +243,10 @@ WARNING: Suspicious SQL pattern detected in /api/tasks
 
 ## Summary
 
-| Issue | Cause | Solution | Status |
-|-------|-------|----------|--------|
-| False positive SQL warnings | Overly broad pattern matching | Regex with context/boundaries | ✅ Fixed |
-| qwen model warning is confusing | Actually normal behavior | Improved logging to explain fallback | ✅ Improved |
-| Model not available causes errors | No graceful fallback | Try requested model, fall back to mistral | ✅ Improved |
+| Issue                             | Cause                         | Solution                                  | Status      |
+| --------------------------------- | ----------------------------- | ----------------------------------------- | ----------- |
+| False positive SQL warnings       | Overly broad pattern matching | Regex with context/boundaries             | ✅ Fixed    |
+| qwen model warning is confusing   | Actually normal behavior      | Improved logging to explain fallback      | ✅ Improved |
+| Model not available causes errors | No graceful fallback          | Try requested model, fall back to mistral | ✅ Improved |
 
 All changes are **backwards compatible** and **fully tested**.

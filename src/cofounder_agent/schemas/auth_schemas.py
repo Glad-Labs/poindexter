@@ -9,6 +9,7 @@ from typing import Optional
 
 class UserProfile(BaseModel):
     """User profile response model."""
+
     id: str
     email: str
     username: str
@@ -19,11 +20,13 @@ class UserProfile(BaseModel):
 
 class LogoutResponse(BaseModel):
     """Logout response model."""
+
     success: bool
     message: str
 
 
 class GitHubCallbackRequest(BaseModel):
     """GitHub callback request model."""
+
     code: str
     state: str

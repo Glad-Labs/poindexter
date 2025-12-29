@@ -16,7 +16,7 @@ Usage:
     In any module, instead of:
         import logging
         logger = logging.getLogger(__name__)
-    
+
     Use:
         from services.logger_config import get_logger
         logger = get_logger(__name__)
@@ -32,6 +32,7 @@ from typing import Optional
 # Try to import structlog for structured logging support
 try:
     import structlog
+
     STRUCTLOG_AVAILABLE = True
 except ImportError:
     STRUCTLOG_AVAILABLE = False
@@ -54,6 +55,7 @@ if LOG_LEVEL not in VALID_LOG_LEVELS:
 # STRUCTURED LOGGING CONFIGURATION (Primary)
 # ============================================================================
 
+
 def configure_structlog() -> bool:
     """
     Configure structlog for structured JSON logging.
@@ -61,38 +63,31 @@ def configure_structlog() -> bool:
     """
     if not STRUCTLOG_AVAILABLE:
         return False
-    
+
     try:
         structlog.configure(
             processors=[
                 # Filter by log level
                 structlog.stdlib.filter_by_level,
-                
                 # Add context information
                 structlog.stdlib.add_logger_name,
                 structlog.stdlib.add_log_level,
-                
                 # Format positional arguments
                 structlog.stdlib.PositionalArgumentsFormatter(),
-                
                 # Add timestamps in ISO format
                 structlog.processors.TimeStamper(fmt="ISO"),
-                
                 # Include stack information for exceptions
                 structlog.processors.StackInfoRenderer(),
-                
                 # Format exception information
                 structlog.processors.format_exc_info,
-                
                 # Decode unicode properly
                 structlog.processors.UnicodeDecoder(),
-                
                 # Output as JSON for production, plain text for development
                 (
                     structlog.processors.JSONRenderer()
                     if LOG_FORMAT == "json"
                     else structlog.dev.ConsoleRenderer()
-                )
+                ),
             ],
             context_class=dict,
             logger_factory=structlog.stdlib.LoggerFactory(),
@@ -108,6 +103,7 @@ def configure_structlog() -> bool:
 # ============================================================================
 # STANDARD LOGGING CONFIGURATION (Fallback)
 # ============================================================================
+
 
 def configure_standard_logging() -> None:
     """
@@ -126,14 +122,14 @@ def configure_standard_logging() -> None:
     else:
         # Human-readable format for development
         log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    
+
     # Configure root logger
     logging.basicConfig(
         level=getattr(logging, LOG_LEVEL),
         format=log_format,
         handlers=[
             logging.StreamHandler(sys.stdout),
-        ]
+        ],
     )
 
 
@@ -151,25 +147,26 @@ if not _structlog_configured:
 # PUBLIC API - UNIFIED LOGGER GETTER
 # ============================================================================
 
+
 def get_logger(name: Optional[str] = None):
     """
     Get a logger instance with centralized configuration.
-    
+
     This is the RECOMMENDED way to get loggers throughout the application.
-    
+
     Args:
         name: Logger name (typically __name__ for module loggers)
               If None, returns root logger
-    
+
     Returns:
         Logger instance (structlog or standard logging)
-    
+
     Example:
         from services.logger_config import get_logger
         logger = get_logger(__name__)
         logger.info("Starting application")
         logger.error("Something went wrong", error=exc)
-    
+
     Note:
         When using structlog, you can pass additional context:
         logger = logger.bind(user_id=123)
@@ -184,10 +181,10 @@ def get_logger(name: Optional[str] = None):
 def set_log_level(level: str) -> None:
     """
     Dynamically change the log level at runtime.
-    
+
     Args:
         level: One of DEBUG, INFO, WARNING, ERROR, CRITICAL
-    
+
     Example:
         from services.logger_config import set_log_level
         set_log_level("DEBUG")  # Enable debug logging
@@ -195,7 +192,7 @@ def set_log_level(level: str) -> None:
     level_upper = level.upper()
     if level_upper not in VALID_LOG_LEVELS:
         raise ValueError(f"Invalid log level: {level}. Must be one of {VALID_LOG_LEVELS}")
-    
+
     if STRUCTLOG_AVAILABLE and _structlog_configured:
         # For structlog, we need to update the processors
         # This is a simplified approach - a full implementation would be more complex
@@ -209,7 +206,11 @@ def set_log_level(level: str) -> None:
                 structlog.processors.StackInfoRenderer(),
                 structlog.processors.format_exc_info,
                 structlog.processors.UnicodeDecoder(),
-                structlog.processors.JSONRenderer() if LOG_FORMAT == "json" else structlog.dev.ConsoleRenderer()
+                (
+                    structlog.processors.JSONRenderer()
+                    if LOG_FORMAT == "json"
+                    else structlog.dev.ConsoleRenderer()
+                ),
             ],
             context_class=dict,
             logger_factory=structlog.stdlib.LoggerFactory(),
@@ -225,10 +226,11 @@ def set_log_level(level: str) -> None:
 # DEPRECATED API - For backward compatibility only
 # ============================================================================
 
+
 def get_standard_logger(name: Optional[str] = None):
     """
     DEPRECATED: Use get_logger() instead.
-    
+
     Gets a standard (non-structured) logger.
     This function is maintained for backward compatibility only.
     """

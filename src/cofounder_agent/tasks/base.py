@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 class TaskStatus(str, Enum):
     """Task execution status."""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -24,6 +25,7 @@ class TaskStatus(str, Enum):
 @dataclass
 class TaskResult:
     """Result of task execution."""
+
     status: TaskStatus
     task_id: str
     task_name: str
@@ -52,6 +54,7 @@ class TaskResult:
 @dataclass
 class ExecutionContext:
     """Context passed through task execution chain."""
+
     workflow_id: str
     user_id: str
     workflow_type: str
@@ -59,28 +62,28 @@ class ExecutionContext:
     task_history: List[TaskResult] = field(default_factory=list)
     workflow_data: Dict[str, Any] = field(default_factory=dict)  # Accumulates across tasks
     execution_options: Dict[str, Any] = field(default_factory=dict)
-    
+
     def add_task_result(self, result: TaskResult) -> None:
         """Record task execution result."""
         self.task_history.append(result)
         logger.info(
             f"Task {result.task_name} completed with status {result.status.value}",
-            extra={"workflow_id": self.workflow_id, "task_id": result.task_id}
+            extra={"workflow_id": self.workflow_id, "task_id": result.task_id},
         )
-    
+
     def get_task_result(self, task_name: str) -> Optional[TaskResult]:
         """Retrieve previous task result by name."""
         for result in self.task_history:
             if result.task_name == task_name:
                 return result
         return None
-    
+
     def get_latest_output(self) -> Dict[str, Any]:
         """Get output from last completed task."""
         if self.task_history:
             return self.task_history[-1].output
         return {}
-    
+
     def merge_workflow_data(self, data: Dict[str, Any]) -> None:
         """Merge new data into workflow context."""
         self.workflow_data.update(data)
@@ -89,7 +92,7 @@ class ExecutionContext:
 class Task(ABC):
     """
     Base class for all workflow tasks.
-    
+
     All tasks inherit from this class and implement the execute() method.
     Tasks are pure functions that transform input to output.
     """
@@ -97,7 +100,7 @@ class Task(ABC):
     def __init__(self, name: str, description: str = ""):
         """
         Initialize task.
-        
+
         Args:
             name: Unique task identifier (e.g., "research", "creative")
             description: Human-readable description of task
@@ -115,14 +118,14 @@ class Task(ABC):
     ) -> TaskResult:
         """
         Execute task with given input.
-        
+
         Args:
             input_data: Task input data (output of previous task + initial input)
             context: Execution context with workflow data and history
-        
+
         Returns:
             TaskResult with status, output, and metadata
-        
+
         This method should:
         1. Validate input_data
         2. Perform task logic
@@ -140,7 +143,7 @@ class Task(ABC):
 class PureTask(Task):
     """
     Extended Task class with built-in error handling and logging.
-    
+
     Handles common patterns:
     - Task validation
     - Error wrapping
@@ -158,7 +161,7 @@ class PureTask(Task):
     ):
         """
         Initialize pure task.
-        
+
         Args:
             name: Task identifier
             description: Task description
@@ -172,7 +175,7 @@ class PureTask(Task):
     def _validate_input(self, input_data: Dict[str, Any]) -> Optional[str]:
         """
         Validate task input.
-        
+
         Returns:
             Error message if validation fails, None if valid
         """
@@ -188,11 +191,11 @@ class PureTask(Task):
     ) -> TaskResult:
         """
         Execute task with error handling and logging.
-        
+
         Validates input, calls _execute_internal(), handles errors.
         """
         import time
-        
+
         started_at = datetime.now()
         start_time = time.time()
 
@@ -230,7 +233,7 @@ class PureTask(Task):
 
             self.logger.info(
                 f"Task completed successfully in {duration:.2f}s",
-                extra={"workflow_id": context.workflow_id}
+                extra={"workflow_id": context.workflow_id},
             )
 
             return result
@@ -240,9 +243,9 @@ class PureTask(Task):
             self.logger.error(
                 f"Task execution failed: {str(e)}",
                 exc_info=True,
-                extra={"workflow_id": context.workflow_id}
+                extra={"workflow_id": context.workflow_id},
             )
-            
+
             return TaskResult(
                 status=TaskStatus.FAILED,
                 task_id=self.task_id,
@@ -262,14 +265,14 @@ class PureTask(Task):
     ) -> Dict[str, Any]:
         """
         Internal task execution logic.
-        
+
         Implement this method instead of execute() for automatic
         error handling, logging, and validation.
-        
+
         Args:
             input_data: Validated task input
             context: Execution context
-        
+
         Returns:
             Output dictionary to pass to next task
         """

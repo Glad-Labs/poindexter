@@ -28,15 +28,16 @@ from typing import Dict, Any
 # RESEARCH SUBTASK TESTS
 # ============================================================================
 
+
 class TestResearchSubtask:
     """Test suite for research subtask endpoint"""
 
-    def test_research_subtask_success(self, client: TestClient, auth_headers: Dict, sample_research_request: Dict):
+    def test_research_subtask_success(
+        self, client: TestClient, auth_headers: Dict, sample_research_request: Dict
+    ):
         """Test successful research subtask execution"""
         response = client.post(
-            "/api/content/subtasks/research",
-            headers=auth_headers,
-            json=sample_research_request
+            "/api/content/subtasks/research", headers=auth_headers, json=sample_research_request
         )
 
         assert response.status_code == 200
@@ -64,9 +65,7 @@ class TestResearchSubtask:
         response = client.post(
             "/api/content/subtasks/research",
             headers=auth_headers,
-            json={
-                "keywords": ["ML", "AI"]  # Missing 'topic'
-            }
+            json={"keywords": ["ML", "AI"]},  # Missing 'topic'
         )
 
         assert response.status_code == 422  # Validation error
@@ -78,10 +77,7 @@ class TestResearchSubtask:
         response = client.post(
             "/api/content/subtasks/research",
             headers=auth_headers,
-            json={
-                "topic": "AI trends",
-                "keywords": []
-            }
+            json={"topic": "AI trends", "keywords": []},
         )
 
         assert response.status_code == 200
@@ -94,10 +90,7 @@ class TestResearchSubtask:
         response = client.post(
             "/api/content/subtasks/research",
             headers=auth_headers,
-            json={
-                "topic": "Test topic",
-                "parent_task_id": parent_id
-            }
+            json={"topic": "Test topic", "parent_task_id": parent_id},
         )
 
         assert response.status_code == 200
@@ -106,10 +99,7 @@ class TestResearchSubtask:
 
     def test_research_no_auth_returns_403(self, client: TestClient, sample_research_request: Dict):
         """Test that missing auth header returns 403"""
-        response = client.post(
-            "/api/content/subtasks/research",
-            json=sample_research_request
-        )
+        response = client.post("/api/content/subtasks/research", json=sample_research_request)
 
         # Expecting 403 Forbidden or 401 Unauthorized depending on auth setup
         assert response.status_code in [401, 403]
@@ -119,15 +109,16 @@ class TestResearchSubtask:
 # CREATIVE SUBTASK TESTS
 # ============================================================================
 
+
 class TestCreativeSubtask:
     """Test suite for creative subtask endpoint"""
 
-    def test_creative_subtask_success(self, client: TestClient, auth_headers: Dict, sample_creative_request: Dict):
+    def test_creative_subtask_success(
+        self, client: TestClient, auth_headers: Dict, sample_creative_request: Dict
+    ):
         """Test successful creative subtask execution"""
         response = client.post(
-            "/api/content/subtasks/creative",
-            headers=auth_headers,
-            json=sample_creative_request
+            "/api/content/subtasks/creative", headers=auth_headers, json=sample_creative_request
         )
 
         assert response.status_code == 200
@@ -152,8 +143,8 @@ class TestCreativeSubtask:
                 "research_output": "Key findings: AI market growing 40% YoY...",
                 "style": "professional",
                 "tone": "persuasive",
-                "target_length": 3000
-            }
+                "target_length": 3000,
+            },
         )
 
         assert response.status_code == 200
@@ -165,11 +156,7 @@ class TestCreativeSubtask:
         response = client.post(
             "/api/content/subtasks/creative",
             headers=auth_headers,
-            json={
-                "topic": "Machine Learning basics",
-                "style": "casual",
-                "tone": "friendly"
-            }
+            json={"topic": "Machine Learning basics", "style": "casual", "tone": "friendly"},
         )
 
         assert response.status_code == 200
@@ -181,10 +168,7 @@ class TestCreativeSubtask:
         response = client.post(
             "/api/content/subtasks/creative",
             headers=auth_headers,
-            json={
-                "research_output": "Some research...",
-                "style": "professional"
-            }
+            json={"research_output": "Some research...", "style": "professional"},
         )
 
         assert response.status_code == 422
@@ -195,10 +179,7 @@ class TestCreativeSubtask:
         response = client.post(
             "/api/content/subtasks/creative",
             headers=auth_headers,
-            json={
-                "topic": "Deep learning",
-                "target_length": target_length
-            }
+            json={"topic": "Deep learning", "target_length": target_length},
         )
 
         assert response.status_code == 200
@@ -211,15 +192,16 @@ class TestCreativeSubtask:
 # QA SUBTASK TESTS
 # ============================================================================
 
+
 class TestQASubtask:
     """Test suite for QA subtask endpoint"""
 
-    def test_qa_subtask_success(self, client: TestClient, auth_headers: Dict, sample_qa_request: Dict):
+    def test_qa_subtask_success(
+        self, client: TestClient, auth_headers: Dict, sample_qa_request: Dict
+    ):
         """Test successful QA subtask execution"""
         response = client.post(
-            "/api/content/subtasks/qa",
-            headers=auth_headers,
-            json=sample_qa_request
+            "/api/content/subtasks/qa", headers=auth_headers, json=sample_qa_request
         )
 
         assert response.status_code == 200
@@ -244,8 +226,8 @@ class TestQASubtask:
             json={
                 "topic": "Test",
                 # Missing creative_output
-                "research_output": "Some research"
-            }
+                "research_output": "Some research",
+            },
         )
 
         assert response.status_code == 422
@@ -255,11 +237,7 @@ class TestQASubtask:
         response = client.post(
             "/api/content/subtasks/qa",
             headers=auth_headers,
-            json={
-                "topic": "AI trends",
-                "creative_output": "Draft content...",
-                "max_iterations": 4
-            }
+            json={"topic": "AI trends", "creative_output": "Draft content...", "max_iterations": 4},
         )
 
         assert response.status_code == 200
@@ -275,8 +253,8 @@ class TestQASubtask:
             json={
                 "topic": "Test",
                 "creative_output": "Content",
-                "max_iterations": 0  # Invalid: must be >= 1
-            }
+                "max_iterations": 0,  # Invalid: must be >= 1
+            },
         )
         assert response.status_code == 422
 
@@ -287,8 +265,8 @@ class TestQASubtask:
             json={
                 "topic": "Test",
                 "creative_output": "Content",
-                "max_iterations": 10  # Invalid: must be <= 5
-            }
+                "max_iterations": 10,  # Invalid: must be <= 5
+            },
         )
         assert response.status_code == 422
 
@@ -297,10 +275,7 @@ class TestQASubtask:
         response = client.post(
             "/api/content/subtasks/qa",
             headers=auth_headers,
-            json={
-                "topic": "Test",
-                "creative_output": "Content to review"
-            }
+            json={"topic": "Test", "creative_output": "Content to review"},
         )
 
         assert response.status_code == 200
@@ -312,15 +287,16 @@ class TestQASubtask:
 # IMAGE SUBTASK TESTS
 # ============================================================================
 
+
 class TestImageSubtask:
     """Test suite for image subtask endpoint"""
 
-    def test_image_subtask_success(self, client: TestClient, auth_headers: Dict, sample_image_request: Dict):
+    def test_image_subtask_success(
+        self, client: TestClient, auth_headers: Dict, sample_image_request: Dict
+    ):
         """Test successful image subtask execution"""
         response = client.post(
-            "/api/content/subtasks/images",
-            headers=auth_headers,
-            json=sample_image_request
+            "/api/content/subtasks/images", headers=auth_headers, json=sample_image_request
         )
 
         assert response.status_code == 200
@@ -343,7 +319,7 @@ class TestImageSubtask:
             json={
                 "content": "Some article content"
                 # Missing topic
-            }
+            },
         )
 
         assert response.status_code == 422
@@ -356,8 +332,8 @@ class TestImageSubtask:
             json={
                 "topic": "Neural networks",
                 "content": "Full article about neural networks...",
-                "number_of_images": 2
-            }
+                "number_of_images": 2,
+            },
         )
 
         assert response.status_code == 200
@@ -370,10 +346,7 @@ class TestImageSubtask:
         response = client.post(
             "/api/content/subtasks/images",
             headers=auth_headers,
-            json={
-                "topic": "Test",
-                "number_of_images": 0  # Invalid
-            }
+            json={"topic": "Test", "number_of_images": 0},  # Invalid
         )
         assert response.status_code == 422
 
@@ -381,10 +354,7 @@ class TestImageSubtask:
         response = client.post(
             "/api/content/subtasks/images",
             headers=auth_headers,
-            json={
-                "topic": "Test",
-                "number_of_images": 10  # Invalid
-            }
+            json={"topic": "Test", "number_of_images": 10},  # Invalid
         )
         assert response.status_code == 422
 
@@ -396,7 +366,7 @@ class TestImageSubtask:
             json={
                 "topic": "Test topic"
                 # number_of_images not specified, should default to 1
-            }
+            },
         )
 
         assert response.status_code == 200
@@ -408,15 +378,16 @@ class TestImageSubtask:
 # FORMAT SUBTASK TESTS
 # ============================================================================
 
+
 class TestFormatSubtask:
     """Test suite for format subtask endpoint"""
 
-    def test_format_subtask_success(self, client: TestClient, auth_headers: Dict, sample_format_request: Dict):
+    def test_format_subtask_success(
+        self, client: TestClient, auth_headers: Dict, sample_format_request: Dict
+    ):
         """Test successful format subtask execution"""
         response = client.post(
-            "/api/content/subtasks/format",
-            headers=auth_headers,
-            json=sample_format_request
+            "/api/content/subtasks/format", headers=auth_headers, json=sample_format_request
         )
 
         assert response.status_code == 200
@@ -440,8 +411,8 @@ class TestFormatSubtask:
             json={
                 "topic": "Test",
                 # Missing content
-                "tags": ["tag1", "tag2"]
-            }
+                "tags": ["tag1", "tag2"],
+            },
         )
 
         assert response.status_code == 422
@@ -454,8 +425,8 @@ class TestFormatSubtask:
             json={
                 "content": "# Content\n\nHere...",
                 # Missing topic
-                "tags": ["tag1"]
-            }
+                "tags": ["tag1"],
+            },
         )
 
         assert response.status_code == 422
@@ -468,8 +439,8 @@ class TestFormatSubtask:
             json={
                 "topic": "Test topic",
                 "content": "Content here...",
-                "featured_image_url": "https://example.com/image.jpg"
-            }
+                "featured_image_url": "https://example.com/image.jpg",
+            },
         )
 
         assert response.status_code == 200
@@ -487,8 +458,8 @@ class TestFormatSubtask:
                 "topic": "AI trends",
                 "content": "Article content...",
                 "tags": tags,
-                "category": category
-            }
+                "category": category,
+            },
         )
 
         assert response.status_code == 200
@@ -501,11 +472,7 @@ class TestFormatSubtask:
         response = client.post(
             "/api/content/subtasks/format",
             headers=auth_headers,
-            json={
-                "topic": "Test",
-                "content": "Content",
-                "tags": []
-            }
+            json={"topic": "Test", "content": "Content", "tags": []},
         )
 
         assert response.status_code == 200
@@ -517,20 +484,18 @@ class TestFormatSubtask:
 # TASK CHAINING / DEPENDENCY TESTS
 # ============================================================================
 
+
 class TestSubtaskChaining:
     """Test suite for chaining subtasks together"""
 
     def test_research_to_creative_chaining(self, client: TestClient, auth_headers: Dict):
         """Test chaining research → creative with output dependency"""
-        
+
         # Step 1: Run research
         research_response = client.post(
             "/api/content/subtasks/research",
             headers=auth_headers,
-            json={
-                "topic": "Quantum computing",
-                "keywords": ["quantum", "computing", "algorithms"]
-            }
+            json={"topic": "Quantum computing", "keywords": ["quantum", "computing", "algorithms"]},
         )
         assert research_response.status_code == 200
         research_data = research_response.json()
@@ -545,8 +510,8 @@ class TestSubtaskChaining:
                 "topic": "Quantum computing",
                 "research_output": research_output,
                 "style": "professional",
-                "parent_task_id": research_id
-            }
+                "parent_task_id": research_id,
+            },
         )
         assert creative_response.status_code == 200
         creative_data = creative_response.json()
@@ -557,16 +522,12 @@ class TestSubtaskChaining:
 
     def test_creative_to_qa_chaining(self, client: TestClient, auth_headers: Dict):
         """Test chaining creative → QA"""
-        
+
         # Step 1: Create sample draft
         creative_response = client.post(
             "/api/content/subtasks/creative",
             headers=auth_headers,
-            json={
-                "topic": "Blockchain basics",
-                "style": "casual",
-                "target_length": 2000
-            }
+            json={"topic": "Blockchain basics", "style": "casual", "target_length": 2000},
         )
         assert creative_response.status_code == 200
         creative_data = creative_response.json()
@@ -581,8 +542,8 @@ class TestSubtaskChaining:
                 "topic": "Blockchain basics",
                 "creative_output": creative_output,
                 "max_iterations": 2,
-                "parent_task_id": creative_id
-            }
+                "parent_task_id": creative_id,
+            },
         )
         assert qa_response.status_code == 200
         qa_data = qa_response.json()
@@ -593,12 +554,12 @@ class TestSubtaskChaining:
 
     def test_full_pipeline_chaining(self, client: TestClient, auth_headers: Dict):
         """Test full pipeline: research → creative → QA → format"""
-        
+
         # 1. Research
         research_response = client.post(
             "/api/content/subtasks/research",
             headers=auth_headers,
-            json={"topic": "Web3", "keywords": ["blockchain", "decentralized"]}
+            json={"topic": "Web3", "keywords": ["blockchain", "decentralized"]},
         )
         assert research_response.status_code == 200
         research_data = research_response.json()
@@ -608,11 +569,7 @@ class TestSubtaskChaining:
         creative_response = client.post(
             "/api/content/subtasks/creative",
             headers=auth_headers,
-            json={
-                "topic": "Web3",
-                "research_output": research_output,
-                "style": "professional"
-            }
+            json={"topic": "Web3", "research_output": research_output, "style": "professional"},
         )
         assert creative_response.status_code == 200
         creative_data = creative_response.json()
@@ -622,11 +579,7 @@ class TestSubtaskChaining:
         qa_response = client.post(
             "/api/content/subtasks/qa",
             headers=auth_headers,
-            json={
-                "topic": "Web3",
-                "creative_output": creative_output,
-                "max_iterations": 2
-            }
+            json={"topic": "Web3", "creative_output": creative_output, "max_iterations": 2},
         )
         assert qa_response.status_code == 200
         qa_data = qa_response.json()
@@ -640,8 +593,8 @@ class TestSubtaskChaining:
                 "topic": "Web3",
                 "content": final_content,
                 "tags": ["web3", "blockchain"],
-                "category": "technology"
-            }
+                "category": "technology",
+            },
         )
         assert format_response.status_code == 200
         format_data = format_response.json()
@@ -655,25 +608,24 @@ class TestSubtaskChaining:
 # RESPONSE STRUCTURE AND METADATA TESTS
 # ============================================================================
 
+
 class TestSubtaskResponseStructure:
     """Test consistency of subtask response structure"""
 
     def test_all_subtasks_return_standard_response(self, client: TestClient, auth_headers: Dict):
         """Test that all subtask endpoints return consistent response structure"""
-        
+
         requests = [
             ("research", {"topic": "Test"}),
             ("creative", {"topic": "Test", "style": "professional"}),
             ("qa", {"topic": "Test", "creative_output": "Content"}),
             ("images", {"topic": "Test"}),
-            ("format", {"topic": "Test", "content": "Content"})
+            ("format", {"topic": "Test", "content": "Content"}),
         ]
 
         for stage, request_body in requests:
             response = client.post(
-                f"/api/content/subtasks/{stage}",
-                headers=auth_headers,
-                json=request_body
+                f"/api/content/subtasks/{stage}", headers=auth_headers, json=request_body
             )
 
             assert response.status_code == 200, f"Failed for {stage} subtask"
@@ -696,14 +648,12 @@ class TestSubtaskResponseStructure:
 
     def test_subtask_id_is_unique(self, client: TestClient, auth_headers: Dict):
         """Test that each subtask gets a unique ID"""
-        
+
         subtask_ids = set()
-        
+
         for i in range(3):
             response = client.post(
-                "/api/content/subtasks/research",
-                headers=auth_headers,
-                json={"topic": f"Topic {i}"}
+                "/api/content/subtasks/research", headers=auth_headers, json={"topic": f"Topic {i}"}
             )
             assert response.status_code == 200
             subtask_id = response.json()["subtask_id"]
@@ -717,16 +667,13 @@ class TestSubtaskResponseStructure:
 # ERROR HANDLING AND EDGE CASES
 # ============================================================================
 
+
 class TestSubtaskErrorHandling:
     """Test error handling and edge cases"""
 
     def test_empty_json_body(self, client: TestClient, auth_headers: Dict):
         """Test sending empty JSON object"""
-        response = client.post(
-            "/api/content/subtasks/research",
-            headers=auth_headers,
-            json={}
-        )
+        response = client.post("/api/content/subtasks/research", headers=auth_headers, json={})
 
         # Should fail validation
         assert response.status_code == 422
@@ -734,9 +681,7 @@ class TestSubtaskErrorHandling:
     def test_malformed_json(self, client: TestClient, auth_headers: Dict):
         """Test with malformed JSON"""
         response = client.post(
-            "/api/content/subtasks/research",
-            headers=auth_headers,
-            data="{ invalid json }"
+            "/api/content/subtasks/research", headers=auth_headers, data="{ invalid json }"
         )
 
         # Should fail with 422 or 400
@@ -747,11 +692,7 @@ class TestSubtaskErrorHandling:
         response = client.post(
             "/api/content/subtasks/research",
             headers=auth_headers,
-            json={
-                "topic": "Test",
-                "unknown_field": "should be ignored",
-                "another_extra": 123
-            }
+            json={"topic": "Test", "unknown_field": "should be ignored", "another_extra": 123},
         )
 
         # Should succeed (extra fields ignored by Pydantic)
@@ -767,8 +708,8 @@ class TestSubtaskErrorHandling:
                 "research_output": None,
                 "style": None,
                 "tone": None,
-                "target_length": None
-            }
+                "target_length": None,
+            },
         )
 
         # Should use defaults for None values

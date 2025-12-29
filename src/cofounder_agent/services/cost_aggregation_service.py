@@ -26,7 +26,7 @@ class CostAggregationService:
     def __init__(self, db_service=None):
         """
         Initialize cost aggregation service
-        
+
         Args:
             db_service: DatabaseService instance (injected)
         """
@@ -36,7 +36,7 @@ class CostAggregationService:
     async def get_summary(self, user_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Get cost summary for current month
-        
+
         Returns: {
             "total_spent": 12.50,
             "today_cost": 0.50,
@@ -65,7 +65,7 @@ class CostAggregationService:
                     FROM cost_logs
                     WHERE created_at >= $1 AND success = true
                     """,
-                    today_start
+                    today_start,
                 )
                 today_cost = float(today_row or 0.0)
 
@@ -77,7 +77,7 @@ class CostAggregationService:
                     FROM cost_logs
                     WHERE created_at >= $1 AND success = true
                     """,
-                    week_start
+                    week_start,
                 )
                 week_cost = float(week_row or 0.0)
 
@@ -91,7 +91,7 @@ class CostAggregationService:
                     FROM cost_logs
                     WHERE created_at >= $1 AND success = true
                     """,
-                    month_start
+                    month_start,
                 )
                 month_cost = float(month_row or 0.0)
 
@@ -102,7 +102,7 @@ class CostAggregationService:
                     FROM cost_logs
                     WHERE created_at >= $1 AND success = true
                     """,
-                    month_start
+                    month_start,
                 )
                 tasks_count = int(tasks_row or 0)
 
@@ -118,7 +118,9 @@ class CostAggregationService:
                 else:
                     projected_monthly = month_cost
 
-                budget_used_percent = (month_cost / self.monthly_budget * 100) if self.monthly_budget > 0 else 0
+                budget_used_percent = (
+                    (month_cost / self.monthly_budget * 100) if self.monthly_budget > 0 else 0
+                )
 
                 return {
                     "total_spent": round(month_cost, 2),
@@ -130,7 +132,7 @@ class CostAggregationService:
                     "projected_monthly": round(projected_monthly, 2),
                     "tasks_completed": tasks_count,
                     "avg_cost_per_task": round(avg_cost_per_task, 4),
-                    "last_updated": datetime.now(timezone.utc).isoformat()
+                    "last_updated": datetime.now(timezone.utc).isoformat(),
                 }
         except Exception as e:
             logger.error(f"Error getting cost summary: {e}")
@@ -141,11 +143,11 @@ class CostAggregationService:
     ) -> Dict[str, Any]:
         """
         Get cost breakdown by pipeline phase
-        
+
         Args:
             period: "today", "week", or "month"
             user_id: Filter by user (optional)
-            
+
         Returns: {
             "period": "week",
             "phases": [
@@ -183,7 +185,7 @@ class CostAggregationService:
                     GROUP BY phase
                     ORDER BY total_cost DESC
                     """,
-                    date_filter
+                    date_filter,
                 )
 
                 # Get total cost for percentage calculation
@@ -193,7 +195,7 @@ class CostAggregationService:
                     FROM cost_logs
                     WHERE created_at >= $1 AND success = true
                     """,
-                    date_filter
+                    date_filter,
                 )
                 total_cost = float(total_cost_row or 0.0)
 
@@ -203,19 +205,21 @@ class CostAggregationService:
                     count = int(row["task_count"] or 0)
                     percent = (cost / total_cost * 100) if total_cost > 0 else 0
 
-                    phases.append({
-                        "phase": row["phase"],
-                        "total_cost": round(cost, 4),
-                        "task_count": count,
-                        "avg_cost": round(cost / count, 4) if count > 0 else 0,
-                        "percent_of_total": round(percent, 2)
-                    })
+                    phases.append(
+                        {
+                            "phase": row["phase"],
+                            "total_cost": round(cost, 4),
+                            "task_count": count,
+                            "avg_cost": round(cost / count, 4) if count > 0 else 0,
+                            "percent_of_total": round(percent, 2),
+                        }
+                    )
 
                 return {
                     "period": period,
                     "phases": phases,
                     "total_cost": round(total_cost, 4),
-                    "last_updated": datetime.now(timezone.utc).isoformat()
+                    "last_updated": datetime.now(timezone.utc).isoformat(),
                 }
         except Exception as e:
             logger.error(f"Error getting cost breakdown by phase: {e}")
@@ -226,7 +230,7 @@ class CostAggregationService:
     ) -> Dict[str, Any]:
         """
         Get cost breakdown by AI model
-        
+
         Returns: {
             "period": "week",
             "models": [
@@ -264,7 +268,7 @@ class CostAggregationService:
                     GROUP BY model, provider
                     ORDER BY total_cost DESC
                     """,
-                    date_filter
+                    date_filter,
                 )
 
                 # Get total cost for percentage calculation
@@ -274,7 +278,7 @@ class CostAggregationService:
                     FROM cost_logs
                     WHERE created_at >= $1 AND success = true
                     """,
-                    date_filter
+                    date_filter,
                 )
                 total_cost = float(total_cost_row or 0.0)
 
@@ -284,20 +288,22 @@ class CostAggregationService:
                     count = int(row["task_count"] or 0)
                     percent = (cost / total_cost * 100) if total_cost > 0 else 0
 
-                    models.append({
-                        "model": row["model"],
-                        "total_cost": round(cost, 4),
-                        "task_count": count,
-                        "avg_cost_per_task": round(cost / count, 4) if count > 0 else 0,
-                        "provider": row["provider"],
-                        "percent_of_total": round(percent, 2)
-                    })
+                    models.append(
+                        {
+                            "model": row["model"],
+                            "total_cost": round(cost, 4),
+                            "task_count": count,
+                            "avg_cost_per_task": round(cost / count, 4) if count > 0 else 0,
+                            "provider": row["provider"],
+                            "percent_of_total": round(percent, 2),
+                        }
+                    )
 
                 return {
                     "period": period,
                     "models": models,
                     "total_cost": round(total_cost, 4),
-                    "last_updated": datetime.now(timezone.utc).isoformat()
+                    "last_updated": datetime.now(timezone.utc).isoformat(),
                 }
         except Exception as e:
             logger.error(f"Error getting cost breakdown by model: {e}")
@@ -306,7 +312,7 @@ class CostAggregationService:
     async def get_history(self, period: str = "week") -> Dict[str, Any]:
         """
         Get daily cost history and trends
-        
+
         Returns: {
             "period": "week",
             "daily_data": [
@@ -337,7 +343,7 @@ class CostAggregationService:
                     GROUP BY DATE(created_at AT TIME ZONE 'UTC')
                     ORDER BY date ASC
                     """,
-                    start_date
+                    start_date,
                 )
 
                 daily_data = []
@@ -347,13 +353,15 @@ class CostAggregationService:
                 for row in rows:
                     cost = float(row["total_cost"] or 0.0)
                     tasks = int(row["task_count"] or 0)
-                    
-                    daily_data.append({
-                        "date": str(row["date"]),
-                        "cost": round(cost, 4),
-                        "tasks": tasks,
-                        "avg_cost": round(cost / tasks, 4) if tasks > 0 else 0
-                    })
+
+                    daily_data.append(
+                        {
+                            "date": str(row["date"]),
+                            "cost": round(cost, 4),
+                            "tasks": tasks,
+                            "avg_cost": round(cost / tasks, 4) if tasks > 0 else 0,
+                        }
+                    )
 
                     total_cost += cost
                     task_count += tasks
@@ -366,8 +374,10 @@ class CostAggregationService:
                 midpoint = len(daily_data) // 2
                 if midpoint > 0:
                     first_half_avg = sum(d["cost"] for d in daily_data[:midpoint]) / midpoint
-                    second_half_avg = sum(d["cost"] for d in daily_data[midpoint:]) / (len(daily_data) - midpoint)
-                    
+                    second_half_avg = sum(d["cost"] for d in daily_data[midpoint:]) / (
+                        len(daily_data) - midpoint
+                    )
+
                     if second_half_avg > first_half_avg * 1.1:
                         trend = "up"
                     elif second_half_avg < first_half_avg * 0.9:
@@ -382,7 +392,7 @@ class CostAggregationService:
                     "daily_data": daily_data,
                     "weekly_average": round(weekly_avg, 4),
                     "trend": trend,
-                    "last_updated": datetime.now(timezone.utc).isoformat()
+                    "last_updated": datetime.now(timezone.utc).isoformat(),
                 }
         except Exception as e:
             logger.error(f"Error getting cost history: {e}")
@@ -393,7 +403,7 @@ class CostAggregationService:
     ) -> Dict[str, Any]:
         """
         Get current budget status and alerts
-        
+
         Returns: {
             "monthly_budget": 150.0,
             "amount_spent": 12.50,
@@ -416,7 +426,7 @@ class CostAggregationService:
             month_start = datetime.now(timezone.utc).replace(
                 day=1, hour=0, minute=0, second=0, microsecond=0
             )
-            
+
             async with self.db.pool.acquire() as conn:
                 cost_row = await conn.fetchval(
                     """
@@ -424,21 +434,21 @@ class CostAggregationService:
                     FROM cost_logs
                     WHERE created_at >= $1 AND success = true
                     """,
-                    month_start
+                    month_start,
                 )
                 amount_spent = float(cost_row or 0.0)
 
             # Calculate days
             now = datetime.now(timezone.utc)
             days_elapsed = (now - month_start).days + 1
-            
+
             # Assume 30-day months for simplicity
             days_in_month = 30
             days_remaining = max(0, days_in_month - days_elapsed)
 
             # Calculate burn rate
             daily_burn_rate = amount_spent / days_elapsed if days_elapsed > 0 else 0
-            
+
             # Project final cost
             projected_final_cost = daily_burn_rate * days_in_month
 
@@ -448,42 +458,54 @@ class CostAggregationService:
 
             # Generate alerts
             alerts = []
-            
+
             if percent_used >= 100:
-                alerts.append({
-                    "level": "critical",
-                    "message": f"Budget exceeded! Spent ${amount_spent:.2f} of ${monthly_budget:.2f}",
-                    "threshold_percent": 100,
-                    "current_percent": percent_used
-                })
+                alerts.append(
+                    {
+                        "level": "critical",
+                        "message": f"Budget exceeded! Spent ${amount_spent:.2f} of ${monthly_budget:.2f}",
+                        "threshold_percent": 100,
+                        "current_percent": percent_used,
+                    }
+                )
                 status = "critical"
             elif percent_used >= 90:
-                alerts.append({
-                    "level": "warning",
-                    "message": f"90% of monthly budget used (${amount_spent:.2f})",
-                    "threshold_percent": 90,
-                    "current_percent": percent_used
-                })
+                alerts.append(
+                    {
+                        "level": "warning",
+                        "message": f"90% of monthly budget used (${amount_spent:.2f})",
+                        "threshold_percent": 90,
+                        "current_percent": percent_used,
+                    }
+                )
                 status = "warning"
             elif percent_used >= 80:
-                alerts.append({
-                    "level": "warning",
-                    "message": f"Approaching budget limit at {percent_used:.1f}%",
-                    "threshold_percent": 80,
-                    "current_percent": percent_used
-                })
+                alerts.append(
+                    {
+                        "level": "warning",
+                        "message": f"Approaching budget limit at {percent_used:.1f}%",
+                        "threshold_percent": 80,
+                        "current_percent": percent_used,
+                    }
+                )
                 status = "warning"
             else:
                 status = "healthy"
 
             # Add projection alert if trending high
             if projected_final_cost > monthly_budget * 1.1:
-                alerts.append({
-                    "level": "warning",
-                    "message": f"Projected monthly cost ${projected_final_cost:.2f} exceeds budget",
-                    "threshold_percent": 100,
-                    "current_percent": (projected_final_cost / monthly_budget * 100) if monthly_budget > 0 else 0
-                })
+                alerts.append(
+                    {
+                        "level": "warning",
+                        "message": f"Projected monthly cost ${projected_final_cost:.2f} exceeds budget",
+                        "threshold_percent": 100,
+                        "current_percent": (
+                            (projected_final_cost / monthly_budget * 100)
+                            if monthly_budget > 0
+                            else 0
+                        ),
+                    }
+                )
 
             return {
                 "monthly_budget": monthly_budget,
@@ -496,7 +518,7 @@ class CostAggregationService:
                 "projected_final_cost": round(projected_final_cost, 2),
                 "alerts": alerts,
                 "status": status,
-                "last_updated": datetime.now(timezone.utc).isoformat()
+                "last_updated": datetime.now(timezone.utc).isoformat(),
             }
         except Exception as e:
             logger.error(f"Error getting budget status: {e}")
@@ -522,7 +544,7 @@ class CostAggregationService:
             "projected_monthly": 0.0,
             "tasks_completed": 0,
             "avg_cost_per_task": 0.0,
-            "last_updated": datetime.now(timezone.utc).isoformat()
+            "last_updated": datetime.now(timezone.utc).isoformat(),
         }
 
     def _get_empty_breakdown_by_phase(self, period: str) -> Dict[str, Any]:
@@ -530,7 +552,7 @@ class CostAggregationService:
             "period": period,
             "phases": [],
             "total_cost": 0.0,
-            "last_updated": datetime.now(timezone.utc).isoformat()
+            "last_updated": datetime.now(timezone.utc).isoformat(),
         }
 
     def _get_empty_breakdown_by_model(self, period: str) -> Dict[str, Any]:
@@ -538,7 +560,7 @@ class CostAggregationService:
             "period": period,
             "models": [],
             "total_cost": 0.0,
-            "last_updated": datetime.now(timezone.utc).isoformat()
+            "last_updated": datetime.now(timezone.utc).isoformat(),
         }
 
     def _get_empty_history(self, period: str) -> Dict[str, Any]:
@@ -547,7 +569,7 @@ class CostAggregationService:
             "daily_data": [],
             "weekly_average": 0.0,
             "trend": "stable",
-            "last_updated": datetime.now(timezone.utc).isoformat()
+            "last_updated": datetime.now(timezone.utc).isoformat(),
         }
 
     def _get_empty_budget_status(self, monthly_budget: float) -> Dict[str, Any]:
@@ -562,5 +584,5 @@ class CostAggregationService:
             "projected_final_cost": 0.0,
             "alerts": [],
             "status": "healthy",
-            "last_updated": datetime.now(timezone.utc).isoformat()
+            "last_updated": datetime.now(timezone.utc).isoformat(),
         }

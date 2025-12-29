@@ -10,36 +10,43 @@ Successfully migrated both frontend workspaces from deprecated ESLint/Next.js co
 ## Final Linting Results
 
 ### Oversight Hub (React 18)
-- **Status:** ✅ **PASSING** 
+
+- **Status:** ✅ **PASSING**
 - **Summary:** 355 problems (0 errors, 355 warnings)
 - **Warning Types:** Mainly prop-types validation in legacy/archived files
 - **Configuration:** `web/oversight-hub/eslint.config.mjs` (ESLint 9 flat config)
 
 ### Public Site (Next.js 15)
+
 - **Status:** ✅ **PASSING**
-- **Summary:** 60 problems (0 errors, 60 warnings)  
+- **Summary:** 60 problems (0 errors, 60 warnings)
 - **Warning Types:** Unused variables, unescaped entities, unknown CSS properties (Tailwind)
 - **Configuration:** `web/public-site/eslint.config.mjs` (ESLint 9 flat config)
 
 ## Key Fixes Applied
 
 ### 1. CostMetricsDashboard.jsx (oversight-hub)
+
 - ✅ Removed orphaned `</div>` tag
 - ✅ Added missing `costTrend` variable calculation
 - ✅ Fixed JSX nesting structure
 
 ### 2. structured-data.js (public-site)
+
 - ✅ Added missing `getStrapiURL` import
 - ✅ Resolved undefined variable errors
 
 ### 3. next.config.js (public-site)
+
 - ✅ Merged duplicate `experimental` object keys
 - ✅ Removed redundant configuration blocks
 
 ### 4. analytics.js (public-site)
+
 - ✅ Removed eslint-disable comment for non-existent import/no-anonymous-default-export rule
 
 ### 5. ESLint Configuration (Both Workspaces)
+
 - ✅ Created modern ESLint 9 flat config format (`eslint.config.mjs`)
 - ✅ Configured proper parser options (`ecmaVersion: 'latest'`, `jsx: true`)
 - ✅ Set up test file handling with jest globals
@@ -49,6 +56,7 @@ Successfully migrated both frontend workspaces from deprecated ESLint/Next.js co
 ## Configuration Details
 
 ### ESLint 9 Flat Config Format
+
 Both workspaces use the new ESLint 9 flat config format specified in `eslint.config.mjs` files:
 
 ```javascript
@@ -74,15 +82,18 @@ export default [
 ### Key Configuration Settings
 
 **Language Options:**
+
 - `ecmaVersion: 'latest'` - Supports all modern JavaScript features (optional chaining, nullish coalescing, etc.)
 - `sourceType: 'module'` - ES modules enabled
 - `parserOptions.ecmaFeatures.jsx: true` - JSX syntax support
 
 **Plugin Configuration:**
+
 - **oversight-hub:** react, react-hooks, jest
 - **public-site:** react, react-hooks, @next/next, jest
 
 **Rule Adjustments:**
+
 ```javascript
 'no-console': 'off'                    // Allow console logging
 'react/prop-types': 'off'              // Next.js doesn't require prop-types
@@ -95,6 +106,7 @@ export default [
 ## Verification Commands
 
 Run linting with:
+
 ```bash
 # Full workspace linting
 npm run lint
@@ -109,27 +121,29 @@ npm run lint:fix
 
 ## Deprecation Notes
 
-✅ **Removed:** 
+✅ **Removed:**
+
 - `.eslintrc.json` (deprecated in ESLint 9)
 - `.eslintignore` (now uses `ignores` in config)
 - `next lint` command (Next.js 15 deprecation)
 
 ✅ **Replaced With:**
+
 - `eslint.config.mjs` (ESLint 9 flat config)
 - Direct `npx eslint` commands
 - Proper parser and plugin configuration
 
 ## Issues Resolved
 
-| File | Issue | Resolution |
-|------|-------|------------|
-| CostMetricsDashboard.jsx | Extra closing div | Removed orphaned tag |
-| CostMetricsDashboard.jsx | Undefined costTrend variable | Added derived calculation |
-| ErrorBoundary.jsx | Optional chaining parsing | Set ecmaVersion: 'latest' |
-| structured-data.js | Undefined getStrapiURL | Added import |
-| next.config.js | Duplicate experimental keys | Merged configuration |
-| analytics.js | Unknown rule disable comment | Removed comment |
-| Header.js, Footer.js, Layout.js | Tailwind CSS `/` parsing | Proper JSX/CSS handling |
+| File                            | Issue                        | Resolution                |
+| ------------------------------- | ---------------------------- | ------------------------- |
+| CostMetricsDashboard.jsx        | Extra closing div            | Removed orphaned tag      |
+| CostMetricsDashboard.jsx        | Undefined costTrend variable | Added derived calculation |
+| ErrorBoundary.jsx               | Optional chaining parsing    | Set ecmaVersion: 'latest' |
+| structured-data.js              | Undefined getStrapiURL       | Added import              |
+| next.config.js                  | Duplicate experimental keys  | Merged configuration      |
+| analytics.js                    | Unknown rule disable comment | Removed comment           |
+| Header.js, Footer.js, Layout.js | Tailwind CSS `/` parsing     | Proper JSX/CSS handling   |
 
 ## Testing Status
 
@@ -137,7 +151,7 @@ npm run lint:fix
 ✅ ESLint 9 flat config properly configured  
 ✅ All syntax and parsing errors resolved  
 ✅ Appropriate rule severity levels applied  
-✅ Test file configurations separate from production  
+✅ Test file configurations separate from production
 
 ## Next Steps
 

@@ -28,7 +28,9 @@ class ContentCritiqueLoop:
         self.approval_count = 0
         self.rejection_count = 0
 
-    async def critique(self, content: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def critique(
+        self, content: str, context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """
         Critique generated content and provide feedback
 
@@ -53,7 +55,7 @@ class ContentCritiqueLoop:
                 "quality_score": 0,
                 "feedback": "No content provided for critique",
                 "suggestions": ["Content is empty or None"],
-                "needs_refinement": True
+                "needs_refinement": True,
             }
 
         logger.debug(f"🔍 Critiquing content ({len(content)} chars)")
@@ -75,7 +77,7 @@ class ContentCritiqueLoop:
                     "has_structure": metrics["has_structure"],
                     "has_keywords": metrics.get("has_keywords", False),
                     "content_length": len(content),
-                }
+                },
             }
 
             if critique_result["approved"]:
@@ -83,7 +85,9 @@ class ContentCritiqueLoop:
                 logger.info(f"✅ Content approved (score: {critique_result['quality_score']}/100)")
             else:
                 self.rejection_count += 1
-                logger.warning(f"⚠️ Content needs improvement (score: {critique_result['quality_score']}/100)")
+                logger.warning(
+                    f"⚠️ Content needs improvement (score: {critique_result['quality_score']}/100)"
+                )
 
             return critique_result
 
@@ -95,17 +99,19 @@ class ContentCritiqueLoop:
                 "feedback": f"Critique failed: {str(e)}",
                 "suggestions": ["Review the error and try again"],
                 "needs_refinement": True,
-                "error": str(e)
+                "error": str(e),
             }
 
-    def _calculate_metrics(self, content: str, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def _calculate_metrics(
+        self, content: str, context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """Calculate content quality metrics"""
         word_count = len(content.split())
-        lines = content.split('\n')
-        has_structure = len([l for l in lines if l.strip().startswith('#')]) > 0
+        lines = content.split("\n")
+        has_structure = len([l for l in lines if l.strip().startswith("#")]) > 0
 
         # Basic readability: longer paragraphs are harder to read
-        paragraphs = [p for p in content.split('\n\n') if p.strip()]
+        paragraphs = [p for p in content.split("\n\n") if p.strip()]
         avg_para_length = word_count / max(len(paragraphs), 1)
         readability_score = max(0, min(100, 100 - (avg_para_length / 150) * 30))
 
@@ -143,7 +149,7 @@ class ContentCritiqueLoop:
             quality_score += 10
 
         # Add points for punctuation/polish
-        if content.count('.') > word_count / 50:  # Reasonable sentence count
+        if content.count(".") > word_count / 50:  # Reasonable sentence count
             quality_score += 10
 
         # Cap at 100
@@ -155,14 +161,14 @@ class ContentCritiqueLoop:
             "readability_score": readability_score,
             "has_keywords": has_keywords,
             "paragraph_count": len(paragraphs),
-            "quality_score": int(quality_score)
+            "quality_score": int(quality_score),
         }
 
     def _generate_feedback(self, metrics: Dict[str, Any]) -> str:
         """Generate specific feedback based on metrics"""
         if not metrics:
             return "Unable to generate feedback"
-        
+
         feedback_parts = []
 
         if metrics.get("quality_score", 50) >= 90:
@@ -196,7 +202,7 @@ class ContentCritiqueLoop:
         """Generate specific improvement suggestions"""
         if not metrics:
             return ["Content is ready for publication"]
-        
+
         suggestions = []
 
         if metrics.get("word_count", 0) < 200:
@@ -228,5 +234,5 @@ class ContentCritiqueLoop:
             "total_critiques": total,
             "approved": self.approval_count,
             "rejected": self.rejection_count,
-            "approval_rate": f"{approval_rate:.1f}%"
+            "approval_rate": f"{approval_rate:.1f}%",
         }

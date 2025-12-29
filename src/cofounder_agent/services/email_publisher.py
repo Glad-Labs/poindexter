@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 class EmailPublisher:
     """Email content publisher"""
-    
+
     def __init__(self):
         """Initialize email publisher from environment variables"""
         self.smtp_host = os.getenv("SMTP_HOST")
@@ -38,7 +38,7 @@ class EmailPublisher:
         self.smtp_password = os.getenv("SMTP_PASSWORD")
         self.email_from = os.getenv("EMAIL_FROM", self.smtp_user)
         self.use_tls = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
-        
+
         if not all([self.smtp_host, self.smtp_user, self.smtp_password, self.email_from]):
             logger.warning(
                 "⚠️  Email not fully configured. Set SMTP_HOST, SMTP_USER, SMTP_PASSWORD, EMAIL_FROM"
@@ -47,7 +47,7 @@ class EmailPublisher:
         else:
             self.available = True
             logger.info(f"✅ Email publisher initialized ({self.smtp_host}:{self.smtp_port})")
-    
+
     async def publish(
         self,
         subject: str,
@@ -55,11 +55,11 @@ class EmailPublisher:
         recipient_emails: List[str],
         html_content: Optional[str] = None,
         from_name: Optional[str] = None,
-        **kwargs
+        **kwargs,
     ) -> Dict[str, Any]:
         """
         Publish content via email.
-        
+
         Args:
             subject: Email subject line
             content: Email body (plain text)
@@ -67,7 +67,7 @@ class EmailPublisher:
             html_content: Optional HTML version of content
             from_name: Optional sender display name
             **kwargs: Additional metadata
-        
+
         Returns:
             Dictionary with email send result:
             {
@@ -84,7 +84,7 @@ class EmailPublisher:
                 "recipients": 0,
                 "message_id": None,
             }
-        
+
         if not recipient_emails:
             return {
                 "success": False,
@@ -92,18 +92,20 @@ class EmailPublisher:
                 "recipients": 0,
                 "message_id": None,
             }
-        
+
         try:
             # Create message
             msg = MIMEMultipart("alternative")
             msg["Subject"] = subject
-            msg["From"] = f"{from_name} <{self.email_from}>" if from_name else cast(str, self.email_from)
+            msg["From"] = (
+                f"{from_name} <{self.email_from}>" if from_name else cast(str, self.email_from)
+            )
             msg["To"] = ", ".join(recipient_emails)
-            
+
             # Add plain text part
             text_part = MIMEText(content, "plain")
             msg.attach(text_part)
-            
+
             # Add HTML part if provided
             if html_content:
                 html_part = MIMEText(html_content, "html")
@@ -113,7 +115,7 @@ class EmailPublisher:
                 html_content = f"<html><body><pre>{content}</pre></body></html>"
                 html_part = MIMEText(html_content, "html")
                 msg.attach(html_part)
-            
+
             # Send email
             async with aiosmtplib.SMTP(
                 hostname=self.smtp_host,
@@ -121,22 +123,22 @@ class EmailPublisher:
                 use_tls=self.use_tls,
             ) as smtp:
                 await smtp.login(self.smtp_user, self.smtp_password)
-                
+
                 send_result = await smtp.send_message(
                     msg,
                     mail_from=self.email_from,
                     rcpt_tos=recipient_emails,
                 )
-            
+
             logger.info(f"✅ Email sent to {len(recipient_emails)} recipient(s)")
-            
+
             return {
                 "success": True,
                 "recipients": len(recipient_emails),
                 "message_id": msg.get("Message-ID", ""),
                 "error": None,
             }
-            
+
         except Exception as e:
             logger.error(f"Email publishing error: {str(e)}")
             return {
@@ -145,28 +147,28 @@ class EmailPublisher:
                 "recipients": 0,
                 "message_id": None,
             }
-    
+
     async def send_newsletter(
         self,
         subject: str,
         content: str,
         list_name: str,
         preview_text: Optional[str] = None,
-        **kwargs
+        **kwargs,
     ) -> Dict[str, Any]:
         """
         Send newsletter to mailing list.
-        
+
         Args:
             subject: Newsletter subject
             content: Newsletter content (plain text)
             list_name: Mailing list identifier (for template/tracking)
             preview_text: Optional preview text shown before opening email
             **kwargs: Additional metadata
-        
+
         Returns:
             Newsletter send result
-        
+
         Note: This is a placeholder that would integrate with newsletter services
         like ConvertKit, Substack, or custom mailing list databases
         """
@@ -176,23 +178,23 @@ class EmailPublisher:
                 "error": "Email not configured",
                 "subscribers_count": 0,
             }
-        
+
         try:
             # In production, this would:
             # 1. Fetch subscribers from mailing list database
             # 2. Prepare newsletter template
             # 3. Send via email service provider
             # 4. Track opens/clicks
-            
+
             logger.info(f"✅ Newsletter queued for list: {list_name}")
-            
+
             return {
                 "success": True,
                 "list": list_name,
                 "subscribers_count": 0,  # Would come from database
                 "error": None,
             }
-            
+
         except Exception as e:
             logger.error(f"Newsletter send error: {str(e)}")
             return {
@@ -200,25 +202,20 @@ class EmailPublisher:
                 "error": str(e),
                 "subscribers_count": 0,
             }
-    
+
     async def send_notification(
-        self,
-        recipient: str,
-        title: str,
-        message: str,
-        action_url: Optional[str] = None,
-        **kwargs
+        self, recipient: str, title: str, message: str, action_url: Optional[str] = None, **kwargs
     ) -> Dict[str, Any]:
         """
         Send transactional notification email.
-        
+
         Args:
             recipient: Recipient email address
             title: Notification title
             message: Notification message
             action_url: Optional URL for action button
             **kwargs: Additional metadata
-        
+
         Returns:
             Notification send result
         """
@@ -228,7 +225,7 @@ class EmailPublisher:
                 "error": "Email not configured",
                 "recipient": recipient,
             }
-        
+
         try:
             # Create HTML template for notification
             html_content = f"""
@@ -240,7 +237,7 @@ class EmailPublisher:
                 </body>
             </html>
             """
-            
+
             result = await self.publish(
                 subject=title,
                 content=message,
@@ -248,9 +245,9 @@ class EmailPublisher:
                 html_content=html_content,
                 from_name="Glad Labs",
             )
-            
+
             return result
-            
+
         except Exception as e:
             logger.error(f"Notification send error: {str(e)}")
             return {

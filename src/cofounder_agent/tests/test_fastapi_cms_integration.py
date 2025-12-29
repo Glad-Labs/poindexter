@@ -32,24 +32,24 @@ class TestCMSDataModels:
         """Post should have all fields needed by Next.js public site"""
         # Fields required by web/public-site
         required_fields = [
-            "id",              # Unique identifier
-            "title",           # Post title
-            "slug",            # URL-friendly slug
-            "content",         # Post content (markdown)
-            "excerpt",         # Short preview
+            "id",  # Unique identifier
+            "title",  # Post title
+            "slug",  # URL-friendly slug
+            "content",  # Post content (markdown)
+            "excerpt",  # Short preview
             "featured_image",  # Hero image
-            "category",        # Category relation
-            "tags",            # Tags array
-            "author",          # Author info
-            "status",          # Published/Draft
-            "published_at",    # Publication date
-            "created_at",      # Creation date
-            "updated_at",      # Last update
-            "seo_title",       # SEO meta title
-            "seo_description", # SEO meta description
-            "seo_keywords",    # SEO keywords
+            "category",  # Category relation
+            "tags",  # Tags array
+            "author",  # Author info
+            "status",  # Published/Draft
+            "published_at",  # Publication date
+            "created_at",  # Creation date
+            "updated_at",  # Last update
+            "seo_title",  # SEO meta title
+            "seo_description",  # SEO meta description
+            "seo_keywords",  # SEO keywords
         ]
-        
+
         # If these fields are missing, Next.js site breaks
         assert len(required_fields) > 0
 
@@ -77,13 +77,13 @@ class TestContentManagementAPI:
             "category_id": "123",
             "status": "published",
         }
-        
+
         response = client.post("/api/cms/posts", json=post_data)
-        
+
         # Should create successfully
         assert response.status_code in [200, 201]
         data = response.json()
-        
+
         # Returned data should have all required fields
         assert "id" in data
         assert data["title"] == "Test Post"
@@ -93,10 +93,10 @@ class TestContentManagementAPI:
     def test_get_posts_with_pagination(self):
         """GET /api/cms/posts should support pagination"""
         response = client.get("/api/cms/posts?page=1&limit=10")
-        
+
         assert response.status_code == 200
         data = response.json()
-        
+
         # Should return paginated data
         assert "items" in data or isinstance(data, list)
         assert "total" in data or len(data) <= 10
@@ -104,10 +104,10 @@ class TestContentManagementAPI:
     def test_get_post_by_slug(self):
         """GET /api/cms/posts/{slug} should return post"""
         response = client.get("/api/cms/posts/test-post")
-        
+
         # Either found or not found (not error)
         assert response.status_code in [200, 404]
-        
+
         if response.status_code == 200:
             data = response.json()
             assert data["slug"] == "test-post"
@@ -115,10 +115,10 @@ class TestContentManagementAPI:
     def test_search_posts(self):
         """GET /api/cms/posts/search should filter content"""
         response = client.get("/api/cms/posts/search?q=test&category=tech")
-        
+
         assert response.status_code == 200
         data = response.json()
-        
+
         # Should return list of matching posts
         assert isinstance(data, list) or "items" in data
 
@@ -130,9 +130,9 @@ class TestContentManagementAPI:
             "seo_keywords": "test, updated",
             "featured_image": "https://example.com/image.jpg",
         }
-        
+
         response = client.put("/api/cms/posts/123", json=update_data)
-        
+
         # Should accept metadata updates
         assert response.status_code in [200, 404]
 
@@ -147,13 +147,13 @@ class TestContentPipeline:
             "style": "professional",
             "auto_publish": False,  # Don't publish yet
         }
-        
+
         response = client.post("/api/content/generate-blog-post", json=request_data)
-        
+
         # Should create content
         assert response.status_code in [200, 201]
         data = response.json()
-        
+
         # Should return post with CMS-compatible fields
         assert "id" in data
         assert "slug" in data
@@ -166,17 +166,17 @@ class TestContentPipeline:
             "topic": "Marketing Strategy",
             "generate_seo": True,
         }
-        
+
         response = client.post("/api/content/generate-blog-post", json=request_data)
-        
+
         if response.status_code == 200:
             data = response.json()
-            
+
             # SEO fields should be populated
             assert "seo_title" in data
             assert "seo_description" in data
             assert "seo_keywords" in data
-            
+
             # Should meet SEO requirements
             assert len(data.get("seo_title", "")) <= 60
             assert len(data.get("seo_description", "")) <= 160
@@ -184,10 +184,10 @@ class TestContentPipeline:
     def test_publish_generated_content(self):
         """POST /api/content/{id}/publish should make content live"""
         response = client.post("/api/content/123/publish")
-        
+
         # Should handle publish request
         assert response.status_code in [200, 404]
-        
+
         if response.status_code == 200:
             data = response.json()
             assert data["status"] == "published"
@@ -199,10 +199,10 @@ class TestPublicSiteIntegration:
     def test_api_response_compatible_with_getstaticprops(self):
         """API responses should work with Next.js getStaticProps"""
         response = client.get("/api/cms/posts")
-        
+
         assert response.status_code == 200
         data = response.json()
-        
+
         # getStaticProps expects array or object with items
         assert isinstance(data, list) or "items" in data
 
@@ -210,10 +210,10 @@ class TestPublicSiteIntegration:
         """API should resolve posts by slug for dynamic routes"""
         # Next.js pages/posts/[slug].js needs this
         response = client.get("/api/cms/posts/test-post")
-        
+
         if response.status_code == 200:
             data = response.json()
-            
+
             # web/public-site uses these fields
             assert "slug" in data
             assert "title" in data
@@ -225,24 +225,24 @@ class TestPublicSiteIntegration:
         """API should filter posts by category"""
         # web/public-site/pages/category/[slug].js needs this
         response = client.get("/api/cms/posts?category=tech")
-        
+
         assert response.status_code == 200
 
     def test_tag_filtering(self):
         """API should filter posts by tag"""
         # web/public-site/pages/tag/[slug].js needs this
         response = client.get("/api/cms/posts?tag=featured")
-        
+
         assert response.status_code == 200
 
     def test_pagination_for_archive(self):
         """API should support pagination"""
         # web/public-site/pages/archive/[page].js needs this
         response = client.get("/api/cms/posts?page=1&limit=10")
-        
+
         assert response.status_code == 200
         data = response.json()
-        
+
         # Should indicate total for pagination
         assert "total" in data or len(data) is not None
 
@@ -253,9 +253,9 @@ class TestOversightHubIntegration:
     def test_content_calendar_endpoint(self):
         """GET /api/cms/calendar should return scheduled posts"""
         response = client.get("/api/cms/calendar")
-        
+
         assert response.status_code in [200, 404]
-        
+
         if response.status_code == 200:
             data = response.json()
             # Should return calendar view with dates
@@ -264,9 +264,9 @@ class TestOversightHubIntegration:
     def test_content_status_tracking(self):
         """GET /api/cms/posts should show content status"""
         response = client.get("/api/cms/posts?status=draft")
-        
+
         assert response.status_code == 200
-        
+
         # Oversight hub uses status for filtering
         data = response.json()
         if isinstance(data, list):
@@ -280,9 +280,9 @@ class TestOversightHubIntegration:
             "status": "published",
             "category_id": "tech",
         }
-        
+
         response = client.put("/api/cms/posts/bulk", json=update_data)
-        
+
         # Should handle bulk operations
         assert response.status_code in [200, 207, 400]
 
@@ -293,11 +293,11 @@ class TestDataFormatting:
     def test_post_formatting_for_markdown_rendering(self):
         """Post content should be valid markdown"""
         response = client.get("/api/cms/posts?limit=1")
-        
+
         if response.status_code == 200:
             data = response.json()
             posts = data if isinstance(data, list) else data.get("items", [])
-            
+
             if posts:
                 post = posts[0]
                 # Content should be markdown
@@ -308,15 +308,15 @@ class TestDataFormatting:
     def test_image_urls_are_absolute(self):
         """Image URLs should be absolute (not relative)"""
         response = client.get("/api/cms/posts?limit=1")
-        
+
         if response.status_code == 200:
             data = response.json()
             posts = data if isinstance(data, list) else data.get("items", [])
-            
+
             if posts:
                 post = posts[0]
                 featured_image = post.get("featured_image", "")
-                
+
                 if featured_image:
                     # URLs should start with http or https or be empty
                     assert featured_image.startswith(("http://", "https://", ""))
@@ -324,15 +324,15 @@ class TestDataFormatting:
     def test_dates_are_iso_format(self):
         """Dates should be ISO 8601 format"""
         response = client.get("/api/cms/posts?limit=1")
-        
+
         if response.status_code == 200:
             data = response.json()
             posts = data if isinstance(data, list) else data.get("items", [])
-            
+
             if posts:
                 post = posts[0]
                 published_at = post.get("published_at", "")
-                
+
                 if published_at:
                     # Should parse as ISO format
                     try:
@@ -348,14 +348,14 @@ class TestErrorHandling:
     def test_invalid_slug_returns_404(self):
         """Invalid slug should return 404, not 500"""
         response = client.get("/api/cms/posts/invalid-slug-xyz-12345")
-        
+
         assert response.status_code in [404, 200]
         # Should NOT be 500 error
 
     def test_invalid_page_number_returns_400(self):
         """Invalid page should return 400"""
         response = client.get("/api/cms/posts?page=invalid")
-        
+
         assert response.status_code in [400, 200]
         # Should handle gracefully
 
@@ -365,9 +365,9 @@ class TestErrorHandling:
             "slug": "test",
             # Missing title
         }
-        
+
         response = client.post("/api/cms/posts", json=post_data)
-        
+
         # Should validate, not crash
         assert response.status_code in [400, 422, 200]
 
@@ -385,7 +385,7 @@ class TestBackwardCompatibility:
         """Old Strapi URLs should redirect or work via adapter"""
         # Strapi: /api/posts
         response = client.get("/api/posts")
-        
+
         # Should work (either at new or old endpoint)
         assert response.status_code in [200, 404, 307]
 
@@ -393,7 +393,7 @@ class TestBackwardCompatibility:
         """Old Strapi request format should still work"""
         # Old format: /api/posts?filters[status][$eq]=published
         response = client.get("/api/posts?status=published")
-        
+
         # Should work via new format
         assert response.status_code in [200, 404]
 

@@ -32,6 +32,7 @@ from src.cofounder_agent.memory_system import (
 # HELPER FUNCTIONS
 # ============================================================================
 
+
 def create_memory(
     id: str = None,  # type: ignore
     content: str = "Test memory",
@@ -81,11 +82,13 @@ def create_cluster(
 # FIXTURES
 # ============================================================================
 
+
 @pytest.fixture
 async def db_pool():
     """Test database pool (may not exist, tests will skip gracefully)."""
     try:
         import asyncpg
+
         pool = await asyncpg.create_pool(
             "postgresql://postgres:postgres@localhost:5432/glad_labs_test",
             min_size=2,
@@ -109,6 +112,7 @@ async def memory_system(db_pool):
 # INITIALIZATION TESTS
 # ============================================================================
 
+
 class TestInitialization:
     """Test memory system initialization."""
 
@@ -130,6 +134,7 @@ class TestInitialization:
 # ============================================================================
 # MEMORY OPERATIONS TESTS
 # ============================================================================
+
 
 class TestMemoryOperations:
     """Test memory store and recall."""
@@ -155,7 +160,7 @@ class TestMemoryOperations:
             memory_type=MemoryType.BUSINESS_FACT,
             importance=ImportanceLevel.HIGH,
         )
-        
+
         # Recall should return list
         results = await memory_system.recall_memories(query="database", limit=5)
         assert isinstance(results, list)
@@ -176,6 +181,7 @@ class TestMemoryOperations:
 # KNOWLEDGE CLUSTER TESTS
 # ============================================================================
 
+
 class TestKnowledgeClusters:
     """Test knowledge cluster operations."""
 
@@ -186,20 +192,20 @@ class TestKnowledgeClusters:
         await memory_system._persist_knowledge_cluster(cluster)
         # Should complete without error
         assert len(cluster.id) == 36  # Valid UUID format
-        assert cluster.id.count('-') == 4
+        assert cluster.id.count("-") == 4
 
     @pytest.mark.asyncio
     async def test_cluster_upsert(self, memory_system):
         """Upsert cluster (should not duplicate)."""
         cluster = create_cluster()  # Uses uuid4() now
-        
+
         # Create and store
         await memory_system._persist_knowledge_cluster(cluster)
-        
+
         # Update and store again (upsert)
         cluster.name = "Updated Test"
         await memory_system._persist_knowledge_cluster(cluster)
-        
+
         # Should work without error
         assert len(cluster.id) == 36  # Valid UUID format
 
@@ -207,6 +213,7 @@ class TestKnowledgeClusters:
 # ============================================================================
 # LEARNING PATTERNS TESTS
 # ============================================================================
+
 
 class TestLearningPatterns:
     """Test learning pattern detection."""
@@ -223,11 +230,11 @@ class TestLearningPatterns:
             examples=["ex1", "ex2"],
             discovered_at=datetime.now(),
         )
-        
+
         await memory_system._store_learning_pattern(pattern)
         # Should complete without error
         assert len(pattern.pattern_id) == 36  # Valid UUID format
-        assert pattern.pattern_id.count('-') == 4
+        assert pattern.pattern_id.count("-") == 4
 
     @pytest.mark.asyncio
     async def test_identify_patterns(self, memory_system):
@@ -239,7 +246,7 @@ class TestLearningPatterns:
                 memory_type=MemoryType.BUSINESS_FACT,
                 importance=ImportanceLevel.HIGH,
             )
-        
+
         # Identify patterns
         patterns = await memory_system.identify_learning_patterns()
         assert isinstance(patterns, list)
@@ -248,6 +255,7 @@ class TestLearningPatterns:
 # ============================================================================
 # USER PREFERENCES TESTS
 # ============================================================================
+
 
 class TestUserPreferences:
     """Test user preference learning."""
@@ -266,14 +274,14 @@ class TestUserPreferences:
     async def test_preference_upsert(self, memory_system):
         """Upsert preference (ON CONFLICT)."""
         key = "upsert-pref"
-        
+
         # Store
         await memory_system.learn_user_preference(
             preference_key=key,
             preference_value={"v": 1},
             confidence=0.5,
         )
-        
+
         # Update
         await memory_system.learn_user_preference(
             preference_key=key,
@@ -292,7 +300,7 @@ class TestUserPreferences:
                 preference_value={"index": i},
                 confidence=0.8,
             )
-        
+
         # Get all
         prefs = await memory_system.get_user_preferences()
         assert isinstance(prefs, dict)
@@ -301,6 +309,7 @@ class TestUserPreferences:
 # ============================================================================
 # CLEANUP TESTS
 # ============================================================================
+
 
 class TestMemoryCleanup:
     """Test memory cleanup operations."""
@@ -315,7 +324,7 @@ class TestMemoryCleanup:
                 memory_type=MemoryType.BUSINESS_FACT,
                 importance=ImportanceLevel.LOW,
             )
-        
+
         # Forget old ones (method only takes days_threshold)
         await memory_system.forget_outdated_memories(days_threshold=0)
         # Should complete without error
@@ -331,7 +340,7 @@ class TestMemoryCleanup:
                 memory_type=MemoryType.BUSINESS_FACT,
                 importance=ImportanceLevel.LOW,
             )
-        
+
         # Cleanup should use batch delete
         await memory_system.forget_outdated_memories(days_threshold=0)
 
@@ -339,6 +348,7 @@ class TestMemoryCleanup:
 # ============================================================================
 # ANALYTICS TESTS
 # ============================================================================
+
 
 class TestMemorySummary:
     """Test memory analytics."""
@@ -353,7 +363,7 @@ class TestMemorySummary:
                 memory_type=MemoryType.BUSINESS_FACT,
                 importance=ImportanceLevel.HIGH,
             )
-        
+
         # Get summary
         summary = await memory_system.get_memory_summary()
         assert isinstance(summary, dict)
@@ -363,6 +373,7 @@ class TestMemorySummary:
 # ERROR HANDLING TESTS
 # ============================================================================
 
+
 class TestErrorHandling:
     """Test error scenarios."""
 
@@ -370,9 +381,9 @@ class TestErrorHandling:
     async def test_persist_without_pool(self):
         """Handle error when db_pool is None."""
         system = AIMemorySystem(db_pool=None)  # type: ignore
-        
+
         memory = create_memory()
-        
+
         # Should raise error
         try:
             await system._persist_memory(memory)
@@ -385,6 +396,7 @@ class TestErrorHandling:
 # ASYNC/CONCURRENT TESTS
 # ============================================================================
 
+
 class TestAsyncPatterns:
     """Test async and concurrent operations."""
 
@@ -392,7 +404,7 @@ class TestAsyncPatterns:
     async def test_concurrent_store(self, memory_system):
         """Store multiple memories concurrently."""
         import asyncio
-        
+
         tasks = [
             memory_system.store_memory(
                 content=f"Concurrent {i}",
@@ -401,9 +413,9 @@ class TestAsyncPatterns:
             )
             for i in range(5)
         ]
-        
+
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        
+
         # All should succeed
         for result in results:
             assert not isinstance(result, Exception)
@@ -420,6 +432,7 @@ class TestAsyncPatterns:
 # INTEGRATION TESTS
 # ============================================================================
 
+
 class TestIntegration:
     """End-to-end integration tests."""
 
@@ -432,28 +445,29 @@ class TestIntegration:
             memory_type=MemoryType.STRATEGIC_INSIGHT,
             importance=ImportanceLevel.CRITICAL,
         )
-        
+
         # 2. Recall
         memories = await memory_system.recall_memories(query="workflow", limit=10)
         assert isinstance(memories, list)
-        
+
         # 3. Learn preference
         await memory_system.learn_user_preference(
             preference_key="workflow_pref",
             preference_value={"works": True},
             confidence=0.95,
         )
-        
+
         # 4. Get summary
         summary = await memory_system.get_memory_summary()
         assert isinstance(summary, dict)
+
     @pytest.mark.asyncio
     async def test_cluster_and_patterns(self, memory_system):
         """Test clusters and pattern identification together."""
         # Create cluster (factory generates UUID automatically)
         cluster = create_cluster()
         await memory_system._persist_knowledge_cluster(cluster)
-        
+
         # Identify patterns
         patterns = await memory_system.identify_learning_patterns()
         assert isinstance(patterns, list)

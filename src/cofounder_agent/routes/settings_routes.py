@@ -48,6 +48,7 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 # Authentication Dependency (Mock for testing)
 # ============================================================================
 
+
 async def get_current_user(request: Request):
     """
     Mock authentication dependency for testing with basic JWT validation.
@@ -58,29 +59,25 @@ async def get_current_user(request: Request):
     auth_header = request.headers.get("Authorization")
     if not auth_header:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    
+
     # Validate Bearer token format
     if not auth_header.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Invalid token format")
-    
+
     # Extract token
     token = auth_header[7:]  # Remove "Bearer " prefix
-    
-    # Reject obviously invalid tokens  
+
+    # Reject obviously invalid tokens
     if token.lower() in ["invalid", "fake-invalid", "none", ""]:
         raise HTTPException(status_code=401, detail="Invalid or revoked token")
-    
-    return {
-        "user_id": "test-user",
-        "email": "test@example.com",
-        "role": "user"
-    }
 
+    return {"user_id": "test-user", "email": "test@example.com", "role": "user"}
 
 
 # ============================================================================
 # API Endpoints
 # ============================================================================
+
 
 @router.get(
     "",
@@ -91,31 +88,33 @@ async def get_current_user(request: Request):
         200: {"description": "List of settings filtered by user role"},
         401: {"description": "Unauthorized - invalid or missing token"},
         403: {"description": "Forbidden - insufficient permissions"},
-    }
+    },
 )
 async def list_settings(
     category: Optional[SettingCategoryEnum] = Query(None, description="Filter by category"),
-    environment: Optional[SettingEnvironmentEnum] = Query(None, description="Filter by environment"),
+    environment: Optional[SettingEnvironmentEnum] = Query(
+        None, description="Filter by environment"
+    ),
     tags: Optional[str] = Query(None, description="Comma-separated tag filter"),
     search: Optional[str] = Query(None, description="Search in key and description"),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     per_page: int = Query(20, ge=1, le=100, description="Items per page"),
-    current_user = Depends(get_current_user),
+    current_user=Depends(get_current_user),
     # db: Session = Depends(get_db),
 ):
     """
     List all settings with role-based filtering.
-    
+
     **Filtering Rules:**
     - Admin: Can see all settings
     - Editor: Can see all settings but cannot modify system-critical ones
     - Viewer: Can only see non-sensitive settings marked as public
-    
+
     **Response includes:**
     - Setting details with encrypted values masked
     - Pagination information
     - Total count
-    
+
     **Query Parameters:**
     - `category`: Filter by setting category (database, authentication, etc.)
     - `environment`: Filter by environment (development, staging, production, all)
@@ -128,7 +127,7 @@ async def list_settings(
     total = 10
     offset = (page - 1) * per_page
     pages = (total + per_page - 1) // per_page
-    
+
     mock_settings = [
         SettingResponse(
             id=i + 1,
@@ -145,17 +144,13 @@ async def list_settings(
             updated_at=datetime.utcnow(),
             created_by_id=1,
             updated_by_id=None,
-            value_preview=f"value_{i+1}"
+            value_preview=f"value_{i+1}",
         )
         for i in range(offset, min(offset + per_page, total))
     ]
-    
+
     return SettingListResponse(
-        total=total,
-        page=page,
-        per_page=per_page,
-        pages=pages,
-        items=mock_settings
+        total=total, page=page, per_page=per_page, pages=pages, items=mock_settings
     )
 
 
@@ -169,25 +164,25 @@ async def list_settings(
         401: {"description": "Unauthorized - invalid or missing token"},
         403: {"description": "Forbidden - insufficient permissions"},
         404: {"description": "Setting not found"},
-    }
+    },
 )
 async def get_setting(
     setting_id: str = Path(..., description="Setting ID or key name"),
-    current_user = Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     """
     Get details of a specific setting.
-    
+
     **Permission Check:**
     - Viewer: Can only access non-sensitive settings
     - Editor: Can access all settings except read-only ones
     - Admin: Can access all settings including read-only ones
-    
+
     **Response:**
     - Full setting details including metadata
     - Encrypted values shown as preview (masked for security)
     - Audit trail availability metadata
-    
+
     **Path Parameters:**
     - `setting_id`: ID or key name of the setting to retrieve
     """
@@ -200,7 +195,7 @@ async def get_setting(
     except ValueError:
         # Treat as key name
         setting_id_int = hash(setting_id) % 10 + 1
-    
+
     return SettingResponse(
         id=setting_id_int,
         key=f"setting_{setting_id_int}",
@@ -216,7 +211,7 @@ async def get_setting(
         updated_at=datetime.utcnow(),
         created_by_id=1,
         updated_by_id=None,
-        value_preview=f"value_{setting_id_int}"
+        value_preview=f"value_{setting_id_int}",
     )
 
 
@@ -231,30 +226,30 @@ async def get_setting(
         401: {"description": "Unauthorized - invalid or missing token"},
         403: {"description": "Forbidden - admin only"},
         409: {"description": "Setting key already exists"},
-    }
+    },
 )
 async def create_setting(
     setting_data: SettingCreate,
-    current_user = Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     """
     Create a new setting (admin only).
-    
+
     **Permission Requirements:**
     - Admin role required
     - Returns 403 Forbidden if user is not admin
-    
+
     **Validation:**
     - Key must be unique
     - Key must match pattern: `[a-zA-Z0-9._-]+`
     - Value cannot be empty
     - If encrypted, value will be encrypted before storage
-    
+
     **Audit Logging:**
     - Creates entry in SettingAuditLog
     - Records user_id, timestamp, new value (encrypted if applicable)
     - Description: "Created setting"
-    
+
     **Request Body:**
     ```json
     {
@@ -273,13 +268,13 @@ async def create_setting(
     # Mock implementation for testing - handle optional fields with defaults
     import random
     import string
-    
+
     # Generate a random key if not provided
     if not setting_data.key:
         key = f"setting_{''.join(random.choices(string.ascii_lowercase + string.digits, k=8))}"
     else:
         key = setting_data.key
-    
+
     value = setting_data.value or "default_value"
     data_type = setting_data.data_type or SettingDataTypeEnum.STRING
     category = setting_data.category or SettingCategoryEnum.SYSTEM
@@ -287,7 +282,7 @@ async def create_setting(
     is_encrypted = setting_data.is_encrypted if setting_data.is_encrypted is not None else False
     is_read_only = setting_data.is_read_only if setting_data.is_read_only is not None else False
     tags = setting_data.tags or []
-    
+
     return SettingResponse(
         id=11,
         key=key,
@@ -303,7 +298,7 @@ async def create_setting(
         updated_at=datetime.utcnow(),
         created_by_id=1,
         updated_by_id=None,
-        value_preview=value if not is_encrypted else f"{value[:10]}..."
+        value_preview=value if not is_encrypted else f"{value[:10]}...",
     )
 
 
@@ -316,11 +311,11 @@ async def create_setting(
         200: {"description": "Settings updated successfully"},
         400: {"description": "Invalid request body"},
         401: {"description": "Unauthorized - invalid or missing token"},
-    }
+    },
 )
 async def batch_update_settings(
     update_data: SettingUpdate = Body(...),
-    current_user = Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     """Batch update user settings (update multiple key-value pairs at once)."""
     # Mock implementation - just return success
@@ -339,7 +334,7 @@ async def batch_update_settings(
         updated_at=datetime.utcnow(),
         created_by_id=1,
         updated_by_id=1,
-        value_preview=update_data.value or "updated_value"
+        value_preview=update_data.value or "updated_value",
     )
 
 
@@ -350,10 +345,10 @@ async def batch_update_settings(
     responses={
         204: {"description": "Settings deleted successfully"},
         401: {"description": "Unauthorized - invalid or missing token"},
-    }
+    },
 )
 async def batch_delete_settings(
-    current_user = Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     """Batch delete user settings (delete all user-owned settings)."""
     # Mock implementation - just return success
@@ -371,32 +366,32 @@ async def batch_delete_settings(
         401: {"description": "Unauthorized - invalid or missing token"},
         403: {"description": "Forbidden - insufficient permissions or read-only setting"},
         404: {"description": "Setting not found"},
-    }
+    },
 )
 async def update_setting(
     setting_id: int = Path(..., gt=0, description="Setting ID"),
     update_data: SettingUpdate = Body(...),
-    current_user = Depends(get_current_user),
+    current_user=Depends(get_current_user),
     request: Request = None,
 ):
     """
     Update an existing setting (admin/editor).
-    
+
     **Permission Requirements:**
     - Admin: Can update all settings including read-only ones
     - Editor: Can update non-read-only settings
     - Viewer: Cannot update any settings (403)
-    
+
     **Validation:**
     - Setting must exist (404 if not)
     - Cannot modify read-only settings unless admin
     - At least one field must be provided for update
-    
+
     **Audit Logging:**
     - Creates entry in SettingAuditLog
     - Records: user_id, timestamp, old_value, new_value (encrypted if applicable)
     - Description includes what was changed
-    
+
     **Request Body (partial update):**
     ```json
     {
@@ -404,18 +399,18 @@ async def update_setting(
         "description": "Updated timeout to 60 seconds"
     }
     ```
-    
+
     **Path Parameters:**
     - `setting_id`: ID of the setting to update
     """
     # Mock implementation for testing
     if setting_id < 1 or setting_id > 10:
         raise HTTPException(status_code=404, detail="Setting not found")
-    
+
     # Log the update for audit trail
     old_value = f"old_value_{setting_id}"
     new_value = update_data.value if update_data.value else f"value_{setting_id}"
-    
+
     log_audit(
         action=SettingsAuditLogger.ACTION_UPDATE,
         setting_id=str(setting_id),
@@ -427,7 +422,7 @@ async def update_setting(
         ip_address=request.client.host if request else None,
         user_agent=request.headers.get("user-agent") if request else None,
     )
-    
+
     return SettingResponse(
         id=setting_id,
         key=f"setting_{setting_id}",
@@ -435,7 +430,9 @@ async def update_setting(
         data_type=SettingDataTypeEnum.STRING,
         category=SettingCategoryEnum.DATABASE,
         environment=SettingEnvironmentEnum.DEVELOPMENT,
-        description=update_data.description if update_data.description else f"Test setting {setting_id}",
+        description=(
+            update_data.description if update_data.description else f"Test setting {setting_id}"
+        ),
         is_encrypted=False,
         is_read_only=False,
         tags=["test"],
@@ -443,7 +440,7 @@ async def update_setting(
         updated_at=datetime.utcnow(),
         created_by_id=1,
         updated_by_id=1,
-        value_preview=new_value
+        value_preview=new_value,
     )
 
 
@@ -456,33 +453,33 @@ async def update_setting(
         401: {"description": "Unauthorized - invalid or missing token"},
         403: {"description": "Forbidden - admin only"},
         404: {"description": "Setting not found"},
-    }
+    },
 )
 async def delete_setting(
     setting_id: int = Path(..., gt=0, description="Setting ID"),
-    current_user = Depends(get_current_user),
+    current_user=Depends(get_current_user),
     request: Request = None,
 ):
     """
     Delete a setting (admin only).
-    
+
     **Permission Requirements:**
     - Admin role required
     - Returns 403 Forbidden if user is not admin
-    
+
     **Behavior:**
     - Soft delete: Sets deleted_at timestamp (optional)
     - Or hard delete: Removes from database
     - Does NOT delete audit logs (they are immutable)
-    
+
     **Audit Logging:**
     - Creates entry in SettingAuditLog
     - Records deletion with value (encrypted if applicable)
     - Description: "Deleted setting"
-    
+
     **Path Parameters:**
     - `setting_id`: ID of the setting to delete
-    
+
     **Response:**
     - 204 No Content on success
     - No response body
@@ -490,7 +487,7 @@ async def delete_setting(
     # Mock implementation for testing
     if setting_id < 1 or setting_id > 10:
         raise HTTPException(status_code=404, detail="Setting not found")
-    
+
     # Log the deletion for audit trail
     log_audit(
         action=SettingsAuditLogger.ACTION_DELETE,
@@ -503,7 +500,7 @@ async def delete_setting(
         ip_address=request.client.host if request else None,
         user_agent=request.headers.get("user-agent") if request else None,
     )
-    
+
     # Return 204 No Content (successful deletion)
     # No response body needed for 204 status
     return
@@ -512,6 +509,7 @@ async def delete_setting(
 # ============================================================================
 # Additional Endpoints (Helper Methods)
 # ============================================================================
+
 
 @router.get(
     "/{setting_id}/history",
@@ -523,26 +521,26 @@ async def delete_setting(
         401: {"description": "Unauthorized - invalid or missing token"},
         403: {"description": "Forbidden - insufficient permissions"},
         404: {"description": "Setting not found"},
-    }
+    },
 )
 async def get_setting_history(
     setting_id: int = Path(..., gt=0, description="Setting ID"),
     limit: int = Query(50, ge=1, le=500, description="Number of history entries to return"),
-    current_user = Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     """
     Get change history for a specific setting.
-    
+
     **Audit Trail:**
     - Returns all changes made to the setting
     - Shows old and new values (encrypted values masked)
     - Includes who made the change and when
     - Sorted by timestamp (newest first)
-    
+
     **Permission:**
     - Admin/Editor: Can view full history
     - Viewer: Can view history for non-sensitive settings only
-    
+
     **Response:**
     - List of audit log entries sorted by timestamp (DESC)
     - Limited to specified number of entries
@@ -551,7 +549,7 @@ async def get_setting_history(
     # Mock implementation for testing
     if setting_id < 1 or setting_id > 10:
         raise HTTPException(status_code=404, detail="Setting not found")
-    
+
     # Return empty history list (or mock with a few entries)
     return []
 
@@ -566,40 +564,40 @@ async def get_setting_history(
         401: {"description": "Unauthorized - invalid or missing token"},
         403: {"description": "Forbidden - admin only"},
         404: {"description": "Setting or history entry not found"},
-    }
+    },
 )
 async def rollback_setting(
     setting_id: int = Path(..., gt=0, description="Setting ID"),
     history_id: int = Query(..., gt=0, description="Audit log entry ID to rollback to"),
-    current_user = Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     """
     Rollback a setting to a previous value (admin only).
-    
+
     **Functionality:**
     - Reverts setting to a specific previous value
     - Creates new audit log entry documenting the rollback
     - Includes reference to original change
-    
+
     **Query Parameters:**
     - `setting_id`: ID of the setting to rollback
     - `history_id`: ID of the audit log entry to rollback to
-    
+
     **Audit Logging:**
     - Creates new SettingAuditLog entry
     - Description: "Rolled back to version from [timestamp]"
     - References original change ID
-    
+
     **Response:**
     - Updated setting details with new value
     """
     # Mock implementation for testing
     if setting_id < 1 or setting_id > 10:
         raise HTTPException(status_code=404, detail="Setting not found")
-    
+
     if history_id < 1:
         raise HTTPException(status_code=404, detail="History entry not found")
-    
+
     return SettingResponse(
         id=setting_id,
         key=f"setting_{setting_id}",
@@ -615,7 +613,7 @@ async def rollback_setting(
         updated_at=datetime.utcnow(),
         created_by_id=1,
         updated_by_id=1,
-        value_preview=f"rolled_back_value_{history_id}"
+        value_preview=f"rolled_back_value_{history_id}",
     )
 
 
@@ -628,20 +626,20 @@ async def rollback_setting(
         400: {"description": "Invalid request body"},
         401: {"description": "Unauthorized - invalid or missing token"},
         403: {"description": "Forbidden - admin/editor only"},
-    }
+    },
 )
 async def bulk_update_settings(
     bulk_data: SettingBulkUpdateRequest,
-    current_user = Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     """
     Update multiple settings in a single transaction (admin/editor).
-    
+
     **Features:**
     - Atomic transaction: All succeed or all fail
     - Creates separate audit log entries for each change
     - Permissions checked for each setting
-    
+
     **Request Body:**
     ```json
     {
@@ -652,7 +650,7 @@ async def bulk_update_settings(
         ]
     }
     ```
-    
+
     **Response:**
     - Returns list of updated settings
     - Or 400 if any validation fails (no partial updates)
@@ -660,8 +658,8 @@ async def bulk_update_settings(
     # Mock implementation for testing
     return {
         "success": True,
-        "updated_count": len(bulk_data.updates) if hasattr(bulk_data, 'updates') else 0,
-        "message": "Bulk update completed"
+        "updated_count": len(bulk_data.updates) if hasattr(bulk_data, "updates") else 0,
+        "message": "Bulk update completed",
     }
 
 
@@ -673,30 +671,30 @@ async def bulk_update_settings(
         200: {"description": "Settings exported as JSON"},
         401: {"description": "Unauthorized - invalid or missing token"},
         403: {"description": "Forbidden - admin only"},
-    }
+    },
 )
 async def export_settings(
     include_secrets: bool = Query(False, description="Include encrypted secrets in export"),
-    current_user = Depends(get_current_user),
+    current_user=Depends(get_current_user),
     format: str = Query("json", regex="^(json|yaml|csv)$", description="Export format"),
 ):
     """
     Export all settings (admin only).
-    
+
     **Features:**
     - Export all settings in JSON, YAML, or CSV format
     - Option to include/exclude encrypted secrets
     - Useful for backups or migration
-    
+
     **Query Parameters:**
     - `include_secrets`: Whether to include encrypted values (decrypted)
     - `format`: Export format (json, yaml, csv)
-    
+
     **Security:**
     - Admin only
     - Only admin can export encrypted values
     - Audit logged
-    
+
     **Response:**
     - File download or JSON response
     """
@@ -706,7 +704,7 @@ async def export_settings(
         "format": format,
         "include_secrets": include_secrets,
         "total_settings": 10,
-        "exported_at": datetime.utcnow().isoformat()
+        "exported_at": datetime.utcnow().isoformat(),
     }
 
 
@@ -716,27 +714,28 @@ async def export_settings(
 # Note: Use GET /api/health (unified endpoint in main.py) instead.
 # This endpoint is maintained for backward compatibility only.
 
+
 @router.get(
     "/health",
     status_code=status.HTTP_200_OK,
     summary="DEPRECATED: Settings API health check (use /api/health instead)",
-    deprecated=True
+    deprecated=True,
 )
 async def settings_health(
-    current_user = Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     """
     DEPRECATED: Use GET /api/health instead.
-    
+
     Health check endpoint for settings API (legacy).
     This endpoint is deprecated and will be removed in version 2.0.
     Use the unified /api/health endpoint for all health checks.
-    
+
     Returns 200 if the settings service is operational.
     """
     return {
         "status": "healthy",
         "service": "settings-api",
         "timestamp": datetime.utcnow().isoformat(),
-        "_deprecated": "Use GET /api/health instead"
+        "_deprecated": "Use GET /api/health instead",
     }

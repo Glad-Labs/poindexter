@@ -28,6 +28,7 @@ class TestPipelineStateManagement:
         """Initialize PipelineState with sample data."""
         try:
             from services.poindexter_orchestrator import PipelineState
+
             return sample_pipeline_state
         except ImportError:
             pytest.skip("poindexter_orchestrator module not available")
@@ -43,7 +44,7 @@ class TestPipelineStateManagement:
         """PipelineState should track step progress."""
         assert pipeline_state["current_step"] == 0
         assert len(pipeline_state["steps"]) > 0
-        
+
     def test_pipeline_state_constraint_validation(self, pipeline_state):
         """PipelineState should store validation constraints."""
         constraints = pipeline_state["constraints"]
@@ -55,7 +56,7 @@ class TestPipelineStateManagement:
         initial_step = pipeline_state["current_step"]
         # Simulate step progress
         pipeline_state["current_step"] = initial_step + 1
-        
+
         assert pipeline_state["current_step"] == initial_step + 1
 
 
@@ -68,6 +69,7 @@ class TestOrchestratorPlanning:
         """Initialize orchestrator with mock tools."""
         try:
             from services.poindexter_orchestrator import PoindexterOrchestrator
+
             orchestrator = PoindexterOrchestrator()
             orchestrator.tools = mock_tools_service
             return orchestrator
@@ -78,8 +80,7 @@ class TestOrchestratorPlanning:
     async def test_create_plan_simple_workflow(self, orchestrator_service):
         """Create plan should generate workflow steps."""
         plan = await orchestrator_service.create_plan(
-            request_type="blog_post",
-            parameters={"topic": "AI Trends", "length": "2000 words"}
+            request_type="blog_post", parameters={"topic": "AI Trends", "length": "2000 words"}
         )
 
         assert plan is not None
@@ -90,8 +91,7 @@ class TestOrchestratorPlanning:
     async def test_create_plan_with_research(self, orchestrator_service):
         """Create plan should include research step."""
         plan = await orchestrator_service.create_plan(
-            request_type="blog_post",
-            parameters={"topic": "test", "require_research": True}
+            request_type="blog_post", parameters={"topic": "test", "require_research": True}
         )
 
         tool_names = [step["tool"] for step in plan]
@@ -101,8 +101,7 @@ class TestOrchestratorPlanning:
     async def test_create_plan_with_images(self, orchestrator_service):
         """Create plan should include image fetching."""
         plan = await orchestrator_service.create_plan(
-            request_type="blog_post",
-            parameters={"include_images": True}
+            request_type="blog_post", parameters={"include_images": True}
         )
 
         tool_names = [step["tool"] for step in plan]
@@ -112,8 +111,7 @@ class TestOrchestratorPlanning:
     async def test_create_plan_publishing_step(self, orchestrator_service):
         """Create plan should include publishing step."""
         plan = await orchestrator_service.create_plan(
-            request_type="blog_post",
-            parameters={"auto_publish": True}
+            request_type="blog_post", parameters={"auto_publish": True}
         )
 
         tool_names = [step["tool"] for step in plan]
@@ -125,7 +123,7 @@ class TestOrchestratorPlanning:
         plan = [
             {"tool": "research_tool", "params": {}},
             {"tool": "generate_content_tool", "params": {}},
-            {"tool": "publish_tool", "params": {}}
+            {"tool": "publish_tool", "params": {}},
         ]
 
         is_valid = await orchestrator_service.validate_plan(plan)
@@ -137,7 +135,7 @@ class TestOrchestratorPlanning:
         # Publishing before content generation
         plan = [
             {"tool": "publish_tool", "params": {}},
-            {"tool": "generate_content_tool", "params": {}}
+            {"tool": "generate_content_tool", "params": {}},
         ]
 
         is_valid = await orchestrator_service.validate_plan(plan)
@@ -147,10 +145,7 @@ class TestOrchestratorPlanning:
     async def test_validate_plan_missing_required_steps(self, orchestrator_service):
         """Validate plan should require key steps."""
         # Missing generate_content_tool
-        plan = [
-            {"tool": "research_tool", "params": {}},
-            {"tool": "publish_tool", "params": {}}
-        ]
+        plan = [{"tool": "research_tool", "params": {}}, {"tool": "publish_tool", "params": {}}]
 
         is_valid = await orchestrator_service.validate_plan(plan)
         assert is_valid is False
@@ -165,6 +160,7 @@ class TestToolExecution:
         """Initialize orchestrator with mock tools."""
         try:
             from services.poindexter_orchestrator import PoindexterOrchestrator
+
             orchestrator = PoindexterOrchestrator()
             orchestrator.tools = mock_tools_service
             return orchestrator
@@ -175,8 +171,7 @@ class TestToolExecution:
     async def test_execute_single_tool(self, orchestrator_service):
         """Execute single tool should call appropriate tool."""
         result = await orchestrator_service.execute_tool(
-            tool_name="research_tool",
-            parameters={"topic": "AI"}
+            tool_name="research_tool", parameters={"topic": "AI"}
         )
 
         assert result["success"] is True
@@ -185,11 +180,9 @@ class TestToolExecution:
     async def test_execute_tool_with_context(self, orchestrator_service):
         """Execute tool should pass context to tool."""
         context = {"previous_result": "research data"}
-        
+
         result = await orchestrator_service.execute_tool(
-            tool_name="generate_content_tool",
-            parameters={"topic": "AI"},
-            context=context
+            tool_name="generate_content_tool", parameters={"topic": "AI"}, context=context
         )
 
         assert result["success"] is True
@@ -199,7 +192,7 @@ class TestToolExecution:
         """Batch execute should run parallel tools."""
         tools = [
             {"tool": "research_tool", "params": {"topic": "AI"}},
-            {"tool": "fetch_images_tool", "params": {"topic": "AI", "count": 3}}
+            {"tool": "fetch_images_tool", "params": {"topic": "AI", "count": 3}},
         ]
 
         results = await orchestrator_service.batch_execute_tools(tools)
@@ -213,21 +206,21 @@ class TestToolExecution:
         # Research must complete before content generation
         tools = [
             {"tool": "research_tool", "params": {}},
-            {"tool": "generate_content_tool", "params": {}, "depends_on": ["research_tool"]}
+            {"tool": "generate_content_tool", "params": {}, "depends_on": ["research_tool"]},
         ]
 
         results = await orchestrator_service.batch_execute_tools(tools)
-        
+
         assert len(results) == 2
 
     @pytest.mark.asyncio
     async def test_execute_tool_error_handling(self, orchestrator_service):
         """Execute tool should handle errors gracefully."""
-        with patch.object(orchestrator_service.tools, 'research_tool', 
-                         side_effect=Exception("API error")):
+        with patch.object(
+            orchestrator_service.tools, "research_tool", side_effect=Exception("API error")
+        ):
             result = await orchestrator_service.execute_tool(
-                tool_name="research_tool",
-                parameters={}
+                tool_name="research_tool", parameters={}
             )
 
             # Should fail gracefully
@@ -244,6 +237,7 @@ class TestSelfCritiqueLoop:
         """Initialize orchestrator with mock tools."""
         try:
             from services.poindexter_orchestrator import PoindexterOrchestrator
+
             orchestrator = PoindexterOrchestrator()
             orchestrator.tools = mock_tools_service
             return orchestrator
@@ -254,10 +248,9 @@ class TestSelfCritiqueLoop:
     async def test_critique_loop_evaluation(self, orchestrator_service):
         """Critique loop should evaluate content quality."""
         content = "Generated content"
-        
+
         quality_score = await orchestrator_service.evaluate_content_quality(
-            content=content,
-            criteria=["clarity", "accuracy", "engagement"]
+            content=content, criteria=["clarity", "accuracy", "engagement"]
         )
 
         assert isinstance(quality_score, float)
@@ -267,9 +260,7 @@ class TestSelfCritiqueLoop:
     async def test_critique_loop_needs_refinement(self, orchestrator_service):
         """Critique loop should identify refinement needs."""
         feedback = await orchestrator_service.generate_critique_feedback(
-            content="short content",
-            quality_score=0.65,
-            target_score=0.85
+            content="short content", quality_score=0.65, target_score=0.85
         )
 
         assert feedback is not None
@@ -281,10 +272,9 @@ class TestSelfCritiqueLoop:
         """Refine content should improve based on feedback."""
         original = "Original content"
         feedback = "Make more engaging"
-        
+
         refined = await orchestrator_service.refine_content_with_feedback(
-            content=original,
-            feedback=feedback
+            content=original, feedback=feedback
         )
 
         assert refined is not None
@@ -295,11 +285,9 @@ class TestSelfCritiqueLoop:
         """Critique loop should not exceed max iterations."""
         content = "Content"
         max_iterations = 3
-        
+
         final_content, iterations = await orchestrator_service.critique_loop_with_limit(
-            content=content,
-            max_iterations=max_iterations,
-            target_quality=0.95
+            content=content, max_iterations=max_iterations, target_quality=0.95
         )
 
         assert iterations <= max_iterations
@@ -308,11 +296,9 @@ class TestSelfCritiqueLoop:
     async def test_critique_loop_early_exit_on_quality(self, orchestrator_service):
         """Critique loop should exit when quality target reached."""
         content = "Excellent content"
-        
+
         final_content, iterations = await orchestrator_service.critique_loop_with_limit(
-            content=content,
-            max_iterations=5,
-            target_quality=0.70  # Low threshold
+            content=content, max_iterations=5, target_quality=0.70  # Low threshold
         )
 
         assert iterations <= 2  # Should exit quickly
@@ -327,6 +313,7 @@ class TestOrchestratorExecutionFlow:
         """Initialize orchestrator with mock tools."""
         try:
             from services.poindexter_orchestrator import PoindexterOrchestrator
+
             orchestrator = PoindexterOrchestrator()
             orchestrator.tools = mock_tools_service
             return orchestrator
@@ -342,8 +329,8 @@ class TestOrchestratorExecutionFlow:
                 "topic": "AI Trends",
                 "length": "2000 words",
                 "include_images": True,
-                "auto_publish": True
-            }
+                "auto_publish": True,
+            },
         )
 
         assert result["success"] is True
@@ -357,11 +344,7 @@ class TestOrchestratorExecutionFlow:
         result = await orchestrator_service.execute_workflow(
             workflow_type="blog_post",
             parameters={"topic": "test"},
-            constraints={
-                "max_cost": 1.0,
-                "quality_threshold": 0.85,
-                "max_iterations": 2
-            }
+            constraints={"max_cost": 1.0, "quality_threshold": 0.85, "max_iterations": 2},
         )
 
         assert result["total_cost"] <= 1.0
@@ -371,7 +354,7 @@ class TestOrchestratorExecutionFlow:
         """Execute workflow should recover from tool errors."""
         # Mock a tool that fails then succeeds
         call_count = 0
-        
+
         async def failing_tool(*args, **kwargs):
             nonlocal call_count
             call_count += 1
@@ -379,12 +362,9 @@ class TestOrchestratorExecutionFlow:
                 raise Exception("Temporary error")
             return {"success": True, "data": {}}
 
-        with patch.object(orchestrator_service.tools, 'research_tool', 
-                         side_effect=failing_tool):
+        with patch.object(orchestrator_service.tools, "research_tool", side_effect=failing_tool):
             result = await orchestrator_service.execute_workflow(
-                workflow_type="blog_post",
-                parameters={},
-                allow_retries=True
+                workflow_type="blog_post", parameters={}, allow_retries=True
             )
 
             assert call_count > 1  # Should retry
@@ -393,14 +373,12 @@ class TestOrchestratorExecutionFlow:
     async def test_execute_workflow_progress_tracking(self, orchestrator_service):
         """Execute workflow should track progress."""
         progress_updates = []
-        
+
         async def progress_callback(step, total):
             progress_updates.append((step, total))
 
         result = await orchestrator_service.execute_workflow(
-            workflow_type="blog_post",
-            parameters={},
-            progress_callback=progress_callback
+            workflow_type="blog_post", parameters={}, progress_callback=progress_callback
         )
 
         assert len(progress_updates) > 0
@@ -410,15 +388,11 @@ class TestOrchestratorExecutionFlow:
     async def test_execute_workflow_cost_optimization(self, orchestrator_service):
         """Execute workflow should optimize for cost."""
         expensive_result = await orchestrator_service.execute_workflow(
-            workflow_type="blog_post",
-            parameters={},
-            optimize_for="quality"
+            workflow_type="blog_post", parameters={}, optimize_for="quality"
         )
 
         economical_result = await orchestrator_service.execute_workflow(
-            workflow_type="blog_post",
-            parameters={},
-            optimize_for="cost"
+            workflow_type="blog_post", parameters={}, optimize_for="cost"
         )
 
         # Economical should use cheaper models
@@ -434,18 +408,18 @@ class TestOrchestratorIntegration:
         """Orchestrator should coordinate all tools successfully."""
         try:
             from services.poindexter_orchestrator import PoindexterOrchestrator
-            
+
             orchestrator = PoindexterOrchestrator()
             orchestrator.tools = mock_tools_service
-            
+
             result = await orchestrator.execute_workflow(
                 workflow_type="full_blog_post",
                 parameters={
                     "topic": "AI Trends in 2025",
                     "require_research": True,
                     "include_images": True,
-                    "auto_publish": True
-                }
+                    "auto_publish": True,
+                },
             )
 
             assert result["success"] is True
@@ -459,16 +433,13 @@ class TestOrchestratorIntegration:
         """Orchestrator should recover from cascading failures."""
         try:
             from services.poindexter_orchestrator import PoindexterOrchestrator
-            
+
             orchestrator = PoindexterOrchestrator()
-            
+
             # Mock multiple failures
-            with patch.object(orchestrator.tools, 'research_tool', 
-                             side_effect=Exception("Failed")):
+            with patch.object(orchestrator.tools, "research_tool", side_effect=Exception("Failed")):
                 result = await orchestrator.execute_workflow(
-                    workflow_type="blog_post",
-                    parameters={},
-                    allow_fallback=True
+                    workflow_type="blog_post", parameters={}, allow_fallback=True
                 )
 
                 # Should not crash
@@ -486,6 +457,7 @@ class TestOrchestratorMetrics:
         """Initialize orchestrator with mock tools."""
         try:
             from services.poindexter_orchestrator import PoindexterOrchestrator
+
             orchestrator = PoindexterOrchestrator()
             orchestrator.tools = mock_tools_service
             return orchestrator
@@ -496,8 +468,7 @@ class TestOrchestratorMetrics:
     async def test_track_execution_metrics(self, orchestrator_service):
         """Orchestrator should track execution metrics."""
         result = await orchestrator_service.execute_workflow(
-            workflow_type="blog_post",
-            parameters={}
+            workflow_type="blog_post", parameters={}
         )
 
         assert "total_cost" in result
@@ -511,13 +482,12 @@ class TestOrchestratorMetrics:
         results = []
         for i in range(3):
             result = await orchestrator_service.execute_workflow(
-                workflow_type="blog_post",
-                parameters={}
+                workflow_type="blog_post", parameters={}
             )
             results.append(result)
 
         aggregated = await orchestrator_service.aggregate_metrics(results)
-        
+
         assert "total_cost" in aggregated
         assert "average_quality" in aggregated
         assert "total_time" in aggregated

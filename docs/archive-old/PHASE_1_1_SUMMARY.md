@@ -24,18 +24,18 @@
 
 **10 Complete Data Models:**
 
-| Model               | Purpose                  | Key Fields                                                                    |
-| ------------------- | ------------------------ | ----------------------------------------------------------------------------- |
-| **User**            | Account management       | username, email, password_hash, totp_secret, is_locked, failed_login_attempts |
-| **Role**            | RBAC roles               | name, is_system_role                                                          |
-| **Permission**      | Resource-action pairs    | resource, action (read/write/delete/admin)                                    |
+| Model               | Purpose                 | Key Fields                                                                    |
+| ------------------- | ----------------------- | ----------------------------------------------------------------------------- |
+| **User**            | Account management      | username, email, password_hash, totp_secret, is_locked, failed_login_attempts |
+| **Role**            | RBAC roles              | name, is_system_role                                                          |
+| **Permission**      | Resource-action pairs   | resource, action (read/write/delete/admin)                                    |
 | **RolePermission**  | Role↔Permission mapping | Cascade delete, unique constraints                                            |
 | **UserRole**        | User↔Role mapping       | Audit trail: assigned_at, assigned_by                                         |
-| **Session**         | Active sessions          | token_jti, refresh_token_jti, device_name, ip_address                         |
-| **Setting**         | Config values            | key, category, value (encrypted), version, environment                        |
-| **SettingAuditLog** | Immutable audit          | old_value, new_value, changed_by, rollback support                            |
-| **FeatureFlag**     | Feature toggles          | flag_name, percentage (gradual rollout), target_users/roles                   |
-| **APIKey**          | Programmatic access      | key_hash, key_prefix, permissions, allowed_ips, rate_limit                    |
+| **Session**         | Active sessions         | token_jti, refresh_token_jti, device_name, ip_address                         |
+| **Setting**         | Config values           | key, category, value (encrypted), version, environment                        |
+| **SettingAuditLog** | Immutable audit         | old_value, new_value, changed_by, rollback support                            |
+| **FeatureFlag**     | Feature toggles         | flag_name, percentage (gradual rollout), target_users/roles                   |
+| **APIKey**          | Programmatic access     | key_hash, key_prefix, permissions, allowed_ips, rate_limit                    |
 
 **Advanced Features:**
 

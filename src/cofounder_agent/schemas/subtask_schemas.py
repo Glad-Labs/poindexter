@@ -9,6 +9,7 @@ from typing import Optional, List, Dict, Any
 
 class ResearchSubtaskRequest(BaseModel):
     """Request to run research stage independently."""
+
     topic: str = Field(..., description="Topic to research")
     keywords: List[str] = Field(default_factory=list, description="Keywords to focus on")
     parent_task_id: Optional[str] = Field(None, description="Parent task ID for chaining")
@@ -16,6 +17,7 @@ class ResearchSubtaskRequest(BaseModel):
 
 class CreativeSubtaskRequest(BaseModel):
     """Request to run creative stage independently."""
+
     topic: str = Field(..., description="Topic for content")
     research_output: Optional[str] = Field(None, description="Output from research stage")
     style: Optional[str] = Field("professional", description="Content style")
@@ -26,6 +28,7 @@ class CreativeSubtaskRequest(BaseModel):
 
 class QASubtaskRequest(BaseModel):
     """Request to run QA stage independently."""
+
     topic: str = Field(..., description="Original topic")
     creative_output: str = Field(..., description="Content to review")
     research_output: Optional[str] = Field(None, description="Original research for context")
@@ -37,6 +40,7 @@ class QASubtaskRequest(BaseModel):
 
 class ImageSubtaskRequest(BaseModel):
     """Request to run image search independently."""
+
     topic: str = Field(..., description="Topic for image search")
     content: Optional[str] = Field(None, description="Content context for image selection")
     number_of_images: int = Field(1, ge=1, le=5, description="How many images to find")
@@ -45,6 +49,7 @@ class ImageSubtaskRequest(BaseModel):
 
 class FormatSubtaskRequest(BaseModel):
     """Request to run formatting stage independently."""
+
     topic: str = Field(..., description="Content topic")
     content: str = Field(..., description="Content to format")
     featured_image_url: Optional[str] = Field(None, description="Featured image URL")
@@ -55,6 +60,7 @@ class FormatSubtaskRequest(BaseModel):
 
 class SubtaskResponse(BaseModel):
     """Response from subtask execution."""
+
     subtask_id: str
     stage: str  # "research", "creative", etc.
     parent_task_id: Optional[str]

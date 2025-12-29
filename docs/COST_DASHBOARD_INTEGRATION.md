@@ -19,6 +19,7 @@ The Glad Labs system now features integrated cost dashboards that provide real-t
 **Target Users:** Business owners, executives, project managers
 
 #### Features:
+
 - **KPI Cards** - Business metrics including:
   - 📈 Revenue (vs. previous month)
   - 📝 Content Published (vs. previous month)
@@ -46,8 +47,8 @@ The Glad Labs system now features integrated cost dashboards that provide real-t
 The Executive Dashboard includes an embedded `CostBreakdownCards` component that displays:
 
 ```jsx
-<CostBreakdownCards 
-  costByPhase={kpis.costByPhase} 
+<CostBreakdownCards
+  costByPhase={kpis.costByPhase}
   costByModel={kpis.costByModel}
 />
 ```
@@ -130,11 +131,12 @@ Backend (FastAPI)
 ### Core Endpoints
 
 #### 1. **GET /api/metrics/costs**
+
 Returns comprehensive cost metrics and model usage data.
 
 ```json
 {
-  "total_cost": 127.50,
+  "total_cost": 127.5,
   "avg_cost_per_task": 0.0087,
   "total_tasks": 15000,
   "costs": {
@@ -148,69 +150,77 @@ Returns comprehensive cost metrics and model usage data.
 ```
 
 #### 2. **GET /api/metrics/costs/breakdown/phase**
+
 Returns cost breakdown by pipeline phase.
 
 **Query Parameters:**
+
 - `period` (string): "today", "week", "month" (default: "week")
 
 ```json
 {
   "phases": {
-    "research": {"cost": 12.50, "percentage": 10, "task_count": 150},
-    "draft": {"cost": 52.50, "percentage": 42, "task_count": 210},
-    "assess": {"cost": 27.50, "percentage": 22, "task_count": 180},
-    "refine": {"cost": 35.00, "percentage": 28, "task_count": 200}
+    "research": { "cost": 12.5, "percentage": 10, "task_count": 150 },
+    "draft": { "cost": 52.5, "percentage": 42, "task_count": 210 },
+    "assess": { "cost": 27.5, "percentage": 22, "task_count": 180 },
+    "refine": { "cost": 35.0, "percentage": 28, "task_count": 200 }
   },
-  "total": 127.50
+  "total": 127.5
 }
 ```
 
 #### 3. **GET /api/metrics/costs/breakdown/model**
+
 Returns cost breakdown by AI model.
 
 **Query Parameters:**
+
 - `period` (string): "today", "week", "month" (default: "week")
 
 ```json
 {
   "models": {
-    "ollama": {"cost": 0.00, "percentage": 0, "calls": 0},
-    "gpt-3.5": {"cost": 52.50, "percentage": 41, "calls": 525},
-    "gpt-4": {"cost": 7.50, "percentage": 6, "calls": 75},
-    "claude": {"cost": 67.50, "percentage": 53, "calls": 135}
+    "ollama": { "cost": 0.0, "percentage": 0, "calls": 0 },
+    "gpt-3.5": { "cost": 52.5, "percentage": 41, "calls": 525 },
+    "gpt-4": { "cost": 7.5, "percentage": 6, "calls": 75 },
+    "claude": { "cost": 67.5, "percentage": 53, "calls": 135 }
   },
-  "total": 127.50
+  "total": 127.5
 }
 ```
 
 #### 4. **GET /api/metrics/costs/history**
+
 Returns historical cost data for trend analysis.
 
 **Query Parameters:**
+
 - `period` (string): "week", "month" (default: "week")
 
 ```json
 {
   "daily_data": [
-    {"date": "2025-01-20", "cost": 4.50},
-    {"date": "2025-01-21", "cost": 5.20},
-    {"date": "2025-01-22", "cost": 4.80}
+    { "date": "2025-01-20", "cost": 4.5 },
+    { "date": "2025-01-21", "cost": 5.2 },
+    { "date": "2025-01-22", "cost": 4.8 }
   ],
-  "weekly_average": 5.10
+  "weekly_average": 5.1
 }
 ```
 
 #### 5. **GET /api/metrics/costs/budget**
+
 Returns budget status and projections.
 
 **Query Parameters:**
+
 - `monthly_budget` (float): Monthly budget limit in USD (default: 150.0)
 
 ```json
 {
   "monthly_budget": 150.0,
-  "amount_spent": 127.50,
-  "amount_remaining": 22.50,
+  "amount_spent": 127.5,
+  "amount_remaining": 22.5,
   "percent_used": 85,
   "daily_burn_rate": 4.25,
   "days_remaining": 5,
@@ -232,24 +242,26 @@ Returns budget status and projections.
 **Used In:** ExecutiveDashboard, CostMetricsDashboard
 
 #### Props:
+
 ```jsx
-<CostBreakdownCards 
+<CostBreakdownCards
   costByPhase={{
     research: 0.0,
     draft: 0.00525,
     assess: 0.00275,
-    refine: 0.0035
+    refine: 0.0035,
   }}
   costByModel={{
     ollama: 0.0,
     'gpt-3.5': 0.00525,
     'gpt-4': 0.00075,
-    claude: 0.00095
+    claude: 0.00095,
   }}
 />
 ```
 
 #### Features:
+
 - Displays cost distribution by pipeline phase
 - Displays cost distribution by AI model
 - Color-coded visualization
@@ -263,6 +275,7 @@ Returns budget status and projections.
 **Route:** `/costs`
 
 Complete standalone dashboard with:
+
 - All cost metrics and analytics
 - Budget management interface
 - Historical trend analysis
@@ -276,14 +289,17 @@ Complete standalone dashboard with:
 ### Access Points:
 
 #### From Main Navigation Menu:
+
 1. Click "Costs" (💰) in the left sidebar navigation menu
 2. Directly navigates to `/costs` route
 
 #### From Executive Dashboard:
+
 1. Click "View Costs" button (💰) in the Quick Actions section
 2. Alternative: Click "View Reports" then look for cost sections
 
 ### Route Map:
+
 ```
 /                       → Executive Dashboard (with CostBreakdownCards)
 /costs                  → Cost Metrics Dashboard (detailed)
@@ -306,6 +322,7 @@ Both dashboards support time range filters:
 - **All Time** - Complete history
 
 ### Frontend Implementation:
+
 ```jsx
 <select value={timeRange} onChange={(e) => setTimeRange(e.target.value)}>
   <option value="1d">Last 24 Hours</option>
@@ -338,7 +355,7 @@ CREATE TABLE cost_tracking (
 );
 
 -- Query pattern for cost aggregation:
-SELECT 
+SELECT
   phase,
   SUM(cost) as total_cost,
   COUNT(*) as task_count,
@@ -354,7 +371,9 @@ ORDER BY total_cost DESC;
 ## Cost Calculation Methods
 
 ### Phase-Based Costs
+
 Costs are calculated per pipeline phase:
+
 - **Research Phase**: Data gathering, fact-checking
 - **Draft Phase**: Initial content creation
 - **Assess Phase**: Quality analysis, critique
@@ -362,13 +381,16 @@ Costs are calculated per pipeline phase:
 - **Finalize Phase**: Final formatting, publishing prep
 
 ### Model-Based Costs
+
 Costs tracked by AI provider:
+
 - **Ollama**: Local models (typically $0 cost)
 - **GPT-3.5**: OpenAI's cost-effective model
 - **GPT-4**: OpenAI's advanced model
 - **Claude**: Anthropic's models
 
 ### Cost Formula:
+
 ```
 Cost per Task = (tokens_used / 1000) * rate_per_1k_tokens
 Total Cost = Sum of all task costs
@@ -388,12 +410,12 @@ Average Cost = Total Cost / Task Count
 
 ### Budget Status Indicators:
 
-| Usage | Status | Color | Action |
-|-------|--------|-------|--------|
-| < 60% | Normal | 🟢 Green | Continue operations |
-| 60-75% | Warning | 🟡 Yellow | Monitor spending |
-| 75-90% | Alert | 🟠 Orange | Review optimization |
-| > 90% | Critical | 🔴 Red | Immediate action |
+| Usage  | Status   | Color     | Action              |
+| ------ | -------- | --------- | ------------------- |
+| < 60%  | Normal   | 🟢 Green  | Continue operations |
+| 60-75% | Warning  | 🟡 Yellow | Monitor spending    |
+| 75-90% | Alert    | 🟠 Orange | Review optimization |
+| > 90%  | Critical | 🔴 Red    | Immediate action    |
 
 ---
 
@@ -402,21 +424,25 @@ Average Cost = Total Cost / Task Count
 The system provides automatic recommendations:
 
 ### 1. Batch Processing
+
 - **Recommendation**: Increase batch size
 - **Potential Savings**: 15%
 - **Implementation**: Group multiple tasks into single API calls
 
 ### 2. Response Caching
+
 - **Recommendation**: Enable caching layer
 - **Potential Savings**: 8-10%
 - **Implementation**: Cache identical requests
 
 ### 3. Peak Hour Optimization
+
 - **Recommendation**: Distribute workload evenly
 - **Potential Savings**: Qualify for volume discounts
 - **Implementation**: Schedule tasks outside peak hours
 
 ### 4. Model Selection
+
 - **Recommendation**: Use cost-appropriate models
 - **Potential Savings**: 20%
 - **Implementation**: Route simple tasks to cheaper models
@@ -430,6 +456,7 @@ The system provides automatic recommendations:
 **Problem**: Dashboard shows "No data available"
 
 **Solutions**:
+
 1. Verify backend is running: `http://localhost:8000/health`
 2. Check database connection: `DATABASE_URL` in `.env.local`
 3. Ensure cost_tracking table exists
@@ -441,6 +468,7 @@ The system provides automatic recommendations:
 **Problem**: Budget percentage doesn't match actual spend
 
 **Solutions**:
+
 1. Verify `monthly_budget` parameter is correct
 2. Check database for duplicate cost records
 3. Verify cost calculations in backend
@@ -451,6 +479,7 @@ The system provides automatic recommendations:
 **Problem**: Phase or model costs not showing
 
 **Solutions**:
+
 1. Ensure tasks are being tracked with phase information
 2. Verify model names match expected values
 3. Check cost_tracking records exist for period
@@ -466,7 +495,7 @@ The metrics endpoints are optimized for performance:
 
 ```python
 # Database query with indexes
-SELECT 
+SELECT
   phase,
   SUM(cost) as cost,
   COUNT(*) as count
@@ -515,14 +544,14 @@ Use this checklist to verify cost dashboard integration:
 
 ## Files Modified/Created
 
-| File | Change | Purpose |
-|------|--------|---------|
-| `web/oversight-hub/src/routes/AppRoutes.jsx` | Added `/costs` route | Route registration |
-| `web/oversight-hub/src/components/LayoutWrapper.jsx` | Added navigation item | Menu integration |
-| `web/oversight-hub/src/components/pages/ExecutiveDashboard.jsx` | Added "View Costs" button | Quick access link |
-| `web/oversight-hub/src/components/pages/ExecutiveDashboard.css` | Added `.costs-button` styling | Button styling |
-| `web/oversight-hub/src/routes/CostMetricsDashboard.jsx` | Already exists | Detailed dashboard |
-| `src/cofounder_agent/routes/metrics_routes.py` | Already exists | Backend endpoints |
+| File                                                            | Change                        | Purpose            |
+| --------------------------------------------------------------- | ----------------------------- | ------------------ |
+| `web/oversight-hub/src/routes/AppRoutes.jsx`                    | Added `/costs` route          | Route registration |
+| `web/oversight-hub/src/components/LayoutWrapper.jsx`            | Added navigation item         | Menu integration   |
+| `web/oversight-hub/src/components/pages/ExecutiveDashboard.jsx` | Added "View Costs" button     | Quick access link  |
+| `web/oversight-hub/src/components/pages/ExecutiveDashboard.css` | Added `.costs-button` styling | Button styling     |
+| `web/oversight-hub/src/routes/CostMetricsDashboard.jsx`         | Already exists                | Detailed dashboard |
+| `src/cofounder_agent/routes/metrics_routes.py`                  | Already exists                | Backend endpoints  |
 
 ---
 
@@ -558,4 +587,3 @@ For issues or questions:
 - [Architecture and Design](02-ARCHITECTURE_AND_DESIGN.md) - System architecture overview
 - [Analytics Dashboard](FRONTEND_CONSTRAINT_INTEGRATION_COMPLETE.md) - Related analytics features
 - [Operations and Maintenance](06-OPERATIONS_AND_MAINTENANCE.md) - System operations
-

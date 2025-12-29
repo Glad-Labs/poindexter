@@ -30,6 +30,7 @@ class TestPoindexterTools:
         """Initialize PoindexterTools with mock agents."""
         try:
             from services.poindexter_tools import PoindexterTools
+
             tools = PoindexterTools()
             tools.research_agent = mock_research_agent
             tools.creative_agent = mock_creative_agent
@@ -46,9 +47,7 @@ class TestPoindexterTools:
     async def test_research_tool_success(self, tools_service):
         """Research tool should successfully gather information."""
         result = await tools_service.research_tool(
-            topic="AI trends in 2025",
-            depth="comprehensive",
-            sources_limit=5
+            topic="AI trends in 2025", depth="comprehensive", sources_limit=5
         )
 
         assert result["success"] is True
@@ -61,20 +60,14 @@ class TestPoindexterTools:
         """Research tool should handle different depth levels."""
         depths = ["quick", "standard", "comprehensive"]
         for depth in depths:
-            result = await tools_service.research_tool(
-                topic="test",
-                depth=depth,
-                sources_limit=3
-            )
+            result = await tools_service.research_tool(topic="test", depth=depth, sources_limit=3)
             assert result["success"] is True
 
     @pytest.mark.asyncio
     async def test_research_tool_cost_tracking(self, tools_service):
         """Research tool should track costs accurately."""
         result = await tools_service.research_tool(
-            topic="machine learning",
-            depth="comprehensive",
-            sources_limit=10
+            topic="machine learning", depth="comprehensive", sources_limit=10
         )
         assert "cost" in result
         assert isinstance(result["cost"], float)
@@ -93,7 +86,7 @@ class TestPoindexterTools:
             style="professional",
             length="2000 words",
             research_data={"key_points": ["point1", "point2"]},
-            constraints={"quality_threshold": 0.85}
+            constraints={"quality_threshold": 0.85},
         )
 
         assert result["success"] is True
@@ -109,7 +102,7 @@ class TestPoindexterTools:
             style="casual",
             length="500 words",
             research_data={},
-            constraints={"quality_threshold": 0.90}  # High threshold triggers critique
+            constraints={"quality_threshold": 0.90},  # High threshold triggers critique
         )
 
         assert result["success"] is True
@@ -124,7 +117,7 @@ class TestPoindexterTools:
             style="professional",
             length="1000 words",
             research_data={},
-            constraints={}
+            constraints={},
         )
 
         # Default max iterations is 3
@@ -138,7 +131,7 @@ class TestPoindexterTools:
             style="professional",
             length="2000 words",
             research_data={},
-            constraints={}
+            constraints={},
         )
 
         assert "cost" in result
@@ -155,7 +148,7 @@ class TestPoindexterTools:
         result = await tools_service.critique_content_tool(
             content="Excellent, well-researched article with clear structure.",
             criteria=["clarity", "accuracy", "engagement"],
-            target_score=0.80
+            target_score=0.80,
         )
 
         assert result["success"] is True
@@ -166,9 +159,7 @@ class TestPoindexterTools:
     async def test_critique_content_needs_improvement(self, tools_service):
         """Critique should identify content needing improvement."""
         result = await tools_service.critique_content_tool(
-            content="short",
-            criteria=["completeness", "depth"],
-            target_score=0.90
+            content="short", criteria=["completeness", "depth"], target_score=0.90
         )
 
         assert result["success"] is True
@@ -180,9 +171,7 @@ class TestPoindexterTools:
         """Critique should evaluate against multiple criteria."""
         criteria = ["clarity", "accuracy", "relevance", "engagement", "completeness"]
         result = await tools_service.critique_content_tool(
-            content="Test article content",
-            criteria=criteria,
-            target_score=0.80
+            content="Test article content", criteria=criteria, target_score=0.80
         )
 
         assert result["success"] is True
@@ -198,11 +187,7 @@ class TestPoindexterTools:
         result = await tools_service.publish_tool(
             content="Article content here",
             platforms=["blog"],
-            metadata={
-                "title": "Test Article",
-                "slug": "test-article",
-                "category": "Tech"
-            }
+            metadata={"title": "Test Article", "slug": "test-article", "category": "Tech"},
         )
 
         assert result["success"] is True
@@ -215,7 +200,7 @@ class TestPoindexterTools:
         result = await tools_service.publish_tool(
             content="Content",
             platforms=["blog", "email", "social"],
-            metadata={"title": "Multi-platform"}
+            metadata={"title": "Multi-platform"},
         )
 
         assert result["success"] is True
@@ -229,8 +214,8 @@ class TestPoindexterTools:
             metadata={
                 "title": "SEO-Optimized Title",
                 "seo_description": "Meta description",
-                "keywords": ["ai", "automation"]
-            }
+                "keywords": ["ai", "automation"],
+            },
         )
 
         assert result["success"] is True
@@ -245,7 +230,7 @@ class TestPoindexterTools:
         result = await tools_service.track_metrics_tool(
             metric_type="workflow_cost",
             data={"total_cost": 2.50, "tools_used": 5},
-            workflow_id="wf-001"
+            workflow_id="wf-001",
         )
 
         assert result["success"] is True
@@ -257,7 +242,7 @@ class TestPoindexterTools:
         result = await tools_service.track_metrics_tool(
             metric_type="content_quality",
             data={"quality_score": 0.92, "iterations": 2},
-            workflow_id="wf-002"
+            workflow_id="wf-002",
         )
 
         assert result["success"] is True
@@ -268,7 +253,7 @@ class TestPoindexterTools:
         result = await tools_service.track_metrics_tool(
             metric_type="performance",
             data={"total_time": 125, "model_calls": 8},
-            workflow_id="wf-003"
+            workflow_id="wf-003",
         )
 
         assert result["success"] is True
@@ -281,9 +266,7 @@ class TestPoindexterTools:
     async def test_fetch_images_success(self, tools_service):
         """Fetch images tool should retrieve images for content."""
         result = await tools_service.fetch_images_tool(
-            topic="AI and technology",
-            count=3,
-            style="professional"
+            topic="AI and technology", count=3, style="professional"
         )
 
         assert result["success"] is True
@@ -296,9 +279,7 @@ class TestPoindexterTools:
         """Fetch images should handle variable counts."""
         for count in [1, 3, 5, 10]:
             result = await tools_service.fetch_images_tool(
-                topic="test",
-                count=count,
-                style="professional"
+                topic="test", count=count, style="professional"
             )
             assert result["success"] is True
 
@@ -307,11 +288,7 @@ class TestPoindexterTools:
         """Fetch images should support different styles."""
         styles = ["professional", "casual", "artistic", "minimalist"]
         for style in styles:
-            result = await tools_service.fetch_images_tool(
-                topic="test",
-                count=2,
-                style=style
-            )
+            result = await tools_service.fetch_images_tool(topic="test", count=2, style=style)
             assert result["success"] is True
 
     # ========================================================================
@@ -324,7 +301,7 @@ class TestPoindexterTools:
         result = await tools_service.refine_tool(
             content="Original content here",
             feedback="Make it more engaging and add examples",
-            direction="improve"
+            direction="improve",
         )
 
         assert result["success"] is True
@@ -337,7 +314,7 @@ class TestPoindexterTools:
         result = await tools_service.refine_tool(
             content="Long content here with lots of details",
             feedback="Condense to key points",
-            direction="shorten"
+            direction="shorten",
         )
 
         assert result["success"] is True
@@ -346,9 +323,7 @@ class TestPoindexterTools:
     async def test_refine_content_expand(self, tools_service):
         """Refine tool should expand content when requested."""
         result = await tools_service.refine_tool(
-            content="Brief content",
-            feedback="Add more details and examples",
-            direction="expand"
+            content="Brief content", feedback="Add more details and examples", direction="expand"
         )
 
         assert result["success"] is True
@@ -361,7 +336,7 @@ class TestPoindexterTools:
     def test_get_all_tools(self, tools_service):
         """get_all_tools should return all available tools."""
         all_tools = tools_service.get_all_tools()
-        
+
         assert len(all_tools) == 7
         tool_names = [t["name"] for t in all_tools]
         assert "research_tool" in tool_names
@@ -376,7 +351,7 @@ class TestPoindexterTools:
     def test_get_tool_descriptions(self, tools_service):
         """get_tool_descriptions should return tool descriptions."""
         descriptions = tools_service.get_tool_descriptions()
-        
+
         assert isinstance(descriptions, str)
         assert "research_tool" in descriptions
         assert "generate_content_tool" in descriptions
@@ -385,7 +360,7 @@ class TestPoindexterTools:
     def test_estimate_tool_cost(self, tools_service):
         """estimate_tool_cost should return cost estimates."""
         cost = tools_service.estimate_tool_cost("generate_content_tool")
-        
+
         assert isinstance(cost, tuple)  # (min, max)
         assert cost[0] > 0
         assert cost[1] > cost[0]
@@ -394,7 +369,7 @@ class TestPoindexterTools:
     def test_estimate_tool_time(self, tools_service):
         """estimate_tool_time should return time estimates."""
         time = tools_service.estimate_tool_time("research_tool")
-        
+
         assert isinstance(time, tuple)  # (min, max)
         assert time[0] > 0
         assert time[1] > time[0]
@@ -408,7 +383,7 @@ class TestToolQualityMetrics:
         """Quality metrics should have proper thresholds."""
         try:
             from services.poindexter_tools import QualityMetric
-            
+
             assert QualityMetric.EXCELLENT == 0.95
             assert QualityMetric.GOOD == 0.85
             assert QualityMetric.ACCEPTABLE == 0.75
@@ -425,7 +400,7 @@ class TestToolResultDataclass:
         """ToolResult should be creatable with all fields."""
         try:
             from services.poindexter_tools import ToolResult
-            
+
             result = ToolResult(**sample_tool_result)
             assert result.success is True
             assert result.cost == 0.15
@@ -437,7 +412,7 @@ class TestToolResultDataclass:
         """ToolResult should handle success and failure states."""
         try:
             from services.poindexter_tools import ToolResult
-            
+
             # Success state
             success_result = ToolResult(
                 success=True,
@@ -446,11 +421,11 @@ class TestToolResultDataclass:
                 quality_score=0.90,
                 critique_notes=None,
                 iterations=1,
-                error=None
+                error=None,
             )
             assert success_result.success is True
             assert success_result.error is None
-            
+
             # Failure state
             fail_result = ToolResult(
                 success=False,
@@ -459,7 +434,7 @@ class TestToolResultDataclass:
                 quality_score=None,
                 critique_notes=None,
                 iterations=0,
-                error="API timeout"
+                error="API timeout",
             )
             assert fail_result.success is False
             assert fail_result.error == "API timeout"

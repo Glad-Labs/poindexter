@@ -21,7 +21,7 @@ from src.cofounder_agent.main import app
 from services.model_consolidation_service import (
     ProviderType,
     get_model_consolidation_service,
-    initialize_model_consolidation_service
+    initialize_model_consolidation_service,
 )
 
 client = TestClient(app)
@@ -41,21 +41,21 @@ class TestModelsEndpointsIntegration:
     def test_get_available_models_endpoint(self):
         """Test GET /api/v1/models/available returns consolidated models"""
         response = client.get("/api/v1/models/available")
-        
+
         assert response.status_code == 200
         data = response.json()
-        
+
         # Check response structure
         assert "models" in data
         assert "total" in data
         assert "timestamp" in data
-        
+
         # Verify models is a list
         assert isinstance(data["models"], list)
-        
+
         # Should have at least some models
         assert data["total"] >= 0
-        
+
         # Check model structure
         for model in data["models"]:
             assert "name" in model
@@ -66,15 +66,15 @@ class TestModelsEndpointsIntegration:
     def test_get_available_models_includes_all_providers(self):
         """Test that available models include all providers from consolidation service"""
         response = client.get("/api/v1/models/available")
-        
+
         assert response.status_code == 200
         data = response.json()
-        
+
         # Extract unique providers from response
         providers = set()
         for model in data["models"]:
             providers.add(model["provider"])
-        
+
         # Should have multiple providers (at least some)
         # Note: Exact count depends on environment, but we should have at least Ollama
         assert len(providers) > 0
@@ -82,10 +82,10 @@ class TestModelsEndpointsIntegration:
     def test_get_provider_status_endpoint(self):
         """Test GET /api/v1/models/status returns provider statuses"""
         response = client.get("/api/v1/models/status")
-        
+
         assert response.status_code == 200
         data = response.json()
-        
+
         # Check response structure
         assert "timestamp" in data
         assert "providers" in data
@@ -93,10 +93,10 @@ class TestModelsEndpointsIntegration:
     def test_get_provider_status_has_provider_info(self):
         """Test provider status includes all provider info"""
         response = client.get("/api/v1/models/status")
-        
+
         assert response.status_code == 200
         data = response.json()
-        
+
         providers = data.get("providers", {})
         # Should be a dict/object
         assert isinstance(providers, dict)
@@ -104,30 +104,30 @@ class TestModelsEndpointsIntegration:
     def test_get_recommended_models_endpoint(self):
         """Test GET /api/v1/models/recommended returns recommended models"""
         response = client.get("/api/v1/models/recommended")
-        
+
         assert response.status_code == 200
         data = response.json()
-        
+
         # Check response structure
         assert "models" in data
         assert "total" in data
         assert "timestamp" in data
-        
+
         # Should have models (recommended from fallback chain)
         assert isinstance(data["models"], list)
 
     def test_get_recommended_models_in_priority_order(self):
         """Test recommended models follow fallback chain priority"""
         response = client.get("/api/v1/models/recommended")
-        
+
         assert response.status_code == 200
         data = response.json()
-        
+
         models = data["models"]
-        
+
         # Expected priority order in model names or provider field
         provider_order = ["ollama", "huggingface", "google", "anthropic", "openai"]
-        
+
         # Verify models are from providers
         for model in models:
             assert model["provider"] in provider_order
@@ -135,28 +135,28 @@ class TestModelsEndpointsIntegration:
     def test_get_rtx5070_models_endpoint(self):
         """Test GET /api/v1/models/rtx5070 returns RTX5070-compatible models"""
         response = client.get("/api/v1/models/rtx5070")
-        
+
         assert response.status_code == 200
         data = response.json()
-        
+
         # Check response structure
         assert "models" in data
         assert "total" in data
         assert "timestamp" in data
-        
+
         # Should have some models
         assert isinstance(data["models"], list)
 
     def test_rtx5070_models_includes_local_and_cloud(self):
         """Test RTX5070 models include both local (Ollama) and cloud options"""
         response = client.get("/api/v1/models/rtx5070")
-        
+
         assert response.status_code == 200
         data = response.json()
-        
+
         models = data["models"]
         providers = {model["provider"] for model in models}
-        
+
         # Should have mix of providers
         # At minimum should consider Ollama, but cloud fallbacks should be included
         assert len(providers) > 0
@@ -167,7 +167,7 @@ class TestModelsEndpointsIntegration:
         # Instead, test that the endpoint handles real scenarios well
         # The mock test below covers error scenarios with patching
         response = client.get("/api/v1/models/available")
-        
+
         # Should return 200 even if some providers fail (graceful degradation)
         assert response.status_code == 200
         data = response.json()
@@ -180,17 +180,17 @@ class TestModelsEndpointsIntegration:
             "/api/v1/models/recommended",
             "/api/v1/models/rtx5070",
         ]
-        
+
         for endpoint in endpoints:
             response = client.get(endpoint)
             assert response.status_code == 200
             data = response.json()
-            
+
             # All should have consistent structure for model responses
             assert "models" in data
             assert "total" in data
             assert "timestamp" in data
-            
+
             # Verify timestamp is valid ISO format
             assert "T" in data["timestamp"] or data["timestamp"].count("-") >= 2
 
@@ -199,7 +199,7 @@ class TestModelsEndpointsIntegration:
         response = client.get("/api/v1/models/available")
         assert response.status_code == 200
         data = response.json()
-        
+
         for model in data["models"]:
             # Required fields for each model
             assert "name" in model
@@ -207,7 +207,7 @@ class TestModelsEndpointsIntegration:
             assert "provider" in model
             assert "isFree" in model
             assert "icon" in model
-            
+
             # Type checks
             assert isinstance(model["name"], str)
             assert isinstance(model["displayName"], str)
@@ -219,19 +219,19 @@ class TestModelsEndpointsIntegration:
         response = client.get("/api/v1/models/available")
         assert response.status_code == 200
         data = response.json()
-        
+
         provider_icons = {
             "ollama": "🖥️",
             "huggingface": "🌐",
             "google": "☁️",
             "anthropic": "🧠",
-            "openai": "⚡"
+            "openai": "⚡",
         }
-        
+
         for model in data["models"]:
             provider = model["provider"]
             icon = model["icon"]
-            
+
             # Icon should be from expected set
             if provider in provider_icons:
                 assert icon == provider_icons[provider] or icon == "🤖"
@@ -241,18 +241,18 @@ class TestModelsEndpointsIntegration:
         response = client.get("/api/v1/models/available")
         assert response.status_code == 200
         data = response.json()
-        
+
         timestamp_str = data["timestamp"]
         # Verify it's ISO format (contains T)
         assert "T" in timestamp_str or timestamp_str.count("-") >= 2
-        
+
         # Parse ISO timestamp
         try:
             if timestamp_str.endswith("Z"):
                 timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
             else:
                 timestamp = datetime.fromisoformat(timestamp_str)
-            
+
             # Should be valid timestamp
             assert timestamp is not None
         except ValueError:
@@ -267,13 +267,13 @@ class TestModelProviderFallbackChain:
         response = client.get("/api/v1/models/recommended")
         assert response.status_code == 200
         data = response.json()
-        
+
         models = data["models"]
         providers = [m["provider"] for m in models]
-        
+
         # Expected order: ollama → huggingface → google → anthropic → openai
         expected_order = ["ollama", "huggingface", "google", "anthropic", "openai"]
-        
+
         # Providers should appear in this order or subset of it
         last_idx = -1
         for provider in providers:

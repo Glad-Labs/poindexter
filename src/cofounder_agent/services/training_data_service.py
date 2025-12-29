@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 class DataTag(str, Enum):
     """Tags for training data"""
+
     PRODUCTION = "production"
     DEVELOPMENT = "development"
     TEST = "test"
@@ -30,6 +31,7 @@ class DataTag(str, Enum):
 @dataclass
 class TrainingDataStats:
     """Statistics about training data"""
+
     total_examples: int
     filtered_count: int
     by_tag: Dict[str, int]
@@ -43,6 +45,7 @@ class TrainingDataStats:
 @dataclass
 class TrainingDatapoint:
     """Single training example"""
+
     id: str
     execution_id: str
     user_request: str
@@ -61,7 +64,7 @@ class TrainingDatapoint:
 class TrainingDataService:
     """
     Manages training data for fine-tuning.
-    
+
     Provides:
     - Filtering and querying training data
     - Tagging data (exclude bad data, mark production, etc.)
@@ -80,7 +83,8 @@ class TrainingDataService:
     async def initialize(self):
         """Create training data tables if not exist"""
         async with self.db_pool.acquire() as conn:
-            await conn.execute("""
+            await conn.execute(
+                """
                 CREATE TABLE IF NOT EXISTS orchestrator_training_data (
                     id SERIAL PRIMARY KEY,
                     execution_id VARCHAR(255) UNIQUE NOT NULL,
@@ -136,8 +140,9 @@ class TrainingDataService:
                     ON training_datasets(created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_datasets_name 
                     ON training_datasets(name, version DESC);
-            """)
-            
+            """
+            )
+
             logger.info("Training data tables initialized")
 
     # ========================================================================
@@ -145,9 +150,7 @@ class TrainingDataService:
     # ========================================================================
 
     async def get_all_training_data(
-        self,
-        limit: int = 1000,
-        offset: int = 0
+        self, limit: int = 1000, offset: int = 0
     ) -> List[TrainingDatapoint]:
         """Get all training data with pagination"""
         query = """
@@ -161,10 +164,10 @@ class TrainingDataService:
             ORDER BY created_at DESC
             LIMIT $1 OFFSET $2
         """
-        
+
         async with self.db_pool.acquire() as conn:
             rows = await conn.fetch(query, limit, offset)
-        
+
         return [self._row_to_datapoint(row) for row in rows]
 
     async def filter_training_data(
@@ -177,11 +180,11 @@ class TrainingDataService:
         include_tags: Optional[List[str]] = None,
         date_after: Optional[str] = None,
         date_before: Optional[str] = None,
-        limit: int = 1000
+        limit: int = 1000,
     ) -> List[TrainingDatapoint]:
         """
         Filter training data by multiple criteria.
-        
+
         Args:
             quality_min/max: Quality score range (0.0-1.0)
             intent_filter: List of intents to include
@@ -191,7 +194,7 @@ class TrainingDataService:
             date_after: Filter by created_at >= date (ISO format)
             date_before: Filter by created_at <= date (ISO format)
             limit: Max results
-            
+
         Returns:
             Filtered training data
         """
@@ -256,18 +259,14 @@ class TrainingDataService:
     # TAGGING & MANAGEMENT
     # ========================================================================
 
-    async def add_tags(
-        self,
-        execution_ids: List[str],
-        tags: List[str]
-    ) -> int:
+    async def add_tags(self, execution_ids: List[str], tags: List[str]) -> int:
         """
         Add tags to training data.
-        
+
         Args:
             execution_ids: Which data to tag
             tags: Tags to add
-            
+
         Returns:
             Number of rows updated
         """
@@ -283,17 +282,13 @@ class TrainingDataService:
                 WHERE execution_id = ANY($1::text[])
                 """,
                 execution_ids,
-                tags
+                tags,
             )
 
         # Extract count from "UPDATE X"
         return int(result.split()[-1]) if result else 0
 
-    async def remove_tags(
-        self,
-        execution_ids: List[str],
-        tags: List[str]
-    ) -> int:
+    async def remove_tags(self, execution_ids: List[str], tags: List[str]) -> int:
         """Remove tags from training data"""
         if not execution_ids or not tags:
             return 0
@@ -310,21 +305,16 @@ class TrainingDataService:
                     WHERE execution_id = ANY($1::text[])
                     """,
                     execution_ids,
-                    tag
+                    tag,
                 )
                 count += int(result.split()[-1]) if result else 0
 
         return count
 
-    async def tag_by_date_range(
-        self,
-        date_after: str,
-        date_before: str,
-        tags: List[str]
-    ) -> int:
+    async def tag_by_date_range(self, date_after: str, date_before: str, tags: List[str]) -> int:
         """
         Tag all data within a date range.
-        
+
         Useful for: "Tag all dev data from before 2025-12-01 as 'development'"
         """
         if not tags:
@@ -341,19 +331,15 @@ class TrainingDataService:
                 """,
                 date_after,
                 date_before,
-                tags
+                tags,
             )
 
         return int(result.split()[-1]) if result else 0
 
-    async def tag_by_quality(
-        self,
-        quality_max: float,
-        tags: List[str]
-    ) -> int:
+    async def tag_by_quality(self, quality_max: float, tags: List[str]) -> int:
         """
         Tag low-quality data.
-        
+
         Useful for: "Tag all data with quality < 0.7 as 'low_quality'"
         """
         if not tags:
@@ -368,7 +354,7 @@ class TrainingDataService:
                 WHERE quality_score < $1
                 """,
                 quality_max,
-                tags
+                tags,
             )
 
         return int(result.split()[-1]) if result else 0
@@ -377,13 +363,10 @@ class TrainingDataService:
     # STATISTICS
     # ========================================================================
 
-    async def get_statistics(
-        self,
-        filters: Optional[Dict[str, Any]] = None
-    ) -> TrainingDataStats:
+    async def get_statistics(self, filters: Optional[Dict[str, Any]] = None) -> TrainingDataStats:
         """
         Get statistics about training data.
-        
+
         Returns: count, quality distribution, intent breakdown, etc.
         """
         # Get total count
@@ -405,7 +388,7 @@ class TrainingDataService:
                 quality_score_distribution={},
                 by_intent={},
                 success_rate=0.0,
-                date_range={"earliest": None, "latest": None}
+                date_range={"earliest": None, "latest": None},
             )
 
         quality_scores = [d.quality_score for d in filtered_data if d.quality_score]
@@ -461,7 +444,7 @@ class TrainingDataService:
             quality_score_distribution=quality_distribution,
             by_intent=by_intent,
             success_rate=success_count / len(filtered_data) if filtered_data else 0.0,
-            date_range=date_range
+            date_range=date_range,
         )
 
     # ========================================================================
@@ -469,13 +452,11 @@ class TrainingDataService:
     # ========================================================================
 
     async def export_as_jsonl(
-        self,
-        filters: Optional[Dict[str, Any]] = None,
-        output_path: Optional[str] = None
+        self, filters: Optional[Dict[str, Any]] = None, output_path: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Export training data as JSONL for fine-tuning.
-        
+
         Returns: statistics about export
         """
         if output_path is None:
@@ -488,46 +469,49 @@ class TrainingDataService:
             data = await self.get_all_training_data(limit=10000)
 
         # Write JSONL
-        with open(output_path, 'w') as f:
+        with open(output_path, "w") as f:
             for example in data:
                 # Prepare for fine-tuning (format works with most providers)
                 training_obj = {
                     "messages": [
                         {
                             "role": "system",
-                            "content": f"You are an intelligent business orchestrator. Task: {example.intent}"
+                            "content": f"You are an intelligent business orchestrator. Task: {example.intent}",
                         },
-                        {
-                            "role": "user",
-                            "content": example.user_request
-                        },
+                        {"role": "user", "content": example.user_request},
                         {
                             "role": "assistant",
-                            "content": json.dumps({
-                                "plan": example.execution_plan,
-                                "expected_quality": example.quality_score,
-                                "business_context": example.business_state
-                            })
-                        }
+                            "content": json.dumps(
+                                {
+                                    "plan": example.execution_plan,
+                                    "expected_quality": example.quality_score,
+                                    "business_context": example.business_state,
+                                }
+                            ),
+                        },
                     ],
                     "metadata": {
                         "success": example.success,
                         "quality_score": example.quality_score,
                         "intent": example.intent,
                         "metrics": example.post_publication_metrics,
-                        "patterns": example.patterns_discovered
-                    }
+                        "patterns": example.patterns_discovered,
+                    },
                 }
                 f.write(json.dumps(training_obj) + "\n")
 
         file_size = os.path.getsize(output_path)
-        
+
         return {
             "success": True,
             "file_path": output_path,
             "file_size": file_size,
             "example_count": len(data),
-            "avg_quality": avg_quality if (avg_quality := sum(e.quality_score for e in data) / len(data) if data else 0) else 0
+            "avg_quality": (
+                avg_quality
+                if (avg_quality := sum(e.quality_score for e in data) / len(data) if data else 0)
+                else 0
+            ),
         }
 
     # ========================================================================
@@ -535,36 +519,31 @@ class TrainingDataService:
     # ========================================================================
 
     async def create_dataset(
-        self,
-        name: str,
-        description: str,
-        filters: Dict[str, Any]
+        self, name: str, description: str, filters: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         Create a versioned dataset for fine-tuning.
-        
+
         Args:
             name: Dataset name (e.g., "production", "high-quality")
             description: What this dataset is for
             filters: Filters used to select data
-            
+
         Returns:
             Dataset metadata
         """
         # Get filtered data
         filtered_data = await self.filter_training_data(**filters)
-        
+
         # Export to JSONL
         export_result = await self.export_as_jsonl(
-            filters=filters,
-            output_path=f"/tmp/dataset_{name}_{datetime.now().timestamp()}.jsonl"
+            filters=filters, output_path=f"/tmp/dataset_{name}_{datetime.now().timestamp()}.jsonl"
         )
 
         # Get version number
         async with self.db_pool.acquire() as conn:
             version = await conn.fetchval(
-                "SELECT MAX(version) FROM training_datasets WHERE name = $1",
-                name
+                "SELECT MAX(version) FROM training_datasets WHERE name = $1", name
             )
             version = (version or 0) + 1
 
@@ -582,7 +561,7 @@ class TrainingDataService:
                 export_result["example_count"],
                 export_result["avg_quality"],
                 export_result["file_path"],
-                export_result["file_size"]
+                export_result["file_size"],
             )
 
         return {
@@ -591,25 +570,20 @@ class TrainingDataService:
             "example_count": export_result["example_count"],
             "avg_quality": export_result["avg_quality"],
             "file_path": export_result["file_path"],
-            "file_size": export_result["file_size"]
+            "file_size": export_result["file_size"],
         }
 
     async def list_datasets(self) -> List[Dict[str, Any]]:
         """List all versioned datasets"""
         async with self.db_pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT * FROM training_datasets ORDER BY name, version DESC"
-            )
+            rows = await conn.fetch("SELECT * FROM training_datasets ORDER BY name, version DESC")
 
         return [dict(row) for row in rows]
 
     async def get_dataset(self, dataset_id: int) -> Optional[Dict[str, Any]]:
         """Get specific dataset by ID"""
         async with self.db_pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT * FROM training_datasets WHERE id = $1",
-                dataset_id
-            )
+            row = await conn.fetchrow("SELECT * FROM training_datasets WHERE id = $1", dataset_id)
 
         return dict(row) if row else None
 
@@ -629,7 +603,7 @@ class TrainingDataService:
         success: bool,
         tags: Optional[List[str]] = None,
         post_publication_metrics: Optional[Dict[str, Any]] = None,
-        patterns_discovered: Optional[List[str]] = None
+        patterns_discovered: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Save a training example to database"""
         async with self.db_pool.acquire() as conn:
@@ -661,13 +635,13 @@ class TrainingDataService:
                 success,
                 tags or [],
                 json.dumps(post_publication_metrics) if post_publication_metrics else None,
-                json.dumps(patterns_discovered) if patterns_discovered else None
+                json.dumps(patterns_discovered) if patterns_discovered else None,
             )
 
         return {
             "id": row["id"],
             "execution_id": row["execution_id"],
-            "created_at": row["created_at"].isoformat()
+            "created_at": row["created_at"].isoformat(),
         }
 
     # ========================================================================
@@ -689,5 +663,5 @@ class TrainingDataService:
             tags=row["tags"] or [],
             created_at=row["created_at"].isoformat() if row["created_at"] else None,
             post_publication_metrics=row.get("post_publication_metrics"),
-            patterns_discovered=row.get("patterns_discovered")
+            patterns_discovered=row.get("patterns_discovered"),
         )

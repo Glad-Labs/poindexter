@@ -5,7 +5,7 @@ from .content_pipeline import create_content_pipeline_graph
 
 __all__ = [
     "ContentPipelineState",
-    "FinancialAnalysisState", 
+    "FinancialAnalysisState",
     "ContentReviewState",
-    "create_content_pipeline_graph"
+    "create_content_pipeline_graph",
 ]

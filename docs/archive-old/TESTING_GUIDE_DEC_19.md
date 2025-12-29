@@ -10,11 +10,11 @@
 
 You have 3 new/fixed features to test. All implementations are complete and syntax-verified.
 
-| Feature | File | Status | Test Time |
-|---------|------|--------|-----------|
-| Image Source Selection | CreateTaskModal.jsx | ✅ READY | 5 min |
-| KPI Analytics Endpoint | metrics_routes.py | ✅ READY | 10 min |
-| Workflow History | ExecutionHub.jsx | ✅ READY | 5 min |
+| Feature                | File                | Status   | Test Time |
+| ---------------------- | ------------------- | -------- | --------- |
+| Image Source Selection | CreateTaskModal.jsx | ✅ READY | 5 min     |
+| KPI Analytics Endpoint | metrics_routes.py   | ✅ READY | 10 min    |
+| Workflow History       | ExecutionHub.jsx    | ✅ READY | 5 min     |
 
 **Total testing time:** ~20 minutes
 
@@ -23,12 +23,14 @@ You have 3 new/fixed features to test. All implementations are complete and synt
 ## 1️⃣ IMAGE GENERATION SOURCE SELECTION
 
 ### What Changed
+
 - User now selects image source: **Pexels**, **SDXL**, or **Both**
 - Only selected source loads (fixes unnecessary SDXL loading)
 
 ### How to Test
 
 **Test Case A: Pexels Only**
+
 ```
 1. Open Oversight Hub (http://localhost:3000)
 2. Create new task → Image Generation task
@@ -38,6 +40,7 @@ You have 3 new/fixed features to test. All implementations are complete and synt
 ```
 
 **Test Case B: SDXL Only**
+
 ```
 1. Create new task → Image Generation task
 2. In form: Select image source = "SDXL Only"
@@ -46,6 +49,7 @@ You have 3 new/fixed features to test. All implementations are complete and synt
 ```
 
 **Test Case C: Both (Fallback)**
+
 ```
 1. Create new task → Image Generation task
 2. In form: Select image source = "Both"
@@ -54,6 +58,7 @@ You have 3 new/fixed features to test. All implementations are complete and synt
 ```
 
 ### Code Location
+
 - **File:** `web/oversight-hub/src/components/tasks/CreateTaskModal.jsx`
 - **Lines:** 44-87 (imageSource field), 234-246 (conditional flags)
 - **What to look for:** Form has "Image Source" dropdown with 3 options
@@ -63,6 +68,7 @@ You have 3 new/fixed features to test. All implementations are complete and synt
 ## 2️⃣ KPI ANALYTICS ENDPOINT
 
 ### What Changed
+
 - New endpoint: `GET /api/metrics/analytics/kpis`
 - Executive Dashboard now shows **real KPI data** instead of mock data
 - No more 404 errors
@@ -70,6 +76,7 @@ You have 3 new/fixed features to test. All implementations are complete and synt
 ### How to Test
 
 **Test A: API Endpoint (curl)**
+
 ```bash
 # Get your JWT token from browser:
 # Open browser DevTools → Console
@@ -95,17 +102,19 @@ curl -H "Authorization: Bearer {YOUR_TOKEN}" \
 ```
 
 **Test B: Browser UI**
+
 ```
 1. Open Oversight Hub (http://localhost:3000)
 2. Navigate to "Executive Dashboard" tab
 3. Look at KPI cards
-✅ Expected: 
+✅ Expected:
    - Cards should show real numbers (not mock data)
    - No 404 error in console
    - All 6 metrics displayed (Revenue, Content, Tasks, Savings, Engagement, Uptime)
 ```
 
 **Test C: Different Time Ranges**
+
 ```bash
 # Test 7 days
 curl -H "Authorization: Bearer {TOKEN}" \
@@ -123,6 +132,7 @@ curl -H "Authorization: Bearer {TOKEN}" \
 ```
 
 ### Code Location
+
 - **File:** `src/cofounder_agent/routes/metrics_routes.py`
 - **Lines:** 586-746 (161 new lines)
 - **Endpoint:** `GET /api/metrics/analytics/kpis`
@@ -133,6 +143,7 @@ curl -H "Authorization: Bearer {TOKEN}" \
 ## 3️⃣ WORKFLOW HISTORY INTEGRATION
 
 ### What Changed
+
 - ExecutionHub **History tab** now populated with real workflow executions
 - Previously showed empty list/mock data
 - Auto-refreshes every 10 seconds
@@ -140,6 +151,7 @@ curl -H "Authorization: Bearer {TOKEN}" \
 ### How to Test
 
 **Test A: History Tab Display**
+
 ```
 1. Open Oversight Hub (http://localhost:3000)
 2. Navigate to "Execution Hub" tab
@@ -151,6 +163,7 @@ curl -H "Authorization: Bearer {TOKEN}" \
 ```
 
 **Test B: Auto-Refresh**
+
 ```
 1. Open Execution Hub → History tab
 2. Watch the list for 30 seconds
@@ -161,6 +174,7 @@ curl -H "Authorization: Bearer {TOKEN}" \
 ```
 
 **Test C: Click Execution**
+
 ```
 1. Open Execution Hub → History tab
 2. Click on any execution row
@@ -171,6 +185,7 @@ curl -H "Authorization: Bearer {TOKEN}" \
 ```
 
 **Test D: Verify No Errors**
+
 ```
 1. Open browser DevTools → Console
 2. Go to Execution Hub → History tab
@@ -181,6 +196,7 @@ curl -H "Authorization: Bearer {TOKEN}" \
 ```
 
 ### Code Location
+
 - **File:** `web/oversight-hub/src/components/pages/ExecutionHub.jsx`
 - **Lines:** 30-75 (~45 lines added)
 - **API Endpoints:**
@@ -195,6 +211,7 @@ curl -H "Authorization: Bearer {TOKEN}" \
 ## 📋 TESTING CHECKLIST
 
 ### Pre-Testing
+
 - [ ] Both services running:
   - [ ] Frontend: `npm start` in `web/oversight-hub/` (port 3000)
   - [ ] Backend: `python -m uvicorn main:app --reload` (port 8000)
@@ -202,12 +219,14 @@ curl -H "Authorization: Bearer {TOKEN}" \
 - [ ] Browser DevTools open (console + network tabs)
 
 ### Image Generation Testing
+
 - [ ] Test: Pexels only → SDXL doesn't load
 - [ ] Test: SDXL only → Pexels doesn't load
 - [ ] Test: Both → Both available
 - [ ] Verify: Form has image source dropdown
 
 ### KPI Endpoint Testing
+
 - [ ] API: curl returns valid JSON
 - [ ] API: Different time ranges work
 - [ ] Browser: Executive Dashboard loads
@@ -215,6 +234,7 @@ curl -H "Authorization: Bearer {TOKEN}" \
 - [ ] Browser: No 404 errors in console
 
 ### Workflow History Testing
+
 - [ ] Browser: History tab shows executions
 - [ ] Browser: List auto-refreshes every 10s
 - [ ] Browser: Can click execution for details
@@ -222,6 +242,7 @@ curl -H "Authorization: Bearer {TOKEN}" \
 - [ ] Network: GET /api/workflow/history succeeds
 
 ### Final Verification
+
 - [ ] No console errors across all tests
 - [ ] All API responses have correct format
 - [ ] All UI updates display correctly
@@ -233,23 +254,27 @@ curl -H "Authorization: Bearer {TOKEN}" \
 ## 🐛 Troubleshooting
 
 ### If Image Generation dropdown not visible
+
 - **Check:** CreateTaskModal.jsx lines 44-87
 - **Verify:** imageSource field is in form state
 - **Fix:** Clear browser cache, refresh page
 
 ### If KPI Endpoint returns 404
+
 - **Check:** Backend running on port 8000
 - **Verify:** metrics_routes.py lines 586-746 exist
 - **Test:** `curl http://localhost:8000/api/metrics/analytics/kpis` (without auth)
 - **Fix:** Restart FastAPI server
 
 ### If Workflow History shows empty
+
 - **Check:** Backend has workflow data in database
 - **Verify:** ExecutionHub.jsx lines 30-75 have fetch call
 - **Test:** Create a task first (so there's data)
 - **Check:** Console for API errors
 
 ### If auto-refresh not working
+
 - **Check:** Browser doesn't have tab in background
 - **Verify:** No JavaScript errors in console
 - **Check:** Network tab shows 10-second interval requests
@@ -269,14 +294,16 @@ Copy and fill in after testing:
 **Environment:** Local development
 
 ### Image Generation Source Selection
+
 - [ ] Pexels only: PASS / FAIL
-  - Notes: 
+  - Notes:
 - [ ] SDXL only: PASS / FAIL
   - Notes:
 - [ ] Both: PASS / FAIL
   - Notes:
 
 ### KPI Analytics Endpoint
+
 - [ ] curl test: PASS / FAIL
   - Notes:
 - [ ] Executive Dashboard: PASS / FAIL
@@ -285,6 +312,7 @@ Copy and fill in after testing:
   - Notes:
 
 ### Workflow History Integration
+
 - [ ] History tab displays: PASS / FAIL
   - Notes:
 - [ ] Auto-refresh works: PASS / FAIL
@@ -293,12 +321,14 @@ Copy and fill in after testing:
   - Notes:
 
 ### Overall
+
 - [ ] No console errors
 - [ ] All API calls successful
 - [ ] UI looks correct
 - [ ] Ready to deploy: YES / NO
 
 **Issues found:**
+
 - [ ] None
 - [ ] Minor (cosmetic)
 - [ ] Major (functionality broken)
@@ -314,12 +344,14 @@ Copy and fill in after testing:
 All of the following must be true:
 
 ✅ **Image Generation:**
+
 - Form has image source dropdown
 - "Pexels only" doesn't load SDXL
 - "SDXL only" doesn't load Pexels
 - "Both" loads both with fallback
 
 ✅ **KPI Endpoint:**
+
 - API responds with valid JSON
 - Executive Dashboard shows real KPI data
 - All 6 metrics display
@@ -327,12 +359,14 @@ All of the following must be true:
 - Different time ranges work
 
 ✅ **Workflow History:**
+
 - History tab shows executions
 - Data auto-refreshes every 10 seconds
 - Can click for details
 - No console errors
 
 ✅ **Overall:**
+
 - No JavaScript errors in console
 - All API calls successful
 - All UI elements render correctly
@@ -371,6 +405,7 @@ All of the following must be true:
 ## 🎉 After Testing
 
 Once all tests pass:
+
 1. ✅ Document results using template above
 2. ✅ Share with team
 3. ✅ Prepare for staging deployment
