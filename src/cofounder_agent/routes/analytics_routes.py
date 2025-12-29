@@ -128,23 +128,16 @@ async def get_kpi_metrics(
         logger.debug(f"  📅 Time window: {start_time} to {now}")
         
         # ===== QUERY TASK STATISTICS =====
-        logger.debug(f"  🔍 Querying task statistics...")
+        logger.debug(f"  🔍 Querying task statistics from content_tasks...")
         
-        # Get all tasks in the time range
-        tasks = await db.query(
-            """
-            SELECT 
-                id, task_name, status, created_at, completed_at, 
-                estimated_cost, actual_cost, model_used,
-                task_type, task_metadata
-            FROM tasks
-            WHERE created_at >= %s OR %s IS NULL
-            ORDER BY created_at DESC
-            """,
-            (start_time, start_time) if start_time else (None, None)
+        # Query tasks from database for this date range
+        tasks = await db.get_tasks_by_date_range(
+            start_date=start_time,
+            end_date=now,
+            limit=10000
         )
         
-        logger.debug(f"  ✅ Retrieved {len(tasks) if tasks else 0} tasks")
+        logger.debug(f"  ✅ Retrieved {len(tasks)} tasks from database")
         
         if not tasks:
             # Return zero metrics if no tasks found

@@ -69,11 +69,13 @@ pytest>=7.4.0
 
 # ===== OBSERVABILITY & TRACING =====
 # OpenTelemetry for tracing and monitoring
-opentelemetry-api>=1.24.0
-opentelemetry-sdk>=1.24.0
-opentelemetry-exporter-otlp>=1.24.0
-opentelemetry-instrumentation-fastapi>=0.45.0
-opentelemetry-instrumentation>=0.45.0
+# Pin setuptools<81 to avoid pkg_resources deprecation (see: setuptools#3932)
+setuptools<81
+opentelemetry-api>=1.27.0
+opentelemetry-sdk>=1.27.0
+opentelemetry-exporter-otlp>=1.27.0
+opentelemetry-instrumentation-fastapi>=0.48b0
+opentelemetry-instrumentation>=0.48b0
 pytest-asyncio>=0.21.0
 pytest-cov>=4.1.0
 pytest-timeout>=2.1.0

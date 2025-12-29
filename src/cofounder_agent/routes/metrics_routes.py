@@ -585,7 +585,7 @@ async def get_budget_status(
 @metrics_router.get("/analytics/kpis")
 async def get_kpi_analytics(
     current_user: UserProfile = Depends(get_current_user),
-    range: str = Query("30days", description="Time range: 7days, 30days, 90days, all")
+    range: str = Query("30d", description="Time range: 1d, 7d, 30d, 90d, all")
 ) -> Dict[str, Any]:
     """
     Get key performance indicator (KPI) metrics for executive dashboard.
@@ -593,7 +593,7 @@ async def get_kpi_analytics(
     **Authentication:** Requires valid JWT token
     
     **Parameters:**
-    - range: Time range for aggregation (7days, 30days, 90days, all)
+    - range: Time range for aggregation (1d, 7d, 30d, 90d, all)
     
     **Returns:**
     - Business KPI metrics including:
@@ -613,18 +613,28 @@ async def get_kpi_analytics(
         from datetime import datetime, timedelta
         now = datetime.utcnow()
         
-        if range == "7days":
-            start_date = now - timedelta(days=7)
-        elif range == "90days":
-            start_date = now - timedelta(days=90)
-        elif range == "all":
-            start_date = datetime.utcfromtimestamp(0)
-        else:  # Default 30days
-            start_date = now - timedelta(days=30)
+        # Validate range parameter
+        valid_ranges = {"1d", "7d", "30d", "90d", "all"}
+        if range not in valid_ranges:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid range '{range}'. Must be one of: {', '.join(sorted(valid_ranges))}"
+            )
         
-        # Get cost metrics
-        cost_metrics = await cost_service.get_monthly_cost_breakdown()
-        total_cost = cost_metrics.get('total', 0.0) if cost_metrics else 0.0
+        if range == "1d":
+            start_date = now - timedelta(days=1)
+        elif range == "7d":
+            start_date = now - timedelta(days=7)
+        elif range == "30d":
+            start_date = now - timedelta(days=30)
+        elif range == "90d":
+            start_date = now - timedelta(days=90)
+        else:  # all
+            start_date = datetime.utcfromtimestamp(0)
+        
+        # Get cost metrics using available method
+        cost_summary = await cost_service.get_summary()
+        total_cost = cost_summary.get('month_cost', 0.0) if cost_summary else 0.0
         
         # Query task counts from database
         from sqlalchemy import select, and_, func

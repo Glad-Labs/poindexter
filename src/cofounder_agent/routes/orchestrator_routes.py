@@ -45,7 +45,7 @@ Approval/Publishing workflow:
 
 Architecture:
 ==============
-- All tasks stored in 'tasks' table in PostgreSQL
+- All tasks stored in 'content_tasks' table in PostgreSQL
 - UnifiedOrchestrator creates tasks via DatabaseService.add_task()
 - task_routes.py provides universal task management for ALL task types
 - orchestrator_routes.py provides unique orchestration features (publishing, training, metrics)

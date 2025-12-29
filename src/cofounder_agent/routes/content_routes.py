@@ -197,6 +197,31 @@ async def create_content_task(
 
         # Update with additional fields stored in metadata
         logger.debug(f"  📝 Updating task with additional fields...")
+        
+        # Calculate estimated costs early (before update call)
+        from services.cost_calculator import get_cost_calculator
+        
+        cost_calculator = get_cost_calculator()
+        models_used = {}
+        cost_breakdown = {}
+        estimated_cost = 0.0
+        
+        if request.models_by_phase:
+            # Use specified models with CostCalculator
+            cost_result = cost_calculator.calculate_task_cost(request.models_by_phase)
+            estimated_cost = cost_result.total_cost
+            cost_breakdown = cost_result.by_phase
+            models_used = request.models_by_phase
+        else:
+            # Auto-calculate based on quality preference
+            quality_pref = request.quality_preference or "balanced"
+            cost_result = cost_calculator.calculate_cost_with_defaults(quality_pref)
+            estimated_cost = cost_result.total_cost
+            cost_breakdown = cost_result.by_phase
+            # Extract models from the default selection
+            models_used = cost_calculator._select_default_models(quality_pref)
+        
+        # Include costs in the update
         update_result = await task_store.update_task(
             task_id,
             {
@@ -207,7 +232,14 @@ async def create_content_task(
                     "target_environment": request.target_environment,
                     "llm_provider": request.llm_provider,  # Store LLM provider override
                     "model": request.model,  # Store model override
+                    "cost_breakdown": cost_breakdown,
+                    "estimated_cost": estimated_cost,
+                    "models_used": models_used,
                 },
+                "estimated_cost": estimated_cost,
+                "cost_breakdown": cost_breakdown,
+                "model_selections": models_used,
+                "quality_preference": request.quality_preference or "balanced",
             },
         )
         logger.debug(f"  ✅ Task updated: {update_result}")
@@ -231,38 +263,6 @@ async def create_content_task(
             quality_preference=request.quality_preference
         )
         logger.debug(f"  ✓ Background task queued with complete parameters")
-
-        # ========================================================================
-        # Calculate estimated costs based on model selection
-        # ========================================================================
-        estimated_cost = 0.0
-        cost_breakdown = {}
-        models_used = {}
-        
-        if request.models_by_phase:
-            # Use specified models
-            from services.model_selector_service import ModelSelector
-            selector = ModelSelector()
-            
-            for phase, model in request.models_by_phase.items():
-                cost = selector.estimate_cost(phase, model)
-                cost_breakdown[phase] = cost
-                models_used[phase] = model
-                estimated_cost += cost
-        elif request.quality_preference:
-            # Auto-select based on quality preference
-            from services.model_selector_service import ModelSelector, QualityPreference
-            selector = ModelSelector()
-            
-            quality_enum = QualityPreference[request.quality_preference.upper()]
-            phases = ["research", "outline", "draft", "assess", "refine", "finalize"]
-            
-            for phase in phases:
-                model = selector.auto_select(phase, quality_enum)
-                cost = selector.estimate_cost(phase, model)
-                cost_breakdown[phase] = cost
-                models_used[phase] = model
-                estimated_cost += cost
 
         logger.info(
             f"✅✅ CONTENT TASK CREATED: {task_id} - Type: {request.task_type} - Topic: {request.topic} - "
