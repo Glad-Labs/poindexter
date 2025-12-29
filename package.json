@@ -10,7 +10,7 @@
     "web/oversight-hub"
   ],
   "scripts": {
-    "//": "=== DEVELOPMENT & SETUP ===",
+    "//": "=== UTILITIES ===",
     "dev": "npm run setup:dev && concurrently \"npm run dev:cofounder\" \"npm run dev:frontend\"",
     "dev:all": "concurrently \"npm run dev:cofounder\" \"npm run dev:public\" \"npm run dev:oversight\"",
     "dev:backend": "npm run dev:cofounder",
@@ -18,7 +18,6 @@
     "dev:frontend": "concurrently \"npm run dev:public\" \"npm run dev:oversight\"",
     "dev:oversight": "npm start --workspace=web/oversight-hub",
     "dev:public": "npm run dev --workspace=web/public-site",
-    "//": "=== INSTALLATION & SETUP ===",
     "install:all": "npm install && npm install --workspaces && npm run setup:python",
     "setup": "npm run install:all && npm run setup:env",
     "setup:dev": "npm run setup:env && npm run health:check",
@@ -26,26 +25,21 @@
     "setup:env": "node scripts/select-env.js",
     "clean": "rimraf node_modules package-lock.json **/node_modules **/dist **/.next **/build .venv __pycache__ **/__pycache__ **/*.pyc",
     "clean:install": "npm run clean && npm run install:all",
-    "//": "=== BUILDING ===",
     "build": "npm run build --workspaces --if-present",
     "build:frontend": "npm run build --workspaces=web/public-site --workspaces=web/oversight-hub --if-present",
-    "//": "=== TESTING ===",
     "test": "npm run test --workspaces --if-present",
     "test:ci": "npm run test --workspaces --if-present -- --ci --coverage --watchAll=false",
     "test:python": "cd src/cofounder_agent && python -m pytest tests/ -v --tb=short",
     "test:python:smoke": "cd src/cofounder_agent && python -m pytest tests/test_e2e_fixed.py -v --tb=short",
     "test:python:coverage": "cd src/cofounder_agent && python -m pytest tests/ -v --cov --cov-report=html",
     "test:all": "npm run test:python && npm run test",
-    "//": "=== CODE QUALITY ===",
     "lint": "npm run lint --workspaces --if-present",
     "lint:fix": "npm run lint:fix --workspaces --if-present",
     "format": "npm run format:js && npm run format:python",
     "format:js": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md}\" \"!**/package-lock.json\" \"!**/node_modules/**\"",
     "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,md}\" \"!**/package-lock.json\" \"!**/node_modules/**\"",
     "format:python": "cd src/cofounder_agent && python -m black . && python -m isort .",
-    "//": "=== MONITORING & HEALTH ===",
     "health:check": "echo 'Checking service health...' && node scripts/health-check.js",
-    "//": "=== UTILITIES ===",
     "env:select": "node scripts/select-env.js"
   },
   "devDependencies": {
@@ -75,6 +69,7 @@
     "nth-check": ">=2.1.1"
   },
   "dependencies": {
+    "ajv": "^8.17.1",
     "psql": "^0.0.1",
     "react-refresh": "^0.14.0"
   }
