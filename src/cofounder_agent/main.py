@@ -607,7 +607,7 @@ async def root():
     return {
         "message": "Glad Labs AI Co-Founder is running",
         "version": "1.0.0",
-        "database_enabled": database_service is not None,
+        "database_enabled": hasattr(app.state, 'database') and app.state.database is not None,
     }
 
 

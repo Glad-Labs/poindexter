@@ -202,39 +202,15 @@ class PayloadInspectionMiddleware(BaseHTTPMiddleware):
     }
 
     async def dispatch(self, request: Request, call_next: Callable) -> Callable:
-        """Inspect request payloads"""
-
-        try:
-            # Only inspect monitored paths
-            if request.url.path not in self.MONITORED_PATHS:
-                return await call_next(request)
-
-            # Only inspect POST/PUT/PATCH requests
-            if request.method not in ["POST", "PUT", "PATCH"]:
-                return await call_next(request)
-
-            # Read body for inspection
-            body = await request.body()
-
-            if body and "application/json" in request.headers.get("content-type", ""):
-                try:
-                    payload = json.loads(body)
-
-                    # Check for suspicious patterns in payload
-                    self._check_payload(payload, request.url.path)
-
-                except json.JSONDecodeError:
-                    # Invalid JSON already caught by InputValidationMiddleware
-                    pass
-
-            # Continue processing
-            response = await call_next(request)
-            return response
-
-        except Exception as e:
-            logger.error(f"Payload inspection error: {str(e)}", exc_info=True)
-            # Don't block request on inspection errors
-            return await call_next(request)
+        """
+        Pass through without payload inspection.
+        
+        NOTE: InputValidationMiddleware already validates requests.
+        This middleware is kept for future logging needs but currently disabled.
+        """
+        # Skip all inspection - InputValidationMiddleware handles validation
+        response = await call_next(request)
+        return response
 
     def _check_payload(self, payload: dict, path: str) -> None:
         """Check payload for suspicious patterns"""

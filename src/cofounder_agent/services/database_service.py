@@ -92,8 +92,10 @@ class DatabaseService:
         """Initialize connection pool for PostgreSQL"""
         try:
             # PostgreSQL requires connection pooling
-            min_size = int(os.getenv("DATABASE_POOL_MIN_SIZE", "10"))
-            max_size = int(os.getenv("DATABASE_POOL_MAX_SIZE", "20"))
+            # Increased from 10-20 to 20-50 to handle concurrent requests
+            # (especially from periodic task list polling + task creation)
+            min_size = int(os.getenv("DATABASE_POOL_MIN_SIZE", "20"))
+            max_size = int(os.getenv("DATABASE_POOL_MAX_SIZE", "50"))
 
             self.pool = await asyncpg.create_pool(
                 self.database_url,

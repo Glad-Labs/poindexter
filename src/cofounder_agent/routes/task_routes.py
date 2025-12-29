@@ -320,7 +320,7 @@ async def create_task(
 @router.get("", response_model=TaskListResponse, summary="List tasks")
 async def list_tasks(
     offset: int = Query(0, ge=0, description="Pagination offset"),
-    limit: int = Query(20, ge=1, le=100, description="Results per page (default: 20, max: 100)"),
+    limit: int = Query(20, ge=1, le=1000, description="Results per page (default: 20, max: 1000)"),
     status: Optional[str] = Query(None, description="Filter by status (optional)"),
     category: Optional[str] = Query(None, description="Filter by category (optional)"),
     current_user: dict = Depends(get_current_user),
@@ -333,7 +333,7 @@ async def list_tasks(
     - Database-level pagination (not in-memory, much faster!)
     - Server-side filtering (status, category)
     - Default limit: 20 (retrieves only what user sees)
-    - Max limit: 100 (prevents abuse)
+    - Max limit: 1000 (prevents abuse while allowing bulk retrieval)
     - Expected response time: <2 seconds (was 150s with all tasks)
 
     **Query Parameters:**
