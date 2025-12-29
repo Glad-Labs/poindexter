@@ -30,6 +30,7 @@ class BlogPost(BaseModel):
     task_id: Optional[str] = None  # Firestore document ID for the task
     run_id: Optional[str] = None
     refinement_loops: int = 3
+    writing_style: Optional[str] = None  # Writing style: technical, narrative, listicle, educational, thought-leadership
     # SEO & Metadata
     title: Optional[str] = None
     meta_description: Optional[str] = None

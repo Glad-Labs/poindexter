@@ -116,9 +116,14 @@ class InputValidationMiddleware(BaseHTTPMiddleware):
                 raise ValueError(f"Header {header} value is too long")
 
     async def _validate_body(self, request: Request) -> None:
-        """Validate request body"""
+        """Validate request body based on headers only.
+        
+        NOTE: We do NOT read the request body here because doing so consumes
+        the stream, making it unavailable for the actual handler.
+        Body validation will be handled by FastAPI/Pydantic in the endpoint handlers.
+        """
 
-        # Check Content-Length header
+        # Check Content-Length header only (does not consume stream)
         content_length = request.headers.get("content-length")
         if content_length:
             try:
@@ -132,27 +137,14 @@ class InputValidationMiddleware(BaseHTTPMiddleware):
                     raise
                 raise ValueError("Invalid Content-Length header")
 
-        # For JSON endpoints, validate JSON structure
+        # Validate Content-Type header (does not consume stream)
         content_type = request.headers.get("content-type", "")
         if "application/json" in content_type:
-            try:
-                body = await request.body()
-
-                if len(body) > self.MAX_BODY_SIZE:
-                    raise ValueError(
-                        f"Request body exceeds maximum size of {self.MAX_BODY_SIZE} bytes"
-                    )
-
-                # Validate JSON is parseable
-                if body:
-                    json.loads(body)
-
-            except json.JSONDecodeError as e:
-                raise ValueError(f"Invalid JSON: {str(e)}")
-            except Exception as e:
-                if "exceeds maximum" in str(e):
-                    raise
-                raise ValueError(f"Error reading request body: {str(e)}")
+            # Basic check that content-type is present
+            # JSON validation will be done by FastAPI's built-in JSON parser
+            pass
+        
+        # Validation complete - do NOT read body as it would consume the stream
 
     def _validate_url(self, request: Request) -> None:
         """Validate URL path and query parameters"""

@@ -53,8 +53,21 @@ class CreativeAgent:
                 research_context=post.research_data,
                 internal_link_titles=list(post.published_posts_map.keys()),
             )
+            
+            # Inject writing style guidance if provided
+            if post.writing_style:
+                style_guidance = {
+                    "technical": "Use technical language, include code examples and implementation details where appropriate.",
+                    "narrative": "Use storytelling techniques with real-world examples and anecdotes. Build a narrative arc.",
+                    "listicle": "Structure as a clear numbered or bulleted list with distinct, self-contained items.",
+                    "educational": "Focus on teaching. Use simple language and progressively build complexity with practical examples.",
+                    "thought-leadership": "Position as expert analysis. Include insights, research citations, and forward-thinking perspectives."
+                }
+                style_text = style_guidance.get(post.writing_style, "Use a professional writing style.")
+                draft_prompt += f"\n\n⭐ WRITING STYLE: {post.writing_style.upper()}\nApproach: {style_text}"
+            
             logger.info(
-                f"CreativeAgent: Starting initial content generation for '{post.topic}'."
+                f"CreativeAgent: Starting initial content generation for '{post.topic}' with style: {post.writing_style or 'default'}."
             )
             raw_draft = await self.llm_client.generate_text(draft_prompt)
 

@@ -452,6 +452,7 @@ class ContentOrchestrator:
                 category="general",
                 status="draft",
                 research_data=research_data,
+                writing_style=style,  # Pass writing style from request
             )
 
             # Inject constraint instructions before creative generation (Tier 1)
