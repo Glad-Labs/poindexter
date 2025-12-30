@@ -86,6 +86,16 @@ class MiddlewareConfig:
         Setup CORS (Cross-Origin Resource Sharing) middleware.
 
         Configuration is environment-based for security.
+        
+        Default development origins (localhost, 127.0.0.1 on ports 3000-3004):
+        - http://localhost:3000 (Next.js public site)
+        - http://localhost:3001 (React oversight hub)
+        - http://127.0.0.1:3000-3004 (alternative localhost addresses)
+        
+        For production, set ALLOWED_ORIGINS env var to comma-separated list:
+        ALLOWED_ORIGINS=https://yourdomain.com,https://app.yourdomain.com
+        
+        ⚠️  WARNING: Never use allow_origins=["*"] in production!
         """
         # Get allowed origins from environment, with safe defaults
         # Includes ports 3000, 3001, 3002, 3003, 3004 for development (in case of port conflicts)
@@ -97,6 +107,10 @@ class MiddlewareConfig:
         # Strip whitespace from origins
         allowed_origins = [origin.strip() for origin in allowed_origins]
 
+        # Log warning if allowing many origins (likely development mode)
+        if len(allowed_origins) > 2:
+            logger.info(f"  ⚠️  Development mode: Allowing {len(allowed_origins)} origins")
+        
         logger.info(f"  CORS Origins: {allowed_origins}")
 
         app.add_middleware(

@@ -23,7 +23,7 @@
     "setup:dev": "npm run setup:env && npm run health:check",
     "setup:python": "pip install -r requirements.txt && pip install -r src/cofounder_agent/requirements.txt",
     "setup:env": "node scripts/select-env.js",
-    "clean": "rimraf node_modules package-lock.json **/node_modules **/dist **/.next **/build .venv __pycache__ **/__pycache__ **/*.pyc",
+    "clean": "rm -rf node_modules package-lock.json yarn.lock **/node_modules **/dist **/.next **/build .venv __pycache__ **/__pycache__ **/*.pyc",
     "clean:install": "npm run clean && npm run install:all",
     "build": "npm run build --workspaces --if-present",
     "build:frontend": "npm run build --workspaces=web/public-site --workspaces=web/oversight-hub --if-present",
@@ -38,20 +38,23 @@
     "test:python:coverage": "cd src/cofounder_agent && python -m pytest tests/ -v --cov --cov-report=html",
     "test:all": "npm run test:python && npm run test",
     "format:python": "cd src/cofounder_agent && python -m black . && python -m isort .",
-    "health:check": "echo 'Checking service health...' && node scripts/health-check.js",
+    "type:check": "cd src/cofounder_agent && python -m mypy --config-file=../../pyproject.toml",
+    "type:check:strict": "cd src/cofounder_agent && python -m mypy --config-file=../../pyproject.toml --strict",
+    "lint:python": "cd src/cofounder_agent && python -m pylint src/ --disable=C0111,C0103,W0612",
+    "lint:python:sql": "cd src/cofounder_agent && python -m pylint src/ --disable=all --enable=E0001,E0101,E0203,E0211,E0213,E1121,E1123,E1136,E1200,E1201,E1205,E1206,E1300,E1301,E1302,E1303,E1304,E1305,E1306,E1307,E1401,E1999",
     "env:select": "node scripts/select-env.js"
   },
   "devDependencies": {
-    "@typescript-eslint/eslint-plugin": "^8.0.0",
-    "@typescript-eslint/parser": "^8.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.51.0",
+    "@typescript-eslint/parser": "^8.51.0",
     "baseline-browser-mapping": "^2.9.11",
     "concurrently": "^9.2.1",
     "cross-env": "^7.0.3",
-    "eslint": "^9.17.0",
+    "eslint": "^9.39.2",
     "markdownlint-cli": "^0.42.0",
     "npm-run-all": "^4.1.5",
-    "prettier": "^3.6.2",
-    "rimraf": "^6.0.0",
+    "prettier": "^3.7.4",
+    "rimraf": "^6.1.2",
     "wait-on": "^7.2.0"
   },
   "engines": {
@@ -70,6 +73,6 @@
   "dependencies": {
     "ajv": "^8.17.1",
     "psql": "^0.0.1",
-    "react-refresh": "^0.14.0"
+    "react-refresh": "^0.14.2"
   }
 }

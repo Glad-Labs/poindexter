@@ -1,71 +1,49 @@
 """
-PostgreSQL Database Service using asyncpg (async driver, no SQLAlchemy)
+PostgreSQL Database Service Coordinator
 
-Replaces Google Cloud Firestore with asyncpg directly.
-All methods are async and return plain dicts for easy JSON serialization.
+Orchestrates access to 4 specialized database modules:
+- UsersDatabase: User and OAuth operations
+- TasksDatabase: Task management and filtering
+- ContentDatabase: Posts, quality evaluations, metrics
+- AdminDatabase: Logging, financial tracking, settings, health
 
-Benefits:
-- No SQLAlchemy complexity
-- Pure async (no greenlet issues)
-- Simple SQL queries
-- Smaller deployment
-- Easier debugging
+This maintains 100% backward compatibility while providing cleaner
+architecture and domain-specific separation of concerns.
+
+All existing methods are delegated to appropriate modules.
+Connection pool is shared across all modules.
 """
 
 import logging
 import os
 import asyncpg
-import json
-from typing import Dict, List, Optional, Any, Tuple
-from datetime import datetime, timedelta, timezone
-from uuid import UUID, uuid4
+from typing import Optional
+
+from .users_db import UsersDatabase
+from .tasks_db import TasksDatabase
+from .content_db import ContentDatabase
+from .admin_db import AdminDatabase
 
 logger = logging.getLogger(__name__)
 
 
-def serialize_value_for_postgres(value: Any) -> Any:
-    """
-    Serialize Python values for PostgreSQL asyncpg.
-
-    Handles:
-    - dict/list → JSON string (for JSONB columns)
-    - datetime → as-is (asyncpg handles this, don't convert to string!)
-    - UUID → string
-    - Other types → as-is
-
-    Args:
-        value: Python value to serialize
-
-    Returns:
-        PostgreSQL-compatible value
-    """
-    if isinstance(value, dict):
-        # JSONB fields need JSON strings, not dicts
-        return json.dumps(value)
-    elif isinstance(value, list):
-        # Arrays of objects need JSON strings
-        return json.dumps(value)
-    elif isinstance(value, datetime):
-        # IMPORTANT: asyncpg handles datetime objects directly
-        # Do NOT convert to string - asyncpg will encode it properly
-        return value
-    elif isinstance(value, UUID):
-        return str(value)
-    else:
-        return value
-
-
 class DatabaseService:
     """
-    PostgreSQL database service using asyncpg (pure async)
-
-    All methods are async and return plain dicts.
-    Connection pool handles concurrency automatically.
+    PostgreSQL database service coordinator.
+    
+    Delegates to 4 specialized modules:
+    - self.users: User/OAuth operations
+    - self.tasks: Task management
+    - self.content: Posts/quality/metrics
+    - self.admin: Logging/financial/settings
+    
+    Maintains 100% backward compatibility with original DatabaseService.
+    All existing method calls still work via delegation.
     """
 
     def __init__(self, database_url: Optional[str] = None):
         """
-        Initialize database service with asyncpg
+        Initialize database service coordinator with asyncpg.
 
         Args:
             database_url: PostgreSQL connection URL
@@ -74,7 +52,6 @@ class DatabaseService:
         if database_url:
             self.database_url = database_url
         else:
-            # Require DATABASE_URL env var - no fallback to SQLite
             database_url_env = os.getenv("DATABASE_URL")
             if not database_url_env:
                 raise ValueError(
@@ -87,13 +64,17 @@ class DatabaseService:
         logger.info(f"DatabaseService initialized with PostgreSQL: {self.database_url[:50]}...")
 
         self.pool = None
+        
+        # Delegate modules will be initialized after pool is created
+        self.users: Optional[UsersDatabase] = None
+        self.tasks: Optional[TasksDatabase] = None
+        self.content: Optional[ContentDatabase] = None
+        self.admin: Optional[AdminDatabase] = None
 
-    async def initialize(self):
-        """Initialize connection pool for PostgreSQL"""
+    async def initialize(self) -> None:
+        """Initialize connection pool and all delegate modules."""
         try:
             # PostgreSQL requires connection pooling
-            # Increased from 10-20 to 20-50 to handle concurrent requests
-            # (especially from periodic task list polling + task creation)
             min_size = int(os.getenv("DATABASE_POOL_MIN_SIZE", "20"))
             max_size = int(os.getenv("DATABASE_POOL_MAX_SIZE", "50"))
 
@@ -104,1586 +85,206 @@ class DatabaseService:
                 timeout=30,
             )
             logger.info(f"✅ Database pool initialized (size: {min_size}-{max_size})")
+            
+            # Initialize all delegate modules
+            self.users = UsersDatabase(self.pool)
+            self.tasks = TasksDatabase(self.pool)
+            self.content = ContentDatabase(self.pool)
+            self.admin = AdminDatabase(self.pool)
+            
+            logger.info("✅ All database modules initialized (users, tasks, content, admin)")
         except Exception as e:
             logger.error(f"❌ Failed to initialize database: {e}")
             raise
 
-    async def close(self):
-        """Close connection pool"""
+    async def close(self) -> None:
+        """Close connection pool."""
         if self.pool:
             await self.pool.close()
             logger.info("Database pool closed")
 
     # ========================================================================
-    # USERS
+    # BACKWARD COMPATIBILITY: Delegation Methods
     # ========================================================================
-
-    async def get_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
-        """Get user by ID"""
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT * FROM users WHERE id = $1::uuid", user_id)
-            return self._convert_row_to_dict(row) if row else None
-
-    async def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
-        """Get user by email"""
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT * FROM users WHERE email = $1", email)
-            return self._convert_row_to_dict(row) if row else None
-
-    async def get_user_by_username(self, username: str) -> Optional[Dict[str, Any]]:
-        """Get user by username"""
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT * FROM users WHERE username = $1", username)
-            return self._convert_row_to_dict(row) if row else None
-
-    async def create_user(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Create new user"""
-        user_id = user_data.get("id") or str(uuid4())
-
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                INSERT INTO users (
-                    id, email, username, password_hash, is_active, created_at, updated_at
-                )
-                VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-                RETURNING *
-                """,
-                user_id,
-                user_data.get("email"),
-                user_data.get("username"),
-                user_data.get("password_hash"),
-                user_data.get("is_active", True),
-            )
-            return self._convert_row_to_dict(row)
-
-    # ========================================================================
-    # OAUTH - Get or Create User from OAuth Provider
-    # ========================================================================
-
-    async def get_or_create_oauth_user(
-        self,
-        provider: str,
-        provider_user_id: str,
-        provider_data: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Get existing OAuth user or create new one from provider data.
-
-        Args:
-            provider: OAuth provider name ('github', 'google', etc.)
-            provider_user_id: User ID from provider
-            provider_data: User data from provider {username, email, avatar_url, etc.}
-
-        Returns:
-            User dict with id, email, username, is_active, created_at, updated_at
-
-        Logic:
-        1. Check if OAuthAccount already exists (prevent duplicate linking)
-        2. If OAuth account exists, return existing user
-        3. If OAuth account doesn't exist but email exists, link OAuth to existing user
-        4. If nothing exists, create new user and link OAuth account
-        """
-        import json
-
-        async with self.pool.acquire() as conn:
-            # Step 1: Check if OAuthAccount already linked
-            oauth_row = await conn.fetchrow(
-                """
-                SELECT oa.user_id 
-                FROM oauth_accounts oa
-                WHERE oa.provider = $1 AND oa.provider_user_id = $2
-                """,
-                provider,
-                provider_user_id,
-            )
-
-            if oauth_row:
-                # OAuth account already linked, get existing user
-                user_id = oauth_row["user_id"]
-                logger.info(f"✅ OAuth account found, getting user: {user_id}")
-
-                user = await conn.fetchrow(
-                    "SELECT * FROM users WHERE id = $1",
-                    user_id,
-                )
-                return dict(user) if user else None
-
-            # Step 2: Check if user with same email already exists
-            email = provider_data.get("email")
-            existing_user = None
-
-            if email:
-                existing_user = await conn.fetchrow(
-                    "SELECT * FROM users WHERE email = $1",
-                    email,
-                )
-
-            if existing_user:
-                # Email exists, link OAuth account to existing user
-                user_id = existing_user["id"]
-                logger.info(f"✅ Email found, linking OAuth to user: {user_id}")
-
-                # Create OAuth account link
-                provider_data_json = json.dumps(provider_data)
-                await conn.execute(
-                    """
-                    INSERT INTO oauth_accounts (
-                        id, user_id, provider, provider_user_id, provider_data, created_at, last_used
-                    )
-                    VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-                    """,
-                    str(uuid4()),
-                    user_id,
-                    provider,
-                    provider_user_id,
-                    provider_data_json,
-                )
-
-                return dict(existing_user)
-
-            # Step 3: Create new user and OAuth account
-            user_id = str(uuid4())
-            logger.info(f"✅ Creating new user from OAuth: {user_id}")
-
-            # Create user
-            user = await conn.fetchrow(
-                """
-                INSERT INTO users (
-                    id, email, username, is_active, created_at, updated_at
-                )
-                VALUES ($1, $2, $3, $4, NOW(), NOW())
-                RETURNING *
-                """,
-                user_id,
-                email,
-                provider_data.get("username", email.split("@")[0] if email else "user"),
-                True,  # OAuth users are active by default
-            )
-
-            # Create OAuth account link
-            provider_data_json = json.dumps(provider_data)
-            await conn.execute(
-                """
-                INSERT INTO oauth_accounts (
-                    id, user_id, provider, provider_user_id, provider_data, created_at, last_used
-                )
-                VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-                """,
-                str(uuid4()),
-                user_id,
-                provider,
-                provider_user_id,
-                provider_data_json,
-            )
-
-            logger.info(f"✅ Created new OAuth user: {user_id}")
-            return dict(user) if user else None
-
-    async def get_oauth_accounts(self, user_id: str) -> List[Dict[str, Any]]:
-        """Get all OAuth accounts linked to a user"""
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT id, provider, provider_user_id, provider_data, created_at, last_used
-                FROM oauth_accounts
-                WHERE user_id = $1::uuid
-                ORDER BY last_used DESC
-                """,
-                user_id,
-            )
-            return [dict(row) for row in rows]
-
-    async def unlink_oauth_account(self, user_id: str, provider: str) -> bool:
-        """Unlink OAuth account from user"""
-        async with self.pool.acquire() as conn:
-            result = await conn.execute(
-                """
-                DELETE FROM oauth_accounts
-                WHERE user_id = $1::uuid AND provider = $2
-                """,
-                user_id,
-                provider,
-            )
-            # Result is a string like "DELETE 1"
-            return "1" in result or "1" == result
-
-    # ========================================================================
-    # TASKS - CONSOLIDATED (uses content_tasks as single source of truth)
-    # ========================================================================
-
-    async def get_pending_tasks(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """Get pending tasks from content_tasks"""
-        try:
-            if not self.pool:
-                return []
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch(
-                    """
-                    SELECT * FROM content_tasks
-                    WHERE status = 'pending'
-                    ORDER BY created_at DESC
-                    LIMIT $1
-                    """,
-                    limit,
-                )
-                return [self._convert_row_to_dict(row) for row in rows]
-        except Exception as e:
-            # Table might not exist in fresh database
-            if "content_tasks" in str(e) or "does not exist" in str(e) or "relation" in str(e):
-                return []
-            logger.warning(f"Error fetching pending tasks: {str(e)}")
-            return []
-
-    async def get_all_tasks(self, limit: int = 100) -> List[Dict[str, Any]]:
-        """Get all tasks from content_tasks"""
-        try:
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch(
-                    """
-                    SELECT * FROM content_tasks
-                    ORDER BY created_at DESC
-                    LIMIT $1
-                    """,
-                    limit,
-                )
-                return [self._convert_row_to_dict(row) for row in rows]
-        except Exception as e:
-            logger.error(f"Error fetching all tasks: {e}")
-            return []
-
-    # ========================================================================
-    # LOGS
-    # ========================================================================
-
-    async def add_log_entry(
-        self,
-        agent_name: str,
-        level: str,
-        message: str,
-        context: Optional[Dict[str, Any]] = None,
-    ) -> str:
-        """Add log entry"""
-        log_id = str(uuid4())
-
-        async with self.pool.acquire() as conn:
-            await conn.execute(
-                """
-                INSERT INTO logs (
-                    id, agent_name, level, message, context, created_at
-                )
-                VALUES ($1, $2, $3, $4, $5, NOW())
-                """,
-                log_id,
-                agent_name,
-                level,
-                message,
-                json.dumps(context or {}),  # Serialize context for JSONB column
-            )
-        return log_id
-
-    async def get_logs(
-        self,
-        agent_name: Optional[str] = None,
-        level: Optional[str] = None,
-        limit: int = 100,
-    ) -> List[Dict[str, Any]]:
-        """Get logs with optional filtering"""
-        query = "SELECT * FROM logs WHERE 1=1"
-        params = []
-
-        if agent_name:
-            query += f" AND agent_name = ${len(params) + 1}"
-            params.append(agent_name)
-
-        if level:
-            query += f" AND level = ${len(params) + 1}"
-            params.append(level)
-
-        query += f" ORDER BY created_at DESC LIMIT ${len(params) + 1}"
-        params.append(limit)
-
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch(query, *params)
-            return [dict(row) for row in rows]
-
-    # ========================================================================
-    # FINANCIAL
-    # ========================================================================
-
-    async def add_financial_entry(self, entry_data: Dict[str, Any]) -> str:
-        """Add financial entry"""
-        entry_id = entry_data.get("id") or str(uuid4())
-
-        async with self.pool.acquire() as conn:
-            await conn.execute(
-                """
-                INSERT INTO financial_entries (
-                    id, category, amount, description, tags, created_at
-                )
-                VALUES ($1, $2, $3, $4, $5, NOW())
-                """,
-                entry_id,
-                entry_data.get("category"),
-                entry_data.get("amount"),
-                entry_data.get("description"),
-                json.dumps(entry_data.get("tags", [])),  # Serialize tags for JSONB column
-            )
-        return entry_id
-
-    async def get_financial_summary(self, days: int = 30) -> Dict[str, Any]:
-        """Get financial summary for last N days"""
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
-
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                SELECT
-                    COUNT(*) as total_entries,
-                    SUM(amount) as total_amount,
-                    AVG(amount) as avg_amount,
-                    MIN(amount) as min_amount,
-                    MAX(amount) as max_amount
-                FROM financial_entries
-                WHERE created_at >= $1
-                """,
-                cutoff_date,
-            )
-            return self._convert_row_to_dict(row) if row else {}
-
-    # ========================================================================
-    # AGENT STATUS
-    # ========================================================================
-
-    async def update_agent_status(
-        self,
-        agent_name: str,
-        status: str,
-        last_run: Optional[datetime] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        """Update or create agent status"""
-        last_run = last_run or datetime.utcnow()
-
-        async with self.pool.acquire() as conn:
-            # Try to update first
-            row = await conn.fetchrow(
-                """
-                UPDATE agent_status
-                SET status = $2, last_run = $3, metadata = $4, updated_at = NOW()
-                WHERE agent_name = $1
-                RETURNING *
-                """,
-                agent_name,
-                status,
-                last_run,
-                json.dumps(metadata or {}),  # Serialize metadata for JSONB column
-            )
-
-            # If no rows updated, insert new
-            if not row:
-                row = await conn.fetchrow(
-                    """
-                    INSERT INTO agent_status (
-                        agent_name, status, last_run, metadata, created_at, updated_at
-                    )
-                    VALUES ($1, $2, $3, $4, NOW(), NOW())
-                    RETURNING *
-                    """,
-                    agent_name,
-                    status,
-                    last_run,
-                    json.dumps(metadata or {}),  # Serialize metadata for JSONB column
-                )
-
-            return self._convert_row_to_dict(row)
-
-    async def get_agent_status(self, agent_name: str) -> Optional[Dict[str, Any]]:
-        """Get agent status"""
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT * FROM agent_status WHERE agent_name = $1",
-                agent_name,
-            )
-            return self._convert_row_to_dict(row) if row else None
-
-    # ========================================================================
-    # HEALTH CHECK
-    # ========================================================================
-
-    async def health_check(self, service: str = "cofounder") -> Dict[str, Any]:
-        """Check database health"""
-        try:
-            async with self.pool.acquire() as conn:
-                result = await conn.fetchval("SELECT NOW()")
-
-                return {
-                    "status": "healthy",
-                    "service": service,
-                    "database": "postgresql",
-                    "timestamp": result.isoformat() if result else None,
-                }
-        except Exception as e:
-            logger.error(f"Health check failed: {e}")
-            return {
-                "status": "unhealthy",
-                "service": service,
-                "error": str(e),
-            }
-
-    # ========================================================================
-    # TASK MANAGEMENT (CONSOLIDATED: content_tasks is single source of truth)
-    # ========================================================================
-
-    async def add_task(self, task_data: Dict[str, Any]) -> str:
-        """
-        Add a new task to the database using content_tasks table.
-
-        Consolidates both manual and poindexter task creation pipelines into one table.
-
-        Args:
-            task_data: Task data dict with: task_name, topic, task_type, status, agent_id, style, tone, etc.
-
-        Returns:
-            Task ID (string)
-        """
-        task_id = task_data.get("id", task_data.get("task_id", str(uuid4())))
-        if isinstance(task_id, UUID):
-            task_id = str(task_id)
-
-        # Extract metadata for normalization
-        metadata = task_data.get("task_metadata") or task_data.get("metadata", {})
-        if isinstance(metadata, str):
-            metadata = json.loads(metadata)
-
-        try:
-            # Use naive UTC datetime for PostgreSQL 'timestamp without time zone' columns
-            now = datetime.utcnow()
-
-            async with self.pool.acquire() as conn:
-                result = await conn.fetchval(
-                    """
-                    INSERT INTO content_tasks (
-                        task_id, id, request_type, task_type, status, topic,
-                        style, tone, target_length, agent_id,
-                        primary_keyword, target_audience, category,
-                        content, excerpt, featured_image_url, featured_image_data,
-                        featured_image_prompt, qa_feedback, quality_score,
-                        seo_title, seo_description, seo_keywords,
-                        stage, percentage, message,
-                        tags, task_metadata, model_used, error_message,
-                        approval_status, publish_mode,
-                        model_selections, quality_preference,
-                        estimated_cost, cost_breakdown,
-                        created_at, updated_at
-                    ) VALUES (
-                        $1, $2, $3, $4, $5, $6,
-                        $7, $8, $9, $10,
-                        $11, $12, $13,
-                        $14, $15, $16, $17,
-                        $18, $19, $20,
-                        $21, $22, $23,
-                        $24, $25, $26,
-                        $27, $28, $29, $30,
-                        $31, $32,
-                        $33, $34,
-                        $35, $36,
-                        $37, $38
-                    )
-                    RETURNING task_id
-                    """,
-                    task_id,
-                    task_id,  # id as UUID reference
-                    task_data.get("request_type", "content_generation"),
-                    task_data.get("task_type", "blog_post"),
-                    task_data.get("status", "pending"),
-                    task_data.get("topic", ""),
-                    task_data.get("style", "technical"),
-                    task_data.get("tone", "professional"),
-                    task_data.get("target_length", 1500),
-                    task_data.get("agent_id", "content-agent"),
-                    task_data.get("primary_keyword"),
-                    task_data.get("target_audience"),
-                    task_data.get("category"),
-                    metadata.get("content") or task_data.get("content"),
-                    metadata.get("excerpt") or task_data.get("excerpt"),
-                    metadata.get("featured_image_url") or task_data.get("featured_image_url"),
-                    (
-                        json.dumps(
-                            metadata.get("featured_image_data")
-                            or task_data.get("featured_image_data")
-                        )
-                        if (
-                            metadata.get("featured_image_data")
-                            or task_data.get("featured_image_data")
-                        )
-                        else None
-                    ),
-                    task_data.get("featured_image_prompt"),
-                    metadata.get("qa_feedback"),
-                    metadata.get("quality_score") or task_data.get("quality_score"),
-                    metadata.get("seo_title"),
-                    metadata.get("seo_description"),
-                    metadata.get("seo_keywords"),
-                    metadata.get("stage", "pending"),
-                    metadata.get("percentage", 0),
-                    metadata.get("message"),
-                    json.dumps(task_data.get("tags", [])),
-                    json.dumps(metadata or {}),
-                    task_data.get("model_used"),
-                    task_data.get("error_message"),
-                    task_data.get("approval_status", "pending"),
-                    task_data.get("publish_mode", "draft"),
-                    json.dumps(task_data.get("model_selections", {})),
-                    task_data.get("quality_preference", "balanced"),
-                    float(task_data.get("estimated_cost", 0.0)),
-                    (
-                        json.dumps(task_data.get("cost_breakdown", {}))
-                        if task_data.get("cost_breakdown")
-                        else None
-                    ),
-                    now,
-                    now,
-                )
-                logger.info(f"✅ Task added to content_tasks: {task_id}")
-                return str(result)
-        except Exception as e:
-            logger.error(f"❌ Failed to add task: {e}")
-            raise
-
-    async def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
-        """Get a task from content_tasks by ID"""
-        sql = "SELECT * FROM content_tasks WHERE task_id = $1"
-
-        try:
-            async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(sql, str(task_id))
-                if row:
-                    return self._convert_row_to_dict(row)
-                return None
-        except Exception as e:
-            logger.error(f"❌ Failed to get task {task_id}: {e}")
-            return None
-
-    async def update_task_status(
-        self,
-        task_id: str,
-        status: str,
-        result: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
-        """Update task status in content_tasks"""
-        now = datetime.utcnow()
-
-        if result:
-            sql = """
-                UPDATE content_tasks
-                SET status = $2, result = $3::jsonb, updated_at = $4
-                WHERE task_id = $1
-                RETURNING *
-            """
-            params = [str(task_id), status, result, now]
-        else:
-            sql = """
-                UPDATE content_tasks
-                SET status = $2, updated_at = $3
-                WHERE task_id = $1
-                RETURNING *
-            """
-            params = [str(task_id), status, now]
-
-        try:
-            async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(sql, *params)
-                if row:
-                    logger.info(f"✅ Task status updated: {task_id} → {status}")
-                    return self._convert_row_to_dict(row)
-                return None
-        except Exception as e:
-            logger.error(f"❌ Failed to update task status {task_id}: {e}")
-            return None
-
-    async def update_task(self, task_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """
-        Update task fields in content_tasks.
-
-        Extracts and normalizes fields from task_metadata into dedicated columns.
-        """
-        if not updates:
-            return await self.get_task(task_id)
-
-        # Extract task_metadata for normalization
-        task_metadata = updates.get("task_metadata", {})
-        if isinstance(task_metadata, str):
-            task_metadata = json.loads(task_metadata)
-        elif task_metadata is None:
-            task_metadata = {}
-
-        # Prepare normalized updates
-        normalized_updates = dict(updates)
-
-        # Extract specific fields to dedicated columns
-        if task_metadata:
-            if "content" not in normalized_updates and "content" in task_metadata:
-                normalized_updates["content"] = task_metadata.get("content")
-            if "excerpt" not in normalized_updates and "excerpt" in task_metadata:
-                normalized_updates["excerpt"] = task_metadata.get("excerpt")
-            if (
-                "featured_image_url" not in normalized_updates
-                and "featured_image_url" in task_metadata
-            ):
-                normalized_updates["featured_image_url"] = task_metadata.get("featured_image_url")
-            if (
-                "featured_image_data" not in normalized_updates
-                and "featured_image_data" in task_metadata
-            ):
-                normalized_updates["featured_image_data"] = task_metadata.get("featured_image_data")
-            if "qa_feedback" not in normalized_updates and "qa_feedback" in task_metadata:
-                qa_fb = task_metadata.get("qa_feedback")
-                if isinstance(qa_fb, list):
-                    qa_fb = json.dumps(qa_fb) if qa_fb else None
-                normalized_updates["qa_feedback"] = qa_fb
-            if "quality_score" not in normalized_updates and "quality_score" in task_metadata:
-                normalized_updates["quality_score"] = task_metadata.get("quality_score")
-            if "seo_title" not in normalized_updates and "seo_title" in task_metadata:
-                normalized_updates["seo_title"] = task_metadata.get("seo_title")
-            if "seo_description" not in normalized_updates and "seo_description" in task_metadata:
-                normalized_updates["seo_description"] = task_metadata.get("seo_description")
-            if "seo_keywords" not in normalized_updates and "seo_keywords" in task_metadata:
-                normalized_updates["seo_keywords"] = task_metadata.get("seo_keywords")
-            if "stage" not in normalized_updates and "stage" in task_metadata:
-                normalized_updates["stage"] = task_metadata.get("stage")
-            if "percentage" not in normalized_updates and "percentage" in task_metadata:
-                normalized_updates["percentage"] = task_metadata.get("percentage")
-            if "message" not in normalized_updates and "message" in task_metadata:
-                normalized_updates["message"] = task_metadata.get("message")
-
-        set_clauses = []
-        params = [str(task_id)]
-
-        for key, value in normalized_updates.items():
-            serialized_value = serialize_value_for_postgres(value)
-            set_clauses.append(f"{key} = ${len(params) + 1}")
-            params.append(serialized_value)
-
-        sql = f"""
-            UPDATE content_tasks
-            SET {', '.join(set_clauses)}, updated_at = NOW()
-            WHERE task_id = $1
-            RETURNING *
-        """
-
-        try:
-            async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(sql, *params)
-                return self._convert_row_to_dict(row) if row else None
-        except Exception as e:
-            logger.error(f"❌ Failed to update task {task_id}: {e}")
-            return None
-
-    async def get_tasks_paginated(
-        self,
-        offset: int = 0,
-        limit: int = 20,
-        status: Optional[str] = None,
-        category: Optional[str] = None,
-    ) -> tuple[List[Dict[str, Any]], int]:
-        """Get paginated tasks from content_tasks with optional filtering"""
-        where_clauses = []
-        params = []
-
-        if status:
-            where_clauses.append(f"status = ${len(params) + 1}")
-            params.append(status)
-
-        if category:
-            where_clauses.append(f"category = ${len(params) + 1}")
-            params.append(category)
-
-        where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
-
-        sql_count = f"SELECT COUNT(*) FROM content_tasks WHERE {where_sql}"
-        sql_list = f"""
-            SELECT * FROM content_tasks
-            WHERE {where_sql}
-            ORDER BY created_at DESC
-            LIMIT ${len(params) + 1} OFFSET ${len(params) + 2}
-        """
-
-        try:
-            async with self.pool.acquire() as conn:
-                count_result = await conn.fetchval(sql_count, *params)
-                total = count_result or 0
-
-                params.extend([limit, offset])
-                rows = await conn.fetch(sql_list, *params)
-
-                tasks = [self._convert_row_to_dict(row) for row in rows]
-                logger.info(f"✅ Listed {len(tasks)} tasks (total: {total})")
-                return tasks, total
-        except Exception as e:
-            logger.error(f"❌ Failed to list tasks: {e}")
-            return [], 0
-
-    async def get_task_counts(self) -> Dict[str, int]:
-        """Get task counts by status from content_tasks"""
-        sql = """
-            SELECT status, COUNT(*) as count
-            FROM content_tasks
-            GROUP BY status
-        """
-        try:
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch(sql)
-                counts = {row["status"]: row["count"] for row in rows}
-                return {
-                    "total": sum(counts.values()),
-                    "pending": counts.get("pending", 0),
-                    "in_progress": counts.get("in_progress", 0),
-                    "completed": counts.get("completed", 0),
-                    "failed": counts.get("failed", 0),
-                    "awaiting_approval": counts.get("awaiting_approval", 0),
-                    "approved": counts.get("approved", 0),
-                }
-        except Exception as e:
-            logger.error(f"❌ Failed to get task counts: {e}")
-            return {
-                "total": 0,
-                "pending": 0,
-                "in_progress": 0,
-                "completed": 0,
-                "failed": 0,
-                "awaiting_approval": 0,
-                "approved": 0,
-            }
-
-    async def get_queued_tasks(self, limit: int = 5) -> List[Dict[str, Any]]:
-        """Get top queued/pending tasks from content_tasks"""
-        sql = """
-            SELECT * FROM content_tasks
-            WHERE status = 'pending'
-            ORDER BY created_at ASC
-            LIMIT $1
-        """
-        try:
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch(sql, limit)
-                return [self._convert_row_to_dict(row) for row in rows]
-        except Exception as e:
-            logger.error(f"❌ Failed to get queued tasks: {e}")
-            return []
-
-    async def get_tasks_by_date_range(
-        self,
-        start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None,
-        status: Optional[str] = None,
-        limit: int = 10000,
-    ) -> List[Dict[str, Any]]:
-        """
-        Get tasks from content_tasks within date range.
-
-        Used by analytics endpoint to fetch tasks for KPI calculations.
-
-        Args:
-            start_date: Start of date range (UTC) - defaults to very old date if None
-            end_date: End of date range (UTC) - defaults to now if None
-            status: Filter by status (e.g., 'completed', 'failed') - optional
-            limit: Maximum results to return
-
-        Returns:
-            List of task dicts with all fields
-        """
-        # Default to all-time if not specified
-        if end_date is None:
-            end_date = datetime.utcnow()
-        if start_date is None:
-            start_date = datetime.utcnow() - timedelta(days=3650)  # ~10 years back
-
-        try:
-            where_clauses = ["created_at >= $1", "created_at <= $2"]
-            params = [start_date, end_date]
-
-            if status:
-                where_clauses.append(f"status = ${len(params) + 1}")
-                params.append(status)
-
-            where_sql = " AND ".join(where_clauses)
-            params.append(limit)
-
-            sql = f"""
-                SELECT * FROM content_tasks
-                WHERE {where_sql}
-                ORDER BY created_at DESC
-                LIMIT ${len(params)}
-            """
-
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch(sql, *params)
-                tasks = [self._convert_row_to_dict(row) for row in rows]
-                logger.debug(
-                    f"✅ Retrieved {len(tasks)} tasks for date range {start_date} to {end_date}"
-                )
-                return tasks
-        except Exception as e:
-            logger.error(f"❌ Failed to get tasks by date range: {e}")
-            return []
-
-    async def delete_task(self, task_id: str) -> bool:
-        """Delete task from content_tasks"""
-        try:
-            async with self.pool.acquire() as conn:
-                result = await conn.execute(
-                    "DELETE FROM content_tasks WHERE task_id = $1", str(task_id)
-                )
-                deleted = "DELETE 1" in result or result == "DELETE 1"
-                if deleted:
-                    logger.info(f"✅ Task deleted: {task_id}")
-                return deleted
-        except Exception as e:
-            logger.error(f"❌ Error deleting task {task_id}: {e}")
-            return False
-
-    async def get_drafts(self, limit: int = 20, offset: int = 0) -> tuple:
-        """Get draft tasks from content_tasks"""
-        try:
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch(
-                    """
-                    SELECT * FROM content_tasks
-                    WHERE status = 'pending' OR approval_status = 'pending'
-                    ORDER BY created_at DESC
-                    LIMIT $1 OFFSET $2
-                    """,
-                    limit,
-                    offset,
-                )
-
-                total = await conn.fetchval(
-                    "SELECT COUNT(*) FROM content_tasks WHERE status = 'pending' OR approval_status = 'pending'"
-                )
-
-                drafts = [self._convert_row_to_dict(row) for row in rows]
-                return (drafts, total or 0)
-        except Exception as e:
-            logger.error(f"❌ Error getting drafts: {e}")
-            return ([], 0)
-
-    # ========================================================================
-    # POSTS (CMS Content)
-    # ========================================================================
-
-    async def create_post(self, post_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Create new post in posts table with all metadata fields"""
-        post_id = post_data.get("id") or str(uuid4())
-
-        # Validate and fix data types before insert
-        seo_keywords = post_data.get("seo_keywords", "")
-        if isinstance(seo_keywords, list):
-            logger.warning(f"⚠️  seo_keywords is list, converting to string: {seo_keywords}")
-            seo_keywords = ", ".join(seo_keywords)
-        elif not isinstance(seo_keywords, str):
-            seo_keywords = str(seo_keywords) if seo_keywords else ""
-
-        tag_ids = post_data.get("tag_ids")
-        if tag_ids and isinstance(tag_ids, str):
-            logger.warning(f"⚠️  tag_ids is string, converting to list: {tag_ids}")
-            tag_ids = [tag_ids]
-
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                INSERT INTO posts (
-                    id, 
-                    title, 
-                    slug, 
-                    content, 
-                    excerpt, 
-                    featured_image_url,
-                    cover_image_url,
-                    author_id,
-                    category_id,
-                    tag_ids,
-                    status, 
-                    seo_title,
-                    seo_description,
-                    seo_keywords,
-                    created_by,
-                    updated_by,
-                    created_at, 
-                    updated_at
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW())
-                RETURNING id, title, slug, content, excerpt, featured_image_url, cover_image_url, 
-                          author_id, category_id, tag_ids, status, created_at, updated_at
-                """,
-                post_id,
-                post_data.get("title"),
-                post_data.get("slug"),
-                post_data.get("content"),
-                post_data.get("excerpt"),
-                post_data.get("featured_image_url"),  # Fixed: was "featured_image"
-                post_data.get("cover_image_url"),
-                post_data.get("author_id"),
-                post_data.get("category_id"),
-                tag_ids,  # Array of tag IDs
-                post_data.get("status", "draft"),
-                post_data.get("seo_title")
-                or post_data.get("title"),  # Default to title if not provided
-                post_data.get("seo_description")
-                or post_data.get("excerpt"),  # Default to excerpt if not provided
-                seo_keywords,  # String of comma-separated keywords
-                post_data.get("created_by"),  # User who created the post
-                post_data.get("updated_by"),  # User who updated the post
-            )
-            return self._convert_row_to_dict(row)
-
-    async def get_post_by_slug(self, slug: str) -> Optional[Dict[str, Any]]:
-        """
-        Get post by slug - used to check for existing posts before creation.
-
-        Args:
-            slug: The slug to search for
-
-        Returns:
-            Post dict if found, None otherwise
-        """
-        try:
-            async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    SELECT id, title, slug, content, excerpt, featured_image_url,
-                           status, created_at, updated_at
-                    FROM posts
-                    WHERE slug = $1
-                    LIMIT 1
-                    """,
-                    slug,
-                )
-                return self._convert_row_to_dict(row) if row else None
-        except Exception as e:
-            logger.error(f"❌ Error getting post by slug '{slug}': {e}")
-            return None
-
-    async def update_post(self, post_id: int, updates: Dict[str, Any]) -> bool:
-        """Update a post with new values (e.g., featured_image_url, status)"""
-        try:
-            # Build SET clause dynamically
-            set_clauses = []
-            values = []
-            param_count = 1
-
-            for key, value in updates.items():
-                # Validate column exists
-                if key not in [
-                    "title",
-                    "slug",
-                    "content",
-                    "excerpt",
-                    "featured_image_url",
-                    "status",
-                    "tags",
-                ]:
-                    logger.warning(f"Skipping invalid column for update: {key}")
-                    continue
-
-                set_clauses.append(f"{key} = ${param_count}")
-                values.append(value)
-                param_count += 1
-
-            if not set_clauses:
-                logger.warning(f"No valid columns to update for post {post_id}")
-                return False
-
-            # Add post_id as final parameter
-            values.append(post_id)
-            param_count += 1
-
-            query = f"""
-                UPDATE posts
-                SET {', '.join(set_clauses)}, updated_at = NOW()
-                WHERE id = ${param_count - 1}
-                RETURNING id, title, slug, featured_image_url, status
-            """
-
-            async with self.pool.acquire() as conn:
-                result = await conn.fetchrow(query, *values)
-
-                if result:
-                    logger.info(f"✅ Updated post {post_id}: {dict(result)}")
-                    return True
-                else:
-                    logger.warning(f"⚠️ Post not found for update: {post_id}")
-                    return False
-
-        except Exception as e:
-            logger.error(f"❌ Error updating post {post_id}: {e}")
-            return False
-
-    @staticmethod
-    def _convert_row_to_dict(row: Any) -> Dict[str, Any]:
-        """Convert asyncpg Record to dict with proper type handling"""
-        import json
-
-        if hasattr(row, "keys"):
-            data = dict(row)
-        else:
-            data = row
-
-        # Convert UUID to string
-        if "id" in data and data["id"]:
-            data["id"] = str(data["id"])
-
-        # Handle JSONB fields
-        for key in ["tags", "task_metadata", "result", "progress"]:
-            if key in data:
-                if isinstance(data[key], str):
-                    try:
-                        data[key] = json.loads(data[key])
-                    except (json.JSONDecodeError, TypeError):
-                        data[key] = {} if key != "tags" else []
-
-        # Convert timestamps to ISO strings
-        for key in ["created_at", "updated_at", "started_at", "completed_at"]:
-            if key in data and data[key]:
-                if hasattr(data[key], "isoformat"):
-                    data[key] = data[key].isoformat()
-
-        return data
-
-    # ========================================================================
-    # METRICS (from content_tasks)
-    # ========================================================================
-
-    async def get_metrics(self) -> Dict[str, Any]:
-        """Get system metrics from content_tasks database"""
-        try:
-            async with self.pool.acquire() as conn:
-                # Get task counts from content_tasks
-                total_tasks = await conn.fetchval("SELECT COUNT(*) FROM content_tasks")
-                completed_tasks = await conn.fetchval(
-                    "SELECT COUNT(*) FROM content_tasks WHERE status = 'completed'"
-                )
-                failed_tasks = await conn.fetchval(
-                    "SELECT COUNT(*) FROM content_tasks WHERE status = 'failed'"
-                )
-
-                # Calculate rates
-                success_rate = (
-                    (completed_tasks / (completed_tasks + failed_tasks) * 100)
-                    if (completed_tasks + failed_tasks) > 0
-                    else 0
-                )
-
-                # Calculate average execution time from completed tasks
-                avg_execution_time = 0
-                try:
-                    time_query = """
-                        SELECT AVG(EXTRACT(EPOCH FROM (updated_at - created_at))) as avg_seconds
-                        FROM content_tasks
-                        WHERE status = 'completed' AND updated_at IS NOT NULL
-                    """
-                    time_result = await conn.fetchrow(time_query)
-                    if time_result and time_result["avg_seconds"]:
-                        avg_execution_time = round(float(time_result["avg_seconds"]), 2)
-                except Exception as e:
-                    logger.warning(f"Could not calculate avg execution time: {e}")
-
-                # Calculate total cost from financial tracking (if implemented)
-                total_cost = 0
-                try:
-                    cost_query = """
-                        SELECT SUM(cost_usd) as total
-                        FROM task_costs
-                        WHERE created_at >= NOW() - INTERVAL '30 days'
-                    """
-                    cost_result = await conn.fetchrow(cost_query)
-                    if cost_result and cost_result["total"]:
-                        total_cost = round(float(cost_result["total"]), 2)
-                except Exception:
-                    logger.debug("Cost tracking not available (task_costs table may not exist)")
-
-                return {
-                    "totalTasks": total_tasks or 0,
-                    "completedTasks": completed_tasks or 0,
-                    "failedTasks": failed_tasks or 0,
-                    "successRate": round(success_rate, 2),
-                    "avgExecutionTime": avg_execution_time,
-                    "totalCost": total_cost,
-                }
-        except Exception as e:
-            logger.error(f"❌ Failed to get metrics: {e}")
-            return {
-                "totalTasks": 0,
-                "completedTasks": 0,
-                "failedTasks": 0,
-                "successRate": 0,
-                "avgExecutionTime": 0,
-                "totalCost": 0,
-            }
-
-    # ========================================================================
-    # QUALITY_EVALUATIONS TABLE METHODS
-    # ========================================================================
-
-    async def create_quality_evaluation(self, eval_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Create quality evaluation record
-
-        Args:
-            eval_data: Dict with content_id, task_id, overall_score, criteria scores, etc.
-
-        Returns:
-            Created quality_evaluation record
-        """
-        try:
-            async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    INSERT INTO quality_evaluations (
-                        content_id, task_id, overall_score, clarity, accuracy, 
-                        completeness, relevance, seo_quality, readability, engagement,
-                        passing, feedback, suggestions, evaluated_by, evaluation_method,
-                        evaluation_timestamp
-                    )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
-                    RETURNING *
-                """,
-                    eval_data["content_id"],
-                    eval_data.get("task_id"),
-                    eval_data["overall_score"],
-                    eval_data.get("criteria", {}).get("clarity", 0),
-                    eval_data.get("criteria", {}).get("accuracy", 0),
-                    eval_data.get("criteria", {}).get("completeness", 0),
-                    eval_data.get("criteria", {}).get("relevance", 0),
-                    eval_data.get("criteria", {}).get("seo_quality", 0),
-                    eval_data.get("criteria", {}).get("readability", 0),
-                    eval_data.get("criteria", {}).get("engagement", 0),
-                    eval_data["overall_score"] >= 7.0,
-                    eval_data.get("feedback"),
-                    json.dumps(eval_data.get("suggestions", [])),
-                    eval_data.get("evaluated_by", "QualityEvaluator"),
-                    eval_data.get("evaluation_method", "pattern-based"),
-                )
-                logger.info(f"✅ Created quality_evaluation for {eval_data['content_id']}")
-                return self._convert_row_to_dict(row)
-        except Exception as e:
-            logger.error(f"❌ Error creating quality_evaluation: {e}")
-            raise
-
-    # ========================================================================
-    # QUALITY_IMPROVEMENT_LOGS TABLE METHODS
-    # ========================================================================
-
-    async def create_quality_improvement_log(self, log_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Log content quality improvement through refinement
-
-        Args:
-            log_data: Dict with content_id, initial_score, improved_score, refinement_type, etc.
-
-        Returns:
-            Created quality_improvement_log record
-        """
-        try:
-            initial = log_data["initial_score"]
-            improved = log_data["improved_score"]
-
-            async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    INSERT INTO quality_improvement_logs (
-                        content_id, initial_score, improved_score, score_improvement,
-                        refinement_type, changes_made, refinement_timestamp, passed_after_refinement
-                    )
-                    VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7)
-                    RETURNING *
-                """,
-                    log_data["content_id"],
-                    initial,
-                    improved,
-                    improved - initial,
-                    log_data.get("refinement_type", "auto-critique"),
-                    log_data.get("changes_made"),
-                    improved >= 7.0,
-                )
-                logger.info(f"✅ Created quality_improvement_log: {initial:.1f} → {improved:.1f}")
-                return self._convert_row_to_dict(row)
-        except Exception as e:
-            logger.error(f"❌ Error creating quality_improvement_log: {e}")
-            raise
-
-    # ========================================================================
-    # CATEGORY, TAG, AUTHOR LOOKUPS (For metadata extraction)
-    # ========================================================================
-
-    async def get_all_categories(self) -> List[Dict[str, str]]:
-        """Get all categories for matching"""
-        try:
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch(
-                    "SELECT id, name, slug, description FROM categories ORDER BY name"
-                )
-                return [self._convert_row_to_dict(row) for row in rows]
-        except Exception as e:
-            logger.warning(f"Could not fetch categories: {e}")
-            return []
-
-    async def get_all_tags(self) -> List[Dict[str, str]]:
-        """Get all tags for matching"""
-        try:
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch(
-                    "SELECT id, name, slug, description FROM tags ORDER BY name"
-                )
-                return [self._convert_row_to_dict(row) for row in rows]
-        except Exception as e:
-            logger.warning(f"Could not fetch tags: {e}")
-            return []
-
-    async def get_author_by_name(self, name: str) -> Optional[Dict[str, Any]]:
-        """Get author by name"""
-        try:
-            async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    "SELECT id, name, slug, email FROM authors WHERE LOWER(name) = LOWER($1)", name
-                )
-                return self._convert_row_to_dict(row) if row else None
-        except Exception as e:
-            logger.warning(f"Could not fetch author by name: {e}")
-            return None
-
-    # ========================================================================
-    # ORCHESTRATOR_TRAINING_DATA TABLE METHODS
-    # ========================================================================
-
-    async def create_orchestrator_training_data(self, train_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Capture execution for training/learning pipeline
-
-        Args:
-            train_data: Dict with execution_id, user_request, intent, execution_result, quality_score, success, tags, etc.
-
-        Returns:
-            Created training_data record
-        """
-        try:
-            async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    INSERT INTO orchestrator_training_data (
-                        execution_id, user_request, intent, business_state, execution_result,
-                        quality_score, success, tags, created_at, source_agent
-                    )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), $9)
-                    RETURNING *
-                """,
-                    train_data["execution_id"],
-                    train_data.get("user_request"),
-                    train_data.get("intent"),
-                    json.dumps(train_data.get("business_state", {})),
-                    train_data.get("execution_result"),
-                    train_data.get("quality_score"),
-                    train_data.get("success", False),
-                    json.dumps(train_data.get("tags", [])),
-                    train_data.get("source_agent", "content_agent"),
-                )
-                logger.info(f"✅ Created orchestrator_training_data: {train_data['execution_id']}")
-                return self._convert_row_to_dict(row)
-        except Exception as e:
-            logger.error(f"❌ Error creating orchestrator_training_data: {e}")
-            raise
-
-    # ========================================================================
-    # COST_LOGS TABLE METHODS (Cost tracking for model usage)
-    # ========================================================================
-
-    async def log_cost(self, cost_log: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Log cost of LLM API call to cost_logs table.
-
-        Args:
-            cost_log: Dict with:
-                - task_id (UUID or str)
-                - user_id (UUID or str, optional)
-                - phase (str): research, outline, draft, assess, refine, finalize
-                - model (str): ollama, gpt-3.5-turbo, gpt-4, claude-3-opus, etc.
-                - provider (str): ollama, openai, anthropic, google
-                - cost_usd (float): Cost in USD
-                - input_tokens (int, optional): Input token count
-                - output_tokens (int, optional): Output token count
-                - total_tokens (int, optional): Total token count
-                - quality_score (float, optional): 1-5 star rating
-                - duration_ms (int, optional): Execution time in milliseconds
-                - success (bool, optional): Whether call succeeded (default: True)
-                - error_message (str, optional): Error details if failed
-
-        Returns:
-            Created cost_log record
-
-        Example:
-            >>> await db.log_cost({
-            ...     "task_id": "550e8400-e29b-41d4-a716-446655440000",
-            ...     "user_id": "user123",
-            ...     "phase": "draft",
-            ...     "model": "gpt-4",
-            ...     "provider": "openai",
-            ...     "cost_usd": 0.0015,
-            ...     "duration_ms": 2500,
-            ...     "success": True
-            ... })
-        """
-        try:
-            async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    INSERT INTO cost_logs (
-                        task_id, user_id, phase, model, provider,
-                        input_tokens, output_tokens, total_tokens,
-                        cost_usd, quality_score, duration_ms, success, error_message,
-                        created_at, updated_at
-                    )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())
-                    RETURNING *
-                """,
-                    str(cost_log["task_id"]),
-                    str(cost_log["user_id"]) if cost_log.get("user_id") else None,
-                    cost_log["phase"],
-                    cost_log["model"],
-                    cost_log["provider"],
-                    cost_log.get("input_tokens", 0),
-                    cost_log.get("output_tokens", 0),
-                    cost_log.get("total_tokens", 0),
-                    float(cost_log.get("cost_usd", 0.0)),
-                    cost_log.get("quality_score"),
-                    cost_log.get("duration_ms"),
-                    cost_log.get("success", True),
-                    cost_log.get("error_message"),
-                )
-                logger.info(
-                    f"✅ Logged cost for {cost_log['phase']}: ${cost_log.get('cost_usd', 0):.6f} ({cost_log['model']})"
-                )
-                return self._convert_row_to_dict(row)
-        except Exception as e:
-            logger.error(f"❌ Error logging cost: {e}")
-            raise
-
-    async def get_task_costs(self, task_id: str) -> Dict[str, Any]:
-        """
-        Get cost breakdown for a task by phase.
-
-        Args:
-            task_id: Task ID
-
-        Returns:
-            {
-                "research": {"cost": 0.0, "model": "ollama", "count": 1},
-                "outline": {"cost": 0.00075, "model": "gpt-3.5-turbo", "count": 1},
-                "draft": {"cost": 0.0015, "model": "gpt-4", "count": 1},
-                "total": 0.00225,
-                "entries": [...]
-            }
-        """
-        try:
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch(
-                    """
-                    SELECT * FROM cost_logs
-                    WHERE task_id = $1
-                    ORDER BY created_at ASC
-                """,
-                    str(task_id),
-                )
-
-                if not rows:
-                    return {"total": 0.0, "entries": []}
-
-                # Group by phase
-                breakdown = {}
-                total_cost = 0.0
-                entries = []
-
-                for row in rows:
-                    row_dict = self._convert_row_to_dict(row)
-                    entries.append(row_dict)
-
-                    phase = row["phase"]
-                    cost = float(row["cost_usd"] or 0.0)
-
-                    if phase not in breakdown:
-                        breakdown[phase] = {"cost": 0.0, "model": row["model"], "count": 0}
-
-                    breakdown[phase]["cost"] += cost
-                    breakdown[phase]["count"] += 1
-                    total_cost += cost
-
-                result = breakdown
-                result["total"] = round(total_cost, 6)
-                result["entries"] = entries
-
-                logger.info(
-                    f"✅ Retrieved costs for task {task_id}: ${total_cost:.6f} across {len(entries)} entries"
-                )
-                return result
-        except Exception as e:
-            logger.error(f"❌ Error getting task costs: {e}")
-            return {"total": 0.0, "entries": []}
-
-    # SETTINGS MANAGEMENT
-    # ========================================================================
-
-    async def get_setting(self, key: str) -> Optional[Dict[str, Any]]:
-        """
-        Get a setting by key.
-
-        Args:
-            key: Setting key identifier
-
-        Returns:
-            Setting dict or None if not found
-        """
-        sql = "SELECT * FROM settings WHERE key = $1 AND is_active = true"
-
-        try:
-            async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(sql, key)
-                if row:
-                    return self._convert_row_to_dict(row)
-                return None
-        except Exception as e:
-            logger.error(f"❌ Failed to get setting {key}: {e}")
-            return None
-
-    async def get_all_settings(self, category: Optional[str] = None) -> List[Dict[str, Any]]:
-        """
-        Get all active settings, optionally filtered by category.
-
-        Args:
-            category: Optional category filter
-
-        Returns:
-            List of setting dicts
-        """
-        if category:
-            sql = "SELECT * FROM settings WHERE category = $1 AND is_active = true ORDER BY key"
-            params = [category]
-        else:
-            sql = "SELECT * FROM settings WHERE is_active = true ORDER BY key"
-            params = []
-
-        try:
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch(sql, *params)
-                return [self._convert_row_to_dict(row) for row in rows]
-        except Exception as e:
-            logger.error(f"❌ Failed to get settings: {e}")
-            return []
-
-    async def set_setting(
-        self,
-        key: str,
-        value: Any,
-        category: Optional[str] = None,
-        display_name: Optional[str] = None,
-        description: Optional[str] = None,
-    ) -> bool:
-        """
-        Create or update a setting.
-
-        Args:
-            key: Setting key identifier
-            value: Setting value (will be stored as text)
-            category: Optional category for grouping
-            display_name: Optional display name for UI
-            description: Optional description
-
-        Returns:
-            True if successful
-        """
-        try:
-            value_str = json.dumps(value) if isinstance(value, (dict, list)) else str(value)
-
-            async with self.pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO settings (key, value, category, display_name, description, is_active, modified_at)
-                    VALUES ($1, $2, $3, $4, $5, true, NOW())
-                    ON CONFLICT (key) DO UPDATE SET
-                        value = $2,
-                        category = $3,
-                        display_name = $4,
-                        description = $5,
-                        modified_at = NOW()
-                    """,
-                    key,
-                    value_str,
-                    category,
-                    display_name,
-                    description,
-                )
-                logger.info(f"✅ Setting saved: {key} = {value_str[:50]}")
-                return True
-        except Exception as e:
-            logger.error(f"❌ Failed to set setting {key}: {e}")
-            return False
-
-    async def delete_setting(self, key: str) -> bool:
-        """
-        Soft delete a setting (mark as inactive).
-
-        Args:
-            key: Setting key identifier
-
-        Returns:
-            True if successful
-        """
-        try:
-            async with self.pool.acquire() as conn:
-                result = await conn.execute(
-                    "UPDATE settings SET is_active = false, modified_at = NOW() WHERE key = $1", key
-                )
-                logger.info(f"✅ Setting deleted: {key}")
-                return True
-        except Exception as e:
-            logger.error(f"❌ Failed to delete setting {key}: {e}")
-            return False
-
-    async def get_setting_value(self, key: str, default: Any = None) -> Any:
-        """
-        Get just the value of a setting, with optional default.
-
-        Args:
-            key: Setting key identifier
-            default: Default value if not found
-
-        Returns:
-            Setting value or default
-        """
-        setting = await self.get_setting(key)
-        if not setting or not setting.get("value"):
-            return default
-
-        # Try to parse as JSON if it looks like JSON
-        value_str = setting["value"]
-        try:
-            return json.loads(value_str)
-        except:
-            return value_str
-
-    async def setting_exists(self, key: str) -> bool:
-        """
-        Check if a setting exists and is active.
-
-        Args:
-            key: Setting key identifier
-
-        Returns:
-            True if setting exists and is active
-        """
-        sql = "SELECT EXISTS(SELECT 1 FROM settings WHERE key = $1 AND is_active = true)"
-        try:
-            async with self.pool.acquire() as conn:
-                result = await conn.fetchval(sql, key)
-                return result or False
-        except Exception as e:
-            logger.error(f"❌ Failed to check setting {key}: {e}")
-            return False
+    # These methods maintain 100% backward compatibility with the original
+    # DatabaseService API. Each method delegates to the appropriate module.
+    
+    # USER OPERATIONS
+    async def get_user_by_id(self, user_id: str):
+        """Delegate to users module."""
+        return await self.users.get_user_by_id(user_id)
+
+    async def get_user_by_email(self, email: str):
+        """Delegate to users module."""
+        return await self.users.get_user_by_email(email)
+
+    async def get_user_by_username(self, username: str):
+        """Delegate to users module."""
+        return await self.users.get_user_by_username(username)
+
+    async def create_user(self, user_data: dict):
+        """Delegate to users module."""
+        return await self.users.create_user(user_data)
+
+    async def get_or_create_oauth_user(self, provider: str, provider_user_id: str, provider_data: dict):
+        """Delegate to users module."""
+        return await self.users.get_or_create_oauth_user(provider, provider_user_id, provider_data)
+
+    async def get_oauth_accounts(self, user_id: str):
+        """Delegate to users module."""
+        return await self.users.get_oauth_accounts(user_id)
+
+    async def unlink_oauth_account(self, user_id: str, provider: str):
+        """Delegate to users module."""
+        return await self.users.unlink_oauth_account(user_id, provider)
+
+    # TASK OPERATIONS
+    async def add_task(self, task_data: dict):
+        """Delegate to tasks module."""
+        return await self.tasks.add_task(task_data)
+
+    async def get_task(self, task_id: str):
+        """Delegate to tasks module."""
+        return await self.tasks.get_task(task_id)
+
+    async def update_task_status(self, task_id: str, status: str, result: Optional[str] = None):
+        """Delegate to tasks module."""
+        return await self.tasks.update_task_status(task_id, status, result)
+
+    async def update_task(self, task_id: str, updates: dict):
+        """Delegate to tasks module."""
+        return await self.tasks.update_task(task_id, updates)
+
+    async def get_tasks_paginated(self, offset: int = 0, limit: int = 20, status: Optional[str] = None, category: Optional[str] = None):
+        """Delegate to tasks module."""
+        return await self.tasks.get_tasks_paginated(offset, limit, status, category)
+
+    async def get_task_counts(self):
+        """Delegate to tasks module."""
+        return await self.tasks.get_task_counts()
+
+    async def get_pending_tasks(self, limit: int = 10):
+        """Delegate to tasks module."""
+        return await self.tasks.get_pending_tasks(limit)
+
+    async def get_all_tasks(self, limit: int = 100):
+        """Delegate to tasks module."""
+        return await self.tasks.get_all_tasks(limit)
+
+    async def get_queued_tasks(self, limit: int = 5):
+        """Delegate to tasks module."""
+        return await self.tasks.get_queued_tasks(limit)
+
+    async def get_tasks_by_date_range(self, start_date=None, end_date=None, status: Optional[str] = None, limit: int = 10000):
+        """Delegate to tasks module."""
+        return await self.tasks.get_tasks_by_date_range(start_date, end_date, status, limit)
+
+    async def delete_task(self, task_id: str):
+        """Delegate to tasks module."""
+        return await self.tasks.delete_task(task_id)
+
+    async def get_drafts(self, limit: int = 20, offset: int = 0):
+        """Delegate to tasks module."""
+        return await self.tasks.get_drafts(limit, offset)
+
+    # CONTENT OPERATIONS
+    async def create_post(self, post_data: dict):
+        """Delegate to content module."""
+        return await self.content.create_post(post_data)
+
+    async def get_post_by_slug(self, slug: str):
+        """Delegate to content module."""
+        return await self.content.get_post_by_slug(slug)
+
+    async def update_post(self, post_id: int, updates: dict):
+        """Delegate to content module."""
+        return await self.content.update_post(post_id, updates)
+
+    async def get_all_categories(self):
+        """Delegate to content module."""
+        return await self.content.get_all_categories()
+
+    async def get_all_tags(self):
+        """Delegate to content module."""
+        return await self.content.get_all_tags()
+
+    async def get_author_by_name(self, name: str):
+        """Delegate to content module."""
+        return await self.content.get_author_by_name(name)
+
+    async def create_quality_evaluation(self, eval_data: dict):
+        """Delegate to content module."""
+        return await self.content.create_quality_evaluation(eval_data)
+
+    async def create_quality_improvement_log(self, log_data: dict):
+        """Delegate to content module."""
+        return await self.content.create_quality_improvement_log(log_data)
+
+    async def get_metrics(self):
+        """Delegate to content module."""
+        return await self.content.get_metrics()
+
+    async def create_orchestrator_training_data(self, train_data: dict):
+        """Delegate to content module."""
+        return await self.content.create_orchestrator_training_data(train_data)
+
+    # ADMIN OPERATIONS
+    async def add_log_entry(self, agent_name: str, level: str, message: str, context: Optional[dict] = None):
+        """Delegate to admin module."""
+        return await self.admin.add_log_entry(agent_name, level, message, context)
+
+    async def get_logs(self, agent_name: Optional[str] = None, level: Optional[str] = None, limit: int = 100):
+        """Delegate to admin module."""
+        return await self.admin.get_logs(agent_name, level, limit)
+
+    async def add_financial_entry(self, entry_data: dict):
+        """Delegate to admin module."""
+        return await self.admin.add_financial_entry(entry_data)
+
+    async def get_financial_summary(self, days: int = 30):
+        """Delegate to admin module."""
+        return await self.admin.get_financial_summary(days)
+
+    async def log_cost(self, cost_log: dict):
+        """Delegate to admin module."""
+        return await self.admin.log_cost(cost_log)
+
+    async def get_task_costs(self, task_id: str):
+        """Delegate to admin module."""
+        return await self.admin.get_task_costs(task_id)
+
+    async def update_agent_status(self, agent_name: str, status: str, last_run=None, metadata: Optional[dict] = None):
+        """Delegate to admin module."""
+        return await self.admin.update_agent_status(agent_name, status, last_run, metadata)
+
+    async def get_agent_status(self, agent_name: str):
+        """Delegate to admin module."""
+        return await self.admin.get_agent_status(agent_name)
+
+    async def health_check(self, service: str = "cofounder"):
+        """Delegate to admin module."""
+        return await self.admin.health_check(service)
+
+    async def get_setting(self, key: str):
+        """Delegate to admin module."""
+        return await self.admin.get_setting(key)
+
+    async def get_all_settings(self, category: Optional[str] = None):
+        """Delegate to admin module."""
+        return await self.admin.get_all_settings(category)
+
+    async def set_setting(self, key: str, value, category: Optional[str] = None, display_name: Optional[str] = None, description: Optional[str] = None):
+        """Delegate to admin module."""
+        return await self.admin.set_setting(key, value, category, display_name, description)
+
+    async def delete_setting(self, key: str):
+        """Delegate to admin module."""
+        return await self.admin.delete_setting(key)
+
+    async def get_setting_value(self, key: str, default=None):
+        """Delegate to admin module."""
+        return await self.admin.get_setting_value(key, default)
+
+    async def setting_exists(self, key: str):
+        """Delegate to admin module."""
+        return await self.admin.setting_exists(key)

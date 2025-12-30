@@ -248,7 +248,7 @@ async def get_kpi_metrics(
             # Cost calculation (convert Decimal to float if needed)
             cost_raw = task.get("estimated_cost") or task.get("actual_cost") or 0.0
             cost = float(cost_raw) if cost_raw else 0.0
-            total_cost += cost
+            total_cost = float(total_cost) + cost
 
             # Model tracking
             model = task.get("model_used") or "unknown"
@@ -259,9 +259,9 @@ async def get_kpi_metrics(
 
             # Cost by model
             if model in cost_by_model:
-                cost_by_model[model] += cost
+                cost_by_model[model] = float(cost_by_model[model]) + cost
             else:
-                cost_by_model[model] = cost
+                cost_by_model[model] = float(cost)
 
             # Task type breakdown
             task_type = task.get("task_type") or "unknown"
@@ -284,8 +284,9 @@ async def get_kpi_metrics(
                 # Extract phase costs from metadata.cost_breakdown if present
                 phase_costs = metadata.get("cost_breakdown", {})
                 for phase, phase_cost in phase_costs.items():
+                    phase_cost = float(phase_cost) if phase_cost else 0.0
                     if phase in cost_by_phase:
-                        cost_by_phase[phase] += phase_cost
+                        cost_by_phase[phase] = float(cost_by_phase[phase]) + phase_cost
                     else:
                         cost_by_phase[phase] = phase_cost
 
@@ -317,9 +318,10 @@ async def get_kpi_metrics(
 
             # Cost per day
             cost = task.get("estimated_cost") or task.get("actual_cost") or 0.0
+            cost = float(cost) if cost else 0.0
             if day_key not in cost_by_day:
                 cost_by_day[day_key] = {"date": day_key, "cost": 0.0}
-            cost_by_day[day_key]["cost"] += cost
+            cost_by_day[day_key]["cost"] = float(cost_by_day[day_key]["cost"]) + cost
 
             # Success per day
             if day_key not in success_by_day:

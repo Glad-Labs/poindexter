@@ -132,6 +132,32 @@ from .settings_schemas import (
     ErrorResponse,
 )
 
+# Database Response Models (Phase 2)
+from .database_response_models import (
+    UserResponse as DatabaseUserResponse,
+    OAuthAccountResponse,
+    TaskResponse as DatabaseTaskResponse,
+    TaskCountsResponse,
+    PostResponse as DatabasePostResponse,
+    CategoryResponse,
+    TagResponse,
+    AuthorResponse,
+    LogResponse,
+    MetricsResponse as DatabaseMetricsResponse,
+    FinancialEntryResponse,
+    FinancialSummaryResponse,
+    CostLogResponse,
+    TaskCostBreakdownResponse,
+    QualityEvaluationResponse as DatabaseQualityEvaluationResponse,
+    QualityImprovementLogResponse,
+    AgentStatusResponse as DatabaseAgentStatusResponse,
+    OrchestratorTrainingDataResponse,
+    SettingResponse as DatabaseSettingResponse,
+    PaginatedResponse,
+)
+
+from .model_converter import ModelConverter
+
 # Social schemas
 from .social_schemas import (
     SocialPlatformEnum,
@@ -288,4 +314,27 @@ __all__ = [
     "ModelsListResponse",
     "ProviderStatus",
     "ProvidersStatusResponse",
+    # Database Response Models (Phase 2)
+    "UserResponse",
+    "OAuthAccountResponse",
+    "TaskResponse",
+    "TaskCountsResponse",
+    "PostResponse",
+    "CategoryResponse",
+    "TagResponse",
+    "AuthorResponse",
+    "LogResponse",
+    "MetricsResponse",
+    "FinancialEntryResponse",
+    "FinancialSummaryResponse",
+    "CostLogResponse",
+    "TaskCostBreakdownResponse",
+    "QualityEvaluationResponse",
+    "QualityImprovementLogResponse",
+    "AgentStatusResponse",
+    "OrchestratorTrainingDataResponse",
+    "SettingResponse",
+    "ErrorResponse",
+    "PaginatedResponse",
+    "ModelConverter",
 ]

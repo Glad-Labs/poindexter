@@ -44,7 +44,7 @@ main() {
   echo ""
   echo -e "${BLUE}╔════════════════════════════════════════════╗${NC}"
   echo -e "${BLUE}║   📋 PUBLIC SITE LAUNCH CHECKLIST        ║${NC}"
-  echo -e "${BLUE}║   Glad Labs Blog - Getting to Production ║${NC}"
+  echo -e "${BLUE}║   Glad Labs - Getting to Production ║${NC}"
   echo -e "${BLUE}╚════════════════════════════════════════════╝${NC}"
   echo ""
 
