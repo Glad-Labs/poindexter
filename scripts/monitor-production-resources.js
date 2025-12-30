@@ -9,11 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-<<<<<<< HEAD:scripts/monitor-production-resources.js
 console.log('📊 Glad Labs Production Resource Monitor');
-=======
-console.log('📊 Glad Labs Tier 1 Resource Monitor');
->>>>>>> feat/refine:scripts/monitor-tier1-resources.js
 console.log('═'.repeat(60));
 
 const LIMITS = {

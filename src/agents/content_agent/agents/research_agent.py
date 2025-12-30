@@ -1,12 +1,7 @@
 import logging
 import httpx
 import json
-<<<<<<< HEAD
-from src.agents.content_agent.config import config
-from src.agents.content_agent.utils.tools import CrewAIToolsFactory
-=======
 from ..config import config
->>>>>>> feat/refine
 
 logger = logging.getLogger(__name__)
 

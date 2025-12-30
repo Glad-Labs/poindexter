@@ -30,13 +30,9 @@ try:
     # Note: intelligent_cofounder and business_intelligence not found - legacy modules
     from memory_system import AIMemorySystem, MemoryType, ImportanceLevel
     from notification_system import SmartNotificationSystem
-<<<<<<< HEAD
-    from multi_agent_orchestrator import MultiAgentOrchestrator, TaskPriority, OrchestrationTask
-=======
     from advanced_dashboard import AdvancedBusinessDashboard
 
     # from multi_agent_orchestrator import MultiAgentOrchestrator, TaskPriority, OrchestrationTask
->>>>>>> feat/refine
     from voice_interface import VoiceInterfaceSystem, VoiceCommand
 except ImportError as e:
     pytest.skip(f"Could not import required modules: {e}", allow_module_level=True)

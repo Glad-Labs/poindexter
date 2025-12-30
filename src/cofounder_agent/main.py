@@ -41,13 +41,11 @@ else:
     load_dotenv(".env.local", override=True)
     print("[+] Loaded .env.local from current directory")
 
-# Add the cofounder_agent directory to the Python path for relative imports
-sys.path.insert(0, os.path.dirname(__file__))
-# Add the parent directory (src) to the Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
-# Import core modules
-from multi_agent_orchestrator import MultiAgentOrchestrator
+# Add the current directory (cofounder_agent) to Python path FIRST
+# This allows absolute imports like "from services.x import y" to work
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
 
 # Import database_service
 from services.database_service import DatabaseService
@@ -111,19 +109,12 @@ from services.legacy_data_integration import LegacyDataIntegrationService
 
 logger = get_logger(__name__)
 
-<<<<<<< HEAD
-# Global service instances
-database_service: Optional[DatabaseService] = None
-orchestrator: Optional[MultiAgentOrchestrator] = None
-startup_error: Optional[str] = None
-startup_complete: bool = False
-=======
 
 # ============================================================================
 # LIFESPAN: Application Startup and Shutdown
 # ============================================================================
 
->>>>>>> feat/refine
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -217,94 +208,6 @@ async def lifespan(app: FastAPI):
 
         # Initialize LangGraph orchestrator
         try:
-<<<<<<< HEAD
-            database_service = DatabaseService()
-            await database_service.initialize()
-            logger.info("  ✅ PostgreSQL connection established")
-        except Exception as e:
-            startup_error = f"PostgreSQL connection failed: {str(e)}"
-            logger.error(f"  ❌ {startup_error}", exc_info=True)
-            logger.warning("  ⚠️ Continuing in development mode without database")
-            database_service = None
-        
-        # 2. Initialize persistent task store
-        logger.info("  📋 Initializing persistent task store...")
-        try:
-            database_url = os.getenv("DATABASE_URL", "sqlite:///.tmp/data.db")
-            initialize_task_store(database_url)
-            logger.info("  ✅ Persistent task store initialized")
-        except Exception as e:
-            error_msg = f"Task store initialization failed: {str(e)}"
-            logger.error(f"  ⚠️ {error_msg}", exc_info=True)
-            startup_error = error_msg
-            # Don't re-raise - allow app to start for health checks
-        
-        # 3. Initialize unified model consolidation service
-        logger.info("  🧠 Initializing unified model consolidation service...")
-        try:
-            initialize_model_consolidation_service()
-            logger.info("  ✅ Model consolidation service initialized (Ollama→HF→Google→Anthropic→OpenAI)")
-        except Exception as e:
-            error_msg = f"Model consolidation initialization failed: {str(e)}"
-            logger.error(f"  ⚠️ {error_msg}", exc_info=True)
-            # Don't fail startup - models are optional
-        
-        # 4. Create tables if they don't exist
-        if database_service:
-            try:
-                logger.info("  📋 Database tables initialized in previous step")
-            except Exception as e:
-                error_msg = f"Table creation failed: {str(e)}"
-                logger.error(f"  ⚠️ {error_msg}", exc_info=True)
-                startup_error = error_msg
-        
-        # 4. Initialize orchestrator with new database service
-        logger.info(f"  🤖 Initializing orchestrator...")
-        try:
-            orchestrator = MultiAgentOrchestrator()
-            logger.info("  ✅ Orchestrator initialized successfully")
-        except Exception as e:
-            error_msg = f"Orchestrator initialization failed: {str(e)}"
-            logger.error(f"  ❌ {error_msg}", exc_info=True)
-            startup_error = error_msg
-            # Don't re-raise - allow app to start for health checks
-        
-        # 5. Verify connections
-        if database_service:
-            try:
-                logger.info("  🔍 Verifying database connection...")
-                health = await database_service.health_check()
-                if health.get("status") == "healthy":
-                    logger.info(f"  ✅ Database health check passed")
-                else:
-                    logger.warning(f"  ⚠️ Database health check returned: {health}")
-            except Exception as e:
-                logger.warning(f"  ⚠️ Database health check failed: {e}", exc_info=True)
-        
-        # 6. Register database service with route modules
-        if database_service:
-            from routes.task_routes import set_db_service
-            set_db_service(database_service)
-            logger.info("  ✅ Database service registered with routes")
-        
-        logger.info("✅ Application started successfully!")
-        logger.info(f"  - Database Service: {database_service is not None}")
-        logger.info(f"  - Orchestrator: {orchestrator is not None}")
-        logger.info(f"  - Task Store: initialized")
-        logger.info(f"  - Startup Error: {startup_error}")
-        logger.info(f"  - API Base URL: {os.getenv('API_BASE_URL', 'http://localhost:8000')}")
-        
-        startup_complete = True
-        yield  # Application runs here
-        
-    except Exception as e:
-        startup_error = f"Critical startup failure: {str(e)}"
-        logger.error(f"❌ {startup_error}", exc_info=True)
-        startup_complete = True  # Mark complete so /api/health works
-    
-    finally:
-        # ===== SHUTDOWN =====
-=======
             from services.langgraph_orchestrator import LangGraphOrchestrator
 
             langgraph_orchestrator = LangGraphOrchestrator(
@@ -320,7 +223,6 @@ async def lifespan(app: FastAPI):
             app.state.langgraph_orchestrator = None
 
         logger.info("[OK] Lifespan: Yielding control to FastAPI application...")
->>>>>>> feat/refine
         try:
             print("[OK] Application is now running")
         except UnicodeEncodeError:

@@ -7,12 +7,7 @@
   "author": "Matthew M. Gladding (Glad Labs, LLC)",
   "workspaces": [
     "web/public-site",
-<<<<<<< HEAD
-    "web/oversight-hub",
-    "cms/strapi-main"
-=======
     "web/oversight-hub"
->>>>>>> feat/refine
   ],
   "scripts": {
     "//": "=== UTILITIES ===",
@@ -31,35 +26,17 @@
     "clean": "rimraf node_modules package-lock.json **/node_modules **/dist **/.next **/build .venv __pycache__ **/__pycache__ **/*.pyc",
     "clean:install": "npm run clean && npm run install:all",
     "build": "npm run build --workspaces --if-present",
-<<<<<<< HEAD
-    "//": "=== UTILITIES ===",
-    "clean": "rimraf node_modules package-lock.json web/public-site/node_modules web/oversight-hub/node_modules cms/strapi-main/node_modules src/cofounder_agent/node_modules web/public-site/.next web/public-site/dist web/oversight-hub/build cms/strapi-main/build src/cofounder_agent/build .venv src/cofounder_agent/__pycache__",
-    "clean:install": "npm run clean && npm install && npm install --workspaces",
+    "build:frontend": "npm run build --workspaces=web/public-site --workspaces=web/oversight-hub --if-present",
     "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md}\" \"!**/package-lock.json\" \"!**/node_modules/**\"",
     "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,md}\" \"!**/package-lock.json\" \"!**/node_modules/**\"",
-    "install:all": "npm install && npm install --workspaces",
     "lint": "npm run lint --workspaces --if-present",
     "lint:fix": "npm run lint:fix --workspaces --if-present",
-    "setup": "npm run install:all && pip install -r scripts/requirements-core.txt",
-    "setup:dev": "npm run install:all && pip install -r scripts/requirements-dev.txt",
-    "setup:ml": "npm run install:all && pip install -r scripts/requirements-dev.txt && pip install -r scripts/requirements-ml.txt",
-    "setup:ci": "npm run install:all && pip install -r scripts/requirements-ci.txt",
-    "//": "=== TESTING ===",
-    "test": "npm run test --workspaces --if-present && npm run test:python",
-=======
-    "build:frontend": "npm run build --workspaces=web/public-site --workspaces=web/oversight-hub --if-present",
     "test": "npm run test --workspaces --if-present",
->>>>>>> feat/refine
     "test:ci": "npm run test --workspaces --if-present -- --ci --coverage --watchAll=false",
     "test:python": "cd src/cofounder_agent && python -m pytest tests/ -v --tb=short",
     "test:python:smoke": "cd src/cofounder_agent && python -m pytest tests/test_e2e_fixed.py -v --tb=short",
     "test:python:coverage": "cd src/cofounder_agent && python -m pytest tests/ -v --cov --cov-report=html",
     "test:all": "npm run test:python && npm run test",
-    "lint": "npm run lint --workspaces --if-present",
-    "lint:fix": "npm run lint:fix --workspaces --if-present",
-    "format": "npm run format:js && npm run format:python",
-    "format:js": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md}\" \"!**/package-lock.json\" \"!**/node_modules/**\"",
-    "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,json,md}\" \"!**/package-lock.json\" \"!**/node_modules/**\"",
     "format:python": "cd src/cofounder_agent && python -m black . && python -m isort .",
     "health:check": "echo 'Checking service health...' && node scripts/health-check.js",
     "env:select": "node scripts/select-env.js"
