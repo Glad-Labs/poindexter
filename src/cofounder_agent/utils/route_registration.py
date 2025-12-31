@@ -147,7 +147,7 @@ def register_all_routes(
 
     try:
         # ===== MODELS & AI BACKENDS =====
-        from routes.models import models_router, models_list_router
+        from routes.model_routes import models_router, models_list_router
 
         app.include_router(models_router)
         app.include_router(models_list_router)

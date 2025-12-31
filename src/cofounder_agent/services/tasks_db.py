@@ -51,7 +51,7 @@ class TasksDatabase(DatabaseServiceMixin):
         """
         self.pool = pool
 
-    async def get_pending_tasks(self, limit: int = 10) -> List[TaskResponse]:
+    async def get_pending_tasks(self, limit: int = 10) -> List[dict]:
         """
         Get pending tasks from content_tasks.
         
@@ -59,7 +59,7 @@ class TasksDatabase(DatabaseServiceMixin):
             limit: Maximum number of tasks to return
             
         Returns:
-            List of pending TaskResponse models
+            List of pending tasks as dicts
         """
         try:
             if not self.pool:
@@ -74,7 +74,12 @@ class TasksDatabase(DatabaseServiceMixin):
             )
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(sql, *params)
-                return [ModelConverter.to_task_response(row) for row in rows]
+                # Convert to dicts for backward compatibility with task_executor
+                result = []
+                for row in rows:
+                    task_response = ModelConverter.to_task_response(row)
+                    result.append(ModelConverter.to_dict(task_response))
+                return result
         except Exception as e:
             if "content_tasks" in str(e) or "does not exist" in str(e) or "relation" in str(e):
                 return []
@@ -135,6 +140,7 @@ class TasksDatabase(DatabaseServiceMixin):
             insert_data = {
                 "task_id": task_id,
                 "id": task_id,
+                "title": task_data.get("task_name") or task_data.get("title"),
                 "request_type": task_data.get("request_type", "content_generation"),
                 "task_type": task_data.get("task_type", "blog_post"),
                 "status": task_data.get("status", "pending"),
@@ -202,7 +208,7 @@ class TasksDatabase(DatabaseServiceMixin):
             logger.error(f"❌ Failed to add task: {e}")
             raise
 
-    async def get_task(self, task_id: str) -> Optional[TaskResponse]:
+    async def get_task(self, task_id: str) -> Optional[dict]:
         """
         Get a task from content_tasks by ID.
         
@@ -210,7 +216,7 @@ class TasksDatabase(DatabaseServiceMixin):
             task_id: Task ID
             
         Returns:
-            TaskResponse model or None if not found
+            Task dict or None if not found
         """
         builder = ParameterizedQueryBuilder()
         sql, params = builder.select(
@@ -223,7 +229,8 @@ class TasksDatabase(DatabaseServiceMixin):
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, *params)
                 if row:
-                    return ModelConverter.to_task_response(row)
+                    task_response = ModelConverter.to_task_response(row)
+                    return ModelConverter.to_dict(task_response)
                 return None
         except Exception as e:
             logger.error(f"❌ Failed to get task {task_id}: {e}")
@@ -261,7 +268,7 @@ class TasksDatabase(DatabaseServiceMixin):
             
             sql, params = builder.update(
                 table="content_tasks",
-                columns=updates,
+                updates=updates,
                 where_clauses=[("task_id", SQLOperator.EQ, str(task_id))],
                 return_columns=["*"]
             )
@@ -276,7 +283,7 @@ class TasksDatabase(DatabaseServiceMixin):
             logger.error(f"❌ Failed to update task status {task_id}: {e}")
             return None
 
-    async def update_task(self, task_id: str, updates: Dict[str, Any]) -> Optional[TaskResponse]:
+    async def update_task(self, task_id: str, updates: Dict[str, Any]) -> Optional[dict]:
         """
         Update task fields in content_tasks.
 
@@ -287,7 +294,7 @@ class TasksDatabase(DatabaseServiceMixin):
             updates: Dict of fields to update
             
         Returns:
-            Updated TaskResponse model or None
+            Updated task dict or None
         """
         if not updates:
             return await self.get_task(task_id)
@@ -295,12 +302,19 @@ class TasksDatabase(DatabaseServiceMixin):
         # Extract task_metadata for normalization
         task_metadata = updates.get("task_metadata", {})
         if isinstance(task_metadata, str):
-            task_metadata = json.loads(task_metadata)
+            try:
+                task_metadata = json.loads(task_metadata)
+            except (json.JSONDecodeError, TypeError):
+                task_metadata = {}
         elif task_metadata is None:
             task_metadata = {}
 
         # Prepare normalized updates
         normalized_updates = dict(updates)
+
+        # Handle task_name -> title mapping
+        if "task_name" in normalized_updates and "title" not in normalized_updates:
+            normalized_updates["title"] = normalized_updates.pop("task_name")
 
         # Extract specific fields to dedicated columns
         if task_metadata:
@@ -341,14 +355,17 @@ class TasksDatabase(DatabaseServiceMixin):
             builder = ParameterizedQueryBuilder()
             sql, params = builder.update(
                 table="content_tasks",
-                columns=serialized_updates,
+                updates=serialized_updates,
                 where_clauses=[("task_id", SQLOperator.EQ, str(task_id))],
                 return_columns=["*"]
             )
 
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, *params)
-                return ModelConverter.to_task_response(row) if row else None
+                if row:
+                    task_response = ModelConverter.to_task_response(row)
+                    return ModelConverter.to_dict(task_response)
+                return None
         except Exception as e:
             logger.error(f"❌ Failed to update task {task_id}: {e}")
             return None
@@ -506,8 +523,8 @@ class TasksDatabase(DatabaseServiceMixin):
         try:
             builder = ParameterizedQueryBuilder()
             where_clauses = [
-                ("created_at", SQLOperator.GTE, start_date),
-                ("created_at", SQLOperator.LTE, end_date)
+                ("created_at", SQLOperator.GE, start_date),
+                ("created_at", SQLOperator.LE, end_date)
             ]
             
             if status:

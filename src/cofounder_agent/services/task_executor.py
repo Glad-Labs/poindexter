@@ -24,6 +24,9 @@ import time
 # Import the content critique loop
 from .content_critique_loop import ContentCritiqueLoop
 
+# Import prompt templates
+from .prompt_templates import PromptTemplates
+
 # Import AI content generator for fallback
 from .ai_content_generator import AIContentGenerator
 
@@ -142,15 +145,15 @@ class TaskExecutor:
                             )
                             # Update task as failed
                             try:
-                                await self.database_service.update_task_status(
+                                await self.database_service.update_task(
                                     task_id,
-                                    "failed",
-                                    result=json.dumps(
-                                        {
+                                    {
+                                        "status": "failed",
+                                        "task_metadata": {
                                             "error": str(e),
                                             "timestamp": datetime.now(timezone.utc).isoformat(),
                                         }
-                                    ),
+                                    }
                                 )
                                 logger.info(
                                     f"📝 [TASK_EXEC_LOOP] Updated task {task_id} status to failed"
@@ -203,12 +206,12 @@ class TaskExecutor:
         try:
             # 1. Update task status to 'in_progress'
             logger.info(f"📝 [TASK_SINGLE] Marking task as in_progress...")
-            await self.database_service.update_task_status(
+            await self.database_service.update_task(
                 task_id,
-                "in_progress",
-                result=json.dumps(
-                    {"status": "processing", "started_at": datetime.now(timezone.utc).isoformat()}
-                ),
+                {
+                    "status": "in_progress",
+                    "task_metadata": {"status": "processing", "started_at": datetime.now(timezone.utc).isoformat()}
+                }
             )
             logger.info(f"✅ [TASK_SINGLE] Task marked as in_progress")
 
@@ -225,9 +228,14 @@ class TaskExecutor:
                 result.get("status", "completed") if isinstance(result, dict) else "completed"
             )
             logger.info(f"💾 [TASK_SINGLE] Updating task status to '{final_status}'...")
-            result_json = json.dumps(result) if isinstance(result, dict) else str(result)
-            await self.database_service.update_task_status(
-                task_id, final_status, result=result_json
+            
+            # Use update_task to ensure normalization of content into columns
+            await self.database_service.update_task(
+                task_id,
+                {
+                    "status": final_status,
+                    "task_metadata": result if isinstance(result, dict) else {"output": str(result)}
+                }
             )
 
             if final_status == "failed":
@@ -287,15 +295,13 @@ class TaskExecutor:
 
                 # Using UnifiedOrchestrator (IntelligentOrchestrator is deprecated)
                 logger.info(f"   🚀 Using UnifiedOrchestrator (unified system)")
-                # Construct natural language request
-                prompt = f"Generate a blog post about '{topic}'."
-                if primary_keyword:
-                    prompt += f" Focus on keywords: {primary_keyword}."
-                if target_audience:
-                    prompt += f" Target audience is {target_audience}."
-                if category:
-                    prompt += f" Category: {category}."
-                prompt += " Ensure the content is professional and approximately 1500-2000 words."
+                # Construct natural language request using centralized template
+                prompt = PromptTemplates.blog_generation_prompt(
+                    topic=topic,
+                    primary_keyword=primary_keyword,
+                    target_audience=target_audience,
+                    category=category
+                )
 
                 # Call orchestrator with proper method
                 if hasattr(self.orchestrator, "process_request"):
@@ -310,17 +316,37 @@ class TaskExecutor:
                     )
 
                 # Extract content from result
-                if result.final_formatting:
-                    generated_content = json.dumps(result.final_formatting)
-                elif result.outputs:
-                    generated_content = str(result.outputs)
-                    for key, val in result.outputs.items():
-                        if isinstance(val, dict) and "content" in val:
-                            generated_content = val["content"]
-                            break
-                        if isinstance(val, str) and len(val) > 100:
-                            generated_content = val
-                            break
+                # Result can be either an object with attributes or a dict
+                final_formatting = None
+                outputs = None
+                
+                if hasattr(result, 'final_formatting'):
+                    final_formatting = result.final_formatting
+                elif isinstance(result, dict):
+                    # Check multiple possible fields for content
+                    final_formatting = result.get('final_formatting') or result.get('output') or result.get('response')
+                    outputs = result.get('outputs')
+                
+                if final_formatting:
+                    if isinstance(final_formatting, (dict, list)):
+                        generated_content = json.dumps(final_formatting)
+                    else:
+                        generated_content = str(final_formatting)
+                elif outputs or (isinstance(result, dict) and result.get('outputs')):
+                    result_outputs = outputs if outputs else result.get('outputs', {})
+                    if isinstance(result_outputs, dict):
+                        # Try to find content in outputs
+                        for key, val in result_outputs.items():
+                            if isinstance(val, dict) and "content" in val:
+                                generated_content = val["content"]
+                                break
+                            if isinstance(val, str) and len(val) > 100:
+                                generated_content = val
+                                break
+                        else:
+                            generated_content = str(result_outputs)
+                    else:
+                        generated_content = str(result_outputs)
                 else:
                     generated_content = None
 
@@ -328,38 +354,43 @@ class TaskExecutor:
                 if not generated_content or (
                     isinstance(generated_content, str) and len(generated_content.strip()) < 50
                 ):
-                    orchestrator_error = f"IntelligentOrchestrator returned empty/minimal content (length: {len(generated_content or '') or 0} chars)"
-                    generated_content = None
+                    # If first attempt failed, try legacy call if available
+                    if hasattr(self.orchestrator, "process_request"):
+                        logger.info(f"   ⚙️ Attempting Legacy Orchestrator call as fallback")
+                        try:
+                            orchestrator_result = await self.orchestrator.process_request(
+                                user_request=f"Generate content: {topic}",
+                                user_id="system_task_executor",
+                                business_metrics={
+                                    "topic": topic,
+                                    "keywords": primary_keyword,
+                                    "target_audience": target_audience,
+                                    "style": "professional",
+                                    "length": "1500-2000",
+                                    "task_id": str(task_id),
+                                    "category": category,
+                                },
+                            )
 
-                else:
-                    # Legacy Orchestrator
-                    logger.info(f"   ⚙️ Using Legacy Orchestrator")
-                    orchestrator_result = await self.orchestrator.process_request(
-                        user_request=f"Generate content: {topic}",
-                        user_id="system_task_executor",
-                        business_metrics={
-                            "topic": topic,
-                            "keywords": primary_keyword,
-                            "target_audience": target_audience,
-                            "style": "professional",
-                            "length": "1500-2000",
-                            "task_id": str(task_id),
-                            "category": category,
-                        },
-                    )
-
-                    # Extract content from result
-                    if isinstance(orchestrator_result, dict):
-                        if "content" in orchestrator_result:
-                            generated_content = orchestrator_result["content"]
-                        elif "response" in orchestrator_result:
-                            generated_content = orchestrator_result["response"]
-                        elif "result" in orchestrator_result:
-                            generated_content = orchestrator_result["result"]
-                        else:
-                            generated_content = json.dumps(orchestrator_result)
+                            # Extract content from result
+                            if isinstance(orchestrator_result, dict):
+                                if "content" in orchestrator_result:
+                                    generated_content = orchestrator_result["content"]
+                                elif "response" in orchestrator_result:
+                                    generated_content = orchestrator_result["response"]
+                                elif "result" in orchestrator_result:
+                                    generated_content = orchestrator_result["result"]
+                                else:
+                                    generated_content = json.dumps(orchestrator_result)
+                            else:
+                                generated_content = str(orchestrator_result)
+                        except Exception as legacy_err:
+                            logger.warning(f"   ⚠️ Legacy Orchestrator call failed: {legacy_err}")
+                            orchestrator_error = f"Both modern and legacy generation failed. Modern: {generated_content or 'None'}. Legacy: {legacy_err}"
+                            generated_content = None
                     else:
-                        generated_content = str(orchestrator_result)
+                        orchestrator_error = f"Orchestrator returned empty/minimal content (length: {len(generated_content or '') or 0} chars)"
+                        generated_content = None
 
                 logger.info(
                     f"✅ [TASK_EXECUTE] PHASE 1 Complete: Generated {len(generated_content) if generated_content else 0} chars"
@@ -410,19 +441,48 @@ class TaskExecutor:
                     f"🔄 [TASK_EXECUTE] Attempting refinement based on critique feedback..."
                 )
                 try:
-                    refinement_result = await self.orchestrator.process_request(
-                        user_request=f"Refine content based on feedback: {topic}",
-                        user_id="system_task_executor",
-                        business_metrics={
-                            "original_content": generated_content,
-                            "feedback": critique_result.get("feedback"),
-                            "suggestions": critique_result.get("suggestions"),
-                            "topic": topic,
-                        },
-                    )
+                    # Check if orchestrator supports modern process_request
+                    if hasattr(self.orchestrator, "process_request") and not hasattr(self.orchestrator, "process_command_async"):
+                        # UnifiedOrchestrator
+                        refinement_result = await self.orchestrator.process_request(
+                            user_input=f"Refine content about '{topic}' based on feedback: {critique_result.get('feedback')}",
+                            context={
+                                "original_content": generated_content,
+                                "feedback": critique_result.get("feedback"),
+                                "task_id": str(task_id)
+                            }
+                        )
+                    else:
+                        # Legacy Orchestrator or basic Orchestrator
+                        # Try legacy signature first if it has process_request
+                        if hasattr(self.orchestrator, "process_request"):
+                            refinement_result = await self.orchestrator.process_request(
+                                user_request=f"Refine content based on feedback: {topic}",
+                                user_id="system_task_executor",
+                                business_metrics={
+                                    "original_content": generated_content,
+                                    "feedback": critique_result.get("feedback"),
+                                    "suggestions": critique_result.get("suggestions"),
+                                    "topic": topic,
+                                },
+                            )
+                        else:
+                            # Fallback to process_command_async
+                            refinement_result = await self.orchestrator.process_command_async(
+                                command=f"Refine content about '{topic}' based on feedback: {critique_result.get('feedback')}",
+                                context={"original_content": generated_content}
+                            )
 
-                    if isinstance(refinement_result, dict) and "content" in refinement_result:
-                        generated_content = refinement_result["content"]
+                    # Extract content from refinement result
+                    if isinstance(refinement_result, dict):
+                        if "content" in refinement_result:
+                            generated_content = refinement_result["content"]
+                        elif "output" in refinement_result:
+                            generated_content = refinement_result["output"]
+                        elif "response" in refinement_result:
+                            generated_content = refinement_result["response"]
+                        elif isinstance(refinement_result.get("output"), dict) and "content" in refinement_result["output"]:
+                            generated_content = refinement_result["output"]["content"]
 
                         # Re-critique refined content
                         critique_result = await self.critique_loop.critique(
@@ -435,12 +495,11 @@ class TaskExecutor:
 
                         quality_score = critique_result.get("quality_score", 0)
                         approved = critique_result.get("approved", False)
-                        logger.info(
-                            f"🔄 Refinement complete: approved={approved}, score={quality_score}/100"
-                        )
-
-                except Exception as e:
-                    logger.warning(f"Refinement attempt failed: {e}")
+                        logger.info(f"   Refined Quality Score: {quality_score}/100")
+                except Exception as refine_err:
+                    logger.error(f"❌ [TASK_EXECUTE] Refinement failed: {refine_err}")
+                
+                logger.info(f"🔄 Refinement complete: approved={approved}, score={quality_score}/100")
 
         # ===== Validate Content Generation =====
         # Ensure meaningful content was actually generated

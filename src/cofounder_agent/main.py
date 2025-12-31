@@ -81,13 +81,6 @@ except ImportError as e:
     initialize_history_service = None
     logging.warning(f"Workflow history service not available: {str(e)}")
 
-# IntelligentOrchestrator is DEPRECATED - replaced by UnifiedOrchestrator
-# Keeping as None for backward compatibility with startup_manager
-INTELLIGENT_ORCHESTRATOR_AVAILABLE = False
-IntelligentOrchestrator = None
-EnhancedMemorySystem = None
-intelligent_orchestrator_router = None
-
 # PostgreSQL database service is now the primary service
 # Legacy 'database.py' (SQLAlchemy) has been removed.
 DATABASE_SERVICE_AVAILABLE = True

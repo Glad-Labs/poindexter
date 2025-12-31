@@ -67,15 +67,50 @@ class TaskResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str = Field(..., description="Task UUID")
+    task_id: Optional[str] = Field(None, description="Task UUID (alias for id)")
     user_id: Optional[str] = Field(None, description="Associated user UUID")
-    title: str = Field(..., description="Task title")
+    title: Optional[str] = Field(None, description="Task title")
+    task_name: Optional[str] = Field(None, description="Task name (alias for title)")
     description: Optional[str] = Field(None, description="Task description")
     topic: Optional[str] = Field(None, description="Topic for content generation")
+    request_type: Optional[str] = Field(None, description="Type of request")
+    task_type: Optional[str] = Field(None, description="Type of task (blog_post, etc.)")
     status: Literal[
-        "pending", "in_progress", "completed", "failed", "awaiting_approval", "approved"
+        "pending", "in_progress", "completed", "failed", "awaiting_approval", "approved", "published", "draft", "scheduled", "ready_to_publish", "awaiting_human_review", "content_generated"
     ] = Field(default="pending", description="Task execution status")
     category: Optional[str] = Field(None, description="Task category")
     priority: Optional[int] = Field(default=0, ge=0, le=5, description="Priority level (0-5)")
+    
+    # Content fields (normalized)
+    style: Optional[str] = Field(None, description="Writing style")
+    tone: Optional[str] = Field(None, description="Writing tone")
+    target_length: Optional[int] = Field(None, description="Target word count")
+    primary_keyword: Optional[str] = Field(None, description="Primary SEO keyword")
+    target_audience: Optional[str] = Field(None, description="Target audience")
+    content: Optional[str] = Field(None, description="Generated content")
+    excerpt: Optional[str] = Field(None, description="Content excerpt")
+    featured_image_url: Optional[str] = Field(None, description="URL for featured image")
+    featured_image_data: Optional[Dict[str, Any]] = Field(None, description="Metadata for featured image")
+    featured_image_prompt: Optional[str] = Field(None, description="Prompt used for image generation")
+    
+    # Quality & SEO
+    qa_feedback: Optional[str] = Field(None, description="QA feedback")
+    quality_score: Optional[float] = Field(None, description="Quality score (0-100)")
+    seo_title: Optional[str] = Field(None, description="SEO optimized title")
+    seo_description: Optional[str] = Field(None, description="SEO meta description")
+    seo_keywords: Optional[str] = Field(None, description="SEO keywords")
+    
+    # Progress tracking
+    stage: Optional[str] = Field(None, description="Current execution stage")
+    percentage: Optional[int] = Field(None, description="Completion percentage")
+    message: Optional[str] = Field(None, description="Status message")
+    
+    # Metadata & System
+    agent_id: Optional[str] = Field(None, description="ID of the agent handling the task")
+    model_used: Optional[str] = Field(None, description="LLM model used")
+    error_message: Optional[str] = Field(None, description="Error message if failed")
+    tags: Optional[List[str]] = Field(default_factory=list, description="Task tags")
+    
     task_metadata: Optional[Dict[str, Any]] = Field(
         default=None, description="Additional task metadata (JSON)"
     )
@@ -89,6 +124,7 @@ class TaskResponse(BaseModel):
     updated_at: datetime = Field(..., description="Last update timestamp")
     started_at: Optional[datetime] = Field(None, description="Execution start timestamp")
     completed_at: Optional[datetime] = Field(None, description="Completion timestamp")
+    cost_breakdown: Optional[Dict[str, Any]] = Field(None, description="Task cost breakdown")
 
 
 class TaskCountsResponse(BaseModel):

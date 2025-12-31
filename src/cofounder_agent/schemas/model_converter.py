@@ -90,6 +90,56 @@ class ModelConverter:
     def to_task_response(row: Any) -> TaskResponse:
         """Convert row to TaskResponse model."""
         data = ModelConverter._normalize_row_data(row)
+        
+        # Handle field mapping: database uses task_id, but model expects id
+        if "task_id" in data:
+            if "id" not in data or data["id"] is None:
+                data["id"] = data["task_id"]
+            # Keep task_id for backward compatibility
+            data["task_id"] = data["task_id"]
+        elif "id" in data:
+            data["task_id"] = data["id"]
+            
+        # Handle task_name mapping to title
+        if "task_name" in data:
+            if "title" not in data or data["title"] is None:
+                data["title"] = data["task_name"]
+            # Keep task_name for backward compatibility
+            data["task_name"] = data["task_name"]
+        elif "title" in data:
+            data["task_name"] = data["title"]
+        
+        # IMPORTANT: Merge normalized columns back into task_metadata for UI compatibility
+        # The frontend expects task_metadata to contain all content fields
+        if "task_metadata" not in data or data["task_metadata"] is None:
+            data["task_metadata"] = {}
+            
+        normalized_fields = [
+            "content",
+            "excerpt",
+            "featured_image_url",
+            "featured_image_data",
+            "qa_feedback",
+            "quality_score",
+            "seo_title",
+            "seo_description",
+            "seo_keywords",
+            "stage",
+            "percentage",
+            "message",
+        ]
+
+        for field in normalized_fields:
+            if field in data and data[field] is not None:
+                # Merge normalized column into task_metadata for UI
+                data["task_metadata"][field] = data[field]
+
+        # Extract constraint_compliance from task_metadata to top level for API response
+        if "constraint_compliance" not in data or data.get("constraint_compliance") is None:
+            if data.get("task_metadata") and isinstance(data["task_metadata"], dict):
+                if "constraint_compliance" in data["task_metadata"]:
+                    data["constraint_compliance"] = data["task_metadata"]["constraint_compliance"]
+
         return TaskResponse(**data)
 
     @staticmethod
@@ -208,6 +258,18 @@ class ModelConverter:
             raise ValueError(f"No converter found for {model_class}")
 
         return [converter(row) for row in rows]
+
+    @staticmethod
+    def to_dict(model: Any) -> Dict[str, Any]:
+        """Convert Pydantic model to dict."""
+        if hasattr(model, "model_dump"):
+            # Pydantic v2
+            return model.model_dump()
+        elif hasattr(model, "dict"):
+            # Pydantic v1
+            return model.dict()
+        else:
+            return dict(model) if isinstance(model, dict) else {}
 
 
 # ============================================================================

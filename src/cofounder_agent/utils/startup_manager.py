@@ -31,7 +31,6 @@ class StartupManager:
         self.redis_cache = None
         self.orchestrator = None
         self.task_executor = None
-        self.intelligent_orchestrator = None
         self.workflow_history_service = None
         self.training_data_service = None
         self.fine_tuning_service = None
@@ -76,9 +75,6 @@ class StartupManager:
             # Step 6: Initialize workflow history service
             await self._initialize_workflow_history()
 
-            # Step 7: Initialize intelligent orchestrator
-            await self._initialize_intelligent_orchestrator()
-
             # Step 8: Initialize content critique loop
             await self._initialize_content_critique()
 
@@ -102,7 +98,6 @@ class StartupManager:
                 "redis_cache": self.redis_cache,
                 "orchestrator": self.orchestrator,
                 "task_executor": self.task_executor,
-                "intelligent_orchestrator": self.intelligent_orchestrator,
                 "workflow_history": self.workflow_history_service,
                 "training_data_service": self.training_data_service,
                 "fine_tuning_service": self.fine_tuning_service,
@@ -237,15 +232,6 @@ class StartupManager:
             logger.warning(f"   {error_msg}", exc_info=True)
             self.workflow_history_service = None
 
-    async def _initialize_intelligent_orchestrator(self) -> None:
-        """Initialize intelligent orchestrator (Phase 5+)"""
-        logger.info("  🧠 Initializing intelligent orchestrator...")
-
-        # IntelligentOrchestrator is DEPRECATED - replaced by UnifiedOrchestrator
-        # Skipping initialization
-        logger.info("   Intelligent orchestrator skipped (deprecated, using UnifiedOrchestrator)")
-        self.intelligent_orchestrator = None
-
     async def _initialize_content_critique(self) -> None:
         """Initialize content critique loop"""
         logger.info("  🔍 Initializing content critique loop...")
@@ -264,18 +250,11 @@ class StartupManager:
             from services.task_executor import TaskExecutor
             from services.content_critique_loop import ContentCritiqueLoop
 
-            # Prefer IntelligentOrchestrator if available
-            active_orchestrator = (
-                self.intelligent_orchestrator
-                if self.intelligent_orchestrator
-                else self.orchestrator
-            )
-
             critique_loop = ContentCritiqueLoop()
 
             self.task_executor = TaskExecutor(
                 database_service=self.database_service,
-                orchestrator=active_orchestrator,
+                orchestrator=self.orchestrator,
                 critique_loop=critique_loop,
                 poll_interval=5,  # Poll every 5 seconds
             )

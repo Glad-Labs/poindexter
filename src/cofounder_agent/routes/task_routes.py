@@ -24,124 +24,7 @@ import os
 
 from utils.error_responses import ErrorResponseBuilder
 from utils.route_utils import get_database_dependency
-
-
-def convert_db_row_to_dict(row):
-    """
-    Convert asyncpg database row to proper types for TaskResponse.
-    Handles UUID → str, datetime → ISO string, JSONB string → dict conversions.
-    Prioritizes normalized columns over nested task_metadata.
-    """
-    if row is None:
-        return None
-
-    # Convert asyncpg Record to dict
-    if hasattr(row, "keys"):
-        data = dict(row)
-    else:
-        data = row
-
-    # Convert UUID to string
-    if "id" in data and data["id"] is not None:
-        data["id"] = str(data["id"])
-
-    # Ensure task_name is never None (required field)
-    if "task_name" not in data or data["task_name"] is None:
-        data["task_name"] = data.get("topic", "Untitled Task")[:100]
-
-    # Convert datetimes to ISO format strings
-    for dt_field in ["created_at", "updated_at", "started_at", "completed_at"]:
-        if dt_field in data and data[dt_field] is not None:
-            if isinstance(data[dt_field], datetime):
-                data[dt_field] = data[dt_field].isoformat()
-            # else already a string
-
-    # Handle task_metadata JSONB (for backward compatibility with orchestrator)
-    # This is still the primary source for orchestrator metadata
-    if "task_metadata" in data:
-        if isinstance(data["task_metadata"], str):
-            try:
-                data["task_metadata"] = json.loads(data["task_metadata"])
-            except (json.JSONDecodeError, TypeError):
-                data["task_metadata"] = {}
-        elif data["task_metadata"] is None:
-            data["task_metadata"] = {}
-    else:
-        data["task_metadata"] = {}
-
-    # IMPORTANT: Merge normalized columns back into task_metadata for UI compatibility
-    # The frontend expects task_metadata to contain all content fields
-    normalized_fields = [
-        "content",
-        "excerpt",
-        "featured_image_url",
-        "featured_image_data",
-        "qa_feedback",
-        "quality_score",
-        "seo_title",
-        "seo_description",
-        "seo_keywords",
-        "stage",
-        "percentage",
-        "message",
-    ]
-
-    for field in normalized_fields:
-        if field in data and data[field] is not None:
-            # Merge normalized column into task_metadata for UI
-            data["task_metadata"][field] = data[field]
-
-    # Convert metadata JSONB string to dict (FALLBACK)
-    if "metadata" in data and isinstance(data["metadata"], str):
-        try:
-            data["metadata"] = json.loads(data["metadata"])
-        except (json.JSONDecodeError, TypeError):
-            data["metadata"] = {}
-    elif "metadata" not in data:
-        data["metadata"] = {}
-
-    # Handle result JSONB similarly (FALLBACK for old results)
-    if "result" in data and isinstance(data["result"], str):
-        try:
-            data["result"] = json.loads(data["result"])
-        except (json.JSONDecodeError, TypeError):
-            data["result"] = None
-
-    # Handle error fields (for failed tasks)
-    # Map error_message and error_details from database to response
-    if "error_message" not in data:
-        data["error_message"] = None
-
-    if "error_details" not in data:
-        # Try to extract error details from task_metadata
-        if data.get("task_metadata") and isinstance(data["task_metadata"], dict):
-            if "error_details" in data["task_metadata"]:
-                data["error_details"] = data["task_metadata"]["error_details"]
-            elif "error" in data["task_metadata"]:
-                # Fallback: if error exists in metadata, use it
-                data["error_details"] = {"error": data["task_metadata"]["error"]}
-        else:
-            data["error_details"] = None
-    else:
-        # Parse error_details if it's a string (JSON)
-        if isinstance(data["error_details"], str):
-            try:
-                data["error_details"] = json.loads(data["error_details"])
-            except (json.JSONDecodeError, TypeError):
-                data["error_details"] = {"raw_error": data["error_details"]}
-
-    # If error_message is in task_metadata, promote it to top level
-    if not data.get("error_message") and data.get("task_metadata", {}).get("error_message"):
-        data["error_message"] = data["task_metadata"]["error_message"]
-
-    # Extract constraint_compliance from task_metadata to top level for API response
-    # This allows the frontend to access compliance metrics directly from the task response
-    if "constraint_compliance" not in data or data.get("constraint_compliance") is None:
-        if data.get("task_metadata") and isinstance(data["task_metadata"], dict):
-            if "constraint_compliance" in data["task_metadata"]:
-                data["constraint_compliance"] = data["task_metadata"]["constraint_compliance"]
-
-    return data
+from schemas.model_converter import ModelConverter
 
 
 # Import async database service
@@ -280,8 +163,9 @@ async def create_task(
         verify_task = await db_service.get_task(returned_task_id)
         if verify_task:
             logger.info(f"✅ [TASK_CREATE] Verification SUCCESS - Task found in database")
-            logger.info(f"   - Status: {verify_task.get('status')}")
-            logger.info(f"   - Created: {verify_task.get('created_at')}")
+            # verify_task is now a dict
+            logger.info(f"   - Status: {verify_task.get('status', 'unknown')}")
+            logger.info(f"   - Created: {verify_task.get('created_at', 'unknown')}")
         else:
             logger.error(
                 f"❌ [TASK_CREATE] Verification FAILED - Task NOT found in database after insert!"
@@ -296,14 +180,16 @@ async def create_task(
         logger.info(f"📤 [TASK_CREATE] Returning response: {response}")
 
         # Queue background task to execute content generation and publishing
-        if background_tasks:
-            logger.info(f"⏳ [TASK_CREATE] Queueing background task for content generation...")
-            background_tasks.add_task(_execute_and_publish_task, returned_task_id, db_service)
-            logger.info(f"✅ [TASK_CREATE] Background task queued successfully")
-        else:
-            logger.warning(
-                f"⚠️ [TASK_CREATE] No background_tasks available - content generation will not run!"
-            )
+        # NOTE: This is now handled by the TaskExecutor background service which polls for pending tasks.
+        # The TaskExecutor uses the full multi-agent UnifiedOrchestrator pipeline.
+        # if background_tasks:
+        #     logger.info(f"⏳ [TASK_CREATE] Queueing background task for content generation...")
+        #     background_tasks.add_task(_execute_and_publish_task, returned_task_id, db_service)
+        #     logger.info(f"✅ [TASK_CREATE] Background task queued successfully")
+        # else:
+        #     logger.warning(
+        #         f"⚠️ [TASK_CREATE] No background_tasks available - content generation will not run!"
+        #     )
 
         return response
 
@@ -359,7 +245,10 @@ async def list_tasks(
         )
 
         # Convert to response schema with proper type conversions
-        task_responses = [UnifiedTaskResponse(**convert_db_row_to_dict(task)) for task in tasks]
+        task_responses = [
+            UnifiedTaskResponse(**ModelConverter.to_task_response(task).model_dump())
+            for task in tasks
+        ]
 
         return TaskListResponse(tasks=task_responses, total=total, offset=offset, limit=limit)
 
@@ -403,7 +292,7 @@ async def get_task(
             raise HTTPException(status_code=404, detail="Task not found")
 
         # Convert to response schema with proper type conversions
-        return UnifiedTaskResponse(**convert_db_row_to_dict(task))
+        return UnifiedTaskResponse(**ModelConverter.to_task_response(task).model_dump())
 
     except HTTPException:
         raise
@@ -485,7 +374,7 @@ async def update_task(
         updated_task = await db_service.get_task(task_id)
 
         # Convert to response schema with proper type conversions
-        return UnifiedTaskResponse(**convert_db_row_to_dict(updated_task))
+        return UnifiedTaskResponse(**ModelConverter.to_task_response(updated_task).model_dump())
 
     except HTTPException:
         raise
@@ -695,7 +584,10 @@ async def _execute_and_publish_task(task_id: str, db_service: DatabaseService):
 
         # Step 2: Update status to "in_progress"
         logger.info(f"[BG_TASK] Updating task status to 'in_progress'...")
-        await db_service.update_task_status(task_id, "in_progress")
+        await db_service.update_task(
+            task_id,
+            {"task_metadata": {"status": "in_progress", "started_at": datetime.now(timezone.utc).isoformat()}, "status": "in_progress"}
+        )
 
         # Step 3: Generate content using LLM with model-aware selection
         logger.info(f"[BG_TASK] Starting content generation...")
@@ -958,7 +850,8 @@ Write the thought-leadership post without title or heading markers:""",
         # Step 4: Update task status and store result with generated content
         logger.info(f"[BG_TASK] Storing generated content in database...")
 
-        # Store result as JSON containing the generated content
+        # Store content in both result field AND normalized columns via task_metadata
+        # This ensures content is accessible both via result JSON and via normalized columns
         result_json = json.dumps(
             {
                 "content": generated_content,
@@ -967,8 +860,19 @@ Write the thought-leadership post without title or heading markers:""",
             }
         )
 
-        await db_service.update_task_status(task_id, "ready_to_publish", result=result_json)
-        logger.info(f"[BG_TASK] Content stored in task result")
+        # Update using update_task to properly extract content to normalized columns
+        task_metadata = {
+            "content": generated_content,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "content_length": len(generated_content),
+            "status": "content_generated",
+        }
+        
+        await db_service.update_task(
+            task_id,
+            {"task_metadata": task_metadata, "status": "ready_to_publish"}
+        )
+        logger.info(f"[BG_TASK] Content stored in normalized columns and task metadata")
 
         # Step 5: DO NOT create post automatically - wait for human review and approval
         # ═══════════════════════════════════════════════════════════════════════════════════
@@ -987,25 +891,31 @@ Write the thought-leadership post without title or heading markers:""",
         # Step 6: Final status update - set to awaiting_approval (human review required)
         logger.info(f"[BG_TASK] Content generation complete, setting task to awaiting_approval...")
 
-        final_result = json.dumps(
-            {
-                "content": generated_content,
-                "generated_at": datetime.now(timezone.utc).isoformat(),
-                "content_length": len(generated_content),
-                "status": "awaiting_human_review",
-                "post_created": True,
-            }
+        final_metadata = {
+            "content": generated_content,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "content_length": len(generated_content),
+            "status": "awaiting_human_review",
+            "post_created": True,
+        }
+        await db_service.update_task(
+            task_id,
+            {"task_metadata": final_metadata, "status": "awaiting_approval"}
         )
-        await db_service.update_task_status(task_id, "awaiting_approval", result=final_result)
         logger.info(f"[BG_TASK] Task awaiting human approval!")
 
     except Exception as e:
         logger.error(f"[BG_TASK] Unhandled error: {str(e)}", exc_info=True)
         try:
-            error_result = json.dumps(
-                {"error": str(e), "failed_at": datetime.now(timezone.utc).isoformat()}
+            error_metadata = {
+                "error": str(e),
+                "failed_at": datetime.now(timezone.utc).isoformat(),
+                "error_stage": "content_generation"
+            }
+            await db_service.update_task(
+                task_id,
+                {"task_metadata": error_metadata, "status": "failed"}
             )
-            await db_service.update_task_status(task_id, "failed", result=error_result)
         except Exception as status_err:
             logger.error(f"[BG_TASK] Could not update task status to failed: {status_err}")
 
