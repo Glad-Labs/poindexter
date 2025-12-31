@@ -17,6 +17,8 @@ from datetime import datetime, timedelta
 from asyncpg import Pool
 
 from src.cofounder_agent.utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
+from src.cofounder_agent.schemas.database_response_models import TaskResponse, TaskCountsResponse
+from src.cofounder_agent.schemas.model_converter import ModelConverter
 from .database_mixin import DatabaseServiceMixin
 
 logger = logging.getLogger(__name__)
@@ -49,7 +51,7 @@ class TasksDatabase(DatabaseServiceMixin):
         """
         self.pool = pool
 
-    async def get_pending_tasks(self, limit: int = 10) -> List[Dict[str, Any]]:
+    async def get_pending_tasks(self, limit: int = 10) -> List[TaskResponse]:
         """
         Get pending tasks from content_tasks.
         
@@ -57,7 +59,7 @@ class TasksDatabase(DatabaseServiceMixin):
             limit: Maximum number of tasks to return
             
         Returns:
-            List of pending task dicts
+            List of pending TaskResponse models
         """
         try:
             if not self.pool:
@@ -72,14 +74,14 @@ class TasksDatabase(DatabaseServiceMixin):
             )
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(sql, *params)
-                return [self._convert_row_to_dict(row) for row in rows]
+                return [ModelConverter.to_task_response(row) for row in rows]
         except Exception as e:
             if "content_tasks" in str(e) or "does not exist" in str(e) or "relation" in str(e):
                 return []
             logger.warning(f"Error fetching pending tasks: {str(e)}")
             return []
 
-    async def get_all_tasks(self, limit: int = 100) -> List[Dict[str, Any]]:
+    async def get_all_tasks(self, limit: int = 100) -> List[TaskResponse]:
         """
         Get all tasks from content_tasks.
         
@@ -87,7 +89,7 @@ class TasksDatabase(DatabaseServiceMixin):
             limit: Maximum number of tasks to return
             
         Returns:
-            List of all task dicts
+            List of all TaskResponse models
         """
         try:
             builder = ParameterizedQueryBuilder()
@@ -99,7 +101,7 @@ class TasksDatabase(DatabaseServiceMixin):
             )
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(sql, *params)
-                return [self._convert_row_to_dict(row) for row in rows]
+                return [ModelConverter.to_task_response(row) for row in rows]
         except Exception as e:
             logger.error(f"Error fetching all tasks: {e}")
             return []
@@ -200,7 +202,7 @@ class TasksDatabase(DatabaseServiceMixin):
             logger.error(f"❌ Failed to add task: {e}")
             raise
 
-    async def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
+    async def get_task(self, task_id: str) -> Optional[TaskResponse]:
         """
         Get a task from content_tasks by ID.
         
@@ -208,7 +210,7 @@ class TasksDatabase(DatabaseServiceMixin):
             task_id: Task ID
             
         Returns:
-            Task dict or None if not found
+            TaskResponse model or None if not found
         """
         builder = ParameterizedQueryBuilder()
         sql, params = builder.select(
@@ -221,7 +223,7 @@ class TasksDatabase(DatabaseServiceMixin):
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, *params)
                 if row:
-                    return self._convert_row_to_dict(row)
+                    return ModelConverter.to_task_response(row)
                 return None
         except Exception as e:
             logger.error(f"❌ Failed to get task {task_id}: {e}")
@@ -274,7 +276,7 @@ class TasksDatabase(DatabaseServiceMixin):
             logger.error(f"❌ Failed to update task status {task_id}: {e}")
             return None
 
-    async def update_task(self, task_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    async def update_task(self, task_id: str, updates: Dict[str, Any]) -> Optional[TaskResponse]:
         """
         Update task fields in content_tasks.
 
@@ -285,7 +287,7 @@ class TasksDatabase(DatabaseServiceMixin):
             updates: Dict of fields to update
             
         Returns:
-            Updated task dict or None
+            Updated TaskResponse model or None
         """
         if not updates:
             return await self.get_task(task_id)
@@ -346,7 +348,7 @@ class TasksDatabase(DatabaseServiceMixin):
 
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, *params)
-                return self._convert_row_to_dict(row) if row else None
+                return ModelConverter.to_task_response(row) if row else None
         except Exception as e:
             logger.error(f"❌ Failed to update task {task_id}: {e}")
             return None
@@ -411,12 +413,12 @@ class TasksDatabase(DatabaseServiceMixin):
             logger.error(f"❌ Failed to list tasks: {e}")
             return [], 0
 
-    async def get_task_counts(self) -> Dict[str, int]:
+    async def get_task_counts(self) -> TaskCountsResponse:
         """
         Get task counts by status from content_tasks.
         
         Returns:
-            Dict with status-based counts
+            TaskCountsResponse model with status-based counts
         """
         sql = """
             SELECT status, COUNT(*) as count
@@ -427,28 +429,28 @@ class TasksDatabase(DatabaseServiceMixin):
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(sql)
                 counts = {row["status"]: row["count"] for row in rows}
-                return {
-                    "total": sum(counts.values()),
-                    "pending": counts.get("pending", 0),
-                    "in_progress": counts.get("in_progress", 0),
-                    "completed": counts.get("completed", 0),
-                    "failed": counts.get("failed", 0),
-                    "awaiting_approval": counts.get("awaiting_approval", 0),
-                    "approved": counts.get("approved", 0),
-                }
+                return TaskCountsResponse(
+                    total=sum(counts.values()),
+                    pending=counts.get("pending", 0),
+                    in_progress=counts.get("in_progress", 0),
+                    completed=counts.get("completed", 0),
+                    failed=counts.get("failed", 0),
+                    awaiting_approval=counts.get("awaiting_approval", 0),
+                    approved=counts.get("approved", 0),
+                )
         except Exception as e:
             logger.error(f"❌ Failed to get task counts: {e}")
-            return {
-                "total": 0,
-                "pending": 0,
-                "in_progress": 0,
-                "completed": 0,
-                "failed": 0,
-                "awaiting_approval": 0,
-                "approved": 0,
-            }
+            return TaskCountsResponse(
+                total=0,
+                pending=0,
+                in_progress=0,
+                completed=0,
+                failed=0,
+                awaiting_approval=0,
+                approved=0,
+            )
 
-    async def get_queued_tasks(self, limit: int = 5) -> List[Dict[str, Any]]:
+    async def get_queued_tasks(self, limit: int = 5) -> List[TaskResponse]:
         """
         Get top queued/pending tasks from content_tasks.
         
@@ -456,7 +458,7 @@ class TasksDatabase(DatabaseServiceMixin):
             limit: Maximum tasks to return
             
         Returns:
-            List of pending task dicts
+            List of pending TaskResponse models
         """
         builder = ParameterizedQueryBuilder()
         sql, params = builder.select(
@@ -469,7 +471,7 @@ class TasksDatabase(DatabaseServiceMixin):
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(sql, *params)
-                return [self._convert_row_to_dict(row) for row in rows]
+                return [ModelConverter.to_task_response(row) for row in rows]
         except Exception as e:
             logger.error(f"❌ Failed to get queued tasks: {e}")
             return []

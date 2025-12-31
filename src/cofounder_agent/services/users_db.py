@@ -16,6 +16,8 @@ from datetime import datetime
 from asyncpg import Pool
 
 from src.cofounder_agent.utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
+from src.cofounder_agent.schemas.database_response_models import UserResponse, OAuthAccountResponse
+from src.cofounder_agent.schemas.model_converter import ModelConverter
 from .database_mixin import DatabaseServiceMixin
 
 logger = logging.getLogger(__name__)
@@ -33,7 +35,7 @@ class UsersDatabase(DatabaseServiceMixin):
         """
         self.pool = pool
 
-    async def get_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
+    async def get_user_by_id(self, user_id: str) -> Optional[UserResponse]:
         """
         Get user by ID.
         
@@ -41,7 +43,7 @@ class UsersDatabase(DatabaseServiceMixin):
             user_id: UUID of user
             
         Returns:
-            User dict or None if not found
+            UserResponse model or None if not found
         """
         builder = ParameterizedQueryBuilder()
         sql, params = builder.select(
@@ -51,9 +53,9 @@ class UsersDatabase(DatabaseServiceMixin):
         )
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(sql, *params)
-            return self._convert_row_to_dict(row) if row else None
+            return ModelConverter.to_user_response(row) if row else None
 
-    async def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+    async def get_user_by_email(self, email: str) -> Optional[UserResponse]:
         """
         Get user by email address.
         
@@ -61,7 +63,7 @@ class UsersDatabase(DatabaseServiceMixin):
             email: User email
             
         Returns:
-            User dict or None if not found
+            UserResponse model or None if not found
         """
         builder = ParameterizedQueryBuilder()
         sql, params = builder.select(
@@ -71,9 +73,9 @@ class UsersDatabase(DatabaseServiceMixin):
         )
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(sql, *params)
-            return self._convert_row_to_dict(row) if row else None
+            return ModelConverter.to_user_response(row) if row else None
 
-    async def get_user_by_username(self, username: str) -> Optional[Dict[str, Any]]:
+    async def get_user_by_username(self, username: str) -> Optional[UserResponse]:
         """
         Get user by username.
         
@@ -81,7 +83,7 @@ class UsersDatabase(DatabaseServiceMixin):
             username: User username
             
         Returns:
-            User dict or None if not found
+            UserResponse model or None if not found
         """
         builder = ParameterizedQueryBuilder()
         sql, params = builder.select(
@@ -91,9 +93,9 @@ class UsersDatabase(DatabaseServiceMixin):
         )
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(sql, *params)
-            return self._convert_row_to_dict(row) if row else None
+            return ModelConverter.to_user_response(row) if row else None
 
-    async def create_user(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def create_user(self, user_data: Dict[str, Any]) -> UserResponse:
         """
         Create new user.
         
@@ -101,7 +103,7 @@ class UsersDatabase(DatabaseServiceMixin):
             user_data: Dict with email, username, password_hash, is_active
             
         Returns:
-            Created user dict with all fields
+            UserResponse model with all fields
         """
         user_id = user_data.get("id") or str(uuid4())
         now = datetime.utcnow()
@@ -124,14 +126,14 @@ class UsersDatabase(DatabaseServiceMixin):
 
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(sql, *params)
-            return self._convert_row_to_dict(row)
+            return ModelConverter.to_user_response(row)
 
     async def get_or_create_oauth_user(
         self,
         provider: str,
         provider_user_id: str,
         provider_data: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Optional[UserResponse]:
         """
         Get existing OAuth user or create new one from provider data.
 
@@ -146,7 +148,7 @@ class UsersDatabase(DatabaseServiceMixin):
             provider_data: User data from provider {username, email, avatar_url, etc.}
 
         Returns:
-            User dict with id, email, username, is_active, created_at, updated_at
+            UserResponse model with id, email, username, is_active, created_at, updated_at
         """
         async with self.pool.acquire() as conn:
             # Check if OAuthAccount already linked
@@ -169,7 +171,7 @@ class UsersDatabase(DatabaseServiceMixin):
                     "SELECT * FROM users WHERE id = $1",
                     user_id,
                 )
-                return dict(user) if user else None
+                return ModelConverter.to_user_response(user) if user else None
 
             # Check if user with same email already exists
             email = provider_data.get("email")
@@ -202,7 +204,7 @@ class UsersDatabase(DatabaseServiceMixin):
                     provider_data_json,
                 )
 
-                return dict(existing_user)
+                return ModelConverter.to_user_response(existing_user)
 
             # Create new user and OAuth account
             user_id = str(uuid4())
@@ -240,9 +242,9 @@ class UsersDatabase(DatabaseServiceMixin):
             )
 
             logger.info(f"✅ Created new OAuth user: {user_id}")
-            return dict(user) if user else None
+            return ModelConverter.to_user_response(user) if user else None
 
-    async def get_oauth_accounts(self, user_id: str) -> List[Dict[str, Any]]:
+    async def get_oauth_accounts(self, user_id: str) -> List[OAuthAccountResponse]:
         """
         Get all OAuth accounts linked to a user.
         
@@ -250,7 +252,7 @@ class UsersDatabase(DatabaseServiceMixin):
             user_id: UUID of user
             
         Returns:
-            List of OAuth account dicts
+            List of OAuthAccountResponse models
         """
         builder = ParameterizedQueryBuilder()
         sql, params = builder.select(
@@ -261,7 +263,7 @@ class UsersDatabase(DatabaseServiceMixin):
         )
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(sql, *params)
-            return [dict(row) for row in rows]
+            return [ModelConverter.to_oauth_account_response(row) for row in rows]
 
     async def unlink_oauth_account(self, user_id: str, provider: str) -> bool:
         """

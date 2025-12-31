@@ -18,6 +18,11 @@ from datetime import datetime
 from asyncpg import Pool
 
 from src.cofounder_agent.utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
+from src.cofounder_agent.schemas.database_response_models import (
+    LogResponse, FinancialEntryResponse, FinancialSummaryResponse, 
+    CostLogResponse, TaskCostBreakdownResponse, AgentStatusResponse, SettingResponse
+)
+from src.cofounder_agent.schemas.model_converter import ModelConverter
 from .database_mixin import DatabaseServiceMixin
 
 logger = logging.getLogger(__name__)
@@ -147,7 +152,7 @@ class AdminDatabase(DatabaseServiceMixin):
             logger.error(f"Error adding financial entry: {str(e)}")
             raise
 
-    async def get_financial_summary(self, days: int = 30) -> Dict[str, Any]:
+    async def get_financial_summary(self, days: int = 30) -> FinancialSummaryResponse:
         """
         Get financial summary for last N days.
         
@@ -174,16 +179,18 @@ class AdminDatabase(DatabaseServiceMixin):
             
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, *params)
-                return self._convert_row_to_dict(row) if row else {}
+                if row:
+                    return FinancialSummaryResponse(**dict(row))
+                return FinancialSummaryResponse()
         except Exception as e:
             logger.warning(f"Error fetching financial summary: {str(e)}")
-            return {}
+            return FinancialSummaryResponse()
 
     # ========================================================================
     # COST LOGGING
     # ========================================================================
 
-    async def log_cost(self, cost_log: Dict[str, Any]) -> Dict[str, Any]:
+    async def log_cost(self, cost_log: Dict[str, Any]) -> CostLogResponse:
         """
         Log cost of LLM API call to cost_logs table.
 
@@ -238,12 +245,12 @@ class AdminDatabase(DatabaseServiceMixin):
                 logger.info(
                     f"✅ Logged cost for {cost_log['phase']}: ${cost_log.get('cost_usd', 0):.6f} ({cost_log['model']})"
                 )
-                return self._convert_row_to_dict(row)
+                return ModelConverter.to_cost_log_response(row)
         except Exception as e:
             logger.error(f"❌ Error logging cost: {e}")
             raise
 
-    async def get_task_costs(self, task_id: str) -> Dict[str, Any]:
+    async def get_task_costs(self, task_id: str) -> TaskCostBreakdownResponse:
         """
         Get cost breakdown for a task by phase.
 
@@ -271,7 +278,7 @@ class AdminDatabase(DatabaseServiceMixin):
                 )
 
                 if not rows:
-                    return {"total": 0.0, "entries": []}
+                    return TaskCostBreakdownResponse(total=0.0, entries=[])
 
                 # Group by phase
                 breakdown = {}
@@ -279,8 +286,7 @@ class AdminDatabase(DatabaseServiceMixin):
                 entries = []
 
                 for row in rows:
-                    row_dict = self._convert_row_to_dict(row)
-                    entries.append(row_dict)
+                    entries.append(ModelConverter.to_cost_log_response(row))
 
                     phase = row["phase"]
                     cost = float(row["cost_usd"] or 0.0)
@@ -292,17 +298,24 @@ class AdminDatabase(DatabaseServiceMixin):
                     breakdown[phase]["count"] += 1
                     total_cost += cost
 
-                result = breakdown
-                result["total"] = round(total_cost, 6)
-                result["entries"] = entries
+                # Create response with appropriate fields
+                response_data = {
+                    "total": round(total_cost, 6),
+                    "entries": entries,
+                }
+                
+                # Add phase-specific costs
+                for phase in ["research", "outline", "draft", "assess", "refine", "finalize"]:
+                    if phase in breakdown:
+                        response_data[phase] = breakdown[phase]
 
                 logger.info(
                     f"✅ Retrieved costs for task {task_id}: ${total_cost:.6f} across {len(entries)} entries"
                 )
-                return result
+                return TaskCostBreakdownResponse(**response_data)
         except Exception as e:
             logger.error(f"❌ Error getting task costs: {e}")
-            return {"total": 0.0, "entries": []}
+            return TaskCostBreakdownResponse(total=0.0, entries=[])
 
     # ========================================================================
     # AGENT STATUS
@@ -349,7 +362,7 @@ class AdminDatabase(DatabaseServiceMixin):
             logger.error(f"Error updating agent status: {str(e)}")
             raise
 
-    async def get_agent_status(self, agent_name: str) -> Optional[Dict[str, Any]]:
+    async def get_agent_status(self, agent_name: str) -> Optional[AgentStatusResponse]:
         """
         Get agent status.
         
@@ -367,7 +380,7 @@ class AdminDatabase(DatabaseServiceMixin):
         )
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(sql, *params)
-            return self._convert_row_to_dict(row) if row else None
+            return ModelConverter.to_agent_status_response(row) if row else None
 
     # ========================================================================
     # HEALTH CHECK
@@ -405,7 +418,7 @@ class AdminDatabase(DatabaseServiceMixin):
     # SETTINGS MANAGEMENT
     # ========================================================================
 
-    async def get_setting(self, key: str) -> Optional[Dict[str, Any]]:
+    async def get_setting(self, key: str) -> Optional[SettingResponse]:
         """
         Get a setting by key.
 
@@ -421,13 +434,13 @@ class AdminDatabase(DatabaseServiceMixin):
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, key)
                 if row:
-                    return self._convert_row_to_dict(row)
+                    return ModelConverter.to_setting_response(row)
                 return None
         except Exception as e:
             logger.error(f"❌ Failed to get setting {key}: {e}")
             return None
 
-    async def get_all_settings(self, category: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_all_settings(self, category: Optional[str] = None) -> List[SettingResponse]:
         """
         Get all active settings, optionally filtered by category.
 
@@ -447,7 +460,7 @@ class AdminDatabase(DatabaseServiceMixin):
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(sql, *params)
-                return [self._convert_row_to_dict(row) for row in rows]
+                return [ModelConverter.to_setting_response(row) for row in rows]
         except Exception as e:
             logger.error(f"❌ Failed to get settings: {e}")
             return []

@@ -18,6 +18,12 @@ from uuid import uuid4
 from asyncpg import Pool
 
 from src.cofounder_agent.utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
+from src.cofounder_agent.schemas.database_response_models import (
+    PostResponse, CategoryResponse, TagResponse, AuthorResponse,
+    QualityEvaluationResponse, QualityImprovementLogResponse, MetricsResponse,
+    OrchestratorTrainingDataResponse
+)
+from src.cofounder_agent.schemas.model_converter import ModelConverter
 from .database_mixin import DatabaseServiceMixin
 
 logger = logging.getLogger(__name__)
@@ -35,7 +41,7 @@ class ContentDatabase(DatabaseServiceMixin):
         """
         self.pool = pool
 
-    async def create_post(self, post_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def create_post(self, post_data: Dict[str, Any]) -> PostResponse:
         """
         Create new post in posts table with all metadata fields.
         
@@ -104,9 +110,9 @@ class ContentDatabase(DatabaseServiceMixin):
                 post_data.get("created_by"),
                 post_data.get("updated_by"),
             )
-            return self._convert_row_to_dict(row)
+            return ModelConverter.to_post_response(row)
 
-    async def get_post_by_slug(self, slug: str) -> Optional[Dict[str, Any]]:
+    async def get_post_by_slug(self, slug: str) -> Optional[PostResponse]:
         """
         Get post by slug - used to check for existing posts before creation.
 
@@ -126,7 +132,7 @@ class ContentDatabase(DatabaseServiceMixin):
             )
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, *params)
-                return self._convert_row_to_dict(row) if row else None
+                return ModelConverter.to_post_response(row) if row else None
         except Exception as e:
             logger.error(f"❌ Error getting post by slug '{slug}': {e}")
             return None
@@ -195,7 +201,7 @@ class ContentDatabase(DatabaseServiceMixin):
             logger.error(f"❌ Error updating post {post_id}: {e}")
             return False
 
-    async def get_all_categories(self) -> List[Dict[str, str]]:
+    async def get_all_categories(self) -> List[CategoryResponse]:
         """
         Get all categories for matching.
         
@@ -207,12 +213,12 @@ class ContentDatabase(DatabaseServiceMixin):
                 rows = await conn.fetch(
                     "SELECT id, name, slug, description FROM categories ORDER BY name"
                 )
-                return [self._convert_row_to_dict(row) for row in rows]
+                return [ModelConverter.to_category_response(row) for row in rows]
         except Exception as e:
             logger.warning(f"Could not fetch categories: {e}")
             return []
 
-    async def get_all_tags(self) -> List[Dict[str, str]]:
+    async def get_all_tags(self) -> List[TagResponse]:
         """
         Get all tags for matching.
         
@@ -224,12 +230,12 @@ class ContentDatabase(DatabaseServiceMixin):
                 rows = await conn.fetch(
                     "SELECT id, name, slug, description FROM tags ORDER BY name"
                 )
-                return [self._convert_row_to_dict(row) for row in rows]
+                return [ModelConverter.to_tag_response(row) for row in rows]
         except Exception as e:
             logger.warning(f"Could not fetch tags: {e}")
             return []
 
-    async def get_author_by_name(self, name: str) -> Optional[Dict[str, Any]]:
+    async def get_author_by_name(self, name: str) -> Optional[AuthorResponse]:
         """
         Get author by name.
         
@@ -243,12 +249,12 @@ class ContentDatabase(DatabaseServiceMixin):
             sql = "SELECT id, name, slug, email FROM authors WHERE LOWER(name) = LOWER($1)"
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, name)
-                return self._convert_row_to_dict(row) if row else None
+                return ModelConverter.to_author_response(row) if row else None
         except Exception as e:
             logger.warning(f"Could not fetch author by name: {e}")
             return None
 
-    async def create_quality_evaluation(self, eval_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def create_quality_evaluation(self, eval_data: Dict[str, Any]) -> QualityEvaluationResponse:
         """
         Create quality evaluation record.
 
@@ -291,12 +297,12 @@ class ContentDatabase(DatabaseServiceMixin):
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, *params)
                 logger.info(f"✅ Created quality_evaluation for {eval_data['content_id']}")
-                return self._convert_row_to_dict(row)
+                return ModelConverter.to_quality_evaluation_response(row)
         except Exception as e:
             logger.error(f"❌ Error creating quality_evaluation: {e}")
             raise
 
-    async def create_quality_improvement_log(self, log_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def create_quality_improvement_log(self, log_data: Dict[str, Any]) -> QualityImprovementLogResponse:
         """
         Log content quality improvement through refinement.
 
@@ -331,12 +337,12 @@ class ContentDatabase(DatabaseServiceMixin):
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, *params)
                 logger.info(f"✅ Created quality_improvement_log: {initial:.1f} → {improved:.1f}")
-                return self._convert_row_to_dict(row)
+                return ModelConverter.to_quality_improvement_log_response(row)
         except Exception as e:
             logger.error(f"❌ Error creating quality_improvement_log: {e}")
             raise
 
-    async def get_metrics(self) -> Dict[str, Any]:
+    async def get_metrics(self) -> MetricsResponse:
         """
         Get system metrics from content_tasks database.
         
@@ -385,26 +391,26 @@ class ContentDatabase(DatabaseServiceMixin):
                 except Exception:
                     logger.debug("Cost tracking not available (task_costs table may not exist)")
 
-                return {
-                    "totalTasks": total_tasks or 0,
-                    "completedTasks": completed_tasks or 0,
-                    "failedTasks": failed_tasks or 0,
-                    "successRate": round(success_rate, 2),
-                    "avgExecutionTime": avg_execution_time,
-                    "totalCost": total_cost,
-                }
+                return MetricsResponse(
+                    totalTasks=total_tasks or 0,
+                    completedTasks=completed_tasks or 0,
+                    failedTasks=failed_tasks or 0,
+                    successRate=round(success_rate, 2),
+                    avgExecutionTime=avg_execution_time,
+                    totalCost=total_cost,
+                )
         except Exception as e:
             logger.error(f"❌ Failed to get metrics: {e}")
-            return {
-                "totalTasks": 0,
-                "completedTasks": 0,
-                "failedTasks": 0,
-                "successRate": 0,
-                "avgExecutionTime": 0,
-                "totalCost": 0,
-            }
+            return MetricsResponse(
+                totalTasks=0,
+                completedTasks=0,
+                failedTasks=0,
+                successRate=0,
+                avgExecutionTime=0,
+                totalCost=0,
+            )
 
-    async def create_orchestrator_training_data(self, train_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def create_orchestrator_training_data(self, train_data: Dict[str, Any]) -> OrchestratorTrainingDataResponse:
         """
         Capture execution for training/learning pipeline.
 
@@ -438,7 +444,7 @@ class ContentDatabase(DatabaseServiceMixin):
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, *params)
                 logger.info(f"✅ Created orchestrator_training_data: {train_data['execution_id']}")
-                return self._convert_row_to_dict(row)
+                return ModelConverter.to_orchestrator_training_data_response(row)
         except Exception as e:
             logger.error(f"❌ Error creating orchestrator_training_data: {e}")
             raise
