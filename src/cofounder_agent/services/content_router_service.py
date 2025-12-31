@@ -26,6 +26,7 @@ from .image_service import ImageService, get_image_service
 from .quality_service import UnifiedQualityService, EvaluationMethod
 from .database_service import DatabaseService
 from .content_orchestrator import get_content_orchestrator
+from schemas.content_schemas import ContentStyle, ContentTone, PublishMode
 
 logger = logging.getLogger(__name__)
 
@@ -33,32 +34,8 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 # ENUMS
 # ============================================================================
-
-
-class ContentStyle(str, Enum):
-    """Content styles for generation"""
-
-    TECHNICAL = "technical"
-    NARRATIVE = "narrative"
-    LISTICLE = "listicle"
-    EDUCATIONAL = "educational"
-    THOUGHT_LEADERSHIP = "thought-leadership"
-
-
-class ContentTone(str, Enum):
-    """Content tones"""
-
-    PROFESSIONAL = "professional"
-    CASUAL = "casual"
-    ACADEMIC = "academic"
-    INSPIRATIONAL = "inspirational"
-
-
-class PublishMode(str, Enum):
-    """Publishing modes"""
-
-    DRAFT = "draft"
-    PUBLISH = "publish"
+# NOTE: ContentStyle, ContentTone, PublishMode are now defined in schemas/content_schemas.py
+# to avoid circular imports. They are imported above.
 
 
 # ============================================================================

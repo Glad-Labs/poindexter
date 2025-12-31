@@ -16,9 +16,9 @@ from datetime import datetime, timedelta
 
 from asyncpg import Pool
 
-from src.cofounder_agent.utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
-from src.cofounder_agent.schemas.database_response_models import TaskResponse, TaskCountsResponse
-from src.cofounder_agent.schemas.model_converter import ModelConverter
+from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
+from schemas.database_response_models import TaskResponse, TaskCountsResponse
+from schemas.model_converter import ModelConverter
 from .database_mixin import DatabaseServiceMixin
 
 logger = logging.getLogger(__name__)

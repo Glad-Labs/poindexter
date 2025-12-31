@@ -56,10 +56,15 @@ class SQLIdentifierValidator:
             - Must start with letter or underscore
             - Can contain letters, numbers, underscores only
             - Cannot contain special characters or spaces
+            - Special case: "*" is allowed for SELECT * queries
         """
         if not identifier:
             logger.warning(f"Empty {context} identifier")
             return False
+
+        # Special case: wildcard "*" is allowed in SELECT statements
+        if identifier == "*":
+            return True
 
         if not SQLIdentifierValidator.IDENTIFIER_PATTERN.match(identifier):
             logger.warning(f"Invalid {context} identifier: {identifier}")

@@ -17,13 +17,13 @@ from uuid import uuid4
 
 from asyncpg import Pool
 
-from src.cofounder_agent.utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
-from src.cofounder_agent.schemas.database_response_models import (
+from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
+from schemas.database_response_models import (
     PostResponse, CategoryResponse, TagResponse, AuthorResponse,
     QualityEvaluationResponse, QualityImprovementLogResponse, MetricsResponse,
     OrchestratorTrainingDataResponse
 )
-from src.cofounder_agent.schemas.model_converter import ModelConverter
+from schemas.model_converter import ModelConverter
 from .database_mixin import DatabaseServiceMixin
 
 logger = logging.getLogger(__name__)

@@ -6,7 +6,37 @@ and approval workflows.
 
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Literal
-from services.content_router_service import ContentStyle, ContentTone, PublishMode
+from enum import Enum
+
+
+# ============================================================================
+# ENUMS (moved from content_router_service to avoid circular imports)
+# ============================================================================
+
+class ContentStyle(str, Enum):
+    """Content styles for generation"""
+
+    TECHNICAL = "technical"
+    NARRATIVE = "narrative"
+    LISTICLE = "listicle"
+    EDUCATIONAL = "educational"
+    THOUGHT_LEADERSHIP = "thought-leadership"
+
+
+class ContentTone(str, Enum):
+    """Content tones"""
+
+    PROFESSIONAL = "professional"
+    CASUAL = "casual"
+    ACADEMIC = "academic"
+    INSPIRATIONAL = "inspirational"
+
+
+class PublishMode(str, Enum):
+    """Publishing modes"""
+
+    DRAFT = "draft"
+    PUBLISH = "publish"
 
 
 class CreateBlogPostRequest(BaseModel):
