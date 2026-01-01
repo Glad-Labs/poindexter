@@ -128,7 +128,6 @@ async def lifespan(app: FastAPI):
         app.state.redis_cache = services["redis_cache"]
         app.state.orchestrator = services["orchestrator"]
         app.state.task_executor = services["task_executor"]
-        app.state.intelligent_orchestrator = services["intelligent_orchestrator"]
         app.state.workflow_history = services["workflow_history"]
         app.state.training_data_service = services.get("training_data_service")
         app.state.fine_tuning_service = services.get("fine_tuning_service")
@@ -185,7 +184,6 @@ async def lifespan(app: FastAPI):
             database_service=services["database"],
             orchestrator=services["orchestrator"],
             task_executor=services["task_executor"],
-            intelligent_orchestrator=services["intelligent_orchestrator"],
             workflow_history=services["workflow_history"],
         )
 
@@ -194,7 +192,6 @@ async def lifespan(app: FastAPI):
             app,
             database_service=services["database"],
             workflow_history_service=services["workflow_history"],
-            intelligent_orchestrator=services["intelligent_orchestrator"],
             training_data_service=services.get("training_data_service"),
             fine_tuning_service=services.get("fine_tuning_service"),
         )

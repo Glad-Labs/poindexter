@@ -210,10 +210,10 @@ class UnifiedTaskResponse(BaseModel):
     # ========================================================================
     # TIMESTAMPS
     # ========================================================================
-    created_at: str = Field(..., description="Task creation timestamp (ISO format)")
-    updated_at: str = Field(..., description="Last update timestamp (ISO format)")
-    started_at: Optional[str] = Field(None, description="Execution start time")
-    completed_at: Optional[str] = Field(None, description="Completion time")
+    created_at: datetime | str = Field(..., description="Task creation timestamp (ISO format)")
+    updated_at: datetime | str = Field(..., description="Last update timestamp (ISO format)")
+    started_at: Optional[datetime | str] = Field(None, description="Execution start time")
+    completed_at: Optional[datetime | str] = Field(None, description="Completion time")
 
     # ========================================================================
     # BACKEND METADATA (For debugging)

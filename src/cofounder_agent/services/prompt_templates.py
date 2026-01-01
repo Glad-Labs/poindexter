@@ -11,7 +11,15 @@ class PromptTemplates:
     """Collection of prompt templates"""
 
     @staticmethod
-    def blog_generation_prompt(topic: str, primary_keyword: Optional[str] = None, target_audience: Optional[str] = None, category: Optional[str] = None) -> str:
+    def blog_generation_prompt(
+        topic: str, 
+        primary_keyword: Optional[str] = None, 
+        target_audience: Optional[str] = None, 
+        category: Optional[str] = None,
+        style: Optional[str] = None,
+        tone: Optional[str] = None,
+        target_length: Optional[int] = None
+    ) -> str:
         """Generate a prompt for blog post creation"""
         prompt = f"Generate a blog post about '{topic}'."
         
@@ -23,8 +31,17 @@ class PromptTemplates:
             
         if category:
             prompt += f" Category: {category}."
+
+        if style:
+            prompt += f" Writing style: {style}."
+
+        if tone:
+            prompt += f" Tone: {tone}."
             
-        prompt += " Ensure the content is professional and approximately 1500-2000 words."
+        if target_length:
+            prompt += f" Target length is approximately {target_length} words."
+        else:
+            prompt += " Ensure the content is professional and approximately 1500-2000 words."
         
         return prompt
 
@@ -39,6 +56,12 @@ class PromptTemplates:
                 context_str += f"Target Audience: {context.get('target_audience')}\n"
             if context.get("primary_keyword"):
                 context_str += f"Keywords: {context.get('primary_keyword')}\n"
+            if context.get("style"):
+                context_str += f"Style: {context.get('style')}\n"
+            if context.get("tone"):
+                context_str += f"Tone: {context.get('tone')}\n"
+            if context.get("target_length"):
+                context_str += f"Target Length: {context.get('target_length')} words\n"
 
         return f"""
 You are an expert content editor and QA specialist. Your task is to critique the following blog post content.

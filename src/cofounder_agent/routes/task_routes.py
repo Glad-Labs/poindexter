@@ -123,6 +123,13 @@ async def create_task(
         logger.info(f"   - estimated_cost: {request.estimated_cost}")
         logger.info(f"   - user_id: {current_user.get('id', 'system')}")
 
+        # Extract style, tone, and target_length from metadata if available
+        metadata = request.metadata or {}
+        style = metadata.get("style")
+        tone = metadata.get("tone")
+        # Map word_count to target_length if target_length is missing
+        target_length = metadata.get("target_length") or metadata.get("word_count")
+
         # Create task data
         task_id = str(uuid_lib.uuid4())
         task_data = {
@@ -132,6 +139,9 @@ async def create_task(
             "primary_keyword": (request.primary_keyword or "").strip(),
             "target_audience": (request.target_audience or "").strip(),
             "category": (request.category or "general").strip(),
+            "style": style,
+            "tone": tone,
+            "target_length": target_length,
             "model_selections": request.model_selections or {},
             "quality_preference": request.quality_preference or "balanced",
             "estimated_cost": request.estimated_cost or 0.0,

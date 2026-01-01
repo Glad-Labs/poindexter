@@ -336,7 +336,6 @@ class StartupManager:
         logger.info(
             f"  - Task Executor: {self.task_executor is not None and self.task_executor.running}"
         )
-        logger.info(f"  - Intelligent Orchestrator: {self.intelligent_orchestrator is not None}")
         logger.info(f"  - Workflow History: {self.workflow_history_service is not None}")
         logger.info(f"  - Training Data Service: {self.training_data_service is not None}")
         logger.info(f"  - Fine-Tuning Service: {self.fine_tuning_service is not None}")

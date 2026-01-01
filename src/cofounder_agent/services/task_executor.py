@@ -267,6 +267,9 @@ class TaskExecutor:
         primary_keyword = task.get("primary_keyword", "")
         target_audience = task.get("target_audience", "")
         category = task.get("category", "general")
+        style = task.get("style", "")
+        tone = task.get("tone", "")
+        target_length = task.get("target_length")
         agent_id = task.get("agent_id", "content-agent")
 
         logger.info(f"🎬 [TASK_EXECUTE] PRODUCTION PIPELINE: {task_id}")
@@ -274,6 +277,7 @@ class TaskExecutor:
         logger.info(f"   Topic: {topic}")
         logger.info(f"   Keyword: {primary_keyword}")
         logger.info(f"   Audience: {target_audience}")
+        logger.info(f"   Style: {style}, Tone: {tone}, Length: {target_length}")
         logger.info(f"   Agent: {agent_id}")
 
         # Start usage tracking for entire task execution
@@ -300,7 +304,10 @@ class TaskExecutor:
                     topic=topic,
                     primary_keyword=primary_keyword,
                     target_audience=target_audience,
-                    category=category
+                    category=category,
+                    style=style,
+                    tone=tone,
+                    target_length=target_length
                 )
 
                 # Call orchestrator with proper method
@@ -420,6 +427,9 @@ class TaskExecutor:
                 "keywords": primary_keyword,
                 "target_audience": target_audience,
                 "category": category,
+                "style": style,
+                "tone": tone,
+                "target_length": target_length,
             },
         )
 

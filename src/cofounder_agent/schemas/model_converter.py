@@ -108,6 +108,13 @@ class ModelConverter:
             data["task_name"] = data["task_name"]
         elif "title" in data:
             data["task_name"] = data["title"]
+            
+        # Fallback: Check task_metadata for task_name if still missing
+        if ("task_name" not in data or data["task_name"] is None) and "task_metadata" in data and isinstance(data["task_metadata"], dict):
+            if "task_name" in data["task_metadata"]:
+                data["task_name"] = data["task_metadata"]["task_name"]
+                if "title" not in data or data["title"] is None:
+                    data["title"] = data["task_name"]
         
         # IMPORTANT: Merge normalized columns back into task_metadata for UI compatibility
         # The frontend expects task_metadata to contain all content fields

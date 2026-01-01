@@ -131,6 +131,10 @@ class TasksDatabase(DatabaseServiceMixin):
         metadata = task_data.get("task_metadata") or task_data.get("metadata", {})
         if isinstance(metadata, str):
             metadata = json.loads(metadata)
+            
+        # Ensure task_name is preserved in metadata since there is no column for it
+        if "task_name" in task_data and "task_name" not in metadata:
+            metadata["task_name"] = task_data["task_name"]
 
         try:
             # Use naive UTC datetime for PostgreSQL 'timestamp without time zone' columns
@@ -140,7 +144,6 @@ class TasksDatabase(DatabaseServiceMixin):
             insert_data = {
                 "task_id": task_id,
                 "id": task_id,
-                "title": task_data.get("task_name") or task_data.get("title"),
                 "request_type": task_data.get("request_type", "content_generation"),
                 "task_type": task_data.get("task_type", "blog_post"),
                 "status": task_data.get("status", "pending"),
