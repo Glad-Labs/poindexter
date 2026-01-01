@@ -75,9 +75,7 @@ class TaskResponse(BaseModel):
     topic: Optional[str] = Field(None, description="Topic for content generation")
     request_type: Optional[str] = Field(None, description="Type of request")
     task_type: Optional[str] = Field(None, description="Type of task (blog_post, etc.)")
-    status: Literal[
-        "pending", "in_progress", "completed", "failed", "awaiting_approval", "approved", "published", "draft", "scheduled", "ready_to_publish", "awaiting_human_review", "content_generated"
-    ] = Field(default="pending", description="Task execution status")
+    status: Optional[str] = Field(None, description="Task execution status")
     category: Optional[str] = Field(None, description="Task category")
     priority: Optional[int] = Field(default=0, ge=0, le=5, description="Priority level (0-5)")
     

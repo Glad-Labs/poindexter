@@ -131,14 +131,14 @@ class UnifiedTaskResponse(BaseModel):
     request_id: Optional[str] = Field(None, description="Request ID for WebSocket tracking")
 
     # Task Classification
-    task_name: str = Field(..., description="Task name/title")
+    task_name: Optional[str] = Field(None, description="Task name/title")
     task_type: str = Field(
         "blog_post", description="Type of task (blog_post, social_media, email, etc.)"
     )
     request_type: Optional[str] = Field("content_generation", description="Request type")
 
     # Content Metadata
-    topic: str = Field(..., description="Content topic/subject")
+    topic: Optional[str] = Field(None, description="Content topic/subject")
     primary_keyword: Optional[str] = Field(None, description="Primary SEO keyword")
     target_audience: Optional[str] = Field(None, description="Target audience")
     category: Optional[str] = Field(None, description="Content category")
