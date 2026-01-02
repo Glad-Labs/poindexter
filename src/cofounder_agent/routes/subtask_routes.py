@@ -15,7 +15,7 @@ API Endpoints:
 - POST /api/content/subtasks/format
 """
 
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Request
 from typing import Optional, List, Dict, Any
 from uuid import uuid4
 import logging
@@ -23,7 +23,6 @@ import time
 from datetime import datetime, timezone
 
 from services.database_service import DatabaseService
-from services.content_orchestrator import ContentOrchestrator
 from services.usage_tracker import get_usage_tracker
 from routes.auth_unified import get_current_user
 from utils.route_utils import get_database_dependency
@@ -50,6 +49,7 @@ router = APIRouter(prefix="/api/content/subtasks", tags=["content-subtasks"])
 async def run_research_subtask(
     request: ResearchSubtaskRequest,
     background_tasks: BackgroundTasks,
+    app_request: Request,
     current_user: str = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
@@ -92,8 +92,11 @@ async def run_research_subtask(
             }
         )
 
-        # Execute research stage
-        orchestrator = ContentOrchestrator()
+        # Get orchestrator from app.state - this is now UnifiedOrchestrator with full pipeline
+        orchestrator = app_request.app.state.orchestrator
+        if not orchestrator:
+            raise HTTPException(status_code=500, detail="Orchestrator not available")
+        
         research_output = await orchestrator._run_research(request.topic, request.keywords)
 
         # Update subtask with results
@@ -139,6 +142,7 @@ async def run_research_subtask(
 async def run_creative_subtask(
     request: CreativeSubtaskRequest,
     background_tasks: BackgroundTasks,
+    app_request: Request,
     current_user: str = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
@@ -175,7 +179,11 @@ async def run_creative_subtask(
             }
         )
 
-        orchestrator = ContentOrchestrator()
+        # Get orchestrator from app.state - this is now UnifiedOrchestrator
+        orchestrator = app_request.app.state.orchestrator
+        if not orchestrator:
+            raise HTTPException(status_code=500, detail="Orchestrator not available")
+        
         blog_post = await orchestrator._run_creative_initial(
             topic=request.topic,
             research_data=request.research_output or "",
@@ -215,6 +223,7 @@ async def run_creative_subtask(
 async def run_qa_subtask(
     request: QASubtaskRequest,
     background_tasks: BackgroundTasks,
+    app_request: Request,
     current_user: str = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
@@ -250,7 +259,11 @@ async def run_qa_subtask(
             }
         )
 
-        orchestrator = ContentOrchestrator()
+        # Get orchestrator from app.state - this is now UnifiedOrchestrator
+        orchestrator = app_request.app.state.orchestrator
+        if not orchestrator:
+            raise HTTPException(status_code=500, detail="Orchestrator not available")
+        
         final_content, feedback, quality_score = await orchestrator._run_qa_loop(
             topic=request.topic,
             draft_post=request.creative_output,
@@ -296,6 +309,7 @@ async def run_qa_subtask(
 async def run_image_subtask(
     request: ImageSubtaskRequest,
     background_tasks: BackgroundTasks,
+    app_request: Request,
     current_user: str = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
@@ -327,7 +341,11 @@ async def run_image_subtask(
             }
         )
 
-        orchestrator = ContentOrchestrator()
+        # Get orchestrator from app.state - this is now UnifiedOrchestrator
+        orchestrator = app_request.app.state.orchestrator
+        if not orchestrator:
+            raise HTTPException(status_code=500, detail="Orchestrator not available")
+        
         featured_image_url = await orchestrator._run_image_selection(
             request.topic, request.content or ""
         )
@@ -362,6 +380,7 @@ async def run_image_subtask(
 async def run_format_subtask(
     request: FormatSubtaskRequest,
     background_tasks: BackgroundTasks,
+    app_request: Request,
     current_user: str = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
@@ -393,7 +412,11 @@ async def run_format_subtask(
             }
         )
 
-        orchestrator = ContentOrchestrator()
+        # Get orchestrator from app.state - this is now UnifiedOrchestrator
+        orchestrator = app_request.app.state.orchestrator
+        if not orchestrator:
+            raise HTTPException(status_code=500, detail="Orchestrator not available")
+        
         formatted_content, excerpt = await orchestrator._run_formatting(
             request.topic, request.content, request.featured_image_url
         )

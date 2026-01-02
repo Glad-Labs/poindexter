@@ -1,0 +1,5 @@
+python-strapi
+pexels-API
+openai
+python-dotenv
+requests

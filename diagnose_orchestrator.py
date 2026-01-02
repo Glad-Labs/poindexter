@@ -29,35 +29,45 @@ async def test_orchestrator_directly():
     logger.info("="*80)
     
     try:
-        # Import ContentOrchestrator
-        logger.info("Importing ContentOrchestrator...")
-        from cofounder_agent.services.content_orchestrator import ContentOrchestrator
-        logger.info("✅ ContentOrchestrator imported successfully")
+        # Import UnifiedOrchestrator instead (ContentOrchestrator is deprecated)
+        logger.info("Importing UnifiedOrchestrator...")
+        from cofounder_agent.services.unified_orchestrator import UnifiedOrchestrator
+        logger.info("✅ UnifiedOrchestrator imported successfully")
         
         # Create instance
-        logger.info("Creating ContentOrchestrator instance...")
-        orchestrator = ContentOrchestrator(task_store=None)
-        logger.info("✅ ContentOrchestrator instance created")
+        logger.info("Creating UnifiedOrchestrator instance...")
+        orchestrator = UnifiedOrchestrator(
+            database_service=None,
+            model_router=None,
+            quality_service=None,
+            memory_system=None,
+            content_orchestrator=None,
+            financial_agent=None,
+            compliance_agent=None,
+        )
+        logger.info("✅ UnifiedOrchestrator instance created")
         
         # Test with minimal parameters
         logger.info("-" * 80)
-        logger.info("CALLING orchestrator.run() with minimal parameters")
+        logger.info("CALLING orchestrator.process_request() with minimal parameters")
         logger.info("-" * 80)
         
         try:
-            result = await orchestrator.run(
-                topic="Artificial Intelligence",
-                keywords=["AI", "machine learning"],
-                style="professional",
-                tone="informative"
-            )
-            logger.info("✅ ContentOrchestrator.run() completed successfully")
-            logger.info(f"Result status: {result.get('status')}")
-            logger.info(f"Result content length: {len(result.get('content', ''))}")
+            # Use a natural language request instead
+            user_request = "Create a blog post about Artificial Intelligence with professional tone"
+            
+            result = await orchestrator.process_request(user_request)
+            logger.info("✅ UnifiedOrchestrator.process_request() completed successfully")
+            logger.info(f"Result type: {type(result)}")
+            if isinstance(result, dict):
+                logger.info(f"Result status: {result.get('status')}")
+                logger.info(f"Result keys: {list(result.keys())}")
+            else:
+                logger.info(f"Result: {result}")
             return result
             
         except Exception as stage_error:
-            logger.error("❌ Exception during orchestrator.run()")
+            logger.error("❌ Exception during orchestrator.process_request()")
             logger.error(f"Exception type: {type(stage_error).__name__}")
             logger.error(f"Exception message: {str(stage_error)}")
             logger.error("Full traceback:")

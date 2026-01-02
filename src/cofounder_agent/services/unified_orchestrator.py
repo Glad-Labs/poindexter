@@ -454,53 +454,242 @@ class UnifiedOrchestrator:
     # ========================================================================
 
     async def _handle_content_creation(self, request: Request) -> ExecutionResult:
-        """Handle content creation request"""
+        """Handle content creation request - Full 5-stage pipeline with human approval gate"""
         logger.info(f"[{request.request_id}] Handling content creation")
 
-        # Use ContentOrchestrator if available
-        orchestrator = self.agents.get("content_orchestrator")
-        if not orchestrator:
-            return ExecutionResult(
-                request_id=request.request_id,
-                request_type=request.request_type,
-                status=ExecutionStatus.FAILED,
-                output="Content orchestrator not available",
-                feedback="Content orchestrator not available",
-            )
+        import uuid
+        from utils.constraint_utils import (
+            ContentConstraints,
+            extract_constraints_from_request,
+            inject_constraints_into_prompt,
+            count_words_in_content,
+            validate_constraints,
+            calculate_phase_targets,
+            check_tolerance,
+            apply_strict_mode,
+            merge_compliance_reports,
+        )
 
         try:
-            # Run content pipeline
+            # Extract parameters
             topic = request.parameters.get("topic", request.original_text)
             style = request.parameters.get("style", "professional")
             tone = request.parameters.get("tone", "informative")
-            keywords = request.parameters.get("keywords", [])
+            keywords = request.parameters.get("keywords", [topic])
+            content_constraints = request.parameters.get("content_constraints", {})
 
-            result = await orchestrator.run(
-                topic=topic,
-                style=style,
-                tone=tone,
-                keywords=keywords or [topic],
-                metadata={"request_id": request.request_id},
+            # Generate task ID
+            task_id = f"task_{int(datetime.utcnow().timestamp())}_{uuid.uuid4().hex[:6]}"
+
+            logger.info(f"[{request.request_id}] Starting 5-stage pipeline for: {topic}")
+
+            # ====================================================================
+            # EXTRACT & INITIALIZE CONSTRAINTS
+            # ====================================================================
+            constraints = ContentConstraints(
+                word_count=content_constraints.get("word_count", 1500) or 1500,
+                writing_style=content_constraints.get("writing_style", style) or style,
+                word_count_tolerance=content_constraints.get("word_count_tolerance", 10) or 10,
+                per_phase_overrides=content_constraints.get("per_phase_overrides"),
+                strict_mode=content_constraints.get("strict_mode", False) or False,
             )
+
+            logger.info(
+                f"[{request.request_id}] Constraints: {constraints.word_count}±{constraints.word_count_tolerance}% words, {constraints.writing_style} style"
+            )
+
+            # Calculate phase targets
+            phase_targets = calculate_phase_targets(constraints.word_count, constraints, num_phases=5)
+            compliance_reports = []
+
+            # ====================================================================
+            # STAGE 1: RESEARCH (10% → 25%)
+            # ====================================================================
+            logger.info(f"[{request.request_id}] STAGE 1: Research")
+            from agents.content_agent.agents.research_agent import ResearchAgent
+
+            research_agent = ResearchAgent()
+            research_data = await research_agent.run(topic, keywords[:5])
+            research_text = research_data if isinstance(research_data, str) else str(research_data)
+
+            research_compliance = validate_constraints(
+                research_text,
+                constraints,
+                phase_name="research",
+                word_count_target=phase_targets.get("research"),
+            )
+            compliance_reports.append(research_compliance)
+            logger.info(
+                f"[{request.request_id}] Research complete: {count_words_in_content(research_text)} words"
+            )
+
+            # ====================================================================
+            # STAGE 2: CREATIVE DRAFT (25% → 45%)
+            # ====================================================================
+            logger.info(f"[{request.request_id}] STAGE 2: Creative Draft")
+            from agents.content_agent.agents.creative_agent import CreativeAgent
+            from agents.content_agent.services.llm_client import LLMClient
+            from agents.content_agent.utils.data_models import BlogPost
+
+            llm_client = LLMClient()
+            creative_agent = CreativeAgent(llm_client=llm_client)
+
+            post = BlogPost(
+                topic=topic,
+                primary_keyword=topic,
+                target_audience="general",
+                category="general",
+                status="draft",
+                research_data=research_text,
+                writing_style=style,
+            )
+
+            draft_post = await creative_agent.run(post, is_refinement=False)
+            draft_text = draft_post.body if hasattr(draft_post, "body") else str(draft_post)
+
+            creative_compliance = validate_constraints(
+                draft_text,
+                constraints,
+                phase_name="creative",
+                word_count_target=phase_targets.get("creative"),
+            )
+            compliance_reports.append(creative_compliance)
+            logger.info(f"[{request.request_id}] Draft complete: {count_words_in_content(draft_text)} words")
+
+            # ====================================================================
+            # STAGE 3: QA REVIEW LOOP (45% → 60%)
+            # ====================================================================
+            logger.info(f"[{request.request_id}] STAGE 3: QA Review")
+            from services.quality_service import get_content_quality_service, EvaluationMethod
+            from services.database_service import get_database_service
+
+            database_service = get_database_service()
+            quality_service = get_content_quality_service(database_service=database_service)
+
+            content = draft_post
+            feedback = ""
+            quality_score = 75
+            max_iterations = 2
+
+            for iteration in range(1, max_iterations + 1):
+                quality_result = await quality_service.evaluate(
+                    content=getattr(content, "raw_content", str(content)),
+                    context={"topic": topic},
+                    method=EvaluationMethod.HYBRID,
+                )
+
+                approval_bool = quality_result.passing
+                feedback = quality_result.feedback
+                quality_score = int(quality_result.overall_score * 100)
+
+                # Check constraint compliance
+                if constraints:
+                    content_text = getattr(content, "body", getattr(content, "raw_content", str(content)))
+                    compliance = validate_constraints(
+                        content_text, constraints, phase_name="qa", word_count_target=phase_targets.get("qa")
+                    )
+                    if not compliance.word_count_within_tolerance:
+                        logger.warning(f"[{request.request_id}] QA: Constraint violation - {compliance.violation_message}")
+                        approval_bool = False
+                        feedback += f" [CONSTRAINT: {compliance.violation_message}]"
+
+                if approval_bool:
+                    logger.info(f"[{request.request_id}] QA Approved (iteration {iteration}, score: {quality_score}/100)")
+                    break
+                elif iteration < max_iterations:
+                    logger.info(f"[{request.request_id}] QA Rejected - Refining...")
+                    content = await creative_agent.run(content, is_refinement=True)
+
+            qa_compliance = validate_constraints(
+                getattr(content, "body", str(content)),
+                constraints,
+                phase_name="qa",
+                word_count_target=phase_targets.get("qa"),
+            )
+            compliance_reports.append(qa_compliance)
+
+            # ====================================================================
+            # STAGE 4: IMAGE SELECTION (60% → 75%)
+            # ====================================================================
+            logger.info(f"[{request.request_id}] STAGE 4: Image Selection")
+            featured_image_url = None
+            try:
+                from services.image_service import get_image_service
+
+                image_service = get_image_service()
+                featured_image = await image_service.search_featured_image(topic=topic, keywords=[])
+                if featured_image:
+                    featured_image_url = featured_image.url
+                    logger.info(f"[{request.request_id}] Featured image selected")
+            except Exception as e:
+                logger.warning(f"[{request.request_id}] Image selection failed: {e}")
+
+            # ====================================================================
+            # STAGE 5: FORMATTING (75% → 90%)
+            # ====================================================================
+            logger.info(f"[{request.request_id}] STAGE 5: Formatting")
+            from agents.content_agent.agents.postgres_publishing_agent import PostgreSQLPublishingAgent
+
+            publishing_agent = PostgreSQLPublishingAgent()
+            result_post = await publishing_agent.run(content)
+
+            formatted_content = getattr(result_post, "raw_content", str(content))
+            excerpt = getattr(result_post, "meta_description", f"Article about {topic}")
+
+            # ====================================================================
+            # STAGE 6: AWAITING HUMAN APPROVAL (90% → 100%)
+            # ====================================================================
+            logger.info(f"[{request.request_id}] STAGE 6: Awaiting Human Approval")
+
+            overall_compliance = merge_compliance_reports(compliance_reports)
+            strict_mode_valid, strict_mode_error = apply_strict_mode(overall_compliance)
+
+            if not strict_mode_valid:
+                logger.warning(f"[{request.request_id}] STRICT MODE VIOLATION: {strict_mode_error}")
+
+            result = {
+                "task_id": task_id,
+                "status": "awaiting_approval",
+                "approval_status": "awaiting_review",
+                "content": formatted_content,
+                "excerpt": excerpt,
+                "featured_image_url": featured_image_url,
+                "qa_feedback": feedback,
+                "quality_score": quality_score,
+                "constraint_compliance": {
+                    "word_count_actual": overall_compliance.word_count_actual,
+                    "word_count_target": overall_compliance.word_count_target,
+                    "word_count_within_tolerance": overall_compliance.word_count_within_tolerance,
+                    "word_count_percentage": overall_compliance.word_count_percentage,
+                    "writing_style": overall_compliance.writing_style_applied,
+                    "strict_mode_enforced": overall_compliance.strict_mode_enforced,
+                    "violation_message": overall_compliance.violation_message,
+                },
+                "message": "✅ Content ready for human review. Human approval required before publishing.",
+                "next_action": f"POST /api/content/tasks/{task_id}/approve with human decision",
+            }
+
+            logger.info(f"[{request.request_id}] ✅ Pipeline complete. Awaiting human approval.")
 
             return ExecutionResult(
                 request_id=request.request_id,
                 request_type=request.request_type,
                 status=ExecutionStatus.PENDING_APPROVAL,
                 output=result,
-                task_id=result.get("task_id"),
+                task_id=task_id,
+                quality_score=quality_score,
+                feedback=feedback,
                 metadata=result,
             )
+
         except Exception as e:
             logger.error(f"[{request.request_id}] Content creation failed: {e}", exc_info=True)
-            error_msg = str(e)
             return ExecutionResult(
                 request_id=request.request_id,
                 request_type=request.request_type,
                 status=ExecutionStatus.FAILED,
-                output=None,
-                feedback=error_msg,  # Include error message in feedback
-                metadata={"error": error_msg},
+                output=str(e),
+                feedback=f"Content creation failed: {str(e)}",
             )
 
     async def _handle_content_subtask(self, request: Request) -> ExecutionResult:

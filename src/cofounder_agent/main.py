@@ -60,7 +60,6 @@ from services.migrations import run_migrations  #  Database schema migrations
 # Import new consolidated services
 from services.unified_orchestrator import UnifiedOrchestrator
 from services.quality_service import UnifiedQualityService
-from services.content_orchestrator import ContentOrchestrator
 
 # Import new utility modules
 from utils.startup_manager import StartupManager
@@ -154,20 +153,13 @@ async def lifespan(app: FastAPI):
         app.state.quality_service = quality_service
         logger.info("✅ UnifiedQualityService initialized")
 
-        # Initialize content orchestrator for use in unified system
-        content_orchestrator = ContentOrchestrator(
-            task_store=task_store  # Now uses the initialized task_store
-        )
-        app.state.content_orchestrator = content_orchestrator
-        logger.info("✅ ContentOrchestrator initialized with task_store")
-
         # Initialize unified orchestrator with all available agents
         unified_orchestrator = UnifiedOrchestrator(
             database_service=db_service,
             model_router=getattr(app.state, "model_router", None),
             quality_service=quality_service,
             memory_system=getattr(app.state, "memory_system", None),
-            content_orchestrator=content_orchestrator,
+            content_orchestrator=None,  # No longer needed - pipeline is built into UnifiedOrchestrator
             financial_agent=getattr(app.state, "financial_agent", None),
             compliance_agent=getattr(app.state, "compliance_agent", None),
         )
