@@ -341,12 +341,14 @@ class TaskExecutor:
                 outputs = None
                 
                 # Log the actual result structure for debugging
-                logger.debug(f"   Raw orchestrator result type: {type(result).__name__}")
+                logger.info(f"   Raw orchestrator result type: {type(result).__name__}")
                 if isinstance(result, dict):
-                    logger.debug(f"   Result keys: {list(result.keys())}")
-                    logger.debug(f"   Result sample: {str(result)[:500]}")
+                    logger.info(f"   Result keys: {list(result.keys())}")
+                    # Log first 300 chars of result for debugging
+                    result_str = str(result)[:300]
+                    logger.info(f"   Result sample: {result_str}")
                 elif hasattr(result, '__dict__'):
-                    logger.debug(f"   Result attributes: {list(result.__dict__.keys())}")
+                    logger.info(f"   Result attributes: {list(result.__dict__.keys())}")
                 
                 if hasattr(result, 'final_formatting'):
                     final_formatting = result.final_formatting
@@ -420,7 +422,8 @@ class TaskExecutor:
                     logger.warning(f"      Content is None: {generated_content is None}")
                     if generated_content:
                         logger.warning(f"      Content length: {len(generated_content)}")
-                        logger.warning(f"      First 100 chars: {str(generated_content)[:100]}")
+                        content_preview = str(generated_content)[:200]
+                        logger.warning(f"      FULL content: {content_preview}")
                     
                     # If first attempt failed, try legacy call if available
                     if hasattr(self.orchestrator, "process_request"):

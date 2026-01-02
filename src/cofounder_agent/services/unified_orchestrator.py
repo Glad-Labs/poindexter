@@ -502,8 +502,6 @@ class UnifiedOrchestrator:
                 feedback=error_msg,  # Include error message in feedback
                 metadata={"error": error_msg},
             )
-                feedback=str(e),
-            )
 
     async def _handle_content_subtask(self, request: Request) -> ExecutionResult:
         """Handle individual content subtask (research, creative, QA, etc.)"""
