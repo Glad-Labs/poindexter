@@ -17,7 +17,7 @@ from datetime import datetime
 
 from asyncpg import Pool
 
-from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
+from ..utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 from schemas.database_response_models import (
     LogResponse, FinancialEntryResponse, FinancialSummaryResponse, CostLogResponse,
     TaskCostBreakdownResponse, AgentStatusResponse, SettingResponse

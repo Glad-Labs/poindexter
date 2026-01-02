@@ -67,7 +67,7 @@ from schemas.orchestrator_schemas import (
     TrainingDataExportRequest,
     TrainingModelUploadRequest,
 )
-from utils.service_dependencies import (
+from ..utils.service_dependencies import (
     get_unified_orchestrator,
     get_database_service,
 )

@@ -15,7 +15,7 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 
 # Import constraint utilities for Tier 1-3 word count and style management
-from utils.constraint_utils import (
+from ..utils.constraint_utils import (
     ContentConstraints,
     ConstraintCompliance,
     extract_constraints_from_request,
