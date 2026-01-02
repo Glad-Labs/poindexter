@@ -347,7 +347,9 @@ class Orchestrator:
                 status_data["task_queue_size"] = len(pending_tasks) if pending_tasks else 0
 
             status_message = f"🟢 System Status: {status_data['mode'].upper()}\n"
-            status_message += f"☁️  Google Cloud: Firestore {'✓' if status_data['google_cloud']['firestore'] else '✗'}, Pub/Sub {'✓' if status_data['google_cloud']['pubsub'] else '✗'}\n"
+            # Only show Google Cloud status if the key exists (not all configurations have it)
+            if "google_cloud" in status_data:
+                status_message += f"☁️  Google Cloud: Firestore {'✓' if status_data['google_cloud'].get('firestore', False) else '✗'}, Pub/Sub {'✓' if status_data['google_cloud'].get('pubsub', False) else '✗'}\n"
             status_message += f"🤖 Agents: Financial {'✓' if status_data['agents']['financial'] else '✗'}, Compliance {'✓' if status_data['agents']['compliance'] else '✗'}\n"
 
             if "task_queue_size" in status_data:

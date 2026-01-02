@@ -172,7 +172,10 @@ async def lifespan(app: FastAPI):
             compliance_agent=getattr(app.state, "compliance_agent", None),
         )
         app.state.unified_orchestrator = unified_orchestrator
-        logger.info("✅ UnifiedOrchestrator initialized")
+        # CRITICAL: Replace the basic orchestrator with the fully-initialized UnifiedOrchestrator
+        # This ensures TaskExecutor uses the proper orchestrator with content generation capabilities
+        app.state.orchestrator = unified_orchestrator
+        logger.info("✅ UnifiedOrchestrator initialized and set as primary orchestrator")
 
         # Store db_service with alternative name for dependency injection
         app.state.db_service = db_service
