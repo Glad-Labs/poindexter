@@ -492,12 +492,16 @@ class UnifiedOrchestrator:
                 metadata=result,
             )
         except Exception as e:
-            logger.error(f"[{request.request_id}] Content creation failed: {e}")
+            logger.error(f"[{request.request_id}] Content creation failed: {e}", exc_info=True)
+            error_msg = str(e)
             return ExecutionResult(
                 request_id=request.request_id,
                 request_type=request.request_type,
                 status=ExecutionStatus.FAILED,
                 output=None,
+                feedback=error_msg,  # Include error message in feedback
+                metadata={"error": error_msg},
+            )
                 feedback=str(e),
             )
 
