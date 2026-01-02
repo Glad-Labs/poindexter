@@ -505,3 +505,151 @@ class NLPIntentRecognizer:
                 found_metrics.append(metric)
 
         return {"metrics": found_metrics or ["views", "engagement"]}  # Default
+
+    async def execute_recognized_intent(
+        self,
+        intent_match: IntentMatch,
+        user_id: str,
+        context: Optional[Dict[str, Any]] = None,
+        selected_model: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Execute recognized intent via Service Layer.
+
+        Converts IntentMatch to service action execution.
+        Both manual forms and NLP inputs use this same unified backend path.
+
+        **How it works:**
+        1. NLPIntentRecognizer recognizes intent from natural language
+        2. This method executes the intent via ServiceRegistry
+        3. Same TaskService used by manual forms
+        4. Result stored in same PostgreSQL table
+        5. No code duplication - single source of truth
+        6. Uses selected model for task execution if provided
+
+        Args:
+            intent_match: Recognized intent with workflow type and parameters
+            user_id: User executing the intent
+            context: Optional execution context
+            selected_model: Optional model selection (e.g., "ollama-mistral", "openai-gpt4")
+
+        Returns:
+            Dict with:
+                - success: bool (action succeeded)
+                - intent_type: str (recognized intent)
+                - action: str (service action name)
+                - service: str (service name)
+                - result: dict (action result data)
+                - errors: list (any error messages)
+        """
+        try:
+            from services.service_base import get_service_registry
+
+            registry = get_service_registry()
+            if not registry:
+                logger.error("Service registry unavailable for intent execution")
+                return {
+                    "success": False,
+                    "error": "Service registry unavailable",
+                    "intent_type": intent_match.intent_type,
+                }
+
+            # Map intent to appropriate service
+            service_name = self._map_intent_to_service(intent_match.intent_type)
+            service = registry.get_service(service_name)
+
+            if not service:
+                logger.error(f"Service '{service_name}' not found for intent '{intent_match.intent_type}'")
+                return {
+                    "success": False,
+                    "error": f"Service '{service_name}' not found",
+                    "intent_type": intent_match.intent_type,
+                }
+
+            # Execute the service action
+            action_name = intent_match.intent_type  # e.g., 'create_task'
+            execution_context = context or {}
+            execution_context["user_id"] = user_id
+            execution_context["source"] = "nlp_agent"
+            execution_context["raw_message"] = intent_match.raw_message
+            
+            # Include selected model in context if provided
+            if selected_model:
+                execution_context["selected_model"] = selected_model
+                logger.info(f"Using selected model for execution: {selected_model}")
+
+            logger.info(
+                f"Executing intent: service={service_name}, action={action_name}, "
+                f"confidence={intent_match.confidence}"
+            )
+
+            result = await service.execute_action(
+                action_name,
+                intent_match.parameters,
+                execution_context,
+            )
+
+            success = result.status == "success" if hasattr(result, "status") else result.get("success", False)
+
+            return {
+                "success": success,
+                "intent_type": intent_match.intent_type,
+                "action": action_name,
+                "service": service_name,
+                "confidence": intent_match.confidence,
+                "result": result.data if hasattr(result, "data") else result,
+                "errors": result.errors if hasattr(result, "errors") else [],
+            }
+
+        except Exception as e:
+            logger.error(f"Error executing recognized intent: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": str(e),
+                "intent_type": intent_match.intent_type,
+            }
+
+    def _map_intent_to_service(self, intent_type: str) -> str:
+        """Map intent type to service name.
+
+        Maps recognized intents to their corresponding services:
+        - create_task, list_tasks, get_task, update_task_status → tasks
+        - create_content, list_content → content
+        - analyze_market, research_market → market_analysis
+        - check_financial → financial_analysis
+
+        Args:
+            intent_type: Recognized intent type (e.g., 'create_task')
+
+        Returns:
+            Service name (e.g., 'tasks')
+        """
+        # Extract resource name from intent_type
+        # Format: action_resource (e.g., create_task, analyze_market)
+        parts = intent_type.split("_")
+
+        if len(parts) < 2:
+            # Single word intent - try direct mapping
+            return intent_type + "s"
+
+        # Get resource part (everything after the action)
+        resource = "_".join(parts[1:])
+
+        # Handle special cases
+        if resource in ["task", "tasks"]:
+            return "tasks"
+        elif resource in ["content", "contents"]:
+            return "content"
+        elif resource in ["market", "markets", "competitor", "competitors"]:
+            return "market_analysis"
+        elif resource in ["financial", "budget", "cost", "roi"]:
+            return "financial_analysis"
+        elif resource in ["compliance", "legal"]:
+            return "compliance"
+        elif resource in ["publish", "publishing"]:
+            return "publishing"
+
+        # Default: pluralize resource name
+        if not resource.endswith("s"):
+            resource += "s"
+
+        return resource
