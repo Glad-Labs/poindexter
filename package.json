@@ -20,7 +20,7 @@
     "dev:public": "npm run dev --workspace=web/public-site",
     "install:all": "npm install && npm install --workspaces && npm run setup:python",
     "setup": "npm run install:all && npm run setup:env",
-    "setup:dev": "npm run setup:env && npm run health:check",
+    "setup:dev": "npm run setup:env",
     "setup:python": "pip install -r requirements.txt && pip install -r src/cofounder_agent/requirements.txt",
     "setup:env": "node scripts/select-env.js",
     "clean": "rm -rf node_modules package-lock.json yarn.lock **/node_modules **/dist **/.next **/build .venv __pycache__ **/__pycache__ **/*.pyc",
