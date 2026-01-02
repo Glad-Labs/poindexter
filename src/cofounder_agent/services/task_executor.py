@@ -40,7 +40,7 @@ class TaskExecutor:
     """Background task executor service"""
 
     def __init__(
-        self, database_service, orchestrator=None, critique_loop=None, poll_interval: int = 5
+        self, database_service, orchestrator=None, critique_loop=None, poll_interval: int = 5, app_state=None
     ):
         """
         Initialize task executor
@@ -50,9 +50,11 @@ class TaskExecutor:
             orchestrator: Optional Orchestrator instance for processing
             critique_loop: Optional ContentCritiqueLoop for validating content
             poll_interval: Seconds between polling for pending tasks (default: 5)
+            app_state: Optional FastAPI app.state for getting updated orchestrator reference
         """
         self.database_service = database_service
-        self.orchestrator = orchestrator
+        self.orchestrator_initial = orchestrator  # Initial orchestrator from startup
+        self.app_state = app_state  # Reference to app.state for dynamic orchestrator updates
         self.critique_loop = critique_loop or ContentCritiqueLoop()
         self.content_generator = AIContentGenerator()  # Fallback content generation
         self.poll_interval = poll_interval
@@ -70,6 +72,20 @@ class TaskExecutor:
             f"content_generator={'✅'}"
         )
 
+    @property
+    def orchestrator(self):
+        """
+        Get the orchestrator dynamically.
+        First tries to get from app.state (which gets updated by main.py with UnifiedOrchestrator),
+        then falls back to the initial orchestrator from startup.
+        This ensures we use the properly-initialized UnifiedOrchestrator when available.
+        """
+        if self.app_state and hasattr(self.app_state, 'orchestrator'):
+            orch = getattr(self.app_state, 'orchestrator', None)
+            if orch is not None:
+                return orch
+        return self.orchestrator_initial
+
     async def start(self):
         """Start the background task processor"""
         if self.running:
@@ -81,6 +97,7 @@ class TaskExecutor:
         logger.info(f"   Poll interval: {self.poll_interval} seconds")
         logger.info(f"   Database service: {self.database_service is not None}")
         logger.info(f"   Orchestrator: {self.orchestrator is not None}")
+        logger.info(f"   Orchestrator type: {type(self.orchestrator).__name__ if self.orchestrator else 'None'}")
 
         # Create background task
         self._processor_task = asyncio.create_task(self._process_loop())

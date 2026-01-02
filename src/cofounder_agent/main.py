@@ -177,6 +177,14 @@ async def lifespan(app: FastAPI):
         app.state.orchestrator = unified_orchestrator
         logger.info("✅ UnifiedOrchestrator initialized and set as primary orchestrator")
 
+        # CRITICAL: Inject app.state into task_executor so it gets the updated orchestrator reference
+        # This ensures task_executor uses the UnifiedOrchestrator instead of the OLD Orchestrator
+        # from startup_manager initialization
+        task_executor = services.get("task_executor")
+        if task_executor:
+            task_executor.app_state = app.state
+            logger.info("✅ TaskExecutor injected with app.state reference (will use UnifiedOrchestrator)")
+
         # Store db_service with alternative name for dependency injection
         app.state.db_service = db_service
 
