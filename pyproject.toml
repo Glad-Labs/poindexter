@@ -8,6 +8,7 @@ packages = []
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.13"
+crewai-tools = "^1.7.2"
 
 [build-system]
 requires = ["poetry-core"]

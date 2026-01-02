@@ -425,42 +425,14 @@ class TaskExecutor:
                         content_preview = str(generated_content)[:200]
                         logger.warning(f"      FULL content: {content_preview}")
                     
-                    # If first attempt failed, try legacy call if available
-                    if hasattr(self.orchestrator, "process_request"):
-                        logger.info(f"   ⚙️ Attempting Legacy Orchestrator call as fallback")
-                        try:
-                            orchestrator_result = await self.orchestrator.process_request(
-                                user_request=f"Generate content: {topic}",
-                                user_id="system_task_executor",
-                                business_metrics={
-                                    "topic": topic,
-                                    "keywords": primary_keyword,
-                                    "target_audience": target_audience,
-                                    "style": "professional",
-                                    "length": "1500-2000",
-                                    "task_id": str(task_id),
-                                    "category": category,
-                                },
-                            )
-
-                            # Extract content from result
-                            if isinstance(orchestrator_result, dict):
-                                if "content" in orchestrator_result:
-                                    generated_content = orchestrator_result["content"]
-                                elif "response" in orchestrator_result:
-                                    generated_content = orchestrator_result["response"]
-                                elif "result" in orchestrator_result:
-                                    generated_content = orchestrator_result["result"]
-                                else:
-                                    generated_content = json.dumps(orchestrator_result)
-                            else:
-                                generated_content = str(orchestrator_result)
-                        except Exception as legacy_err:
-                            logger.warning(f"   ⚠️ Legacy Orchestrator call failed: {legacy_err}")
-                            orchestrator_error = f"Both modern and legacy generation failed. Modern: {generated_content or 'None'}. Legacy: {legacy_err}"
-                            generated_content = None
-                    else:
-                        orchestrator_error = f"Orchestrator returned empty/minimal content (length: {len(generated_content or '') or 0} chars)"
+                    # Try fallback content generation instead of retrying orchestrator
+                    logger.info(f"   ⚙️ Attempting fallback content generation...")
+                    try:
+                        generated_content = await self._fallback_generate_content(task)
+                        logger.info(f"   ✅ Fallback generation succeeded: {len(generated_content)} chars")
+                    except Exception as fallback_err:
+                        logger.error(f"   ❌ Fallback generation also failed: {fallback_err}")
+                        orchestrator_error = f"Orchestrator failed with: {orchestrator_error or 'Unknown error'}. Fallback also failed: {fallback_err}"
                         generated_content = None
 
                 logger.info(

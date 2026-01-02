@@ -155,25 +155,29 @@ class ContentOrchestrator:
             # ====================================================================
             # STAGE 1: RESEARCH (10% → 25%)
             # ====================================================================
-            logger.info(f"📚 STAGE 1: Research Agent")
-            research_data = await self._run_research(
-                topic,
-                keywords or [topic],
-                constraints=constraints,
-                phase_target=phase_targets.get("research", constraints.word_count // 5),
-            )
+            try:
+                logger.info(f"📚 STAGE 1: Research Agent")
+                research_data = await self._run_research(
+                    topic,
+                    keywords or [topic],
+                    constraints=constraints,
+                    phase_target=phase_targets.get("research", constraints.word_count // 5),
+                )
 
-            # Validate research output against constraints (Tier 1)
-            research_compliance = validate_constraints(
-                research_data,
-                constraints,
-                phase_name="research",
-                word_count_target=phase_targets.get("research"),
-            )
-            compliance_reports.append(research_compliance)
-            logger.info(
-                f"📊 Research compliance: {research_compliance.word_count_actual}/{research_compliance.word_count_target} words"
-            )
+                # Validate research output against constraints (Tier 1)
+                research_compliance = validate_constraints(
+                    research_data,
+                    constraints,
+                    phase_name="research",
+                    word_count_target=phase_targets.get("research"),
+                )
+                compliance_reports.append(research_compliance)
+                logger.info(
+                    f"📊 Research compliance: {research_compliance.word_count_actual}/{research_compliance.word_count_target} words"
+                )
+            except Exception as stage_err:
+                logger.error(f"STAGE 1 ERROR: {type(stage_err).__name__}: {stage_err}", exc_info=True)
+                raise
 
             if self.task_store:
                 await self.task_store.update_task(
@@ -191,27 +195,31 @@ class ContentOrchestrator:
             # ====================================================================
             # STAGE 2: CREATIVE DRAFT (25% → 45%)
             # ====================================================================
-            logger.info(f"✍️  STAGE 2: Creative Agent (Initial Draft)")
-            draft_content = await self._run_creative_initial(
-                topic,
-                research_data,
-                style,
-                tone,
-                constraints=constraints,
-                phase_target=phase_targets.get("creative", constraints.word_count // 5),
-            )
+            try:
+                logger.info(f"✍️  STAGE 2: Creative Agent (Initial Draft)")
+                draft_content = await self._run_creative_initial(
+                    topic,
+                    research_data,
+                    style,
+                    tone,
+                    constraints=constraints,
+                    phase_target=phase_targets.get("creative", constraints.word_count // 5),
+                )
 
-            # Validate creative output against constraints (Tier 1)
-            creative_compliance = validate_constraints(
-                draft_content.body if hasattr(draft_content, "body") else str(draft_content),
-                constraints,
-                phase_name="creative",
-                word_count_target=phase_targets.get("creative"),
-            )
-            compliance_reports.append(creative_compliance)
-            logger.info(
-                f"📊 Creative compliance: {creative_compliance.word_count_actual}/{creative_compliance.word_count_target} words"
-            )
+                # Validate creative output against constraints (Tier 1)
+                creative_compliance = validate_constraints(
+                    draft_content.body if hasattr(draft_content, "body") else str(draft_content),
+                    constraints,
+                    phase_name="creative",
+                    word_count_target=phase_targets.get("creative"),
+                )
+                compliance_reports.append(creative_compliance)
+                logger.info(
+                    f"📊 Creative compliance: {creative_compliance.word_count_actual}/{creative_compliance.word_count_target} words"
+                )
+            except Exception as stage_err:
+                logger.error(f"STAGE 2 ERROR: {type(stage_err).__name__}: {stage_err}", exc_info=True)
+                raise
 
             if self.task_store:
                 await self.task_store.update_task(
@@ -374,9 +382,25 @@ class ContentOrchestrator:
 
         except Exception as e:
             logger.error(f"❌ Pipeline error: {e}", exc_info=True)
+            
+            # Add detailed context to error
+            error_context = {
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "error_module": type(e).__module__,
+            }
+            
+            logger.error(f"  Error Context: {error_context}")
+            
             if self.task_store:
                 await self.task_store.update_task(
-                    task_id, {"status": "failed", "task_metadata": {"error": str(e)}}
+                    task_id, {
+                        "status": "failed",
+                        "task_metadata": {
+                            "error": str(e),
+                            "error_context": error_context
+                        }
+                    }
                 )
             raise
 
