@@ -22,8 +22,8 @@ import json
 import logging
 import os
 
-from ..utils.error_responses import ErrorResponseBuilder
-from ..utils.route_utils import get_database_dependency
+from utils.error_responses import ErrorResponseBuilder
+from utils.route_utils import get_database_dependency
 from schemas.model_converter import ModelConverter
 
 

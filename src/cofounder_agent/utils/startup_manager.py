@@ -199,12 +199,21 @@ class StartupManager:
         logger.info(f"  🤖 Initializing orchestrator (API: {api_base_url})...")
 
         try:
-            from orchestrator_logic import Orchestrator
+            from services.unified_orchestrator import UnifiedOrchestrator
 
-            self.orchestrator = Orchestrator(
-                database_service=self.database_service, api_base_url=api_base_url
+            # Initialize with UnifiedOrchestrator instead of legacy Orchestrator
+            # UnifiedOrchestrator handles all request types including content creation
+            # and doesn't return help text for actual content requests
+            self.orchestrator = UnifiedOrchestrator(
+                database_service=self.database_service,
+                model_router=getattr(self, "model_router", None),
+                quality_service=getattr(self, "quality_service", None),
+                memory_system=getattr(self, "memory_system", None),
+                content_orchestrator=getattr(self, "content_orchestrator", None),
+                financial_agent=getattr(self, "financial_agent", None),
+                compliance_agent=getattr(self, "compliance_agent", None),
             )
-            logger.info("   Orchestrator initialized successfully")
+            logger.info("   Orchestrator initialized successfully (UnifiedOrchestrator)")
         except Exception as e:
             error_msg = f"Orchestrator initialization failed: {str(e)}"
             logger.error(f"   {error_msg}", exc_info=True)

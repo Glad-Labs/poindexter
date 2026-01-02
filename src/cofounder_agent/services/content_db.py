@@ -17,7 +17,7 @@ from uuid import uuid4
 
 from asyncpg import Pool
 
-from ..utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
+from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 from schemas.database_response_models import (
     PostResponse, CategoryResponse, TagResponse, AuthorResponse,
     QualityEvaluationResponse, QualityImprovementLogResponse, MetricsResponse,

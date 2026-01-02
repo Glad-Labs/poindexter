@@ -1,6 +1,6 @@
 """
 Glad Labs AI Co-Founder Orchestrator Logic
-Updated with PostgreSQL database and API-based command queue (Firestore/Pub/Sub removed)
+Updated with PostgreSQL database and API-based command queue 
 """
 
 import logging

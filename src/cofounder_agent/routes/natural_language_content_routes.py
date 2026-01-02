@@ -24,7 +24,7 @@ from datetime import datetime
 from services.unified_orchestrator import UnifiedOrchestrator, RequestType
 from services.quality_service import UnifiedQualityService, EvaluationMethod
 from services.database_service import DatabaseService
-from ..utils.service_dependencies import (
+from utils.service_dependencies import (
     get_unified_orchestrator,
     get_quality_service,
     get_database_service,

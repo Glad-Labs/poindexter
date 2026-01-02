@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 
 from asyncpg import Pool
 
-from ..utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
+from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 from schemas.database_response_models import TaskResponse, TaskCountsResponse
 from schemas.model_converter import ModelConverter
 from .database_mixin import DatabaseServiceMixin

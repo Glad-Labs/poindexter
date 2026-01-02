@@ -15,7 +15,7 @@ from datetime import datetime
 
 from asyncpg import Pool
 
-from ..utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
+from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 from schemas.database_response_models import UserResponse, OAuthAccountResponse
 from schemas.model_converter import ModelConverter
 from .database_mixin import DatabaseServiceMixin

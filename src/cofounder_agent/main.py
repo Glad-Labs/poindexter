@@ -359,6 +359,18 @@ async def api_health():
         return {"status": "unhealthy", "service": "cofounder-agent", "error": str(e)}
 
 
+@app.get("/health")
+async def health():
+    """
+    Quick health check endpoint (no dependencies) - for load balancers and monitoring.
+    
+    Returns: 200 OK if app is running
+    Usage: External load balancers, uptime monitors, basic connectivity checks
+    Performance: Instant response (doesn't check database)
+    """
+    return {"status": "ok", "service": "cofounder-agent"}
+
+
 @app.get("/api/metrics")
 async def get_metrics():
     """
