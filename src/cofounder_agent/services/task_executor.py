@@ -240,9 +240,9 @@ class TaskExecutor:
             if isinstance(result, dict):
                 logger.debug(f"   Result keys: {list(result.keys())}")
 
-            # 3. Update task status (completed or failed based on result)
+            # 3. Update task status (awaiting_approval or failed based on result)
             final_status = (
-                result.get("status", "completed") if isinstance(result, dict) else "completed"
+                result.get("status", "awaiting_approval") if isinstance(result, dict) else "awaiting_approval"
             )
             logger.info(f"💾 [TASK_SINGLE] Updating task status to '{final_status}'...")
             
@@ -265,7 +265,7 @@ class TaskExecutor:
                 )
                 logger.error(f"   Error: {error_msg}")
             else:
-                logger.info(f"✅ [TASK_SINGLE] Task completed: {task_id}")
+                logger.info(f"✅ [TASK_SINGLE] Task awaiting approval: {task_id}")
 
         except Exception as e:
             logger.error(f"❌ [TASK_SINGLE] Task failed: {task_id} - {str(e)}", exc_info=True)
@@ -621,7 +621,7 @@ class TaskExecutor:
             and len(generated_content.strip()) >= 50
         )
 
-        final_status = "completed" if content_is_valid else "failed"
+        final_status = "awaiting_approval" if content_is_valid else "failed"
         if not content_is_valid:
             error_msg = (
                 f"Content validation failed: {orchestrator_error or 'Content too short or empty'} "

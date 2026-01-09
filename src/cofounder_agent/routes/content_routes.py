@@ -530,7 +530,7 @@ async def approve_and_publish_task(
                 approval_status="approved",
                 strapi_post_id=task.get("strapi_id"),
                 published_url=task.get("strapi_url", f"/posts/{task_id}"),
-                approval_timestamp=task.get("updated_at", datetime.now().isoformat()),
+                approval_timestamp=str(task.get("updated_at", approval_timestamp_iso)),
                 reviewer_id=task.get("task_metadata", {}).get("approved_by", "system"),
                 message=f"Task {task_id} is already {current_status}",
             )
@@ -546,6 +546,7 @@ async def approve_and_publish_task(
             )
 
         approval_timestamp = datetime.now()
+        approval_timestamp_iso = approval_timestamp.isoformat()  # Convert immediately to ISO format
         reviewer_id = request.reviewer_id
         human_feedback = request.human_feedback
 
@@ -686,6 +687,16 @@ async def approve_and_publish_task(
                 categories = await db_service.get_all_categories()
                 tags = await db_service.get_all_tags()
 
+                # Convert CategoryResponse and TagResponse objects to dicts for metadata service
+                categories_dict = [
+                    {"id": cat.id, "name": cat.name, "description": cat.description}
+                    for cat in categories
+                ] if categories else None
+                tags_dict = [
+                    {"id": tag.id, "name": tag.name}
+                    for tag in tags
+                ] if tags else None
+
                 # ============================================================================
                 # BATCH GENERATE ALL METADATA (Most efficient)
                 # ============================================================================
@@ -696,8 +707,8 @@ async def approve_and_publish_task(
                     title=task_metadata.get("title"),
                     excerpt=task_metadata.get("excerpt"),
                     featured_image_url=featured_image_url,
-                    available_categories=categories if categories else None,
-                    available_tags=tags if tags else None,
+                    available_categories=categories_dict,
+                    available_tags=tags_dict,
                     author_id=task_metadata.get("author_id"),
                 )
 
@@ -711,6 +722,12 @@ async def approve_and_publish_task(
                 reviewer_author_id = DEFAULT_SYSTEM_AUTHOR_ID
 
                 # Build post data from unified metadata
+                # ✅ CRITICAL: Convert tag_ids UUIDs to strings for Pydantic validation
+                tag_ids_str = None
+                if metadata.tag_ids:
+                    tag_ids_str = [str(tag_id) for tag_id in metadata.tag_ids]
+                    logger.debug(f"✅ Converted tag_ids to strings: {tag_ids_str}")
+                
                 post_data = {
                     "id": task_metadata.get("post_id"),
                     "title": metadata.title,  # ✅ Extracted/generated
@@ -719,9 +736,9 @@ async def approve_and_publish_task(
                     "excerpt": metadata.excerpt,  # ✅ Generated
                     "featured_image_url": metadata.featured_image_url,
                     "cover_image_url": task_metadata.get("cover_image_url"),
-                    "author_id": metadata.author_id,  # ✅ Matched or default
-                    "category_id": metadata.category_id,  # ✅ Matched intelligently
-                    "tag_ids": metadata.tag_ids if metadata.tag_ids else None,  # ✅ Extracted
+                    "author_id": str(metadata.author_id) if metadata.author_id else None,  # ✅ Convert to string
+                    "category_id": str(metadata.category_id) if metadata.category_id else None,  # ✅ Convert to string
+                    "tag_ids": tag_ids_str,  # ✅ Extracted and converted to strings
                     "status": "published",
                     "seo_title": metadata.seo_title,  # ✅ Generated
                     "seo_description": metadata.seo_description,  # ✅ Generated
@@ -751,12 +768,12 @@ async def approve_and_publish_task(
                     task_id,
                     {
                         "status": "published",
-                        "published_at": approval_timestamp,
-                        "completed_at": approval_timestamp,
+                        "published_at": approval_timestamp_iso,
+                        "completed_at": approval_timestamp_iso,
                         "task_metadata": {
                             **task_metadata,
                             "cms_post_id": post_id,
-                            "published_at": approval_timestamp.isoformat(),
+                            "published_at": approval_timestamp_iso,
                             "published_to_db": True,
                         },
                     },
@@ -775,7 +792,7 @@ async def approve_and_publish_task(
                 approval_status="approved",
                 strapi_post_id=post_id,
                 published_url=f"/posts/{post_data.get('slug')}",
-                approval_timestamp=approval_timestamp.isoformat(),
+                approval_timestamp=approval_timestamp_iso,
                 reviewer_id=reviewer_id,
                 message=f"✅ Task approved by {reviewer_id}",
             )
@@ -795,10 +812,10 @@ async def approve_and_publish_task(
                     "approval_status": "rejected",
                     "task_metadata": {
                         "approved_by": reviewer_id,
-                        "approval_timestamp": approval_timestamp.isoformat(),
+                        "approval_timestamp": approval_timestamp_iso,
                         "approval_notes": human_feedback,
                         "human_feedback": human_feedback,
-                        "completed_at": approval_timestamp.isoformat(),
+                        "completed_at": approval_timestamp_iso,
                     },
                 },
             )
@@ -833,7 +850,7 @@ async def approve_and_publish_task(
                 approval_status="rejected",
                 strapi_post_id=None,
                 published_url=None,
-                approval_timestamp=approval_timestamp.isoformat(),
+                approval_timestamp=approval_timestamp_iso,
                 reviewer_id=reviewer_id,
                 message=f"❌ Task rejected by {reviewer_id} - Feedback: {human_feedback}",
             )

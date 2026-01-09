@@ -1138,10 +1138,10 @@ async def approve_task(
 
         # Check if task is in a state that can be approved
         current_status = task.get("status", "unknown")
-        if current_status not in ["completed", "pending"]:
+        if current_status not in ["completed", "pending", "approved", "awaiting_approval"]:
             raise HTTPException(
                 status_code=400,
-                detail=f"Cannot approve task with status '{current_status}'. Must be 'completed' or 'pending'."
+                detail=f"Cannot approve task with status '{current_status}'. Must be 'completed', 'pending', 'awaiting_approval', or 'approved'."
             )
 
         # Update task status to approved
