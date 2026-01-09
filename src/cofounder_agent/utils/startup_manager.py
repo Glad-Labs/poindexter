@@ -90,6 +90,14 @@ class StartupManager:
             # Step 12: Register services with routes
             await self._register_route_services()
 
+            # Step 13: Warmup SDXL models (async, non-blocking)
+            # Only if GPU is available - this prevents timeout issues when users first request SDXL
+            try:
+                await self._warmup_sdxl_models()
+            except Exception as e:
+                logger.warning(f"⚠️  SDXL warmup failed (non-critical): {e}")
+                # Continue anyway - SDXL will load lazily when first used
+
             logger.info(" Application started successfully!")
             self._log_startup_summary()
 
@@ -329,6 +337,71 @@ class StartupManager:
             logger.debug(
                 "   Database service available via dependency injection (get_database_dependency)"
             )
+
+    async def _warmup_sdxl_models(self) -> None:
+        """Warmup SDXL models in background to avoid timeout on first request"""
+        import torch
+        
+        # Check if GPU is available first
+        if not torch.cuda.is_available():
+            logger.info("  SDXL warmup: GPU not available, skipping SDXL model warmup")
+            return
+        
+        try:
+            logger.info("  🎨 Warming up SDXL models (background task)...")
+            from services.image_service import ImageService
+            
+            # Create image service (will trigger lazy initialization on first generate_image call)
+            image_service = ImageService()
+            logger.info("   ImageService created, initializing SDXL models...")
+            
+            # This triggers the lazy _initialize_sdxl() call
+            # We run it in a background task to avoid blocking startup
+            import asyncio
+            asyncio.create_task(self._sdxl_warmup_background(image_service))
+            
+        except Exception as e:
+            logger.warning(f"  SDXL warmup setup failed: {e}")
+
+    async def _sdxl_warmup_background(self, image_service) -> None:
+        """Background task to warmup SDXL models"""
+        try:
+            logger.info("  [BACKGROUND] Starting SDXL model warmup...")
+            
+            # Simple warmup: generate a tiny 1-step image to load models
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                output_path = tmp.name
+            
+            try:
+                # Generate a single-step image just to load the models
+                success = await image_service.generate_image(
+                    prompt="test",
+                    output_path=output_path,
+                    num_inference_steps=1,  # Minimal steps
+                    guidance_scale=7.5,
+                    use_refinement=False,  # Skip refinement for warmup
+                    high_quality=False
+                )
+                
+                if success:
+                    logger.info("  ✅ SDXL models warmed up successfully!")
+                    logger.info("  This means first SDXL requests from UI will be instant")
+                else:
+                    logger.warning("  ⚠️ SDXL warmup generation failed (will initialize on first request)")
+                    
+            finally:
+                # Clean up temp file
+                import os
+                try:
+                    if os.path.exists(output_path):
+                        os.remove(output_path)
+                except:
+                    pass
+                    
+        except Exception as e:
+            logger.warning(f"  ⚠️ SDXL background warmup error: {e}")
+            logger.info("     SDXL will initialize lazily on first request (may take longer)")
 
     def _log_startup_summary(self) -> None:
         """Log summary of startup state"""
