@@ -147,6 +147,7 @@ async def create_task(
             "estimated_cost": request.estimated_cost or 0.0,
             "status": "pending",
             "agent_id": "content-agent",
+            "user_id": current_user.get("id", "system"),  # Capture user for writing sample retrieval
             "metadata": request.metadata or {},
             "created_at": datetime.now(timezone.utc).isoformat(),
         }

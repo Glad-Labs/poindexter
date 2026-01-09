@@ -43,6 +43,11 @@ class CreativeAgent:
                 draft=post.raw_content,
                 critique=post.qa_feedback[-1],
             )
+            
+            # Include writing sample guidance in refinement too
+            if post.metadata and post.metadata.get("writing_sample_guidance"):
+                refinement_prompt += f"\n\n{post.metadata['writing_sample_guidance']}"
+            
             logger.info(
                 f"CreativeAgent: Refining content for '{post.topic}' based on QA feedback."
             )
@@ -56,8 +61,12 @@ class CreativeAgent:
                 internal_link_titles=list(post.published_posts_map.keys()),
             )
             
-            # Inject writing style guidance if provided
-            if post.writing_style:
+            # Inject writing sample guidance (RAG style matching) if provided
+            if post.metadata and post.metadata.get("writing_sample_guidance"):
+                draft_prompt += f"\n\n{post.metadata['writing_sample_guidance']}"
+                logger.info(f"CreativeAgent: Using user's writing sample for style matching")
+            # Otherwise, inject basic style guidance
+            elif post.writing_style:
                 style_guidance = {
                     "technical": "Use technical language, include code examples and implementation details where appropriate.",
                     "narrative": "Use storytelling techniques with real-world examples and anecdotes. Build a narrative arc.",

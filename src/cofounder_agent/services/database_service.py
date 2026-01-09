@@ -1,11 +1,12 @@
 """
 PostgreSQL Database Service Coordinator
 
-Orchestrates access to 4 specialized database modules:
+Orchestrates access to 5 specialized database modules:
 - UsersDatabase: User and OAuth operations
 - TasksDatabase: Task management and filtering
 - ContentDatabase: Posts, quality evaluations, metrics
 - AdminDatabase: Logging, financial tracking, settings, health
+- WritingStyleDatabase: Writing samples for RAG style matching
 
 This maintains 100% backward compatibility while providing cleaner
 architecture and domain-specific separation of concerns.
@@ -23,6 +24,7 @@ from .users_db import UsersDatabase
 from .tasks_db import TasksDatabase
 from .content_db import ContentDatabase
 from .admin_db import AdminDatabase
+from .writing_style_db import WritingStyleDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +33,12 @@ class DatabaseService:
     """
     PostgreSQL database service coordinator.
     
-    Delegates to 4 specialized modules:
+    Delegates to 5 specialized modules:
     - self.users: User/OAuth operations
     - self.tasks: Task management
     - self.content: Posts/quality/metrics
     - self.admin: Logging/financial/settings
+    - self.writing_style: Writing samples for style matching
     
     Maintains 100% backward compatibility with original DatabaseService.
     All existing method calls still work via delegation.
@@ -70,6 +73,7 @@ class DatabaseService:
         self.tasks: Optional[TasksDatabase] = None
         self.content: Optional[ContentDatabase] = None
         self.admin: Optional[AdminDatabase] = None
+        self.writing_style: Optional[WritingStyleDatabase] = None
 
     async def initialize(self) -> None:
         """Initialize connection pool and all delegate modules."""
@@ -91,8 +95,9 @@ class DatabaseService:
             self.tasks = TasksDatabase(self.pool)
             self.content = ContentDatabase(self.pool)
             self.admin = AdminDatabase(self.pool)
+            self.writing_style = WritingStyleDatabase(self.pool)
             
-            logger.info("✅ All database modules initialized (users, tasks, content, admin)")
+            logger.info("✅ All database modules initialized (users, tasks, content, admin, writing_style)")
         except Exception as e:
             logger.error(f"❌ Failed to initialize database: {e}")
             raise

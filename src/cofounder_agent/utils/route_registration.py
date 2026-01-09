@@ -123,6 +123,18 @@ def register_all_routes(
         status["content_router"] = False
 
     try:
+        # ===== WRITING STYLE MANAGEMENT (RAG) =====
+        from routes.writing_style_routes import router as writing_style_router
+
+        # Database service now injected via Depends(get_database_dependency) in routes
+        app.include_router(writing_style_router)
+        logger.info(" writing_style_router registered (RAG style matching)")
+        status["writing_style_router"] = True
+    except Exception as e:
+        logger.error(f" writing_style_router failed: {e}")
+        status["writing_style_router"] = False
+
+    try:
         # ===== MEDIA & IMAGE MANAGEMENT =====
         from routes.media_routes import media_router
 

@@ -338,6 +338,7 @@ class TaskExecutor:
                     "task_id": str(task_id),
                     "model_selections": model_selections,
                     "quality_preference": quality_preference,
+                    "user_id": task.get("user_id"),  # Include user_id for writing sample retrieval
                 }
 
                 # Call orchestrator with proper method

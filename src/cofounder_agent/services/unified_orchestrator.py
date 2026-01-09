@@ -88,6 +88,7 @@ class Request:
     parameters: Dict[str, Any] = field(default_factory=dict)
     context: Dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    user_id: Optional[str] = None  # User ID from auth context
 
 
 @dataclass
@@ -530,9 +531,23 @@ class UnifiedOrchestrator:
             from agents.content_agent.agents.creative_agent import CreativeAgent
             from agents.content_agent.services.llm_client import LLMClient
             from agents.content_agent.utils.data_models import BlogPost
+            from services.writing_style_service import WritingStyleService
 
             llm_client = LLMClient()
             creative_agent = CreativeAgent(llm_client=llm_client)
+
+            # Retrieve active writing sample for the user (RAG style matching)
+            writing_style_guidance = ""
+            user_id = request.context.get("user_id") if request.context else None
+            if user_id and self.database_service:
+                try:
+                    writing_style_svc = WritingStyleService(self.database_service)
+                    style_data = await writing_style_svc.get_style_prompt_for_generation(user_id)
+                    if style_data:
+                        writing_style_guidance = style_data.get("writing_style_guidance", "")
+                        logger.info(f"[{request.request_id}] Using active writing sample: {style_data.get('sample_title')}")
+                except Exception as e:
+                    logger.warning(f"[{request.request_id}] Could not retrieve writing sample: {e}")
 
             post = BlogPost(
                 topic=topic,
@@ -543,6 +558,10 @@ class UnifiedOrchestrator:
                 research_data=research_text,
                 writing_style=style,
             )
+            
+            # Store writing style guidance in post metadata for creative agent to use
+            if writing_style_guidance:
+                post.metadata = {"writing_sample_guidance": writing_style_guidance}
 
             draft_post = await creative_agent.run(post, is_refinement=False)
             draft_text = draft_post.body if hasattr(draft_post, "body") else str(draft_post)
