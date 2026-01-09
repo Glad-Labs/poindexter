@@ -288,6 +288,7 @@ class TaskExecutor:
         tone = task.get("tone", "")
         target_length = task.get("target_length")
         agent_id = task.get("agent_id", "content-agent")
+        writing_style_id = task.get("writing_style_id")
 
         logger.info(f"🎬 [TASK_EXECUTE] PRODUCTION PIPELINE: {task_id}")
         logger.info(f"   Name: {task_name}")
@@ -296,6 +297,8 @@ class TaskExecutor:
         logger.info(f"   Audience: {target_audience}")
         logger.info(f"   Style: {style}, Tone: {tone}, Length: {target_length}")
         logger.info(f"   Agent: {agent_id}")
+        if writing_style_id:
+            logger.info(f"   Writing Style ID: {writing_style_id}")
 
         # Extract model selections and preferences from task
         model_selections = task.get("model_selections", {})
@@ -339,6 +342,7 @@ class TaskExecutor:
                     "model_selections": model_selections,
                     "quality_preference": quality_preference,
                     "user_id": task.get("user_id"),  # Include user_id for writing sample retrieval
+                    "writing_style_id": writing_style_id,  # Include writing_style_id for style guidance
                 }
 
                 # Call orchestrator with proper method

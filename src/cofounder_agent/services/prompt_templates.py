@@ -49,6 +49,8 @@ class PromptTemplates:
     def content_critique_prompt(content: str, context: Optional[Dict] = None) -> str:
         """Generate a prompt for content critique"""
         context_str = ""
+        style_guidance = ""
+        
         if context:
             if context.get("topic"):
                 context_str += f"Topic: {context.get('topic')}\n"
@@ -62,13 +64,14 @@ class PromptTemplates:
                 context_str += f"Tone: {context.get('tone')}\n"
             if context.get("target_length"):
                 context_str += f"Target Length: {context.get('target_length')} words\n"
+            if context.get("writing_style_guidance"):
+                style_guidance = f"\n\nWRITING STYLE REFERENCE:\n{context.get('writing_style_guidance')}\n"
 
         return f"""
 You are an expert content editor and QA specialist. Your task is to critique the following blog post content.
 
 CONTEXT:
-{context_str}
-
+{context_str}{style_guidance}
 CONTENT TO EVALUATE:
 {content[:10000]}  # Truncate if too long
 
@@ -79,9 +82,7 @@ Evaluate the content based on the following criteria:
 3. SEO: Are keywords used naturally?
 4. Engagement: Is the content engaging and valuable?
 5. Accuracy: Does it seem factually plausible (within general knowledge)?
-
-OUTPUT FORMAT:
-Return a JSON object with the following fields:
+{"6. Writing Style Consistency: If a writing style reference is provided above, does the content match that style? Pay attention to vocabulary, sentence structure, tone, and overall voice." if style_guidance else ""}
 - quality_score: (0-100)
 - approved: (boolean, true if score >= 75)
 - feedback: (string, summary of feedback)

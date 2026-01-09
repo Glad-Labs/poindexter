@@ -80,6 +80,36 @@ class WritingStyleService:
             logger.error(f"Error preparing writing sample for generation: {e}")
             return None
 
+    async def get_style_prompt_for_specific_sample(self, writing_style_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get writing sample data for a specific writing sample ID.
+        
+        Args:
+            writing_style_id: UUID of the writing sample
+            
+        Returns:
+            Dict with sample info, or None if sample not found
+        """
+        try:
+            sample = await self.db.writing_style.get_writing_sample(writing_style_id)
+            
+            if not sample:
+                logger.warning(f"Writing sample not found: {writing_style_id}")
+                return None
+            
+            return {
+                "sample_id": sample.get("id"),
+                "sample_title": sample.get("title"),
+                "sample_text": sample.get("content"),
+                "writing_style_guidance": self._format_sample_for_prompt(sample),
+                "word_count": sample.get("word_count"),
+                "description": sample.get("description")
+            }
+            
+        except Exception as e:
+            logger.error(f"Error retrieving specific writing sample {writing_style_id}: {e}")
+            return None
+
     @staticmethod
     def _format_sample_for_prompt(sample: Dict[str, Any]) -> str:
         """

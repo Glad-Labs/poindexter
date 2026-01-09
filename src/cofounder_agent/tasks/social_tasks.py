@@ -63,7 +63,8 @@ Format as JSON with keys: trends_by_platform, hashtags, sentiment, posting_times
             import json
 
             research = json.loads(response)
-        except:
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
+            logger.warning(f"Failed to parse social research data: {e}")
             research = {
                 "trends_by_platform": {},
                 "hashtags": [topic.lower()],
@@ -155,7 +156,8 @@ Format as JSON with keys: post_text, hashtags, cta"""
             import json
 
             result = json.loads(response)
-        except:
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
+            logger.warning(f"Failed to parse social post data: {e}")
             result = {
                 "post_text": response,
                 "hashtags": [topic.lower()],

@@ -135,6 +135,18 @@ def register_all_routes(
         status["writing_style_router"] = False
 
     try:
+        # ===== WRITING SAMPLE UPLOAD (Phase 3.1) =====
+        from routes.sample_upload_routes import router as sample_upload_router
+
+        # Database service now injected via Depends(get_database_dependency) in routes
+        app.include_router(sample_upload_router)
+        logger.info(" sample_upload_router registered (Phase 3.1 - sample management)")
+        status["sample_upload_router"] = True
+    except Exception as e:
+        logger.error(f" sample_upload_router failed: {e}")
+        status["sample_upload_router"] = False
+
+    try:
         # ===== MEDIA & IMAGE MANAGEMENT =====
         from routes.media_routes import media_router
 

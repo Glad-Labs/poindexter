@@ -121,7 +121,8 @@ Create JSON with keys: title, summary, body, metadata"""
                 import json
 
                 transformed = json.loads(response)
-            except:
+            except (json.JSONDecodeError, ValueError, TypeError) as e:
+                logger.warning(f"Failed to parse transformed content: {e}")
                 transformed = {"content": content}
 
         elif to_format == "markdown" and isinstance(content, dict):

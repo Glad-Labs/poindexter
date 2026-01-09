@@ -54,6 +54,9 @@ class BlogPost(BaseModel):
     # --- Refinement & State Tracking ---
     qa_feedback: List[str] = Field(default_factory=list)
 
+    # --- Metadata for Agent Coordination ---
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Metadata for agent coordination (e.g., writing_sample_guidance)")
+
     # --- Publishing & Finalization ---
     strapi_post_id: Optional[int] = None
     rejection_reason: Optional[str] = None  # Reason for failing QA or publishing

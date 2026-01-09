@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 import uuid as uuid_lib
 import json
+import json
 import logging
 import os
 
@@ -148,6 +149,7 @@ async def create_task(
             "status": "pending",
             "agent_id": "content-agent",
             "user_id": current_user.get("id", "system"),  # Capture user for writing sample retrieval
+            "writing_style_id": request.writing_style_id,  # UUID of writing sample for style guidance
             "metadata": request.metadata or {},
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -1091,3 +1093,218 @@ async def confirm_and_execute_task(
     except Exception as e:
         logger.error(f"[CONFIRM] Task confirmation failed: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Task confirmation failed: {str(e)}")
+
+
+# ============================================================================
+# TASK APPROVAL & PUBLISHING ENDPOINTS
+# ============================================================================
+
+
+@router.post("/{task_id}/approve", response_model=UnifiedTaskResponse, summary="Approve task for publishing")
+async def approve_task(
+    task_id: str,
+    current_user: dict = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
+):
+    """
+    Approve a task for publishing.
+    
+    Changes task status from 'completed' to 'approved'.
+    
+    **Parameters:**
+    - task_id: Task UUID
+    
+    **Returns:**
+    - Updated task with status 'approved'
+    
+    **Example cURL:**
+    ```bash
+    curl -X POST http://localhost:8000/api/tasks/550e8400-e29b-41d4-a716-446655440000/approve \
+      -H "Authorization: Bearer YOUR_JWT_TOKEN"
+    ```
+    """
+    try:
+        # Validate UUID format
+        try:
+            UUID(task_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid task ID format")
+
+        # Fetch task
+        task = await db_service.get_task(task_id)
+
+        if not task:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+        # Check if task is in a state that can be approved
+        current_status = task.get("status", "unknown")
+        if current_status not in ["completed", "pending"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot approve task with status '{current_status}'. Must be 'completed' or 'pending'."
+            )
+
+        # Update task status to approved
+        logger.info(f"Approving task {task_id} (current status: {current_status})")
+        approval_metadata = {
+            "approved_at": datetime.now(timezone.utc).isoformat(),
+            "approved_by": current_user.get("id")
+        }
+        await db_service.update_task_status(
+            task_id,
+            "approved",
+            result=json.dumps({"metadata": approval_metadata})
+        )
+
+        # Fetch updated task
+        updated_task = await db_service.get_task(task_id)
+
+        # Convert to response schema
+        return UnifiedTaskResponse(**ModelConverter.to_task_response(updated_task).model_dump())
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to approve task {task_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to approve task: {str(e)}")
+
+
+@router.post("/{task_id}/publish", response_model=UnifiedTaskResponse, summary="Publish approved task")
+async def publish_task(
+    task_id: str,
+    current_user: dict = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
+    background_tasks: BackgroundTasks = None,
+):
+    """
+    Publish an approved task to specified channels.
+    
+    Changes task status from 'approved' to 'published'.
+    Handles distribution to CMS, social media, email, etc.
+    
+    **Parameters:**
+    - task_id: Task UUID
+    
+    **Returns:**
+    - Updated task with status 'published'
+    
+    **Example cURL:**
+    ```bash
+    curl -X POST http://localhost:8000/api/tasks/550e8400-e29b-41d4-a716-446655440000/publish \
+      -H "Authorization: Bearer YOUR_JWT_TOKEN"
+    ```
+    """
+    try:
+        # Validate UUID format
+        try:
+            UUID(task_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid task ID format")
+
+        # Fetch task
+        task = await db_service.get_task(task_id)
+
+        if not task:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+        # Check if task is approved
+        current_status = task.get("status", "unknown")
+        if current_status != "approved":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot publish task with status '{current_status}'. Must be 'approved'."
+            )
+
+        # Update task status to published
+        logger.info(f"Publishing task {task_id}")
+        publish_metadata = {
+            "published_at": datetime.now(timezone.utc).isoformat(),
+            "published_by": current_user.get("id")
+        }
+        await db_service.update_task_status(
+            task_id,
+            "published",
+            result=json.dumps({"metadata": publish_metadata})
+        )
+
+        # Fetch updated task
+        updated_task = await db_service.get_task(task_id)
+
+        # Convert to response schema
+        return UnifiedTaskResponse(**ModelConverter.to_task_response(updated_task).model_dump())
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to publish task {task_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to publish task: {str(e)}")
+
+
+@router.post("/{task_id}/reject", response_model=UnifiedTaskResponse, summary="Reject task for revision")
+async def reject_task(
+    task_id: str,
+    current_user: dict = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
+):
+    """
+    Reject a task and send it back for revision.
+    
+    Changes task status to 'rejected' with optional feedback.
+    Task can be revised and resubmitted.
+    
+    **Parameters:**
+    - task_id: Task UUID
+    
+    **Returns:**
+    - Updated task with status 'rejected'
+    
+    **Example cURL:**
+    ```bash
+    curl -X POST http://localhost:8000/api/tasks/550e8400-e29b-41d4-a716-446655440000/reject \
+      -H "Authorization: Bearer YOUR_JWT_TOKEN"
+    ```
+    """
+    try:
+        # Validate UUID format
+        try:
+            UUID(task_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid task ID format")
+
+        # Fetch task
+        task = await db_service.get_task(task_id)
+
+        if not task:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+        # Check if task is in a state that can be rejected
+        current_status = task.get("status", "unknown")
+        if current_status not in ["completed", "approved"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot reject task with status '{current_status}'. Must be 'completed' or 'approved'."
+            )
+
+        # Update task status to rejected
+        logger.info(f"Rejecting task {task_id} (current status: {current_status})")
+        reject_metadata = {
+            "rejected_at": datetime.now(timezone.utc).isoformat(),
+            "rejected_by": current_user.get("id")
+        }
+        await db_service.update_task_status(
+            task_id,
+            "rejected",
+            result=json.dumps({"metadata": reject_metadata})
+        )
+
+        # Fetch updated task
+        updated_task = await db_service.get_task(task_id)
+
+        # Convert to response schema
+        return UnifiedTaskResponse(**ModelConverter.to_task_response(updated_task).model_dump())
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to reject task {task_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to reject task: {str(e)}")

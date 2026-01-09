@@ -155,6 +155,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 "primary_keyword": task_data.get("primary_keyword"),
                 "target_audience": task_data.get("target_audience"),
                 "category": task_data.get("category"),
+                "writing_style_id": task_data.get("writing_style_id"),
                 "content": metadata.get("content") or task_data.get("content"),
                 "excerpt": metadata.get("excerpt") or task_data.get("excerpt"),
                 "featured_image_url": metadata.get("featured_image_url") or task_data.get("featured_image_url"),

@@ -1350,11 +1350,11 @@ async def websocket_blog_creation(
         logger.error(f"🔌 WebSocket error: {str(e)}", exc_info=True)
         try:
             await websocket.send_json({"type": "error", "error": str(e)})
-        except:
-            pass
+        except RuntimeError as send_err:
+            logger.debug(f"Failed to send error message over WebSocket: {send_err}")
     finally:
         try:
             await websocket.close()
             logger.info(f"🔌 WebSocket closed: {request_id}")
-        except:
-            pass
+        except RuntimeError as close_err:
+            logger.debug(f"WebSocket already closed: {close_err}")

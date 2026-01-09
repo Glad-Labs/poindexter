@@ -532,20 +532,37 @@ class UnifiedOrchestrator:
             from agents.content_agent.services.llm_client import LLMClient
             from agents.content_agent.utils.data_models import BlogPost
             from services.writing_style_service import WritingStyleService
+            from services.writing_style_integration import WritingStyleIntegrationService
 
             llm_client = LLMClient()
             creative_agent = CreativeAgent(llm_client=llm_client)
 
-            # Retrieve active writing sample for the user (RAG style matching)
+            # Retrieve writing style guidance - either from specific writing_style_id or active sample
             writing_style_guidance = ""
             user_id = request.context.get("user_id") if request.context else None
-            if user_id and self.database_service:
+            writing_style_id = request.context.get("writing_style_id") if request.context else None
+            
+            if self.database_service:
                 try:
-                    writing_style_svc = WritingStyleService(self.database_service)
-                    style_data = await writing_style_svc.get_style_prompt_for_generation(user_id)
-                    if style_data:
-                        writing_style_guidance = style_data.get("writing_style_guidance", "")
-                        logger.info(f"[{request.request_id}] Using active writing sample: {style_data.get('sample_title')}")
+                    # Use enhanced integration service for detailed sample analysis
+                    integration_svc = WritingStyleIntegrationService(self.database_service)
+                    
+                    # Get sample with full analysis
+                    sample_data = await integration_svc.get_sample_for_content_generation(
+                        writing_style_id=writing_style_id,
+                        user_id=user_id
+                    )
+                    
+                    if sample_data:
+                        writing_style_guidance = sample_data.get("writing_style_guidance", "")
+                        analysis = sample_data.get("analysis", {})
+                        
+                        sample_title = sample_data.get("sample_title", "Unknown")
+                        logger.info(f"[{request.request_id}] Using writing sample: {sample_title}")
+                        logger.info(f"[{request.request_id}]   - Detected tone: {analysis.get('detected_tone')}")
+                        logger.info(f"[{request.request_id}]   - Detected style: {analysis.get('detected_style')}")
+                        logger.info(f"[{request.request_id}]   - Avg sentence length: {analysis.get('avg_sentence_length')} words")
+                    
                 except Exception as e:
                     logger.warning(f"[{request.request_id}] Could not retrieve writing sample: {e}")
 
@@ -591,9 +608,13 @@ class UnifiedOrchestrator:
             max_iterations = 2
 
             for iteration in range(1, max_iterations + 1):
+                quality_context = {"topic": topic}
+                if writing_style_guidance:
+                    quality_context["writing_style_guidance"] = writing_style_guidance
+                
                 quality_result = await quality_service.evaluate(
                     content=getattr(content, "raw_content", str(content)),
-                    context={"topic": topic},
+                    context=quality_context,
                     method=EvaluationMethod.HYBRID,
                 )
 

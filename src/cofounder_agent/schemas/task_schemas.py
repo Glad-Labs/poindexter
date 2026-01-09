@@ -66,6 +66,9 @@ class TaskCreateRequest(BaseModel):
     category: str = Field(
         default="general", max_length=50, description="Content category (max 50 chars)"
     )
+    writing_style_id: Optional[str] = Field(
+        default=None, description="UUID of the writing sample to use for style guidance (optional)"
+    )
     model_selections: Optional[Dict[str, str]] = Field(
         default_factory=dict,
         description="Per-phase model selections (research, outline, draft, assess, refine, finalize)",
@@ -95,6 +98,7 @@ class TaskCreateRequest(BaseModel):
                 "primary_keyword": "AI healthcare",
                 "target_audience": "Healthcare professionals",
                 "category": "healthcare",
+                "writing_style_id": "550e8400-e29b-41d4-a716-446655440000",
                 "model_selections": {
                     "research": "ollama",
                     "outline": "ollama",

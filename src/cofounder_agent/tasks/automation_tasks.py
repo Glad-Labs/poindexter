@@ -72,7 +72,8 @@ Format as JSON with keys: subject, preview, body, cta_text, cta_url"""
             import json
 
             email_data = json.loads(response)
-        except:
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
+            logger.warning(f"Failed to parse email campaign data: {e}")
             email_data = {
                 "subject": topic,
                 "preview": topic[:100],
@@ -219,7 +220,8 @@ Format as JSON with keys: summary, key_points, main_takeaway"""
             import json
 
             summary_data = json.loads(response)
-        except:
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
+            logger.warning(f"Failed to parse summary data: {e}")
             summary_data = {
                 "summary": content[:200],
                 "key_points": [],

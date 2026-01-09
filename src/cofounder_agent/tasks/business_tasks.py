@@ -97,7 +97,8 @@ Format as JSON with keys: recommendations, opportunities, breakeven_units, proje
             import json
 
             analysis = json.loads(response)
-        except:
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
+            logger.warning(f"Failed to parse cost analysis: {e}")
             analysis = {
                 "recommendations": [],
                 "opportunities": [],
@@ -180,7 +181,8 @@ Format as JSON with keys: market_size, growth_rate, trends, gaps, customer_insig
             import json
 
             analysis = json.loads(response)
-        except:
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
+            logger.warning(f"Failed to parse market analysis: {e}")
             analysis = {
                 "market_size": "Unknown",
                 "trends": [],
@@ -265,7 +267,8 @@ Format as JSON with keys: summary, insights, improvements, trend, trend_percenta
             import json
 
             analysis = json.loads(response)
-        except:
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
+            logger.warning(f"Failed to parse performance analysis: {e}")
             analysis = {
                 "summary": response,
                 "insights": [],

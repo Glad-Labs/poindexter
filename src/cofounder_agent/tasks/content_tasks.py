@@ -90,8 +90,9 @@ Format as JSON with keys: key_points, trends, statistics, sources"""
             # Clean up potential markdown code blocks
             cleaned_response = response.replace("```json", "").replace("```", "").strip()
             research_data = json.loads(cleaned_response)
-        except:
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
             # Fallback if not valid JSON
+            logger.warning(f"Failed to parse research data as JSON: {e}")
             research_data = {
                 "key_points": [response[:200]],
                 "trends": [],
@@ -276,7 +277,8 @@ Format as JSON with keys: scores (dict), feedback (str), suggestions (list), ove
 
             qa_result = json.loads(response_obj.text)
             overall_score = qa_result.get("overall_score", 5.0)
-        except:
+        except (json.JSONDecodeError, ValueError, TypeError, AttributeError) as e:
+            logger.warning(f"Failed to parse QA result: {e}")
             overall_score = 5.0
             qa_result = {
                 "feedback": response_obj.text,
@@ -357,7 +359,8 @@ Format: {{"search_queries": ["query1", "query2", "query3"]}}"""
 
             suggestions = json.loads(response_obj.text)
             search_queries = suggestions.get("search_queries", [topic])
-        except:
+        except (json.JSONDecodeError, ValueError, TypeError, AttributeError) as e:
+            logger.warning(f"Failed to parse image suggestions: {e}")
             search_queries = [topic]
 
         # In production, would search Pexels/Unsplash API
