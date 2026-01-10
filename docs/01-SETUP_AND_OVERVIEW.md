@@ -1,14 +1,8 @@
 # 01 - Setup & Overview
 
-<<<<<<< HEAD
-**Last Updated:** November 5, 2025  
-**Version:** 3.0  
-**Status:** ✅ Production Ready | Testing Infrastructure Complete | 267/267 Tests Passing
-=======
-**Last Updated:** November 24, 2025  
-**Version:** 2.0  
-**Status:** ✅ Production Ready | PostgreSQL-First
->>>>>>> feat/refine
+**Last Updated:** January 10, 2026  
+**Version:** 3.0.1  
+**Status:** ✅ Production Ready | All Services Running | Clean Codebase
 
 ---
 
@@ -70,9 +64,16 @@ Choose based on your preference:
 ### Step 1: Clone Repository
 
 ```bash
-git clone https://gitlab.com/glad-labs-org/glad-labs-website.git
+# Clone from GitHub (primary repo for production)
+git clone https://github.com/Glad-Labs/glad-labs-codebase.git
+cd glad-labs-website
+
+# Or if you have SSH configured:
+git clone git@github.com:Glad-Labs/glad-labs-codebase.git
 cd glad-labs-website
 ```
+
+**Note:** Use HTTPS with GitHub Credential Manager for Enterprise authentication.
 
 ### Step 2: Install Dependencies
 
