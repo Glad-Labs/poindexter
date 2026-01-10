@@ -530,10 +530,14 @@ async def approve_and_publish_task(
                 approval_status="approved",
                 strapi_post_id=task.get("strapi_id"),
                 published_url=task.get("strapi_url", f"/posts/{task_id}"),
-                approval_timestamp=str(task.get("updated_at", approval_timestamp_iso)),
+                approval_timestamp=str(task.get("updated_at")),
                 reviewer_id=task.get("task_metadata", {}).get("approved_by", "system"),
                 message=f"Task {task_id} is already {current_status}",
             )
+
+        # ✅ Initialize timestamp variables early for use throughout the function
+        approval_timestamp = datetime.now()
+        approval_timestamp_iso = approval_timestamp.isoformat()  # Convert immediately to ISO format
 
         if current_status != "awaiting_approval":
             logger.error(
@@ -544,9 +548,6 @@ async def approve_and_publish_task(
                 current_state=current_status,
                 requested_action="approve",
             )
-
-        approval_timestamp = datetime.now()
-        approval_timestamp_iso = approval_timestamp.isoformat()  # Convert immediately to ISO format
         reviewer_id = request.reviewer_id
         human_feedback = request.human_feedback
 
@@ -728,6 +729,11 @@ async def approve_and_publish_task(
                     tag_ids_str = [str(tag_id) for tag_id in metadata.tag_ids]
                     logger.debug(f"✅ Converted tag_ids to strings: {tag_ids_str}")
                 
+                # ✅ Ensure SEO fields have fallback values (never empty)
+                seo_title = metadata.seo_title or metadata.title
+                seo_description = metadata.seo_description or metadata.excerpt or content[:155]
+                seo_keywords = metadata.seo_keywords or ""
+                
                 post_data = {
                     "id": task_metadata.get("post_id"),
                     "title": metadata.title,  # ✅ Extracted/generated
@@ -740,9 +746,9 @@ async def approve_and_publish_task(
                     "category_id": str(metadata.category_id) if metadata.category_id else None,  # ✅ Convert to string
                     "tag_ids": tag_ids_str,  # ✅ Extracted and converted to strings
                     "status": "published",
-                    "seo_title": metadata.seo_title,  # ✅ Generated
-                    "seo_description": metadata.seo_description,  # ✅ Generated
-                    "seo_keywords": metadata.seo_keywords,  # ✅ Generated
+                    "seo_title": seo_title,  # ✅ Generated with fallback
+                    "seo_description": seo_description,  # ✅ Generated with fallback
+                    "seo_keywords": seo_keywords,  # ✅ Generated with fallback
                     "created_by": reviewer_author_id,  # System UUID for created_by (reviewer who approved)
                     "updated_by": reviewer_author_id,  # System UUID for updated_by (reviewer who approved)
                 }
@@ -753,6 +759,17 @@ async def approve_and_publish_task(
                     f"\n  - title={post_data.get('title')[:50]}"
                     f"\n  - slug={post_data.get('slug')}"
                 )
+                
+                # ✅ Log ALL post data fields for debugging
+                logger.info(f"🔍 COMPLETE POST DATA BEFORE INSERT:")
+                for key, value in post_data.items():
+                    if key == "content":
+                        logger.info(f"   - {key}: {len(value) if isinstance(value, str) else 0} chars")
+                    elif isinstance(value, (list, dict)):
+                        logger.info(f"   - {key}: {value}")
+                    else:
+                        value_str = str(value)[:100] if value else "None"
+                        logger.info(f"   - {key}: {value_str}")
 
                 post_result = await db_service.create_post(post_data)
                 post_id = post_result.get("id")

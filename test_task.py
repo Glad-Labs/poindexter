@@ -4,6 +4,10 @@ import httpx
 import asyncio
 import json
 import sys
+import logging
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format='%(message)s')
 
 async def main():
     # Get a token first
@@ -14,7 +18,7 @@ async def main():
     
     token_data = auth_response.json()
     token = token_data["token"]
-    print(f"[OK] Got token: {token[:20]}...")
+    logger.info(f"[OK] Got token: {token[:20]}...")
     
     # Create a task
     task_data = {
@@ -37,11 +41,11 @@ async def main():
     
     result = response.json()
     task_id = result.get('task_id') or result.get('id')
-    print(f"[OK] Task created: {task_id}")
-    print(json.dumps(result, indent=2))
+    logger.info(f"[OK] Task created: {task_id}")
+    logger.info(json.dumps(result, indent=2))
     
     # Wait for task execution (longer wait for actual generation)
-    print("[INFO] Waiting for task execution...")
+    logger.info("[INFO] Waiting for task execution...")
     for i in range(12):  # Wait up to 60 seconds
         await asyncio.sleep(5)
         
@@ -54,7 +58,7 @@ async def main():
         
         task_result = response.json()
         status = task_result.get('status') or task_result.get('task_status')
-        print(f"   Status: {status}")
+        logger.info(f"   Status: {status}")
         
         if status in ['completed', 'failed']:
             break
@@ -62,21 +66,21 @@ async def main():
         task_result = response.json()
     
     task_result = response.json()
-    print(f"\n[OK] Task result:")
-    print(json.dumps(task_result, indent=2))
+    logger.info(f"\n[OK] Task result:")
+    logger.info(json.dumps(task_result, indent=2))
     
     # Extract content fields
     content = task_result.get('content') or task_result.get('generated_content')
     if content:
         content_len = len(content)
-        print(f"\n[OK] Generated content length: {content_len} chars")
-        print(f"   Preview: {content[:100]}...")
+        logger.info(f"\n[OK] Generated content length: {content_len} chars")
+        logger.info(f"   Preview: {content[:100]}...")
     else:
-        print(f"\n[ERROR] No content generated")
+        logger.info(f"\n[ERROR] No content generated")
         if task_result.get('orchestrator_error'):
-            print(f"   Error: {task_result['orchestrator_error']}")
+            logger.info(f"   Error: {task_result['orchestrator_error']}")
         if task_result.get('metadata'):
-            print(f"   Metadata: {json.dumps(task_result['metadata'], indent=2)}")
+            logger.info(f"   Metadata: {json.dumps(task_result['metadata'], indent=2)}")
 
 if __name__ == "__main__":
     asyncio.run(main())

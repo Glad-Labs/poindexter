@@ -8,6 +8,7 @@ from ..services.pexels_client import PexelsClient
 from ..services.strapi_client import StrapiClient
 from ..utils.data_models import BlogPost, ImageDetails
 from ..utils.helpers import load_prompts_from_file, slugify, extract_json_from_string
+from ..utils.tools import CrewAIToolsFactory
 
 
 logger = logging.getLogger(__name__)

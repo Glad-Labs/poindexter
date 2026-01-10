@@ -146,7 +146,7 @@ SETTINGS_METHODS = """
         value_str = setting['value']
         try:
             return json.loads(value_str)
-        except:
+        except (json.JSONDecodeError, ValueError, TypeError):
             return value_str
     
     async def setting_exists(self, key: str) -> bool:

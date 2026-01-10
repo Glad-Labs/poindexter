@@ -861,7 +861,7 @@ async def main(db_pool: asyncpg.Pool):
     memory_system = AIMemorySystem(db_pool=db_pool)
     await memory_system.initialize()
 
-    print("🧠 Testing AI Memory System...")
+    logger.info("🧠 Testing AI Memory System...")
 
     # Store some test memories
     await memory_system.store_memory(
@@ -899,37 +899,37 @@ async def main(db_pool: asyncpg.Pool):
     )
 
     # Test memory recall
-    print("\n🔍 Testing memory recall...")
+    logger.info("\n🔍 Testing memory recall...")
     memories = await memory_system.recall_memories("AI business automation")
-    print(f"Found {len(memories)} relevant memories")
+    logger.info(f"Found {len(memories)} relevant memories")
 
     for memory in memories:
-        print(f"  • {memory.memory_type.value}: {memory.content[:60]}...")
+        logger.info(f"  • {memory.memory_type.value}: {memory.content[:60]}...")
 
     # Test user preferences
     await memory_system.learn_user_preference("ai_cost_preference", "cost_optimized")
     await memory_system.learn_user_preference("development_environment", "local_models")
 
     preferences = await memory_system.get_user_preferences()
-    print(f"\n👤 User preferences: {len(preferences)} stored")
+    logger.info(f"\n👤 User preferences: {len(preferences)} stored")
 
     # Get contextual knowledge
     context = await memory_system.get_contextual_knowledge("business strategy and AI automation")
-    print(f"\n📚 Contextual knowledge gathered:")
-    print(f"  • Relevant memories: {len(context['relevant_memories'])}")
-    print(f"  • User preferences: {len(context['user_preferences'])}")
-    print(f"  • Knowledge clusters: {len(context['knowledge_clusters'])}")
+    logger.info(f"\n📚 Contextual knowledge gathered:")
+    logger.info(f"  • Relevant memories: {len(context['relevant_memories'])}")
+    logger.info(f"  • User preferences: {len(context['user_preferences'])}")
+    logger.info(f"  • Knowledge clusters: {len(context['knowledge_clusters'])}")
 
     # Get system summary
     summary = await memory_system.get_memory_summary()
-    print(f"\n📊 Memory System Summary:")
-    print(f"  • Total memories: {summary['total_memories']}")
-    print(f"  • Memory types: {summary['memory_by_type']}")
-    print(f"  • User preferences: {summary['total_preferences']}")
-    print(f"  • Knowledge clusters: {summary['total_knowledge_clusters']}")
-    print(f"  • Embedding model: {'Active' if summary['embedding_model_active'] else 'Inactive'}")
+    logger.info(f"\n📊 Memory System Summary:")
+    logger.info(f"  • Total memories: {summary['total_memories']}")
+    logger.info(f"  • Memory types: {summary['memory_by_type']}")
+    logger.info(f"  • User preferences: {summary['total_preferences']}")
+    logger.info(f"  • Knowledge clusters: {summary['total_knowledge_clusters']}")
+    logger.info(f"  • Embedding model: {'Active' if summary['embedding_model_active'] else 'Inactive'}")
 
 
 if __name__ == "__main__":
-    print("❌ This module must be used with a PostgreSQL database connection pool.")
-    print("   Use from within the FastAPI application context during lifespan initialization.")
+    logger.error("❌ This module must be used with a PostgreSQL database connection pool.")
+    logger.error("   Use from within the FastAPI application context during lifespan initialization.")

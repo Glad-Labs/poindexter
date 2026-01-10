@@ -123,7 +123,6 @@ class StartupManager:
     async def _initialize_database(self) -> None:
         """Initialize PostgreSQL database connection"""
         logger.info("  Connecting to PostgreSQL (REQUIRED)...")
-        print("  Connecting to PostgreSQL (REQUIRED)...")
 
         db_url = os.getenv("DATABASE_URL", "Not set")
         logger.info(f"  DATABASE_URL: {db_url[:50] if db_url != 'Not set' else 'Not set'}...")
@@ -134,11 +133,9 @@ class StartupManager:
             self.database_service = DatabaseService()
             await self.database_service.initialize()
             logger.info("   PostgreSQL connected - ready for operations")
-            print("   PostgreSQL connected - ready for operations")
         except Exception as e:
             startup_error = f"FATAL: PostgreSQL connection failed: {str(e)}"
             logger.error(f"  {startup_error}", exc_info=True)
-            print(f"  {startup_error}")
             logger.error("  🛑 PostgreSQL is REQUIRED - cannot continue")
             logger.error("   Set DATABASE_URL or DATABASE_USER environment variables")
             logger.error(
@@ -339,69 +336,59 @@ class StartupManager:
             )
 
     async def _warmup_sdxl_models(self) -> None:
-        """Warmup SDXL models in background to avoid timeout on first request"""
+        """Warmup SDXL models to avoid timeout on first request"""
         import torch
+        import os
         
         # Check if GPU is available first
         if not torch.cuda.is_available():
-            logger.info("  SDXL warmup: GPU not available, skipping SDXL model warmup")
+            logger.info("  SDXL warmup: GPU not available, skipping model warmup")
+            return
+        
+        # Check if user explicitly disabled SDXL warmup
+        if os.getenv("DISABLE_SDXL_WARMUP", "").lower() == "true":
+            logger.info("  SDXL warmup: Disabled via DISABLE_SDXL_WARMUP environment variable")
             return
         
         try:
-            logger.info("  🎨 Warming up SDXL models (background task)...")
+            logger.info("  🎨 Warming up SDXL models (this may take 20-30 seconds)...")
             from services.image_service import ImageService
-            
-            # Create image service (will trigger lazy initialization on first generate_image call)
-            image_service = ImageService()
-            logger.info("   ImageService created, initializing SDXL models...")
-            
-            # This triggers the lazy _initialize_sdxl() call
-            # We run it in a background task to avoid blocking startup
-            import asyncio
-            asyncio.create_task(self._sdxl_warmup_background(image_service))
-            
-        except Exception as e:
-            logger.warning(f"  SDXL warmup setup failed: {e}")
-
-    async def _sdxl_warmup_background(self, image_service) -> None:
-        """Background task to warmup SDXL models"""
-        try:
-            logger.info("  [BACKGROUND] Starting SDXL model warmup...")
-            
-            # Simple warmup: generate a tiny 1-step image to load models
             import tempfile
+            
+            # Create image service
+            image_service = ImageService()
+            
+            # Generate a minimal test image just to load the models
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
                 output_path = tmp.name
             
             try:
-                # Generate a single-step image just to load the models
+                # Single-step generation just to load models
                 success = await image_service.generate_image(
-                    prompt="test",
+                    prompt="warmup",
                     output_path=output_path,
-                    num_inference_steps=1,  # Minimal steps
+                    num_inference_steps=1,
                     guidance_scale=7.5,
-                    use_refinement=False,  # Skip refinement for warmup
+                    use_refinement=False,
                     high_quality=False
                 )
                 
                 if success:
-                    logger.info("  ✅ SDXL models warmed up successfully!")
-                    logger.info("  This means first SDXL requests from UI will be instant")
+                    logger.info("  ✅ SDXL models loaded successfully! First requests will be fast.")
                 else:
-                    logger.warning("  ⚠️ SDXL warmup generation failed (will initialize on first request)")
+                    logger.warning("  ⚠️ SDXL warmup generation failed (will initialize lazily)")
                     
             finally:
                 # Clean up temp file
-                import os
                 try:
                     if os.path.exists(output_path):
                         os.remove(output_path)
-                except:
+                except (OSError, IOError):
                     pass
                     
         except Exception as e:
-            logger.warning(f"  ⚠️ SDXL background warmup error: {e}")
-            logger.info("     SDXL will initialize lazily on first request (may take longer)")
+            logger.warning(f"  ⚠️ SDXL warmup error (non-critical): {e}")
+            logger.info("     SDXL will initialize on first request")
 
     def _log_startup_summary(self) -> None:
         """Log summary of startup state"""

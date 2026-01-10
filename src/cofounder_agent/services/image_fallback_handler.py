@@ -67,7 +67,7 @@ class ImageFallbackHandler:
                 models = response.json().get("models", [])
                 sdxl_available = any("sdxl" in m.get("name", "").lower() for m in models)
                 return sdxl_available
-        except:
+        except (requests.RequestException, ValueError, KeyError):
             pass
         return False
 

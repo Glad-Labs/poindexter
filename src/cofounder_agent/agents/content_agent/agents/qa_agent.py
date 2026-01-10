@@ -4,6 +4,7 @@ from ..config import config
 from ..services.llm_client import LLMClient
 from ..utils.data_models import BlogPost
 from ..utils.helpers import load_prompts_from_file
+from ..utils.tools import CrewAIToolsFactory
 
 logger = logging.getLogger(__name__)
 

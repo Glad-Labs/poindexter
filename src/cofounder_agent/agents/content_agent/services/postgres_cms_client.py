@@ -48,7 +48,7 @@ class PostgresCMSClient:
                 creds, rest = parts[1].split("@", 1)
                 return f"{parts[0]}://***@{rest}"
             return url
-        except:
+        except (IndexError, ValueError):
             return url
 
     async def initialize(self):

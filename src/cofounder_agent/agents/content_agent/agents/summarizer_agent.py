@@ -1,5 +1,6 @@
 import logging
 from ..services.llm_client import LLMClient
+from ..utils.tools import CrewAIToolsFactory
 
 logger = logging.getLogger(__name__)
 

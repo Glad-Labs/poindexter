@@ -71,6 +71,9 @@ class ModelConverter:
                         data[key] = json.loads(data[key])
                     except (json.JSONDecodeError, TypeError):
                         data[key] = [data[key]] if data[key] else None
+                # Convert UUID objects within arrays to strings
+                elif isinstance(data[key], (list, tuple)):
+                    data[key] = [str(item) if isinstance(item, UUID) else item for item in data[key]]
 
         return data
 

@@ -11,6 +11,10 @@ import json
 import os
 import re
 import httpx
+from config.constants import (
+    API_TIMEOUT_STANDARD,
+    API_TIMEOUT_HEALTH_CHECK,
+)
 
 # Try to import complex dependency agents, but don't fail if unavailable
 try:
@@ -284,7 +288,7 @@ class Orchestrator:
                     response = await client.post(
                         f"{self.api_base_url}/api/commands/dispatch",
                         json={"agent_type": "content", "command": pipeline_command},
-                        timeout=10.0,
+                        timeout=API_TIMEOUT_STANDARD,
                     )
 
                     if response.status_code == 200:
@@ -336,7 +340,7 @@ class Orchestrator:
             # Check command queue API health
             try:
                 async with httpx.AsyncClient() as client:
-                    response = await client.get(f"{self.api_base_url}/api/health", timeout=5.0)
+                    response = await client.get(f"{self.api_base_url}/api/health", timeout=API_TIMEOUT_HEALTH_CHECK)
                     status_data["api_health"] = response.status_code == 200
             except Exception:
                 status_data["api_health"] = False
@@ -407,7 +411,7 @@ class Orchestrator:
                     response = await client.post(
                         f"{self.api_base_url}/api/commands/intervene",
                         json=intervention_data,
-                        timeout=10.0,
+                        timeout=API_TIMEOUT_STANDARD,
                     )
 
                     if response.status_code == 200:
@@ -546,7 +550,7 @@ class Orchestrator:
                     api_response = await client.post(
                         f"{self.api_base_url}/api/commands/dispatch",
                         json={"agent_type": "content", "command": content_request},
-                        timeout=10.0,
+                        timeout=API_TIMEOUT_STANDARD,
                     )
 
                     if api_response.status_code == 200:

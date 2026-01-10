@@ -3,6 +3,7 @@ import re
 from ..services.strapi_client import StrapiClient
 from ..utils.data_models import BlogPost
 from ..utils.markdown_utils import markdown_to_strapi_blocks
+from ..utils.tools import CrewAIToolsFactory
 
 
 class PublishingAgent:

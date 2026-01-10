@@ -278,7 +278,7 @@ async def get_kpi_metrics(
                 if isinstance(metadata, str):
                     try:
                         metadata = json.loads(metadata)
-                    except:
+                    except (json.JSONDecodeError, ValueError):
                         metadata = {}
 
                 # Extract phase costs from metadata.cost_breakdown if present

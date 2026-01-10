@@ -59,7 +59,7 @@ def register_all_routes(
 
         # Check which routes were registered
         if registration_status['task_router']:
-            print("Task routes available")
+            logger.info("✅ Task routes available")
     """
 
     status = {}
@@ -134,17 +134,10 @@ def register_all_routes(
         logger.error(f" writing_style_router failed: {e}")
         status["writing_style_router"] = False
 
-    try:
-        # ===== WRITING SAMPLE UPLOAD (Phase 3.1) =====
-        from routes.sample_upload_routes import router as sample_upload_router
-
-        # Database service now injected via Depends(get_database_dependency) in routes
-        app.include_router(sample_upload_router)
-        logger.info(" sample_upload_router registered (Phase 3.1 - sample management)")
-        status["sample_upload_router"] = True
-    except Exception as e:
-        logger.error(f" sample_upload_router failed: {e}")
-        status["sample_upload_router"] = False
+    # ===== WRITING SAMPLE UPLOAD (Phase 3.1) - REMOVED =====
+    # Note: sample_upload_routes.py was removed in previous cleanup
+    # Functionality moved to writing_style_routes.py if needed
+    status["sample_upload_router"] = False
 
     try:
         # ===== MEDIA & IMAGE MANAGEMENT =====

@@ -66,6 +66,20 @@ class ContentDatabase(DatabaseServiceMixin):
             logger.warning(f"⚠️  tag_ids is string, converting to list: {tag_ids}")
             tag_ids = [tag_ids]
 
+        # ✅ Log all values being inserted for debugging
+        logger.info(f"🔍 INSERTING POST WITH THESE VALUES:")
+        logger.info(f"   - id: {post_id}")
+        logger.info(f"   - title: {post_data.get('title')[:50] if post_data.get('title') else 'EMPTY'}")
+        logger.info(f"   - slug: {post_data.get('slug')}")
+        logger.info(f"   - featured_image_url: {post_data.get('featured_image_url')}")
+        logger.info(f"   - seo_title: {post_data.get('seo_title')}")
+        logger.info(f"   - seo_description: {post_data.get('seo_description')[:50] if post_data.get('seo_description') else 'EMPTY'}")
+        logger.info(f"   - seo_keywords: {seo_keywords}")
+        logger.info(f"   - status: {post_data.get('status', 'draft')}")
+        logger.info(f"   - author_id: {post_data.get('author_id')}")
+        logger.info(f"   - category_id: {post_data.get('category_id')}")
+        logger.info(f"   - tag_ids: {tag_ids}")
+
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
@@ -104,8 +118,8 @@ class ContentDatabase(DatabaseServiceMixin):
                 post_data.get("category_id"),
                 tag_ids,
                 post_data.get("status", "draft"),
-                post_data.get("seo_title") or post_data.get("title"),
-                post_data.get("seo_description") or post_data.get("excerpt"),
+                post_data.get("seo_title"),
+                post_data.get("seo_description"),
                 seo_keywords,
                 post_data.get("created_by"),
                 post_data.get("updated_by"),

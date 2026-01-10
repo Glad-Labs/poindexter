@@ -330,7 +330,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
             import json
             try:
                 metadata = json.loads(metadata)
-            except:
+            except (json.JSONDecodeError, ValueError):
                 metadata = {}
         
         return {

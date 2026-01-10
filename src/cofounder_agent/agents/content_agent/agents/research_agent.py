@@ -2,6 +2,7 @@ import logging
 import httpx
 import json
 from ..config import config
+from ..utils.tools import CrewAIToolsFactory
 
 logger = logging.getLogger(__name__)
 
