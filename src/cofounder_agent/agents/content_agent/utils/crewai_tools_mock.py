@@ -1,6 +1,7 @@
 """
 Mock CrewAI Tools - Provides stub implementations when crewai_tools is not available.
-This allows the content agent pipeline to run without explicit CrewAI tool dependencies.
+This allows the content agent pipeline to run without explicit CrewAI tool dependencies
+while crewai_tools is being installed or available.
 """
 
 import logging
@@ -84,20 +85,9 @@ class CodeInterpreterTool(BaseTool):
     def __init__(self):
         super().__init__(
             name="CodeInterpreterTool",
-            description="Execute Python code and return results"
+            description="Execute and interpret code snippets"
         )
     
     def __call__(self, code: str) -> str:
-        logger.info(f"CodeInterpreterTool mocked execution")
-        return f"Code execution result"
-
-
-# Export all tools
-__all__ = [
-    'BaseTool',
-    'SerperDevTool',
-    'WebsiteSearchTool',
-    'FileReadTool',
-    'DirectoryReadTool',
-    'CodeInterpreterTool',
-]
+        logging.getLogger(__name__).info(f"CodeInterpreterTool mocked execution: {code[:100]}")
+        return f"Code execution result: {code[:50]}..."

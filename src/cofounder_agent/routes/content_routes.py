@@ -790,12 +790,12 @@ async def approve_and_publish_task(
                         logger.info(f"   - {key}: {value_str}")
 
                 post_result = await db_service.create_post(post_data)
-                post_id = post_result.get("id")
+                post_id = post_result.id
                 
                 # ✅ Verify featured_image_url was persisted
                 logger.info(
                     f"✅ Post published to CMS database with ID: {post_id}"
-                    f"\n  - Featured image in DB: {post_result.get('featured_image_url')}"
+                    f"\n  - Featured image in DB: {post_result.featured_image_url}"
                 )
 
                 # Update task with CMS post ID and published timestamp
@@ -826,7 +826,7 @@ async def approve_and_publish_task(
                 task_id=task_id,
                 approval_status="approved",
                 strapi_post_id=post_id,
-                published_url=f"/posts/{post_data.get('slug')}",
+                published_url=f"/posts/{post_result.slug}",
                 approval_timestamp=approval_timestamp_iso,
                 reviewer_id=reviewer_id,
                 message=f"✅ Task approved by {reviewer_id}",

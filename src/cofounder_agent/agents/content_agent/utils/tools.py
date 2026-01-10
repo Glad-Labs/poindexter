@@ -11,8 +11,9 @@ try:
         DirectoryReadTool,
         CodeInterpreterTool,
     )
-except ImportError:
-    logging.warning("crewai_tools not available, using mock implementations")
+    CREWAI_TOOLS_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"crewai_tools not available ({e}), using mock implementations")
     from .crewai_tools_mock import (
         SerperDevTool,
         WebsiteSearchTool,
@@ -20,6 +21,7 @@ except ImportError:
         DirectoryReadTool,
         CodeInterpreterTool,
     )
+    CREWAI_TOOLS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 

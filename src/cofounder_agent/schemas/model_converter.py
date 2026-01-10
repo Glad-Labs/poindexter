@@ -198,6 +198,15 @@ class ModelConverter:
     def to_quality_evaluation_response(row: Any) -> QualityEvaluationResponse:
         """Convert row to QualityEvaluationResponse model."""
         data = ModelConverter._normalize_row_data(row)
+        # Convert id to string if it's an integer
+        if "id" in data and isinstance(data["id"], int):
+            data["id"] = str(data["id"])
+        # Convert content_id to string if it's an integer
+        if "content_id" in data and isinstance(data["content_id"], int):
+            data["content_id"] = str(data["content_id"])
+        # Convert task_id to string if it's an integer
+        if "task_id" in data and isinstance(data["task_id"], int):
+            data["task_id"] = str(data["task_id"])
         return QualityEvaluationResponse(**data)
 
     @staticmethod

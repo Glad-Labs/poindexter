@@ -597,9 +597,9 @@ class UnifiedOrchestrator:
             # ====================================================================
             logger.info(f"[{request.request_id}] STAGE 3: QA Review")
             from services.quality_service import get_content_quality_service, EvaluationMethod
-            from services.database_service import get_database_service
+            from services.database_service import DatabaseService
 
-            database_service = get_database_service()
+            database_service = DatabaseService()
             quality_service = get_content_quality_service(database_service=database_service)
 
             content = draft_post
