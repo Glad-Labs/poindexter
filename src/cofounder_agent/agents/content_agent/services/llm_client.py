@@ -1,4 +1,8 @@
-import google.generativeai as genai
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None  # Will be checked when provider is "gemini"
+
 import httpx
 from agents.content_agent.config import config
 from agents.content_agent.utils.helpers import extract_json_from_string
@@ -21,6 +25,8 @@ class LLMClient:
 
         try:
             if self.provider == "gemini":
+                if not genai:
+                    raise ImportError("google-generativeai not installed. Install with: pip install google-generativeai")
                 if config.GEMINI_API_KEY:
                     os.environ["GOOGLE_API_KEY"] = config.GEMINI_API_KEY
                 else:

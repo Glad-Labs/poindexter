@@ -43,7 +43,6 @@ from .task_schemas import (
 # Content schemas
 from .content_schemas import (
     CreateBlogPostRequest,
-    CreateBlogPostResponse,
     TaskStatusResponse,
     BlogDraftResponse,
     DraftsListResponse,
@@ -52,6 +51,13 @@ from .content_schemas import (
     ApprovalResponse,
     PublishDraftResponse,
     GenerateAndPublishRequest,
+)
+
+# Unified task response (contains CreateBlogPostResponse as alias)
+from .unified_task_response import (
+    UnifiedTaskResponse,
+    CreateBlogPostResponse,
+    ProgressInfo,
 )
 
 # Agent schemas
@@ -226,6 +232,8 @@ __all__ = [
     # Content
     "CreateBlogPostRequest",
     "CreateBlogPostResponse",
+    "UnifiedTaskResponse",
+    "ProgressInfo",
     "TaskStatusResponse",
     "BlogDraftResponse",
     "DraftsListResponse",

@@ -47,6 +47,7 @@ from fastapi import (
     WebSocketDisconnect,
     WebSocket,
 )
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
@@ -102,8 +103,19 @@ content_router = APIRouter(prefix="/api/content", tags=["content"])
 
 
 @content_router.post(
+    "/tasks/test-simple",
+    status_code=201,
+    description="Simple test endpoint",
+)
+async def test_simple():
+    return JSONResponse(
+        status_code=201,
+        content={"test": "success"}
+    )
+
+
+@content_router.post(
     "/tasks",
-    response_model=UnifiedTaskResponse,
     status_code=201,
     description="Create a content task (blog post, social media, email, etc.)",
 )
@@ -140,11 +152,15 @@ async def create_content_task(
         - task_type: Type of task created
         - polling_url: Endpoint to check progress
     """
+    print(f"[FUNC_START] create_content_task called")
     logger.info(
         f"🟢 POST /api/content/tasks called - Type: {request.task_type} - Topic: {request.topic}"
     )
+    logger.debug(f"[CREATE_TASK] Received request: {request}")
+    logger.debug(f"[CREATE_TASK] Database service: {db}")
 
     try:
+        logger.info("[ENTER_TRY] Entering create_content_task try block")
         # Validate topic
         if not request.topic or len(request.topic.strip()) < 3:
             raise ValidationError(
@@ -187,29 +203,16 @@ async def create_content_task(
                 )
             logger.debug(f"  ✅ Quality preference valid: {request.quality_preference}")
 
-        task_store = get_content_task_store(db)
-        logger.debug(f"  ✓ Got task store")
+        # ========================================================================
+        # GENERATE TASK ID & CALCULATE COSTS (without creating task yet)
+        # ========================================================================
+        from uuid import uuid4
+        
+        # Generate task_id - will be created in background task
+        task_id = str(uuid4())
+        logger.debug(f"  📝 Generated task ID: {task_id}")
 
-        # Create task
-        logger.debug(f"  📝 Creating task in store...")
-        task_id = await task_store.create_task(
-            topic=request.topic,
-            style=request.style.value,
-            tone=request.tone.value,
-            target_length=request.target_length,
-            tags=request.tags,
-            request_type="enhanced" if request.enhanced else "basic",
-            task_type=request.task_type,  # ✅ Store task type
-            metadata={
-                "generate_featured_image": request.generate_featured_image,
-            },
-        )
-        logger.info(f"  ✅ Task created: {task_id}")
-
-        # Update with additional fields stored in metadata
-        logger.debug(f"  📝 Updating task with additional fields...")
-
-        # Calculate estimated costs early (before update call)
+        # Calculate estimated costs early
         from services.cost_calculator import get_cost_calculator
 
         cost_calculator = get_cost_calculator()
@@ -232,65 +235,75 @@ async def create_content_task(
             # Extract models from the default selection
             models_used = cost_calculator._select_default_models(quality_pref)
 
-        # Include costs in the update
-        update_result = await task_store.update_task(
-            task_id,
-            {
-                # Store categories and environment settings in metadata JSON
-                "task_metadata": {
-                    "categories": request.categories or [],
-                    "publish_mode": request.publish_mode.value,
-                    "target_environment": request.target_environment,
-                    "llm_provider": request.llm_provider,  # Store LLM provider override
-                    "model": request.model,  # Store model override
-                    "cost_breakdown": cost_breakdown,
-                    "estimated_cost": estimated_cost,
-                    "models_used": models_used,
-                },
-                "estimated_cost": estimated_cost,
-                "cost_breakdown": cost_breakdown,
-                "model_selections": models_used,
-                "quality_preference": request.quality_preference or "balanced",
-            },
-        )
-        logger.debug(f"  ✅ Task updated: {update_result}")
+        logger.debug(f"  ✅ Estimated cost calculated: ${estimated_cost:.6f}")
 
         # ========================================================================
         # Start background content generation with complete pipeline
         # ========================================================================
         logger.debug(f"  ⏳ Starting background content generation task...")
-        background_tasks.add_task(
-            process_content_generation_task,
-            topic=request.topic,
-            style=request.style.value,
-            tone=request.tone.value,
-            target_length=request.target_length,
-            tags=request.tags,
-            generate_featured_image=request.generate_featured_image,
-            database_service=db,
-            task_id=task_id,
-            # NEW: Model selection parameters (Week 1 cost tracking)
-            models_by_phase=request.models_by_phase,
-            quality_preference=request.quality_preference,
-        )
-        logger.debug(f"  ✓ Background task queued with complete parameters")
+        
+        # Create async wrapper for background task
+        async def _run_content_generation():
+            try:
+                await process_content_generation_task(
+                    topic=request.topic,
+                    style=request.style.value,
+                    tone=request.tone.value,
+                    target_length=request.target_length,
+                    tags=request.tags,
+                    generate_featured_image=request.generate_featured_image,
+                    database_service=db,
+                    task_id=task_id,
+                    models_by_phase=request.models_by_phase,
+                    quality_preference=request.quality_preference,
+                )
+            except Exception as e:
+                logger.error(f"Background content generation failed: {e}", exc_info=True)
+                # Update task status to failed
+                try:
+                    await db.update_task(task_id=task_id, updates={"status": "failed", "error_message": str(e)})
+                except:
+                    pass
+        
+        import asyncio
+        
+        # Schedule as a background coroutine
+        asyncio.create_task(_run_content_generation())
+        logger.debug(f"  ✓ Background task scheduled with complete parameters")
 
         logger.info(
-            f"✅✅ CONTENT TASK CREATED: {task_id} - Type: {request.task_type} - Topic: {request.topic} - "
+            f"✅✅ CONTENT TASK QUEUED: {task_id} - Type: {request.task_type} - Topic: {request.topic} - "
             f"Image Search: {request.generate_featured_image} - Estimated cost: ${estimated_cost:.6f} - "
             f"Ready for polling at /api/content/tasks/{task_id}"
         )
 
-        return CreateBlogPostResponse(
+        now = datetime.now().isoformat()
+        logger.info(f"[RESPONSE_BUILD] Creating response with: task_id={task_id}, status=pending, topic={request.topic}, created_at={now}, updated_at={now}")
+        
+        response_obj = CreateBlogPostResponse(
             task_id=task_id,
             task_type=request.task_type,  # ✅ Include task type in response
             status="pending",
             topic=request.topic,
-            created_at=datetime.now().isoformat(),
+            created_at=now,
+            updated_at=now,  # ✅ REQUIRED: Last update timestamp
             polling_url=f"/api/content/tasks/{task_id}",
-            estimated_cost=round(estimated_cost, 6),
-            cost_breakdown=cost_breakdown,
-            models_used=models_used,
+            estimated_cost=round(estimated_cost, 6) if estimated_cost else 0.0,
+        )
+        logger.info(f"[RESPONSE_BUILD] response_obj created, type: {type(response_obj).__name__}, module: {type(response_obj).__module__}")
+        logger.info(f"[RESPONSE_BUILD] response_obj.updated_at = {response_obj.updated_at}")
+        
+        # Serialize to dict manually to ensure all fields are present
+        response_dict = response_obj.model_dump(exclude_none=True)
+        logger.info(f"[RESPONSE_BUILD] response_dict keys = {list(response_dict.keys())}")
+        logger.info(f"[RESPONSE_BUILD] response_dict has updated_at = {'updated_at' in response_dict}")
+        
+        # Return using JSONResponse to bypass FastAPI's response_model validation
+        # which might be causing issues
+        return JSONResponse(
+            status_code=201,
+            content=response_dict,
+            headers={"Content-Type": "application/json"}
         )
 
     except ValidationError as e:
@@ -298,6 +311,11 @@ async def create_content_task(
         raise e.to_http_exception()
     except Exception as e:
         logger.error(f"❌ Error creating content task: {e}", exc_info=True)
+        logger.error(f"❌ Exception type: {type(e).__name__}", exc_info=False)
+        logger.error(f"❌ Exception module: {type(e).__module__}", exc_info=False)
+        logger.error(f"❌ Exception args: {e.args}", exc_info=False)
+        import traceback
+        logger.error(f"❌ Full traceback: {traceback.format_exc()}", exc_info=False)
         error = handle_error(e)
         raise error.to_http_exception()
 

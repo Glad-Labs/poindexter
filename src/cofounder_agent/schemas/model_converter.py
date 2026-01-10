@@ -53,7 +53,7 @@ class ModelConverter:
                 data[key] = str(data[key])
 
         # Handle JSONB fields
-        json_fields = ["metadata", "task_metadata", "result", "progress", "context", "provider_data", "business_state", "suggestions"]
+        json_fields = ["metadata", "task_metadata", "result", "progress", "context", "provider_data", "business_state", "suggestions", "cost_breakdown"]
         for key in json_fields:
             if key in data and data[key] is not None:
                 if isinstance(data[key], str):

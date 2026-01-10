@@ -156,30 +156,6 @@ class CreateBlogPostRequest(BaseModel):
         }
 
 
-class CreateBlogPostResponse(BaseModel):
-    """Response from task creation"""
-
-    task_id: str
-    task_type: str
-    status: str
-    topic: str
-    created_at: str
-    polling_url: str
-
-    # Cost tracking (NEW - Week 1)
-    estimated_cost: Optional[float] = Field(
-        None,
-        description="Estimated total cost in USD for this task (based on models_by_phase or quality_preference)",
-    )
-    cost_breakdown: Optional[Dict[str, float]] = Field(
-        None,
-        description="Breakdown of estimated costs by phase: {research: 0.0, draft: 0.0015, ...}",
-    )
-    models_used: Optional[Dict[str, str]] = Field(
-        None, description="Models selected for each phase: {research: ollama, draft: gpt-4, ...}"
-    )
-
-
 class TaskStatusResponse(BaseModel):
     """Task status response"""
 

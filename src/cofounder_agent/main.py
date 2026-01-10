@@ -119,13 +119,21 @@ async def lifespan(app: FastAPI):
     startup_manager = StartupManager()
 
     try:
+        logger.info("=" * 80)
+        logger.info("[LIFESPAN] Starting application startup sequence...")
+        logger.info("=" * 80)
+        
         # Initialize all services
+        logger.info("[LIFESPAN] Calling startup_manager.initialize_all_services()...")
         services = await startup_manager.initialize_all_services()
+        logger.info("[LIFESPAN] ✅ All services initialized by startup_manager")
+        logger.debug(f"[LIFESPAN] Services dict keys: {services.keys()}")
 
         # Inject services into app state for access in routes
+        logger.info("[LIFESPAN] Injecting services into app.state...")
         app.state.database = services["database"]
         app.state.redis_cache = services["redis_cache"]
-        app.state.orchestrator = services["orchestrator"]
+        # app.state.orchestrator will be set to UnifiedOrchestrator below (removed legacy Orchestrator)
         app.state.task_executor = services["task_executor"]
         app.state.workflow_history = services["workflow_history"]
         app.state.training_data_service = services.get("training_data_service")
@@ -133,11 +141,16 @@ async def lifespan(app: FastAPI):
         app.state.legacy_data_service = services.get("legacy_data_service")
         app.state.startup_error = services["startup_error"]
         app.state.startup_complete = True
+        logger.debug("[LIFESPAN] ✅ All services injected into app.state")
 
         # Initialize new consolidated services
         db_service = services["database"]
+        logger.info(f"[LIFESPAN] db_service = {db_service}")
+        logger.debug(f"[LIFESPAN] db_service.pool = {db_service.pool}")
+        logger.debug(f"[LIFESPAN] db_service.tasks = {db_service.tasks}")
 
         # Initialize task store for content orchestrator
+        logger.info("[LIFESPAN] Initializing ContentTaskStore...")
         from services.content_router_service import get_content_task_store
 
         task_store = get_content_task_store(db_service)
@@ -145,6 +158,7 @@ async def lifespan(app: FastAPI):
         logger.info("✅ ContentTaskStore initialized")
 
         # Initialize quality service
+        logger.info("[LIFESPAN] Initializing UnifiedQualityService...")
         quality_service = UnifiedQualityService(
             model_router=getattr(app.state, "model_router", None),
             database_service=db_service,
@@ -153,6 +167,13 @@ async def lifespan(app: FastAPI):
         app.state.quality_service = quality_service
         logger.info("✅ UnifiedQualityService initialized")
 
+        # The UnifiedOrchestrator is created here with all dependencies properly initialized
+        # This ensures TaskExecutor can use it for content generation
+        logger.info("[LIFESPAN] Creating UnifiedOrchestrator with all dependencies...")
+        logger.debug(f"[LIFESPAN] UnifiedOrchestrator dependencies:")
+        logger.debug(f"  - database_service: {db_service}")
+        logger.debug(f"  - quality_service: {quality_service}")
+        
         # Initialize unified orchestrator with all available agents
         unified_orchestrator = UnifiedOrchestrator(
             database_service=db_service,
@@ -164,33 +185,49 @@ async def lifespan(app: FastAPI):
             compliance_agent=getattr(app.state, "compliance_agent", None),
         )
         app.state.unified_orchestrator = unified_orchestrator
-        # CRITICAL: Replace the basic orchestrator with the fully-initialized UnifiedOrchestrator
-        # This ensures TaskExecutor uses the proper orchestrator with content generation capabilities
+        # CRITICAL: Set as primary orchestrator for TaskExecutor to use
         app.state.orchestrator = unified_orchestrator
         logger.info("✅ UnifiedOrchestrator initialized and set as primary orchestrator")
+        logger.debug(f"[LIFESPAN] app.state.orchestrator = {app.state.orchestrator}")
 
-        # CRITICAL: Inject app.state into task_executor so it gets the updated orchestrator reference
-        # This ensures task_executor uses the UnifiedOrchestrator instead of the OLD Orchestrator
-        # from startup_manager initialization
+        # CRITICAL: Inject app.state into task_executor NOW (before it processes tasks)
+        # This ensures it has access to the properly-initialized UnifiedOrchestrator
+        logger.info("[LIFESPAN] Injecting app.state into TaskExecutor...")
         task_executor = services.get("task_executor")
         if task_executor:
+            logger.debug(f"[LIFESPAN] TaskExecutor before injection: app_state={getattr(task_executor, 'app_state', None)}")
             task_executor.app_state = app.state
-            logger.info("✅ TaskExecutor injected with app.state reference (will use UnifiedOrchestrator)")
+            logger.debug(f"[LIFESPAN] TaskExecutor after injection: app_state={task_executor.app_state}")
+            logger.debug(f"[LIFESPAN] TaskExecutor.orchestrator property check: {task_executor.orchestrator is not None}")
+            logger.info("✅ TaskExecutor app.state reference updated with UnifiedOrchestrator")
+            logger.info(f"   TaskExecutor can now access orchestrator: {task_executor.orchestrator is not None}")
+            
+            # NOW start the task executor (after UnifiedOrchestrator is initialized)
+            logger.info("[LIFESPAN] Starting TaskExecutor background processing loop...")
+            await task_executor.start()
+            logger.info("✅ TaskExecutor started successfully with UnifiedOrchestrator")
+        else:
+            logger.warning("⚠️ TaskExecutor not found in services")
 
         # Store db_service with alternative name for dependency injection
         app.state.db_service = db_service
+        logger.debug(f"[LIFESPAN] app.state.db_service = {app.state.db_service}")
 
         # Initialize ServiceContainer for Phase 2 utilities
         # Provides 3 access patterns: get_services(), Depends(), Request.state
+        # Note: orchestrator will be UnifiedOrchestrator, set below before TaskExecutor starts
+        logger.info("[LIFESPAN] Initializing ServiceContainer...")
         initialize_services(
             app,
             database_service=services["database"],
-            orchestrator=services["orchestrator"],
+            orchestrator=None,  # Will be set to UnifiedOrchestrator below
             task_executor=services["task_executor"],
             workflow_history=services["workflow_history"],
         )
+        logger.debug("[LIFESPAN] ✅ ServiceContainer initialized")
 
         # Register routes with initialized services
+        logger.info("[LIFESPAN] Registering routes...")
         register_all_routes(
             app,
             database_service=services["database"],

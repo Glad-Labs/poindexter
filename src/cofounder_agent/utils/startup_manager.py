@@ -95,7 +95,9 @@ class StartupManager:
             try:
                 await self._warmup_sdxl_models()
             except Exception as e:
-                logger.warning(f"⚠️  SDXL warmup failed (non-critical): {e}")
+                import traceback
+                logger.warning(f"⚠️  SDXL warmup failed (non-critical): {type(e).__name__}: {e}")
+                logger.debug(f"    Traceback: {traceback.format_exc()}")
                 # Continue anyway - SDXL will load lazily when first used
 
             logger.info(" Application started successfully!")
@@ -104,7 +106,6 @@ class StartupManager:
             return {
                 "database": self.database_service,
                 "redis_cache": self.redis_cache,
-                "orchestrator": self.orchestrator,
                 "task_executor": self.task_executor,
                 "workflow_history": self.workflow_history_service,
                 "training_data_service": self.training_data_service,
@@ -130,9 +131,21 @@ class StartupManager:
         try:
             from services.database_service import DatabaseService
 
+            logger.debug("  [DEBUG] Creating DatabaseService instance...")
             self.database_service = DatabaseService()
+            logger.debug(f"  [DEBUG] DatabaseService created: {self.database_service}")
+            logger.debug(f"  [DEBUG] Before initialize(): pool={self.database_service.pool}, tasks={self.database_service.tasks}")
+            
+            logger.debug("  [DEBUG] Calling await self.database_service.initialize()...")
             await self.database_service.initialize()
+            logger.debug(f"  [DEBUG] After initialize(): pool={self.database_service.pool is not None}, tasks={self.database_service.tasks is not None}")
+            logger.debug(f"  [DEBUG] After initialize(): users={self.database_service.users is not None}, content={self.database_service.content is not None}")
+            
             logger.info("   PostgreSQL connected - ready for operations")
+            logger.info(f"     Pool initialized: {self.database_service.pool is not None}")
+            logger.info(f"     Tasks DB initialized: {self.database_service.tasks is not None}")
+            logger.info(f"     Users DB initialized: {self.database_service.users is not None}")
+            logger.info(f"     Content DB initialized: {self.database_service.content is not None}")
         except Exception as e:
             startup_error = f"FATAL: PostgreSQL connection failed: {str(e)}"
             logger.error(f"  {startup_error}", exc_info=True)
@@ -199,25 +212,16 @@ class StartupManager:
             # Don't fail startup - models are optional
 
     async def _initialize_orchestrator(self) -> None:
-        """Initialize the main orchestrator (placeholder - will be replaced by UnifiedOrchestrator in main.py lifespan)"""
-        api_base_url = os.getenv("API_BASE_URL", "http://localhost:8000")
-        logger.info(f"  🤖 Initializing orchestrator (API: {api_base_url})...")
-
-        try:
-            # Initialize with OLD Orchestrator as a temporary placeholder
-            # This will be REPLACED by UnifiedOrchestrator in main.py lifespan
-            # (which has all dependencies properly initialized)
-            from orchestrator_logic import Orchestrator
-
-            self.orchestrator = Orchestrator(
-                database_service=self.database_service,
-                api_base_url=api_base_url
-            )
-            logger.info("   Orchestrator initialized successfully (placeholder - will be upgraded to UnifiedOrchestrator)")
-        except Exception as e:
-            error_msg = f"Orchestrator initialization failed: {str(e)}"
-            logger.error(f"   {error_msg}", exc_info=True)
-            self.startup_error = error_msg
+        """Orchestrator initialization - SKIPPED
+        
+        The orchestrator is now created in main.py lifespan as UnifiedOrchestrator
+        after all dependencies are properly initialized.
+        
+        This method is kept for backward compatibility but does nothing.
+        """
+        logger.info("  🤖 Orchestrator initialization (deferred to main.py lifespan)...")
+        logger.info("     UnifiedOrchestrator will be created with all dependencies ready")
+        # self.orchestrator stays None - will be set in main.py lifespan
 
     async def _initialize_workflow_history(self) -> None:
         """Initialize workflow history service (Phase 6)"""
@@ -253,25 +257,40 @@ class StartupManager:
             logger.warning(f"   Content critique loop initialization failed: {e}")
 
     async def _initialize_task_executor(self) -> None:
-        """Initialize background task executor"""
-        logger.info("  ⏳ Starting background task executor...")
+        """Initialize background task executor (WITHOUT starting it yet)
+        
+        IMPORTANT: We create the TaskExecutor but do NOT call .start() here.
+        The executor will be started from main.py AFTER UnifiedOrchestrator is initialized.
+        This prevents the executor from processing tasks with the legacy Orchestrator.
+        """
+        logger.info("  ⏳ Initializing background task executor (start deferred)...")
         try:
             from services.task_executor import TaskExecutor
             from services.content_critique_loop import ContentCritiqueLoop
 
+            logger.debug(f"  [DEBUG] TaskExecutor init: database_service={self.database_service}")
+            logger.debug(f"  [DEBUG] TaskExecutor init: database_service.tasks={self.database_service.tasks}")
+            logger.debug(f"  [DEBUG] TaskExecutor init: orchestrator={self.orchestrator}")
+            
             critique_loop = ContentCritiqueLoop()
+            logger.debug(f"  [DEBUG] ContentCritiqueLoop created: {critique_loop}")
 
+            logger.debug("  [DEBUG] Creating TaskExecutor instance...")
+            # Pass None for orchestrator - it will be injected from main.py lifespan
             self.task_executor = TaskExecutor(
                 database_service=self.database_service,
-                orchestrator=self.orchestrator,
+                orchestrator=None,  # Will be injected in main.py AFTER UnifiedOrchestrator is created
                 critique_loop=critique_loop,
                 poll_interval=5,  # Poll every 5 seconds
             )
-            await self.task_executor.start()
-            logger.info("   Background task executor started successfully")
-            logger.info(f"     🔗 Pipeline: Orchestrator->Critique->Publishing")
+            logger.debug(f"  [DEBUG] TaskExecutor created: {self.task_executor}")
+            logger.debug(f"  [DEBUG] TaskExecutor.database_service: {self.task_executor.database_service}")
+            logger.debug(f"  [DEBUG] TaskExecutor.orchestrator (initial): None (will be injected later)")
+            
+            logger.info("   Background task executor initialized (not started yet)")
+            logger.info(f"     ⏸️  Will be fully configured and started after UnifiedOrchestrator is injected in main.py")
         except Exception as e:
-            error_msg = f"Task executor startup failed: {str(e)}"
+            error_msg = f"Task executor initialization failed: {str(e)}"
             logger.error(f"   {error_msg}", exc_info=True)
             # Don't fail startup - task processing is optional
             self.task_executor = None
@@ -337,8 +356,15 @@ class StartupManager:
 
     async def _warmup_sdxl_models(self) -> None:
         """Warmup SDXL models to avoid timeout on first request"""
-        import torch
         import os
+        
+        # Check if torch is even available (optional dependency for SDXL)
+        try:
+            import torch
+        except ModuleNotFoundError:
+            logger.info("  SDXL warmup: torch not installed - SDXL disabled")
+            logger.info("     To enable SDXL: pip install -r scripts/requirements-ml.txt")
+            return
         
         # Check if GPU is available first
         if not torch.cuda.is_available():
@@ -387,7 +413,9 @@ class StartupManager:
                     pass
                     
         except Exception as e:
-            logger.warning(f"  ⚠️ SDXL warmup error (non-critical): {e}")
+            import traceback
+            logger.warning(f"  ⚠️ SDXL warmup error (non-critical): {type(e).__name__}: {e}")
+            logger.warning(f"     Full traceback:\n{traceback.format_exc()}")
             logger.info("     SDXL will initialize on first request")
 
     def _log_startup_summary(self) -> None:

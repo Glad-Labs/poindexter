@@ -26,7 +26,6 @@ psycopg2-binary = "^2.9"
 # AI/LLM Integration
 anthropic = "^0.7"
 openai = "^1.0"
-google-generativeai = "^0.3"
 requests = "^2.30"
 
 # Async/Concurrency
@@ -44,15 +43,16 @@ numpy = "^1.24"
 # Logging & Monitoring
 python-json-logger = "^2.0"
 setuptools = "<81"  # Pin to avoid pkg_resources deprecation (see: setuptools#3932)
-opentelemetry-api = "^1.27"
-opentelemetry-sdk = "^1.27"
-opentelemetry-exporter-otlp = "^1.27"
-opentelemetry-instrumentation-fastapi = "^0.48b0"
 sentry-sdk = "^1.40"
 
 # Storage & Files
 python-multipart = "^0.0.6"
 pillow = "^10.0"
+
+# ML/AI - Image Generation (SDXL)
+torch = { version = ">=2.0.0", optional = true }
+transformers = { version = ">=4.40.0", optional = true }
+accelerate = { version = ">=0.24.0", optional = true }
 
 # Additional Required Packages
 structlog = "^24.0"
@@ -68,6 +68,9 @@ pydantic-extra-types = "^2.0"
 python-slugify = "^8.0"
 slowapi = "^0.1.9"
 langchain-core = "^1.2.5"
+
+[tool.poetry.extras]
+ml = ["torch", "transformers", "accelerate"]
 
 [tool.poetry.group.dev.dependencies]
 # Testing

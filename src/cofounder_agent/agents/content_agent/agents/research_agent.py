@@ -23,7 +23,13 @@ class ResearchAgent:
         if not config.SERPER_API_KEY:
             raise ValueError("SERPER_API_KEY is not set in the environment.")
         self.serper_api_key = config.SERPER_API_KEY
-        self.tools = CrewAIToolsFactory.get_research_agent_tools()
+        try:
+            self.tools = CrewAIToolsFactory.get_research_agent_tools()
+            logging.info("ResearchAgent: Initialized with all research agent tools")
+        except Exception as e:
+            logging.warning(f"ResearchAgent: Failed to initialize tools: {e}")
+            logging.warning("ResearchAgent will continue without some tools")
+            self.tools = []
 
     async def run(self, topic: str, keywords: list[str]) -> str:
         """

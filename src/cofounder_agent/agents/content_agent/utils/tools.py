@@ -1,13 +1,25 @@
 import os
 import logging
 from typing import Optional
-from crewai_tools import (
-    SerperDevTool,
-    WebsiteSearchTool,
-    FileReadTool,
-    DirectoryReadTool,
-    CodeInterpreterTool,
-)
+
+# Try to import crewai_tools, fall back to mock if not available
+try:
+    from crewai_tools import (
+        SerperDevTool,
+        WebsiteSearchTool,
+        FileReadTool,
+        DirectoryReadTool,
+        CodeInterpreterTool,
+    )
+except ImportError:
+    logging.warning("crewai_tools not available, using mock implementations")
+    from .crewai_tools_mock import (
+        SerperDevTool,
+        WebsiteSearchTool,
+        FileReadTool,
+        DirectoryReadTool,
+        CodeInterpreterTool,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -34,12 +46,20 @@ class CompetitorContentSearchTool(WebsiteSearchTool):
     Uses semantic search to find relevant information within web pages.
     
     **Use Cases:** Competitor analysis, content benchmarking, market positioning
-    **No API Required:** Uses local processing
+    **Note:** Requires CHROMA_OPENAI_API_KEY environment variable to be set
     """
 
     def __init__(self):
-        super().__init__()
-        logger.info("CompetitorContentSearchTool initialized")
+        try:
+            super().__init__()
+            logger.info("CompetitorContentSearchTool initialized successfully")
+        except Exception as e:
+            # Handle missing CHROMA_OPENAI_API_KEY or other initialization errors gracefully
+            logger.warning(f"CompetitorContentSearchTool initialization failed: {str(e)[:200]}")
+            logger.warning("Competitor content search will be unavailable - continuing without this tool")
+            # Store the error for later reference, but don't raise
+            self._initialization_error = str(e)
+            self._is_available = False
 
 
 class DocumentAccessTool(FileReadTool):

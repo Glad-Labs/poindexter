@@ -361,8 +361,13 @@ async def process_content_generation_task(
 
     try:
         # Initialize unified services
+        logger.info(f"[BG-TASK] Starting content generation for task {task_id[:8]}...")
+        logger.debug(f"[BG-TASK] database_service = {database_service}")
+        logger.debug(f"[BG-TASK] database_service.tasks = {database_service.tasks if database_service else None}")
+        
         image_service = get_image_service()
-        quality_service = get_content_quality_service(database_service=database_service)
+        quality_service = UnifiedQualityService(database_service=database_service)
+        logger.debug(f"[BG-TASK] Services initialized: image_service={image_service}, quality_service={quality_service}")
 
         # ================================================================================
         # STAGE 1: CREATE CONTENT_TASK RECORD
@@ -370,6 +375,7 @@ async def process_content_generation_task(
         logger.info("📋 STAGE 1: Creating content_task record...")
 
         # Use consolidated add_task() method
+        logger.debug(f"[BG-TASK] Calling database_service.add_task()...")
         task_id_created = await database_service.add_task(
             {
                 "task_id": task_id,
@@ -438,13 +444,13 @@ async def process_content_generation_task(
         result["quality_score"] = quality_result.overall_score
         result["quality_passing"] = quality_result.passing
         result["quality_details_initial"] = {
-            "clarity": quality_result.clarity,
-            "accuracy": quality_result.accuracy,
-            "completeness": quality_result.completeness,
-            "relevance": quality_result.relevance,
-            "seo_quality": quality_result.seo_quality,
-            "readability": quality_result.readability,
-            "engagement": quality_result.engagement,
+            "clarity": quality_result.dimensions.clarity,
+            "accuracy": quality_result.dimensions.accuracy,
+            "completeness": quality_result.dimensions.completeness,
+            "relevance": quality_result.dimensions.relevance,
+            "seo_quality": quality_result.dimensions.seo_quality,
+            "readability": quality_result.dimensions.readability,
+            "engagement": quality_result.dimensions.engagement,
         }
         result["stages"]["2b_quality_evaluated_initial"] = True
         logger.info(f"✅ Initial quality evaluation complete:")
@@ -567,10 +573,10 @@ async def process_content_generation_task(
             }
         )
 
-        result["post_id"] = str(post["id"])
-        result["post_slug"] = post["slug"]
+        result["post_id"] = str(post.id)
+        result["post_slug"] = post.slug
         result["stages"]["5_post_created"] = True
-        logger.info(f"✅ Post created: {post['id']}")
+        logger.info(f"✅ Post created: {post.id}")
         logger.info(f"   Title: {topic}")
         logger.info(f"   Slug: {slug}")
         logger.info(f"   Author: {author_id}")
@@ -587,13 +593,13 @@ async def process_content_generation_task(
                 "content_id": task_id,
                 "task_id": task_id,
                 "overall_score": quality_result.overall_score,
-                "clarity": quality_result.clarity,
-                "accuracy": quality_result.accuracy,
-                "completeness": quality_result.completeness,
-                "relevance": quality_result.relevance,
-                "seo_quality": quality_result.seo_quality,
-                "readability": quality_result.readability,
-                "engagement": quality_result.engagement,
+                "clarity": quality_result.dimensions.clarity,
+                "accuracy": quality_result.dimensions.accuracy,
+                "completeness": quality_result.dimensions.completeness,
+                "relevance": quality_result.dimensions.relevance,
+                "seo_quality": quality_result.dimensions.seo_quality,
+                "readability": quality_result.dimensions.readability,
+                "engagement": quality_result.dimensions.engagement,
                 "passing": quality_result.passing,
                 "feedback": quality_result.feedback,
                 "suggestions": quality_result.suggestions,
@@ -671,15 +677,18 @@ async def process_content_generation_task(
         return result
 
     except Exception as e:
-        logger.error(f"❌ Pipeline error: {e}", exc_info=True)
+        logger.error(f"❌ [BG-TASK] Pipeline error for task {task_id[:8]}...: {e}", exc_info=True)
+        logger.error(f"[BG-TASK] Detailed traceback:", exc_info=True)
 
         # Update content_task with failure status
         try:
+            logger.debug(f"[BG-TASK] Attempting to update task status to 'failed'...")
             await database_service.update_task(
                 task_id=task_id, updates={"status": "failed", "approval_status": "failed"}
             )
+            logger.debug(f"[BG-TASK] ✅ Task status updated to 'failed'")
         except Exception as db_error:
-            logger.error(f"❌ Failed to update task status: {db_error}")
+            logger.error(f"❌ [BG-TASK] Failed to update task status: {db_error}", exc_info=True)
 
         result["status"] = "failed"
         result["error"] = str(e)

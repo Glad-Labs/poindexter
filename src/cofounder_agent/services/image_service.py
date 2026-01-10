@@ -50,7 +50,7 @@ try:
     from diffusers import StableDiffusionXLPipeline
 
     DIFFUSERS_AVAILABLE = True
-except ImportError as e:
+except (ImportError, RuntimeError) as e:
     DIFFUSERS_AVAILABLE = False
     StableDiffusionXLPipeline = None
     logging.warning(f"Diffusers library not available: {e}")

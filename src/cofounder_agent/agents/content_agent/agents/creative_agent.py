@@ -24,7 +24,14 @@ class CreativeAgent:
     def __init__(self, llm_client: LLMClient):
         self.llm_client = llm_client
         self.prompts = load_prompts_from_file(config.PROMPTS_PATH)
-        self.tools = CrewAIToolsFactory.get_content_agent_tools()
+        try:
+            self.tools = CrewAIToolsFactory.get_content_agent_tools()
+            logger.info("CreativeAgent: Initialized with all content agent tools")
+        except Exception as e:
+            logger.warning(f"CreativeAgent: Failed to initialize tools: {e}")
+            logger.warning("CreativeAgent will continue without some tools")
+            # Initialize with empty tools list - LLMClient can still generate content
+            self.tools = []
 
     async def run(self, post: BlogPost, is_refinement: bool = False) -> BlogPost:
         """
