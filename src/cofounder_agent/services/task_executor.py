@@ -246,12 +246,28 @@ class TaskExecutor:
             )
             logger.info(f"💾 [TASK_SINGLE] Updating task status to '{final_status}'...")
             
+            # Extract relevant fields from result for task_metadata (don't store entire result)
+            # This prevents the entire result dict from being treated as metadata
+            task_metadata_updates = {}
+            if isinstance(result, dict):
+                # Extract only the fields we want in task_metadata
+                fields_to_extract = [
+                    "content", "excerpt", "title", "featured_image_url", "featured_image_data",
+                    "seo_title", "seo_description", "seo_keywords", "qa_feedback", "quality_score",
+                    "orchestrator_error", "message", "constraint_compliance", "stage", "percentage"
+                ]
+                for field in fields_to_extract:
+                    if field in result:
+                        task_metadata_updates[field] = result[field]
+            else:
+                task_metadata_updates["output"] = str(result)
+            
             # Use update_task to ensure normalization of content into columns
             await self.database_service.update_task(
                 task_id,
                 {
                     "status": final_status,
-                    "task_metadata": result if isinstance(result, dict) else {"output": str(result)}
+                    "task_metadata": task_metadata_updates
                 }
             )
 

@@ -613,6 +613,32 @@ async def approve_and_publish_task(
                     "Task content is empty", field="content", constraint="required"
                 )
 
+            # ✅ CRITICAL: Validate content is a string, not a dict (prevent data corruption)
+            if isinstance(content, dict):
+                logger.error(
+                    f"❌ Task {task_id} content is a dict instead of string - this indicates data corruption"
+                )
+                logger.error(f"   Content type: {type(content)}, Content keys: {list(content.keys())[:5]}")
+                # Try to extract content field from the dict if it exists
+                if "content" in content:
+                    logger.warning(f"   Attempting recovery: extracting 'content' field from dict")
+                    content = content.get("content", "")
+                else:
+                    raise ValidationError(
+                        "Task content is corrupted (dict instead of string)",
+                        field="content",
+                        constraint="data_type_mismatch"
+                    )
+            
+            # Ensure content is a string
+            if not isinstance(content, str):
+                logger.error(f"❌ Task {task_id} content is not a string: {type(content)}")
+                raise ValidationError(
+                    f"Task content must be a string, got {type(content).__name__}",
+                    field="content",
+                    constraint="data_type_mismatch"
+                )
+
             logger.debug(f"✅ Found content from {content_location} ({len(content)} chars)")
 
             # ✅ Update task with approval metadata
