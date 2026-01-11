@@ -21,6 +21,8 @@ from utils.error_responses import ErrorResponseBuilder
 from schemas.bulk_task_schemas import (
     BulkTaskRequest,
     BulkTaskResponse,
+    BulkCreateTasksRequest,
+    BulkCreateTasksResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -155,3 +157,75 @@ async def bulk_task_operations(
         total=len(request.task_ids),
         errors=errors if errors else None,
     )
+
+
+@router.post(
+    "/bulk/create", response_model=BulkCreateTasksResponse, summary="Create multiple tasks in bulk"
+)
+async def bulk_create_tasks(
+    request: BulkCreateTasksRequest,
+    current_user: dict = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
+):
+    """
+    Create multiple tasks at once.
+
+    **Fields:**
+    - `task_name`: Name of the task
+    - `topic`: Topic or subject matter
+    - `primary_keyword`: Primary keyword for SEO
+    - `target_audience`: Target audience for content
+    - `category`: Category of task
+    - `priority`: Priority level (high, medium, low)
+
+    **Authentication:** Required (JWT token)
+
+    **Returns:** List of created tasks with their IDs
+    """
+    try:
+        created_tasks = []
+        errors = []
+        
+        for i, task in enumerate(request.tasks):
+            try:
+                # Create task in database
+                result = await db_service.create_task(
+                    title=task.task_name,
+                    description=task.description or task.topic,
+                    status="pending",
+                    priority=task.priority,
+                    metadata={
+                        "topic": task.topic,
+                        "primary_keyword": task.primary_keyword,
+                        "target_audience": task.target_audience,
+                        "category": task.category,
+                    },
+                    created_by=current_user.get("user_id") if current_user else "system"
+                )
+                
+                created_tasks.append({
+                    "id": str(result.get("id")) if isinstance(result, dict) else str(result),
+                    "name": task.task_name,
+                    "status": "pending"
+                })
+            except Exception as e:
+                logger.error(f"Error creating task {i+1}: {str(e)}")
+                errors.append({
+                    "index": i,
+                    "task_name": task.task_name,
+                    "error": str(e)
+                })
+        
+        return BulkCreateTasksResponse(
+            created=len(created_tasks),
+            failed=len(errors),
+            total=len(request.tasks),
+            tasks=created_tasks if created_tasks else None,
+            errors=errors if errors else None,
+        )
+    except Exception as e:
+        logger.error(f"Bulk create error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Bulk create failed: {str(e)}"
+        )

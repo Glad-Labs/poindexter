@@ -84,7 +84,7 @@ def sample_task_response() -> Dict[str, Any]:
 class TestBasicTaskCreation:
     """Test basic task creation workflows"""
 
-    def test_create_task_with_all_fields(self, sample_task_data):
+    def test_create_task_with_all_fields(self, client, sample_task_data):
         """Should create task with all valid fields"""
         response = client.post("/api/tasks", json=sample_task_data)
         assert response.status_code == 201
@@ -94,7 +94,7 @@ class TestBasicTaskCreation:
         assert data["status"] == "pending"
         assert "id" in data
 
-    def test_create_task_with_minimal_fields(self):
+    def test_create_task_with_minimal_fields(self, client):
         """Should create task with only required fields"""
         task_data = {"task_name": "Minimal Task", "topic": "Test Topic"}
         response = client.post("/api/tasks", json=task_data)
@@ -103,7 +103,7 @@ class TestBasicTaskCreation:
         assert data["task_name"] == "Minimal Task"
         assert data["topic"] == "Test Topic"
 
-    def test_list_tasks_with_pagination(self):
+    def test_list_tasks_with_pagination(self, client):
         """Should list tasks with skip and limit parameters"""
         response = client.get("/api/tasks?skip=0&limit=10")
         assert response.status_code == 200
@@ -112,7 +112,7 @@ class TestBasicTaskCreation:
         assert "meta" in data
         assert "pagination" in data["meta"]
 
-    def test_get_task_by_id(self, sample_task_response):
+    def test_get_task_by_id(self, client, sample_task_response):
         """Should retrieve specific task by ID"""
         task_id = sample_task_response["id"]
         response = client.get(f"/api/tasks/{task_id}")
@@ -127,7 +127,7 @@ class TestBasicTaskCreation:
 class TestEdgeCases:
     """Test edge cases and boundary conditions"""
 
-    def test_task_with_unicode_characters(self):
+    def test_task_with_unicode_characters(self, client):
         """Should handle unicode in task data"""
         task_data = {
             "task_name": "测试任务 🚀 Test Task",
@@ -136,13 +136,13 @@ class TestEdgeCases:
         response = client.post("/api/tasks", json=task_data)
         assert response.status_code == 201
 
-    def test_task_with_very_long_strings(self):
+    def test_task_with_very_long_strings(self, client):
         """Should handle maximum length strings"""
         task_data = {"task_name": "a" * 200, "topic": "b" * 200}  # Max 200 chars
         response = client.post("/api/tasks", json=task_data)
         assert response.status_code == 201
 
-    def test_task_with_special_characters_in_metadata(self):
+    def test_task_with_special_characters_in_metadata(self, client):
         """Should handle special chars in metadata"""
         task_data = {
             "task_name": "Test Task",
@@ -158,7 +158,7 @@ class TestEdgeCases:
         data = response.json()
         assert data["metadata"]["special"] == "!@#$%^&*()"
 
-    def test_task_with_null_optional_fields(self):
+    def test_task_with_null_optional_fields(self, client):
         """Should handle null values in optional fields"""
         task_data = {
             "task_name": "Test",
@@ -170,13 +170,13 @@ class TestEdgeCases:
         response = client.post("/api/tasks", json=task_data)
         assert response.status_code == 201
 
-    def test_task_with_empty_strings(self):
+    def test_task_with_empty_strings(self, client):
         """Should reject empty required fields"""
         task_data = {"task_name": "", "topic": "Topic"}
         response = client.post("/api/tasks", json=task_data)
         assert response.status_code == 422  # Validation error
 
-    def test_task_with_missing_required_fields(self):
+    def test_task_with_missing_required_fields(self, client):
         """Should reject missing required fields"""
         task_data = {
             "task_name": "Test Task"
@@ -185,7 +185,7 @@ class TestEdgeCases:
         response = client.post("/api/tasks", json=task_data)
         assert response.status_code == 422
 
-    def test_task_with_invalid_status(self):
+    def test_task_with_invalid_status(self, client):
         """Should reject invalid status values"""
         invalid_statuses = ["in-progress", "complete", "unknown", "PENDING"]
         for status in invalid_statuses:
@@ -193,7 +193,7 @@ class TestEdgeCases:
             response = client.patch("/api/tasks/test-id", json=update_data)
             assert response.status_code in [422, 404]  # 404 if task doesn't exist
 
-    def test_list_posts_with_extreme_pagination(self):
+    def test_list_posts_with_extreme_pagination(self, client):
         """Should handle extreme pagination parameters"""
         # Very high skip
         response = client.get("/api/posts?skip=999999&limit=10")
@@ -216,7 +216,7 @@ class TestEdgeCases:
 class TestContentPipeline:
     """Test complete content generation workflow"""
 
-    def test_task_to_post_workflow(self):
+    def test_task_to_post_workflow(self, client):
         """Test full workflow: create task → generate content → create post"""
         # Step 1: Create task
         task_data = {
@@ -247,14 +247,14 @@ class TestContentPipeline:
         update_response = client.patch(f"/api/tasks/{task_id}", json=completion_data)
         assert update_response.status_code in [200, 404]
 
-    def test_concurrent_task_execution(self):
+    def test_concurrent_task_execution(self, client):
         """Test creating multiple tasks concurrently"""
         tasks = [{"task_name": f"Task {i}", "topic": f"Topic {i}"} for i in range(5)]
 
         responses = [client.post("/api/tasks", json=task) for task in tasks]
         assert all(r.status_code == 201 for r in responses)
 
-    def test_task_status_transitions(self):
+    def test_task_status_transitions(self, client):
         """Test valid status transitions"""
         # Create task
         task_data = {"task_name": "Test", "topic": "Test"}
@@ -269,7 +269,7 @@ class TestContentPipeline:
         r = client.patch(f"/api/tasks/{task_id}", json={"status": "completed"})
         assert r.status_code in [200, 404]
 
-    def test_invalid_status_transitions(self):
+    def test_invalid_status_transitions(self, client):
         """Test invalid status transitions are rejected"""
         task_data = {"task_name": "Test", "topic": "Test"}
         response = client.post("/api/tasks", json=task_data)
@@ -290,7 +290,7 @@ class TestContentPipeline:
 class TestPostCreation:
     """Test blog post creation and management"""
 
-    def test_create_post_with_all_fields(self):
+    def test_create_post_with_all_fields(self, client):
         """Should create post with all fields"""
         post_data = {
             "title": "Test Post",
@@ -305,20 +305,20 @@ class TestPostCreation:
         response = client.post("/api/posts", json=post_data)
         assert response.status_code in [201, 200]
 
-    def test_create_post_with_minimal_fields(self):
+    def test_create_post_with_minimal_fields(self, client):
         """Should create post with only required fields"""
         post_data = {"title": "Minimal Post", "content": "Content"}
         response = client.post("/api/posts", json=post_data)
         assert response.status_code in [201, 200]
 
-    def test_post_slug_auto_generation(self):
+    def test_post_slug_auto_generation(self, client):
         """Should auto-generate slug if not provided"""
         post_data = {"title": "Post Without Slug", "content": "Content"}
         response = client.post("/api/posts", json=post_data)
         assert response.status_code in [201, 200]
         # Slug should be auto-generated from title
 
-    def test_list_posts_filtering(self):
+    def test_list_posts_filtering(self, client):
         """Should filter posts by status"""
         # Published posts only
         response = client.get("/api/posts?published_only=true")
@@ -328,19 +328,19 @@ class TestPostCreation:
         response = client.get("/api/posts?published_only=false")
         assert response.status_code == 200
 
-    def test_get_post_by_id(self):
+    def test_get_post_by_id(self, client):
         """Should retrieve post by ID"""
         # This will return 404 if post doesn't exist, which is fine for edge case test
         response = client.get("/api/posts/test-id")
         assert response.status_code in [200, 404]
 
-    def test_update_post(self):
+    def test_update_post(self, client):
         """Should update existing post"""
         post_data = {"title": "Updated Title", "content": "Updated content"}
         response = client.patch("/api/posts/test-id", json=post_data)
         assert response.status_code in [200, 404]
 
-    def test_delete_post(self):
+    def test_delete_post(self, client):
         """Should delete post"""
         response = client.delete("/api/posts/test-id")
         assert response.status_code in [200, 204, 404]
@@ -354,7 +354,7 @@ class TestPostCreation:
 class TestErrorHandling:
     """Test error handling and recovery"""
 
-    def test_malformed_json_request(self):
+    def test_malformed_json_request(self, client):
         """Should reject malformed JSON"""
         # This is handled by FastAPI's JSON parsing
         response = client.post(
@@ -362,19 +362,19 @@ class TestErrorHandling:
         )
         assert response.status_code in [422, 400]
 
-    def test_invalid_content_type(self):
+    def test_invalid_content_type(self, client):
         """Should handle invalid content type"""
         response = client.post("/api/tasks", data="test", headers={"Content-Type": "text/plain"})
         assert response.status_code in [415, 422]
 
-    def test_database_connection_error(self):
+    def test_database_connection_error(self, client):
         """Should handle database errors gracefully"""
         # Try to get a task (will fail if DB not connected, but should not crash)
         response = client.get("/api/tasks/invalid-id")
         # Should return 404 or 500, not crash
         assert response.status_code in [404, 500]
 
-    def test_timeout_handling(self):
+    def test_timeout_handling(self, client):
         """Should handle timeout errors"""
         # This would need a mock that times out
         # Actual test would depend on implementation
@@ -389,20 +389,20 @@ class TestErrorHandling:
 class TestPerformance:
     """Test performance under various conditions"""
 
-    def test_list_large_result_set(self):
+    def test_list_large_result_set(self, client):
         """Should handle listing large result sets efficiently"""
         response = client.get("/api/tasks?skip=0&limit=100")
         assert response.status_code == 200
         # Response should complete in reasonable time
 
-    def test_create_many_tasks(self):
+    def test_create_many_tasks(self, client):
         """Should handle creating many tasks"""
         for i in range(10):
             task_data = {"task_name": f"Perf Test Task {i}", "topic": f"Perf Test Topic {i}"}
             response = client.post("/api/tasks", json=task_data)
             assert response.status_code == 201
 
-    def test_concurrent_api_calls(self):
+    def test_concurrent_api_calls(self, client):
         """Should handle concurrent requests"""
         import concurrent.futures
 
@@ -423,7 +423,7 @@ class TestPerformance:
 class TestSystemHealth:
     """Test system health and status endpoints"""
 
-    def test_health_check_endpoint(self):
+    def test_health_check_endpoint(self, client):
         """Should return health status"""
         response = client.get("/api/health")
         assert response.status_code == 200
@@ -431,14 +431,14 @@ class TestSystemHealth:
         assert "status" in data
         assert data["status"] in ["healthy", "degraded", "unhealthy"]
 
-    def test_metrics_endpoint(self):
+    def test_metrics_endpoint(self, client):
         """Should return system metrics"""
         response = client.get("/api/metrics")
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, dict)
 
-    def test_root_endpoint(self):
+    def test_root_endpoint(self, client):
         """Should return API info at root"""
         response = client.get("/")
         assert response.status_code == 200
@@ -452,7 +452,7 @@ class TestSystemHealth:
 class TestIntegration:
     """Test integration between components"""
 
-    def test_task_and_post_creation_flow(self):
+    def test_task_and_post_creation_flow(self, client):
         """Test creating task and associated post"""
         # Create task
         task_data = {"task_name": "Integration Test", "topic": "Test Topic"}
@@ -469,7 +469,7 @@ class TestIntegration:
         post_resp = client.post("/api/posts", json=post_data)
         assert post_resp.status_code in [201, 200]
 
-    def test_list_tasks_and_posts_together(self):
+    def test_list_tasks_and_posts_together(self, client):
         """Test listing both tasks and posts"""
         tasks = client.get("/api/tasks")
         posts = client.get("/api/posts")

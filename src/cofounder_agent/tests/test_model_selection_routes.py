@@ -16,34 +16,8 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 
-@pytest.fixture(scope="session")
-def test_app():
-    """Create test app with routes registered"""
-    from routes.model_selection_routes import router as model_selection_router
-    from routes.model_routes import models_list_router
-    from utils.exception_handlers import register_exception_handlers
-    from utils.middleware_config import MiddlewareConfig
-    
-    app = FastAPI(title="Test Model Selection App")
-    
-    # Register routes
-    app.include_router(model_selection_router)
-    app.include_router(models_list_router)
-    
-    # Register exception handlers
-    register_exception_handlers(app)
-    
-    # Register middleware
-    middleware_config = MiddlewareConfig()
-    middleware_config.register_all_middleware(app)
-    
-    return app
-
-
-@pytest.fixture(scope="session")
-def client(test_app):
-    """Create test client"""
-    return TestClient(test_app)
+# Use conftest app and client fixtures instead
+# This ensures all routes are properly registered
 
 
 @pytest.mark.unit

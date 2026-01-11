@@ -415,12 +415,13 @@ _test_db_path = os_module.path.join(_test_db_dir, "test_tasks.db")
 
 
 @pytest.fixture
-def app():
+def app(initialize_subtask_db_service):
     """FastAPI application fixture - task store now uses DatabaseService (async)"""
     # Task storage is now handled by DatabaseService with asyncpg
     # Simply import and return the app
     import sys
     import os
+    from unittest.mock import MagicMock, AsyncMock
 
     # Add parent directory to path for imports to work properly
     parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -428,6 +429,51 @@ def app():
         sys.path.insert(0, parent_dir)
 
     from main import app as fastapi_app
+    from utils.route_registration import register_all_routes
+    
+    # For testing, ensure all routes are registered
+    # The register_all_routes function is idempotent and handles all route registration
+    register_all_routes(fastapi_app)
+    
+    # Add mock orchestrator to app.state for subtask routes
+    mock_orchestrator = AsyncMock()
+    mock_orchestrator.execute_research = AsyncMock(return_value={
+        "status": "success",
+        "content": "Mock research content",
+        "sources": ["mock_source_1"],
+        "quality_score": 0.85
+    })
+    mock_orchestrator.execute_creative = AsyncMock(return_value={
+        "status": "success", 
+        "content": "Mock creative content",
+        "quality_score": 0.88
+    })
+    mock_orchestrator.execute_qa = AsyncMock(return_value={
+        "status": "success",
+        "feedback": "Mock QA feedback",
+        "approved": True,
+        "quality_score": 0.9
+    })
+    mock_orchestrator.execute_image_generation = AsyncMock(return_value={
+        "status": "success",
+        "images": [{"url": "mock_image_url", "alt_text": "mock image"}],
+        "quality_score": 0.8
+    })
+    mock_orchestrator.execute_format = AsyncMock(return_value={
+        "status": "success",
+        "formatted_content": "Mock formatted content",
+        "quality_score": 0.87
+    })
+    
+    fastapi_app.state.orchestrator = mock_orchestrator
+    
+    # Verify routes are registered
+    route_paths = [r.path for r in fastapi_app.routes if hasattr(r, 'path')]
+    import sys
+    print(f"[conftest] Total registered routes: {len(route_paths)}", file=sys.stderr)
+    websocket_routes = [r.path for r in fastapi_app.routes if 'ws' in r.path]
+    print(f"[conftest] WebSocket routes: {websocket_routes}", file=sys.stderr)
+    print(f"[conftest] Sample routes: {route_paths[:5]}", file=sys.stderr)
 
     return fastapi_app
 
@@ -437,6 +483,8 @@ def client(app, initialize_subtask_db_service):
     """FastAPI TestClient fixture"""
     from fastapi.testclient import TestClient
 
+    # The TestClient automatically triggers startup/shutdown events
+    # This ensures that the lifespan context manager runs and routes are registered
     return TestClient(app)
 
 
@@ -812,6 +860,7 @@ def initialize_subtask_db_service():
     from routes import subtask_routes, task_routes
     from services.database_service import DatabaseService
     from unittest.mock import AsyncMock, MagicMock
+    from utils.route_utils import register_legacy_db_service
     import uuid
 
     # Create a mock DatabaseService for testing
@@ -868,7 +917,10 @@ def initialize_subtask_db_service():
     mock_db.update_task = AsyncMock(return_value=True)
     mock_db.delete_task = AsyncMock(return_value=True)
 
-    # Set the global db_service in both routes
+    # Register the mock database service globally via the service container
+    register_legacy_db_service(mock_db)
+    
+    # Also set on the route modules for backward compatibility
     subtask_routes.db_service = mock_db
     task_routes.db_service = mock_db
 

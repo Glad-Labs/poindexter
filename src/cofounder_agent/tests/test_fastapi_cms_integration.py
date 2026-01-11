@@ -20,15 +20,17 @@ from datetime import datetime, timedelta
 from typing import Dict, Any
 
 # Import FastAPI app
-from src.cofounder_agent.main import app
+from main import app
 
-client = TestClient(app)
+# Note: Use the client fixture from conftest instead
+# This ensures proper test isolation and lifespan management
+
 
 
 class TestCMSDataModels:
     """Test FastAPI CMS data models"""
 
-    def test_post_model_has_required_fields(self):
+    def test_post_model_has_required_fields(self, client):
         """Post should have all fields needed by Next.js public site"""
         # Fields required by web/public-site
         required_fields = [
@@ -53,7 +55,7 @@ class TestCMSDataModels:
         # If these fields are missing, Next.js site breaks
         assert len(required_fields) > 0
 
-    def test_category_model_compatibility(self):
+    def test_category_model_compatibility(self, client):
         """Category model should match Next.js expectations"""
         expected_fields = {
             "id": "UUID",
@@ -67,7 +69,7 @@ class TestCMSDataModels:
 class TestContentManagementAPI:
     """Test content management endpoints"""
 
-    def test_create_post_endpoint(self):
+    def test_create_post_endpoint(self, client):
         """POST /api/cms/posts should create content"""
         post_data = {
             "title": "Test Post",
@@ -90,7 +92,7 @@ class TestContentManagementAPI:
         assert data["slug"] == "test-post"
         assert data["status"] == "published"
 
-    def test_get_posts_with_pagination(self):
+    def test_get_posts_with_pagination(self, client):
         """GET /api/cms/posts should support pagination"""
         response = client.get("/api/cms/posts?page=1&limit=10")
 
@@ -101,7 +103,7 @@ class TestContentManagementAPI:
         assert "items" in data or isinstance(data, list)
         assert "total" in data or len(data) <= 10
 
-    def test_get_post_by_slug(self):
+    def test_get_post_by_slug(self, client):
         """GET /api/cms/posts/{slug} should return post"""
         response = client.get("/api/cms/posts/test-post")
 
@@ -112,7 +114,7 @@ class TestContentManagementAPI:
             data = response.json()
             assert data["slug"] == "test-post"
 
-    def test_search_posts(self):
+    def test_search_posts(self, client):
         """GET /api/cms/posts/search should filter content"""
         response = client.get("/api/cms/posts/search?q=test&category=tech")
 
@@ -122,7 +124,7 @@ class TestContentManagementAPI:
         # Should return list of matching posts
         assert isinstance(data, list) or "items" in data
 
-    def test_update_post_metadata(self):
+    def test_update_post_metadata(self, client):
         """PUT /api/cms/posts/{id} should update SEO and metadata"""
         update_data = {
             "seo_title": "Updated Title",
@@ -140,7 +142,7 @@ class TestContentManagementAPI:
 class TestContentPipeline:
     """Test content generation pipeline integration"""
 
-    def test_generate_post_creates_database_entry(self):
+    def test_generate_post_creates_database_entry(self, client):
         """POST /api/content/generate-blog-post should create CMS entry"""
         request_data = {
             "topic": "AI in Business",
@@ -160,7 +162,7 @@ class TestContentPipeline:
         assert "content" in data
         assert "status" in data
 
-    def test_generated_content_has_seo_fields(self):
+    def test_generated_content_has_seo_fields(self, client):
         """Generated content should include SEO metadata"""
         request_data = {
             "topic": "Marketing Strategy",
@@ -181,7 +183,7 @@ class TestContentPipeline:
             assert len(data.get("seo_title", "")) <= 60
             assert len(data.get("seo_description", "")) <= 160
 
-    def test_publish_generated_content(self):
+    def test_publish_generated_content(self, client):
         """POST /api/content/{id}/publish should make content live"""
         response = client.post("/api/content/123/publish")
 
@@ -196,7 +198,7 @@ class TestContentPipeline:
 class TestPublicSiteIntegration:
     """Test integration with Next.js public site"""
 
-    def test_api_response_compatible_with_getstaticprops(self):
+    def test_api_response_compatible_with_getstaticprops(self, client):
         """API responses should work with Next.js getStaticProps"""
         response = client.get("/api/cms/posts")
 
@@ -206,7 +208,7 @@ class TestPublicSiteIntegration:
         # getStaticProps expects array or object with items
         assert isinstance(data, list) or "items" in data
 
-    def test_post_slug_resolution(self):
+    def test_post_slug_resolution(self, client):
         """API should resolve posts by slug for dynamic routes"""
         # Next.js pages/posts/[slug].js needs this
         response = client.get("/api/cms/posts/test-post")
@@ -221,21 +223,21 @@ class TestPublicSiteIntegration:
             assert "seo_title" in data
             assert "seo_description" in data
 
-    def test_category_filtering(self):
+    def test_category_filtering(self, client):
         """API should filter posts by category"""
         # web/public-site/pages/category/[slug].js needs this
         response = client.get("/api/cms/posts?category=tech")
 
         assert response.status_code == 200
 
-    def test_tag_filtering(self):
+    def test_tag_filtering(self, client):
         """API should filter posts by tag"""
         # web/public-site/pages/tag/[slug].js needs this
         response = client.get("/api/cms/posts?tag=featured")
 
         assert response.status_code == 200
 
-    def test_pagination_for_archive(self):
+    def test_pagination_for_archive(self, client):
         """API should support pagination"""
         # web/public-site/pages/archive/[page].js needs this
         response = client.get("/api/cms/posts?page=1&limit=10")
@@ -250,7 +252,7 @@ class TestPublicSiteIntegration:
 class TestOversightHubIntegration:
     """Test integration with React oversight hub"""
 
-    def test_content_calendar_endpoint(self):
+    def test_content_calendar_endpoint(self, client):
         """GET /api/cms/calendar should return scheduled posts"""
         response = client.get("/api/cms/calendar")
 
@@ -261,7 +263,7 @@ class TestOversightHubIntegration:
             # Should return calendar view with dates
             assert isinstance(data, list) or isinstance(data, dict)
 
-    def test_content_status_tracking(self):
+    def test_content_status_tracking(self, client):
         """GET /api/cms/posts should show content status"""
         response = client.get("/api/cms/posts?status=draft")
 
@@ -273,7 +275,7 @@ class TestOversightHubIntegration:
             for post in data:
                 assert post.get("status") in ["draft", "published", "scheduled"]
 
-    def test_bulk_content_update(self):
+    def test_bulk_content_update(self, client):
         """PUT /api/cms/posts/bulk should update multiple posts"""
         update_data = {
             "post_ids": ["1", "2", "3"],
@@ -290,7 +292,7 @@ class TestOversightHubIntegration:
 class TestDataFormatting:
     """Test data formatting for compatibility"""
 
-    def test_post_formatting_for_markdown_rendering(self):
+    def test_post_formatting_for_markdown_rendering(self, client):
         """Post content should be valid markdown"""
         response = client.get("/api/cms/posts?limit=1")
 
@@ -305,7 +307,7 @@ class TestDataFormatting:
                 # Markdown is plain text with # ** - etc
                 assert isinstance(content, str)
 
-    def test_image_urls_are_absolute(self):
+    def test_image_urls_are_absolute(self, client):
         """Image URLs should be absolute (not relative)"""
         response = client.get("/api/cms/posts?limit=1")
 
@@ -321,7 +323,7 @@ class TestDataFormatting:
                     # URLs should start with http or https or be empty
                     assert featured_image.startswith(("http://", "https://", ""))
 
-    def test_dates_are_iso_format(self):
+    def test_dates_are_iso_format(self, client):
         """Dates should be ISO 8601 format"""
         response = client.get("/api/cms/posts?limit=1")
 
@@ -345,21 +347,21 @@ class TestDataFormatting:
 class TestErrorHandling:
     """Test error handling and recovery"""
 
-    def test_invalid_slug_returns_404(self):
+    def test_invalid_slug_returns_404(self, client):
         """Invalid slug should return 404, not 500"""
         response = client.get("/api/cms/posts/invalid-slug-xyz-12345")
 
         assert response.status_code in [404, 200]
         # Should NOT be 500 error
 
-    def test_invalid_page_number_returns_400(self):
+    def test_invalid_page_number_returns_400(self, client):
         """Invalid page should return 400"""
         response = client.get("/api/cms/posts?page=invalid")
 
         assert response.status_code in [400, 200]
         # Should handle gracefully
 
-    def test_missing_required_field_returns_validation_error(self):
+    def test_missing_required_field_returns_validation_error(self, client):
         """Missing required field should return validation error"""
         post_data = {
             "slug": "test",
@@ -371,7 +373,7 @@ class TestErrorHandling:
         # Should validate, not crash
         assert response.status_code in [400, 422, 200]
 
-    def test_database_error_returns_500_with_message(self):
+    def test_database_error_returns_500_with_message(self, client):
         """Database errors should return 500 with helpful message"""
         # This would require database connection failure
         # Skipped in unit tests, tested in integration
@@ -381,7 +383,7 @@ class TestErrorHandling:
 class TestBackwardCompatibility:
     """Test backward compatibility with old Strapi endpoints"""
 
-    def test_old_strapi_urls_still_work(self):
+    def test_old_strapi_urls_still_work(self, client):
         """Old Strapi URLs should redirect or work via adapter"""
         # Strapi: /api/posts
         response = client.get("/api/posts")
@@ -389,7 +391,7 @@ class TestBackwardCompatibility:
         # Should work (either at new or old endpoint)
         assert response.status_code in [200, 404, 307]
 
-    def test_old_strapi_format_still_accepted(self):
+    def test_old_strapi_format_still_accepted(self, client):
         """Old Strapi request format should still work"""
         # Old format: /api/posts?filters[status][$eq]=published
         response = client.get("/api/posts?status=published")

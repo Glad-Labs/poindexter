@@ -30,9 +30,11 @@ import json
 from datetime import datetime, timezone
 from fastapi.testclient import TestClient
 
-from src.cofounder_agent.main import app
+from main import app
 
-client = TestClient(app)
+# Note: Use the client fixture from conftest instead
+# This ensures proper test isolation and lifespan management
+
 
 
 # ============================================================================
@@ -85,31 +87,31 @@ def secret_setting():
 class TestSettingsListEndpoint:
     """Test suite for GET /api/settings endpoint"""
 
-    def test_list_settings_with_auth(self, user_token):
+    def test_list_settings_with_auth(self, client, user_token):
         """Should list settings with valid authentication"""
         response = client.get("/api/settings", headers={"Authorization": f"Bearer {user_token}"})
         assert response.status_code in [200, 401]
 
-    def test_list_settings_without_auth(self):
+    def test_list_settings_without_auth(self, client):
         """Should reject request without authentication"""
         response = client.get("/api/settings")
         assert response.status_code == 401
 
-    def test_list_settings_pagination(self, user_token):
+    def test_list_settings_pagination(self, client, user_token):
         """Should support pagination with limit and skip"""
         response = client.get(
             "/api/settings?limit=10&skip=0", headers={"Authorization": f"Bearer {user_token}"}
         )
         assert response.status_code in [200, 401, 422]
 
-    def test_list_settings_filter_by_category(self, user_token):
+    def test_list_settings_filter_by_category(self, client, user_token):
         """Should filter settings by category"""
         response = client.get(
             "/api/settings?category=system", headers={"Authorization": f"Bearer {user_token}"}
         )
         assert response.status_code in [200, 401, 422]
 
-    def test_list_settings_filter_by_environment(self, user_token):
+    def test_list_settings_filter_by_environment(self, client, user_token):
         """Should filter settings by environment"""
         response = client.get(
             "/api/settings?environment=production",
@@ -117,7 +119,7 @@ class TestSettingsListEndpoint:
         )
         assert response.status_code in [200, 401, 422]
 
-    def test_list_settings_response_is_list(self, user_token):
+    def test_list_settings_response_is_list(self, client, user_token):
         """Should return list of settings"""
         response = client.get("/api/settings", headers={"Authorization": f"Bearer {user_token}"})
         if response.status_code == 200:
@@ -128,7 +130,7 @@ class TestSettingsListEndpoint:
 class TestSettingsGetEndpoint:
     """Test suite for GET /api/settings/{setting_id} endpoint"""
 
-    def test_get_setting_by_id(self, user_token):
+    def test_get_setting_by_id(self, client, user_token):
         """Should retrieve specific setting by ID"""
         setting_id = str(uuid.uuid4())
         response = client.get(
@@ -136,33 +138,33 @@ class TestSettingsGetEndpoint:
         )
         assert response.status_code in [200, 401, 404]
 
-    def test_get_nonexistent_setting(self, user_token):
+    def test_get_nonexistent_setting(self, client, user_token):
         """Should return 404 for nonexistent setting"""
         response = client.get(
             "/api/settings/nonexistent-id-12345", headers={"Authorization": f"Bearer {user_token}"}
         )
         assert response.status_code in [404, 401]
 
-    def test_get_setting_without_auth(self):
+    def test_get_setting_without_auth(self, client):
         """Should reject request without authentication"""
         setting_id = str(uuid.uuid4())
         response = client.get(f"/api/settings/{setting_id}")
         assert response.status_code == 401
 
-    def test_get_setting_with_invalid_id_format(self, user_token):
+    def test_get_setting_with_invalid_id_format(self, client, user_token):
         """Should handle invalid ID format"""
         response = client.get(
             "/api/settings/invalid-id-format!!!", headers={"Authorization": f"Bearer {user_token}"}
         )
         assert response.status_code in [400, 404, 401, 422]
 
-    def test_get_setting_empty_id(self, user_token):
+    def test_get_setting_empty_id(self, client, user_token):
         """Should reject empty setting ID"""
         response = client.get("/api/settings/", headers={"Authorization": f"Bearer {user_token}"})
         # Empty path should not match endpoint
         assert response.status_code in [404, 401, 405]
 
-    def test_get_setting_response_format(self, user_token):
+    def test_get_setting_response_format(self, client, user_token):
         """Should return properly formatted setting"""
         setting_id = str(uuid.uuid4())
         response = client.get(
@@ -173,7 +175,7 @@ class TestSettingsGetEndpoint:
             assert isinstance(data, dict)
             assert "key" in data or "id" in data
 
-    def test_get_secret_setting_redacted(self, user_token):
+    def test_get_secret_setting_redacted(self, client, user_token):
         """Should not expose secret values in response"""
         setting_id = str(uuid.uuid4())
         response = client.get(
@@ -189,14 +191,14 @@ class TestSettingsGetEndpoint:
 class TestSettingsCreateEndpoint:
     """Test suite for POST /api/settings endpoint"""
 
-    def test_create_setting_as_admin(self, admin_token, sample_setting):
+    def test_create_setting_as_admin(self, client, admin_token, sample_setting):
         """Should allow admin to create setting"""
         response = client.post(
             "/api/settings", json=sample_setting, headers={"Authorization": f"Bearer {admin_token}"}
         )
         assert response.status_code in [201, 401, 403]
 
-    def test_create_setting_as_user(self, user_token, sample_setting):
+    def test_create_setting_as_user(self, client, user_token, sample_setting):
         """Should reject non-admin user creating setting"""
         response = client.post(
             "/api/settings", json=sample_setting, headers={"Authorization": f"Bearer {user_token}"}
@@ -204,12 +206,12 @@ class TestSettingsCreateEndpoint:
         # Users should not be able to create settings
         assert response.status_code in [403, 401, 400]
 
-    def test_create_setting_without_auth(self, sample_setting):
+    def test_create_setting_without_auth(self, client, sample_setting):
         """Should reject request without authentication"""
         response = client.post("/api/settings", json=sample_setting)
         assert response.status_code == 401
 
-    def test_create_setting_missing_required_fields(self, admin_token):
+    def test_create_setting_missing_required_fields(self, client, admin_token):
         """Should validate required fields"""
         incomplete_setting = {"key": "test"}  # Missing value and category
         response = client.post(
@@ -219,14 +221,14 @@ class TestSettingsCreateEndpoint:
         )
         assert response.status_code in [422, 400, 401]
 
-    def test_create_secret_setting(self, admin_token, secret_setting):
+    def test_create_secret_setting(self, client, admin_token, secret_setting):
         """Should support creating secret settings"""
         response = client.post(
             "/api/settings", json=secret_setting, headers={"Authorization": f"Bearer {admin_token}"}
         )
         assert response.status_code in [201, 401, 403]
 
-    def test_create_setting_with_invalid_category(self, admin_token):
+    def test_create_setting_with_invalid_category(self, client, admin_token):
         """Should validate setting category"""
         invalid_setting = {
             "key": "test",
@@ -241,7 +243,7 @@ class TestSettingsCreateEndpoint:
         )
         assert response.status_code in [422, 400, 401]
 
-    def test_create_setting_with_empty_value(self, admin_token):
+    def test_create_setting_with_empty_value(self, client, admin_token):
         """Should handle empty setting value"""
         empty_setting = {"key": "test", "value": "", "category": "system", "description": "Test"}
         response = client.post(
@@ -250,7 +252,7 @@ class TestSettingsCreateEndpoint:
         # Should either accept empty value or validate it
         assert response.status_code in [201, 400, 422, 401]
 
-    def test_create_setting_response_includes_id(self, admin_token, sample_setting):
+    def test_create_setting_response_includes_id(self, client, admin_token, sample_setting):
         """Should return created setting with ID"""
         response = client.post(
             "/api/settings", json=sample_setting, headers={"Authorization": f"Bearer {admin_token}"}
@@ -263,7 +265,7 @@ class TestSettingsCreateEndpoint:
 class TestSettingsUpdateEndpoint:
     """Test suite for PUT /api/settings/{setting_id} endpoint"""
 
-    def test_update_setting_as_admin(self, admin_token):
+    def test_update_setting_as_admin(self, client, admin_token):
         """Should allow admin to update setting"""
         setting_id = str(uuid.uuid4())
         update_data = {"value": "updated-value"}
@@ -274,7 +276,7 @@ class TestSettingsUpdateEndpoint:
         )
         assert response.status_code in [200, 201, 401, 404]
 
-    def test_update_setting_as_editor(self, editor_token):
+    def test_update_setting_as_editor(self, client, editor_token):
         """Should allow editor to update setting"""
         setting_id = str(uuid.uuid4())
         update_data = {"value": "updated-value"}
@@ -285,7 +287,7 @@ class TestSettingsUpdateEndpoint:
         )
         assert response.status_code in [200, 201, 401, 403, 404]
 
-    def test_update_setting_as_user(self, user_token):
+    def test_update_setting_as_user(self, client, user_token):
         """Should reject regular user updating setting"""
         setting_id = str(uuid.uuid4())
         update_data = {"value": "updated-value"}
@@ -296,7 +298,7 @@ class TestSettingsUpdateEndpoint:
         )
         assert response.status_code in [403, 401, 400]
 
-    def test_update_nonexistent_setting(self, admin_token):
+    def test_update_nonexistent_setting(self, client, admin_token):
         """Should return 404 for nonexistent setting"""
         update_data = {"value": "updated-value"}
         response = client.put(
@@ -306,14 +308,14 @@ class TestSettingsUpdateEndpoint:
         )
         assert response.status_code in [404, 401, 400]
 
-    def test_update_setting_without_auth(self):
+    def test_update_setting_without_auth(self, client):
         """Should reject request without authentication"""
         setting_id = str(uuid.uuid4())
         update_data = {"value": "updated-value"}
         response = client.put(f"/api/settings/{setting_id}", json=update_data)
         assert response.status_code == 401
 
-    def test_update_setting_partial_fields(self, admin_token):
+    def test_update_setting_partial_fields(self, client, admin_token):
         """Should support partial updates"""
         setting_id = str(uuid.uuid4())
         partial_update = {"description": "Updated description"}
@@ -328,7 +330,7 @@ class TestSettingsUpdateEndpoint:
 class TestSettingsDeleteEndpoint:
     """Test suite for DELETE /api/settings/{setting_id} endpoint"""
 
-    def test_delete_setting_as_admin(self, admin_token):
+    def test_delete_setting_as_admin(self, client, admin_token):
         """Should allow admin to delete setting"""
         setting_id = str(uuid.uuid4())
         response = client.delete(
@@ -336,7 +338,7 @@ class TestSettingsDeleteEndpoint:
         )
         assert response.status_code in [200, 204, 401, 404]
 
-    def test_delete_setting_as_user(self, user_token):
+    def test_delete_setting_as_user(self, client, user_token):
         """Should reject regular user deleting setting"""
         setting_id = str(uuid.uuid4())
         response = client.delete(
@@ -344,20 +346,20 @@ class TestSettingsDeleteEndpoint:
         )
         assert response.status_code in [403, 401, 400]
 
-    def test_delete_nonexistent_setting(self, admin_token):
+    def test_delete_nonexistent_setting(self, client, admin_token):
         """Should handle deleting nonexistent setting"""
         response = client.delete(
             "/api/settings/nonexistent-id-12345", headers={"Authorization": f"Bearer {admin_token}"}
         )
         assert response.status_code in [404, 200, 204, 401]
 
-    def test_delete_setting_without_auth(self):
+    def test_delete_setting_without_auth(self, client):
         """Should reject request without authentication"""
         setting_id = str(uuid.uuid4())
         response = client.delete(f"/api/settings/{setting_id}")
         assert response.status_code == 401
 
-    def test_delete_setting_twice(self, admin_token):
+    def test_delete_setting_twice(self, client, admin_token):
         """Should handle deleting same setting twice"""
         setting_id = str(uuid.uuid4())
         # First delete
@@ -373,7 +375,7 @@ class TestSettingsDeleteEndpoint:
         # Second should be 404 or 200 (already deleted)
         assert response2.status_code in [404, 200, 204, 401]
 
-    def test_delete_setting_response(self, admin_token):
+    def test_delete_setting_response(self, client, admin_token):
         """Should return proper delete response"""
         setting_id = str(uuid.uuid4())
         response = client.delete(
@@ -388,7 +390,7 @@ class TestSettingsDeleteEndpoint:
 class TestSettingsAuthorization:
     """Test suite for authorization and access control"""
 
-    def test_settings_role_based_access(self, user_token, admin_token):
+    def test_settings_role_based_access(self, client, user_token, admin_token):
         """Should enforce role-based access control"""
         # User should only have read access
         user_response = client.get(
@@ -402,7 +404,7 @@ class TestSettingsAuthorization:
         assert user_response.status_code != 405
         assert admin_response.status_code != 405
 
-    def test_settings_forbidden_operations_for_users(self, user_token, sample_setting):
+    def test_settings_forbidden_operations_for_users(self, client, user_token, sample_setting):
         """Should deny write operations for regular users"""
         # Attempt create
         create_response = client.post(
@@ -410,7 +412,7 @@ class TestSettingsAuthorization:
         )
         assert create_response.status_code in [403, 401, 400]
 
-    def test_settings_forbidden_operations_for_editors(self, editor_token, sample_setting):
+    def test_settings_forbidden_operations_for_editors(self, client, editor_token, sample_setting):
         """Should deny delete operations for editors"""
         setting_id = str(uuid.uuid4())
         delete_response = client.delete(
@@ -419,7 +421,7 @@ class TestSettingsAuthorization:
         # Editors should not be able to delete
         assert delete_response.status_code in [403, 401, 400]
 
-    def test_settings_admin_can_do_all_operations(self, admin_token, sample_setting):
+    def test_settings_admin_can_do_all_operations(self, client, admin_token, sample_setting):
         """Should allow admins to perform all operations"""
         # Admin should be able to list, get, create, update, delete
         operations = [
@@ -436,23 +438,23 @@ class TestSettingsAuthorization:
             # Admin operations should not return 403
             assert response.status_code != 403
 
-    def test_settings_token_expiration_handling(self, user_token):
+    def test_settings_token_expiration_handling(self, client, user_token):
         """Should handle expired tokens"""
         expired_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE2MDAwMDAwMDB9.signature"
         response = client.get("/api/settings", headers={"Authorization": f"Bearer {expired_token}"})
         assert response.status_code == 401
 
-    def test_settings_malformed_token(self):
+    def test_settings_malformed_token(self, client):
         """Should reject malformed token"""
         response = client.get("/api/settings", headers={"Authorization": "Bearer invalid.token"})
         assert response.status_code == 401
 
-    def test_settings_no_bearer_prefix(self, user_token):
+    def test_settings_no_bearer_prefix(self, client, user_token):
         """Should reject token without Bearer prefix"""
         response = client.get("/api/settings", headers={"Authorization": user_token})
         assert response.status_code == 401
 
-    def test_settings_mixed_case_bearer(self, user_token):
+    def test_settings_mixed_case_bearer(self, client, user_token):
         """Should handle Bearer prefix case handling"""
         response = client.get("/api/settings", headers={"Authorization": f"bearer {user_token}"})
         # Should either accept or reject consistently
@@ -462,7 +464,7 @@ class TestSettingsAuthorization:
 class TestSettingsValidation:
     """Test suite for input validation"""
 
-    def test_settings_key_validation(self, admin_token):
+    def test_settings_key_validation(self, client, admin_token):
         """Should validate setting key format"""
         invalid_key = {"key": "", "value": "test", "category": "system"}  # Empty key
         response = client.post(
@@ -470,7 +472,7 @@ class TestSettingsValidation:
         )
         assert response.status_code in [422, 400, 401]
 
-    def test_settings_value_type_validation(self, admin_token):
+    def test_settings_value_type_validation(self, client, admin_token):
         """Should validate setting value types"""
         # JSON value should be valid
         json_setting = {
@@ -484,7 +486,7 @@ class TestSettingsValidation:
         )
         assert response.status_code in [201, 400, 422, 401]
 
-    def test_settings_integer_value_validation(self, admin_token):
+    def test_settings_integer_value_validation(self, client, admin_token):
         """Should validate integer setting values"""
         int_setting = {
             "key": "max_retries",
@@ -498,7 +500,7 @@ class TestSettingsValidation:
         # Should either reject or accept and handle conversion
         assert response.status_code in [201, 400, 422, 401]
 
-    def test_settings_description_length(self, admin_token):
+    def test_settings_description_length(self, client, admin_token):
         """Should validate description length"""
         long_desc = {
             "key": "test",
@@ -512,7 +514,7 @@ class TestSettingsValidation:
         # Should either accept or reject due to length
         assert response.status_code in [201, 400, 422, 401]
 
-    def test_settings_special_characters_in_key(self, admin_token):
+    def test_settings_special_characters_in_key(self, client, admin_token):
         """Should handle special characters in setting key"""
         special_setting = {"key": "test!@#$%^&*()", "value": "test", "category": "system"}
         response = client.post(
@@ -522,7 +524,7 @@ class TestSettingsValidation:
         )
         assert response.status_code in [201, 400, 422, 401]
 
-    def test_settings_unicode_values(self, admin_token):
+    def test_settings_unicode_values(self, client, admin_token):
         """Should handle Unicode values"""
         unicode_setting = {"key": "app_name", "value": "Glad Labs 🚀 全球", "category": "system"}
         response = client.post(

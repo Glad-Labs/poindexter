@@ -16,32 +16,8 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 
-@pytest.fixture(scope="session")
-def test_app():
-    """Create test app with routes registered"""
-    from routes.task_routes import router as task_router
-    from utils.exception_handlers import register_exception_handlers
-    from utils.middleware_config import MiddlewareConfig
-    
-    app = FastAPI(title="Test Bulk Task App")
-    
-    # Register routes
-    app.include_router(task_router)
-    
-    # Register exception handlers
-    register_exception_handlers(app)
-    
-    # Register middleware
-    middleware_config = MiddlewareConfig()
-    middleware_config.register_all_middleware(app)
-    
-    return app
-
-
-@pytest.fixture(scope="session")
-def client(test_app):
-    """Create test client"""
-    return TestClient(test_app)
+# Use conftest app and client fixtures instead
+# This ensures all routes are properly registered
 
 
 
@@ -52,7 +28,7 @@ class TestBulkTaskRoutes:
     """Test bulk task endpoints"""
 
     @pytest.fixture
-    def auth_headers(self):
+    def auth_headers(self, client):
         """Get auth headers for protected endpoints"""
         # Try to authenticate
         auth_response = client.post(
@@ -65,7 +41,7 @@ class TestBulkTaskRoutes:
             return {"Authorization": f"Bearer {token}"}
         return {}
 
-    def test_bulk_create_tasks(self, auth_headers):
+    def test_bulk_create_tasks(self, client, auth_headers):
         """Test creating multiple tasks at once"""
         bulk_data = {
             "tasks": [
@@ -102,7 +78,7 @@ class TestBulkTaskRoutes:
         else:
             assert response.status_code == 401
 
-    def test_bulk_create_empty_list(self, auth_headers):
+    def test_bulk_create_empty_list(self, client, auth_headers):
         """Test creating tasks with empty list"""
         response = client.post(
             "/api/tasks/bulk/create",
@@ -115,7 +91,7 @@ class TestBulkTaskRoutes:
         else:
             assert response.status_code == 401
 
-    def test_bulk_create_duplicate_tasks(self, auth_headers):
+    def test_bulk_create_duplicate_tasks(self, client, auth_headers):
         """Test creating duplicate tasks in one request"""
         bulk_data = {
             "tasks": [
@@ -147,7 +123,7 @@ class TestBulkTaskRoutes:
         else:
             assert response.status_code == 401
 
-    def test_bulk_update_tasks(self, auth_headers):
+    def test_bulk_update_tasks(self, client, auth_headers):
         """Test updating multiple tasks"""
         update_data = {
             "updates": [
@@ -167,7 +143,7 @@ class TestBulkTaskRoutes:
         else:
             assert response.status_code == 401
 
-    def test_bulk_delete_tasks(self, auth_headers):
+    def test_bulk_delete_tasks(self, client, auth_headers):
         """Test deleting multiple tasks"""
         delete_data = {
             "task_ids": ["test_id_1", "test_id_2", "test_id_3"]
@@ -184,7 +160,7 @@ class TestBulkTaskRoutes:
         else:
             assert response.status_code == 401
 
-    def test_bulk_delete_empty_list(self, auth_headers):
+    def test_bulk_delete_empty_list(self, client, auth_headers):
         """Test deleting with empty task list"""
         response = client.delete(
             "/api/tasks/bulk/delete",
@@ -197,7 +173,7 @@ class TestBulkTaskRoutes:
         else:
             assert response.status_code == 401
 
-    def test_bulk_operations_invalid_json(self, auth_headers):
+    def test_bulk_operations_invalid_json(self, client, auth_headers):
         """Test bulk operations with invalid JSON"""
         response = client.post(
             "/api/tasks/bulk/create",
@@ -207,7 +183,7 @@ class TestBulkTaskRoutes:
         
         assert response.status_code in [400, 422]
 
-    def test_bulk_operations_missing_fields(self, auth_headers):
+    def test_bulk_operations_missing_fields(self, client, auth_headers):
         """Test bulk operations with missing required fields"""
         incomplete_data = {
             "tasks": [
@@ -235,7 +211,7 @@ class TestBulkTaskRoutes:
 class TestBulkTaskPerformance:
     """Test bulk operation performance characteristics"""
 
-    def test_large_bulk_create_limit(self, auth_headers):
+    def test_large_bulk_create_limit(self, client, auth_headers):
         """Test maximum bulk create size"""
         # Create 100 tasks - may exceed limit
         large_bulk = {
@@ -263,7 +239,7 @@ class TestBulkTaskPerformance:
         else:
             assert response.status_code == 401
 
-    def test_bulk_operation_response_time(self, auth_headers):
+    def test_bulk_operation_response_time(self, client, auth_headers):
         """Test that bulk operations respond in reasonable time"""
         import time
         

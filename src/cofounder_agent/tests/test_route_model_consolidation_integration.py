@@ -17,14 +17,16 @@ from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock, AsyncMock
 from datetime import datetime
 
-from src.cofounder_agent.main import app
+from main import app
 from services.model_consolidation_service import (
     ProviderType,
     get_model_consolidation_service,
     initialize_model_consolidation_service,
 )
 
-client = TestClient(app)
+# Note: Use the client fixture from conftest instead
+# This ensures proper test isolation and lifespan management
+
 
 
 class TestModelsEndpointsIntegration:
@@ -38,7 +40,7 @@ class TestModelsEndpointsIntegration:
         yield
         # Cleanup after test
 
-    def test_get_available_models_endpoint(self):
+    def test_get_available_models_endpoint(self, client):
         """Test GET /api/v1/models/available returns consolidated models"""
         response = client.get("/api/v1/models/available")
 
@@ -63,7 +65,7 @@ class TestModelsEndpointsIntegration:
             assert "provider" in model
             assert "isFree" in model
 
-    def test_get_available_models_includes_all_providers(self):
+    def test_get_available_models_includes_all_providers(self, client):
         """Test that available models include all providers from consolidation service"""
         response = client.get("/api/v1/models/available")
 
@@ -79,7 +81,7 @@ class TestModelsEndpointsIntegration:
         # Note: Exact count depends on environment, but we should have at least Ollama
         assert len(providers) > 0
 
-    def test_get_provider_status_endpoint(self):
+    def test_get_provider_status_endpoint(self, client):
         """Test GET /api/v1/models/status returns provider statuses"""
         response = client.get("/api/v1/models/status")
 
@@ -90,7 +92,7 @@ class TestModelsEndpointsIntegration:
         assert "timestamp" in data
         assert "providers" in data
 
-    def test_get_provider_status_has_provider_info(self):
+    def test_get_provider_status_has_provider_info(self, client):
         """Test provider status includes all provider info"""
         response = client.get("/api/v1/models/status")
 
@@ -101,7 +103,7 @@ class TestModelsEndpointsIntegration:
         # Should be a dict/object
         assert isinstance(providers, dict)
 
-    def test_get_recommended_models_endpoint(self):
+    def test_get_recommended_models_endpoint(self, client):
         """Test GET /api/v1/models/recommended returns recommended models"""
         response = client.get("/api/v1/models/recommended")
 
@@ -116,7 +118,7 @@ class TestModelsEndpointsIntegration:
         # Should have models (recommended from fallback chain)
         assert isinstance(data["models"], list)
 
-    def test_get_recommended_models_in_priority_order(self):
+    def test_get_recommended_models_in_priority_order(self, client):
         """Test recommended models follow fallback chain priority"""
         response = client.get("/api/v1/models/recommended")
 
@@ -132,7 +134,7 @@ class TestModelsEndpointsIntegration:
         for model in models:
             assert model["provider"] in provider_order
 
-    def test_get_rtx5070_models_endpoint(self):
+    def test_get_rtx5070_models_endpoint(self, client):
         """Test GET /api/v1/models/rtx5070 returns RTX5070-compatible models"""
         response = client.get("/api/v1/models/rtx5070")
 
@@ -147,7 +149,7 @@ class TestModelsEndpointsIntegration:
         # Should have some models
         assert isinstance(data["models"], list)
 
-    def test_rtx5070_models_includes_local_and_cloud(self):
+    def test_rtx5070_models_includes_local_and_cloud(self, client):
         """Test RTX5070 models include both local (Ollama) and cloud options"""
         response = client.get("/api/v1/models/rtx5070")
 
@@ -161,7 +163,7 @@ class TestModelsEndpointsIntegration:
         # At minimum should consider Ollama, but cloud fallbacks should be included
         assert len(providers) > 0
 
-    def test_models_endpoint_error_handling(self):
+    def test_models_endpoint_error_handling(self, client):
         """Test endpoints handle errors gracefully"""
         # Note: Mocking at the function level is difficult due to lazy initialization
         # Instead, test that the endpoint handles real scenarios well
@@ -173,7 +175,7 @@ class TestModelsEndpointsIntegration:
         data = response.json()
         assert "models" in data
 
-    def test_models_endpoint_response_format_consistency(self):
+    def test_models_endpoint_response_format_consistency(self, client):
         """Test all model endpoints return consistent response format"""
         endpoints = [
             "/api/v1/models/available",
@@ -194,7 +196,7 @@ class TestModelsEndpointsIntegration:
             # Verify timestamp is valid ISO format
             assert "T" in data["timestamp"] or data["timestamp"].count("-") >= 2
 
-    def test_models_list_response_structure(self):
+    def test_models_list_response_structure(self, client):
         """Test individual model objects have required fields"""
         response = client.get("/api/v1/models/available")
         assert response.status_code == 200
@@ -214,7 +216,7 @@ class TestModelsEndpointsIntegration:
             assert isinstance(model["provider"], str)
             assert isinstance(model["isFree"], bool)
 
-    def test_provider_icons_are_emoji(self):
+    def test_provider_icons_are_emoji(self, client):
         """Test provider icons are properly formatted emojis"""
         response = client.get("/api/v1/models/available")
         assert response.status_code == 200
@@ -236,7 +238,7 @@ class TestModelsEndpointsIntegration:
             if provider in provider_icons:
                 assert icon == provider_icons[provider] or icon == "🤖"
 
-    def test_models_endpoint_timestamp_is_recent(self):
+    def test_models_endpoint_timestamp_is_recent(self, client):
         """Test endpoint timestamp exists and is valid"""
         response = client.get("/api/v1/models/available")
         assert response.status_code == 200
@@ -262,7 +264,7 @@ class TestModelsEndpointsIntegration:
 class TestModelProviderFallbackChain:
     """Verify provider fallback chain through real endpoint testing"""
 
-    def test_provider_fallback_chain_respected_in_responses(self):
+    def test_provider_fallback_chain_respected_in_responses(self, client):
         """Test that provider fallback chain is respected in endpoint responses"""
         response = client.get("/api/v1/models/recommended")
         assert response.status_code == 200

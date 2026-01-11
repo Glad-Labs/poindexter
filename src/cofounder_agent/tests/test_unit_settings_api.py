@@ -90,7 +90,7 @@ class TestSettingsGetEndpoint:
     def test_get_user_settings_success(self, client, mock_user):
         """Test successful retrieval of user settings"""
         with patch(
-            "cofounder_agent.routes.settings_routes.get_current_user", return_value=mock_user
+            "routes.settings_routes.get_current_user", return_value=mock_user
         ):
             response = client.get("/api/settings", headers={"Authorization": "Bearer fake-token"})
             assert response.status_code in [200, 404]  # 200 if settings exist, 404 if not
@@ -103,7 +103,7 @@ class TestSettingsGetEndpoint:
     def test_get_specific_setting_success(self, client, mock_user):
         """Test retrieval of specific setting"""
         with patch(
-            "cofounder_agent.routes.settings_routes.get_current_user", return_value=mock_user
+            "routes.settings_routes.get_current_user", return_value=mock_user
         ):
             response = client.get(
                 "/api/settings/theme", headers={"Authorization": "Bearer fake-token"}
@@ -126,7 +126,7 @@ class TestSettingsCreateEndpoint:
     def test_create_settings_success(self, client, mock_user, api_format_settings):
         """Test successful creation of settings"""
         with patch(
-            "cofounder_agent.routes.settings_routes.get_current_user", return_value=mock_user
+            "routes.settings_routes.get_current_user", return_value=mock_user
         ):
             response = client.post(
                 "/api/settings",
@@ -141,7 +141,7 @@ class TestSettingsCreateEndpoint:
         incomplete_settings = {k: v for k, v in api_format_settings.items() if k != "key"}
 
         with patch(
-            "cofounder_agent.routes.settings_routes.get_current_user", return_value=mock_user
+            "routes.settings_routes.get_current_user", return_value=mock_user
         ):
             response = client.post(
                 "/api/settings",
@@ -157,7 +157,7 @@ class TestSettingsCreateEndpoint:
         invalid_settings["data_type"] = "invalid_type"  # Invalid enum value
 
         with patch(
-            "cofounder_agent.routes.settings_routes.get_current_user", return_value=mock_user
+            "routes.settings_routes.get_current_user", return_value=mock_user
         ):
             response = client.post(
                 "/api/settings",
@@ -170,7 +170,7 @@ class TestSettingsCreateEndpoint:
     def test_create_settings_duplicate(self, client, mock_user, api_format_settings):
         """Test creating settings when they already exist"""
         with patch(
-            "cofounder_agent.routes.settings_routes.get_current_user", return_value=mock_user
+            "routes.settings_routes.get_current_user", return_value=mock_user
         ):
             # First request succeeds
             response1 = client.post(
@@ -199,7 +199,7 @@ class TestSettingsUpdateEndpoint:
         updated_settings["value"] = "light"
 
         with patch(
-            "cofounder_agent.routes.settings_routes.get_current_user", return_value=mock_user
+            "routes.settings_routes.get_current_user", return_value=mock_user
         ):
             response = client.put(
                 "/api/settings/1",  # Update specific setting by ID
@@ -211,7 +211,7 @@ class TestSettingsUpdateEndpoint:
     def test_update_single_setting(self, client, mock_user):
         """Test updating a single setting"""
         with patch(
-            "cofounder_agent.routes.settings_routes.get_current_user", return_value=mock_user
+            "routes.settings_routes.get_current_user", return_value=mock_user
         ):
             response = client.put(
                 "/api/settings/1",
@@ -223,7 +223,7 @@ class TestSettingsUpdateEndpoint:
     def test_update_settings_nonexistent_user(self, client, mock_user):
         """Test updating settings for user with no existing settings"""
         with patch(
-            "cofounder_agent.routes.settings_routes.get_current_user", return_value=mock_user
+            "routes.settings_routes.get_current_user", return_value=mock_user
         ):
             response = client.put(
                 "/api/settings/999",  # Non-existent setting ID
@@ -238,7 +238,7 @@ class TestSettingsUpdateEndpoint:
         partial_update = {"value": "dark"}  # Only update value
 
         with patch(
-            "cofounder_agent.routes.settings_routes.get_current_user", return_value=mock_user
+            "routes.settings_routes.get_current_user", return_value=mock_user
         ):
             response = client.put(
                 "/api/settings/1",
@@ -254,7 +254,7 @@ class TestSettingsDeleteEndpoint:
     def test_delete_settings_success(self, client, mock_user):
         """Test successful deletion of settings"""
         with patch(
-            "cofounder_agent.routes.settings_routes.get_current_user", return_value=mock_user
+            "routes.settings_routes.get_current_user", return_value=mock_user
         ):
             response = client.delete(
                 "/api/settings/1",  # Delete specific setting by ID
@@ -265,7 +265,7 @@ class TestSettingsDeleteEndpoint:
     def test_delete_specific_setting(self, client, mock_user):
         """Test deletion of specific setting"""
         with patch(
-            "cofounder_agent.routes.settings_routes.get_current_user", return_value=mock_user
+            "routes.settings_routes.get_current_user", return_value=mock_user
         ):
             response = client.delete(
                 "/api/settings/1", headers={"Authorization": "Bearer fake-token"}
@@ -275,7 +275,7 @@ class TestSettingsDeleteEndpoint:
     def test_delete_nonexistent_setting(self, client, mock_user):
         """Test deleting non-existent setting"""
         with patch(
-            "cofounder_agent.routes.settings_routes.get_current_user", return_value=mock_user
+            "routes.settings_routes.get_current_user", return_value=mock_user
         ):
             response = client.delete(
                 "/api/settings/999",  # Non-existent ID
@@ -327,7 +327,7 @@ class TestSettingsPermissions:
         """Test that users cannot access other users' settings"""
         user1 = {"user_id": "user-1", "email": "user1@example.com", "role": "user"}
 
-        with patch("cofounder_agent.routes.settings_routes.get_current_user", return_value=user1):
+        with patch("routes.settings_routes.get_current_user", return_value=user1):
             response = client.get(
                 "/api/settings/user-2",  # Different user
                 headers={"Authorization": "Bearer fake-token"},
@@ -341,7 +341,7 @@ class TestSettingsPermissions:
         admin_user = {"user_id": "admin-1", "email": "admin@example.com", "role": "admin"}
 
         with patch(
-            "cofounder_agent.routes.settings_routes.get_current_user", return_value=admin_user
+            "routes.settings_routes.get_current_user", return_value=admin_user
         ):
             response = client.get(
                 "/api/settings/user-2", headers={"Authorization": "Bearer admin-token"}
@@ -356,7 +356,7 @@ class TestAuditLogging:
     def test_settings_change_creates_audit_log(self, client, mock_user, sample_settings):
         """Test that changing settings returns success (audit logging tested in integration tests)"""
         with patch(
-            "cofounder_agent.routes.settings_routes.get_current_user", return_value=mock_user
+            "routes.settings_routes.get_current_user", return_value=mock_user
         ):
             response = client.put(
                 "/api/settings",
@@ -370,7 +370,7 @@ class TestAuditLogging:
     def test_audit_log_contains_user_info(self, client, mock_user, sample_settings):
         """Test that update endpoint returns success with user context"""
         with patch(
-            "cofounder_agent.routes.settings_routes.get_current_user", return_value=mock_user
+            "routes.settings_routes.get_current_user", return_value=mock_user
         ):
             response = client.put(
                 "/api/settings",

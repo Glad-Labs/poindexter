@@ -14,7 +14,7 @@ from typing import Dict, Set
 from services.progress_service import get_progress_service
 
 logger = logging.getLogger(__name__)
-websocket_router = APIRouter(prefix="/ws", tags=["WebSocket"])
+websocket_router = APIRouter(prefix="/api/ws", tags=["WebSocket"])
 
 
 class ConnectionManager:

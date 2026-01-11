@@ -14,13 +14,13 @@ import hmac
 import hashlib
 from datetime import datetime, timedelta
 from fastapi.testclient import TestClient
-from src.cofounder_agent.main import app
-from src.cofounder_agent.services.validation_service import (
+from main import app
+from services.validation_service import (
     InputValidator,
     ValidationError,
     SanitizationHelper,
 )
-from src.cofounder_agent.services.webhook_security import (
+from services.webhook_security import (
     WebhookSecurity,
     WebhookSignatureError,
     WebhookRateLimiter,
@@ -28,7 +28,9 @@ from src.cofounder_agent.services.webhook_security import (
 )
 
 
-client = TestClient(app)
+# Note: Use the client fixture from conftest instead
+# This ensures proper test isolation and lifespan management
+
 
 
 # ============================================================================
@@ -39,24 +41,24 @@ client = TestClient(app)
 class TestInputValidator:
     """Test input validation service"""
 
-    def test_string_validation_basic(self):
+    def test_string_validation_basic(self, client):
         """Should validate basic string input"""
         result = InputValidator.validate_string(
             "hello world", "test_field", min_length=1, max_length=100
         )
         assert result == "hello world"
 
-    def test_string_validation_too_short(self):
+    def test_string_validation_too_short(self, client):
         """Should reject strings below min length"""
         with pytest.raises(ValidationError, match="at least 5 characters"):
             InputValidator.validate_string("hi", "field", min_length=5)
 
-    def test_string_validation_too_long(self):
+    def test_string_validation_too_long(self, client):
         """Should reject strings above max length"""
         with pytest.raises(ValidationError, match="must not exceed 10 characters"):
             InputValidator.validate_string("this is a very long string", "field", max_length=10)
 
-    def test_string_validation_sql_injection(self):
+    def test_string_validation_sql_injection(self, client):
         """Should detect SQL injection attempts"""
         sql_payloads = [
             "admin' OR '1'='1",
@@ -69,7 +71,7 @@ class TestInputValidator:
             with pytest.raises(ValidationError, match="invalid SQL"):
                 InputValidator.validate_string(payload, "field", allow_sql=False)
 
-    def test_string_validation_xss(self):
+    def test_string_validation_xss(self, client):
         """Should detect XSS attempts"""
         xss_payloads = [
             "<script>alert('xss')</script>",
@@ -82,7 +84,7 @@ class TestInputValidator:
             with pytest.raises(ValidationError, match="invalid HTML or JavaScript"):
                 InputValidator.validate_string(payload, "field", allow_html=False)
 
-    def test_email_validation(self):
+    def test_email_validation(self, client):
         """Should validate email addresses"""
         valid_emails = [
             "test@example.com",
@@ -94,7 +96,7 @@ class TestInputValidator:
             result = InputValidator.validate_email(email)
             assert result == email.lower()
 
-    def test_email_validation_invalid(self):
+    def test_email_validation_invalid(self, client):
         """Should reject invalid emails"""
         invalid_emails = [
             "notanemail",
@@ -107,7 +109,7 @@ class TestInputValidator:
             with pytest.raises(ValidationError):
                 InputValidator.validate_email(email)
 
-    def test_url_validation(self):
+    def test_url_validation(self, client):
         """Should validate URLs"""
         valid_urls = [
             "https://example.com",
@@ -119,7 +121,7 @@ class TestInputValidator:
             result = InputValidator.validate_url(url)
             assert result == url
 
-    def test_url_validation_invalid(self):
+    def test_url_validation_invalid(self, client):
         """Should reject invalid URLs"""
         invalid_urls = [
             "not a url",
@@ -131,12 +133,12 @@ class TestInputValidator:
             with pytest.raises(ValidationError):
                 InputValidator.validate_url(url)
 
-    def test_integer_validation(self):
+    def test_integer_validation(self, client):
         """Should validate integer input"""
         result = InputValidator.validate_integer(42, "field", min_value=0, max_value=100)
         assert result == 42
 
-    def test_integer_validation_bounds(self):
+    def test_integer_validation_bounds(self, client):
         """Should enforce integer bounds"""
         with pytest.raises(ValidationError, match="must be at least 10"):
             InputValidator.validate_integer(5, "field", min_value=10)
@@ -144,26 +146,26 @@ class TestInputValidator:
         with pytest.raises(ValidationError, match="must not exceed 100"):
             InputValidator.validate_integer(150, "field", max_value=100)
 
-    def test_dict_validation(self):
+    def test_dict_validation(self, client):
         """Should validate dictionary input"""
         data = {"name": "John", "age": 30}
         result = InputValidator.validate_dict(data, "field")
         assert result == data
 
-    def test_dict_validation_allowed_keys(self):
+    def test_dict_validation_allowed_keys(self, client):
         """Should restrict dictionary keys"""
         data = {"name": "John", "invalid_key": "value"}
 
         with pytest.raises(ValidationError, match="invalid keys"):
             InputValidator.validate_dict(data, "field", allowed_keys=["name", "age"])
 
-    def test_list_validation(self):
+    def test_list_validation(self, client):
         """Should validate list input"""
         data = [1, 2, 3, 4, 5]
         result = InputValidator.validate_list(data, "field", item_type=int)
         assert result == data
 
-    def test_list_validation_item_type(self):
+    def test_list_validation_item_type(self, client):
         """Should enforce list item types"""
         data = [1, "two", 3]
 
@@ -174,7 +176,7 @@ class TestInputValidator:
 class TestSanitizationHelper:
     """Test sanitization utilities"""
 
-    def test_sanitize_filename(self):
+    def test_sanitize_filename(self, client):
         """Should sanitize filenames"""
         dangerous_names = [
             "../../../etc/passwd",
@@ -189,7 +191,7 @@ class TestSanitizationHelper:
             assert "\x00" not in result
             assert "<" not in result
 
-    def test_sanitize_html(self):
+    def test_sanitize_html(self, client):
         """Should remove dangerous HTML"""
         html = '<p>Hello <script>alert("xss")</script> World</p>'
         result = SanitizationHelper.sanitize_html(html)
@@ -206,7 +208,7 @@ class TestSanitizationHelper:
 class TestWebhookSecurity:
     """Test webhook signature verification"""
 
-    def test_signature_calculation(self):
+    def test_signature_calculation(self, client):
         """Should calculate valid HMAC-SHA256 signature"""
         payload = b'{"event": "test"}'
         secret = "test-secret-123"
@@ -217,7 +219,7 @@ class TestWebhookSecurity:
         assert len(signature) == 64
         assert all(c in "0123456789abcdef" for c in signature)
 
-    def test_signature_with_timestamp(self):
+    def test_signature_with_timestamp(self, client):
         """Should include timestamp in signature"""
         payload = b'{"event": "test"}'
         secret = "test-secret-123"
@@ -229,7 +231,7 @@ class TestWebhookSecurity:
         signature_no_ts = WebhookSecurity.calculate_signature(payload, secret)
         assert signature != signature_no_ts
 
-    def test_signature_verification_success(self):
+    def test_signature_verification_success(self, client):
         """Should verify valid signature"""
         payload = b'{"event": "test"}'
         secret = "test-secret-123"
@@ -243,7 +245,7 @@ class TestWebhookSecurity:
         )
         assert result is True
 
-    def test_signature_verification_tampered_payload(self):
+    def test_signature_verification_tampered_payload(self, client):
         """Should reject tampered payloads"""
         payload = b'{"event": "test"}'
         secret = "test-secret-123"
@@ -258,7 +260,7 @@ class TestWebhookSecurity:
                 tampered_payload, signature, secret, check_timestamp=False
             )
 
-    def test_signature_verification_invalid_secret(self):
+    def test_signature_verification_invalid_secret(self, client):
         """Should reject signature with wrong secret"""
         payload = b'{"event": "test"}'
         secret = "test-secret-123"
@@ -271,7 +273,7 @@ class TestWebhookSecurity:
                 payload, signature, wrong_secret, check_timestamp=False
             )
 
-    def test_signature_verification_expired_timestamp(self):
+    def test_signature_verification_expired_timestamp(self, client):
         """Should reject expired timestamps"""
         payload = b'{"event": "test"}'
         secret = "test-secret-123"
@@ -284,7 +286,7 @@ class TestWebhookSecurity:
                 payload, signature, secret, old_timestamp, check_timestamp=True
             )
 
-    def test_test_signature_generation(self):
+    def test_test_signature_generation(self, client):
         """Should generate valid test signatures"""
         payload = b'{"test": "data"}'
         secret = "test-secret"
@@ -299,7 +301,7 @@ class TestWebhookSecurity:
 class TestWebhookRateLimiter:
     """Test webhook rate limiting"""
 
-    def test_rate_limiter_allows_requests(self):
+    def test_rate_limiter_allows_requests(self, client):
         """Should allow requests within rate limit"""
         limiter = WebhookRateLimiter(max_requests_per_minute=10)
 
@@ -307,7 +309,7 @@ class TestWebhookRateLimiter:
         for i in range(10):
             assert limiter.is_allowed("source_1") is True
 
-    def test_rate_limiter_blocks_excessive_requests(self):
+    def test_rate_limiter_blocks_excessive_requests(self, client):
         """Should block requests exceeding rate limit"""
         limiter = WebhookRateLimiter(max_requests_per_minute=5)
         source = "source_1"
@@ -319,7 +321,7 @@ class TestWebhookRateLimiter:
         # 6th should be blocked
         assert limiter.is_allowed(source) is False
 
-    def test_rate_limiter_per_source(self):
+    def test_rate_limiter_per_source(self, client):
         """Should track limits per source separately"""
         limiter = WebhookRateLimiter(max_requests_per_minute=3)
 
@@ -338,26 +340,26 @@ class TestWebhookRateLimiter:
 class TestWebhookValidator:
     """Test webhook payload validation"""
 
-    def test_payload_size_validation(self):
+    def test_payload_size_validation(self, client):
         """Should validate payload size"""
         # Valid size
         payload = b"x" * (5 * 1024 * 1024)  # 5MB
         assert WebhookValidator.validate_payload_size(payload, max_size_mb=10) is True
 
-    def test_payload_size_exceeded(self):
+    def test_payload_size_exceeded(self, client):
         """Should reject oversized payloads"""
         payload = b"x" * (15 * 1024 * 1024)  # 15MB
 
         with pytest.raises(WebhookSignatureError, match="exceeds maximum"):
             WebhookValidator.validate_payload_size(payload, max_size_mb=10)
 
-    def test_content_type_validation(self):
+    def test_content_type_validation(self, client):
         """Should validate content type"""
         # Valid
         assert WebhookValidator.validate_content_type("application/json") is True
         assert WebhookValidator.validate_content_type("application/json; charset=utf-8") is True
 
-    def test_content_type_invalid(self):
+    def test_content_type_invalid(self, client):
         """Should reject invalid content types"""
         with pytest.raises(WebhookSignatureError, match="Invalid content type"):
             WebhookValidator.validate_content_type("text/xml")
@@ -371,7 +373,7 @@ class TestWebhookValidator:
 class TestInputValidationMiddleware:
     """Test input validation middleware on API endpoints"""
 
-    def test_oversized_request_rejected(self):
+    def test_oversized_request_rejected(self, client):
         """Should reject requests exceeding body size limit"""
         # Create a very large payload
         large_payload = {"data": "x" * (11 * 1024 * 1024)}  # 11MB (exceeds default 10MB)
@@ -383,7 +385,7 @@ class TestInputValidationMiddleware:
         # Should reject with 400 or 413
         assert response.status_code in [400, 413, 422]
 
-    def test_invalid_json_rejected(self):
+    def test_invalid_json_rejected(self, client):
         """Should reject invalid JSON"""
         response = client.post(
             "/api/tasks", content="{invalid json}", headers={"Content-Type": "application/json"}
@@ -392,7 +394,7 @@ class TestInputValidationMiddleware:
         # Should return 400
         assert response.status_code in [400, 422]
 
-    def test_invalid_content_type_rejected(self):
+    def test_invalid_content_type_rejected(self, client):
         """Should reject invalid content types"""
         response = client.post(
             "/api/tasks", data="test data", headers={"Content-Type": "text/plain"}
@@ -401,14 +403,14 @@ class TestInputValidationMiddleware:
         # Should be rejected or processed as form data
         assert response.status_code in [400, 422, 200]
 
-    def test_path_traversal_rejected(self):
+    def test_path_traversal_rejected(self, client):
         """Should reject path traversal attempts"""
         response = client.get("/api/tasks/../../etc/passwd")
 
         # Should be rejected
         assert response.status_code in [400, 404]
 
-    def test_null_byte_in_path_rejected(self):
+    def test_null_byte_in_path_rejected(self, client):
         """Should reject null bytes in path"""
         response = client.get("/api/tasks\x00/secret")
 
@@ -424,7 +426,7 @@ class TestInputValidationMiddleware:
 class TestWebhookIntegration:
     """Test webhook endpoints with security features"""
 
-    def test_webhook_with_valid_signature(self):
+    def test_webhook_with_valid_signature(self, client):
         """Should accept webhook with valid signature"""
         payload = {"event": "entry.create", "model": "article", "entry": {"id": 1, "title": "Test"}}
 
@@ -446,7 +448,7 @@ class TestWebhookIntegration:
         # Should process webhook
         assert response.status_code in [200, 400]  # 400 if signature header not checked yet
 
-    def test_webhook_with_invalid_signature(self):
+    def test_webhook_with_invalid_signature(self, client):
         """Should reject webhook with invalid signature"""
         payload = {"event": "entry.create", "model": "article", "entry": {"id": 1, "title": "Test"}}
 

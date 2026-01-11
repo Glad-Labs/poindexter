@@ -17,38 +17,8 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 
-@pytest.fixture(scope="session")
-def test_app():
-    """Create test app with routes registered"""
-    try:
-        from routes.websocket_routes import router as websocket_router
-    except ImportError:
-        # If websocket routes don't exist, just create a basic app
-        websocket_router = None
-    
-    from utils.exception_handlers import register_exception_handlers
-    from utils.middleware_config import MiddlewareConfig
-    
-    app = FastAPI(title="Test WebSocket App")
-    
-    # Register routes if available
-    if websocket_router:
-        app.include_router(websocket_router)
-    
-    # Register exception handlers
-    register_exception_handlers(app)
-    
-    # Register middleware
-    middleware_config = MiddlewareConfig()
-    middleware_config.register_all_middleware(app)
-    
-    return app
-
-
-@pytest.fixture(scope="session")
-def client(test_app):
-    """Create test client"""
-    return TestClient(test_app)
+# Use conftest app and client fixtures instead
+# This ensures all routes are properly registered
 
 
 @pytest.mark.unit

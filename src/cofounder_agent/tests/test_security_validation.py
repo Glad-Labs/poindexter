@@ -21,47 +21,8 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 
-# Test fixtures
-@pytest.fixture
-def test_app():
-    """Create FastAPI test app with security middleware"""
-    app = FastAPI()
-
-    # CORS middleware (environment-based)
-    allowed_origins = os.getenv(
-        "ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001"
-    ).split(",")
-
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=allowed_origins,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE"],
-        allow_headers=["Authorization", "Content-Type"],
-    )
-
-    # Rate limiting
-    limiter = Limiter(key_func=get_remote_address)
-    app.state.limiter = limiter
-
-    @app.get("/api/test")
-    async def test_endpoint():
-        return {"status": "ok"}
-
-    @app.post("/api/login")
-    async def login(username: str, password: str):
-        """Authentication endpoint (would be rate-limited in production)"""
-        if not username or not password:
-            return {"error": "Missing credentials"}
-        return {"token": "test-token"}
-
-    return app
-
-
-@pytest.fixture
-def client(test_app):
-    """Test client for FastAPI app"""
-    return TestClient(test_app)
+# Use conftest app and client fixtures instead
+# This ensures all routes are properly registered
 
 
 # ============================================================================

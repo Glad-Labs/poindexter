@@ -16,32 +16,8 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 
-@pytest.fixture(scope="session")
-def test_app():
-    """Create test app with routes registered"""
-    from routes.task_routes import router as task_router
-    from utils.exception_handlers import register_exception_handlers
-    from utils.middleware_config import MiddlewareConfig
-    
-    app = FastAPI(title="Test Command Queue App")
-    
-    # Register routes
-    app.include_router(task_router)
-    
-    # Register exception handlers
-    register_exception_handlers(app)
-    
-    # Register middleware
-    middleware_config = MiddlewareConfig()
-    middleware_config.register_all_middleware(app)
-    
-    return app
-
-
-@pytest.fixture(scope="session")
-def client(test_app):
-    """Create test client"""
-    return TestClient(test_app)
+# Use conftest app and client fixtures instead
+# This ensures all routes are properly registered
 
 
 @pytest.mark.unit
@@ -50,7 +26,7 @@ class TestCommandQueueRoutes:
     """Test command queue endpoints"""
 
     @pytest.fixture
-    def auth_headers(self):
+    def auth_headers(self, client):
         """Get auth headers for protected endpoints"""
         auth_response = client.post(
             "/api/auth/github/callback",
@@ -62,7 +38,7 @@ class TestCommandQueueRoutes:
             return {"Authorization": f"Bearer {token}"}
         return {}
 
-    def test_dispatch_command(self, auth_headers):
+    def test_dispatch_command(self, client, auth_headers):
         """Test dispatching a command"""
         command_data = {
             "agent_type": "content",
@@ -87,7 +63,7 @@ class TestCommandQueueRoutes:
         else:
             assert response.status_code == 401
 
-    def test_dispatch_command_invalid_agent(self, auth_headers):
+    def test_dispatch_command_invalid_agent(self, client, auth_headers):
         """Test dispatching to invalid agent type"""
         response = client.post(
             "/api/commands/dispatch",
@@ -103,7 +79,7 @@ class TestCommandQueueRoutes:
         else:
             assert response.status_code == 401
 
-    def test_get_command_status(self, auth_headers):
+    def test_get_command_status(self, client, auth_headers):
         """Test checking command status"""
         response = client.get(
             "/api/commands/test_command_id/status",
@@ -115,7 +91,7 @@ class TestCommandQueueRoutes:
         else:
             assert response.status_code == 401
 
-    def test_get_command_result(self, auth_headers):
+    def test_get_command_result(self, client, auth_headers):
         """Test retrieving command result"""
         response = client.get(
             "/api/commands/test_command_id/result",
@@ -127,7 +103,7 @@ class TestCommandQueueRoutes:
         else:
             assert response.status_code == 401
 
-    def test_list_pending_commands(self, auth_headers):
+    def test_list_pending_commands(self, client, auth_headers):
         """Test listing pending commands"""
         response = client.get(
             "/api/commands/pending",
@@ -141,7 +117,7 @@ class TestCommandQueueRoutes:
         else:
             assert response.status_code == 401
 
-    def test_cancel_command(self, auth_headers):
+    def test_cancel_command(self, client, auth_headers):
         """Test canceling a command"""
         response = client.post(
             "/api/commands/test_command_id/cancel",
@@ -153,7 +129,7 @@ class TestCommandQueueRoutes:
         else:
             assert response.status_code == 401
 
-    def test_queue_statistics(self, auth_headers):
+    def test_queue_statistics(self, client, auth_headers):
         """Test getting queue statistics"""
         response = client.get(
             "/api/commands/statistics",
@@ -167,7 +143,7 @@ class TestCommandQueueRoutes:
         else:
             assert response.status_code == 401
 
-    def test_clear_completed_commands(self, auth_headers):
+    def test_clear_completed_commands(self, client, auth_headers):
         """Test clearing completed commands"""
         response = client.post(
             "/api/commands/clear-completed",
@@ -179,7 +155,7 @@ class TestCommandQueueRoutes:
         else:
             assert response.status_code == 401
 
-    def test_intervention_command(self, auth_headers):
+    def test_intervention_command(self, client, auth_headers):
         """Test sending intervention command"""
         response = client.post(
             "/api/commands/intervene",
