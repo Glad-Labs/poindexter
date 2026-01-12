@@ -26,13 +26,13 @@ jobs:
       - name: 🔧 Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: "22"
           cache: "npm"
 
       - name: 🐍 Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: 📦 Install dependencies
         run: npm ci && npm ci --workspaces
@@ -57,8 +57,8 @@ jobs:
       - name: 🔄 Load development environment
         run: cp .env.example .env.local
 
-      - name: 🧪 Run frontend tests
-        run: npm run test:frontend:ci
+      - name: 🧪 Run tests
+        run: npm run test:ci
         continue-on-error: true
 
       - name: 🧪 Run Python tests

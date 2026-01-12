@@ -66,8 +66,8 @@ jobs:
       # TEST PHASE (Full suite + security before production)
       # ============================================
 
-      - name: 🧪 Run frontend tests
-        run: npm run test:frontend:ci
+      - name: 🧪 Run all tests
+        run: npm run test:ci
 
       - name: 🧪 Run backend tests
         run: npm run test:python
@@ -80,31 +80,10 @@ jobs:
         continue-on-error: true
 
       # ============================================
-      # DEPLOYMENT PHASE - STRAPI CMS
+      # NOTE: Strapi CMS deployment removed (not in use)
       # ============================================
-
-      - name: 🚀 Deploy Strapi CMS to Railway (Production)
-        run: |
-          echo "🚨 DEPLOYING STRAPI CMS TO PRODUCTION"
-          cd cms/strapi-main
-          npx railway up
-          cd ../..
-          echo "✅ Strapi production deployment completed"
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROD_PROJECT_ID }}
-          RAILWAY_SERVICE_ID: strapi-cms-prod
-          DATABASE_HOST: ${{ secrets.STRAPI_PROD_DB_HOST }}
-          DATABASE_PORT: "5432"
-          DATABASE_NAME: glad_labs_production
-          DATABASE_USER: ${{ secrets.STRAPI_PROD_DB_USER }}
-          DATABASE_PASSWORD: ${{ secrets.STRAPI_PROD_DB_PASSWORD }}
-          DATABASE_SSL: "true"
-          STRAPI_ADMIN_PASSWORD: ${{ secrets.STRAPI_PROD_ADMIN_PASSWORD }}
-          STRAPI_ADMIN_EMAIL: admin@glad-labs.com
-          STRAPI_JWT_SECRET: ${{ secrets.STRAPI_PROD_JWT_SECRET }}
-          STRAPI_API_TOKEN: ${{ secrets.STRAPI_PROD_API_TOKEN }}
-          NODE_ENV: production
+      # Strapi CMS deployment is not configured for this project
+      # The Co-Founder Agent handles all content management
 
       # ============================================
       # DEPLOYMENT PHASE - CO-FOUNDER AGENT
@@ -181,11 +160,8 @@ jobs:
           echo "Waiting for services to stabilize (20 seconds)..."
           sleep 20
 
-          echo "Testing Strapi CMS health..."
-          curl -f https://cms.railway.app/admin || exit 1
-
           echo "Testing Co-Founder Agent health..."
-          curl -f https://api.railway.app/api/health || exit 1
+          curl -f https://agent-prod.railway.app/health || exit 1
 
           echo "Testing Public Site health..."
           curl -f https://glad-labs.com || exit 1
@@ -199,12 +175,8 @@ jobs:
         run: |
           echo "🔍 Performing production health checks..."
 
-          echo "Checking Strapi database connection..."
-          curl -f -H "Authorization: Bearer ${{ secrets.STRAPI_PROD_API_TOKEN }}" \
-            https://cms.railway.app/api/posts?pagination[limit]=1 || echo "⚠️ Database check pending"
-
           echo "Checking Co-Founder Agent connectivity..."
-          curl -f https://api.railway.app/api/health/detailed || echo "⚠️ Agent check pending"
+          curl -f https://agent-prod.railway.app/health/detailed || echo "⚠️ Agent check pending"
 
           echo "Checking SSL/TLS certificates..."
           openssl s_client -connect glad-labs.com:443 -servername glad-labs.com < /dev/null | grep -o "Verify return code"
@@ -216,9 +188,9 @@ jobs:
           echo "🔍 Verifying production deployment..."
           echo "✅ All components deployed successfully to production!"
           echo "🌍 Production URLs:"
-          echo "  - Strapi CMS: https://cms.railway.app/admin"
-          echo "  - Co-Founder Agent API: https://api.railway.app/docs"
+          echo "  - Co-Founder Agent API: https://agent-prod.railway.app/docs"
           echo "  - Public Site: https://glad-labs.com"
+          echo "  - Oversight Hub: https://oversight.glad-labs.com"
           echo "  - Oversight Hub: https://oversight.glad-labs.com"
           echo "🎉 Production environment is live and healthy"
 
