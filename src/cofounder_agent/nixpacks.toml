@@ -1,8 +1,3 @@
-providers = ["python"]
-
-[apt]
-# System packages needed for opencv-python in headless environment
-packages = ["libgl1-mesa-glx", "libglib2.0-0"]
-
-[python]
-version = "3.13"
+# This file is deprecated - Nixpacks is no longer used
+# Railway now uses the Dockerfile for building (see railway.json for configuration)
+# This file is kept for reference only
