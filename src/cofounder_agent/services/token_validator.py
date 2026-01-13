@@ -53,10 +53,6 @@ class AuthConfig:
     ALGORITHM = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
 
-    # Debug: log what secret was loaded (first 20 chars only for security)
-    secret_preview = SECRET_KEY[:20] + "..." if len(SECRET_KEY) > 20 else "***"
-    print(f"[token_validator import] JWT secret loaded: {secret_preview}", flush=True)
-
 
 class JWTTokenValidator:
     """Validates JWT tokens without database access"""
