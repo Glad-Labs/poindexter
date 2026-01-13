@@ -9,7 +9,10 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.10,<3.13"
+python = ">=3.10,<3.14"
+
+# Use headless opencv (doesn't require X11/GUI libraries in production)
+opencv-python-headless = "^4.8.0"
 
 # Web Framework
 fastapi = "^0.100"
