@@ -1,3 +1,3 @@
-providers = ["python"]
-
-
+# This file is deprecated - Nixpacks is no longer used
+# Railway now uses the Dockerfile for building (see railway.json for configuration)
+# This file is kept for reference only
