@@ -1,0 +1,10 @@
+[providers]
+# Explicitly enable Python provider
+enable = ["python", "nodejs", "npm"]
+
+[build]
+# System packages needed for opencv-python
+aptPackages = ["libgl1-mesa-glx", "libglib2.0-0"]
+
+[python]
+version = "3.13"
