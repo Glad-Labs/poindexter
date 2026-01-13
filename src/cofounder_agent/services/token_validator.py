@@ -13,6 +13,7 @@ This is a standalone validator that:
 
 import os
 from typing import Optional, Tuple, Dict, Any
+from datetime import datetime
 from enum import Enum
 import jwt
 
@@ -77,6 +78,15 @@ class JWTTokenValidator:
         """
         import sys
 
+        # Development: Allow disabling auth for testing
+        if os.getenv("DISABLE_AUTH_FOR_DEV") == "true":
+            return {
+                "sub": "dev-user",
+                "type": token_type.value,
+                "iat": datetime.now().timestamp(),
+                "exp": (datetime.now().timestamp() + 3600),
+            }
+
         try:
             # Validate token format (should have 3 parts separated by dots)
             parts = token.split(".")
@@ -85,17 +95,8 @@ class JWTTokenValidator:
                     f"Invalid token format: expected 3 parts, got {len(parts)}"
                 )
 
-            # Debug logging
-            print(f"\n[verify_token] Verifying token...", file=sys.stderr)
-            print(f"[verify_token] Using secret: {AuthConfig.SECRET_KEY[:30]}...", file=sys.stderr)
-            print(f"[verify_token] Token: {token[:50]}...", file=sys.stderr)
-
             # Verify and decode token
             payload = jwt.decode(token, AuthConfig.SECRET_KEY, algorithms=[AuthConfig.ALGORITHM])
-
-            print(f"[verify_token] Token decoded successfully", file=sys.stderr)
-            print(f"[verify_token] Payload type field: {payload.get('type')}", file=sys.stderr)
-            print(f"[verify_token] Expected type: {token_type.value}", file=sys.stderr)
 
             # Verify token type
             if payload.get("type") != token_type.value:
@@ -105,7 +106,6 @@ class JWTTokenValidator:
         except jwt.ExpiredSignatureError:
             raise jwt.ExpiredSignatureError("Token has expired")
         except jwt.InvalidTokenError as e:
-            print(f"[verify_token] Invalid token error: {str(e)}", file=sys.stderr)
             raise jwt.InvalidTokenError(f"Invalid token: {str(e)}")
 
     @staticmethod
