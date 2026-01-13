@@ -11,6 +11,9 @@ package-mode = false
 python = ">=3.10,<3.14"
 crewai-tools = "^1.7.2"
 
+# Use headless opencv (doesn't require X11/GUI libraries in production)
+opencv-python-headless = "^4.8.0"
+
 # Optional ML/AI dependencies for SDXL image generation
 torch = { version = ">=2.0.0", optional = true }
 diffusers = { version = ">=0.30.0", optional = true }
