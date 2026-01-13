@@ -3266,7 +3266,10 @@ files = [
 
 [package.dependencies]
 googleapis-common-protos = ">=1.52,<2.0"
-grpcio = {version = ">=1.63.2,<2.0.0", markers = "python_version < \"3.13\""}
+grpcio = [
+    {version = ">=1.63.2,<2.0.0", markers = "python_version < \"3.13\""},
+    {version = ">=1.66.2,<2.0.0", markers = "python_version >= \"3.13\""},
+]
 opentelemetry-api = ">=1.15,<2.0"
 opentelemetry-exporter-otlp-proto-common = "1.34.1"
 opentelemetry-proto = "1.34.1"
@@ -5124,7 +5127,7 @@ description = "Easily download, build, install, upgrade, and uninstall Python pa
 optional = true
 python-versions = ">=3.9"
 groups = ["main"]
-markers = "extra == \"ml\" and python_version == \"3.12\""
+markers = "extra == \"ml\" and python_version >= \"3.12\""
 files = [
     {file = "setuptools-80.9.0-py3-none-any.whl", hash = "sha256:062d34222ad13e0cc312a4c02d73f059e86a4acbfbdea8f8f76b28c99f306922"},
     {file = "setuptools-80.9.0.tar.gz", hash = "sha256:f36b47402ecde768dbfafc46e8e4207b4360c654f1f3bb84475f0a28628fb19c"},
@@ -6266,5 +6269,5 @@ ml = ["accelerate", "diffusers", "torch", "transformers"]
 
 [metadata]
 lock-version = "2.1"
-python-versions = ">=3.10,<3.13"
-content-hash = "87050f77db03836449989ad22a27c5fc3798dc30de4b715a19b9d9eacc0b1fe0"
+python-versions = ">=3.10,<3.14"
+content-hash = "a14a77024fff54440fcc28eb7890b76d4377ea1e093903a52ec89154db5cd1dc"
