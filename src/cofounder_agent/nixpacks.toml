@@ -1,3 +1,6 @@
+[providers]
+enable = ["python"]
+
 [build]
 # System packages needed for opencv-python in headless environment
 aptPackages = ["libgl1-mesa-glx", "libglib2.0-0"]
