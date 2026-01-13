@@ -38,8 +38,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 # GitHub Configuration
-GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
-GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
+# Note: Using GH_OAUTH_ prefix instead of GITHUB_ because GitHub Actions
+# blocks secrets starting with GITHUB_ for security reasons
+GITHUB_CLIENT_ID = os.getenv("GH_OAUTH_CLIENT_ID", "")
+GITHUB_CLIENT_SECRET = os.getenv("GH_OAUTH_CLIENT_SECRET", "")
 
 
 # ============================================================================

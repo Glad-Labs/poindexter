@@ -12,8 +12,9 @@ Setup:
    - Authorization callback URL: https://yourdomain.com/api/auth/callback/github (prod)
 3. Copy Client ID and Client Secret
 4. Set environment variables:
-   - GITHUB_CLIENT_ID (Client ID)
-   - GITHUB_CLIENT_SECRET (Client Secret)
+   - GH_OAUTH_CLIENT_ID (Client ID)
+   - GH_OAUTH_CLIENT_SECRET (Client Secret)
+   Note: Use GH_OAUTH_ prefix instead of GITHUB_ because GitHub Actions blocks secrets starting with GITHUB_
 """
 
 import os
@@ -36,15 +37,15 @@ class GitHubOAuthProvider(OAuthProvider):
 
     def __init__(self):
         """Initialize GitHub OAuth provider from environment variables"""
-        self.client_id = os.getenv("GITHUB_CLIENT_ID")
-        self.client_secret = os.getenv("GITHUB_CLIENT_SECRET")
+        self.client_id = os.getenv("GH_OAUTH_CLIENT_ID")
+        self.client_secret = os.getenv("GH_OAUTH_CLIENT_SECRET")
         self.redirect_uri = os.getenv(
             "GITHUB_REDIRECT_URI", "http://localhost:8000/api/auth/callback/github"
         )
 
         if not self.client_id or not self.client_secret:
             raise OAuthException(
-                "GitHub OAuth not configured. Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET"
+                "GitHub OAuth not configured. Set GH_OAUTH_CLIENT_ID and GH_OAUTH_CLIENT_SECRET"
             )
 
         logger.info("✅ GitHub OAuth provider initialized")
