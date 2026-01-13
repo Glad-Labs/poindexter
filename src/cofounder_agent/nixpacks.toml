@@ -1,5 +1,4 @@
-[providers]
-enable = ["python"]
+providers = ["python"]
 
 [build]
 # System packages needed for opencv-python in headless environment
