@@ -8,7 +8,7 @@ packages = []
 package-mode = false
 
 [tool.poetry.dependencies]
-python = ">=3.10,<3.13"
+python = ">=3.10,<3.14"
 crewai-tools = "^1.7.2"
 
 # Optional ML/AI dependencies for SDXL image generation
