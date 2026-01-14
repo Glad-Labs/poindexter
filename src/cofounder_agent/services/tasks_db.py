@@ -144,7 +144,6 @@ class TasksDatabase(DatabaseServiceMixin):
             insert_data = {
                 "task_id": task_id,
                 "id": task_id,
-                "request_type": task_data.get("request_type", "content_generation"),
                 "task_type": task_data.get("task_type", "blog_post"),
                 "status": task_data.get("status", "pending"),
                 "topic": task_data.get("topic", ""),
