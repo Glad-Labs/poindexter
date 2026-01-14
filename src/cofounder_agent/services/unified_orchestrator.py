@@ -451,6 +451,35 @@ class UnifiedOrchestrator:
         return params
 
     # ========================================================================
+    # MODEL SELECTION HELPER
+    # ========================================================================
+
+    def _get_model_for_phase(
+        self, phase: str, model_selections: Dict[str, str], quality_preference: str
+    ) -> Optional[str]:
+        """
+        Get the appropriate LLM model for a given generation phase.
+
+        Args:
+            phase: Generation phase ('research', 'draft', 'assess', 'refine', 'finalize')
+            model_selections: User's per-phase model selections
+            quality_preference: Fallback preference (fast, balanced, quality)
+
+        Returns:
+            Model identifier (e.g., "gpt-4", "claude-opus") or None to use config default
+        """
+        # Try to get specific model selection for this phase
+        if model_selections and phase in model_selections:
+            selected = model_selections[phase]
+            # If user selected a specific model (not "auto"), use it
+            if selected and selected != "auto":
+                logger.info(f"   Model selection: Using {selected} for {phase} phase")
+                return selected
+
+        logger.info(f"   Model selection: Using default for {phase} phase (quality={quality_preference})")
+        return None
+
+    # ========================================================================
     # REQUEST HANDLERS
     # ========================================================================
 
@@ -478,6 +507,23 @@ class UnifiedOrchestrator:
             tone = request.parameters.get("tone", "informative")
             keywords = request.parameters.get("keywords", [topic])
             content_constraints = request.parameters.get("content_constraints", {})
+
+            # Extract model selections and quality preference from execution context
+            model_selections = {}
+            quality_preference = "balanced"
+            if request.context:
+                model_selections = request.context.get("model_selections", {})
+                quality_preference = request.context.get("quality_preference", "balanced")
+                if isinstance(model_selections, str):
+                    try:
+                        import json
+                        model_selections = json.loads(model_selections)
+                    except (json.JSONDecodeError, TypeError):
+                        model_selections = {}
+            
+            logger.info(f"[{request.request_id}] Model Configuration:")
+            logger.info(f"   - Model Selections: {model_selections}")
+            logger.info(f"   - Quality Preference: {quality_preference}")
 
             # Generate task ID
             task_id = f"task_{int(datetime.utcnow().timestamp())}_{uuid.uuid4().hex[:6]}"
@@ -534,7 +580,11 @@ class UnifiedOrchestrator:
             from services.writing_style_service import WritingStyleService
             from services.writing_style_integration import WritingStyleIntegrationService
 
-            llm_client = LLMClient()
+            # Get model selection for draft phase
+            draft_model = self._get_model_for_phase("draft", model_selections, quality_preference)
+            
+            # Create LLMClient with selected model
+            llm_client = LLMClient(model_name=draft_model) if draft_model else LLMClient()
             creative_agent = CreativeAgent(llm_client=llm_client)
 
             # Retrieve writing style guidance - either from specific writing_style_id or active sample
@@ -638,6 +688,12 @@ class UnifiedOrchestrator:
                     break
                 elif iteration < max_iterations:
                     logger.info(f"[{request.request_id}] QA Rejected - Refining...")
+                    # Get model selection for refine phase
+                    refine_model = self._get_model_for_phase("refine", model_selections, quality_preference)
+                    if refine_model:
+                        # Create new LLMClient with refine model for refinement
+                        refine_llm_client = LLMClient(model_name=refine_model)
+                        creative_agent = CreativeAgent(llm_client=refine_llm_client)
                     content = await creative_agent.run(content, is_refinement=True)
 
             qa_compliance = validate_constraints(

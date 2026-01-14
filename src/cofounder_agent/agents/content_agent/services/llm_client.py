@@ -15,13 +15,20 @@ from pathlib import Path
 class LLMClient:
     """Client for interacting with a configured Large Language Model."""
 
-    def __init__(self):
-        """Initializes the LLM client based on the provider specified in the config."""
+    def __init__(self, model_name: str = None):
+        """
+        Initializes the LLM client based on the provider specified in the config.
+        
+        Args:
+            model_name: Optional specific model to use (e.g., "gemini-2.5-flash", "gpt-4")
+                       If not provided, uses the configured default model.
+        """
         self.provider = config.LLM_PROVIDER
+        self.model_name_override = model_name  # Store for potential use
         self.model = None
         self.summarizer_model = None
-        self.cache_dir = Path(config.BASE_DIR) / "content-agent" / ".cache"
-        self.cache_dir.mkdir(exist_ok=True)
+        self.cache_dir = Path(config.BASE_DIR) / ".cache"
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
 
         try:
             if self.provider == "gemini":
@@ -31,9 +38,11 @@ class LLMClient:
                     os.environ["GOOGLE_API_KEY"] = config.GEMINI_API_KEY
                 else:
                     raise ValueError("GEMINI_API_KEY not found in config for gemini provider.")
-                self.model = genai.GenerativeModel(config.GEMINI_MODEL)
+                # Use override model if provided, otherwise use config default
+                model_to_use = model_name if model_name else config.GEMINI_MODEL
+                self.model = genai.GenerativeModel(model_to_use)
                 self.summarizer_model = genai.GenerativeModel(config.SUMMARIZER_MODEL)
-                logging.info("Initialized Gemini client.")
+                logging.info(f"Initialized Gemini client with model: {model_to_use}")
             elif self.provider == "local" or self.provider == "ollama":
                 # Treat Ollama as a local provider - both use the same HTTP API endpoint
                 logging.info(f"Using local LLM provider (Ollama) at {config.LOCAL_LLM_API_URL}")

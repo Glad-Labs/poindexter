@@ -145,6 +145,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 "task_id": task_id,
                 "id": task_id,
                 "task_type": task_data.get("task_type", "blog_post"),
+                "request_type": task_data.get("request_type", "content_generation"),
                 "status": task_data.get("status", "pending"),
                 "topic": task_data.get("topic", ""),
                 "style": task_data.get("style", "technical"),
