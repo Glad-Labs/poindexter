@@ -30,9 +30,9 @@ class AuthConfig:
 
     # Support both JWT_SECRET_KEY and JWT_SECRET for flexibility
     # SECURITY: Do NOT use hardcoded default - require environment variable
-    _secret = os.getenv("JWT_SECRET_KEY") or os.getenv("JWT_SECRET")
+    _from_env = os.getenv("JWT_SECRET_KEY") or os.getenv("JWT_SECRET")
 
-    if not _secret:
+    if not _from_env:
         # In production, this is a critical error
         import sys
 
@@ -44,13 +44,17 @@ class AuthConfig:
             sys.exit(1)  # Exit if JWT secret is missing in production
         else:
             # Development fallback only - MUST MATCH frontend mockTokenGenerator.js
-            _secret = "dev-jwt-secret-change-in-production-to-random-64-chars"
+            _from_env = "dev-jwt-secret-change-in-production-to-random-64-chars"
             print(
                 "[WARNING] Using development JWT secret - SET JWT_SECRET in .env for production",
                 flush=True,
             )
+            _secret_source = "FALLBACK (hardcoded development)"
+    else:
+        _secret_source = "JWT_SECRET_KEY" if os.getenv("JWT_SECRET_KEY") else "JWT_SECRET"
+        print(f"[INFO] JWT Secret loaded from {_secret_source}", flush=True)
 
-    SECRET_KEY = _secret
+    SECRET_KEY = _from_env
     ALGORITHM = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
 
@@ -100,12 +104,16 @@ class JWTTokenValidator:
 
             # Verify token type
             if payload.get("type") != token_type.value:
-                raise jwt.InvalidTokenError(f"Invalid token type: expected {token_type.value}")
+                raise jwt.InvalidTokenError(f"Invalid token type: expected {token_type.value}, got {payload.get('type')}")
 
             return payload
-        except jwt.ExpiredSignatureError:
+        except jwt.ExpiredSignatureError as e:
+            import sys
+            print(f"[DEBUG] Token expired: {str(e)}", file=sys.stderr, flush=True)
             raise jwt.ExpiredSignatureError("Token has expired")
         except jwt.InvalidTokenError as e:
+            import sys
+            print(f"[DEBUG] Invalid token error: {str(e)}", file=sys.stderr, flush=True)
             raise jwt.InvalidTokenError(f"Invalid token: {str(e)}")
 
     @staticmethod
