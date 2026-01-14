@@ -101,7 +101,7 @@ jobs:
           RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROD_PROJECT_ID }}
           RAILWAY_SERVICE_ID: cofounder-agent-prod
           DATABASE_URL: ${{ secrets.DATABASE_PROD_URL }}
-          JWT_SECRET: ${{ secrets.COFOUNDER_PROD_JWT_SECRET }}
+          JWT_SECRET_KEY: ${{ secrets.COFOUNDER_PROD_JWT_SECRET }}
           OPENAI_API_KEY: ${{ secrets.COFOUNDER_PROD_OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.COFOUNDER_PROD_ANTHROPIC_API_KEY }}
           GOOGLE_API_KEY: ${{ secrets.COFOUNDER_PROD_GOOGLE_API_KEY }}

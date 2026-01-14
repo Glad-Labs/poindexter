@@ -93,7 +93,7 @@ jobs:
           RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_STAGING_PROJECT_ID }}
           RAILWAY_SERVICE_ID: cofounder-agent-staging
           DATABASE_URL: ${{ secrets.DATABASE_STAGING_URL }}
-          JWT_SECRET: ${{ secrets.COFOUNDER_STAGING_JWT_SECRET }}
+          JWT_SECRET_KEY: ${{ secrets.COFOUNDER_STAGING_JWT_SECRET }}
           OPENAI_API_KEY: ${{ secrets.COFOUNDER_STAGING_OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.COFOUNDER_STAGING_ANTHROPIC_API_KEY }}
           GOOGLE_API_KEY: ${{ secrets.COFOUNDER_STAGING_GOOGLE_API_KEY }}
