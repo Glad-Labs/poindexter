@@ -411,6 +411,35 @@ async def health():
     return {"status": "ok", "service": "cofounder-agent"}
 
 
+@app.get("/health/debug")
+async def health_debug():
+    """
+    Debug endpoint - shows JWT secret configuration for troubleshooting.
+    
+    WARNING: Only use for debugging - remove in production!
+    
+    Returns: Configuration info for auth troubleshooting
+    """
+    import os
+    from services.token_validator import AuthConfig
+    
+    jwt_secret_key = os.getenv("JWT_SECRET_KEY", "NOT_SET")
+    jwt_secret = os.getenv("JWT_SECRET", "NOT_SET")
+    environment = os.getenv("ENVIRONMENT", "NOT_SET")
+    
+    return {
+        "status": "debug",
+        "service": "cofounder-agent",
+        "jwt_secret_key_env": "SET" if jwt_secret_key != "NOT_SET" else "NOT_SET",
+        "jwt_secret_env": "SET" if jwt_secret != "NOT_SET" else "NOT_SET",
+        "environment": environment,
+        "secret_key_length": len(AuthConfig.SECRET_KEY),
+        "secret_key_prefix": AuthConfig.SECRET_KEY[:20] + "***" if AuthConfig.SECRET_KEY else "EMPTY",
+        "secret_algorithm": AuthConfig.ALGORITHM,
+        "access_token_expiry_minutes": AuthConfig.ACCESS_TOKEN_EXPIRE_MINUTES,
+    }
+
+
 @app.get("/api/metrics")
 async def get_metrics():
     """
