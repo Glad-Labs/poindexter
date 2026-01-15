@@ -451,7 +451,8 @@ class ContentDatabase(DatabaseServiceMixin):
                 train_data.get("execution_result"),
                 train_data.get("quality_score"),
                 train_data.get("success", False),
-                json.dumps(train_data.get("tags", [])),
+                # Handle tags - can be a list or already a JSON string
+                train_data.get("tags", []) if isinstance(train_data.get("tags"), list) else json.loads(train_data.get("tags", "[]")),
                 train_data.get("source_agent", "content_agent"),
             ]
             
