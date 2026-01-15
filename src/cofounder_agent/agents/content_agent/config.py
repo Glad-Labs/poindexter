@@ -24,7 +24,10 @@ class Config:
     def __init__(self):
         # Load environment variables from a .env file into the environment.
         # This allows for secure and flexible configuration without hardcoding secrets.
-        project_root = Path(__file__).resolve().parents[3]
+        
+        # Path calculation: config.py is at src/cofounder_agent/agents/content_agent/config.py
+        # So we need to go up 4 levels to reach project root (glad-labs-website/)
+        project_root = Path(__file__).resolve().parents[4]
         
         # Try .env.local first (development/local), then .env (committed version)
         dotenv_local_path = project_root / '.env.local'
@@ -77,6 +80,18 @@ class Config:
         self.MODEL_FOR_QA = os.getenv("MODEL_FOR_QA", "ollama/mistral")
         self.MODEL_FOR_IMAGE = os.getenv("MODEL_FOR_IMAGE", "ollama/mistral")
         self.MODEL_FOR_PUBLISHING = os.getenv("MODEL_FOR_PUBLISHING", "ollama/phi")
+
+        # --- API Keys for LLM Providers ---
+        # These are read from environment variables and used by the LLM client
+        self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+        self.ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+        self.GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")  # For Google Gemini
+        self.GEMINI_API_KEY = self.GOOGLE_API_KEY  # Alias for backward compatibility
+        self.HUGGINGFACE_API_TOKEN = os.getenv("HUGGINGFACE_API_TOKEN")
+
+        # --- Gemini-specific configuration ---
+        self.GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+        self.SUMMARIZER_MODEL = os.getenv("SUMMARIZER_MODEL", "gemini-2.0-flash")
 
         # --- Local LLM (Ollama) Configuration --
         # For running a local quality assurance model if available.

@@ -1,8 +1,3 @@
-try:
-    import google.generativeai as genai
-except ImportError:
-    genai = None  # Will be checked when provider is "gemini"
-
 import httpx
 from agents.content_agent.config import config
 from agents.content_agent.utils.helpers import extract_json_from_string
@@ -11,6 +6,17 @@ import json
 import os
 import hashlib
 from pathlib import Path
+import sys
+
+# Fix sys.path for Poetry venv namespace packages
+# Poetry sometimes misorders sys.path which breaks namespace package imports
+if sys.prefix not in sys.path:
+    site_packages = Path(sys.prefix) / "Lib" / "site-packages"
+    if site_packages.exists() and str(site_packages) not in sys.path:
+        sys.path.insert(0, str(site_packages))
+
+# Initialize genai as None - will be imported when needed
+genai = None
 
 class LLMClient:
     """Client for interacting with a configured Large Language Model."""
@@ -32,27 +38,30 @@ class LLMClient:
 
         try:
             if self.provider == "gemini":
+                # Lazy import of google-generativeai when provider is Gemini
+                global genai
                 if not genai:
-                    # google-generativeai not installed - fall back to Ollama
-                    logging.warning("⚠️ google-generativeai not installed, falling back to Ollama")
-                    self.provider = "ollama"
-                    logging.info(f"Using Ollama fallback at {config.LOCAL_LLM_API_URL}")
-                else:
-                    if config.GEMINI_API_KEY:
-                        os.environ["GOOGLE_API_KEY"] = config.GEMINI_API_KEY
-                    else:
-                        raise ValueError("GEMINI_API_KEY not found in config for gemini provider.")
-                    # Use override model if provided, otherwise use config default
-                    model_to_use = model_name if model_name else config.GEMINI_MODEL
-                    self.model = genai.GenerativeModel(model_to_use)
-                    self.summarizer_model = genai.GenerativeModel(config.SUMMARIZER_MODEL)
-                    logging.info(f"Initialized Gemini client with model: {model_to_use}")
+                    try:
+                        import google.generativeai as genai_module
+                        genai = genai_module
+                    except ImportError:
+                        raise ImportError("google-generativeai is not installed. Install with: pip install google-generativeai")
+                
+                if not config.GEMINI_API_KEY:
+                    raise ValueError("GEMINI_API_KEY (or GOOGLE_API_KEY) not found in config for gemini provider.")
+                
+                os.environ["GOOGLE_API_KEY"] = config.GEMINI_API_KEY
+                
+                # Use override model if provided, otherwise use config default
+                model_to_use = model_name if model_name else config.GEMINI_MODEL
+                self.model = genai.GenerativeModel(model_to_use)
+                self.summarizer_model = genai.GenerativeModel(config.SUMMARIZER_MODEL)
+                logging.info(f"✅ Initialized Gemini client with model: {model_to_use}")
             
-            if self.provider == "local" or self.provider == "ollama":
+            elif self.provider == "local" or self.provider == "ollama":
                 # Treat Ollama as a local provider - both use the same HTTP API endpoint
-                logging.info(f"Using local LLM provider (Ollama) at {config.LOCAL_LLM_API_URL}")
-            elif self.provider == "gemini":
-                pass  # Already handled above
+                logging.info(f"✅ Using local LLM provider (Ollama) at {config.LOCAL_LLM_API_URL}")
+            
             else:
                 raise ValueError(f"Unsupported LLM provider: {self.provider}")
         except Exception as e:
