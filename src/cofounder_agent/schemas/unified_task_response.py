@@ -22,8 +22,8 @@ from datetime import datetime
 class ProgressInfo(BaseModel):
     """Real-time progress information for tasks in progress"""
 
-    stage: str = Field(..., description="Current pipeline stage")
-    percentage: int = Field(..., ge=0, le=100, description="Progress percentage 0-100")
+    stage: Optional[str] = Field(None, description="Current pipeline stage")
+    percentage: Optional[int] = Field(None, ge=0, le=100, description="Progress percentage 0-100")
     message: Optional[str] = Field(None, description="Status message")
     node: Optional[str] = Field(None, description="LangGraph node name (alias for stage)")
 

@@ -94,15 +94,12 @@ class ModelConverter:
         """Convert row to TaskResponse model."""
         data = ModelConverter._normalize_row_data(row)
         
-        # Handle field mapping: database uses task_id, but model expects id
-        if "task_id" in data:
-            if "id" not in data or data["id"] is None:
-                data["id"] = data["task_id"]
-            # Keep task_id for backward compatibility
-            data["task_id"] = data["task_id"]
-        elif "id" in data:
-            data["task_id"] = data["id"]
-            
+        # CRITICAL: Map task_id (UUID string) to id for API response
+        # The database has an integer 'id' column (SERIAL PK) but we use task_id (UUID string) as the logical identifier
+        # The TaskResponse schema expects 'id' to be a string (the UUID)
+        if "task_id" in data and data["task_id"]:
+            data["id"] = data["task_id"]  # Always use task_id as the public-facing id
+        
         # Handle task_name mapping to title
         if "task_name" in data:
             if "title" not in data or data["title"] is None:

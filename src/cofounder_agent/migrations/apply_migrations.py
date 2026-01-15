@@ -10,13 +10,23 @@ import psycopg2
 import glob
 from pathlib import Path
 from urllib.parse import urlparse
+from dotenv import load_dotenv
+
+# Load .env.local from project root
+env_path = Path(__file__).parent.parent.parent.parent / '.env.local'
+if env_path.exists():
+    load_dotenv(env_path)
+    print(f"📄 Loaded environment from: {env_path}")
+else:
+    print(f"⚠️  .env.local not found at {env_path}")
+    print(f"   Checking for environment variables instead...")
 
 def get_database_url():
     """Get DATABASE_URL from environment"""
     db_url = os.getenv('DATABASE_URL')
     if not db_url:
         print("❌ DATABASE_URL environment variable not set")
-        print("Please set DATABASE_URL to your PostgreSQL connection string")
+        print("Please set DATABASE_URL in .env.local or as an environment variable")
         sys.exit(1)
     return db_url
 
@@ -33,7 +43,7 @@ def parse_db_url(db_url):
 
 def apply_migrations():
     """Apply all SQL migration files"""
-    db_url = "postgresql://postgres:postgres@localhost:5432/glad_labs_dev"
+    db_url = get_database_url()  # Use environment variable, not hardcoded!
     db_config = parse_db_url(db_url)
     
     print("🔄 Applying database migrations...")
@@ -56,6 +66,34 @@ def apply_migrations():
         cursor.close()
         conn.close()
         return
+    
+    # Define migration order (critical for schema dependencies)
+    migration_order = [
+        "001_initial_schema.sql",           # Create base tables first
+        "001_add_missing_task_columns.sql", # Add columns to existing tables
+        "002_quality_evaluation.sql",
+        "002a_cost_logs_table.sql",
+        "003_training_data_tables.sql",
+        "004_writing_samples.sql",
+        "005_add_writing_style_id.sql",
+        "006_add_all_required_columns.sql", # Add all columns needed by tasks_db.py
+        "007_consolidate_to_single_tasks_table.sql",  # Remove FK constraint, use content_tasks standalone
+        "008_create_cms_tables.sql",  # Create posts, categories, tags tables for publishing
+    ]
+    
+    # Sort migrations by the defined order, then any others alphabetically
+    ordered_migrations = []
+    for migration_name in migration_order:
+        for migration_file in migration_files:
+            if migration_file.endswith(migration_name):
+                ordered_migrations.append(migration_file)
+                migration_files.remove(migration_file)
+                break
+    
+    # Add any remaining migrations (not in the order list) at the end
+    ordered_migrations.extend(sorted(migration_files))
+    
+    migration_files = ordered_migrations
     
     # Apply each migration
     for migration_file in migration_files:

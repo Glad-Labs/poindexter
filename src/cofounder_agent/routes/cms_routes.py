@@ -233,7 +233,7 @@ async def list_posts(
             query = """
                 SELECT id, title, slug, excerpt, featured_image_url, cover_image_url, 
                        category_id, published_at, created_at, updated_at,
-                       seo_title, seo_description, seo_keywords, status, content, author_id, view_count
+                       seo_title, seo_description, seo_keywords, status, content, author_id
                 FROM posts
             """
 
@@ -301,7 +301,7 @@ async def get_post_by_slug(
                 """
                 SELECT id, title, slug, content, excerpt, featured_image_url, cover_image_url, 
                        category_id, published_at, created_at, updated_at,
-                       seo_title, seo_description, seo_keywords, status, author_id, view_count
+                       seo_title, seo_description, seo_keywords, status, author_id
                 FROM posts
                 WHERE slug = $1
             """,

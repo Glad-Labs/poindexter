@@ -18,10 +18,11 @@ CREATE TABLE IF NOT EXISTS tasks (
     max_attempts INTEGER DEFAULT 3
 );
 
--- Create content_tasks table (specialized content creation tasks)
+-- Create content_tasks table (unified task tracking)
 CREATE TABLE IF NOT EXISTS content_tasks (
     id SERIAL PRIMARY KEY,
-    task_id VARCHAR(255) UNIQUE NOT NULL REFERENCES tasks(task_id),
+    task_id VARCHAR(255) UNIQUE NOT NULL,
+    task_type VARCHAR(100) NOT NULL,
     content_type VARCHAR(100) NOT NULL,
     title VARCHAR(500),
     description TEXT,

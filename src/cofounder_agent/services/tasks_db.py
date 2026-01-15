@@ -143,7 +143,7 @@ class TasksDatabase(DatabaseServiceMixin):
             # Build insert columns dict
             insert_data = {
                 "task_id": task_id,
-                "id": task_id,
+                "content_type": task_data.get("category", task_data.get("task_type", "blog_post")),
                 "task_type": task_data.get("task_type", "blog_post"),
                 "request_type": task_data.get("request_type", "content_generation"),
                 "status": task_data.get("status", "pending"),
@@ -206,7 +206,7 @@ class TasksDatabase(DatabaseServiceMixin):
 
             async with self.pool.acquire() as conn:
                 result = await conn.fetchval(sql, *params)
-                logger.info(f"✅ Task added to content_tasks: {task_id}")
+                logger.info(f"✅ Task added: {task_id}")
                 return str(result)
         except Exception as e:
             logger.error(f"❌ Failed to add task: {e}")
