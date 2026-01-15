@@ -81,50 +81,58 @@ class ContentDatabase(DatabaseServiceMixin):
         logger.info(f"   - tag_ids: {tag_ids}")
 
         async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                INSERT INTO posts (
-                    id, 
-                    title, 
-                    slug, 
-                    content, 
-                    excerpt, 
-                    featured_image_url,
-                    cover_image_url,
-                    author_id,
-                    category_id,
+            try:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO posts (
+                        id, 
+                        title, 
+                        slug, 
+                        content, 
+                        excerpt, 
+                        featured_image_url,
+                        cover_image_url,
+                        author_id,
+                        category_id,
+                        tag_ids,
+                        status, 
+                        seo_title,
+                        seo_description,
+                        seo_keywords,
+                        created_by,
+                        updated_by,
+                        created_at, 
+                        updated_at
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW())
+                    RETURNING id, title, slug, content, excerpt, featured_image_url, cover_image_url, 
+                              author_id, category_id, tag_ids, status, created_at, updated_at
+                    """,
+                    post_id,
+                    post_data.get("title"),
+                    post_data.get("slug"),
+                    post_data.get("content"),
+                    post_data.get("excerpt"),
+                    post_data.get("featured_image_url"),
+                    post_data.get("cover_image_url"),
+                    post_data.get("author_id"),
+                    post_data.get("category_id"),
                     tag_ids,
-                    status, 
-                    seo_title,
-                    seo_description,
+                    post_data.get("status", "draft"),
+                    post_data.get("seo_title"),
+                    post_data.get("seo_description"),
                     seo_keywords,
-                    created_by,
-                    updated_by,
-                    created_at, 
-                    updated_at
+                    post_data.get("created_by"),
+                    post_data.get("updated_by"),
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW())
-                RETURNING id, title, slug, content, excerpt, featured_image_url, cover_image_url, 
-                          author_id, category_id, tag_ids, status, created_at, updated_at
-                """,
-                post_id,
-                post_data.get("title"),
-                post_data.get("slug"),
-                post_data.get("content"),
-                post_data.get("excerpt"),
-                post_data.get("featured_image_url"),
-                post_data.get("cover_image_url"),
-                post_data.get("author_id"),
-                post_data.get("category_id"),
-                tag_ids,
-                post_data.get("status", "draft"),
-                post_data.get("seo_title"),
-                post_data.get("seo_description"),
-                seo_keywords,
-                post_data.get("created_by"),
-                post_data.get("updated_by"),
-            )
-            return ModelConverter.to_post_response(row)
+                if not row:
+                    raise Exception("Insert query returned no row - post creation failed")
+                
+                logger.info(f"✅ POST CREATED SUCCESSFULLY in database with ID: {post_id}")
+                return ModelConverter.to_post_response(row)
+            except Exception as db_error:
+                logger.error(f"❌ DATABASE ERROR while creating post: {db_error}", exc_info=True)
+                raise Exception(f"Failed to create post in database: {str(db_error)}")
 
     async def get_post_by_slug(self, slug: str) -> Optional[PostResponse]:
         """

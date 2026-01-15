@@ -641,24 +641,10 @@ async def approve_and_publish_task(
 
             logger.debug(f"✅ Found content from {content_location} ({len(content)} chars)")
 
-            # ✅ Update task with approval metadata
-            await task_store.update_task(
-                task_id,
-                {
-                    "status": "approved",
-                    "approval_status": "approved",
-                    "task_metadata": {
-                        "approved_by": reviewer_id,
-                        "approval_timestamp": approval_timestamp.isoformat(),
-                        "approval_notes": human_feedback,
-                        "human_feedback": human_feedback,
-                        "publish_mode": "approved",
-                        "completed_at": approval_timestamp.isoformat(),
-                    },
-                },
-            )
-
-            # ✅ PUBLISH TO CMS DATABASE
+            # ✅ PUBLISH TO CMS DATABASE FIRST (before updating task status)
+            # If this fails, the task will remain "awaiting_approval"
+            post_id = None
+            post_result = None
             try:
                 # ============================================================================
                 # USE UNIFIED METADATA SERVICE (Single source of truth)
@@ -824,25 +810,33 @@ async def approve_and_publish_task(
                     f"\n  - Featured image in DB: {post_result.featured_image_url}"
                 )
 
-                # Update task with CMS post ID and published timestamp
+                # ✅ NOW update task with approval and published status (AFTER successful post creation)
                 await task_store.update_task(
                     task_id,
                     {
                         "status": "published",
+                        "approval_status": "approved",
                         "published_at": approval_timestamp_iso,
                         "completed_at": approval_timestamp_iso,
                         "task_metadata": {
                             **task_metadata,
+                            "approved_by": reviewer_id,
+                            "approval_timestamp": approval_timestamp.isoformat(),
+                            "approval_notes": human_feedback,
+                            "human_feedback": human_feedback,
+                            "publish_mode": "approved",
                             "cms_post_id": post_id,
                             "published_at": approval_timestamp_iso,
                             "published_to_db": True,
                         },
                     },
                 )
+
             except Exception as e:
-                logger.error(f"❌ Failed to publish post to CMS: {e}")
+                logger.error(f"❌ Failed to publish post to CMS: {e}", exc_info=True)
+                # Task remains in "awaiting_approval" status if post creation fails
                 raise HTTPException(
-                    status_code=500, detail=f"Post approved but publishing failed: {str(e)}"
+                    status_code=500, detail=f"Failed to create post: {str(e)}"
                 )
 
             logger.info(f"✅ Task {task_id} APPROVED and PUBLISHED")
