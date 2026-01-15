@@ -223,18 +223,8 @@ def set_log_level(level: str) -> None:
 
 
 # ============================================================================
-# DEPRECATED API - For backward compatibility only
+# DEPRECATED API REMOVED - Use get_logger() for all logging needs
 # ============================================================================
-
-
-def get_standard_logger(name: Optional[str] = None):
-    """
-    DEPRECATED: Use get_logger() instead.
-
-    Gets a standard (non-structured) logger.
-    This function is maintained for backward compatibility only.
-    """
-    return logging.getLogger(name)
 
 
 # ============================================================================

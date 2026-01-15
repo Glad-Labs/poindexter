@@ -63,7 +63,7 @@ class ModelConverter:
                         pass  # Keep as string if not valid JSON
 
         # Handle list/array fields
-        array_fields = ["tag_ids", "tags"]
+        array_fields = ["tag_ids", "tags", "seo_keywords"]
         for key in array_fields:
             if key in data and data[key] is not None:
                 if isinstance(data[key], str):
@@ -222,6 +222,12 @@ class ModelConverter:
     def to_orchestrator_training_data_response(row: Any) -> OrchestratorTrainingDataResponse:
         """Convert row to OrchestratorTrainingDataResponse model."""
         data = ModelConverter._normalize_row_data(row)
+        # Convert id to string if it's an integer (database returns int, schema expects str)
+        if "id" in data and isinstance(data["id"], int):
+            data["id"] = str(data["id"])
+        # Convert execution_id to string if it's an integer
+        if "execution_id" in data and isinstance(data["execution_id"], int):
+            data["execution_id"] = str(data["execution_id"])
         return OrchestratorTrainingDataResponse(**data)
 
     @staticmethod

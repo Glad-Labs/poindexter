@@ -27,6 +27,9 @@ from .content_critique_loop import ContentCritiqueLoop
 # Import prompt templates
 from .prompt_templates import PromptTemplates
 
+# Import model selection helper
+from routes.task_routes import get_model_for_phase
+
 # Import AI content generator for fallback
 from .ai_content_generator import AIContentGenerator
 
@@ -254,7 +257,7 @@ class TaskExecutor:
                 fields_to_extract = [
                     "content", "excerpt", "title", "featured_image_url", "featured_image_data",
                     "seo_title", "seo_description", "seo_keywords", "qa_feedback", "quality_score",
-                    "orchestrator_error", "message", "constraint_compliance", "stage", "percentage"
+                    "orchestrator_error", "message", "constraint_compliance", "stage", "percentage", "model_used"
                 ]
                 for field in fields_to_extract:
                     if field in result:
@@ -275,12 +278,19 @@ class TaskExecutor:
             
             # Use update_task to ensure normalization of content into columns
             logger.info(f"📝 [DEBUG] Calling update_task with status={final_status}, metadata keys={list(task_metadata_updates.keys())}")
+            
+            # Also store model_used in the normalized column if it's in the result
+            update_payload = {
+                "status": final_status,
+                "task_metadata": task_metadata_updates
+            }
+            if isinstance(result, dict) and "model_used" in result:
+                update_payload["model_used"] = result["model_used"]
+                logger.info(f"📝 [DEBUG] Including model_used in database update: {result['model_used']}")
+            
             await self.database_service.update_task(
                 task_id,
-                {
-                    "status": final_status,
-                    "task_metadata": task_metadata_updates
-                }
+                update_payload
             )
             logger.info(f"✅ [DEBUG] update_task completed for {task_id}")
 
@@ -334,6 +344,10 @@ class TaskExecutor:
         quality_preference = task.get("quality_preference", "balanced")
         logger.info(f"   Model selections: {model_selections}")
         logger.info(f"   Quality preference: {quality_preference}")
+        
+        # Determine which model will be used for this task (for tracking purposes)
+        model_used = get_model_for_phase("draft", model_selections, quality_preference)
+        logger.info(f"   Determined model for execution: {model_used}")
 
         # Start usage tracking for entire task execution
         task_start_time = time.time()
@@ -681,6 +695,8 @@ class TaskExecutor:
                 len(generated_content) if (content_is_valid and generated_content) else 0
             ),
             "orchestrator_error": orchestrator_error,
+            # Model tracking
+            "model_used": model_used,
             # Critique phase
             "quality_score": quality_score,
             "content_approved": approved,

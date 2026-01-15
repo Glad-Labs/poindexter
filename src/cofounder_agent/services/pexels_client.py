@@ -46,9 +46,6 @@ class PexelsClient:
 
         self.headers = {"Authorization": self.api_key} if self.api_key else {}
 
-    # DEPRECATED: Sync search_images removed - use async search_images_async() instead
-    # Enforces async-first patterns to prevent blocking I/O in FastAPI event loop
-
     def _is_content_appropriate(self, photo: Dict[str, Any]) -> bool:
         """
         Filter out inappropriate content based on available metadata.
@@ -151,9 +148,6 @@ class PexelsClient:
         except Exception as e:
             logger.error(f"Pexels search failed: {e}")
             return []
-
-    # DEPRECATED: Sync get_featured_image removed - use async get_featured_image() instead
-    # Enforces async-first patterns to prevent blocking I/O in FastAPI event loop
 
     async def get_featured_image(
         self, topic: str, keywords: Optional[List[str]] = None

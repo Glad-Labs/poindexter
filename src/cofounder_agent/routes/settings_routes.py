@@ -709,25 +709,9 @@ async def export_settings(
 
 
 # ============================================================================
-# Health Check - DEPRECATED
+# Health Check - REMOVED (use GET /api/health instead)
 # ============================================================================
-# Note: Use GET /api/health (unified endpoint in main.py) instead.
-# This endpoint is maintained for backward compatibility only.
-
-
-@router.get(
-    "/health",
-    status_code=status.HTTP_200_OK,
-    summary="DEPRECATED: Settings API health check (use /api/health instead)",
-    deprecated=True,
-)
-async def settings_health(
-    current_user=Depends(get_current_user),
-):
-    """
-    DEPRECATED: Use GET /api/health instead.
-
-    Health check endpoint for settings API (legacy).
+# Note: Unified health check endpoint is in main.py at GET /api/health
     This endpoint is deprecated and will be removed in version 2.0.
     Use the unified /api/health endpoint for all health checks.
 

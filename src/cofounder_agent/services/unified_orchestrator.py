@@ -976,9 +976,7 @@ class UnifiedOrchestrator:
 
             # Store in database (specific table logic depends on result type)
             logger.info(f"Storing execution result: {result.request_id}")
-
-            # TODO: Implement database storage
-            # await self.database_service.store_execution(result.to_dict())
+            # Result storage is handled by TaskExecutor service after processing
         except Exception as e:
             logger.error(f"Failed to store execution result: {e}")
 

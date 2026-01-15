@@ -177,20 +177,12 @@ async def approve_and_publish(
             else:
                 await db_service.update_task_status(task_id, "approved")
 
-            # Background publishing to channels
-            background_tasks.add_task(
-                _publish_to_channels,
-                task_id=task_id,
-                channels=action.publish_to_channels,
-                db_service=db_service,
-            )
-
+            # Publishing was removed - implement centralized publishing service if needed in future
             return {
                 "success": True,
                 "task_id": task_id,
                 "status": "approved",
-                "publishing_to": action.publish_to_channels,
-                "message": "Task approved. Publishing in progress.",
+                "message": "Task approved. Ready for publishing.",
             }
         else:
             rejection_reason = action.modifications.get("reason") if action.modifications else None
@@ -287,79 +279,9 @@ async def upload_training_model(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@orchestrator_router.get(
-    "/learning-patterns",
-    summary="Get learning patterns",
-    description="Get patterns learned from execution history",
-)
-async def get_learning_patterns(
-    limit: int = Query(100, ge=1, le=1000),
-    db_service: DatabaseService = Depends(get_database_service),
-) -> Dict[str, Any]:
-    """Get learning patterns"""
-    try:
-        logger.info("Retrieving learning patterns")
-
-        # TODO: Implement pattern extraction from execution history
-        # Analyze task success/failure rates
-        # Identify common request types
-        # Find optimal parameters
-
-        return {
-            "patterns": [],
-            "total_executions": 0,  # TODO
-            "success_rate": 0.0,  # TODO
-            "retrieved_at": datetime.utcnow().isoformat(),
-        }
-    except Exception as e:
-        logger.error(f"Failed to retrieve patterns: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@orchestrator_router.get(
-    "/business-metrics-analysis",
-    summary="Analyze business metrics",
-    description="Analyze collected business metrics and trends",
-)
-async def analyze_business_metrics(
-    db_service: DatabaseService = Depends(get_database_service),
-) -> Dict[str, Any]:
-    """Analyze business metrics"""
-    try:
-        logger.info("Analyzing business metrics")
-
-        # TODO: Implement metrics analysis
-        # Aggregate task metrics
-        # Calculate trends
-        # Identify improvements
-
-        return {
-            "metrics": {},
-            "trends": [],
-            "recommendations": [],
-            "analyzed_at": datetime.utcnow().isoformat(),
-        }
-    except Exception as e:
-        logger.error(f"Metrics analysis failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@orchestrator_router.get(
-    "/tools",
-    summary="List available MCP tools",
-    description="List all available Model Context Protocol tools",
-)
-async def list_available_tools() -> Dict[str, Any]:
-    """List available MCP tools"""
-    try:
-        logger.info("Listing available tools")
-
-        # TODO: Implement MCP tool discovery
-
-        return {"tools": [], "total": 0, "available_at": datetime.utcnow().isoformat()}
-    except Exception as e:
-        logger.error(f"Failed to list tools: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+# REMOVED: /learning-patterns endpoint - unimplemented stub
+# REMOVED: /business-metrics-analysis endpoint - unimplemented stub  
+# REMOVED: /tools endpoint - unimplemented stub
 
 
 # ============================================================================
@@ -367,37 +289,7 @@ async def list_available_tools() -> Dict[str, Any]:
 # ============================================================================
 
 
-async def _publish_to_channels(
-    task_id: str, channels: List[str], db_service: DatabaseService
-) -> None:
-    """Background task: Publish result to channels"""
-    try:
-        logger.info(f"Publishing task {task_id} to channels: {channels}")
-
-        # Get task result
-        task = await db_service.get_task(task_id)
-        if not task:
-            logger.error(f"Task {task_id} not found for publishing")
-            return
-
-        result = task.get("result", {})
-
-        # TODO: Implement channel publishing
-        # For each channel in channels:
-        #   - LinkedIn Publisher
-        #   - Twitter Publisher
-        #   - Email Publisher
-        #   - Blog CMS
-
-        # Update task status
-        if isinstance(result, str):
-            result_dict = json.loads(result) if result else {}
-        else:
-            result_dict = result or {}
-
-        result_dict["published_to"] = channels
-
-        await db_service.update_task_status(task_id, "published", result=json.dumps(result_dict))
+# REMOVED: _publish_to_channels background task - unimplemented stub
 
         logger.info(f"Task {task_id} published successfully")
 
