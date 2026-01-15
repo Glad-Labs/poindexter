@@ -262,7 +262,19 @@ class TaskExecutor:
             else:
                 task_metadata_updates["output"] = str(result)
             
+            # DEBUG: Log all extracted metadata
+            logger.info(f"🔍 [DEBUG] Extracted metadata for task {task_id}:")
+            logger.info(f"   - Fields extracted: {list(task_metadata_updates.keys())}")
+            logger.info(f"   - Has 'content': {'content' in task_metadata_updates}")
+            if 'content' in task_metadata_updates:
+                content_val = task_metadata_updates.get('content')
+                logger.info(f"   - Content type: {type(content_val).__name__}")
+                logger.info(f"   - Content length: {len(content_val) if isinstance(content_val, str) else 'N/A'} chars")
+                if isinstance(content_val, str):
+                    logger.info(f"   - Content preview: {content_val[:100]}...")
+            
             # Use update_task to ensure normalization of content into columns
+            logger.info(f"📝 [DEBUG] Calling update_task with status={final_status}, metadata keys={list(task_metadata_updates.keys())}")
             await self.database_service.update_task(
                 task_id,
                 {
@@ -270,6 +282,7 @@ class TaskExecutor:
                     "task_metadata": task_metadata_updates
                 }
             )
+            logger.info(f"✅ [DEBUG] update_task completed for {task_id}")
 
             if final_status == "failed":
                 logger.error(f"❌ [TASK_SINGLE] Task failed: {task_id}")
@@ -725,10 +738,16 @@ class TaskExecutor:
         Returns:
             Generated content as string (markdown formatted)
         """
-        topic = task.get("topic", "No Topic")
-        keyword = task.get("primary_keyword", "keyword")
-        audience = task.get("target_audience", "general audience")
-        category = task.get("category", "general")
+        topic = task.get("topic") or "Topic"
+        keyword = (task.get("primary_keyword") or "keyword")
+        audience = task.get("target_audience") or "general audience"
+        category = task.get("category") or "general"
+
+        # Ensure all variables are strings and not None
+        topic = str(topic) if topic is not None else "Topic"
+        keyword = str(keyword) if keyword is not None else "keyword"
+        audience = str(audience) if audience is not None else "general audience"
+        category = str(category) if category is not None else "general"
 
         logger.info(f"📝 Using fallback content generation via AIContentGenerator")
         logger.info(f"   Topic: {topic}")

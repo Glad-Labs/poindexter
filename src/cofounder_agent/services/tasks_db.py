@@ -355,6 +355,13 @@ class TasksDatabase(DatabaseServiceMixin):
         for key, value in normalized_updates.items():
             serialized_updates[key] = serialize_value_for_postgres(value)
 
+        # DEBUG: Log normalized updates
+        logger.info(f"🔍 [DEBUG] Normalized updates for task {task_id}:")
+        logger.info(f"   - Keys: {list(normalized_updates.keys())}")
+        logger.info(f"   - Has 'content' in normalized: {'content' in normalized_updates}")
+        if 'content' in normalized_updates:
+            logger.info(f"   - Content length: {len(normalized_updates.get('content') or '')} chars")
+
         try:
             builder = ParameterizedQueryBuilder()
             sql, params = builder.update(
@@ -367,11 +374,17 @@ class TasksDatabase(DatabaseServiceMixin):
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, *params)
                 if row:
+                    # DEBUG: Verify content was persisted
+                    logger.info(f"✅ [DEBUG] Update returned row for task {task_id}")
+                    logger.info(f"   - Row has 'content': {row.get('content') is not None}")
+                    if row.get('content'):
+                        logger.info(f"   - Persisted content length: {len(row.get('content'))} chars")
                     task_response = ModelConverter.to_task_response(row)
                     return ModelConverter.to_dict(task_response)
+                logger.warning(f"⚠️  [DEBUG] Update returned no row for task {task_id}")
                 return None
         except Exception as e:
-            logger.error(f"❌ Failed to update task {task_id}: {e}")
+            logger.error(f"❌ Failed to update task {task_id}: {e}", exc_info=True)
             return None
 
     async def get_tasks_paginated(

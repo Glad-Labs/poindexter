@@ -189,8 +189,10 @@ class ContentCritiqueLoop:
             keywords = context.get("keywords", [])
             if isinstance(keywords, str):
                 keywords = [keywords]
+            elif keywords is None:
+                keywords = []
             content_lower = content.lower()
-            has_keywords = any(kw.lower() in content_lower for kw in keywords)
+            has_keywords = any(kw.lower() in content_lower for kw in keywords if kw)
 
         # Quality score calculation
         quality_score = 50  # Base score

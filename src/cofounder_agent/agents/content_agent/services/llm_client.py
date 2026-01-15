@@ -6,20 +6,29 @@ from pathlib import Path
 # This must happen before we even try to import google.generativeai
 # Poetry breaks namespace package resolution, so we manually fix it here
 # ============================================================================
-_venv_site_packages = Path(sys.prefix) / "Lib" / "site-packages"
-if _venv_site_packages.exists():
-    _venv_site_packages_str = str(_venv_site_packages)
-    # Create new sys.path with venv site-packages FIRST
-    _new_path = [_venv_site_packages_str]
-    for p in sys.path:
-        if p != _venv_site_packages_str and p != "":
-            _new_path.append(p)
-    sys.path[:] = _new_path
-    # Force Python to reload the module cache
-    import importlib
-    importlib.invalidate_caches()
-    import site
-    site.main()  # Reinitialize site package processing
+def _fix_sys_path_for_venv():
+    """Fix sys.path to prioritize venv site-packages for namespace package resolution."""
+    try:
+        venv_site_packages = Path(sys.prefix) / "Lib" / "site-packages"
+        if venv_site_packages.exists():
+            venv_site_packages_str = str(venv_site_packages)
+            # Create new sys.path with venv site-packages FIRST
+            new_path = [venv_site_packages_str]
+            for p in sys.path:
+                if p != venv_site_packages_str and p != "":
+                    new_path.append(p)
+            sys.path[:] = new_path
+            # Force Python to reload the module cache
+            import importlib
+            importlib.invalidate_caches()
+            import site
+            site.main()  # Reinitialize site package processing
+    except Exception as e:
+        # If sys.path fixing fails, log but continue - fallback imports may still work
+        print(f"[WARNING] Failed to fix sys.path for venv: {e}")
+
+# Execute the fix immediately when this module is imported
+_fix_sys_path_for_venv()
 
 import httpx
 from agents.content_agent.config import config
