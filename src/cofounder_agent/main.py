@@ -5,21 +5,29 @@ Implements PostgreSQL database with REST API command queue integration
 """
 
 # ============================================================================
-# CRITICAL: Fix sys.path for namespace packages BEFORE any imports
+# CRITICAL: Fix sys.path for namespace packages at module import time
 # Poetry sometimes breaks namespace package resolution (e.g., google.generativeai)
-# This must be done FIRST, before importing anything else
+# This MUST be done before any package imports
 # ============================================================================
 import sys
-from pathlib import Path
+from pathlib import Path as _PathType
 
-_venv_site_packages = Path(sys.prefix) / "Lib" / "site-packages"
-if _venv_site_packages.exists():
-    _venv_site_packages_str = str(_venv_site_packages)
-    # Ensure venv's site-packages is first in the path
-    sys.path = [_venv_site_packages_str] + [p for p in sys.path if p != _venv_site_packages_str]
-    # Clear import caches to force fresh imports
-    import importlib
-    importlib.invalidate_caches()
+def _fix_sys_path():
+    """Fix sys.path to prioritize venv site-packages."""
+    try:
+        venv_site_packages = _PathType(sys.prefix) / "Lib" / "site-packages"
+        if venv_site_packages.exists():
+            venv_site_packages_str = str(venv_site_packages)
+            # Ensure venv's site-packages is first in the path
+            sys.path = [venv_site_packages_str] + [p for p in sys.path if p != venv_site_packages_str]
+            # Clear import caches to force fresh imports
+            import importlib
+            importlib.invalidate_caches()
+    except Exception as e:
+        print(f"[WARNING] Failed to fix sys.path: {e}")
+
+_fix_sys_path()
+del _fix_sys_path, _PathType
 
 import os
 import logging

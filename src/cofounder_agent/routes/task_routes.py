@@ -879,13 +879,19 @@ Write the thought-leadership post without title or heading markers:""",
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "content_length": len(generated_content),
             "status": "content_generated",
+            "model_used": model,  # Store which model was used for this task
         }
         
         await db_service.update_task(
             task_id,
-            {"task_metadata": task_metadata, "status": "ready_to_publish"}
+            {
+                "task_metadata": task_metadata,
+                "status": "ready_to_publish",
+                "model_used": model,  # Also store in normalized column for easy querying
+            }
         )
         logger.info(f"[BG_TASK] Content stored in normalized columns and task metadata")
+        logger.info(f"[BG_TASK] Model used: {model}")
 
         # Step 5: DO NOT create post automatically - wait for human review and approval
         # ═══════════════════════════════════════════════════════════════════════════════════
