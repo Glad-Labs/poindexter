@@ -16,10 +16,18 @@ ADD COLUMN IF NOT EXISTS request_type VARCHAR(50);
 UPDATE content_tasks SET task_type = 'blog_post' WHERE task_type IS NULL;
 UPDATE content_tasks SET request_type = 'content_generation' WHERE request_type IS NULL;
 
--- Add NOT NULL constraints
+-- Add NOT NULL constraints and defaults (separate statements)
 ALTER TABLE content_tasks
-ALTER COLUMN task_type SET NOT NULL DEFAULT 'blog_post',
-ALTER COLUMN request_type SET NOT NULL DEFAULT 'content_generation';
+ALTER COLUMN task_type SET NOT NULL;
+
+ALTER TABLE content_tasks
+ALTER COLUMN task_type SET DEFAULT 'blog_post';
+
+ALTER TABLE content_tasks
+ALTER COLUMN request_type SET NOT NULL;
+
+ALTER TABLE content_tasks
+ALTER COLUMN request_type SET DEFAULT 'content_generation';
 
 -- Create index on task_type for faster queries
 CREATE INDEX IF NOT EXISTS idx_content_tasks_task_type ON content_tasks(task_type);

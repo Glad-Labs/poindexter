@@ -33,19 +33,26 @@ class LLMClient:
         try:
             if self.provider == "gemini":
                 if not genai:
-                    raise ImportError("google-generativeai not installed. Install with: pip install google-generativeai")
-                if config.GEMINI_API_KEY:
-                    os.environ["GOOGLE_API_KEY"] = config.GEMINI_API_KEY
+                    # google-generativeai not installed - fall back to Ollama
+                    logging.warning("⚠️ google-generativeai not installed, falling back to Ollama")
+                    self.provider = "ollama"
+                    logging.info(f"Using Ollama fallback at {config.LOCAL_LLM_API_URL}")
                 else:
-                    raise ValueError("GEMINI_API_KEY not found in config for gemini provider.")
-                # Use override model if provided, otherwise use config default
-                model_to_use = model_name if model_name else config.GEMINI_MODEL
-                self.model = genai.GenerativeModel(model_to_use)
-                self.summarizer_model = genai.GenerativeModel(config.SUMMARIZER_MODEL)
-                logging.info(f"Initialized Gemini client with model: {model_to_use}")
-            elif self.provider == "local" or self.provider == "ollama":
+                    if config.GEMINI_API_KEY:
+                        os.environ["GOOGLE_API_KEY"] = config.GEMINI_API_KEY
+                    else:
+                        raise ValueError("GEMINI_API_KEY not found in config for gemini provider.")
+                    # Use override model if provided, otherwise use config default
+                    model_to_use = model_name if model_name else config.GEMINI_MODEL
+                    self.model = genai.GenerativeModel(model_to_use)
+                    self.summarizer_model = genai.GenerativeModel(config.SUMMARIZER_MODEL)
+                    logging.info(f"Initialized Gemini client with model: {model_to_use}")
+            
+            if self.provider == "local" or self.provider == "ollama":
                 # Treat Ollama as a local provider - both use the same HTTP API endpoint
                 logging.info(f"Using local LLM provider (Ollama) at {config.LOCAL_LLM_API_URL}")
+            elif self.provider == "gemini":
+                pass  # Already handled above
             else:
                 raise ValueError(f"Unsupported LLM provider: {self.provider}")
         except Exception as e:

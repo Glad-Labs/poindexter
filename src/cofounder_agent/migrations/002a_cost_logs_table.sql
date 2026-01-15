@@ -32,18 +32,18 @@ CREATE TABLE IF NOT EXISTS cost_logs (
 );
 
 -- Create indexes for common queries
-CREATE INDEX idx_cost_logs_task_id ON cost_logs(task_id);
-CREATE INDEX idx_cost_logs_user_id ON cost_logs(user_id);
-CREATE INDEX idx_cost_logs_created_at ON cost_logs(created_at);
-CREATE INDEX idx_cost_logs_provider ON cost_logs(provider);
-CREATE INDEX idx_cost_logs_model ON cost_logs(model);
-CREATE INDEX idx_cost_logs_phase ON cost_logs(phase);
+CREATE INDEX IF NOT EXISTS idx_cost_logs_task_id ON cost_logs(task_id);
+CREATE INDEX IF NOT EXISTS idx_cost_logs_user_id ON cost_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_cost_logs_created_at ON cost_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_cost_logs_provider ON cost_logs(provider);
+CREATE INDEX IF NOT EXISTS idx_cost_logs_model ON cost_logs(model);
+CREATE INDEX IF NOT EXISTS idx_cost_logs_phase ON cost_logs(phase);
 
 -- Composite index for cost aggregation queries (for dashboard)
-CREATE INDEX idx_cost_logs_user_date ON cost_logs(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_cost_logs_user_date ON cost_logs(user_id, created_at);
 
 -- Composite index for task cost breakdown
-CREATE INDEX idx_cost_logs_task_phase ON cost_logs(task_id, phase);
+CREATE INDEX IF NOT EXISTS idx_cost_logs_task_phase ON cost_logs(task_id, phase);
 
 -- Comment on table
 COMMENT ON TABLE cost_logs IS 'Per-API-call cost tracking for transparency and budget management';

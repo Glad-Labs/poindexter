@@ -33,7 +33,7 @@ def parse_db_url(db_url):
 
 def apply_migrations():
     """Apply all SQL migration files"""
-    db_url = get_database_url()
+    db_url = "postgresql://postgres:postgres@localhost:5432/glad_labs_dev"
     db_config = parse_db_url(db_url)
     
     print("🔄 Applying database migrations...")
