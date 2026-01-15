@@ -557,12 +557,13 @@ async def approve_and_publish_task(
         approval_timestamp = datetime.now()
         approval_timestamp_iso = approval_timestamp.isoformat()  # Convert immediately to ISO format
 
-        if current_status != "awaiting_approval":
+        # Allow approval for awaiting_approval OR rejected tasks (can re-approve rejected content)
+        if current_status not in ["awaiting_approval", "rejected"]:
             logger.error(
-                f"❌ Approval: Task {task_id} not awaiting approval (status={current_status})"
+                f"❌ Approval: Task {task_id} not in approvable state (status={current_status})"
             )
             raise StateError(
-                f"Task must be in 'awaiting_approval' status",
+                f"Task must be in 'awaiting_approval' or 'rejected' status to approve/re-approve",
                 current_state=current_status,
                 requested_action="approve",
             )
