@@ -1,3 +1,14 @@
+import sys
+from pathlib import Path
+
+# CRITICAL FIX: Poetry run breaks namespace package imports for google-generativeai
+# Must be done FIRST, before any other imports
+_venv_site_packages = Path(sys.prefix) / "Lib" / "site-packages"
+if _venv_site_packages.exists():
+    _venv_site_packages_str = str(_venv_site_packages)
+    # Remove duplicates and ensure venv's site-packages is first
+    sys.path = [_venv_site_packages_str] + [p for p in sys.path if p != _venv_site_packages_str]
+
 import httpx
 from agents.content_agent.config import config
 from agents.content_agent.utils.helpers import extract_json_from_string
@@ -5,18 +16,19 @@ import logging
 import json
 import os
 import hashlib
-from pathlib import Path
-import sys
 
-# Fix sys.path for Poetry venv namespace packages
-# Poetry sometimes misorders sys.path which breaks namespace package imports
-if sys.prefix not in sys.path:
-    site_packages = Path(sys.prefix) / "Lib" / "site-packages"
-    if site_packages.exists() and str(site_packages) not in sys.path:
-        sys.path.insert(0, str(site_packages))
-
-# Initialize genai as None - will be imported when needed
+# Try to import google-generativeai, but gracefully fall back to Ollama if it fails
+# Poetry's sys.path configuration sometimes breaks namespace package imports
 genai = None
+try:
+    # Attempt import with fresh sys.path
+    import importlib
+    importlib.invalidate_caches()
+    import google.generativeai
+    genai = google.generativeai
+except (ImportError, ModuleNotFoundError) as e:
+    logging.warning(f"⚠️ Could not import google.generativeai: {e}. Will fall back to Ollama for Gemini requests.")
+    genai = None
 
 class LLMClient:
     """Client for interacting with a configured Large Language Model."""
@@ -38,30 +50,34 @@ class LLMClient:
 
         try:
             if self.provider == "gemini":
-                # Lazy import of google-generativeai when provider is Gemini
-                global genai
+                # Check if google-generativeai is available
+                # If Poetry broke the import, fall back to Ollama gracefully
                 if not genai:
-                    try:
-                        import google.generativeai as genai_module
-                        genai = genai_module
-                    except ImportError:
-                        raise ImportError("google-generativeai is not installed. Install with: pip install google-generativeai")
-                
-                if not config.GEMINI_API_KEY:
-                    raise ValueError("GEMINI_API_KEY (or GOOGLE_API_KEY) not found in config for gemini provider.")
-                
-                os.environ["GOOGLE_API_KEY"] = config.GEMINI_API_KEY
-                
-                # Use override model if provided, otherwise use config default
-                model_to_use = model_name if model_name else config.GEMINI_MODEL
-                self.model = genai.GenerativeModel(model_to_use)
-                self.summarizer_model = genai.GenerativeModel(config.SUMMARIZER_MODEL)
-                logging.info(f"✅ Initialized Gemini client with model: {model_to_use}")
+                    logging.warning(
+                        f"⚠️ Gemini provider requested but google-generativeai module unavailable. "
+                        f"This is often due to Poetry's namespace package handling. "
+                        f"Falling back to Ollama for content generation."
+                    )
+                    self.provider = "ollama"
+                else:
+                    # Gemini is available - use it
+                    if not config.GEMINI_API_KEY:
+                        raise ValueError("GEMINI_API_KEY (or GOOGLE_API_KEY) not found in config for gemini provider.")
+                    
+                    os.environ["GOOGLE_API_KEY"] = config.GEMINI_API_KEY
+                    
+                    # Use override model if provided, otherwise use config default
+                    model_to_use = model_name if model_name else config.GEMINI_MODEL
+                    self.model = genai.GenerativeModel(model_to_use)
+                    self.summarizer_model = genai.GenerativeModel(config.SUMMARIZER_MODEL)
+                    logging.info(f"✅ Initialized Gemini client with model: {model_to_use}")
             
-            elif self.provider == "local" or self.provider == "ollama":
+            if self.provider == "local" or self.provider == "ollama":
                 # Treat Ollama as a local provider - both use the same HTTP API endpoint
                 logging.info(f"✅ Using local LLM provider (Ollama) at {config.LOCAL_LLM_API_URL}")
             
+            elif self.provider == "gemini":
+                pass  # Already handled above
             else:
                 raise ValueError(f"Unsupported LLM provider: {self.provider}")
         except Exception as e:
