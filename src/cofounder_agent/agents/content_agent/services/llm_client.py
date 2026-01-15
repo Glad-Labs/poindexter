@@ -1,13 +1,25 @@
 import sys
 from pathlib import Path
 
-# CRITICAL FIX: Poetry run breaks namespace package imports for google-generativeai
-# Must be done FIRST, before any other imports
+# ============================================================================
+# CRITICAL: Fix sys.path for namespace packages FIRST before any imports
+# This must happen before we even try to import google.generativeai
+# Poetry breaks namespace package resolution, so we manually fix it here
+# ============================================================================
 _venv_site_packages = Path(sys.prefix) / "Lib" / "site-packages"
 if _venv_site_packages.exists():
     _venv_site_packages_str = str(_venv_site_packages)
-    # Remove duplicates and ensure venv's site-packages is first
-    sys.path = [_venv_site_packages_str] + [p for p in sys.path if p != _venv_site_packages_str]
+    # Create new sys.path with venv site-packages FIRST
+    _new_path = [_venv_site_packages_str]
+    for p in sys.path:
+        if p != _venv_site_packages_str and p != "":
+            _new_path.append(p)
+    sys.path[:] = _new_path
+    # Force Python to reload the module cache
+    import importlib
+    importlib.invalidate_caches()
+    import site
+    site.main()  # Reinitialize site package processing
 
 import httpx
 from agents.content_agent.config import config
@@ -17,17 +29,15 @@ import json
 import os
 import hashlib
 
-# Try to import google-generativeai, but gracefully fall back to Ollama if it fails
-# Poetry's sys.path configuration sometimes breaks namespace package imports
+# Now try to import google-generativeai
+# With the sys.path fix above, this should work even with poetry run
 genai = None
 try:
-    # Attempt import with fresh sys.path
-    import importlib
-    importlib.invalidate_caches()
     import google.generativeai
     genai = google.generativeai
+    logging.info("✅ google-generativeai successfully imported")
 except (ImportError, ModuleNotFoundError) as e:
-    logging.warning(f"⚠️ Could not import google.generativeai: {e}. Will fall back to Ollama for Gemini requests.")
+    logging.warning(f"⚠️ Could not import google.generativeai: {e}. Will fall back to Ollama.")
     genai = None
 
 class LLMClient:

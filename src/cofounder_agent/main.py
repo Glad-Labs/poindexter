@@ -4,7 +4,23 @@ FastAPI application serving as the central orchestrator for the Glad Labs ecosys
 Implements PostgreSQL database with REST API command queue integration
 """
 
+# ============================================================================
+# CRITICAL: Fix sys.path for namespace packages BEFORE any imports
+# Poetry sometimes breaks namespace package resolution (e.g., google.generativeai)
+# This must be done FIRST, before importing anything else
+# ============================================================================
 import sys
+from pathlib import Path
+
+_venv_site_packages = Path(sys.prefix) / "Lib" / "site-packages"
+if _venv_site_packages.exists():
+    _venv_site_packages_str = str(_venv_site_packages)
+    # Ensure venv's site-packages is first in the path
+    sys.path = [_venv_site_packages_str] + [p for p in sys.path if p != _venv_site_packages_str]
+    # Clear import caches to force fresh imports
+    import importlib
+    importlib.invalidate_caches()
+
 import os
 import logging
 import asyncio

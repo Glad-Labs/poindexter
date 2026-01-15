@@ -1,3 +1,21 @@
+# ============================================================================
+# CRITICAL: Fix sys.path for namespace packages at module import time
+# Poetry sometimes breaks namespace package resolution (e.g., google.generativeai)
+# This MUST be done before any package imports
+# ============================================================================
+import sys
+from pathlib import Path as _PathType
+
+_venv_site_packages = _PathType(sys.prefix) / "Lib" / "site-packages"
+if _venv_site_packages.exists():
+    _venv_site_packages_str = str(_venv_site_packages)
+    # Ensure venv's site-packages is first in the path
+    sys.path = [_venv_site_packages_str] + [p for p in sys.path if p != _venv_site_packages_str]
+    # Clear import caches
+    import importlib
+    importlib.invalidate_caches()
+del _venv_site_packages, _venv_site_packages_str, _PathType
+
 import os
 import logging
 from dotenv import load_dotenv
