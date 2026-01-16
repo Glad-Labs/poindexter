@@ -1,4 +1,5 @@
 # Codebase Cleanup Summary
+
 **Date:** January 15, 2025  
 **Scope:** Comprehensive deprecation removal and technical debt cleanup  
 **Status:** ✅ COMPLETED
@@ -20,6 +21,7 @@ This document summarizes all deprecated code removals, archive cleanup, and docu
 **Status:** ✅ COMPLETED
 
 Removed from `/web/oversight-hub/src/services/cofounderAgentClient.js`:
+
 - `getPosts()` - Never used by React components
 - `getPostBySlug()` - Strapi posts endpoint not implemented
 - `createPost()` - Strapi posts creation not implemented
@@ -33,6 +35,7 @@ Removed from `/web/oversight-hub/src/services/cofounderAgentClient.js`:
 - `createTag()` - Tag creation not implemented
 
 **Removed Code Block:**
+
 ```javascript
 // CMS Operations - Posts (DEPRECATED)
 // CMS Operations - Categories (DEPRECATED)
@@ -51,6 +54,7 @@ Removed from `/web/oversight-hub/src/services/cofounderAgentClient.js`:
 **Status:** ✅ COMPLETED
 
 Removed from `/web/public-site/lib/related-posts.js`:
+
 - `getPostsGroupedByCategory(_limit = 3)` - TODO: category grouping (Strapi doesn't support)
 - `getMoreFromAuthor(authorId, _limit = 3)` - TODO: author-based recommendations (authorId not tracked)
 - `getRecommendedPosts(userReadingHistory, _limit = 5)` - TODO: user history tracking not implemented
@@ -69,6 +73,7 @@ Removed from `/web/public-site/lib/related-posts.js`:
 **Status:** ✅ COMPLETED
 
 Removed files:
+
 - `20251219_ApprovalQueue.jsx` (21.1 KB)
 - `20251219_ContentQueue.jsx` (636 B)
 - `20251219_Financials.jsx` (3.6 KB)
@@ -90,6 +95,7 @@ Removed files:
 **Status:** ✅ COMPLETED
 
 Removed documentation:
+
 - `COMPREHENSIVE_DUPLICATION_AND_BLOAT_ANALYSIS.md` - Old duplication report
 - `CONSOLIDATION_DEDUPLICATION_FINAL_STATUS.md` - Previous refactoring status
 - `ENDPOINT_CONSOLIDATION_SUMMARY.md` - Earlier endpoint unification
@@ -107,6 +113,7 @@ Removed documentation:
 **Status:** ✅ COMPLETED
 
 Removed files:
+
 - `src/cofounder_agent/services/database_service_monolithic.py.bak` - Old monolithic database service
 - `archive/orchestrator-legacy/orchestrator_logic.py.backup` - Legacy orchestrator backup
 
@@ -122,24 +129,25 @@ Removed files:
 **Status:** ✅ COMPLETED
 
 **Change:**
+
 ```markdown
 OLD:
-POST /api/content/create        → (deprecated, redirects?)
+POST /api/content/create → (deprecated, redirects?)
 POST /api/content/create-blog-post → (deprecated?)
 
 NEW:
 ✅ PRIMARY ENDPOINTS (IMPLEMENTED):
-POST /api/tasks                      → task_routes.py
-GET  /api/tasks                      → task_routes.py (with pagination)
-GET  /api/tasks/{task_id}            → task_routes.py
-POST /api/content/tasks              → content_routes.py
-GET  /api/content/tasks/{id}         → content_routes.py
+POST /api/tasks → task_routes.py
+GET /api/tasks → task_routes.py (with pagination)
+GET /api/tasks/{task_id} → task_routes.py
+POST /api/content/tasks → content_routes.py
+GET /api/content/tasks/{id} → content_routes.py
 POST /api/content/generate-and-publish → content_routes.py
 
 ❌ DEPRECATED ENDPOINTS (NOT IMPLEMENTED):
-POST /api/content/create              (reference only, no handler)
-POST /api/content/create-blog-post    (reference only, no handler)
-POST /api/content/generate            (reference only, no handler)
+POST /api/content/create (reference only, no handler)
+POST /api/content/create-blog-post (reference only, no handler)
+POST /api/content/generate (reference only, no handler)
 ```
 
 **Impact:** Clarifies which endpoints are functional vs. documentation-only references
@@ -150,12 +158,12 @@ POST /api/content/generate            (reference only, no handler)
 
 ### 4.1 Reduced Dead Code
 
-| Category | Removed | Impact |
-|----------|---------|--------|
-| Deprecated functions | 11 (CMS) + 3 (placeholder) | Clearer API surface |
-| Archive files | 44 | Reduced clutter (-385 KB) |
-| Backup files | 2 | Removed obsolete copies |
-| **Total** | **59 items** | **Repository cleaner** |
+| Category             | Removed                    | Impact                    |
+| -------------------- | -------------------------- | ------------------------- |
+| Deprecated functions | 11 (CMS) + 3 (placeholder) | Clearer API surface       |
+| Archive files        | 44                         | Reduced clutter (-385 KB) |
+| Backup files         | 2                          | Removed obsolete copies   |
+| **Total**            | **59 items**               | **Repository cleaner**    |
 
 ### 4.2 Verification Results
 
@@ -170,6 +178,7 @@ POST /api/content/generate            (reference only, no handler)
 ## 5. Production Impact Assessment
 
 ### 5.1 Breaking Changes
+
 **Status:** ❌ NONE
 
 - Removed functions were never called by active components
@@ -177,6 +186,7 @@ POST /api/content/generate            (reference only, no handler)
 - Documentation clarification improves clarity without changing behavior
 
 ### 5.2 Backward Compatibility
+
 **Status:** ✅ MAINTAINED
 
 - Legacy error handling code preserved (`ResultPreviewPanel.jsx`, `ErrorDetailPanel.jsx`)
@@ -184,6 +194,7 @@ POST /api/content/generate            (reference only, no handler)
 - TaskResponse type conversions ensure old database formats still work
 
 ### 5.3 Testing
+
 **Status:** ✅ VERIFIED
 
 - Oversight Hub displays 62 tasks correctly
@@ -198,6 +209,7 @@ POST /api/content/generate            (reference only, no handler)
 ### 6.1 If You Need Old Analysis
 
 All removed analysis documents are available in Git history:
+
 ```bash
 git log --all -- src/cofounder_agent/archive/
 git show HEAD~N:src/cofounder_agent/archive/COMPREHENSIVE_DUPLICATION_AND_BLOAT_ANALYSIS.md
@@ -206,6 +218,7 @@ git show HEAD~N:src/cofounder_agent/archive/COMPREHENSIVE_DUPLICATION_AND_BLOAT_
 ### 6.2 If You Need Old Component Versions
 
 Component backups are in Git history:
+
 ```bash
 git show HEAD~N:web/oversight-hub/archive/20251219_SettingsManager.jsx
 ```
@@ -213,6 +226,7 @@ git show HEAD~N:web/oversight-hub/archive/20251219_SettingsManager.jsx
 ### 6.3 Architecture Reference
 
 Current architecture uses:
+
 - **Task Management:** `/api/tasks` (universal) + `/api/content/tasks` (content-specific)
 - **Database:** Modular services (`database_service.py`, `content_router_service.py`)
 - **Error Handling:** Backward-compatible legacy field checking

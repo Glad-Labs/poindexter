@@ -12,9 +12,10 @@
 When creating a blog post task via POST `/api/tasks`, the endpoint returns 201 Created successfully, but then crashes in the background task processor with a duplicate key constraint violation on `content_tasks.task_id`.
 
 ### Error Logs
+
 ```
 INFO:     127.0.0.1:55589 - "POST /api/tasks HTTP/1.1" 201 Created
-ERROR:services.tasks_db:❌ Failed to add task: duplicate key value violates unique constraint "content_tasks_task_id_key"     
+ERROR:services.tasks_db:❌ Failed to add task: duplicate key value violates unique constraint "content_tasks_task_id_key"
 DETAIL:  Key (task_id)=(36f437d5-7b3f-4d7a-aa55-aef0e42b355f) already exists.
 ```
 
@@ -72,6 +73,7 @@ The task_routes.py handler creates and inserts the task into the database, then 
 **Lines:** 375-395
 
 **Before:**
+
 ```python
 # ================================================================================
 # STAGE 1: CREATE CONTENT_TASK RECORD
@@ -101,6 +103,7 @@ logger.info(f"✅ Content task created: {task_id_created}\n")
 ```
 
 **After:**
+
 ```python
 # ================================================================================
 # STAGE 1: VERIFY TASK RECORD EXISTS
@@ -129,11 +132,13 @@ except Exception as e:
 ## Testing the Fix
 
 ### 1. Clear any stuck tasks (optional)
+
 ```sql
 DELETE FROM content_tasks WHERE task_id = '36f437d5-7b3f-4d7a-aa55-aef0e42b355f';
 ```
 
 ### 2. Create a new blog post task
+
 ```bash
 curl -X POST http://localhost:8000/api/tasks \
   -H "Content-Type: application/json" \
@@ -148,6 +153,7 @@ curl -X POST http://localhost:8000/api/tasks \
 ```
 
 ### 3. Expected Response
+
 ```json
 {
   "id": "36f437d5-7b3f-4d7a-aa55-aef0e42b355f",
@@ -159,6 +165,7 @@ curl -X POST http://localhost:8000/api/tasks \
 ```
 
 ### 4. Monitor logs
+
 ```bash
 # Should see:
 # INFO: 127.0.0.1:... - "POST /api/tasks HTTP/1.1" 201 Created
@@ -174,17 +181,20 @@ curl -X POST http://localhost:8000/api/tasks \
 ## Impact Analysis
 
 ### What Changed
+
 - **Background task now verifies instead of re-inserting** task record
 - Database constraint violation eliminated
 - Task creation pipeline completes successfully
 
 ### What Stayed the Same
+
 - Task creation API (POST /api/tasks) - same input/output
 - Content generation pipeline - all 6 stages still execute
 - Database schema - no changes needed
 - Other task types (social_media, email, newsletter, etc.) - unaffected
 
 ### Affected Flows
+
 - ✅ Blog post creation - NOW WORKS
 - ✅ Background task processing - NOW WORKS
 - ✅ Content generation pipeline - NOW COMPLETES
@@ -217,4 +227,3 @@ To prevent similar issues in the future:
 - [content_router_service.py](src/cofounder_agent/services/content_router_service.py) - Background processor (STAGE 1 fixed)
 - [tasks_db.py](src/cofounder_agent/services/tasks_db.py) - Database layer (unchanged)
 - [database_service.py](src/cofounder_agent/services/database_service.py) - Service coordinator (unchanged)
-

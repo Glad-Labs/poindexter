@@ -193,11 +193,12 @@ ignore = [
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-testpaths = ["tests"]
-python_files = ["test_*.py", "*_test.py"]
+testpaths = ["../../tests"]
+python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"
+pythonpath = ["../..", ".", "../"]
 addopts = [
     "-v",
     "--tb=short",

@@ -19,7 +19,10 @@ def _fix_sys_path():
         if venv_site_packages.exists():
             venv_site_packages_str = str(venv_site_packages)
             # Ensure venv's site-packages is first in the path
-            sys.path = [venv_site_packages_str] + [p for p in sys.path if p != venv_site_packages_str]
+            sys.path = (
+                [venv_site_packages_str]
+                + [p for p in sys.path if p != venv_site_packages_str]
+            )
             # Clear import caches to force fresh imports
             import importlib
             importlib.invalidate_caches()
@@ -75,27 +78,29 @@ if current_dir not in sys.path:
 from services.database_service import DatabaseService
 from services.task_executor import TaskExecutor
 from services.content_critique_loop import ContentCritiqueLoop
-from services.telemetry import setup_telemetry  #  OpenTelemetry tracing
-from services.sentry_integration import setup_sentry  #  Sentry error tracking
-from services.redis_cache import setup_redis_cache  #  Redis caching for query optimization
-from services.content_router_service import get_content_task_store  #  Inject DB service
-from services.migrations import run_migrations  #  Database schema migrations
+from services.telemetry import setup_telemetry  # noqa: E402
+from services.sentry_integration import setup_sentry  # noqa: E402
+from services.redis_cache import setup_redis_cache  # noqa: E402
+from services.content_router_service import (  # noqa: E402
+    get_content_task_store,
+)  # Inject DB service
+from services.migrations import run_migrations  # noqa: E402
 
 # Import new consolidated services
-from services.unified_orchestrator import UnifiedOrchestrator
-from services.quality_service import UnifiedQualityService
+from services.unified_orchestrator import UnifiedOrchestrator  # noqa: E402
+from services.quality_service import UnifiedQualityService  # noqa: E402
 
 # Import new utility modules
-from utils.startup_manager import StartupManager
-from utils.exception_handlers import register_exception_handlers
-from utils.middleware_config import MiddlewareConfig
-from utils.route_registration import register_all_routes
-from utils.route_utils import initialize_services
+from utils.startup_manager import StartupManager  # noqa: E402
+from utils.exception_handlers import register_exception_handlers  # noqa: E402
+from utils.middleware_config import MiddlewareConfig  # noqa: E402
+from utils.route_registration import register_all_routes  # noqa: E402
+from utils.route_utils import initialize_services  # noqa: E402
 
 # Import workflow history service dependencies (needed for startup manager)
 try:
-    from services.workflow_history import WorkflowHistoryService
-    from routes.workflow_history import initialize_history_service
+    from services.workflow_history import WorkflowHistoryService  # noqa: E402
+    from routes.workflow_history import initialize_history_service  # noqa: E402
 
     WORKFLOW_HISTORY_AVAILABLE = True
 except ImportError as e:
@@ -117,11 +122,15 @@ GOOGLE_CLOUD_AVAILABLE = False
 firestore_client = None
 
 # Use centralized logging configuration
-from services.logger_config import get_logger
-from services.model_consolidation_service import initialize_model_consolidation_service
-from services.training_data_service import TrainingDataService
-from services.fine_tuning_service import FineTuningService
-from services.legacy_data_integration import LegacyDataIntegrationService
+from services.logger_config import get_logger  # noqa: E402
+from services.model_consolidation_service import (  # noqa: E402
+    initialize_model_consolidation_service,
+)
+from services.training_data_service import TrainingDataService  # noqa: E402
+from services.fine_tuning_service import FineTuningService  # noqa: E402
+from services.legacy_data_integration import (  # noqa: E402
+    LegacyDataIntegrationService,
+)
 
 logger = get_logger(__name__)
 
@@ -146,7 +155,7 @@ async def lifespan(app: FastAPI):
         logger.info("=" * 80)
         logger.info("[LIFESPAN] Starting application startup sequence...")
         logger.info("=" * 80)
-        
+
         # Initialize all services
         logger.info("[LIFESPAN] Calling startup_manager.initialize_all_services()...")
         services = await startup_manager.initialize_all_services()
@@ -154,10 +163,13 @@ async def lifespan(app: FastAPI):
         logger.debug(f"[LIFESPAN] Services dict keys: {services.keys()}")
 
         # Inject services into app state for access in routes
-        logger.info("[LIFESPAN] Injecting services into app.state...")
+        logger.info(
+            "[LIFESPAN] Injecting services into app.state..."
+        )
         app.state.database = services["database"]
         app.state.redis_cache = services["redis_cache"]
-        # app.state.orchestrator will be set to UnifiedOrchestrator below (removed legacy Orchestrator)
+        # app.state.orchestrator will be set to UnifiedOrchestrator below
+        # (removed legacy Orchestrator)
         app.state.task_executor = services["task_executor"]
         app.state.workflow_history = services["workflow_history"]
         app.state.training_data_service = services.get("training_data_service")
@@ -193,25 +205,30 @@ async def lifespan(app: FastAPI):
 
         # The UnifiedOrchestrator is created here with all dependencies properly initialized
         # This ensures TaskExecutor can use it for content generation
-        logger.info("[LIFESPAN] Creating UnifiedOrchestrator with all dependencies...")
+        logger.info(
+            "[LIFESPAN] Creating UnifiedOrchestrator with all dependencies..."
+        )
         logger.debug(f"[LIFESPAN] UnifiedOrchestrator dependencies:")
         logger.debug(f"  - database_service: {db_service}")
         logger.debug(f"  - quality_service: {quality_service}")
-        
+
         # Initialize unified orchestrator with all available agents
         unified_orchestrator = UnifiedOrchestrator(
             database_service=db_service,
             model_router=getattr(app.state, "model_router", None),
             quality_service=quality_service,
             memory_system=getattr(app.state, "memory_system", None),
-            content_orchestrator=None,  # No longer needed - pipeline is built into UnifiedOrchestrator
+            # No longer needed - pipeline is built into UnifiedOrchestrator
+            content_orchestrator=None,
             financial_agent=getattr(app.state, "financial_agent", None),
             compliance_agent=getattr(app.state, "compliance_agent", None),
         )
         app.state.unified_orchestrator = unified_orchestrator
         # CRITICAL: Set as primary orchestrator for TaskExecutor to use
         app.state.orchestrator = unified_orchestrator
-        logger.info("✅ UnifiedOrchestrator initialized and set as primary orchestrator")
+        logger.info(
+            "✅ UnifiedOrchestrator initialized and set as primary orchestrator"
+        )
         logger.debug(f"[LIFESPAN] app.state.orchestrator = {app.state.orchestrator}")
 
         # CRITICAL: Inject app.state into task_executor NOW (before it processes tasks)
@@ -219,13 +236,27 @@ async def lifespan(app: FastAPI):
         logger.info("[LIFESPAN] Injecting app.state into TaskExecutor...")
         task_executor = services.get("task_executor")
         if task_executor:
-            logger.debug(f"[LIFESPAN] TaskExecutor before injection: app_state={getattr(task_executor, 'app_state', None)}")
+            logger.debug(
+                "[LIFESPAN] TaskExecutor before injection: "
+                f"app_state={getattr(task_executor, 'app_state', None)}"
+            )
             task_executor.app_state = app.state
-            logger.debug(f"[LIFESPAN] TaskExecutor after injection: app_state={task_executor.app_state}")
-            logger.debug(f"[LIFESPAN] TaskExecutor.orchestrator property check: {task_executor.orchestrator is not None}")
-            logger.info("✅ TaskExecutor app.state reference updated with UnifiedOrchestrator")
-            logger.info(f"   TaskExecutor can now access orchestrator: {task_executor.orchestrator is not None}")
-            
+            logger.debug(
+                "[LIFESPAN] TaskExecutor after injection: "
+                f"app_state={task_executor.app_state}"
+            )
+            logger.debug(
+                "[LIFESPAN] TaskExecutor.orchestrator property check: "
+                f"{task_executor.orchestrator is not None}"
+            )
+            logger.info(
+                "✅ TaskExecutor app.state reference updated with UnifiedOrchestrator"
+            )
+            logger.info(
+                f"   TaskExecutor can now access orchestrator: "
+                f"{task_executor.orchestrator is not None}"
+            )
+
             # NOW start the task executor (after UnifiedOrchestrator is initialized)
             logger.info("[LIFESPAN] Starting TaskExecutor background processing loop...")
             await task_executor.start()
@@ -262,7 +293,9 @@ async def lifespan(app: FastAPI):
 
         # Initialize LangGraph orchestrator
         try:
-            from services.langgraph_orchestrator import LangGraphOrchestrator
+            from services.langgraph_orchestrator import (
+            LangGraphOrchestrator,  # noqa: E402
+        )  # noqa: E402
 
             langgraph_orchestrator = LangGraphOrchestrator(
                 db_service=db_service,
@@ -272,8 +305,10 @@ async def lifespan(app: FastAPI):
             )
             app.state.langgraph_orchestrator = langgraph_orchestrator
             logger.info("✅ LangGraphOrchestrator initialized")
-        except Exception as e:
-            logger.warning(f"⚠️  LangGraph initialization failed (non-critical): {str(e)}")
+        except Exception as e:  # pylint: disable=broad-except
+            logger.warning(
+                f"⚠️  LangGraph initialization failed (non-critical): {str(e)}"
+            )
             app.state.langgraph_orchestrator = None
 
         logger.info("[OK] Lifespan: Yielding control to FastAPI application...")
@@ -427,7 +462,7 @@ async def api_health():
 async def health():
     """
     Quick health check endpoint (no dependencies) - for load balancers and monitoring.
-    
+
     Returns: 200 OK if app is running
     Usage: External load balancers, uptime monitors, basic connectivity checks
     Performance: Instant response (doesn't check database)
@@ -439,18 +474,17 @@ async def health():
 async def health_debug():
     """
     Debug endpoint - shows JWT secret configuration for troubleshooting.
-    
+
     WARNING: Only use for debugging - remove in production!
-    
+
     Returns: Configuration info for auth troubleshooting
     """
     import os
     from services.token_validator import AuthConfig
-    
+
     jwt_secret_key = os.getenv("JWT_SECRET_KEY", "NOT_SET")
     jwt_secret = os.getenv("JWT_SECRET", "NOT_SET")
     environment = os.getenv("ENVIRONMENT", "NOT_SET")
-    
     return {
         "status": "debug",
         "service": "cofounder-agent",
@@ -458,7 +492,9 @@ async def health_debug():
         "jwt_secret_env": "SET" if jwt_secret != "NOT_SET" else "NOT_SET",
         "environment": environment,
         "secret_key_length": len(AuthConfig.SECRET_KEY),
-        "secret_key_prefix": AuthConfig.SECRET_KEY[:20] + "***" if AuthConfig.SECRET_KEY else "EMPTY",
+        "secret_key_prefix": (
+            AuthConfig.SECRET_KEY[:20] + "***" if AuthConfig.SECRET_KEY else "EMPTY"
+        ),
         "secret_algorithm": AuthConfig.ALGORITHM,
         "access_token_expiry_minutes": AuthConfig.ACCESS_TOKEN_EXPIRE_MINUTES,
     }
@@ -568,24 +604,31 @@ async def process_command(request: CommandRequest, background_tasks: BackgroundT
     try:
         logger.info(f"Received command: {request.command}")
 
+        orchestrator = getattr(request.app.state, "orchestrator", None)
         if orchestrator is None:
             raise HTTPException(status_code=503, detail="Orchestrator not initialized")
 
         # Always use async version with new database service
-        response = await orchestrator.process_command_async(request.command, request.context)
+        response = await orchestrator.process_command_async(
+            request.command, request.context
+        )
 
         return CommandResponse(
             response=response.get("response", "Command processed"),
             task_id=response.get("task_id"),
             metadata=response.get("metadata"),
         )
-    except Exception as e:
-        logger.error(f"Error processing command: {str(e)} | command={request.command}")
-        raise HTTPException(status_code=500, detail=f"An internal error occurred: {str(e)}")
+    except Exception as e:  # pylint: disable=broad-except
+        logger.error(
+            f"Error processing command: {str(e)} | command={request.command}"
+        )
+        raise HTTPException(
+            status_code=500, detail=f"An internal error occurred: {str(e)}"
+        )
 
 
 @app.get("/status", response_model=StatusResponse)
-async def get_status():
+async def get_status(request):
     """
     DEPRECATED: Use GET /api/health instead.
 
@@ -598,13 +641,19 @@ async def get_status():
         health = await api_health()
 
         # Convert to StatusResponse format for backward compatibility
+        database_service = getattr(request.app.state, "database", None)
+        orchestrator = getattr(request.app.state, "orchestrator", None)
         status_data = {
             "service": (
-                "online" if health.get("status") == "healthy" else health.get("status", "unknown")
+                "online"
+                if health.get("status") == "healthy"
+                else health.get("status", "unknown")
             ),
             "database_available": database_service is not None,
             "orchestrator_initialized": orchestrator is not None,
-            "timestamp": health.get("timestamp", str(asyncio.get_event_loop().time())),
+            "timestamp": health.get(
+                "timestamp", str(asyncio.get_event_loop().time())
+            ),
         }
 
         # Include component statuses if available
@@ -613,11 +662,15 @@ async def get_status():
             for key, value in components.items():
                 status_data[f"component_{key}"] = value
 
-        return StatusResponse(status=health.get("status", "unknown"), data=status_data)
+        return StatusResponse(
+            status=health.get("status", "unknown"), data=status_data
+        )
 
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-except
         logger.error(f"Error getting status: {e}")
-        return StatusResponse(status="unhealthy", data={"error": str(e)})
+        return StatusResponse(
+            status="unhealthy", data={"error": str(e)}
+        )
 
 
 @app.get("/tasks/pending")
@@ -626,15 +679,18 @@ async def get_pending_tasks(limit: int = 10):
     Get pending tasks from the task queue
     """
     try:
+        database_service = getattr(app.state, "database", None)
         if not database_service:
             return {"tasks": [], "message": "Running in development mode"}
 
         tasks = await database_service.get_pending_tasks(limit)
         return {"tasks": tasks, "count": len(tasks)}
 
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-except
         logger.error(f"Error getting pending tasks: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get tasks: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get tasks: {str(e)}"
+        )
 
 
 @app.get("/metrics/performance")
@@ -643,15 +699,18 @@ async def get_performance_metrics(hours: int = 24):
     Get comprehensive performance metrics and analytics
     """
     try:
+        database_service = getattr(app.state, "database", None)
         if database_service:
             # Query performance data from database
             logs = await database_service.get_logs(limit=1000)
             return {"logs": logs, "status": "success"}
-        else:
-            return {"message": "Performance monitoring not available", "status": "disabled"}
-    except Exception as e:
+        return {"message": "Performance monitoring not available", "status": "disabled"}
+    except Exception as e:  # pylint: disable=broad-except
         logger.error(f"Error getting performance metrics: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get performance metrics: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get performance metrics: {str(e)}"
+        )
 
 
 @app.get("/metrics/health")
@@ -686,14 +745,21 @@ async def reset_performance_metrics():
     """
     try:
         # Performance metrics are now logged to database
+        database_service = getattr(app.state, "database", None)
         if database_service:
-            await database_service.add_log_entry("system", "info", "Performance metrics reset")
-            return {"message": "Performance metrics reset successfully", "status": "success"}
-        else:
-            return {"message": "Database not available", "status": "disabled"}
-    except Exception as e:
+            await database_service.add_log_entry(
+                "system", "info", "Performance metrics reset"
+            )
+            return {
+                "message": "Performance metrics reset successfully",
+                "status": "success",
+            }
+        return {"message": "Database not available", "status": "disabled"}
+    except Exception as e:  # pylint: disable=broad-except
         logger.error(f"Error resetting metrics: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to reset metrics: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to reset metrics: {str(e)}"
+        )
 
 
 @app.get("/")

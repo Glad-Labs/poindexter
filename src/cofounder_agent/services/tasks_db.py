@@ -229,12 +229,35 @@ class TasksDatabase(DatabaseServiceMixin):
         """
         Get a task from content_tasks by ID.
         
+        Supports both:
+        - UUID task IDs (stored in task_id column)
+        - Numeric IDs (stored in id column, legacy format)
+        
         Args:
-            task_id: Task ID
+            task_id: Task ID (UUID or numeric)
             
         Returns:
             Task dict or None if not found
         """
+        # First, try to find by numeric ID if the task_id looks numeric
+        if task_id.isdigit():
+            builder = ParameterizedQueryBuilder()
+            sql, params = builder.select(
+                columns=["*"],
+                table="content_tasks",
+                where_clauses=[("id", SQLOperator.EQ, int(task_id))]
+            )
+            
+            try:
+                async with self.pool.acquire() as conn:
+                    row = await conn.fetchrow(sql, *params)
+                    if row:
+                        task_response = ModelConverter.to_task_response(row)
+                        return ModelConverter.to_dict(task_response)
+            except Exception as e:
+                logger.debug(f"Numeric ID lookup failed for {task_id}: {e}")
+        
+        # Try UUID lookup
         builder = ParameterizedQueryBuilder()
         sql, params = builder.select(
             columns=["*"],
@@ -262,8 +285,10 @@ class TasksDatabase(DatabaseServiceMixin):
         """
         Update task status in content_tasks.
         
+        Supports both numeric IDs (legacy) and UUID task IDs.
+        
         Args:
-            task_id: Task ID
+            task_id: Task ID (numeric or UUID)
             status: New status
             result: Optional result data
             
@@ -273,6 +298,10 @@ class TasksDatabase(DatabaseServiceMixin):
         now = datetime.utcnow()
 
         try:
+            # Determine which column to update (id for numeric, task_id for UUID)
+            where_column = "id" if task_id.isdigit() else "task_id"
+            where_value = int(task_id) if task_id.isdigit() else str(task_id)
+            
             builder = ParameterizedQueryBuilder()
             
             updates = {
@@ -286,7 +315,7 @@ class TasksDatabase(DatabaseServiceMixin):
             sql, params = builder.update(
                 table="content_tasks",
                 updates=updates,
-                where_clauses=[("task_id", SQLOperator.EQ, str(task_id))],
+                where_clauses=[(where_column, SQLOperator.EQ, where_value)],
                 return_columns=["*"]
             )
 
@@ -376,11 +405,15 @@ class TasksDatabase(DatabaseServiceMixin):
             logger.info(f"   - Content length: {len(normalized_updates.get('content') or '')} chars")
 
         try:
+            # Determine which column to update (id for numeric, task_id for UUID)
+            where_column = "id" if task_id.isdigit() else "task_id"
+            where_value = int(task_id) if task_id.isdigit() else str(task_id)
+            
             builder = ParameterizedQueryBuilder()
             sql, params = builder.update(
                 table="content_tasks",
                 updates=serialized_updates,
-                where_clauses=[("task_id", SQLOperator.EQ, str(task_id))],
+                where_clauses=[(where_column, SQLOperator.EQ, where_value)],
                 return_columns=["*"]
             )
 
@@ -583,17 +616,23 @@ class TasksDatabase(DatabaseServiceMixin):
         """
         Delete task from content_tasks.
         
+        Supports both numeric IDs (legacy) and UUID task IDs.
+        
         Args:
-            task_id: Task ID
+            task_id: Task ID (numeric or UUID)
             
         Returns:
             True if deleted, False if error
         """
         try:
+            # Determine which column to check (id for numeric, task_id for UUID)
+            where_column = "id" if task_id.isdigit() else "task_id"
+            where_value = int(task_id) if task_id.isdigit() else str(task_id)
+            
             builder = ParameterizedQueryBuilder()
             sql, params = builder.delete(
                 table="content_tasks",
-                where_clauses=[("task_id", SQLOperator.EQ, str(task_id))]
+                where_clauses=[(where_column, SQLOperator.EQ, where_value)]
             )
             
             async with self.pool.acquire() as conn:
@@ -642,3 +681,139 @@ class TasksDatabase(DatabaseServiceMixin):
         except Exception as e:
             logger.error(f"❌ Error getting drafts: {e}")
             return ([], 0)
+
+    async def log_status_change(
+        self,
+        task_id: str,
+        old_status: str,
+        new_status: str,
+        reason: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> bool:
+        """
+        Log a status change to task_status_history table.
+        
+        Args:
+            task_id: Task ID
+            old_status: Previous status
+            new_status: New status
+            reason: Optional reason for the change
+            metadata: Optional additional metadata (validation errors, etc.)
+            
+        Returns:
+            True if logged successfully, False on error
+        """
+        try:
+            sql = """
+                INSERT INTO task_status_history (task_id, old_status, new_status, reason, metadata, timestamp)
+                VALUES ($1, $2, $3, $4, $5, $6)
+            """
+            
+            now = datetime.utcnow()
+            metadata_json = json.dumps(metadata or {})
+            
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    sql,
+                    task_id,
+                    old_status,
+                    new_status,
+                    reason or "",
+                    metadata_json,
+                    now
+                )
+                logger.info(f"✅ Status change logged: {task_id} {old_status} → {new_status}")
+                return True
+        except Exception as e:
+            logger.error(f"❌ Failed to log status change: {e}")
+            return False
+
+    async def get_status_history(
+        self,
+        task_id: str,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """
+        Get status change history for a task.
+        
+        Args:
+            task_id: Task ID
+            limit: Maximum records to return
+            
+        Returns:
+            List of status change records
+        """
+        try:
+            sql = """
+                SELECT id, task_id, old_status, new_status, reason, metadata, timestamp
+                FROM task_status_history
+                WHERE task_id = $1
+                ORDER BY timestamp DESC
+                LIMIT $2
+            """
+            
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(sql, task_id, limit)
+                
+                history = []
+                for row in rows:
+                    history.append({
+                        "id": row["id"],
+                        "task_id": row["task_id"],
+                        "old_status": row["old_status"],
+                        "new_status": row["new_status"],
+                        "reason": row["reason"],
+                        "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
+                        "timestamp": row["timestamp"].isoformat() if row["timestamp"] else None
+                    })
+                
+                logger.info(f"✅ Retrieved {len(history)} status changes for task {task_id}")
+                return history
+        except Exception as e:
+            logger.error(f"❌ Failed to get status history: {e}")
+            return []
+
+    async def get_validation_failures(
+        self,
+        task_id: str,
+        limit: int = 50
+    ) -> List[Dict[str, Any]]:
+        """
+        Get all validation failures for a task by querying status history.
+        
+        Args:
+            task_id: Task ID
+            limit: Maximum records to return
+            
+        Returns:
+            List of validation failure records with details
+        """
+        try:
+            sql = """
+                SELECT id, task_id, old_status, new_status, reason, metadata, timestamp
+                FROM task_status_history
+                WHERE task_id = $1
+                AND new_status IN ('validation_failed', 'validation_error')
+                ORDER BY timestamp DESC
+                LIMIT $2
+            """
+            
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(sql, task_id, limit)
+                
+                failures = []
+                for row in rows:
+                    metadata = json.loads(row["metadata"]) if row["metadata"] else {}
+                    failures.append({
+                        "id": row["id"],
+                        "timestamp": row["timestamp"].isoformat() if row["timestamp"] else None,
+                        "reason": row["reason"],
+                        "errors": metadata.get("validation_errors", []),
+                        "context": metadata.get("context", {})
+                    })
+                
+                logger.info(f"✅ Retrieved {len(failures)} validation failures for task {task_id}")
+                return failures
+        except Exception as e:
+            logger.error(f"❌ Failed to get validation failures: {e}")
+            return []

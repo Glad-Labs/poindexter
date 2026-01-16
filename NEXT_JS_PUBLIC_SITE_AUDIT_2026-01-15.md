@@ -1,4 +1,5 @@
 # Next.js Public Site Comprehensive Audit Report
+
 **Date:** January 15, 2026  
 **Component:** Next.js 15 Public Site (port 3000)  
 **Framework:** Next.js 15.5.9 + React 18.3.1  
@@ -31,6 +32,7 @@ The Next.js public site is a **well-architected content distribution platform** 
 ## 1. Architecture Overview
 
 ### Framework Stack
+
 - **Framework:** Next.js 15.5.9 (App Router)
 - **React:** 18.3.1
 - **Styling:** Tailwind CSS 3.4.19 + @tailwindcss/typography
@@ -40,6 +42,7 @@ The Next.js public site is a **well-architected content distribution platform** 
 - **Testing:** Jest + Playwright E2E
 
 ### Rendering Strategy
+
 ```
 Home Page (page.js)
 ├─ SSG with ISR (revalidate: 3600)
@@ -75,6 +78,7 @@ Error Boundary (error.jsx)
 ## 2. Next.js Configuration & Security
 
 ### next.config.js Analysis
+
 **File:** 229+ lines with comprehensive configuration
 
 ```javascript
@@ -86,32 +90,40 @@ remotePatterns: [
   { protocol: 'https', hostname: 'images.unsplash.com' },
   { protocol: 'https', hostname: '*.vercel.app' },
   { protocol: 'https', hostname: 'youtube.com' },
-  { protocol: 'https', hostname: '*.googleusercontent.com' }
-]
+  { protocol: 'https', hostname: '*.googleusercontent.com' },
+];
 
 // ✅ GOOD: Security headers properly configured
 headers: [
   {
     source: '/(.*)',
     headers: [
-      { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
-      { key: 'Content-Security-Policy', value: "default-src 'self'; script-src 'self' 'unsafe-inline' ...; img-src 'self' data: https:;" },
+      {
+        key: 'Strict-Transport-Security',
+        value: 'max-age=31536000; includeSubDomains',
+      },
+      {
+        key: 'Content-Security-Policy',
+        value:
+          "default-src 'self'; script-src 'self' 'unsafe-inline' ...; img-src 'self' data: https:;",
+      },
       { key: 'X-Content-Type-Options', value: 'nosniff' },
       { key: 'X-Frame-Options', value: 'DENY' },
       { key: 'X-XSS-Protection', value: '1; mode=block' },
-      { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' }
-    ]
+      { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+    ],
   },
   {
     source: '/service-worker.js',
     headers: [
-      { key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' }
-    ]
-  }
-]
+      { key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' },
+    ],
+  },
+];
 ```
 
 ### vercel.json Configuration
+
 ```json
 {
   "buildCommand": "npm run build",
@@ -140,8 +152,9 @@ headers: [
 ## 3. App Structure & Root Layout
 
 ### app/layout.js Analysis
+
 **Purpose:** Root layout for all pages  
-**Size:** 77 lines  
+**Size:** 77 lines
 
 ```javascript
 // ✅ GOOD: Proper metadata export
@@ -181,6 +194,7 @@ export const metadata = {
 ## 4. Routing & Dynamic Routes
 
 ### File Structure
+
 ```
 app/
 ├── layout.js (root layout, 77 lines)
@@ -206,6 +220,7 @@ app/
 ```
 
 ### Dynamic Route: [slug]/page.tsx Analysis
+
 **Purpose:** Render individual blog posts by slug  
 **Size:** 254 lines  
 **Rendering:** 'use client' (client-side with hydration)
@@ -222,17 +237,20 @@ export default function PostPage() {
 
   useEffect(() => {
     const fetchPost = async () => {
-      if (!params || !params.slug) { setLoading(false); return; }
-      
+      if (!params || !params.slug) {
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
       try {
         const response = await fetch(`${API_BASE}/api/posts?populate=*`);
         if (!response.ok) throw new Error('Failed to fetch posts');
-        
+
         const data = await response.json();
         const posts = data.data || data || [];
         const foundPost = posts.find((p: Post) => p.slug === slug);
-        
+
         if (!foundPost) throw new Error('Post not found');
         setPost(foundPost);
         setError(null);
@@ -252,11 +270,13 @@ export default function PostPage() {
 ```
 
 **Issues Identified:**
+
 1. **Using 'use client' for static content:** Dynamic posts could be pre-rendered as SSG with generateStaticParams()
 2. **Fetching all posts then filtering:** Should use backend endpoint like /api/posts/{slug} instead of fetching all posts
 3. **No fallback for database downtime:** If FastAPI is down, page shows error instead of cached version
 
 **Recommendation:**
+
 ```typescript
 // BETTER: Use SSG with ISR and dynamic params
 export async function generateStaticParams() {
@@ -287,12 +307,13 @@ export default async function PostPage({ params }) {
 ## 5. API Integration with FastAPI Backend
 
 ### lib/api-fastapi.js Analysis
+
 **Purpose:** Centralized API client for backend communication  
-**Size:** 583 lines  
+**Size:** 583 lines
 
 ```javascript
 // ✅ GOOD: Environment variable configuration with fallbacks
-const FASTAPI_URL = 
+const FASTAPI_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ||
   process.env.NEXT_PUBLIC_FASTAPI_URL ||
   'http://localhost:8000';
@@ -324,7 +345,11 @@ async function fetchAPI(endpoint, options = {}) {
 }
 
 // ✅ GOOD: Adapter pattern for pagination
-export async function getPaginatedPosts(page = 1, pageSize = 10, excludeId = null) {
+export async function getPaginatedPosts(
+  page = 1,
+  pageSize = 10,
+  excludeId = null
+) {
   const skip = (page - 1) * pageSize;
   let endpoint = `/posts?skip=${skip}&limit=${pageSize}&published_only=true`;
   const response = await fetchAPI(endpoint);
@@ -341,7 +366,9 @@ export async function getPaginatedPosts(page = 1, pageSize = 10, excludeId = nul
         page: page,
         pageSize: pageSize,
         total: response.meta?.pagination?.total || 0,
-        pageCount: Math.ceil((response.meta?.pagination?.total || 0) / pageSize),
+        pageCount: Math.ceil(
+          (response.meta?.pagination?.total || 0) / pageSize
+        ),
       },
     },
   };
@@ -353,7 +380,12 @@ export async function getPostBySlug(slug) {
     const response = await fetchAPI(`/posts?populate=*&status=published`);
     if (response.data && Array.isArray(response.data)) {
       const post = response.data.find((p) => p.slug === slug);
-      if (post) return { ...post, category: post.category || null, tags: post.tags || [] };
+      if (post)
+        return {
+          ...post,
+          category: post.category || null,
+          tags: post.tags || [],
+        };
     }
     return null;
   } catch (error) {
@@ -364,6 +396,7 @@ export async function getPostBySlug(slug) {
 ```
 
 **API Functions Provided:**
+
 - `getPaginatedPosts(page, pageSize, excludeId)` - List paginated posts
 - `getFeaturedPost()` - Get most recent post
 - `getPostBySlug(slug)` - Get single post by slug (currently gets all posts and filters)
@@ -372,6 +405,7 @@ export async function getPostBySlug(slug) {
 - `getPostsByCategory(categoryId, limit)` - Filter by category
 
 **Issues Identified:**
+
 1. **Inefficient slug lookup:** Should use `/api/posts/{slug}` endpoint if available, not fetch all and filter
 2. **No caching strategy:** All API calls go directly to backend without response caching in Next.js
 
@@ -382,7 +416,8 @@ export async function getPostBySlug(slug) {
 ## 6. API Route Handlers
 
 ### app/api/posts/route.ts Analysis
-**Purpose:** Next.js API route that forwards to FastAPI  
+
+**Purpose:** Next.js API route that forwards to FastAPI
 
 ```typescript
 export async function GET(request: NextRequest) {
@@ -427,6 +462,7 @@ export async function GET(request: NextRequest) {
 ## 7. Component Architecture
 
 ### Component Hierarchy
+
 ```
 RootLayout
 ├── TopNavigation (fixed header with nav links)
@@ -450,8 +486,9 @@ RootLayout
 ```
 
 ### PostCard Component Analysis
+
 **Purpose:** Reusable post preview card  
-**Size:** 122 lines  
+**Size:** 122 lines
 
 ```javascript
 const PostCard = ({ post }) => {
@@ -512,7 +549,8 @@ const PostCard = ({ post }) => {
 **Assessment:** ✅ EXCELLENT - Professional component with proper image optimization, accessibility (aria labels, time elements), responsive sizing, and focus management.
 
 ### TopNavigation Component
-**Size:** 88 lines  
+
+**Size:** 88 lines
 
 ```javascript
 export function TopNavigation() {
@@ -520,7 +558,10 @@ export function TopNavigation() {
     <header className="fixed top-0 left-0 right-0 z-50 bg-slate-950/80 border-b border-slate-800/50 backdrop-blur-xl">
       <nav className="container mx-auto px-4 md:px-6 py-4 md:py-5 flex items-center justify-between">
         {/* ✅ Logo with gradient and focus states */}
-        <Link href="/" className="group flex items-center space-x-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 rounded-lg px-2 py-1">
+        <Link
+          href="/"
+          className="group flex items-center space-x-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 rounded-lg px-2 py-1"
+        >
           <div className="text-2xl md:text-3xl font-black bg-gradient-to-r from-cyan-400 via-blue-500 to-violet-500 bg-clip-text text-transparent">
             GL
           </div>
@@ -531,22 +572,33 @@ export function TopNavigation() {
 
         {/* ✅ Navigation links with hover effects */}
         <div className="hidden md:flex items-center space-x-12">
-          <Link href="/archive/1" className="relative text-slate-300 hover:text-cyan-300 group">
+          <Link
+            href="/archive/1"
+            className="relative text-slate-300 hover:text-cyan-300 group"
+          >
             Articles
             <span className="absolute inset-0 bg-gradient-to-r from-cyan-400/20 to-blue-500/20 scale-x-0 group-hover:scale-x-100 origin-left transition-transform" />
           </Link>
-          <Link href="/about" className="relative text-slate-300 hover:text-cyan-300 group">
+          <Link
+            href="/about"
+            className="relative text-slate-300 hover:text-cyan-300 group"
+          >
             About
           </Link>
         </div>
 
         {/* ✅ CTA button with animation */}
-        <Link href="/archive/1" className="px-6 py-2.5 font-semibold rounded-xl overflow-hidden group">
+        <Link
+          href="/archive/1"
+          className="px-6 py-2.5 font-semibold rounded-xl overflow-hidden group"
+        >
           <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 to-blue-600 group-hover:shadow-lg" />
           <span className="relative text-white flex items-center gap-2">
             <span className="hidden sm:inline">Explore</span>
             <span className="sm:hidden">Read</span>
-            <span className="group-hover:translate-x-1 transition-transform">→</span>
+            <span className="group-hover:translate-x-1 transition-transform">
+              →
+            </span>
           </span>
         </Link>
       </nav>
@@ -562,7 +614,8 @@ export function TopNavigation() {
 ## 8. Error Handling & Recovery
 
 ### Error Boundary Component
-**File:** components/ErrorBoundary.jsx (237 lines)  
+
+**File:** components/ErrorBoundary.jsx (237 lines)
 
 ```javascript
 export default class ErrorBoundary extends Component {
@@ -583,7 +636,7 @@ export default class ErrorBoundary extends Component {
   componentDidCatch(error, errorInfo) {
     const errorType = getErrorType(error);
     this.setState({ error, errorInfo, errorType });
-    
+
     // ✅ GOOD: Log to monitoring service
     logError(error, {
       component: this.props.fallback?.component || 'Unknown',
@@ -610,7 +663,9 @@ export default class ErrorBoundary extends Component {
 ```
 
 ### Error Fallback Component
+
 Displays:
+
 - Large error icon (🔌 network, 🔍 404, ⚠️ unknown)
 - User-friendly error message
 - Error details (development only)
@@ -618,7 +673,8 @@ Displays:
 - WCAG 2.1 AA compliance
 
 ### 404 Not Found Page
-**File:** app/not-found.jsx (151 lines)  
+
+**File:** app/not-found.jsx (151 lines)
 
 ```javascript
 export default function NotFound() {
@@ -647,7 +703,7 @@ export default function NotFound() {
         404
       </h1>
       <p>The page you're looking for doesn't exist.</p>
-      
+
       {/* ✅ GOOD: Action buttons for recovery */}
       <Link href="/">← Back to Home</Link>
       <Link href="/archive/1">Browse All Posts</Link>
@@ -657,7 +713,9 @@ export default function NotFound() {
         <div className="mt-16 pt-12 border-t border-gray-700">
           <h2>You might enjoy these posts instead:</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {suggestedPosts.map(post => <PostCard key={post.id} post={post} />)}
+            {suggestedPosts.map((post) => (
+              <PostCard key={post.id} post={post} />
+            ))}
           </div>
         </div>
       )}
@@ -673,7 +731,8 @@ export default function NotFound() {
 ## 9. SEO Optimization
 
 ### lib/seo.js Analysis
-**Size:** 382 lines  
+
+**Size:** 382 lines
 
 ```javascript
 // ✅ GOOD: Meta description building with truncation
@@ -686,7 +745,11 @@ export function buildMetaDescription(excerpt, fallback = '') {
 }
 
 // ✅ GOOD: SEO title optimization (50-60 chars target)
-export function buildSEOTitle(title, siteName = 'Glad Labs', suffix = '| Blog') {
+export function buildSEOTitle(
+  title,
+  siteName = 'Glad Labs',
+  suffix = '| Blog'
+) {
   const separator = siteName ? ` ${suffix} ` : '';
   const fullTitle = siteName ? `${title}${separator}${siteName}` : title;
   if (fullTitle.length > 60) return `${title} ${suffix}`;
@@ -715,7 +778,11 @@ export function generateOGTags(post, baseURL = 'https://glad-labs.com') {
 }
 
 // ✅ GOOD: Twitter Card meta tags
-export function generateTwitterTags(post, twitterHandle = '@GladLabsAI', baseURL = 'https://glad-labs.com') {
+export function generateTwitterTags(
+  post,
+  twitterHandle = '@GladLabsAI',
+  baseURL = 'https://glad-labs.com'
+) {
   return {
     'twitter:card': 'summary_large_image',
     'twitter:title': title,
@@ -728,6 +795,7 @@ export function generateTwitterTags(post, twitterHandle = '@GladLabsAI', baseURL
 ```
 
 ### robots.txt Configuration
+
 ```plaintext
 # ✅ GOOD: Comprehensive crawler configuration
 User-agent: *
@@ -758,6 +826,7 @@ Allow: /
 ```
 
 **Issues:**
+
 1. **robots.txt still references 'yourdomain.com'** - Should use actual production domain
 2. **Sitemap URL not validated** - Must be accessible at that URL
 
@@ -768,6 +837,7 @@ Allow: /
 ## 10. Performance Optimization
 
 ### Image Optimization
+
 **Strategy:** Next.js Image component with optimization
 
 ```javascript
@@ -787,12 +857,13 @@ Allow: /
 ```
 
 ### ISR (Incremental Static Regeneration)
+
 **Strategy:** 3600-second (1-hour) revalidation
 
 ```javascript
 // ✅ GOOD: ISR for all API calls
 const response = await fetch(url, {
-  next: { revalidate: 3600 } // ISR: revalidate every hour
+  next: { revalidate: 3600 }, // ISR: revalidate every hour
 });
 
 // Benefits:
@@ -803,11 +874,13 @@ const response = await fetch(url, {
 ```
 
 ### Tailwind CSS Optimization
+
 - **Production:** Only shipped CSS for used classes
 - **CSS-in-JS:** None (static Tailwind only)
 - **Bundle size:** Optimized via @tailwindcss/typography
 
 ### Build Optimization
+
 ```json
 {
   "scripts": {
@@ -828,6 +901,7 @@ const response = await fetch(url, {
 ## 11. Deployment & Docker
 
 ### Dockerfile Analysis
+
 **Strategy:** Multi-stage build for optimized production image
 
 ```dockerfile
@@ -872,6 +946,7 @@ CMD ["node", "server.js"]
 ```
 
 **Benefits:**
+
 - ✅ Multistage build reduces final image size (85% smaller)
 - ✅ Non-root user (nextjs:1001) for security
 - ✅ Minimal layers (only production artifacts copied)
@@ -879,6 +954,7 @@ CMD ["node", "server.js"]
 - ✅ Standalone output (no Node.js modules in production)
 
 ### Vercel Configuration
+
 ```json
 {
   "buildCommand": "npm run build",
@@ -897,7 +973,9 @@ CMD ["node", "server.js"]
 ## 12. Development Workflow
 
 ### Environment Variables
+
 **Required:**
+
 ```env
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000  # FastAPI backend
 NEXT_PUBLIC_FASTAPI_URL=http://localhost:8000   # Fallback
@@ -908,19 +986,21 @@ NEXT_PUBLIC_GA_ID=G-XXXXXXXXXX                  # Google Analytics (optional)
 **Note:** ⚠️ MINOR ISSUE - Still contains placeholder 'yourdomain.com' in code
 
 ### npm Scripts
+
 ```json
 {
-  "dev": "next dev",                    // Start dev server
-  "build": "next build",                // Build for production
+  "dev": "next dev", // Start dev server
+  "build": "next build", // Build for production
   "postbuild": "node scripts/generate-sitemap.js",
-  "start": "next start",                // Start production server
-  "lint": "next lint",                  // Run ESLint
-  "test": "jest",                       // Run Jest tests
-  "test:e2e": "playwright test"         // Run E2E tests
+  "start": "next start", // Start production server
+  "lint": "next lint", // Run ESLint
+  "test": "jest", // Run Jest tests
+  "test:e2e": "playwright test" // Run E2E tests
 }
 ```
 
 ### package.json Dependencies
+
 **Framework:** 91 lines, type: "module" (ESM)
 
 ```json
@@ -955,6 +1035,7 @@ NEXT_PUBLIC_GA_ID=G-XXXXXXXXXX                  # Google Analytics (optional)
 ## 13. Testing Setup
 
 ### Jest Configuration
+
 Tests are configured for unit and component testing.
 
 ```javascript
@@ -963,6 +1044,7 @@ Tests are configured for unit and component testing.
 ```
 
 ### E2E Testing
+
 Playwright configuration for end-to-end tests.
 
 ```javascript
@@ -977,17 +1059,20 @@ Playwright configuration for end-to-end tests.
 ## 14. Identified Issues & Recommendations
 
 ### ✅ Issue 1: robots.txt & Sitemap Domain Mismatch
+
 **Severity:** Minor  
-**Location:** public/robots.txt (line 8)  
+**Location:** public/robots.txt (line 8)
 
 **Current:**
+
 ```plaintext
 Sitemap: https://yourdomain.com/sitemap.xml
 ```
 
-**Problem:** Still references placeholder domain name  
+**Problem:** Still references placeholder domain name
 
 **Recommendation:**
+
 ```plaintext
 Sitemap: ${NEXT_PUBLIC_SITE_URL}/sitemap.xml
 // or
@@ -999,26 +1084,32 @@ Sitemap: https://glad-labs.com/sitemap.xml
 ---
 
 ### ⚠️ Issue 2: Dynamic Post Route Uses Client-Side Rendering
+
 **Severity:** Minor (Performance optimization opportunity)  
-**Location:** app/posts/[slug]/page.tsx (line 1)  
+**Location:** app/posts/[slug]/page.tsx (line 1)
 
 **Current:**
+
 ```typescript
-'use client';  // Client-side rendering
+'use client'; // Client-side rendering
 
 export default function PostPage() {
   const [post, setPost] = useState(null);
-  useEffect(() => { /* fetch post */ }, [params]);
+  useEffect(() => {
+    /* fetch post */
+  }, [params]);
 }
 ```
 
-**Problem:** 
+**Problem:**
+
 - Page uses 'use client' but content is largely static
 - No incremental static generation (SSG/ISR)
 - Every visit requires API call to FastAPI
 - No cached version if backend is down
 
 **Recommendation:**
+
 ```typescript
 // Use Server-Side Rendering (SSR) or SSG
 export async function generateStaticParams() {
@@ -1049,10 +1140,12 @@ export default async function PostPage({ params }) {
 ---
 
 ### ⚠️ Issue 3: API Slug Lookup Inefficiency
+
 **Severity:** Minor (Optimization opportunity)  
-**Location:** lib/api-fastapi.js (lines 128-143)  
+**Location:** lib/api-fastapi.js (lines 128-143)
 
 **Current:**
+
 ```javascript
 export async function getPostBySlug(slug) {
   try {
@@ -1068,11 +1161,13 @@ export async function getPostBySlug(slug) {
 ```
 
 **Problem:**
+
 - Downloads entire posts list just to find one post
 - Scales poorly as post count grows
 - Wastes bandwidth and time
 
 **Recommendation:**
+
 ```javascript
 // Add backend endpoint for single post lookup
 export async function getPostBySlug(slug) {
@@ -1101,9 +1196,11 @@ export async function getPostBySlugFallback(slug) {
 ## 15. Summary & Production Readiness
 
 ### Overall Assessment
+
 ✅ **PRODUCTION-READY** with 3 minor optimization opportunities
 
 ### Strengths
+
 1. ✅ Proper Next.js 15 App Router setup with SSG/ISR
 2. ✅ Comprehensive security headers (HSTS, CSP, X-Frame-Options)
 3. ✅ Professional error handling with recovery options
@@ -1116,26 +1213,33 @@ export async function getPostBySlugFallback(slug) {
 10. ✅ Environment variable configuration with fallbacks
 
 ### Areas for Optimization
+
 1. ⚠️ **Migrate [slug]/page.tsx to SSG/ISR** for better performance (non-blocking)
 2. ⚠️ **Implement /posts/{slug} backend endpoint** for efficient lookup (non-blocking)
 3. ⚠️ **Update robots.txt domain** from placeholder (non-blocking)
 
 ### Critical Issues Found
+
 **0** - No critical issues detected
 
 ### Major Issues Found
+
 **0** - No major issues detected
 
 ### Minor Issues Found
+
 **3** - All non-blocking optimization opportunities
 
 ### Testing Status
+
 ✅ Jest + Playwright configured and ready for expansion
 
 ### Deployment Status
+
 ✅ Docker and Vercel configuration production-ready
 
 ### Performance Status
+
 ✅ ISR caching optimized, image optimization in place, minimal JavaScript
 
 ---
@@ -1160,6 +1264,7 @@ export async function getPostBySlugFallback(slug) {
 The Next.js public site is a **well-engineered content distribution platform** that demonstrates production-ready architecture. All systems are properly configured with excellent error handling, security, and performance optimization. The 3 identified issues are minor optimization opportunities that do not impact production functionality.
 
 **Recommended Actions for Release:**
+
 1. Verify environment variables are properly set in production
 2. Update robots.txt with actual production domain
 3. Test API connectivity to FastAPI backend
@@ -1167,4 +1272,3 @@ The Next.js public site is a **well-engineered content distribution platform** t
 5. Run E2E tests against staging environment
 
 **Status:** ✅ **APPROVED FOR PRODUCTION DEPLOYMENT**
-

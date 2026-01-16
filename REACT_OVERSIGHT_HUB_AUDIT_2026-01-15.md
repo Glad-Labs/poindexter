@@ -1,4 +1,5 @@
 # React Oversight Hub Audit Report
+
 **Date:** January 15, 2026  
 **Status:** ✅ FULLY FUNCTIONAL WITH MINOR ISSUES  
 **Scope:** Complete React UI architecture, state management, API integration, and error handling
@@ -38,6 +39,7 @@ Your React Oversight Hub is **production-ready with solid architecture**. The UI
 ```
 
 **Status:** ✅ CORRECT ORDER
+
 - ErrorBoundary wraps everything (highest level)
 - AuthProvider provides auth context
 - Router enables client-side routing
@@ -52,15 +54,34 @@ Your React Oversight Hub is **production-ready with solid architecture**. The UI
   {/* Public Routes */}
   <Route path="/login" element={<Login />} />
   <Route path="/auth/callback" element={<AuthCallback />} />
-  
+
   {/* Protected Routes */}
-  <Route path="/" element={<ProtectedRoute><LayoutWrapper><ExecutiveDashboard /></LayoutWrapper></ProtectedRoute>} />
-  <Route path="/tasks" element={<ProtectedRoute><LayoutWrapper><TaskManagement /></LayoutWrapper></ProtectedRoute>} />
+  <Route
+    path="/"
+    element={
+      <ProtectedRoute>
+        <LayoutWrapper>
+          <ExecutiveDashboard />
+        </LayoutWrapper>
+      </ProtectedRoute>
+    }
+  />
+  <Route
+    path="/tasks"
+    element={
+      <ProtectedRoute>
+        <LayoutWrapper>
+          <TaskManagement />
+        </LayoutWrapper>
+      </ProtectedRoute>
+    }
+  />
   {/* ... more routes */}
 </Routes>
 ```
 
 **Status:** ✅ WELL ORGANIZED
+
 - Public routes (login, auth callback) first
 - Protected routes wrapped with ProtectedRoute HOC
 - LayoutWrapper handles sidebar/header for authenticated views
@@ -71,22 +92,22 @@ Your React Oversight Hub is **production-ready with solid architecture**. The UI
 **File:** [App.jsx](src/App.jsx#L15)
 
 ```jsx
-const isPublicRoute = 
-  location.pathname === '/login' || 
-  location.pathname.startsWith('/auth/');
+const isPublicRoute =
+  location.pathname === '/login' || location.pathname.startsWith('/auth/');
 
 if (isPublicRoute) {
-  return <AppRoutes />;  // Don't show sidebar
+  return <AppRoutes />; // Don't show sidebar
 }
 
 if (!isAuthenticated) {
-  return <AppRoutes />;  // Not authenticated, will redirect to login
+  return <AppRoutes />; // Not authenticated, will redirect to login
 }
 
-return <AppRoutes />;    // Authenticated, show with layout
+return <AppRoutes />; // Authenticated, show with layout
 ```
 
 **Status:** ✅ CORRECT LOGIC
+
 - Public routes bypass layout
 - Unauthenticated users see AppRoutes (which redirects to login)
 - Authenticated users see full app with sidebar
@@ -107,19 +128,19 @@ const useStore = create(
       user: null,
       accessToken: null,
       isAuthenticated: false,
-      
+
       // ===== TASK STATE =====
       tasks: [],
       selectedTask: null,
-      
+
       // ===== METRICS STATE =====
       metrics: { totalTasks, completedTasks, ... },
-      
+
       // ===== UI STATE =====
       theme: 'dark',
       autoRefresh: false,
       notifications: { desktop: true },
-      
+
       // ===== ORCHESTRATOR STATE =====
       orchestrator: { mode, activeHost, selectedModel, ... },
     }),
@@ -129,6 +150,7 @@ const useStore = create(
 ```
 
 **Status:** ✅ WELL STRUCTURED
+
 - Clear separation by domain (auth, tasks, metrics, UI, orchestrator)
 - Persist middleware stores in localStorage
 - Namespace prevents conflicts with other apps
@@ -137,6 +159,7 @@ const useStore = create(
 ### 2.2 Selectors & Mutators
 
 State access pattern (per component):
+
 ```javascript
 // Read state (selector)
 const user = useStore((state) => state.user);
@@ -148,6 +171,7 @@ const setUser = useStore((state) => state.setUser);
 ```
 
 **Status:** ✅ OPTIMAL PATTERN
+
 - Selective subscriptions (components only re-render on their selectors)
 - No unnecessary re-renders
 - Type-safe with closure pattern
@@ -155,6 +179,7 @@ const setUser = useStore((state) => state.setUser);
 ### 2.3 Persistence
 
 **Status:** ✅ AUTOMATIC
+
 - Zustand persist middleware saves to localStorage
 - Survives page reloads
 - Namespace prevents conflicts
@@ -174,11 +199,11 @@ useEffect(() => {
     if (process.env.NODE_ENV === 'development') {
       await initializeDevToken();
     }
-    
+
     // Step 2: Check localStorage for stored user/token
     const storedUser = getStoredUser();
     const token = getAuthToken();
-    
+
     // Step 3: If found, sync to Zustand and set loading false
     if (storedUser && token) {
       setStoreUser(storedUser);
@@ -188,17 +213,18 @@ useEffect(() => {
       setLoading(false);
       return;
     }
-    
+
     // Step 4: No auth found, allow redirect to login
     setStoreIsAuthenticated(false);
     setLoading(false);
   };
-  
+
   initializeAuth();
 }, []);
 ```
 
 **Status:** ✅ PROPER SEQUENCING
+
 - Dev token auto-init for development
 - localStorage checked first (cached sessions)
 - Zustand state synced before loading flag cleared
@@ -207,15 +233,18 @@ useEffect(() => {
 ### 3.2 Auth Context & Store Sync
 
 Two systems working together:
+
 - **AuthContext** - React Context for provider pattern
 - **Zustand Store** - Global state management
 
 **Sync points:**
+
 1. AuthContext initializes and syncs to Zustand
 2. AuthContext calls setStoreUser(), setStoreIsAuthenticated()
 3. Components access auth via both contexts and hooks
 
 **Status:** ✅ DUAL REDUNDANCY
+
 - Provides multiple access patterns
 - Components can use useAuth() hook OR AuthContext
 - Prevents lost auth on component re-mounts
@@ -228,20 +257,21 @@ Two systems working together:
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
   const location = useLocation();
-  
+
   if (loading) {
     return <div>Loading...</div>;
   }
-  
+
   if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
-  
+
   return children;
 };
 ```
 
 **Status:** ✅ CORRECT IMPLEMENTATION
+
 - Shows loading state while auth initializes
 - Redirects to login if not authenticated
 - Saves current location for post-login redirect
@@ -264,11 +294,12 @@ function getAuthHeaders() {
 const response = await fetch(url, {
   method,
   headers: getAuthHeaders(),
-  body: data ? JSON.stringify(data) : undefined
+  body: data ? JSON.stringify(data) : undefined,
 });
 ```
 
 **Status:** ✅ CONSISTENT PATTERN
+
 - Every request includes auth header
 - Token read from localStorage via getAuthToken()
 - Fails gracefully if token missing
@@ -288,30 +319,37 @@ export async function makeRequest(
   data = null,
   retry = false,
   onUnauthorized = null,
-  timeout = 30000  // 30 seconds for long operations
+  timeout = 30000 // 30 seconds for long operations
 ) {
   const url = `${API_BASE_URL}${endpoint}`;
-  const config = { 
-    method, 
+  const config = {
+    method,
     headers: getAuthHeaders(),
-    signal: controller.signal  // Timeout support
+    signal: controller.signal, // Timeout support
   };
-  
+
   if (data) {
     config.body = JSON.stringify(data);
   }
-  
+
   try {
     const response = await fetch(url, config);
-    
+
     // Handle 401: Auto-refresh token in development
     if (response.status === 401 && !retry) {
       if (process.env.NODE_ENV === 'development') {
         await initializeDevToken();
-        return makeRequest(endpoint, method, data, true, onUnauthorized, timeout);
+        return makeRequest(
+          endpoint,
+          method,
+          data,
+          true,
+          onUnauthorized,
+          timeout
+        );
       }
     }
-    
+
     // Handle responses
     return response.ok ? response.json() : { error: response.statusText };
   } catch (error) {
@@ -324,6 +362,7 @@ export async function makeRequest(
 ```
 
 **Status:** ✅ PRODUCTION-GRADE
+
 - Centralized request logic
 - Timeout handling (AbortController)
 - Auto-refresh token in dev
@@ -340,7 +379,7 @@ export const getTasks = async (offset = 0, limit = 20, filters = {}) => {
     offset: offset.toString(),
     limit: limit.toString(),
   });
-  
+
   const result = await makeRequest(
     `/api/tasks?${params}`,
     'GET',
@@ -349,16 +388,17 @@ export const getTasks = async (offset = 0, limit = 20, filters = {}) => {
     null,
     30000
   );
-  
+
   if (result.error) {
     throw new Error(`Could not fetch tasks: ${result.error}`);
   }
-  
+
   return result.tasks || [];
 };
 ```
 
 **Status:** ✅ CLEAN ABSTRACTION
+
 - Uses makeRequest() for consistency
 - Handles errors properly
 - Returns clean response
@@ -379,6 +419,7 @@ if (!process.env.REACT_APP_API_URL) {
 ```
 
 **Status:** ✅ ENVIRONMENT AWARE
+
 - Reads from environment variables
 - Falls back to localhost for development
 - Warns if not configured
@@ -395,13 +436,13 @@ if (!process.env.REACT_APP_API_URL) {
 class ErrorBoundary extends React.Component {
   componentDidCatch(error, errorInfo) {
     console.error('Error Boundary caught:', error);
-    
+
     // Log to error tracking service (Sentry, etc.)
     if (process.env.NODE_ENV === 'production') {
       if (window.__SENTRY__) {
         window.__SENTRY__.captureException(error);
       }
-      
+
       // Fallback: Send to backend
       fetch(`${API_BASE_URL}/api/errors`, {
         method: 'POST',
@@ -411,11 +452,11 @@ class ErrorBoundary extends React.Component {
           stack: error.stack,
           componentStack: errorInfo.componentStack,
           timestamp: new Date().toISOString(),
-        })
+        }),
       });
     }
   }
-  
+
   render() {
     if (this.state.hasError) {
       return <ErrorFallbackUI />;
@@ -426,6 +467,7 @@ class ErrorBoundary extends React.Component {
 ```
 
 **Status:** ✅ COMPREHENSIVE
+
 - Catches React component errors
 - Logs to Sentry if available
 - Falls back to backend logging
@@ -442,7 +484,7 @@ useEffect(() => {
     try {
       setLoading(true);
       const response = await getTasks(limit, offset);
-      
+
       if (response && response.tasks && Array.isArray(response.tasks)) {
         setLocalTasks(response.tasks);
       } else {
@@ -456,12 +498,13 @@ useEffect(() => {
       setLoading(false);
     }
   };
-  
+
   fetchTasksWrapper();
 }, []);
 ```
 
 **Status:** ✅ TRY-CATCH-FINALLY
+
 - Proper error catching
 - Loading state managed in finally
 - Graceful fallback (empty list)
@@ -482,6 +525,7 @@ const theme = useStore((state) => state.theme);
 ```
 
 **Status:** ✅ OPTIMAL
+
 - Zustand provides granular subscriptions
 - No unnecessary re-renders
 - Better than Context (which re-renders on any state change)
@@ -498,7 +542,7 @@ const fetchTasks = useCallback(async () => {
     console.log('Request already in flight, skipping...');
     return;
   }
-  
+
   try {
     isFetchingRef.current = true;
     const allTasksData = await getTasks(0, 1000);
@@ -510,6 +554,7 @@ const fetchTasks = useCallback(async () => {
 ```
 
 **Status:** ✅ PREVENTS DUPLICATES
+
 - Uses ref to track in-flight requests
 - Prevents concurrent API calls
 - Saves bandwidth and improves UX
@@ -530,6 +575,7 @@ const fetchTasks = useCallback(async () => {
 ```
 
 **Status:** ⚠️ DOCUMENTED DECISION
+
 - Auto-refresh was causing UI issues
 - Manually disabled with explanation
 - Better UX than constant polling
@@ -572,6 +618,7 @@ src/
 ```
 
 **Status:** ✅ WELL ORGANIZED
+
 - Clear separation of concerns
 - Easy to navigate and maintain
 - Follows React conventions
@@ -591,6 +638,7 @@ Wraps all authenticated pages with sidebar + header. Used like:
 ```
 
 **Status:** ✅ COMPOSABLE
+
 - Separation of layout from page logic
 - Reusable across all protected routes
 - Clean HOC pattern
@@ -609,12 +657,14 @@ const interval = setInterval(fetchTasksWrapper, 30000);
 ```
 
 **Issue:** Auto-refresh polls API every 30 seconds regardless of user activity
+
 - Wastes bandwidth
 - Could interfere with user edits
 - Better to refresh on demand
 
 **Current Status:** Auto-refresh is enabled
-**Recommendation:** 
+**Recommendation:**
+
 - Add toggle in settings to enable/disable
 - Or make it event-driven (on task creation/update)
 - Consider WebSocket for real-time updates instead
@@ -630,10 +680,12 @@ const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 ```
 
 **Issue:** Falls back to localhost if env var not set
+
 - Could work in development by accident
 - Production deployment could fail silently
 
 **Recommendation:**
+
 ```javascript
 const API_BASE_URL = process.env.REACT_APP_API_URL;
 if (!API_BASE_URL) {
@@ -660,11 +712,13 @@ if (response && response.tasks && Array.isArray(response.tasks)) {
 ```
 
 **Issue:** Response format validation suggests API inconsistency
+
 - Sometimes returns `{ tasks: [...] }`
 - Sometimes returns tasks directly?
 - Defensive programming is good, but indicates API isn't normalized
 
 **Recommendation:**
+
 - Verify `/api/tasks` always returns `{ tasks: [...], total: number }`
 - Standardize response format in backend
 - Remove defensive checks once API is consistent
@@ -681,6 +735,7 @@ const loading = user === null && accessToken === null ? undefined : false;
 ```
 
 **Issue:** Loading state is `undefined` or `false`, never `true`
+
 - Can't represent "actively loading" state
 - Should be `true` while auth initializes
 
@@ -688,6 +743,7 @@ const loading = user === null && accessToken === null ? undefined : false;
 **But:** useAuth() hook's loading logic is incorrect
 
 **Recommendation:**
+
 ```javascript
 const loading = useStore((state) => state.authLoading); // New Zustand state
 ```
@@ -740,11 +796,13 @@ __tests__/
 ```
 
 **Status:** ⚠️ MINIMAL COVERAGE
+
 - Only 2 test files
 - Core components not tested (Auth, Protected routes, API)
 - TaskManagement component not tested
 
 **Recommendation:**
+
 ```javascript
 // Add tests for:
 1. AuthContext initialization
@@ -768,10 +826,12 @@ __tests__/
 ```
 
 **Status:** ⚠️ MODERATE
+
 - Large bundle for SPA
 - Main contributors likely Material-UI, React
 
 **Recommendation:**
+
 - Code-split route components with React.lazy()
 - Remove unused dependencies
 - Consider smaller UI library alternatives
@@ -781,10 +841,12 @@ __tests__/
 **Estimated:** ~2-3 seconds (before auth init)
 
 **Status:** ⚠️ ACCEPTABLE
+
 - Auth initialization adds ~100-200ms
 - Network latency dominates
 
 **Recommendation:**
+
 - Measure with WebPageTest or Lighthouse
 - Profile with React DevTools Profiler
 - Implement service worker for offline support
@@ -822,14 +884,14 @@ npm run build  # Creates optimized production build
 
 ### Alignment with Backend
 
-| Feature | Backend | Frontend | Status |
-|---------|---------|----------|--------|
-| Error Handling | Structured responses | Try-catch blocks | ✅ Consistent |
-| Authentication | JWT tokens | Bearer headers | ✅ Compatible |
-| State Management | Orchestrator pattern | Zustand store | ✅ Aligned |
-| API Timeout | 30 seconds | 30 seconds | ✅ Matched |
-| Logging | Structured logging | Console + Sentry | ✅ Complementary |
-| CORS | Configured | Respects | ✅ Working |
+| Feature          | Backend              | Frontend         | Status           |
+| ---------------- | -------------------- | ---------------- | ---------------- |
+| Error Handling   | Structured responses | Try-catch blocks | ✅ Consistent    |
+| Authentication   | JWT tokens           | Bearer headers   | ✅ Compatible    |
+| State Management | Orchestrator pattern | Zustand store    | ✅ Aligned       |
+| API Timeout      | 30 seconds           | 30 seconds       | ✅ Matched       |
+| Logging          | Structured logging   | Console + Sentry | ✅ Complementary |
+| CORS             | Configured           | Respects         | ✅ Working       |
 
 ---
 
@@ -862,6 +924,7 @@ npm run build  # Creates optimized production build
 Your React Oversight Hub is **well-architected with solid fundamentals**:
 
 ### Strengths
+
 ✅ Clean component structure  
 ✅ Centralized Zustand state management  
 ✅ Comprehensive error handling  
@@ -869,16 +932,18 @@ Your React Oversight Hub is **well-architected with solid fundamentals**:
 ✅ Centralized API client  
 ✅ Timeout handling on all requests  
 ✅ Error boundary for crash prevention  
-✅ Environment-based configuration  
+✅ Environment-based configuration
 
 ### Weaknesses (Minor)
+
 ⚠️ Auto-refresh polling every 30 seconds  
 ⚠️ Hardcoded localhost fallback  
 ⚠️ Response format validation suggests API inconsistency  
 ⚠️ useAuth() loading state logic incorrect  
-⚠️ Minimal test coverage  
+⚠️ Minimal test coverage
 
 ### Architecture Quality
+
 - **State Management:** 9/10 (Zustand perfectly suited)
 - **API Integration:** 8/10 (Centralized, but could standardize responses)
 - **Error Handling:** 9/10 (Comprehensive with graceful fallbacks)
@@ -886,16 +951,17 @@ Your React Oversight Hub is **well-architected with solid fundamentals**:
 - **Component Organization:** 8/10 (Clean structure, room for composition)
 
 ### Production Readiness
+
 ✅ Ready to deploy with minor config changes  
 ✅ Error tracking infrastructure in place  
 ✅ Auth flow handles edge cases  
-✅ Performance acceptable for admin UI  
+✅ Performance acceptable for admin UI
 
 ---
 
 **Next Steps:**
+
 1. Address 3 high-priority recommendations
 2. Standardize backend API responses
 3. Add unit tests for critical flows
 4. Deploy with production REACT_APP_API_URL
-

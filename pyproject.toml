@@ -50,9 +50,9 @@ classifiers = [
 where = ["src"]
 
 [tool.pytest.ini_options]
-testpaths = ["src"]
-pythonpath = ["."]
-python_files = ["test_*.py", "*_test.py"]
+testpaths = ["tests"]
+pythonpath = [".", "src", "src/cofounder_agent"]
+python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = [

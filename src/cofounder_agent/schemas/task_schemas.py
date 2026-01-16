@@ -259,22 +259,25 @@ class TaskCreateRequest(BaseModel):
 
 
 class TaskStatusUpdateRequest(BaseModel):
-    """Schema for updating task status"""
+    """Schema for updating task status with enterprise audit trail"""
 
     status: str = Field(
         ...,
-        pattern="^(pending|in_progress|completed|failed|cancelled)$",
-        description="New task status",
+        description="New task status (pending, in_progress, awaiting_approval, approved, published, failed, on_hold, rejected, cancelled)",
     )
+    updated_by: Optional[str] = Field(None, description="User/system making the change")
+    reason: Optional[str] = Field(None, description="Reason for status change (audit trail)")
     result: Optional[Dict[str, Any]] = Field(None, description="Task result/output")
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
 
     class Config:
         json_schema_extra = {
             "example": {
-                "status": "completed",
+                "status": "awaiting_approval",
+                "updated_by": "user@example.com",
+                "reason": "Content generation completed",
                 "result": {"content": "Generated blog post..."},
-                "metadata": {"execution_time": 45.2},
+                "metadata": {"quality_score": 8.5, "validation_context": {}},
             }
         }
 
