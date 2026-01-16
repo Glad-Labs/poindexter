@@ -38,16 +38,22 @@ import json
 import os
 import hashlib
 
-# Now try to import google-generativeai
+# Now try to import google-genai (new package, replaces deprecated google.generativeai)
 # With the sys.path fix above, this should work even with poetry run
 genai = None
 try:
-    import google.generativeai
-    genai = google.generativeai
-    logging.info("✅ google-generativeai successfully imported")
+    import google.genai as genai_module
+    genai = genai_module
+    logging.info("✅ google.genai successfully imported")
 except (ImportError, ModuleNotFoundError) as e:
-    logging.warning(f"⚠️ Could not import google.generativeai: {e}. Will fall back to Ollama.")
-    genai = None
+    # Fallback to old deprecated package if new one not available
+    try:
+        import google.generativeai as genai_module
+        genai = genai_module
+        logging.warning(f"⚠️  Using deprecated google.generativeai. Please upgrade to google.genai: {e}")
+    except (ImportError, ModuleNotFoundError) as e2:
+        logging.warning(f"⚠️ Could not import google.genai or google.generativeai: {e2}. Will fall back to Ollama.")
+        genai = None
 
 class LLMClient:
     """Client for interacting with a configured Large Language Model."""

@@ -12,8 +12,8 @@ try:
         CodeInterpreterTool,
     )
     CREWAI_TOOLS_AVAILABLE = True
-except ImportError as e:
-    logging.warning(f"crewai_tools not available ({e}), using mock implementations")
+except ImportError:
+    # crewai_tools not available, using mock implementations instead
     from .crewai_tools_mock import (
         SerperDevTool,
         WebsiteSearchTool,

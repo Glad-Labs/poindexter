@@ -32,6 +32,7 @@ from schemas.model_converter import ModelConverter
 from services.database_service import DatabaseService
 from routes.auth_unified import get_current_user
 from schemas.task_schemas import (
+    UnifiedTaskRequest,
     TaskCreateRequest,
     TaskStatusUpdateRequest,
     TaskListResponse,
@@ -54,55 +55,94 @@ router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 # ============================================================================
 
 
-@router.post("", response_model=Dict[str, Any], summary="Create new task", status_code=201)
+@router.post("", response_model=Dict[str, Any], summary="Create task - unified endpoint for all task types", status_code=201)
 async def create_task(
-    request: TaskCreateRequest,
+    request: UnifiedTaskRequest,
     current_user: dict = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
     background_tasks: BackgroundTasks = None,
 ):
     """
-    Create a new task for content generation.
+    Unified task creation endpoint - routes to appropriate handler based on task_type.
     
-    **Parameters:**
-    - task_name: Name/title of the task
-    - topic: Blog post topic
-    - primary_keyword: Primary SEO keyword (optional)
-    - target_audience: Target audience (optional)
-    - category: Content category (default: "general")
-    - metadata: Additional metadata (optional)
+    **Supported Task Types:**
+    - blog_post: Blog content generation with self-critiquing pipeline
+    - social_media: Multi-platform social content (Twitter, LinkedIn, Instagram)
+    - email: Email campaign generation
+    - newsletter: Newsletter content generation
+    - business_analytics: Business metrics analysis and insights
+    - data_retrieval: Data extraction from multiple sources
+    - market_research: Competitive intelligence and market analysis
+    - financial_analysis: Financial data analysis and reporting
+    
+    **Common Parameters (all tasks):**
+    - task_type: REQUIRED - Type of task to create
+    - topic: REQUIRED - Task topic/subject/query
+    - models_by_phase: Optional per-phase model selection
+    - quality_preference: fast|balanced|quality (default: balanced)
+    - metadata: Optional additional metadata
+    
+    **Content Task Parameters (blog_post, social_media, email, newsletter):**
+    - style: technical|narrative|listicle|educational|thought-leadership
+    - tone: professional|casual|academic|inspirational
+    - target_length: 200-5000 words (blog_post)
+    - generate_featured_image: true|false (blog_post)
+    - platforms: List of platforms (social_media)
+    - tags: Content tags
+    
+    **Analytics Task Parameters (business_analytics):**
+    - metrics: List of metrics to analyze (revenue, churn, conversion_rate)
+    - time_period: Analysis period (last_month, last_quarter, ytd)
+    - business_context: Industry, size, goals context
+    
+    **Data Task Parameters (data_retrieval):**
+    - data_sources: List of source types (postgres, s3, api)
+    - filters: Query filters and parameters
     
     **Returns:**
-    - Task ID (UUID)
-    - Status and creation timestamp
+    - task_id: UUID of created task
+    - status: pending (will be picked up by TaskExecutor)
+    - created_at: ISO timestamp
     
-    **Example cURL:**
-    ```bash
-    curl -X POST http://localhost:8000/api/tasks \
-      -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-      -H "Content-Type: application/json" \
-      -d '{
-        "task_name": "Blog Post - AI in Healthcare",
-        "topic": "How AI is Transforming Healthcare",
-        "primary_keyword": "AI healthcare",
-        "target_audience": "Healthcare professionals",
-        "category": "healthcare"
-      }'
+    **Example Requests:**
+    
+    Blog Post:
+    ```json
+    {
+      "task_type": "blog_post",
+      "topic": "AI in Healthcare",
+      "style": "technical",
+      "tone": "professional",
+      "target_length": 2000,
+      "generate_featured_image": true,
+      "quality_preference": "balanced"
+    }
+    ```
+    
+    Social Media:
+    ```json
+    {
+      "task_type": "social_media",
+      "topic": "New Product Launch",
+      "platforms": ["twitter", "linkedin"],
+      "tone": "casual",
+      "quality_preference": "fast"
+    }
+    ```
+    
+    Business Analytics:
+    ```json
+    {
+      "task_type": "business_analytics",
+      "topic": "Q4 Revenue Analysis",
+      "metrics": ["revenue", "churn_rate", "customer_acquisition"],
+      "time_period": "last_quarter",
+      "business_context": {"industry": "SaaS", "size": "mid-market"}
+    }
     ```
     """
     try:
-        # Validate required fields with detailed error messages
-        if not request.task_name or not str(request.task_name).strip():
-            logger.error("❌ Task creation failed: task_name is empty")
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "field": "task_name",
-                    "message": "task_name is required and cannot be empty",
-                    "type": "validation_error",
-                },
-            )
-
+        # Validate required fields
         if not request.topic or not str(request.topic).strip():
             logger.error("❌ Task creation failed: topic is empty")
             raise HTTPException(
@@ -114,189 +154,327 @@ async def create_task(
                 },
             )
 
-        # Log incoming request
-        logger.info(f"📥 [TASK_CREATE] Received request:")
-        logger.info(f"   - task_name: {request.task_name}")
-        logger.info(f"   - topic: {request.topic}")
-        logger.info(f"   - category: {request.category}")
-        logger.info(f"   - model_selections: {request.model_selections}")
-        logger.info(f"   - quality_preference: {request.quality_preference}")
-        logger.info(f"   - estimated_cost: {request.estimated_cost}")
-        logger.info(f"   - user_id: {current_user.get('id', 'system')}")
+        logger.info(f"📥 [UNIFIED_TASK_CREATE] Received: task_type={request.task_type}, topic={request.topic}")
 
-        # Extract style, tone, and target_length from metadata if available
-        metadata = request.metadata or {}
-        style = metadata.get("style")
-        tone = metadata.get("tone")
-        # Map word_count to target_length if target_length is missing
-        target_length = metadata.get("target_length") or metadata.get("word_count")
-
-        # Create task data
-        task_id = str(uuid_lib.uuid4())
-        task_data = {
-            "id": task_id,
-            "task_name": request.task_name.strip(),
-            "topic": request.topic.strip(),
-            "primary_keyword": (request.primary_keyword or "").strip(),
-            "target_audience": (request.target_audience or "").strip(),
-            "category": (request.category or "general").strip(),
-            "style": style,
-            "tone": tone,
-            "target_length": target_length,
-            "model_selections": request.model_selections or {},
-            "quality_preference": request.quality_preference or "balanced",
-            "estimated_cost": request.estimated_cost or 0.0,
-            "status": "pending",
-            "agent_id": "content-agent",
-            "user_id": current_user.get("id", "system"),  # Capture user for writing sample retrieval
-            "writing_style_id": request.writing_style_id,  # UUID of writing sample for style guidance
-            "metadata": request.metadata or {},
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-
-        logger.info(f"🔄 [TASK_CREATE] Generated task_id: {task_id}")
-        logger.info(f"🔄 [TASK_CREATE] Task data prepared:")
-        logger.info(
-            f"   - Basic: {json.dumps({k: v for k, v in task_data.items() if k not in ['metadata', 'model_selections']}, indent=2)}"
-        )
-        logger.info(f"   - Model Selections: {task_data['model_selections']}")
-        logger.info(
-            f"   - Cost Info: quality={task_data['quality_preference']}, estimated=${task_data['estimated_cost']:.4f}"
-        )
-
-        # Add task to database
-        logger.info(f"💾 [TASK_CREATE] Inserting into database...")
-        returned_task_id = await db_service.add_task(task_data)
-        logger.info(
-            f"✅ [TASK_CREATE] Database insert successful - returned task_id: {returned_task_id}"
-        )
-
-        # Verify task was inserted
-        logger.info(f"🔍 [TASK_CREATE] Verifying task in database...")
-        verify_task = await db_service.get_task(returned_task_id)
-        if verify_task:
-            logger.info(f"✅ [TASK_CREATE] Verification SUCCESS - Task found in database")
-            # verify_task is now a dict
-            logger.info(f"   - Status: {verify_task.get('status', 'unknown')}")
-            logger.info(f"   - Created: {verify_task.get('created_at', 'unknown')}")
+        # Route based on task_type
+        if request.task_type == "blog_post":
+            return await _handle_blog_post_creation(request, current_user, db_service)
+        
+        elif request.task_type == "social_media":
+            return await _handle_social_media_creation(request, current_user, db_service)
+        
+        elif request.task_type == "email":
+            return await _handle_email_creation(request, current_user, db_service)
+        
+        elif request.task_type == "newsletter":
+            return await _handle_newsletter_creation(request, current_user, db_service)
+        
+        elif request.task_type == "business_analytics":
+            return await _handle_business_analytics_creation(request, current_user, db_service)
+        
+        elif request.task_type == "data_retrieval":
+            return await _handle_data_retrieval_creation(request, current_user, db_service)
+        
+        elif request.task_type == "market_research":
+            return await _handle_market_research_creation(request, current_user, db_service)
+        
+        elif request.task_type == "financial_analysis":
+            return await _handle_financial_analysis_creation(request, current_user, db_service)
+        
         else:
-            logger.error(
-                f"❌ [TASK_CREATE] Verification FAILED - Task NOT found in database after insert!"
+            raise HTTPException(
+                status_code=400,
+                detail={"message": f"Unknown task_type: {request.task_type}", "supported": ["blog_post", "social_media", "email", "newsletter", "business_analytics", "data_retrieval", "market_research", "financial_analysis"]}
             )
-
-        response = {
-            "id": returned_task_id,
-            "status": "pending",
-            "created_at": task_data["created_at"],
-            "message": "Task created successfully",
-        }
-        logger.info(f"📤 [TASK_CREATE] Returning response: {response}")
-
-        # Content generation is now handled by the TaskExecutor background service which polls for pending tasks.
-        # The TaskExecutor uses the full multi-agent UnifiedOrchestrator pipeline.
-
-        return response
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ [TASK_CREATE] Exception: {str(e)}", exc_info=True)
+        logger.error(f"❌ [UNIFIED_TASK_CREATE] Exception: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail={"message": f"Failed to create task: {str(e)}", "type": "internal_error"},
         )
 
 
-@router.get("", response_model=TaskListResponse, summary="List tasks")
-async def list_tasks(
-    offset: int = Query(0, ge=0, description="Pagination offset"),
-    limit: int = Query(20, ge=1, le=1000, description="Results per page (default: 20, max: 1000)"),
-    status: Optional[str] = Query(None, description="Filter by status (optional)"),
-    category: Optional[str] = Query(None, description="Filter by category (optional)"),
-    current_user: dict = Depends(get_current_user),
-    db_service: DatabaseService = Depends(get_database_dependency),
-):
-    """
-    List tasks with database-level pagination and filtering.
-
-    **Optimizations:**
-    - Database-level pagination (not in-memory, much faster!)
-    - Server-side filtering (status, category)
-    - Default limit: 20 (retrieves only what user sees)
-    - Max limit: 1000 (prevents abuse while allowing bulk retrieval)
-    - Expected response time: <2 seconds (was 150s with all tasks)
-
-    **Query Parameters:**
-    - offset: Pagination offset (default: 0)
-    - limit: Number of results (default: 20, max: 100)
-    - status: Filter by task status (optional)
-    - category: Filter by category (optional)
-
-    **Returns:**
-    - List of tasks (paginated)
-    - Total count (for UI pagination)
-    - Current offset and limit
-
-    **Example:**
-    ```
-    GET /api/tasks?offset=0&limit=20&status=completed
-    ```
-    """
-    try:
-        # Use database-level pagination (much faster than in-memory!)
-        tasks, total = await db_service.get_tasks_paginated(
-            offset=offset, limit=limit, status=status, category=category
-        )
-
-        # Convert to response schema with proper type conversions
-        task_responses = [
-            UnifiedTaskResponse(**ModelConverter.task_response_to_unified(ModelConverter.to_task_response(task)))
-            for task in tasks
-        ]
-
-        return TaskListResponse(tasks=task_responses, total=total, offset=offset, limit=limit)
-
-    except Exception as e:
-        logger.error(f"Error listing tasks: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch tasks: {str(e)}")
+# ============================================================================
+# TASK TYPE HANDLERS
+# ============================================================================
 
 
-@router.get("/{task_id}", response_model=UnifiedTaskResponse, summary="Get task details")
-async def get_task(
-    task_id: str,
-    current_user: dict = Depends(get_current_user),
-    db_service: DatabaseService = Depends(get_database_dependency),
-):
-    """
-    Get details for a specific task.
+async def _handle_blog_post_creation(request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService) -> Dict[str, Any]:
+    """Handle blog post task creation"""
+    from services.content_router_service import process_content_generation_task
+    import asyncio
     
-    **Parameters:**
-    - task_id: Task UUID
+    task_id = str(uuid_lib.uuid4())
     
-    **Returns:**
-    - Full task details including status, timestamps, and results
+    task_data = {
+        "id": task_id,
+        "task_name": f"Blog Post: {request.topic}",
+        "task_type": "blog_post",
+        "topic": request.topic.strip(),
+        "category": request.category or "general",
+        "style": request.style,
+        "tone": request.tone,
+        "target_length": request.target_length or 1500,
+        "model_selections": request.models_by_phase or {},
+        "quality_preference": request.quality_preference or "balanced",
+        "status": "pending",
+        "user_id": current_user.get("id", "system"),
+        "metadata": {**(request.metadata or {}), "generate_featured_image": request.generate_featured_image, "tags": request.tags},
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
     
-    **Example cURL:**
-    ```bash
-    curl -X GET http://localhost:8000/api/tasks/550e8400-e29b-41d4-a716-446655440000 \
-      -H "Authorization: Bearer YOUR_JWT_TOKEN"
-    ```
-    """
-    try:
-        # Validate UUID format
+    # Store in database
+    returned_task_id = await db_service.add_task(task_data)
+    logger.info(f"✅ [BLOG_TASK] Created: {returned_task_id}")
+    
+    # Schedule background generation
+    async def _run_blog_generation():
         try:
-            UUID(task_id)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid task ID format")
+            await process_content_generation_task(
+                topic=request.topic,
+                style=request.style or "narrative",
+                tone=request.tone or "professional",
+                target_length=request.target_length or 1500,
+                tags=request.tags,
+                generate_featured_image=request.generate_featured_image or True,
+                database_service=db_service,
+                task_id=task_id,
+                models_by_phase=request.models_by_phase,
+                quality_preference=request.quality_preference or "balanced",
+            )
+        except Exception as e:
+            logger.error(f"Blog generation failed: {e}", exc_info=True)
+            await db_service.update_task(task_id, {"status": "failed", "error_message": str(e)})
+    
+    asyncio.create_task(_run_blog_generation())
+    
+    return {
+        "id": returned_task_id,
+        "task_type": "blog_post",
+        "status": "pending",
+        "created_at": task_data["created_at"],
+        "message": "Blog post task created and queued",
+    }
 
-        # Fetch task
-        task = await db_service.get_task(task_id)
 
-        if not task:
-            raise HTTPException(status_code=404, detail="Task not found")
+async def _handle_social_media_creation(request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService) -> Dict[str, Any]:
+    """Handle social media task creation"""
+    task_id = str(uuid_lib.uuid4())
+    
+    task_data = {
+        "id": task_id,
+        "task_name": f"Social Media: {request.topic}",
+        "task_type": "social_media",
+        "topic": request.topic.strip(),
+        "category": request.category or "general",
+        "tone": request.tone or "professional",
+        "style": request.style,
+        "model_selections": request.models_by_phase or {},
+        "quality_preference": request.quality_preference or "balanced",
+        "status": "pending",
+        "user_id": current_user.get("id", "system"),
+        "metadata": {**(request.metadata or {}), "platforms": request.platforms, "tags": request.tags},
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    
+    returned_task_id = await db_service.add_task(task_data)
+    logger.info(f"✅ [SOCIAL_TASK] Created: {returned_task_id} - Platforms: {request.platforms}")
+    
+    return {
+        "id": returned_task_id,
+        "task_type": "social_media",
+        "status": "pending",
+        "created_at": task_data["created_at"],
+        "message": f"Social media task created for platforms: {', '.join(request.platforms or ['all'])}",
+    }
 
-        # Convert to response schema with proper type conversions
-        return UnifiedTaskResponse(**ModelConverter.task_response_to_unified(ModelConverter.to_task_response(task)))
+
+async def _handle_email_creation(request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService) -> Dict[str, Any]:
+    """Handle email task creation"""
+    task_id = str(uuid_lib.uuid4())
+    
+    task_data = {
+        "id": task_id,
+        "task_name": f"Email: {request.topic}",
+        "task_type": "email",
+        "topic": request.topic.strip(),
+        "category": request.category or "general",
+        "tone": request.tone or "professional",
+        "model_selections": request.models_by_phase or {},
+        "quality_preference": request.quality_preference or "balanced",
+        "status": "pending",
+        "user_id": current_user.get("id", "system"),
+        "metadata": {**(request.metadata or {}), "tags": request.tags},
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    
+    returned_task_id = await db_service.add_task(task_data)
+    logger.info(f"✅ [EMAIL_TASK] Created: {returned_task_id}")
+    
+    return {
+        "id": returned_task_id,
+        "task_type": "email",
+        "status": "pending",
+        "created_at": task_data["created_at"],
+        "message": "Email task created and queued",
+    }
+
+
+async def _handle_newsletter_creation(request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService) -> Dict[str, Any]:
+    """Handle newsletter task creation"""
+    task_id = str(uuid_lib.uuid4())
+    
+    task_data = {
+        "id": task_id,
+        "task_name": f"Newsletter: {request.topic}",
+        "task_type": "newsletter",
+        "topic": request.topic.strip(),
+        "category": request.category or "general",
+        "model_selections": request.models_by_phase or {},
+        "quality_preference": request.quality_preference or "balanced",
+        "status": "pending",
+        "user_id": current_user.get("id", "system"),
+        "metadata": {**(request.metadata or {}), "tags": request.tags},
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    
+    returned_task_id = await db_service.add_task(task_data)
+    logger.info(f"✅ [NEWSLETTER_TASK] Created: {returned_task_id}")
+    
+    return {
+        "id": returned_task_id,
+        "task_type": "newsletter",
+        "status": "pending",
+        "created_at": task_data["created_at"],
+        "message": "Newsletter task created and queued",
+    }
+
+
+async def _handle_business_analytics_creation(request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService) -> Dict[str, Any]:
+    """Handle business analytics task creation"""
+    task_id = str(uuid_lib.uuid4())
+    
+    task_data = {
+        "id": task_id,
+        "task_name": f"Analytics: {request.topic}",
+        "task_type": "business_analytics",
+        "topic": request.topic.strip(),
+        "category": request.category or "general",
+        "model_selections": request.models_by_phase or {},
+        "quality_preference": request.quality_preference or "balanced",
+        "status": "pending",
+        "user_id": current_user.get("id", "system"),
+        "metadata": {**(request.metadata or {}), "metrics": request.metrics, "time_period": request.time_period, "business_context": request.business_context},
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    
+    returned_task_id = await db_service.add_task(task_data)
+    logger.info(f"✅ [ANALYTICS_TASK] Created: {returned_task_id} - Metrics: {request.metrics}")
+    
+    return {
+        "id": returned_task_id,
+        "task_type": "business_analytics",
+        "status": "pending",
+        "created_at": task_data["created_at"],
+        "message": f"Business analytics task created - Analyzing: {', '.join(request.metrics or [])}",
+    }
+
+
+async def _handle_data_retrieval_creation(request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService) -> Dict[str, Any]:
+    """Handle data retrieval task creation"""
+    task_id = str(uuid_lib.uuid4())
+    
+    task_data = {
+        "id": task_id,
+        "task_name": f"Data Retrieval: {request.topic}",
+        "task_type": "data_retrieval",
+        "topic": request.topic.strip(),
+        "category": request.category or "general",
+        "model_selections": request.models_by_phase or {},
+        "status": "pending",
+        "user_id": current_user.get("id", "system"),
+        "metadata": {**(request.metadata or {}), "data_sources": request.data_sources, "filters": request.filters},
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    
+    returned_task_id = await db_service.add_task(task_data)
+    logger.info(f"✅ [DATA_TASK] Created: {returned_task_id} - Sources: {request.data_sources}")
+    
+    return {
+        "id": returned_task_id,
+        "task_type": "data_retrieval",
+        "status": "pending",
+        "created_at": task_data["created_at"],
+        "message": f"Data retrieval task created from sources: {', '.join(request.data_sources or [])}",
+    }
+
+
+async def _handle_market_research_creation(request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService) -> Dict[str, Any]:
+    """Handle market research task creation"""
+    task_id = str(uuid_lib.uuid4())
+    
+    task_data = {
+        "id": task_id,
+        "task_name": f"Market Research: {request.topic}",
+        "task_type": "market_research",
+        "topic": request.topic.strip(),
+        "category": request.category or "general",
+        "model_selections": request.models_by_phase or {},
+        "quality_preference": request.quality_preference or "balanced",
+        "status": "pending",
+        "user_id": current_user.get("id", "system"),
+        "metadata": {**(request.metadata or {})},
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    
+    returned_task_id = await db_service.add_task(task_data)
+    logger.info(f"✅ [MARKET_RESEARCH_TASK] Created: {returned_task_id}")
+    
+    return {
+        "id": returned_task_id,
+        "task_type": "market_research",
+        "status": "pending",
+        "created_at": task_data["created_at"],
+        "message": "Market research task created and queued",
+    }
+
+
+async def _handle_financial_analysis_creation(request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService) -> Dict[str, Any]:
+    """Handle financial analysis task creation"""
+    task_id = str(uuid_lib.uuid4())
+    
+    task_data = {
+        "id": task_id,
+        "task_name": f"Financial Analysis: {request.topic}",
+        "task_type": "financial_analysis",
+        "topic": request.topic.strip(),
+        "category": request.category or "general",
+        "model_selections": request.models_by_phase or {},
+        "quality_preference": request.quality_preference or "balanced",
+        "status": "pending",
+        "user_id": current_user.get("id", "system"),
+        "metadata": {**(request.metadata or {})},
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    
+    returned_task_id = await db_service.add_task(task_data)
+    logger.info(f"✅ [FINANCIAL_ANALYSIS_TASK] Created: {returned_task_id}")
+    
+    return {
+        "id": returned_task_id,
+        "task_type": "financial_analysis",
+        "status": "pending",
+        "created_at": task_data["created_at"],
+        "message": "Financial analysis task created and queued",
+    }
+
+
+# ============================================================================
+# RETRIEVAL ENDPOINTS
+# ============================================================================
 
     except HTTPException:
         raise

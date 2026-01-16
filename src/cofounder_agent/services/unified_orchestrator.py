@@ -630,7 +630,14 @@ class UnifiedOrchestrator:
             if writing_style_guidance:
                 post.metadata = {"writing_sample_guidance": writing_style_guidance}
 
-            draft_post = await creative_agent.run(post, is_refinement=False)
+            # Pass constraints with phase-specific word count target
+            phase_target = phase_targets.get("creative", 300)
+            draft_post = await creative_agent.run(
+                post, 
+                is_refinement=False,
+                word_count_target=phase_target,
+                constraints=constraints
+            )
             draft_text = draft_post.body if hasattr(draft_post, "body") else str(draft_post)
 
             creative_compliance = validate_constraints(
@@ -694,7 +701,12 @@ class UnifiedOrchestrator:
                         # Create new LLMClient with refine model for refinement
                         refine_llm_client = LLMClient(model_name=refine_model)
                         creative_agent = CreativeAgent(llm_client=refine_llm_client)
-                    content = await creative_agent.run(content, is_refinement=True)
+                    content = await creative_agent.run(
+                        content, 
+                        is_refinement=True,
+                        word_count_target=phase_targets.get("creative", 300),
+                        constraints=constraints
+                    )
 
             qa_compliance = validate_constraints(
                 getattr(content, "body", str(content)),

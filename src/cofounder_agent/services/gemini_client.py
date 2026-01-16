@@ -80,8 +80,12 @@ class GeminiClient:
             raise Exception("Gemini API key not configured")
 
         try:
-            # Import google-generativeai library
-            import google.generativeai as genai
+            # Import google-genai library (new package, replaces deprecated google.generativeai)
+            try:
+                import google.genai as genai
+            except ImportError:
+                # Fallback to old deprecated package if new one not available
+                import google.generativeai as genai
 
             # Configure the API key
             genai.configure(api_key=self.api_key)
@@ -133,7 +137,12 @@ class GeminiClient:
             raise Exception("Gemini API key not configured")
 
         try:
-            import google.generativeai as genai
+            # Import google-genai library (new package, replaces deprecated google.generativeai)
+            try:
+                import google.genai as genai
+            except ImportError:
+                # Fallback to old deprecated package if new one not available
+                import google.generativeai as genai
 
             genai.configure(api_key=self.api_key)
             gemini_model = genai.GenerativeModel(model)

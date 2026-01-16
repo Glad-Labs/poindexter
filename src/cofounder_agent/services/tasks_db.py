@@ -32,7 +32,20 @@ def serialize_value_for_postgres(value: Any) -> Any:
         return json.dumps(value)
     if isinstance(value, list):
         return json.dumps(value)
-    if isinstance(value, (int, float, str, bool)):
+    if isinstance(value, (int, float, bool)):
+        return value
+    if isinstance(value, str):
+        # Try to parse ISO format datetime strings
+        if 'T' in value and len(value) > 18:  # Basic check for ISO datetime format
+            try:
+                # Handle ISO format with or without microseconds and timezone
+                if value.endswith('Z'):
+                    value = value[:-1] + '+00:00'
+                # Try parsing with fromisoformat
+                return datetime.fromisoformat(value)
+            except (ValueError, AttributeError):
+                # Not a datetime string, return as-is
+                return value
         return value
     if hasattr(value, "isoformat"):
         return value

@@ -1,14 +1,19 @@
 """
 Route Registration - Centralized route registration for FastAPI application
 
-Handles registration of all 18+ route routers with the FastAPI application.
+Handles registration of all 15+ route routers with the FastAPI application.
 Provides dependency injection of database service to route modules.
 
+Unified Task Endpoint (/api/tasks):
+- Single endpoint for all task types (blog_post, social_media, email, newsletter, business_analytics, data_retrieval, market_research, financial_analysis)
+- Routes to appropriate handler based on task_type parameter
+- Subtasks bypassed - use /api/tasks with task_type instead
+
 Includes:
-- Core business logic routes (tasks, subtasks, content)
+- Core business logic routes (tasks, content, bulk operations)
 - API integration routes (models, auth, chat)
 - System routes (health, metrics, webhooks)
-- Feature-specific routes (agents, social, CMS)
+- Feature-specific routes (agents, social, CMS, WebSocket)
 - Optional routes (workflow history, intelligent orchestrator)
 """
 
@@ -17,7 +22,6 @@ from fastapi import FastAPI
 from typing import Optional, Any, Dict
 
 logger = logging.getLogger(__name__)
-
 
 def register_all_routes(
     app: FastAPI,
@@ -86,18 +90,6 @@ def register_all_routes(
     except Exception as e:
         logger.error(f" task_router failed: {e}")
         status["task_router"] = False
-
-    try:
-        # ===== SUBTASK MANAGEMENT =====
-        from routes.subtask_routes import router as subtask_router
-
-        # Database service now injected via Depends(get_database_dependency) in routes
-        app.include_router(subtask_router)
-        logger.info(" subtask_router registered")
-        status["subtask_router"] = True
-    except Exception as e:
-        logger.error(f" subtask_router failed: {e}")
-        status["subtask_router"] = False
 
     try:
         # ===== BULK TASK OPERATIONS =====

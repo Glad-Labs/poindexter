@@ -14,7 +14,11 @@ from enum import Enum
 
 # AI Provider clients
 import openai
-import google.generativeai as genai
+try:
+    import google.genai as genai
+except ImportError:
+    # Fallback to old deprecated package if new one not available
+    import google.generativeai as genai
 try:
     import ollama
     OLLAMA_AVAILABLE = True

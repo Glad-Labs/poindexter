@@ -55,6 +55,19 @@ except ImportError:
     OPENAI_AVAILABLE = False
     logger.debug("⚠️  OpenAI package not installed")
 
+# Check for Google Gemini availability and API key
+try:
+    import google.genai as genai
+    
+    GOOGLE_AVAILABLE = bool(os.getenv("GOOGLE_API_KEY"))
+    if GOOGLE_AVAILABLE:
+        genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+    else:
+        logger.debug("⚠️  GOOGLE_API_KEY not set in environment")
+except ImportError:
+    GOOGLE_AVAILABLE = False
+    logger.debug("⚠️  Google genai package not installed")
+
 
 @dataclass
 class UnifiedMetadata:
@@ -111,11 +124,11 @@ class UnifiedMetadataService:
             model: "auto" (use best available), "claude-3-haiku", "gpt-4", etc.
         """
         self.model = model
-        self.llm_available = ANTHROPIC_AVAILABLE or OPENAI_AVAILABLE
+        self.llm_available = ANTHROPIC_AVAILABLE or OPENAI_AVAILABLE or GOOGLE_AVAILABLE
 
         if not self.llm_available:
             logger.warning(
-                "⚠️  No LLM available (Anthropic or OpenAI). Using fallback strategies only."
+                "⚠️  No LLM available (Anthropic, OpenAI, or Google Gemini). Using fallback strategies only."
             )
 
     # ========================================================================

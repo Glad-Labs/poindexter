@@ -33,7 +33,7 @@ class CreativeAgent:
             # Initialize with empty tools list - LLMClient can still generate content
             self.tools = []
 
-    async def run(self, post: BlogPost, is_refinement: bool = False) -> BlogPost:
+    async def run(self, post: BlogPost, is_refinement: bool = False, word_count_target: int = None, constraints=None) -> BlogPost:
         """
         Generates or refines the blog post content. The method now directly
         uses the `research_data` and `qa_feedback` stored within the BlogPost object,
@@ -43,6 +43,8 @@ class CreativeAgent:
             post (BlogPost): The blog post object, which acts as the single source of truth.
             is_refinement (bool): If True, runs the refinement process using QA feedback
                                   from the post object. Otherwise, generates the initial draft.
+            word_count_target (int): Target word count for this phase (e.g., 300 words for creative phase)
+            constraints: ContentConstraints object with word count and tolerance settings
         """
         raw_draft = ""
         if is_refinement and post.qa_feedback:
@@ -54,6 +56,13 @@ class CreativeAgent:
             # Include writing sample guidance in refinement too
             if post.metadata and post.metadata.get("writing_sample_guidance"):
                 refinement_prompt += f"\n\n{post.metadata['writing_sample_guidance']}"
+            
+            # Inject word count constraint for refinement
+            if word_count_target and constraints:
+                tolerance = constraints.word_count_tolerance
+                min_words = int(word_count_target * (1 - tolerance / 100))
+                max_words = int(word_count_target * (1 + tolerance / 100))
+                refinement_prompt = f"[WORD COUNT CONSTRAINT: {min_words}-{max_words} words (target: {word_count_target})]\n\n" + refinement_prompt
             
             logger.info(
                 f"CreativeAgent: Refining content for '{post.topic}' based on QA feedback."
@@ -67,6 +76,14 @@ class CreativeAgent:
                 research_context=post.research_data,
                 internal_link_titles=list(post.published_posts_map.keys()),
             )
+            
+            # Inject word count constraint at the beginning of the prompt
+            if word_count_target and constraints:
+                tolerance = constraints.word_count_tolerance
+                min_words = int(word_count_target * (1 - tolerance / 100))
+                max_words = int(word_count_target * (1 + tolerance / 100))
+                constraint_instruction = f"[CRITICAL: Generate content between {min_words}-{max_words} words (target: {word_count_target} ±{tolerance}%)]\n"
+                draft_prompt = constraint_instruction + draft_prompt
             
             # Inject writing sample guidance (RAG style matching) if provided
             if post.metadata and post.metadata.get("writing_sample_guidance"):
@@ -85,7 +102,7 @@ class CreativeAgent:
                 draft_prompt += f"\n\n⭐ WRITING STYLE: {post.writing_style.upper()}\nApproach: {style_text}"
             
             logger.info(
-                f"CreativeAgent: Starting initial content generation for '{post.topic}' with style: {post.writing_style or 'default'}."
+                f"CreativeAgent: Starting initial content generation for '{post.topic}' with style: {post.writing_style or 'default'} (target: {word_count_target} words)."
             )
             raw_draft = await self.llm_client.generate_text(draft_prompt)
 

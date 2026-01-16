@@ -712,14 +712,6 @@ async def export_settings(
 # Health Check - REMOVED (use GET /api/health instead)
 # ============================================================================
 # Note: Unified health check endpoint is in main.py at GET /api/health
-    This endpoint is deprecated and will be removed in version 2.0.
-    Use the unified /api/health endpoint for all health checks.
-
-    Returns 200 if the settings service is operational.
-    """
-    return {
-        "status": "healthy",
-        "service": "settings-api",
-        "timestamp": datetime.utcnow().isoformat(),
-        "_deprecated": "Use GET /api/health instead",
-    }
+# This endpoint is deprecated and will be removed in version 2.0.
+# Use the unified /api/health endpoint for all health checks.
+# Returns 200 if the settings service is operational.

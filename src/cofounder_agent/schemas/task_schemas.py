@@ -9,6 +9,150 @@ from pydantic import BaseModel, Field
 from schemas.unified_task_response import UnifiedTaskResponse
 
 
+class UnifiedTaskRequest(BaseModel):
+    """
+    Unified task creation request - single endpoint for all task types.
+    
+    Routes to appropriate handler based on task_type.
+    Extensible for future task types (business_analytics, data_retrieval, etc.)
+    """
+
+    # REQUIRED: Task type determines routing
+    task_type: Literal[
+        "blog_post", 
+        "social_media", 
+        "email", 
+        "newsletter",
+        "business_analytics",
+        "data_retrieval",
+        "market_research",
+        "financial_analysis"
+    ] = Field(
+        "blog_post",
+        description="Type of task: blog_post, social_media, email, newsletter, business_analytics, data_retrieval, etc."
+    )
+
+    # COMMON FIELDS - All task types
+    topic: str = Field(
+        ...,
+        min_length=3,
+        max_length=200,
+        description="Task topic/subject/query",
+        examples=["AI Trends in Healthcare", "Q4 Revenue Analysis", "Competitor Pricing Strategy"]
+    )
+
+    # CONTENT-SPECIFIC FIELDS (for blog_post, social_media, email, newsletter)
+    style: Optional[Literal["technical", "narrative", "listicle", "educational", "thought-leadership"]] = Field(
+        "narrative",
+        description="Content style (blog_post, social_media, email only)"
+    )
+    tone: Optional[Literal["professional", "casual", "academic", "inspirational"]] = Field(
+        "professional",
+        description="Content tone (blog_post, social_media, email only)"
+    )
+    target_length: Optional[int] = Field(
+        1500,
+        ge=200,
+        le=5000,
+        description="Target word count for content (200-5000, blog_post only)"
+    )
+    generate_featured_image: Optional[bool] = Field(
+        True,
+        description="Search for featured image (blog_post only)"
+    )
+    tags: Optional[List[str]] = Field(
+        None,
+        min_items=0,
+        max_items=10,
+        description="Tags for categorization (max 10)"
+    )
+
+    # SOCIAL MEDIA SPECIFIC
+    platforms: Optional[List[str]] = Field(
+        None,
+        description="Target platforms for social_media tasks (twitter, linkedin, instagram, etc.)"
+    )
+
+    # BUSINESS ANALYTICS SPECIFIC
+    metrics: Optional[List[str]] = Field(
+        None,
+        description="Metrics to analyze (revenue, churn, conversion_rate, etc.)"
+    )
+    time_period: Optional[str] = Field(
+        None,
+        description="Analysis time period (last_month, last_quarter, ytd, custom)"
+    )
+    business_context: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Business context for analytics (industry, size, goals)"
+    )
+
+    # DATA RETRIEVAL SPECIFIC
+    data_sources: Optional[List[str]] = Field(
+        None,
+        description="Data sources to query (api, database, csv, etc.)"
+    )
+    filters: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Data filters and query parameters"
+    )
+
+    # COMMON OPTIONAL
+    category: Optional[str] = Field(
+        "general",
+        description="Content category",
+        max_length=50
+    )
+    models_by_phase: Optional[Dict[str, str]] = Field(
+        None,
+        description="Per-phase model selection (research, creative, qa, etc.)"
+    )
+    quality_preference: Optional[Literal["fast", "balanced", "quality"]] = Field(
+        "balanced",
+        description="Quality vs speed preference"
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Additional metadata for task"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "examples": [
+                {
+                    "task_type": "blog_post",
+                    "topic": "AI Trends in Healthcare 2025",
+                    "style": "technical",
+                    "tone": "professional",
+                    "target_length": 2000,
+                    "generate_featured_image": True,
+                    "tags": ["AI", "Healthcare"],
+                    "quality_preference": "balanced"
+                },
+                {
+                    "task_type": "social_media",
+                    "topic": "New Product Launch Campaign",
+                    "platforms": ["twitter", "linkedin"],
+                    "tone": "casual",
+                    "tags": ["marketing", "product"]
+                },
+                {
+                    "task_type": "business_analytics",
+                    "topic": "Revenue Analysis Q4 2025",
+                    "metrics": ["revenue", "churn_rate", "customer_acquisition"],
+                    "time_period": "last_quarter",
+                    "business_context": {"industry": "SaaS", "size": "mid-market"}
+                },
+                {
+                    "task_type": "data_retrieval",
+                    "topic": "Retrieve customer data for ML training",
+                    "data_sources": ["postgres_db", "s3_bucket"],
+                    "filters": {"date_range": "last_6_months", "status": "active"}
+                }
+            ]
+        }
+
+
 class ContentConstraints(BaseModel):
     """Content generation constraints - Tier 1 & 2 features"""
 

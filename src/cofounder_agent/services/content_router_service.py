@@ -665,7 +665,7 @@ async def process_content_generation_task(
         logger.info(f"✅ COMPLETE CONTENT GENERATION PIPELINE FINISHED")
         logger.info(f"{'='*80}")
         logger.info(f"   Task ID: {task_id}")
-        logger.info(f"   Post ID: {post['id']}")
+        logger.info(f"   Post ID: {post.id}")
         logger.info(
             f"   Featured Image: {result.get('featured_image_url', 'NONE')[:100] if result.get('featured_image_url') else 'NONE'}"
         )
