@@ -7,7 +7,8 @@
 =======
 **Version:** 1.1  
 **Status:** ✅ Production Ready
->>>>>>> feat/refine
+
+> > > > > > > feat/refine
 
 ---
 
@@ -28,7 +29,8 @@
 Glad Labs uses a three-tier deployment architecture:
 =======
 Glad Labs uses a two-tier deployment architecture:
->>>>>>> feat/refine
+
+> > > > > > > feat/refine
 
 ```text
 1. AI Co-Founder (FastAPI Backend + PostgreSQL)

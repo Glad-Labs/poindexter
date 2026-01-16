@@ -5,9 +5,11 @@
 I've created **3 comprehensive guide documents** that explain how the src/ folder works:
 
 ### Document 1: `SRC_FOLDER_PIPELINE_WALKTHROUGH.md`
+
 **Primary comprehensive reference for understanding the complete pipeline**
 
 **Key Sections:**
+
 - High-level architecture overview with visual diagram
 - Step-by-step breakdown of 7 core components
 - Complete blog post generation example (real-world flow)
@@ -20,9 +22,11 @@ I've created **3 comprehensive guide documents** that explain how the src/ folde
 ---
 
 ### Document 2: `SRC_QUICK_REFERENCE_DIAGRAMS.md`
+
 **Quick visual reference for relationships and flows**
 
 **Key Sections:**
+
 - 10 detailed visual diagrams
 - Request journey through components
 - Agent interaction map
@@ -40,9 +44,11 @@ I've created **3 comprehensive guide documents** that explain how the src/ folde
 ---
 
 ### Document 3: `SRC_CODE_EXAMPLES.md`
+
 **Actual implementation examples from the codebase**
 
 **Key Sections:**
+
 - main.py - FastAPI application setup
 - content_routes.py - Route handlers
 - multi_agent_orchestrator.py - Task routing
@@ -56,9 +62,11 @@ I've created **3 comprehensive guide documents** that explain how the src/ folde
 ---
 
 ### Document 4: `README_SRC_ARCHITECTURE.md`
+
 **Navigation guide and learning path**
 
 **Key Sections:**
+
 - Quick navigation guide (find answers fast)
 - Recommended reading order
 - src/ folder structure overview
@@ -76,6 +84,7 @@ I've created **3 comprehensive guide documents** that explain how the src/ folde
 ## How to Use These Documents
 
 ### If you're NEW to the project:
+
 1. Start: Read README_SRC_ARCHITECTURE.md (5 min)
 2. Then: SRC_FOLDER_PIPELINE_WALKTHROUGH.md section "Steps 1-2" (10 min)
 3. Next: SRC_QUICK_REFERENCE_DIAGRAMS.md "Request Journey" (5 min)
@@ -86,6 +95,7 @@ I've created **3 comprehensive guide documents** that explain how the src/ folde
 ---
 
 ### If you need to IMPLEMENT a feature:
+
 1. Check: SRC_QUICK_REFERENCE_DIAGRAMS.md for component relationships
 2. Review: SRC_CODE_EXAMPLES.md for similar implementation
 3. Reference: SRC_FOLDER_PIPELINE_WALKTHROUGH.md for architecture context
@@ -94,6 +104,7 @@ I've created **3 comprehensive guide documents** that explain how the src/ folde
 ---
 
 ### If you need to DEBUG an issue:
+
 1. Check: SRC_QUICK_REFERENCE_DIAGRAMS.md "Error Handling Flow"
 2. Trace: SRC_FOLDER_PIPELINE_WALKTHROUGH.md "Complete Cycle"
 3. Review: SRC_CODE_EXAMPLES.md for component in question
@@ -104,6 +115,7 @@ I've created **3 comprehensive guide documents** that explain how the src/ folde
 ## What These Documents Cover
 
 ### Architecture Understanding:
+
 ✅ How main.py initializes the system
 ✅ How routes receive and parse requests
 ✅ How orchestrator distributes tasks
@@ -113,6 +125,7 @@ I've created **3 comprehensive guide documents** that explain how the src/ folde
 ✅ How results are returned to frontend
 
 ### Component Relationships:
+
 ✅ Routes ↔ Orchestrator
 ✅ Orchestrator ↔ Agents
 ✅ Agents ↔ Base Agent
@@ -121,6 +134,7 @@ I've created **3 comprehensive guide documents** that explain how the src/ folde
 ✅ Services ↔ All components
 
 ### Real-World Examples:
+
 ✅ Blog post generation (6-phase pipeline)
 ✅ Financial analysis
 ✅ Market insight generation
@@ -128,6 +142,7 @@ I've created **3 comprehensive guide documents** that explain how the src/ folde
 ✅ Social media posting
 
 ### Implementation Details:
+
 ✅ Python async/await patterns
 ✅ FastAPI route structure
 ✅ Database operations
@@ -140,6 +155,7 @@ I've created **3 comprehensive guide documents** that explain how the src/ folde
 ## Key Insights from the Documentation
 
 ### The Pipeline is Elegant:
+
 ```
 Request → Routes → Orchestrator → Agents → Models → Database → Response
 ```
@@ -147,6 +163,7 @@ Request → Routes → Orchestrator → Agents → Models → Database → Respo
 **Each layer has ONE responsibility** - easy to understand and modify
 
 ### Model Selection is Smart:
+
 ```
 Ollama (free) → Claude (quality) → GPT (proven) → Gemini (fallback)
 ```
@@ -154,6 +171,7 @@ Ollama (free) → Claude (quality) → GPT (proven) → Gemini (fallback)
 **Always picks cheapest option first** - automatic fallback if needed
 
 ### Agents are Specialized:
+
 - ContentAgent (6-phase self-critiquing pipeline)
 - FinancialAgent (cost tracking)
 - MarketInsightAgent (market analysis)
@@ -163,6 +181,7 @@ Ollama (free) → Claude (quality) → GPT (proven) → Gemini (fallback)
 **Each does ONE thing well**
 
 ### Data Persists in PostgreSQL:
+
 - All tasks stored
 - Agent state tracked
 - Results available for history
@@ -174,16 +193,16 @@ Ollama (free) → Claude (quality) → GPT (proven) → Gemini (fallback)
 
 ## Quick Answer Guide
 
-| Question | Answer Source |
-|----------|---|
+| Question                                    | Answer Source                                                             |
+| ------------------------------------------- | ------------------------------------------------------------------------- |
 | How does a request flow through the system? | SRC_FOLDER_PIPELINE_WALKTHROUGH.md → "Complete Request-to-Response Cycle" |
-| Where does each component connect? | SRC_QUICK_REFERENCE_DIAGRAMS.md → "File Dependency Graph" |
-| How do I add a new endpoint? | SRC_CODE_EXAMPLES.md → "content_routes.py example" |
-| How do agents communicate? | SRC_QUICK_REFERENCE_DIAGRAMS.md → "Agent Interaction Map" |
-| What if a model fails? | SRC_QUICK_REFERENCE_DIAGRAMS.md → "Model Selection Cascade" |
-| Where is data stored? | SRC_QUICK_REFERENCE_DIAGRAMS.md → "Database Schema" |
-| How do I create a new agent? | SRC_CODE_EXAMPLES.md → "base_agent.py" section |
-| What services support agents? | SRC_FOLDER_PIPELINE_WALKTHROUGH.md → "Step 4: Services" |
+| Where does each component connect?          | SRC_QUICK_REFERENCE_DIAGRAMS.md → "File Dependency Graph"                 |
+| How do I add a new endpoint?                | SRC_CODE_EXAMPLES.md → "content_routes.py example"                        |
+| How do agents communicate?                  | SRC_QUICK_REFERENCE_DIAGRAMS.md → "Agent Interaction Map"                 |
+| What if a model fails?                      | SRC_QUICK_REFERENCE_DIAGRAMS.md → "Model Selection Cascade"               |
+| Where is data stored?                       | SRC_QUICK_REFERENCE_DIAGRAMS.md → "Database Schema"                       |
+| How do I create a new agent?                | SRC_CODE_EXAMPLES.md → "base_agent.py" section                            |
+| What services support agents?               | SRC_FOLDER_PIPELINE_WALKTHROUGH.md → "Step 4: Services"                   |
 
 ---
 
@@ -293,8 +312,9 @@ All files are in the root folder for easy access.
 Start with: `README_SRC_ARCHITECTURE.md`
 
 Then choose your path:
+
 - **Want complete understanding?** → Pipeline Walkthrough
-- **Want visual reference?** → Quick Reference Diagrams  
+- **Want visual reference?** → Quick Reference Diagrams
 - **Want code examples?** → Code Examples
 - **Need quick lookup?** → README Guide
 
@@ -305,4 +325,3 @@ Then choose your path:
 Created: November 4, 2025
 Purpose: Comprehensive src/ folder architecture documentation
 Status: Complete and ready for use
-

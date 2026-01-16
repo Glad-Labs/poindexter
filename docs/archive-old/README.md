@@ -126,7 +126,9 @@ glad-labs-website/
 │ └── content-agent/ # Content generation agents
 └── 📁 docs/ # Documentation
 ```
+
 =======
+
 - [01 Setup & Overview](./docs/01-SETUP_AND_OVERVIEW.md) - Quick start guide (15 minutes)
 - [02 Architecture & Design](./docs/02-ARCHITECTURE_AND_DESIGN.md) - System design and components
 - [03 Deployment & Infrastructure](./docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md) - Production deployment
@@ -134,7 +136,7 @@ glad-labs-website/
 - [05 AI Agents & Integration](./docs/05-AI_AGENTS_AND_INTEGRATION.md) - Agent architecture and MCP
 - [06 Operations & Maintenance](./docs/06-OPERATIONS_AND_MAINTENANCE.md) - Monitoring and backups
 - [07 Branch-Specific Variables](./docs/07-BRANCH_SPECIFIC_VARIABLES.md) - Environment configuration
->>>>>>> feat/refine
+  > > > > > > > feat/refine
 
 ---
 

@@ -12,13 +12,14 @@
 **Progress:** 1 of 7 docs verified (01-SETUP_AND_OVERVIEW.md)  
 **Critical Issues Found:** 0  
 **Minor Issues Found:** 0  
-**Docs Accuracy:** ✅ HIGH (>95%)  
+**Docs Accuracy:** ✅ HIGH (>95%)
 
 ---
 
 ## Verification Methodology
 
 Each core doc is verified against:
+
 1. **Actual codebase files** (package.json, requirements.txt, workflows, etc.)
 2. **Running system checks** (Python version, npm version, available commands)
 3. **File system validation** (folder structure, file locations)
@@ -37,18 +38,18 @@ Each core doc is verified against:
 
 #### Verified Claims
 
-| Claim | Expected | Actual | Status | Evidence |
-|-------|----------|--------|--------|----------|
-| Node.js 18-22 | ✅ | ✅ | CORRECT | package.json supports, development tested with 18+ |
-| Python 3.12+ | ✅ | ✅ | CORRECT | python --version returns 3.12.10 |
-| npm 10+ | ✅ | ✅ | CORRECT | Standard with Node 18+ |
-| Strapi folder | cms/strapi-main | cms/strapi-main | ✅ CORRECT | Verified: `Get-ChildItem cms/` |
-| Ports (3000, 3001, 8000, 1337) | ✅ | ✅ | CORRECT | npm scripts configured for these ports |
-| Ollama setup steps | ✅ | ✅ | CORRECT | Commands use standard Ollama install |
-| API key providers | OpenAI, Claude, Gemini, Ollama | ✅ | CORRECT | All mentioned in requirements.txt |
-| Repository URL | gitlab.com/glad-labs-org | ✅ | CORRECT | Per copilot-instructions.md |
-| npm run dev command | Works for local dev | ✅ | CORRECT | package.json defines "dev" script |
-| Strapi dev location | cms/strapi-main | cms/strapi-main | ✅ CORRECT | Verified in package.json workspaces |
+| Claim                          | Expected                       | Actual          | Status     | Evidence                                           |
+| ------------------------------ | ------------------------------ | --------------- | ---------- | -------------------------------------------------- |
+| Node.js 18-22                  | ✅                             | ✅              | CORRECT    | package.json supports, development tested with 18+ |
+| Python 3.12+                   | ✅                             | ✅              | CORRECT    | python --version returns 3.12.10                   |
+| npm 10+                        | ✅                             | ✅              | CORRECT    | Standard with Node 18+                             |
+| Strapi folder                  | cms/strapi-main                | cms/strapi-main | ✅ CORRECT | Verified: `Get-ChildItem cms/`                     |
+| Ports (3000, 3001, 8000, 1337) | ✅                             | ✅              | CORRECT    | npm scripts configured for these ports             |
+| Ollama setup steps             | ✅                             | ✅              | CORRECT    | Commands use standard Ollama install               |
+| API key providers              | OpenAI, Claude, Gemini, Ollama | ✅              | CORRECT    | All mentioned in requirements.txt                  |
+| Repository URL                 | gitlab.com/glad-labs-org       | ✅              | CORRECT    | Per copilot-instructions.md                        |
+| npm run dev command            | Works for local dev            | ✅              | CORRECT    | package.json defines "dev" script                  |
+| Strapi dev location            | cms/strapi-main                | cms/strapi-main | ✅ CORRECT | Verified in package.json workspaces                |
 
 #### Validation Notes
 
@@ -72,6 +73,7 @@ Each core doc is verified against:
 **Estimated Lines:** 500+  
 **Status:** ⏳ NOT YET VERIFIED  
 **Key Areas to Verify:**
+
 - Tech stack versions (Next.js, React, FastAPI, Strapi v5)
 - Multi-agent system design (Content, Financial, Market, Compliance agents)
 - Database options and schema
@@ -86,6 +88,7 @@ Each core doc is verified against:
 **Estimated Lines:** 600+  
 **Status:** ⏳ NOT YET VERIFIED  
 **Key Areas to Verify:**
+
 - Railway deployment URLs and procedures
 - Vercel deployment steps
 - GitHub Secrets configuration (which secrets, format)
@@ -101,6 +104,7 @@ Each core doc is verified against:
 **Estimated Lines:** 611  
 **Status:** ⏳ NOT YET VERIFIED (PARTIAL SCAN COMPLETED)  
 **Preliminary Findings:**
+
 - ✅ Branch strategy (Tier 1-4) is accurately described
 - ✅ Feature branches do NOT run CI/CD (intentional, documented correctly)
 - ✅ dev/main branches trigger automated deployments (correct per workflow files)
@@ -114,6 +118,7 @@ Each core doc is verified against:
 **File:** `docs/05-AI_AGENTS_AND_INTEGRATION.md`  
 **Status:** ⏳ NOT YET VERIFIED  
 **Key Areas to Verify:**
+
 - Agent types and capabilities
 - Model fallback chain order
 - Memory system design
@@ -127,6 +132,7 @@ Each core doc is verified against:
 **File:** `docs/06-OPERATIONS_AND_MAINTENANCE.md`  
 **Status:** ⏳ NOT YET VERIFIED  
 **Key Areas to Verify:**
+
 - Health check endpoints and their actual URLs
 - Backup procedures and frequency
 - Monitoring setup and metrics
@@ -140,6 +146,7 @@ Each core doc is verified against:
 **File:** `docs/07-BRANCH_SPECIFIC_VARIABLES.md`  
 **Status:** ⏳ NOT YET VERIFIED  
 **Key Areas to Verify:**
+
 - Environment variable names vs. actual usage
 - GitHub Actions workflow triggers
 - Deployment target configuration
@@ -196,16 +203,16 @@ Git: Latest ✅
 
 ## Documentation Accuracy Score
 
-| Document | Lines | Status | Accuracy | Issues |
-|----------|-------|--------|----------|--------|
-| **01-SETUP** | 767 | ✅ VERIFIED | 100% | 0 |
-| **02-ARCHITECTURE** | ~500 | ⏳ PENDING | - | - |
-| **03-DEPLOYMENT** | ~600 | ⏳ PENDING | - | - |
-| **04-DEVELOPMENT** | 611 | ⏳ PENDING | - | - |
-| **05-AI_AGENTS** | ~400 | ⏳ PENDING | - | - |
-| **06-OPERATIONS** | ~400 | ⏳ PENDING | - | - |
-| **07-VARIABLES** | ~300 | ⏳ PENDING | - | - |
-| **TOTAL** | 3,878 | 19.7% | - | - |
+| Document            | Lines | Status      | Accuracy | Issues |
+| ------------------- | ----- | ----------- | -------- | ------ |
+| **01-SETUP**        | 767   | ✅ VERIFIED | 100%     | 0      |
+| **02-ARCHITECTURE** | ~500  | ⏳ PENDING  | -        | -      |
+| **03-DEPLOYMENT**   | ~600  | ⏳ PENDING  | -        | -      |
+| **04-DEVELOPMENT**  | 611   | ⏳ PENDING  | -        | -      |
+| **05-AI_AGENTS**    | ~400  | ⏳ PENDING  | -        | -      |
+| **06-OPERATIONS**   | ~400  | ⏳ PENDING  | -        | -      |
+| **07-VARIABLES**    | ~300  | ⏳ PENDING  | -        | -      |
+| **TOTAL**           | 3,878 | 19.7%       | -        | -      |
 
 ---
 
@@ -255,4 +262,3 @@ Git: Latest ✅
 **Report Generated:** November 5, 2025 at 14:45  
 **Next Update:** After completing verification of docs 02-07  
 **Estimated Completion:** November 5, 2025 (~2 hours)
-

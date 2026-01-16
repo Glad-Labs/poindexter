@@ -1,4 +1,5 @@
 # Phase 3 Implementation Plan - Writing Sample Management & Integration
+
 **Status: READY TO BEGIN**  
 **Estimated Duration: 2-3 weeks**  
 **Start Date: January 8, 2026**
@@ -10,6 +11,7 @@
 Phase 3 extends Phase 2's Writing Style System by implementing complete sample management and integrating writing samples into the content generation pipeline. This phase enables users to upload example writing, apply it to content generation, and ensure generated content matches selected styles.
 
 ### Key Deliverables
+
 1. **Writing Sample Upload System** - File handling, validation, storage
 2. **Sample Management UI** - CRUD operations, library browsing
 3. **Content Generation Integration** - Use samples to guide content creation
@@ -17,6 +19,7 @@ Phase 3 extends Phase 2's Writing Style System by implementing complete sample m
 5. **QA Style Evaluation** - Check generated content matches writing style
 
 ### Architecture Overview
+
 ```
 User Uploads Sample
         ↓
@@ -39,11 +42,13 @@ Quality Evaluation checks style compliance
 ## Phase 3.1: Writing Sample Upload API
 
 ### Objective
+
 Implement backend endpoint for uploading writing samples with validation, parsing, and storage.
 
 ### Files to Create/Modify
 
 #### New File: `src/cofounder_agent/routes/sample_upload_routes.py`
+
 ```python
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from typing import Optional
@@ -62,19 +67,19 @@ async def upload_sample(
 ):
     """
     Upload a writing sample (TXT, CSV, JSON)
-    
+
     - Validate file type (TXT, CSV, JSON)
     - Parse content
     - Extract metadata (word count, char count, style)
     - Store in database
     - Return sample ID
-    
+
     Request:
     - file: UploadFile (required)
     - title: str (optional)
     - style: str (optional - technical, narrative, etc.)
     - tone: str (optional - professional, casual, etc.)
-    
+
     Response:
     {
       "id": 123,
@@ -93,18 +98,19 @@ async def batch_import(
 ):
     """
     Import multiple samples from CSV
-    
+
     CSV Format:
     title,style,tone,content_path
     Sample 1,technical,professional,./samples/sample1.txt
     Sample 2,narrative,casual,./samples/sample2.txt
-    
+
     Response: List of imported sample IDs with status
     """
     pass
 ```
 
 #### New File: `src/cofounder_agent/services/sample_upload_service.py`
+
 ```python
 from typing import Optional
 import csv
@@ -115,15 +121,15 @@ class SampleUploadService:
     async def validate_file(self, file) -> tuple[bool, str]:
         """Validate file type and size"""
         pass
-    
+
     async def parse_file(self, file, content_type: str) -> str:
         """Parse file content based on type"""
         pass
-    
+
     async def extract_metadata(self, content: str, style: str = None) -> dict:
         """Extract word count, char count, style characteristics"""
         pass
-    
+
     async def store_sample(
         self,
         user_id: str,
@@ -140,17 +146,20 @@ class SampleUploadService:
 ### Implementation Details
 
 **Supported File Types:**
+
 - TXT (plain text)
 - CSV (CSV format with content column)
 - JSON (JSON array with "content" field)
 
 **Validation Rules:**
+
 - File size: max 5MB
 - Content length: 100-50,000 characters
 - Title: 1-500 characters
 - Allowed characters in content
 
 **Metadata Extracted:**
+
 - word_count: Integer
 - char_count: Integer
 - avg_word_length: Float
@@ -160,14 +169,16 @@ class SampleUploadService:
 - style_detected: String (if not provided)
 
 **Database Insert:**
+
 ```sql
-INSERT INTO writing_samples 
+INSERT INTO writing_samples
 (user_id, title, description, content, is_active, word_count, char_count, metadata)
 VALUES ($1, $2, $3, $4, false, $5, $6, $7)
 RETURNING id;
 ```
 
 ### Testing Checklist
+
 - ✅ Upload TXT file
 - ✅ Upload CSV file
 - ✅ Upload JSON file
@@ -184,11 +195,13 @@ RETURNING id;
 ## Phase 3.2: Sample Management Frontend UI
 
 ### Objective
+
 Create React components for uploading, viewing, and managing writing samples.
 
 ### Files to Create
 
 #### New File: `web/oversight-hub/src/components/WritingSampleUpload.jsx`
+
 ```jsx
 import React, { useState } from 'react';
 import {
@@ -204,7 +217,7 @@ import {
   Paper,
   Grid,
   Alert,
-  Divider
+  Divider,
 } from '@mui/material';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 
@@ -245,15 +258,15 @@ export function WritingSampleUpload() {
         method: 'POST',
         body: formData,
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+        },
       });
 
       if (response.ok) {
         const result = await response.json();
         setMessage({
           type: 'success',
-          text: `Sample uploaded successfully! ID: ${result.id}`
+          text: `Sample uploaded successfully! ID: ${result.id}`,
         });
         setFile(null);
         setTitle('');
@@ -285,7 +298,7 @@ export function WritingSampleUpload() {
               border: '2px dashed #ccc',
               textAlign: 'center',
               cursor: 'pointer',
-              '&:hover': { borderColor: '#666' }
+              '&:hover': { borderColor: '#666' },
             }}
           >
             <input
@@ -374,7 +387,9 @@ export function WritingSampleUpload() {
           color="primary"
           onClick={handleUpload}
           disabled={!file || uploading}
-          startIcon={uploading ? <CircularProgress size={20} /> : <CloudUploadIcon />}
+          startIcon={
+            uploading ? <CircularProgress size={20} /> : <CloudUploadIcon />
+          }
           fullWidth
         >
           {uploading ? `Uploading... ${progress}%` : 'Upload Sample'}
@@ -386,6 +401,7 @@ export function WritingSampleUpload() {
 ```
 
 #### New File: `web/oversight-hub/src/components/WritingSampleLibrary.jsx`
+
 ```jsx
 import React, { useState, useEffect } from 'react';
 import {
@@ -410,7 +426,7 @@ import {
   Tooltip,
   CircularProgress,
   Typography,
-  Divider
+  Divider,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
@@ -431,8 +447,8 @@ export function WritingSampleLibrary() {
     try {
       const response = await fetch('/api/writing-style/samples', {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+        },
       });
       const data = await response.json();
       setSamples(data.samples || []);
@@ -453,10 +469,10 @@ export function WritingSampleLibrary() {
       await fetch(`/api/writing-style/samples/${id}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+        },
       });
-      setSamples(samples.filter(s => s.id !== id));
+      setSamples(samples.filter((s) => s.id !== id));
       setDeleteDialogOpen(false);
     } catch (error) {
       console.error('Failed to delete sample:', error);
@@ -496,7 +512,11 @@ export function WritingSampleLibrary() {
                       <Chip label={sample.style} size="small" />
                     </TableCell>
                     <TableCell>
-                      <Chip label={sample.tone} size="small" variant="outlined" />
+                      <Chip
+                        label={sample.tone}
+                        size="small"
+                        variant="outlined"
+                      />
                     </TableCell>
                     <TableCell>{sample.word_count}</TableCell>
                     <TableCell align="right">
@@ -538,7 +558,10 @@ export function WritingSampleLibrary() {
           </Typography>
           <Divider />
           <Box sx={{ mt: 2 }}>
-            <Chip label={`${selectedSample?.word_count} words`} sx={{ mr: 1 }} />
+            <Chip
+              label={`${selectedSample?.word_count} words`}
+              sx={{ mr: 1 }}
+            />
             <Chip label={selectedSample?.style} sx={{ mr: 1 }} />
             <Chip label={selectedSample?.tone} />
           </Box>
@@ -570,9 +593,11 @@ export function WritingSampleLibrary() {
 ```
 
 #### Update: `web/oversight-hub/src/components/WritingStyleManager.jsx`
+
 Add WritingSampleUpload and WritingSampleLibrary components to the Settings page.
 
 ### Testing Checklist
+
 - ✅ Upload form displays correctly
 - ✅ File selection works (drag-drop and click)
 - ✅ Form validation works
@@ -588,9 +613,11 @@ Add WritingSampleUpload and WritingSampleLibrary components to the Settings page
 ## Phase 3.3: Content Generation Integration
 
 ### Objective
+
 Modify content generation pipeline to use writing samples as style reference.
 
 #### Modified File: `src/agents/content_agent/creative_agent.py`
+
 ```python
 class CreativeAgent:
     async def generate_draft(
@@ -602,19 +629,19 @@ class CreativeAgent:
     ) -> str:
         """
         Generate content draft using writing sample as reference
-        
+
         If writing_sample_id provided:
         1. Retrieve writing sample
         2. Analyze sample characteristics
         3. Include sample patterns in prompt
         4. Guide generation to match style
-        
+
         Prompt template:
         "Generate {task_type} about '{topic}'.
-        
+
         Writing Style Reference:
         {sample_excerpt}
-        
+
         Match these characteristics:
         - Tone: {tone}
         - Structure: {structure_analysis}
@@ -626,16 +653,17 @@ class CreativeAgent:
 ```
 
 #### Modified File: `src/cofounder_agent/services/writing_style_service.py`
+
 ```python
 class WritingStyleService:
     async def get_sample_characteristics(self, sample_id: int) -> dict:
         """Extract key characteristics from writing sample"""
         pass
-    
+
     async def analyze_style_patterns(self, content: str) -> dict:
         """Analyze sentence structure, vocabulary, tone markers"""
         pass
-    
+
     async def inject_sample_into_prompt(
         self,
         base_prompt: str,
@@ -647,6 +675,7 @@ class WritingStyleService:
 ```
 
 ### Testing Checklist
+
 - ✅ Retrieve sample by ID
 - ✅ Extract characteristics
 - ✅ Inject into prompt
@@ -659,9 +688,11 @@ class WritingStyleService:
 ## Phase 3.4: RAG for Style-Aware Retrieval
 
 ### Objective
+
 Implement semantic search to find most relevant samples for content task.
 
 #### New File: `src/cofounder_agent/services/embedding_service.py`
+
 ```python
 from typing import List
 import numpy as np
@@ -671,11 +702,11 @@ class EmbeddingService:
         """Generate vector embedding for text"""
         # Use sentence-transformers or OpenAI embeddings
         pass
-    
+
     async def embed_sample(self, sample_id: int, content: str) -> dict:
         """Generate and store embedding for sample"""
         pass
-    
+
     async def search_similar_samples(
         self,
         query_text: str,
@@ -684,7 +715,7 @@ class EmbeddingService:
     ) -> List[dict]:
         """
         Find top N most similar samples using vector similarity
-        
+
         1. Generate embedding for query
         2. Compute cosine similarity to all sample embeddings
         3. Filter by style if provided
@@ -694,6 +725,7 @@ class EmbeddingService:
 ```
 
 #### New Database Table: `embeddings`
+
 ```sql
 CREATE TABLE embeddings (
     id SERIAL PRIMARY KEY,
@@ -708,6 +740,7 @@ CREATE INDEX idx_embedding_similarity ON embeddings USING ivfflat (embedding vec
 ```
 
 ### Testing Checklist
+
 - ✅ Generate embeddings for samples
 - ✅ Store embeddings in database
 - ✅ Query similar samples
@@ -720,9 +753,11 @@ CREATE INDEX idx_embedding_similarity ON embeddings USING ivfflat (embedding vec
 ## Phase 3.5: QA Style Evaluation
 
 ### Objective
+
 Add style consistency checks to quality evaluation.
 
 #### Modified File: `src/agents/qa_agent/evaluator.py`
+
 ```python
 class QAEvaluator:
     async def evaluate_style_consistency(
@@ -734,14 +769,14 @@ class QAEvaluator:
     ) -> dict:
         """
         Check if generated content matches writing style
-        
+
         Metrics:
         - Style Match Score (0-10): How well matches sample
         - Tone Consistency (0-10): Matches expected tone
         - Structure Adherence (0-10): Follows sample structure
         - Vocabulary Match (0-10): Similar vocabulary level
         - Overall Style Score: Average of above
-        
+
         Return:
         {
           "style_match": 8.5,
@@ -756,10 +791,11 @@ class QAEvaluator:
 ```
 
 #### Modified File: `src/cofounder_agent/models/task_model.py`
+
 ```python
 class QualityEvaluation(BaseModel):
     # existing fields...
-    
+
     # NEW: Style evaluation
     style_match: Optional[float] = None
     tone_consistency: Optional[float] = None
@@ -769,6 +805,7 @@ class QualityEvaluation(BaseModel):
 ```
 
 ### Testing Checklist
+
 - ✅ Evaluate style match
 - ✅ Check tone consistency
 - ✅ Verify structure
@@ -786,6 +823,7 @@ class QualityEvaluation(BaseModel):
 **Total Test Cases: 50+**
 
 #### Category 1: Upload Flow (12 cases)
+
 - ✅ Upload TXT file
 - ✅ Upload CSV file
 - ✅ Upload JSON file
@@ -800,6 +838,7 @@ class QualityEvaluation(BaseModel):
 - ✅ Batch import CSV
 
 #### Category 2: Sample Management (10 cases)
+
 - ✅ List samples
 - ✅ View sample details
 - ✅ Search samples
@@ -812,6 +851,7 @@ class QualityEvaluation(BaseModel):
 - ✅ Handle edge cases
 
 #### Category 3: Integration (12 cases)
+
 - ✅ Create task with sample ID
 - ✅ Retrieve sample in content agent
 - ✅ Inject sample into prompt
@@ -826,6 +866,7 @@ class QualityEvaluation(BaseModel):
 - ✅ Error handling robust
 
 #### Category 4: RAG Retrieval (8 cases)
+
 - ✅ Generate embeddings
 - ✅ Store embeddings
 - ✅ Search by similarity
@@ -836,6 +877,7 @@ class QualityEvaluation(BaseModel):
 - ✅ Concurrent searches
 
 #### Category 5: QA Evaluation (8 cases)
+
 - ✅ Evaluate style match
 - ✅ Check tone consistency
 - ✅ Verify structure
@@ -846,6 +888,7 @@ class QualityEvaluation(BaseModel):
 - ✅ Score computation correct
 
 ### Test Execution
+
 ```bash
 # Run all Phase 3 tests
 npm run test:python:phase3
@@ -901,6 +944,7 @@ npm run test:python:phase3:smoke
 ## Dependencies & Prerequisites
 
 ### Backend Dependencies
+
 - PostgreSQL (with pgvector extension for embeddings)
 - Python 3.12+
 - FastAPI
@@ -908,11 +952,13 @@ npm run test:python:phase3:smoke
 - sentence-transformers (for embeddings)
 
 ### Frontend Dependencies
+
 - React 18+
 - Material-UI
 - Axios
 
 ### Installation
+
 ```bash
 # Install pgvector extension
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -928,15 +974,15 @@ pip freeze > scripts/requirements-core.txt
 
 ## Implementation Timeline
 
-| Phase | Duration | Completion |
-|-------|----------|------------|
-| 3.1: Upload API | 3 days | Jan 11 |
-| 3.2: Frontend UI | 4 days | Jan 15 |
-| 3.3: Integration | 3 days | Jan 18 |
-| 3.4: RAG Retrieval | 4 days | Jan 22 |
-| 3.5: QA Evaluation | 3 days | Jan 25 |
-| 3.6: Testing | 3 days | Jan 28 |
-| 3.7: Documentation | 2 days | Jan 30 |
+| Phase              | Duration | Completion |
+| ------------------ | -------- | ---------- |
+| 3.1: Upload API    | 3 days   | Jan 11     |
+| 3.2: Frontend UI   | 4 days   | Jan 15     |
+| 3.3: Integration   | 3 days   | Jan 18     |
+| 3.4: RAG Retrieval | 4 days   | Jan 22     |
+| 3.5: QA Evaluation | 3 days   | Jan 25     |
+| 3.6: Testing       | 3 days   | Jan 28     |
+| 3.7: Documentation | 2 days   | Jan 30     |
 
 **Total: 22 days (≈3 weeks)**
 
@@ -944,28 +990,28 @@ pip freeze > scripts/requirements-core.txt
 
 ## Success Criteria
 
-| Criterion | Target | Verification |
-|-----------|--------|--------------|
-| Upload API Functional | 100% | Endpoint tests pass |
-| UI Complete | 100% | All components render |
-| Integration Working | 100% | Content uses samples |
-| RAG Retrieval Accurate | 95% | Similarity tests |
-| QA Evaluation Complete | 100% | Style metrics computed |
-| Test Coverage | 90%+ | Test suite passes |
-| Documentation Complete | 100% | All docs created |
-| Performance Acceptable | <500ms | Query latency |
+| Criterion              | Target | Verification           |
+| ---------------------- | ------ | ---------------------- |
+| Upload API Functional  | 100%   | Endpoint tests pass    |
+| UI Complete            | 100%   | All components render  |
+| Integration Working    | 100%   | Content uses samples   |
+| RAG Retrieval Accurate | 95%    | Similarity tests       |
+| QA Evaluation Complete | 100%   | Style metrics computed |
+| Test Coverage          | 90%+   | Test suite passes      |
+| Documentation Complete | 100%   | All docs created       |
+| Performance Acceptable | <500ms | Query latency          |
 
 ---
 
 ## Risk Mitigation
 
-| Risk | Mitigation |
-|------|-----------|
-| Embedding generation slow | Implement batch processing, async jobs |
-| Vector similarity inaccurate | Test multiple embedding models |
-| Database scaling | Add indexing, partitioning |
-| File upload size limits | Implement chunking, streaming |
-| Concurrent access issues | Add locking, transaction handling |
+| Risk                         | Mitigation                             |
+| ---------------------------- | -------------------------------------- |
+| Embedding generation slow    | Implement batch processing, async jobs |
+| Vector similarity inaccurate | Test multiple embedding models         |
+| Database scaling             | Add indexing, partitioning             |
+| File upload size limits      | Implement chunking, streaming          |
+| Concurrent access issues     | Add locking, transaction handling      |
 
 ---
 
@@ -978,13 +1024,14 @@ pip freeze > scripts/requirements-core.txt
 ✅ Generated content matches styles  
 ✅ QA evaluation complete  
 ✅ Documentation comprehensive  
-✅ Production ready  
+✅ Production ready
 
 ---
 
 ## Next Steps After Phase 3
 
 **Phase 4: Advanced Capabilities**
+
 - Fine-tuning models on writing samples
 - Advanced RAG with hybrid search
 - Multi-language support

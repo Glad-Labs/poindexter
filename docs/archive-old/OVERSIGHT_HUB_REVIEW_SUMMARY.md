@@ -1,6 +1,7 @@
 # OVERSIGHT HUB REVIEW COMPLETE ✅
 
 ## Summary
+
 Full comprehensive audit completed of the oversight-hub React application against the FastAPI backend. All stubbed/mock code identified and resolved. Technical debt documented with clear remediation path.
 
 ---
@@ -31,7 +32,7 @@ Full comprehensive audit completed of the oversight-hub React application agains
 
 ### 🟠 Medium Issues (All Resolved)
 
-1. **CMS Endpoints Don't Exist** 
+1. **CMS Endpoints Don't Exist**
    - getPosts(), getCategories(), getTags() call non-existent endpoints
    - Marked as DEPRECATED with console warnings
    - Directed users to `/api/content/tasks` API
@@ -58,14 +59,14 @@ Full comprehensive audit completed of the oversight-hub React application agains
 
 ## FILES MODIFIED
 
-| File | Issue | Fix | Impact |
-|------|-------|-----|--------|
-| **ollamaService.js** | Hardcoded localhost:11434 | API proxy pattern | ✅ Secure, portable |
-| **cofounderAgentClient.js** | Token refresh stub | Full implementation | ✅ Proper auth flow |
-| **cofounderAgentClient.js** | OAuth callback broken | POST + code/state | ✅ Secure OAuth |
-| **cofounderAgentClient.js** | CMS endpoints fake | Deprecated + warnings | ✅ Clear migration |
-| **mockAuthService.js** | No dev-only guards | NODE_ENV checks | ✅ Security protected |
-| **ModelSelectionPanel.jsx** | Unused prop | Removed | ✅ Cleaner API |
+| File                        | Issue                     | Fix                   | Impact                |
+| --------------------------- | ------------------------- | --------------------- | --------------------- |
+| **ollamaService.js**        | Hardcoded localhost:11434 | API proxy pattern     | ✅ Secure, portable   |
+| **cofounderAgentClient.js** | Token refresh stub        | Full implementation   | ✅ Proper auth flow   |
+| **cofounderAgentClient.js** | OAuth callback broken     | POST + code/state     | ✅ Secure OAuth       |
+| **cofounderAgentClient.js** | CMS endpoints fake        | Deprecated + warnings | ✅ Clear migration    |
+| **mockAuthService.js**      | No dev-only guards        | NODE_ENV checks       | ✅ Security protected |
+| **ModelSelectionPanel.jsx** | Unused prop               | Removed               | ✅ Cleaner API        |
 
 ---
 
@@ -87,6 +88,7 @@ Full comprehensive audit completed of the oversight-hub React application agains
 ## NEXT STEPS (for your backend team)
 
 ### Verify These Endpoints Exist:
+
 1. **POST /api/auth/refresh** - Exchange refresh token for new access token
 2. **GET /api/ollama/tags** - Proxy to local Ollama
 3. **POST /api/ollama/generate** - Proxy to local Ollama generation
@@ -100,6 +102,7 @@ If missing, they should be added to enable the fixed frontend code.
 ## DEVELOPER MIGRATION GUIDE
 
 ### If you were using CMS functions:
+
 ```javascript
 // ❌ OLD (deprecated)
 const posts = await getPosts();
@@ -111,6 +114,7 @@ const task = await createTask({ type: 'blog_post', ... });
 ```
 
 ### If you were using OAuth:
+
 ```javascript
 // ✅ NOW WORKS PROPERLY
 const result = await handleOAuthCallback(provider, code, state);
@@ -118,6 +122,7 @@ const result = await handleOAuthCallback(provider, code, state);
 ```
 
 ### If you were using Ollama:
+
 ```javascript
 // ✅ NOW SECURED
 const models = await getOllamaModels();
@@ -131,6 +136,7 @@ const models = await getOllamaModels();
 See: **OVERSIGHT_HUB_AUDIT_AND_FIXES.md** (in repo root)
 
 Contains:
+
 - Detailed before/after code samples
 - API endpoint analysis
 - Security improvements

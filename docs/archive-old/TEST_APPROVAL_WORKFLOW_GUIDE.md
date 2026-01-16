@@ -3,12 +3,14 @@
 ## Status: Ready for Testing ✅
 
 ### Test Environment Setup
+
 - ✅ Backend (FastAPI) running on `http://localhost:8000`
 - ✅ Oversight Hub UI running on `http://localhost:3001`
 - ✅ PostgreSQL database connected (`glad_labs_dev`)
 - ✅ Test task created in database
 
 ### Test Task Details
+
 - **Task ID**: `a71e5b39-6808-4a0c-8b5d-df579e8af133`
 - **Status**: completed
 - **Approval Status**: pending
@@ -24,12 +26,14 @@
 ## Testing Steps
 
 ### Step 1: Open Oversight Hub and Navigate to Task
+
 1. Open browser to `http://localhost:3001/tasks`
 2. Login if prompted (or refresh page)
 3. Look for task with topic: "Emerging AI Trends in 2025"
 4. Click on the task to open details panel
 
-**Expected Result**: 
+**Expected Result**:
+
 - Task displays in the task list
 - Task details panel opens showing all metadata
 - Featured image is visible in the preview
@@ -37,15 +41,18 @@
 ---
 
 ### Step 2: Verify Content and Metadata Display
+
 Once task details are open, verify:
 
 **Content Elements**:
+
 - ✅ Title: Should display content title
 - ✅ Content: Full article text visible
 - ✅ Featured Image: Pexels image should display
 - ✅ Excerpt: Summary text visible
 
 **Metadata Elements**:
+
 - ✅ Topic: "Emerging AI Trends in 2025"
 - ✅ Primary Keyword: "AI trends 2025"
 - ✅ Target Audience: "Tech professionals"
@@ -57,6 +64,7 @@ Once task details are open, verify:
 ---
 
 ### Step 3: Trigger Approval Flow
+
 1. Click the "Approve" button in the task details panel
 2. If prompted for approval data:
    - **Reviewer ID** (optional): Can enter any identifier
@@ -64,7 +72,8 @@ Once task details are open, verify:
    - **Featured Image Override** (if available): Can change image URL
 3. Click "Submit Approval" or similar button
 
-**Expected Result**: 
+**Expected Result**:
+
 - No validation errors
 - Request sent to backend
 - UI shows loading/success message
@@ -73,6 +82,7 @@ Once task details are open, verify:
 ---
 
 ### Step 4: Monitor Backend for Data Flow
+
 While approval is processing, check backend logs for these key messages:
 
 ```
@@ -106,6 +116,7 @@ While approval is processing, check backend logs for these key messages:
 ```
 
 **Critical Validation Points**:
+
 1. ✅ `featured_image_url` is NOT null/None - shows Pexels image
 2. ✅ `seo_title` is populated - has fallback text
 3. ✅ `seo_description` is populated - has fallback text
@@ -115,6 +126,7 @@ While approval is processing, check backend logs for these key messages:
 ---
 
 ### Step 5: Verify Database Insertion
+
 After approval completes, run this query to verify data was saved:
 
 ```sql
@@ -140,6 +152,7 @@ LIMIT 1;
 ```
 
 **Expected Result**:
+
 ```
 id:                    | <uuid>
 title:                 | Emerging AI Trends in 2025
@@ -155,6 +168,7 @@ created_at:            | <timestamp>
 ```
 
 **Validation Checklist**:
+
 - ✅ featured_image_url is **NOT NULL** and contains valid URL
 - ✅ seo_title is **NOT NULL** and contains text
 - ✅ seo_description is **NOT NULL** and contains text
@@ -167,15 +181,19 @@ created_at:            | <timestamp>
 ## What We Fixed
 
 ### Issue 1: Missing Featured Image URL
+
 **Root Cause**: Bad fallback logic in `create_post()` using `or` clauses  
 **Fix**: Removed unreliable fallback and ensured UI sends featured_image_url
 
 ### Issue 2: Missing SEO Fields
+
 **Root Causes**:
+
 1. Metadata service sometimes returned None values
 2. No safeguards in approval endpoint
 
 **Fixes**:
+
 1. Added robust fallback chain in `/approve-task` endpoint:
    - seo_title: metadata.seo_title → metadata.title
    - seo_description: metadata.seo_description → metadata.excerpt → content[:155]
@@ -184,10 +202,12 @@ created_at:            | <timestamp>
 2. Added comprehensive logging to track all values through the flow
 
 ### Issue 3: UUID Validation Errors
+
 **Root Cause**: Database returned UUID objects in arrays, not strings  
 **Fix**: Added UUID-to-string conversion in ModelConverter
 
 ### Issue 4: UnboundLocalError
+
 **Root Cause**: Variable used before definition in early return path  
 **Fix**: Moved variable initialization to before first use
 
@@ -196,22 +216,26 @@ created_at:            | <timestamp>
 ## Success Criteria
 
 ✅ **Approval Request Succeeds**
+
 - No 500 errors
 - No validation errors
 - HTTP 200 response
 
 ✅ **Backend Logs Show Non-Empty Values**
+
 - COMPLETE POST DATA shows featured_image_url with URL
 - COMPLETE POST DATA shows seo_title, seo_description, seo_keywords with text
 - POST INSERT logs all 16 columns with values
 
 ✅ **Database Query Returns Complete Data**
+
 - featured_image_url is NOT NULL (contains Pexels URL)
 - seo_title is NOT NULL (contains: "Emerging AI Trends 2025: What to Watch")
 - seo_description is NOT NULL (contains summary text)
 - seo_keywords is NOT NULL (contains keywords)
 
 ✅ **UI Shows Success**
+
 - Task approval completes without errors
 - Task status changes to approved
 - No error messages displayed
@@ -221,31 +245,41 @@ created_at:            | <timestamp>
 ## Troubleshooting
 
 ### Issue: 404 on Oversight Hub
+
 **Solution**: Ensure React dev server is running on port 3001
+
 ```bash
 npm run dev:oversight-hub
 ```
 
 ### Issue: 401 Unauthorized on API
+
 **Solution**: Auth is required. Use JWT token with Bearer prefix
+
 ```bash
 curl -H "Authorization: Bearer <jwt-token>" http://localhost:8000/api/...
 ```
 
 ### Issue: No tasks showing in UI
-**Solution**: 
+
+**Solution**:
+
 1. Verify database connection
 2. Check if tasks table has data: `SELECT COUNT(*) FROM content_tasks`
 3. Ensure task status is 'completed' and approval_status is 'pending'
 
 ### Issue: Featured Image URL is NULL in database
+
 **Troubleshooting Steps**:
+
 1. Check backend logs for "COMPLETE POST DATA BEFORE INSERT"
 2. Verify featured_image_url is populated in that log output
 3. If NULL in log, check if UI is sending featured_image_url in approval request
 
 ### Issue: SEO Fields are NULL in database
+
 **Troubleshooting Steps**:
+
 1. Check backend logs for "COMPLETE POST DATA BEFORE INSERT"
 2. Verify seo_title, seo_description, seo_keywords are populated
 3. If NULL in log:
@@ -258,6 +292,7 @@ curl -H "Authorization: Bearer <jwt-token>" http://localhost:8000/api/...
 ## Database Queries for Verification
 
 ### View All Tasks
+
 ```sql
 SELECT task_id, topic, status, approval_status, created_at
 FROM content_tasks
@@ -266,6 +301,7 @@ LIMIT 10;
 ```
 
 ### View Published Posts
+
 ```sql
 SELECT id, title, featured_image_url, seo_title, seo_keywords, status, created_at
 FROM posts
@@ -274,8 +310,9 @@ LIMIT 10;
 ```
 
 ### Check Task-to-Post Link
+
 ```sql
-SELECT 
+SELECT
     ct.task_id,
     ct.topic,
     p.title,
@@ -287,6 +324,7 @@ WHERE ct.task_id = 'a71e5b39-6808-4a0c-8b5d-df579e8af133';
 ```
 
 ### Get Latest Post Details
+
 ```sql
 SELECT * FROM posts
 WHERE task_id = 'a71e5b39-6808-4a0c-8b5d-df579e8af133'
@@ -338,6 +376,7 @@ LIMIT 1;
 ## Questions or Issues?
 
 If you encounter any issues during testing:
+
 1. Check backend logs for detailed error messages
 2. Run the database verification queries to understand the state
 3. Review the "Troubleshooting" section above

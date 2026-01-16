@@ -179,7 +179,7 @@ This cleanup enforces the high-level documentation policy:
 ```
 
 ✅ docs/00-README.md (main hub)
-✅ docs/01-SETUP_AND_OVERVIEW.md
+✅ docs/01-SETUP*AND_OVERVIEW.md
 ✅ docs/02-ARCHITECTURE_AND_DESIGN.md
 ✅ docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md
 ✅ docs/04-DEVELOPMENT_WORKFLOW.md
@@ -190,8 +190,8 @@ This cleanup enforces the high-level documentation policy:
 ✅ docs/components/oversight-hub/README.md
 ✅ docs/components/public-site/README.md
 ✅ docs/components/strapi-cms/README.md
-✅ docs/reference/_ (except TEST_AUDIT_AND_CLEANUP_REPORT.md)
-✅ docs/troubleshooting/_ (all files)
+✅ docs/reference/* (except TEST*AUDIT_AND_CLEANUP_REPORT.md)
+✅ docs/troubleshooting/* (all files)
 ✅ README.md (root project readme)
 ✅ LICENSE.md (legal)
 ✅ package.json (config)

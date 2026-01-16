@@ -97,7 +97,7 @@ src/cofounder_agent/routes/
         ▼                   ▼                ▼
     content_routes.py  task_routes.py    auth_routes.py
     ────────────────    ──────────────    ──────────────
-    
+
     POST /api/              POST /api/        POST /api/auth/
       generate-              tasks              login
       blog-post          GET /api/tasks    POST /api/auth/
@@ -107,7 +107,7 @@ src/cofounder_agent/routes/
     POST /api/              {id}
       generate-         DELETE /api/
       images              tasks/{id}
-    
+
     And 12+ more route files:
     • models.py              • agents_routes.py
     • webhooks.py            • social_routes.py
@@ -357,7 +357,7 @@ Failure    Failure   Failure    Error
    ▼          ▼          ▼          ▼
 Try next  Retry with  Use cache  Return
 model in  backoff                error
-fallback           
+fallback
 chain
 
 Result:
@@ -370,20 +370,19 @@ Result:
 
 ## Quick Lookup Table
 
-| Need | Location | File |
-|------|----------|------|
-| Add endpoint | routes/ | content_routes.py |
-| Change how agents work | multi_agent_orchestrator.py | - |
-| New agent type | src/agents/ | Create new folder |
-| Fix database issue | services/ | database_service.py |
-| Change AI model priority | services/ | model_router.py |
-| Store agent memory | src/ | memory_system.py |
-| Check logs | src/cofounder_agent/services/ | logger_config.py |
-| Add MCP tools | src/mcp/ | tool_registry.py |
+| Need                     | Location                      | File                |
+| ------------------------ | ----------------------------- | ------------------- |
+| Add endpoint             | routes/                       | content_routes.py   |
+| Change how agents work   | multi_agent_orchestrator.py   | -                   |
+| New agent type           | src/agents/                   | Create new folder   |
+| Fix database issue       | services/                     | database_service.py |
+| Change AI model priority | services/                     | model_router.py     |
+| Store agent memory       | src/                          | memory_system.py    |
+| Check logs               | src/cofounder_agent/services/ | logger_config.py    |
+| Add MCP tools            | src/mcp/                      | tool_registry.py    |
 
 ---
 
 ## Summary: The Pipeline in One Sentence
 
 **Request enters main.py → Routes to handler → Orchestrator decomposes → Agents execute in parallel → Models selected via fallback chain → Results stored in PostgreSQL → Response returned to user.**
-
