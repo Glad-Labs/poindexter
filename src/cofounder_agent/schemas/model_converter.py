@@ -63,7 +63,7 @@ class ModelConverter:
                         pass  # Keep as string if not valid JSON
 
         # Handle list/array fields
-        array_fields = ["tag_ids", "tags", "seo_keywords"]
+        array_fields = ["tag_ids", "tags"]
         for key in array_fields:
             if key in data and data[key] is not None:
                 if isinstance(data[key], str):
@@ -93,6 +93,11 @@ class ModelConverter:
     def to_task_response(row: Any) -> TaskResponse:
         """Convert row to TaskResponse model."""
         data = ModelConverter._normalize_row_data(row)
+        
+        # CRITICAL: Convert seo_keywords back to JSON string if it was parsed as list
+        # TaskResponse expects seo_keywords as Optional[str], not List[str]
+        if "seo_keywords" in data and isinstance(data["seo_keywords"], list):
+            data["seo_keywords"] = json.dumps(data["seo_keywords"])
         
         # CRITICAL: Map task_id (UUID string) to id for API response
         # The database has an integer 'id' column (SERIAL PK) but we use task_id (UUID string) as the logical identifier
@@ -292,6 +297,24 @@ class ModelConverter:
             return model.dict()
         else:
             return dict(model) if isinstance(model, dict) else {}
+
+    @staticmethod
+    def task_response_to_unified(task_response: TaskResponse) -> Dict[str, Any]:
+        """Convert TaskResponse to UnifiedTaskResponse-compatible dict.
+        
+        Handles conversion of seo_keywords from JSON string to list.
+        """
+        data = task_response.model_dump()
+        
+        # Convert seo_keywords from JSON string to list for UnifiedTaskResponse
+        if "seo_keywords" in data and isinstance(data["seo_keywords"], str):
+            try:
+                data["seo_keywords"] = json.loads(data["seo_keywords"])
+            except (json.JSONDecodeError, TypeError):
+                # If not valid JSON, wrap in list
+                data["seo_keywords"] = [data["seo_keywords"]] if data["seo_keywords"] else None
+        
+        return data
 
 
 # ============================================================================

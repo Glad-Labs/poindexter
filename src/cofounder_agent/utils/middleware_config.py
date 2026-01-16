@@ -104,8 +104,8 @@ class MiddlewareConfig:
             "http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004,http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:3002,http://127.0.0.1:3003,http://127.0.0.1:3004",  # Development defaults
         ).split(",")
 
-        # Strip whitespace from origins
-        allowed_origins = [origin.strip() for origin in allowed_origins]
+        # Strip whitespace and trailing slashes from origins
+        allowed_origins = [origin.strip().rstrip("/") for origin in allowed_origins]
 
         # Log warning if allowing many origins (likely development mode)
         if len(allowed_origins) > 2:

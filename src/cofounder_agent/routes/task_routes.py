@@ -250,7 +250,7 @@ async def list_tasks(
 
         # Convert to response schema with proper type conversions
         task_responses = [
-            UnifiedTaskResponse(**ModelConverter.to_task_response(task).model_dump())
+            UnifiedTaskResponse(**ModelConverter.task_response_to_unified(ModelConverter.to_task_response(task)))
             for task in tasks
         ]
 
@@ -296,7 +296,7 @@ async def get_task(
             raise HTTPException(status_code=404, detail="Task not found")
 
         # Convert to response schema with proper type conversions
-        return UnifiedTaskResponse(**ModelConverter.to_task_response(task).model_dump())
+        return UnifiedTaskResponse(**ModelConverter.task_response_to_unified(ModelConverter.to_task_response(task)))
 
     except HTTPException:
         raise
@@ -378,7 +378,7 @@ async def update_task(
         updated_task = await db_service.get_task(task_id)
 
         # Convert to response schema with proper type conversions
-        return UnifiedTaskResponse(**ModelConverter.to_task_response(updated_task).model_dump())
+        return UnifiedTaskResponse(**ModelConverter.task_response_to_unified(ModelConverter.to_task_response(updated_task)))
 
     except HTTPException:
         raise
@@ -765,7 +765,7 @@ async def approve_task(
         updated_task = await db_service.get_task(task_id)
 
         # Convert to response schema
-        return UnifiedTaskResponse(**ModelConverter.to_task_response(updated_task).model_dump())
+        return UnifiedTaskResponse(**ModelConverter.task_response_to_unified(ModelConverter.to_task_response(updated_task)))
 
     except HTTPException:
         raise
@@ -836,7 +836,7 @@ async def publish_task(
         updated_task = await db_service.get_task(task_id)
 
         # Convert to response schema
-        return UnifiedTaskResponse(**ModelConverter.to_task_response(updated_task).model_dump())
+        return UnifiedTaskResponse(**ModelConverter.task_response_to_unified(ModelConverter.to_task_response(updated_task)))
 
     except HTTPException:
         raise
@@ -906,7 +906,7 @@ async def reject_task(
         updated_task = await db_service.get_task(task_id)
 
         # Convert to response schema
-        return UnifiedTaskResponse(**ModelConverter.to_task_response(updated_task).model_dump())
+        return UnifiedTaskResponse(**ModelConverter.task_response_to_unified(ModelConverter.to_task_response(updated_task)))
 
     except HTTPException:
         raise
