@@ -165,7 +165,7 @@ class TestCostEffectiveness:
         router = ModelRouter()
         gpt35_cost = router.MODEL_COSTS["gpt-3.5-turbo"]
         gpt4_cost = router.MODEL_COSTS["gpt-4-turbo"]
-        
+
         # GPT-3.5 should be at least 20x cheaper
         assert gpt35_cost < gpt4_cost
         assert gpt4_cost / gpt35_cost >= 20  # Expected 20x+ savings
@@ -173,13 +173,13 @@ class TestCostEffectiveness:
     def test_cost_savings_potential(self):
         """Should demonstrate significant cost savings"""
         router = ModelRouter()
-        
+
         # For 1 million tokens:
         gpt35_cost = router.MODEL_COSTS["gpt-3.5-turbo"] * 1000
         gpt4_cost = router.MODEL_COSTS["gpt-4-turbo"] * 1000
-        
+
         savings = gpt4_cost - gpt35_cost
-        
+
         # Should save more than $40 per million tokens
         assert savings > 40
 

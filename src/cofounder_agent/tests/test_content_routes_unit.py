@@ -35,6 +35,7 @@ except ImportError as e:
 # REQUEST MODEL TESTS
 # ============================================================================
 
+
 class TestCreateBlogPostRequestModel:
     """Test suite for CreateBlogPostRequest model structure"""
 
@@ -103,6 +104,7 @@ class TestCreateBlogPostRequestModel:
 # RESPONSE MODEL TESTS
 # ============================================================================
 
+
 class TestCreateBlogPostResponseModel:
     """Test suite for CreateBlogPostResponse model structure"""
 
@@ -155,6 +157,7 @@ class TestCreateBlogPostResponseModel:
 # TASK STATUS MODEL TESTS
 # ============================================================================
 
+
 class TestTaskStatusResponseModel:
     """Test suite for TaskStatusResponse model structure"""
 
@@ -205,6 +208,7 @@ class TestTaskStatusResponseModel:
 # ============================================================================
 # ENUM TESTS
 # ============================================================================
+
 
 class TestContentStyleEnum:
     """Test suite for ContentStyle enumeration"""
@@ -291,6 +295,7 @@ class TestPublishModeEnum:
 # FIELD CONSTRAINT TESTS
 # ============================================================================
 
+
 class TestFieldConstraints:
     """Test suite for field constraints and metadata"""
 
@@ -325,6 +330,7 @@ class TestFieldConstraints:
 # ============================================================================
 # SERIALIZATION TESTS
 # ============================================================================
+
 
 class TestModelSerialization:
     """Test suite for model serialization capabilities"""

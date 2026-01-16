@@ -117,7 +117,7 @@ class InputValidationMiddleware(BaseHTTPMiddleware):
 
     async def _validate_body(self, request: Request) -> None:
         """Validate request body based on headers only.
-        
+
         NOTE: We do NOT read the request body here because doing so consumes
         the stream, making it unavailable for the actual handler.
         Body validation will be handled by FastAPI/Pydantic in the endpoint handlers.
@@ -143,7 +143,7 @@ class InputValidationMiddleware(BaseHTTPMiddleware):
             # Basic check that content-type is present
             # JSON validation will be done by FastAPI's built-in JSON parser
             pass
-        
+
         # Validation complete - do NOT read body as it would consume the stream
 
     def _validate_url(self, request: Request) -> None:
@@ -196,7 +196,7 @@ class PayloadInspectionMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Callable:
         """
         Pass through without payload inspection.
-        
+
         NOTE: InputValidationMiddleware already validates requests.
         This middleware is kept for future logging needs but currently disabled.
         """

@@ -42,13 +42,9 @@ def markdown_to_strapi_blocks(md_content: str) -> list:
         # Handle Blockquotes
         elif line.startswith("> "):
             text = line[2:].strip()
-            blocks.append(
-                {"type": "quote", "children": [{"type": "text", "text": text}]}
-            )
+            blocks.append({"type": "quote", "children": [{"type": "text", "text": text}]})
         # Handle Paragraphs (default)
         else:
-            blocks.append(
-                {"type": "paragraph", "children": [{"type": "text", "text": line}]}
-            )
+            blocks.append({"type": "paragraph", "children": [{"type": "text", "text": line}]})
 
     return blocks

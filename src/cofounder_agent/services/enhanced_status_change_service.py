@@ -17,7 +17,7 @@ class EnhancedStatusChangeService:
     def __init__(self, db_service: TasksDatabase):
         """
         Initialize service.
-        
+
         Args:
             db_service: Database service for persistence
         """
@@ -30,7 +30,7 @@ class EnhancedStatusChangeService:
         new_status: str,
         reason: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
-        user_id: Optional[str] = None
+        user_id: Optional[str] = None,
     ) -> Tuple[bool, str, List[str]]:
         """
         Validate and execute status change with full audit trail.
@@ -60,7 +60,7 @@ class EnhancedStatusChangeService:
                 current_status=current_status,
                 new_status=new_status,
                 task_id=task_id,
-                additional_context=metadata
+                additional_context=metadata,
             )
 
             if not is_valid:
@@ -74,7 +74,7 @@ class EnhancedStatusChangeService:
                 "user_id": user_id,
                 "reason": reason,
                 "validation_context": metadata or {},
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.utcnow().isoformat(),
             }
 
             # Log to history table
@@ -83,17 +83,14 @@ class EnhancedStatusChangeService:
                 old_status=current_status,
                 new_status=new_status,
                 reason=reason,
-                metadata=history_metadata
+                metadata=history_metadata,
             )
 
             if not logged:
                 logger.warning(f"⚠️  Failed to log status change for {task_id}")
 
             # Update task
-            update_data = {
-                "status": new_status,
-                "updated_at": datetime.utcnow()
-            }
+            update_data = {"status": new_status, "updated_at": datetime.utcnow()}
 
             if metadata:
                 update_data["task_metadata"] = metadata
@@ -113,11 +110,7 @@ class EnhancedStatusChangeService:
             logger.error(f"❌ {error}", exc_info=True)
             return False, error, ["internal_error"]
 
-    async def get_status_audit_trail(
-        self,
-        task_id: str,
-        limit: int = 50
-    ) -> Dict[str, Any]:
+    async def get_status_audit_trail(self, task_id: str, limit: int = 50) -> Dict[str, Any]:
         """
         Get complete audit trail for a task.
 
@@ -131,25 +124,12 @@ class EnhancedStatusChangeService:
         try:
             history = await self.db_service.get_status_history(task_id, limit)
 
-            return {
-                "task_id": task_id,
-                "history_count": len(history),
-                "history": history
-            }
+            return {"task_id": task_id, "history_count": len(history), "history": history}
         except Exception as e:
             logger.error(f"❌ Failed to get audit trail: {e}")
-            return {
-                "task_id": task_id,
-                "history_count": 0,
-                "history": [],
-                "error": str(e)
-            }
+            return {"task_id": task_id, "history_count": 0, "history": [], "error": str(e)}
 
-    async def get_validation_failures(
-        self,
-        task_id: str,
-        limit: int = 50
-    ) -> Dict[str, Any]:
+    async def get_validation_failures(self, task_id: str, limit: int = 50) -> Dict[str, Any]:
         """
         Get all validation failures for a task.
 
@@ -163,16 +143,7 @@ class EnhancedStatusChangeService:
         try:
             failures = await self.db_service.get_validation_failures(task_id, limit)
 
-            return {
-                "task_id": task_id,
-                "failure_count": len(failures),
-                "failures": failures
-            }
+            return {"task_id": task_id, "failure_count": len(failures), "failures": failures}
         except Exception as e:
             logger.error(f"❌ Failed to get validation failures: {e}")
-            return {
-                "task_id": task_id,
-                "failure_count": 0,
-                "failures": [],
-                "error": str(e)
-            }
+            return {"task_id": task_id, "failure_count": 0, "failures": [], "error": str(e)}

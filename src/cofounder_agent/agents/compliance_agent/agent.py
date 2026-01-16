@@ -3,11 +3,13 @@ import subprocess
 import os
 from src.agents.content_agent.utils.tools import CrewAIToolsFactory
 
+
 class ComplianceAgent:
     """
     An agent responsible for reviewing the codebase for security best practices
     and flagging potential risks.
     """
+
     def __init__(self, workspace_root: str):
         self.workspace_root = workspace_root
         self.tools = [
@@ -23,10 +25,10 @@ class ComplianceAgent:
         """
         try:
             logging.info("Running security audit...")
-            
+
             # Run npm audit
             npm_audit_result = self._run_command("npm audit")
-            
+
             # Run pip-audit
             pip_audit_result = self._run_command("pip-audit")
 
@@ -58,7 +60,7 @@ class ComplianceAgent:
                 capture_output=True,
                 text=True,
                 cwd=self.workspace_root,
-                check=True
+                check=True,
             )
             return result.stdout
         except subprocess.CalledProcessError as e:

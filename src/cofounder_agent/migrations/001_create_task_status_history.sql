@@ -20,13 +20,7 @@ CREATE TABLE task_status_history (
     CONSTRAINT fk_task_status_history_task_id 
         FOREIGN KEY (task_id) 
         REFERENCES content_tasks(task_id) 
-        ON DELETE CASCADE,
-    
-    -- Indexes for query performance
-    INDEX idx_task_status_history_task_id (task_id),
-    INDEX idx_task_status_history_timestamp (timestamp),
-    INDEX idx_task_status_history_new_status (new_status),
-    INDEX idx_task_status_history_task_timestamp (task_id, timestamp DESC)
+        ON DELETE CASCADE
 );
 
 -- Create indexes

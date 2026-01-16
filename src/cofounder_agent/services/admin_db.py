@@ -19,8 +19,13 @@ from asyncpg import Pool
 
 from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 from schemas.database_response_models import (
-    LogResponse, FinancialEntryResponse, FinancialSummaryResponse, CostLogResponse,
-    TaskCostBreakdownResponse, AgentStatusResponse, SettingResponse
+    LogResponse,
+    FinancialEntryResponse,
+    FinancialSummaryResponse,
+    CostLogResponse,
+    TaskCostBreakdownResponse,
+    AgentStatusResponse,
+    SettingResponse,
 )
 from schemas.model_converter import ModelConverter
 from .database_mixin import DatabaseServiceMixin
@@ -34,7 +39,7 @@ class AdminDatabase(DatabaseServiceMixin):
     def __init__(self, pool: Pool):
         """
         Initialize admin database module.
-        
+
         Args:
             pool: asyncpg connection pool
         """
@@ -53,13 +58,13 @@ class AdminDatabase(DatabaseServiceMixin):
     ) -> str:
         """
         Add log entry.
-        
+
         Args:
             agent_name: Name of agent creating log
             level: Log level (DEBUG, INFO, WARNING, ERROR)
             message: Log message
             context: Optional context dict
-            
+
         Returns:
             Log ID
         """
@@ -67,7 +72,7 @@ class AdminDatabase(DatabaseServiceMixin):
 
         sql = "INSERT INTO logs (id, agent_name, level, message, context, created_at) VALUES ($1, $2, $3, $4, $5, NOW())"
         params = [log_id, agent_name, level, message, json.dumps(context or {})]
-        
+
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(sql, *params)
@@ -84,32 +89,32 @@ class AdminDatabase(DatabaseServiceMixin):
     ) -> List[Dict[str, Any]]:
         """
         Get logs with optional filtering.
-        
+
         Args:
             agent_name: Filter by agent name
             level: Filter by log level
             limit: Maximum logs to return
-            
+
         Returns:
             List of log dicts
         """
         try:
             builder = ParameterizedQueryBuilder()
-            
+
             where_clauses = []
             if agent_name:
                 where_clauses.append(("agent_name", SQLOperator.EQ, agent_name))
             if level:
                 where_clauses.append(("level", SQLOperator.EQ, level))
-            
+
             sql, params = builder.select(
                 columns=["*"],
                 table="logs",
                 where_clauses=where_clauses if where_clauses else None,
                 order_by=[("created_at", "DESC")],
-                limit=limit
+                limit=limit,
             )
-            
+
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(sql, *params)
                 return [dict(row) for row in rows]
@@ -126,10 +131,10 @@ class AdminDatabase(DatabaseServiceMixin):
     async def add_financial_entry(self, entry_data: Dict[str, Any]) -> str:
         """
         Add financial entry.
-        
+
         Args:
             entry_data: Dict with category, amount, description, tags
-            
+
         Returns:
             Entry ID
         """
@@ -141,9 +146,9 @@ class AdminDatabase(DatabaseServiceMixin):
             entry_data.get("category"),
             entry_data.get("amount"),
             entry_data.get("description"),
-            json.dumps(entry_data.get("tags", []))
+            json.dumps(entry_data.get("tags", [])),
         ]
-        
+
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(sql, *params)
@@ -155,14 +160,14 @@ class AdminDatabase(DatabaseServiceMixin):
     async def get_financial_summary(self, days: int = 30) -> FinancialSummaryResponse:
         """
         Get financial summary for last N days.
-        
+
         Args:
             days: Number of days to look back
-            
+
         Returns:
             Dict with total_entries, total_amount, avg_amount, min_amount, max_amount
         """
-        cutoff_date = datetime.utcnow() - __import__('datetime').timedelta(days=days)
+        cutoff_date = datetime.utcnow() - __import__("datetime").timedelta(days=days)
 
         try:
             sql = """
@@ -176,7 +181,7 @@ class AdminDatabase(DatabaseServiceMixin):
                 WHERE created_at >= $1
             """
             params = [cutoff_date]
-            
+
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, *params)
                 if row:
@@ -239,7 +244,7 @@ class AdminDatabase(DatabaseServiceMixin):
                 cost_log.get("success", True),
                 cost_log.get("error_message"),
             ]
-            
+
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, *params)
                 logger.info(
@@ -303,7 +308,7 @@ class AdminDatabase(DatabaseServiceMixin):
                     "total": round(total_cost, 6),
                     "entries": entries,
                 }
-                
+
                 # Add phase-specific costs
                 for phase in ["research", "outline", "draft", "assess", "refine", "finalize"]:
                     if phase in breakdown:
@@ -330,13 +335,13 @@ class AdminDatabase(DatabaseServiceMixin):
     ) -> Dict[str, Any]:
         """
         Update or create agent status.
-        
+
         Args:
             agent_name: Agent name
             status: Status string
             last_run: Optional last run timestamp
             metadata: Optional metadata dict
-            
+
         Returns:
             Updated agent status dict
         """
@@ -348,7 +353,7 @@ class AdminDatabase(DatabaseServiceMixin):
                 # Try to update first
                 sql_update = "UPDATE agent_status SET status = $2, last_run = $3, metadata = $4, updated_at = NOW() WHERE agent_name = $1 RETURNING *"
                 params_update = [agent_name, status, last_run, metadata_json]
-                
+
                 row = await conn.fetchrow(sql_update, *params_update)
 
                 # If no rows updated, insert new
@@ -365,10 +370,10 @@ class AdminDatabase(DatabaseServiceMixin):
     async def get_agent_status(self, agent_name: str) -> Optional[AgentStatusResponse]:
         """
         Get agent status.
-        
+
         Args:
             agent_name: Agent name
-            
+
         Returns:
             Agent status dict or None
         """
@@ -376,7 +381,7 @@ class AdminDatabase(DatabaseServiceMixin):
         sql, params = builder.select(
             columns=["*"],
             table="agent_status",
-            where_clauses=[("agent_name", SQLOperator.EQ, agent_name)]
+            where_clauses=[("agent_name", SQLOperator.EQ, agent_name)],
         )
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(sql, *params)
@@ -389,10 +394,10 @@ class AdminDatabase(DatabaseServiceMixin):
     async def health_check(self, service: str = "cofounder") -> Dict[str, Any]:
         """
         Check database health.
-        
+
         Args:
             service: Service name
-            
+
         Returns:
             Health status dict
         """

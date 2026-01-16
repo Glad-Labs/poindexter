@@ -32,14 +32,14 @@ logger = logging.getLogger(__name__)
 class DatabaseService:
     """
     PostgreSQL database service coordinator.
-    
+
     Delegates to 5 specialized modules:
     - self.users: User/OAuth operations
     - self.tasks: Task management
     - self.content: Posts/quality/metrics
     - self.admin: Logging/financial/settings
     - self.writing_style: Writing samples for style matching
-    
+
     Maintains 100% backward compatibility with original DatabaseService.
     All existing method calls still work via delegation.
     """
@@ -67,7 +67,7 @@ class DatabaseService:
         logger.info(f"DatabaseService initialized with PostgreSQL: {self.database_url[:50]}...")
 
         self.pool = None
-        
+
         # Delegate modules will be initialized after pool is created
         self.users: Optional[UsersDatabase] = None
         self.tasks: Optional[TasksDatabase] = None
@@ -89,15 +89,17 @@ class DatabaseService:
                 timeout=30,
             )
             logger.info(f"✅ Database pool initialized (size: {min_size}-{max_size})")
-            
+
             # Initialize all delegate modules
             self.users = UsersDatabase(self.pool)
             self.tasks = TasksDatabase(self.pool)
             self.content = ContentDatabase(self.pool)
             self.admin = AdminDatabase(self.pool)
             self.writing_style = WritingStyleDatabase(self.pool)
-            
-            logger.info("✅ All database modules initialized (users, tasks, content, admin, writing_style)")
+
+            logger.info(
+                "✅ All database modules initialized (users, tasks, content, admin, writing_style)"
+            )
         except Exception as e:
             logger.error(f"❌ Failed to initialize database: {e}")
             raise
@@ -113,7 +115,7 @@ class DatabaseService:
     # ========================================================================
     # These methods maintain 100% backward compatibility with the original
     # DatabaseService API. Each method delegates to the appropriate module.
-    
+
     # USER OPERATIONS
     async def get_user_by_id(self, user_id: str):
         """Delegate to users module."""
@@ -131,7 +133,9 @@ class DatabaseService:
         """Delegate to users module."""
         return await self.users.create_user(user_data)
 
-    async def get_or_create_oauth_user(self, provider: str, provider_user_id: str, provider_data: dict):
+    async def get_or_create_oauth_user(
+        self, provider: str, provider_user_id: str, provider_data: dict
+    ):
         """Delegate to users module."""
         return await self.users.get_or_create_oauth_user(provider, provider_user_id, provider_data)
 
@@ -160,7 +164,13 @@ class DatabaseService:
         """Delegate to tasks module."""
         return await self.tasks.update_task(task_id, updates)
 
-    async def get_tasks_paginated(self, offset: int = 0, limit: int = 20, status: Optional[str] = None, category: Optional[str] = None):
+    async def get_tasks_paginated(
+        self,
+        offset: int = 0,
+        limit: int = 20,
+        status: Optional[str] = None,
+        category: Optional[str] = None,
+    ):
         """Delegate to tasks module."""
         return await self.tasks.get_tasks_paginated(offset, limit, status, category)
 
@@ -180,7 +190,9 @@ class DatabaseService:
         """Delegate to tasks module."""
         return await self.tasks.get_queued_tasks(limit)
 
-    async def get_tasks_by_date_range(self, start_date=None, end_date=None, status: Optional[str] = None, limit: int = 10000):
+    async def get_tasks_by_date_range(
+        self, start_date=None, end_date=None, status: Optional[str] = None, limit: int = 10000
+    ):
         """Delegate to tasks module."""
         return await self.tasks.get_tasks_by_date_range(start_date, end_date, status, limit)
 
@@ -234,11 +246,15 @@ class DatabaseService:
         return await self.content.create_orchestrator_training_data(train_data)
 
     # ADMIN OPERATIONS
-    async def add_log_entry(self, agent_name: str, level: str, message: str, context: Optional[dict] = None):
+    async def add_log_entry(
+        self, agent_name: str, level: str, message: str, context: Optional[dict] = None
+    ):
         """Delegate to admin module."""
         return await self.admin.add_log_entry(agent_name, level, message, context)
 
-    async def get_logs(self, agent_name: Optional[str] = None, level: Optional[str] = None, limit: int = 100):
+    async def get_logs(
+        self, agent_name: Optional[str] = None, level: Optional[str] = None, limit: int = 100
+    ):
         """Delegate to admin module."""
         return await self.admin.get_logs(agent_name, level, limit)
 
@@ -258,7 +274,9 @@ class DatabaseService:
         """Delegate to admin module."""
         return await self.admin.get_task_costs(task_id)
 
-    async def update_agent_status(self, agent_name: str, status: str, last_run=None, metadata: Optional[dict] = None):
+    async def update_agent_status(
+        self, agent_name: str, status: str, last_run=None, metadata: Optional[dict] = None
+    ):
         """Delegate to admin module."""
         return await self.admin.update_agent_status(agent_name, status, last_run, metadata)
 
@@ -278,7 +296,14 @@ class DatabaseService:
         """Delegate to admin module."""
         return await self.admin.get_all_settings(category)
 
-    async def set_setting(self, key: str, value, category: Optional[str] = None, display_name: Optional[str] = None, description: Optional[str] = None):
+    async def set_setting(
+        self,
+        key: str,
+        value,
+        category: Optional[str] = None,
+        display_name: Optional[str] = None,
+        description: Optional[str] = None,
+    ):
         """Delegate to admin module."""
         return await self.admin.set_setting(key, value, category, display_name, description)
 

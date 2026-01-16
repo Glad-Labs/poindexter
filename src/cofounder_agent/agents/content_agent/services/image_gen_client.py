@@ -46,6 +46,4 @@ class ImageGenClient:
             image.save(output_path)
 
         except Exception as e:
-            logging.error(
-                f"Error generating image with Stable Diffusion: {e}", exc_info=True
-            )
+            logging.error(f"Error generating image with Stable Diffusion: {e}", exc_info=True)

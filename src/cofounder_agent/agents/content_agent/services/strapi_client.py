@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class StrapiClient:
     """
     A client for interacting with the Strapi CMS API.
-    
+
     ASYNC-FIRST: All HTTP operations use httpx (no blocking I/O)
     """
 
@@ -23,23 +23,17 @@ class StrapiClient:
         self.api_url = config.STRAPI_API_URL
         self.api_token = config.STRAPI_API_TOKEN
         if not self.api_url or not self.api_token:
-            raise ValueError(
-                "STRAPI_API_URL and STRAPI_API_TOKEN must be set in the environment."
-            )
+            raise ValueError("STRAPI_API_URL and STRAPI_API_TOKEN must be set in the environment.")
         self.headers = {
             "Authorization": f"Bearer {self.api_token}",
         }
         # Add a diagnostic log to confirm which token is being used.
         token_preview = (
-            f"{self.api_token[:5]}...{self.api_token[-4:]}"
-            if self.api_token
-            else "None"
+            f"{self.api_token[:5]}...{self.api_token[-4:]}" if self.api_token else "None"
         )
         logging.info(f"Strapi client initialized. Using token: {token_preview}")
 
-    async def upload_image(
-        self, file_path: str, alt_text: str, caption: str
-    ) -> Optional[int]:
+    async def upload_image(self, file_path: str, alt_text: str, caption: str) -> Optional[int]:
         """
         Uploads an image to the Strapi media library (async).
 
@@ -55,14 +49,10 @@ class StrapiClient:
         try:
             with open(file_path, "rb") as f:
                 file_content = f.read()
-            
+
             files = {"files": (os.path.basename(file_path), file_content, "image/jpeg")}
-            data = {
-                "fileInfo": json.dumps(
-                    {"alternativeText": alt_text, "caption": caption}
-                )
-            }
-            
+            data = {"fileInfo": json.dumps({"alternativeText": alt_text, "caption": caption})}
+
             async with httpx.AsyncClient(timeout=30) as client:
                 response = await client.post(
                     upload_url,
@@ -100,14 +90,10 @@ class StrapiClient:
                     response = await client.get(url, headers=headers)
                 elif method.upper() == "POST":
                     headers["Content-Type"] = "application/json"
-                    response = await client.post(
-                        url, headers=headers, json=data if data else None
-                    )
+                    response = await client.post(url, headers=headers, json=data if data else None)
                 elif method.upper() == "PUT":
                     headers["Content-Type"] = "application/json"
-                    response = await client.put(
-                        url, headers=headers, json=data if data else None
-                    )
+                    response = await client.put(url, headers=headers, json=data if data else None)
                 elif method.upper() == "DELETE":
                     response = await client.delete(url, headers=headers)
                 else:
@@ -162,7 +148,9 @@ class StrapiClient:
 
             data = response.json()
             post_id = data.get("data", {}).get("id")
-            post_url = f"{self.api_url}/api/posts/{post_id}"  # This is the API URL, not the frontend URL
+            post_url = (
+                f"{self.api_url}/api/posts/{post_id}"  # This is the API URL, not the frontend URL
+            )
 
             logging.info(f"Successfully created post in Strapi with ID: {post_id}")
             return post_id, post_url
@@ -190,9 +178,7 @@ class StrapiClient:
                 title = attrs.get("Title")
                 slug = attrs.get("Slug")
                 if title and slug:
-                    published_posts[title] = (
-                        f"/posts/{slug}"  # Assuming this URL structure
-                    )
+                    published_posts[title] = f"/posts/{slug}"  # Assuming this URL structure
 
             logging.info(f"Fetched {len(published_posts)} published posts from Strapi.")
             return published_posts

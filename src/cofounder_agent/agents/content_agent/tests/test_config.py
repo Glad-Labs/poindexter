@@ -23,6 +23,7 @@ def test_config_non_strict_loads(monkeypatch):
 
     # Reload module to re-run validation with current env
     import sys as _sys
+
     if "agents.content_agent.config" in list(_sys.modules.keys()):
         importlib.invalidate_caches()
         importlib.reload(importlib.import_module("config"))
@@ -41,6 +42,7 @@ def test_config_strict_raises(monkeypatch):
     monkeypatch.setenv("STRICT_ENV_VALIDATION", "1")
 
     import sys as _sys
+
     if "config" in list(_sys.modules.keys()):
         del _sys.modules["config"]
     cfg_module = importlib.import_module("config")

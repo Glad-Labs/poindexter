@@ -96,6 +96,7 @@ class StartupManager:
                 await self._warmup_sdxl_models()
             except Exception as e:
                 import traceback
+
                 logger.warning(f"⚠️  SDXL warmup failed (non-critical): {type(e).__name__}: {e}")
                 logger.debug(f"    Traceback: {traceback.format_exc()}")
                 # Continue anyway - SDXL will load lazily when first used
@@ -134,13 +135,19 @@ class StartupManager:
             logger.debug("  [DEBUG] Creating DatabaseService instance...")
             self.database_service = DatabaseService()
             logger.debug(f"  [DEBUG] DatabaseService created: {self.database_service}")
-            logger.debug(f"  [DEBUG] Before initialize(): pool={self.database_service.pool}, tasks={self.database_service.tasks}")
-            
+            logger.debug(
+                f"  [DEBUG] Before initialize(): pool={self.database_service.pool}, tasks={self.database_service.tasks}"
+            )
+
             logger.debug("  [DEBUG] Calling await self.database_service.initialize()...")
             await self.database_service.initialize()
-            logger.debug(f"  [DEBUG] After initialize(): pool={self.database_service.pool is not None}, tasks={self.database_service.tasks is not None}")
-            logger.debug(f"  [DEBUG] After initialize(): users={self.database_service.users is not None}, content={self.database_service.content is not None}")
-            
+            logger.debug(
+                f"  [DEBUG] After initialize(): pool={self.database_service.pool is not None}, tasks={self.database_service.tasks is not None}"
+            )
+            logger.debug(
+                f"  [DEBUG] After initialize(): users={self.database_service.users is not None}, content={self.database_service.content is not None}"
+            )
+
             logger.info("   PostgreSQL connected - ready for operations")
             logger.info(f"     Pool initialized: {self.database_service.pool is not None}")
             logger.info(f"     Tasks DB initialized: {self.database_service.tasks is not None}")
@@ -213,10 +220,10 @@ class StartupManager:
 
     async def _initialize_orchestrator(self) -> None:
         """Orchestrator initialization - SKIPPED
-        
+
         The orchestrator is now created in main.py lifespan as UnifiedOrchestrator
         after all dependencies are properly initialized.
-        
+
         This method is kept for backward compatibility but does nothing.
         """
         logger.info("  🤖 Orchestrator initialization (deferred to main.py lifespan)...")
@@ -258,7 +265,7 @@ class StartupManager:
 
     async def _initialize_task_executor(self) -> None:
         """Initialize background task executor (WITHOUT starting it yet)
-        
+
         IMPORTANT: We create the TaskExecutor but do NOT call .start() here.
         The executor will be started from main.py AFTER UnifiedOrchestrator is initialized.
         This prevents the executor from processing tasks with the legacy Orchestrator.
@@ -269,9 +276,11 @@ class StartupManager:
             from services.content_critique_loop import ContentCritiqueLoop
 
             logger.debug(f"  [DEBUG] TaskExecutor init: database_service={self.database_service}")
-            logger.debug(f"  [DEBUG] TaskExecutor init: database_service.tasks={self.database_service.tasks}")
+            logger.debug(
+                f"  [DEBUG] TaskExecutor init: database_service.tasks={self.database_service.tasks}"
+            )
             logger.debug(f"  [DEBUG] TaskExecutor init: orchestrator={self.orchestrator}")
-            
+
             critique_loop = ContentCritiqueLoop()
             logger.debug(f"  [DEBUG] ContentCritiqueLoop created: {critique_loop}")
 
@@ -284,11 +293,17 @@ class StartupManager:
                 poll_interval=5,  # Poll every 5 seconds
             )
             logger.debug(f"  [DEBUG] TaskExecutor created: {self.task_executor}")
-            logger.debug(f"  [DEBUG] TaskExecutor.database_service: {self.task_executor.database_service}")
-            logger.debug(f"  [DEBUG] TaskExecutor.orchestrator (initial): None (will be injected later)")
-            
+            logger.debug(
+                f"  [DEBUG] TaskExecutor.database_service: {self.task_executor.database_service}"
+            )
+            logger.debug(
+                f"  [DEBUG] TaskExecutor.orchestrator (initial): None (will be injected later)"
+            )
+
             logger.info("   Background task executor initialized (not started yet)")
-            logger.info(f"     ⏸️  Will be fully configured and started after UnifiedOrchestrator is injected in main.py")
+            logger.info(
+                f"     ⏸️  Will be fully configured and started after UnifiedOrchestrator is injected in main.py"
+            )
         except Exception as e:
             error_msg = f"Task executor initialization failed: {str(e)}"
             logger.error(f"   {error_msg}", exc_info=True)
@@ -357,7 +372,7 @@ class StartupManager:
     async def _warmup_sdxl_models(self) -> None:
         """Warmup SDXL models to avoid timeout on first request"""
         import os
-        
+
         # Check if torch is even available (optional dependency for SDXL)
         try:
             import torch
@@ -365,29 +380,29 @@ class StartupManager:
             logger.info("  SDXL warmup: torch not installed - SDXL disabled")
             logger.info("     To enable SDXL: pip install -r scripts/requirements-ml.txt")
             return
-        
+
         # Check if GPU is available first
         if not torch.cuda.is_available():
             logger.info("  SDXL warmup: GPU not available, skipping model warmup")
             return
-        
+
         # Check if user explicitly disabled SDXL warmup
         if os.getenv("DISABLE_SDXL_WARMUP", "").lower() == "true":
             logger.info("  SDXL warmup: Disabled via DISABLE_SDXL_WARMUP environment variable")
             return
-        
+
         try:
             logger.info("  🎨 Warming up SDXL models (this may take 20-30 seconds)...")
             from services.image_service import ImageService
             import tempfile
-            
+
             # Create image service
             image_service = ImageService()
-            
+
             # Generate a minimal test image just to load the models
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
                 output_path = tmp.name
-            
+
             try:
                 # Single-step generation just to load models
                 success = await image_service.generate_image(
@@ -396,14 +411,16 @@ class StartupManager:
                     num_inference_steps=1,
                     guidance_scale=7.5,
                     use_refinement=False,
-                    high_quality=False
+                    high_quality=False,
                 )
-                
+
                 if success:
-                    logger.info("  ✅ SDXL models loaded successfully! First requests will be fast.")
+                    logger.info(
+                        "  ✅ SDXL models loaded successfully! First requests will be fast."
+                    )
                 else:
                     logger.warning("  ⚠️ SDXL warmup generation failed (will initialize lazily)")
-                    
+
             finally:
                 # Clean up temp file
                 try:
@@ -411,9 +428,10 @@ class StartupManager:
                         os.remove(output_path)
                 except (OSError, IOError):
                     pass
-                    
+
         except Exception as e:
             import traceback
+
             logger.warning(f"  ⚠️ SDXL warmup error (non-critical): {type(e).__name__}: {e}")
             logger.warning(f"     Full traceback:\n{traceback.format_exc()}")
             logger.info("     SDXL will initialize on first request")

@@ -23,6 +23,7 @@ from typing import Optional, Any, Dict
 
 logger = logging.getLogger(__name__)
 
+
 def register_all_routes(
     app: FastAPI,
     database_service: Optional[Any] = None,

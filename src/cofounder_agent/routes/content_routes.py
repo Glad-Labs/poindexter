@@ -108,10 +108,7 @@ content_router = APIRouter(prefix="/api/content", tags=["content"])
     description="Simple test endpoint",
 )
 async def test_simple():
-    return JSONResponse(
-        status_code=201,
-        content={"test": "success"}
-    )
+    return JSONResponse(status_code=201, content={"test": "success"})
 
 
 @content_router.post(
@@ -206,7 +203,7 @@ async def create_content_task(
         # GENERATE TASK ID & CALCULATE COSTS (without creating task yet)
         # ========================================================================
         from uuid import uuid4
-        
+
         # Generate task_id - will be created in background task
         task_id = str(uuid4())
         logger.debug(f"  📝 Generated task ID: {task_id}")
@@ -240,7 +237,7 @@ async def create_content_task(
         # Start background content generation with complete pipeline
         # ========================================================================
         logger.debug(f"  ⏳ Starting background content generation task...")
-        
+
         # Create async wrapper for background task
         async def _run_content_generation():
             try:
@@ -260,12 +257,14 @@ async def create_content_task(
                 logger.error(f"Background content generation failed: {e}", exc_info=True)
                 # Update task status to failed
                 try:
-                    await db.update_task(task_id=task_id, updates={"status": "failed", "error_message": str(e)})
+                    await db.update_task(
+                        task_id=task_id, updates={"status": "failed", "error_message": str(e)}
+                    )
                 except:
                     pass
-        
+
         import asyncio
-        
+
         # Schedule as a background coroutine
         asyncio.create_task(_run_content_generation())
         logger.debug(f"  ✓ Background task scheduled with complete parameters")
@@ -277,8 +276,10 @@ async def create_content_task(
         )
 
         now = datetime.now().isoformat()
-        logger.info(f"[RESPONSE_BUILD] Creating response with: task_id={task_id}, status=pending, topic={request.topic}, created_at={now}, updated_at={now}")
-        
+        logger.info(
+            f"[RESPONSE_BUILD] Creating response with: task_id={task_id}, status=pending, topic={request.topic}, created_at={now}, updated_at={now}"
+        )
+
         response_obj = CreateBlogPostResponse(
             task_id=task_id,
             task_type=request.task_type,  # ✅ Include task type in response
@@ -289,20 +290,22 @@ async def create_content_task(
             polling_url=f"/api/content/tasks/{task_id}",
             estimated_cost=round(estimated_cost, 6) if estimated_cost else 0.0,
         )
-        logger.info(f"[RESPONSE_BUILD] response_obj created, type: {type(response_obj).__name__}, module: {type(response_obj).__module__}")
+        logger.info(
+            f"[RESPONSE_BUILD] response_obj created, type: {type(response_obj).__name__}, module: {type(response_obj).__module__}"
+        )
         logger.info(f"[RESPONSE_BUILD] response_obj.updated_at = {response_obj.updated_at}")
-        
+
         # Serialize to dict manually to ensure all fields are present
         response_dict = response_obj.model_dump(exclude_none=True)
         logger.info(f"[RESPONSE_BUILD] response_dict keys = {list(response_dict.keys())}")
-        logger.info(f"[RESPONSE_BUILD] response_dict has updated_at = {'updated_at' in response_dict}")
-        
+        logger.info(
+            f"[RESPONSE_BUILD] response_dict has updated_at = {'updated_at' in response_dict}"
+        )
+
         # Return using JSONResponse to bypass FastAPI's response_model validation
         # which might be causing issues
         return JSONResponse(
-            status_code=201,
-            content=response_dict,
-            headers={"Content-Type": "application/json"}
+            status_code=201, content=response_dict, headers={"Content-Type": "application/json"}
         )
 
     except ValidationError as e:
@@ -314,6 +317,7 @@ async def create_content_task(
         logger.error(f"❌ Exception module: {type(e).__module__}", exc_info=False)
         logger.error(f"❌ Exception args: {e.args}", exc_info=False)
         import traceback
+
         logger.error(f"❌ Full traceback: {traceback.format_exc()}", exc_info=False)
         error = handle_error(e)
         raise error.to_http_exception()
@@ -618,7 +622,9 @@ async def approve_and_publish_task(
                 logger.error(
                     f"❌ Task {task_id} content is a dict instead of string - this indicates data corruption"
                 )
-                logger.error(f"   Content type: {type(content)}, Content keys: {list(content.keys())[:5]}")
+                logger.error(
+                    f"   Content type: {type(content)}, Content keys: {list(content.keys())[:5]}"
+                )
                 # Try to extract content field from the dict if it exists
                 if "content" in content:
                     logger.warning(f"   Attempting recovery: extracting 'content' field from dict")
@@ -627,16 +633,16 @@ async def approve_and_publish_task(
                     raise ValidationError(
                         "Task content is corrupted (dict instead of string)",
                         field="content",
-                        constraint="data_type_mismatch"
+                        constraint="data_type_mismatch",
                     )
-            
+
             # Ensure content is a string
             if not isinstance(content, str):
                 logger.error(f"❌ Task {task_id} content is not a string: {type(content)}")
                 raise ValidationError(
                     f"Task content must be a string, got {type(content).__name__}",
                     field="content",
-                    constraint="data_type_mismatch"
+                    constraint="data_type_mismatch",
                 )
 
             logger.debug(f"✅ Found content from {content_location} ({len(content)} chars)")
@@ -719,14 +725,15 @@ async def approve_and_publish_task(
                 tags = await db_service.get_all_tags()
 
                 # Convert CategoryResponse and TagResponse objects to dicts for metadata service
-                categories_dict = [
-                    {"id": cat.id, "name": cat.name, "description": cat.description}
-                    for cat in categories
-                ] if categories else None
-                tags_dict = [
-                    {"id": tag.id, "name": tag.name}
-                    for tag in tags
-                ] if tags else None
+                categories_dict = (
+                    [
+                        {"id": cat.id, "name": cat.name, "description": cat.description}
+                        for cat in categories
+                    ]
+                    if categories
+                    else None
+                )
+                tags_dict = [{"id": tag.id, "name": tag.name} for tag in tags] if tags else None
 
                 # ============================================================================
                 # BATCH GENERATE ALL METADATA (Most efficient)
@@ -758,12 +765,12 @@ async def approve_and_publish_task(
                 if metadata.tag_ids:
                     tag_ids_str = [str(tag_id) for tag_id in metadata.tag_ids]
                     logger.debug(f"✅ Converted tag_ids to strings: {tag_ids_str}")
-                
+
                 # ✅ Ensure SEO fields have fallback values (never empty)
                 seo_title = metadata.seo_title or metadata.title
                 seo_description = metadata.seo_description or metadata.excerpt or content[:155]
                 seo_keywords = metadata.seo_keywords or ""
-                
+
                 post_data = {
                     "id": task_metadata.get("post_id"),
                     "title": metadata.title,  # ✅ Extracted/generated
@@ -772,8 +779,12 @@ async def approve_and_publish_task(
                     "excerpt": metadata.excerpt,  # ✅ Generated
                     "featured_image_url": metadata.featured_image_url,
                     "cover_image_url": task_metadata.get("cover_image_url"),
-                    "author_id": str(metadata.author_id) if metadata.author_id else None,  # ✅ Convert to string
-                    "category_id": str(metadata.category_id) if metadata.category_id else None,  # ✅ Convert to string
+                    "author_id": (
+                        str(metadata.author_id) if metadata.author_id else None
+                    ),  # ✅ Convert to string
+                    "category_id": (
+                        str(metadata.category_id) if metadata.category_id else None
+                    ),  # ✅ Convert to string
                     "tag_ids": tag_ids_str,  # ✅ Extracted and converted to strings
                     "status": "published",
                     "seo_title": seo_title,  # ✅ Generated with fallback
@@ -789,12 +800,14 @@ async def approve_and_publish_task(
                     f"\n  - title={post_data.get('title')[:50]}"
                     f"\n  - slug={post_data.get('slug')}"
                 )
-                
+
                 # ✅ Log ALL post data fields for debugging
                 logger.info(f"🔍 COMPLETE POST DATA BEFORE INSERT:")
                 for key, value in post_data.items():
                     if key == "content":
-                        logger.info(f"   - {key}: {len(value) if isinstance(value, str) else 0} chars")
+                        logger.info(
+                            f"   - {key}: {len(value) if isinstance(value, str) else 0} chars"
+                        )
                     elif isinstance(value, (list, dict)):
                         logger.info(f"   - {key}: {value}")
                     else:
@@ -803,7 +816,7 @@ async def approve_and_publish_task(
 
                 post_result = await db_service.create_post(post_data)
                 post_id = post_result.id
-                
+
                 # ✅ Verify featured_image_url was persisted
                 logger.info(
                     f"✅ Post published to CMS database with ID: {post_id}"
@@ -835,9 +848,7 @@ async def approve_and_publish_task(
             except Exception as e:
                 logger.error(f"❌ Failed to publish post to CMS: {e}", exc_info=True)
                 # Task remains in "awaiting_approval" status if post creation fails
-                raise HTTPException(
-                    status_code=500, detail=f"Failed to create post: {str(e)}"
-                )
+                raise HTTPException(status_code=500, detail=f"Failed to create post: {str(e)}")
 
             logger.info(f"✅ Task {task_id} APPROVED and PUBLISHED")
             logger.info(f"{'='*80}\n")

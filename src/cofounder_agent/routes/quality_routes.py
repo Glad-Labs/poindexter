@@ -243,28 +243,28 @@ async def evaluate_style_consistency(
 ) -> Dict[str, Any]:
     """
     Evaluate style consistency of generated content against reference metrics.
-    
+
     Args:
         generated_content: The content to evaluate
         reference_metrics: Metrics from reference writing sample (Phase 3.3)
         reference_style: Expected style (technical, narrative, listicle, etc.)
         reference_tone: Expected tone (formal, casual, authoritative, conversational)
-    
+
     Returns:
         Dict with style consistency evaluation results
     """
     try:
         validator = get_style_consistency_validator()
-        
+
         result = await validator.validate_style_consistency(
             generated_content=generated_content,
             reference_metrics=reference_metrics,
             reference_style=reference_style,
-            reference_tone=reference_tone
+            reference_tone=reference_tone,
         )
-        
+
         logger.info(f"✅ Style consistency evaluation: {result.style_consistency_score:.2f}/1.0")
-        
+
         return {
             "style_consistency_score": round(result.style_consistency_score, 3),
             "component_scores": {
@@ -288,7 +288,7 @@ async def evaluate_style_consistency(
             "issues": result.issues,
             "suggestions": result.suggestions,
         }
-        
+
     except Exception as e:
         logger.error(f"Style consistency evaluation failed: {e}")
         raise HTTPException(status_code=500, detail=f"Evaluation failed: {str(e)}")
@@ -315,33 +315,33 @@ async def verify_tone_consistency(
 ) -> Dict[str, Any]:
     """
     Verify tone consistency in content.
-    
+
     Args:
         content: Content to analyze
         expected_tone: Expected tone (formal, casual, authoritative, conversational)
-    
+
     Returns:
         Dict with tone analysis results
     """
     try:
         validator = get_style_consistency_validator()
-        
+
         # Analyze content
         metrics = validator._analyze_content(content)
         detected_tone = validator._detect_tone(content)
-        
+
         # Calculate consistency
-        tone_score = validator._calculate_tone_consistency(
-            detected_tone, expected_tone, metrics
-        )
-        
+        tone_score = validator._calculate_tone_consistency(detected_tone, expected_tone, metrics)
+
         # Identify tone-specific issues
         issues = []
         if expected_tone and detected_tone != expected_tone:
-            issues.append(f"Detected tone '{detected_tone}' differs from expected '{expected_tone}'")
-        
+            issues.append(
+                f"Detected tone '{detected_tone}' differs from expected '{expected_tone}'"
+            )
+
         logger.info(f"✅ Tone consistency verification: {tone_score:.2f}/1.0")
-        
+
         return {
             "detected_tone": detected_tone,
             "expected_tone": expected_tone,
@@ -349,13 +349,13 @@ async def verify_tone_consistency(
             "passing": tone_score >= 0.75,
             "issues": issues,
             "metrics": {
-                "word_count": metrics['word_count'],
-                "sentence_count": metrics['sentence_count'],
-                "avg_sentence_length": round(metrics['avg_sentence_length'], 2),
-                "vocabulary_diversity": round(metrics['vocabulary_diversity'], 3),
+                "word_count": metrics["word_count"],
+                "sentence_count": metrics["sentence_count"],
+                "avg_sentence_length": round(metrics["avg_sentence_length"], 2),
+                "vocabulary_diversity": round(metrics["vocabulary_diversity"], 3),
             },
         }
-        
+
     except Exception as e:
         logger.error(f"Tone consistency verification failed: {e}")
         raise HTTPException(status_code=500, detail=f"Verification failed: {str(e)}")
@@ -384,45 +384,37 @@ async def evaluate_style_metrics(
 ) -> Dict[str, Any]:
     """
     Evaluate detailed style metrics for content.
-    
+
     Args:
         content: Content to evaluate
         content_style: The intended style of the content
         reference_metrics: Optional reference sample metrics for comparison
-    
+
     Returns:
         Dict with detailed style metrics
     """
     try:
         validator = get_style_consistency_validator()
-        
+
         # Analyze content
         metrics = validator._analyze_content(content)
         detected_style = validator._detect_style(content)
         detected_tone = validator._detect_tone(content)
-        
+
         # Calculate style-specific scores
-        vocab_score = validator._calculate_vocabulary_consistency(
-            metrics, reference_metrics
-        )
-        
+        vocab_score = validator._calculate_vocabulary_consistency(metrics, reference_metrics)
+
         sentence_score = validator._calculate_sentence_structure_consistency(
             metrics, reference_metrics
         )
-        
-        format_score = validator._calculate_formatting_consistency(
-            content, reference_metrics
-        )
-        
+
+        format_score = validator._calculate_formatting_consistency(content, reference_metrics)
+
         # Overall style score
-        overall_style_score = (
-            vocab_score * 0.4 +
-            sentence_score * 0.35 +
-            format_score * 0.25
-        )
-        
+        overall_style_score = vocab_score * 0.4 + sentence_score * 0.35 + format_score * 0.25
+
         logger.info(f"✅ Style metrics evaluation: {overall_style_score:.2f}/1.0")
-        
+
         return {
             "detected_style": detected_style,
             "detected_tone": detected_tone,
@@ -435,26 +427,25 @@ async def evaluate_style_metrics(
                 "formatting_consistency": round(format_score, 3),
             },
             "content_characteristics": {
-                "word_count": metrics['word_count'],
-                "sentence_count": metrics['sentence_count'],
-                "paragraph_count": metrics['paragraph_count'],
-                "avg_word_length": round(metrics['avg_word_length'], 2),
-                "avg_sentence_length": round(metrics['avg_sentence_length'], 2),
-                "avg_paragraph_length": round(metrics['avg_paragraph_length'], 2),
-                "vocabulary_diversity": round(metrics['vocabulary_diversity'], 3),
+                "word_count": metrics["word_count"],
+                "sentence_count": metrics["sentence_count"],
+                "paragraph_count": metrics["paragraph_count"],
+                "avg_word_length": round(metrics["avg_word_length"], 2),
+                "avg_sentence_length": round(metrics["avg_sentence_length"], 2),
+                "avg_paragraph_length": round(metrics["avg_paragraph_length"], 2),
+                "vocabulary_diversity": round(metrics["vocabulary_diversity"], 3),
             },
             "formatting_elements": {
-                "has_lists": metrics['has_lists'],
-                "has_code_blocks": metrics['has_code_blocks'],
-                "has_headings": metrics['has_headings'],
-                "has_quotes": metrics['has_quotes'],
+                "has_lists": metrics["has_lists"],
+                "has_code_blocks": metrics["has_code_blocks"],
+                "has_headings": metrics["has_headings"],
+                "has_quotes": metrics["has_quotes"],
             },
         }
-        
+
     except Exception as e:
         logger.error(f"Style metrics evaluation failed: {e}")
         raise HTTPException(status_code=500, detail=f"Evaluation failed: {str(e)}")
-
 
 
 def register_quality_routes(app):

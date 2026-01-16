@@ -107,15 +107,19 @@ class JWTTokenValidator:
 
             # Verify token type
             if payload.get("type") != token_type.value:
-                raise jwt.InvalidTokenError(f"Invalid token type: expected {token_type.value}, got {payload.get('type')}")
+                raise jwt.InvalidTokenError(
+                    f"Invalid token type: expected {token_type.value}, got {payload.get('type')}"
+                )
 
             return payload
         except jwt.ExpiredSignatureError as e:
             import sys
+
             print(f"[DEBUG] Token expired: {str(e)}", file=sys.stderr, flush=True)
             raise jwt.ExpiredSignatureError("Token has expired")
         except jwt.InvalidTokenError as e:
             import sys
+
             print(f"[DEBUG] Invalid token error: {str(e)}", file=sys.stderr, flush=True)
             raise jwt.InvalidTokenError(f"Invalid token: {str(e)}")
 

@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 
+
 # ============================================================================
 # CRITICAL: Fix sys.path for namespace packages FIRST before any imports
 # This must happen before we even try to import google.generativeai
@@ -20,12 +21,15 @@ def _fix_sys_path_for_venv():
             sys.path[:] = new_path
             # Force Python to reload the module cache
             import importlib
+
             importlib.invalidate_caches()
             import site
+
             site.main()  # Reinitialize site package processing
     except Exception as e:
         # If sys.path fixing fails, log but continue - fallback imports may still work
         print(f"[WARNING] Failed to fix sys.path for venv: {e}")
+
 
 # Execute the fix immediately when this module is imported
 _fix_sys_path_for_venv()
@@ -43,17 +47,24 @@ import hashlib
 genai = None
 try:
     import google.genai as genai_module
+
     genai = genai_module
     logging.info("✅ google.genai successfully imported")
 except (ImportError, ModuleNotFoundError) as e:
     # Fallback to old deprecated package if new one not available
     try:
         import google.generativeai as genai_module
+
         genai = genai_module
-        logging.warning(f"⚠️  Using deprecated google.generativeai. Please upgrade to google.genai: {e}")
+        logging.warning(
+            f"⚠️  Using deprecated google.generativeai. Please upgrade to google.genai: {e}"
+        )
     except (ImportError, ModuleNotFoundError) as e2:
-        logging.warning(f"⚠️ Could not import google.genai or google.generativeai: {e2}. Will fall back to Ollama.")
+        logging.warning(
+            f"⚠️ Could not import google.genai or google.generativeai: {e2}. Will fall back to Ollama."
+        )
         genai = None
+
 
 class LLMClient:
     """Client for interacting with a configured Large Language Model."""
@@ -61,7 +72,7 @@ class LLMClient:
     def __init__(self, model_name: str = None):
         """
         Initializes the LLM client based on the provider specified in the config.
-        
+
         Args:
             model_name: Optional specific model to use (e.g., "gemini-2.5-flash", "gpt-4")
                        If not provided, uses the configured default model.
@@ -87,20 +98,22 @@ class LLMClient:
                 else:
                     # Gemini is available - use it
                     if not config.GEMINI_API_KEY:
-                        raise ValueError("GEMINI_API_KEY (or GOOGLE_API_KEY) not found in config for gemini provider.")
-                    
+                        raise ValueError(
+                            "GEMINI_API_KEY (or GOOGLE_API_KEY) not found in config for gemini provider."
+                        )
+
                     os.environ["GOOGLE_API_KEY"] = config.GEMINI_API_KEY
-                    
+
                     # Use override model if provided, otherwise use config default
                     model_to_use = model_name if model_name else config.GEMINI_MODEL
                     self.model = genai.GenerativeModel(model_to_use)
                     self.summarizer_model = genai.GenerativeModel(config.SUMMARIZER_MODEL)
                     logging.info(f"✅ Initialized Gemini client with model: {model_to_use}")
-            
+
             if self.provider == "local" or self.provider == "ollama":
                 # Treat Ollama as a local provider - both use the same HTTP API endpoint
                 logging.info(f"✅ Using local LLM provider (Ollama) at {config.LOCAL_LLM_API_URL}")
-            
+
             elif self.provider == "gemini":
                 pass  # Already handled above
             else:
@@ -231,7 +244,9 @@ class LLMClient:
         elif self.provider == "local" or self.provider == "ollama":
             # For local/ollama provider, we can reuse the text generation with the summarizer model if needed
             # or use a specific endpoint if available. For now, we use the main model.
-            logging.warning("Summarization with local/ollama provider falls back to the main model.")
+            logging.warning(
+                "Summarization with local/ollama provider falls back to the main model."
+            )
             result = await self._generate_text_local(prompt)
         else:
             logging.error(f"Unsupported LLM provider: {self.provider}")

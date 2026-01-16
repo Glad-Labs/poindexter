@@ -7,28 +7,29 @@ Makes it easier to version, edit, and manage prompts.
 
 from typing import Optional, Dict
 
+
 class PromptTemplates:
     """Collection of prompt templates"""
 
     @staticmethod
     def blog_generation_prompt(
-        topic: str, 
-        primary_keyword: Optional[str] = None, 
-        target_audience: Optional[str] = None, 
+        topic: str,
+        primary_keyword: Optional[str] = None,
+        target_audience: Optional[str] = None,
         category: Optional[str] = None,
         style: Optional[str] = None,
         tone: Optional[str] = None,
-        target_length: Optional[int] = None
+        target_length: Optional[int] = None,
     ) -> str:
         """Generate a prompt for blog post creation"""
         prompt = f"Generate a blog post about '{topic}'."
-        
+
         if primary_keyword:
             prompt += f" Focus on keywords: {primary_keyword}."
-            
+
         if target_audience:
             prompt += f" Target audience is {target_audience}."
-            
+
         if category:
             prompt += f" Category: {category}."
 
@@ -37,12 +38,12 @@ class PromptTemplates:
 
         if tone:
             prompt += f" Tone: {tone}."
-            
+
         if target_length:
             prompt += f" Target length is approximately {target_length} words."
         else:
             prompt += " Ensure the content is professional and approximately 1500-2000 words."
-        
+
         return prompt
 
     @staticmethod
@@ -50,7 +51,7 @@ class PromptTemplates:
         """Generate a prompt for content critique"""
         context_str = ""
         style_guidance = ""
-        
+
         if context:
             if context.get("topic"):
                 context_str += f"Topic: {context.get('topic')}\n"
@@ -65,7 +66,9 @@ class PromptTemplates:
             if context.get("target_length"):
                 context_str += f"Target Length: {context.get('target_length')} words\n"
             if context.get("writing_style_guidance"):
-                style_guidance = f"\n\nWRITING STYLE REFERENCE:\n{context.get('writing_style_guidance')}\n"
+                style_guidance = (
+                    f"\n\nWRITING STYLE REFERENCE:\n{context.get('writing_style_guidance')}\n"
+                )
 
         return f"""
 You are an expert content editor and QA specialist. Your task is to critique the following blog post content.

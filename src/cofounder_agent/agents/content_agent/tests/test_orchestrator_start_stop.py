@@ -5,6 +5,7 @@ from unittest.mock import patch
 # Pre-stub google modules to avoid optional deps
 import sys as _sys
 import types as _types
+
 if "google" not in _sys.modules:
     _sys.modules["google"] = _types.ModuleType("google")
 if "google.cloud" not in _sys.modules:
@@ -28,19 +29,25 @@ def test_start_and_stop_polling():
         mock_config.PUBSUB_SUBSCRIPTION = None
         mock_config.PROMPTS_PATH = "dummy/prompts.json"
 
-        with patch.object(module, "FirestoreClient") as MockFS, \
-             patch.object(module, "setup_logging"), \
-             patch.object(module, "StrapiClient"), \
-             patch.object(module, "LLMClient"), \
-             patch.object(module, "PexelsClient"), \
-             patch.object(module, "GCSClient"), \
-             patch.object(module, "ResearchAgent"), \
-             patch.object(module, "SummarizerAgent"), \
-             patch.object(module, "CreativeAgent"), \
-             patch.object(module, "ImageAgent"), \
-             patch.object(module, "QAAgent"), \
-             patch.object(module, "PublishingAgent"), \
-             patch.object(module, "load_prompts_from_file", return_value={"summarize_research_data": "", "summarize_previous_draft": ""}):
+        with (
+            patch.object(module, "FirestoreClient") as MockFS,
+            patch.object(module, "setup_logging"),
+            patch.object(module, "StrapiClient"),
+            patch.object(module, "LLMClient"),
+            patch.object(module, "PexelsClient"),
+            patch.object(module, "GCSClient"),
+            patch.object(module, "ResearchAgent"),
+            patch.object(module, "SummarizerAgent"),
+            patch.object(module, "CreativeAgent"),
+            patch.object(module, "ImageAgent"),
+            patch.object(module, "QAAgent"),
+            patch.object(module, "PublishingAgent"),
+            patch.object(
+                module,
+                "load_prompts_from_file",
+                return_value={"summarize_research_data": "", "summarize_previous_draft": ""},
+            ),
+        ):
             orch = module.Orchestrator()
 
     # Speed up: tiny interval
@@ -52,16 +59,20 @@ def test_start_and_stop_polling():
                 self._args = args
                 self._daemon = daemon
                 self._alive = False
+
             def start(self):
                 self._alive = True
                 # Run target once to exercise path; stop event will end quickly
                 if self._target:
                     self._target(*self._args)
                 self._alive = False
+
             def is_alive(self):
                 return self._alive
+
             def join(self, timeout=None):
                 self._alive = False
+
         mock_threading.Thread = DummyThread
 
         # Start background polling and then stop

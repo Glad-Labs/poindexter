@@ -52,19 +52,22 @@ class TestWritingStyleIntegration:
                 Furthermore, consistent terminology helps readers understand complex concepts.
             """,
             "word_count": 50,
-            "description": "Professional technical writing sample"
+            "description": "Professional technical writing sample",
         }
 
         # Mock the WritingStyleService
-        with patch.object(WritingStyleService, 'get_style_prompt_for_specific_sample',
-                         return_value={
-                             "sample_id": "test-sample-123",
-                             "sample_title": "Professional Blog Post",
-                             "sample_text": sample_data["content"],
-                             "writing_style_guidance": "Match the formal tone",
-                             "word_count": 50
-                         }):
-            
+        with patch.object(
+            WritingStyleService,
+            "get_style_prompt_for_specific_sample",
+            return_value={
+                "sample_id": "test-sample-123",
+                "sample_title": "Professional Blog Post",
+                "sample_text": sample_data["content"],
+                "writing_style_guidance": "Match the formal tone",
+                "word_count": 50,
+            },
+        ):
+
             result = await integration_service.get_sample_for_content_generation(
                 writing_style_id="test-sample-123"
             )
@@ -85,7 +88,7 @@ class TestWritingStyleIntegration:
         """
 
         analysis = integration_service._analyze_sample(formal_text)
-        
+
         assert analysis["detected_tone"] in ["formal", "authoritative"]
         assert analysis["word_count"] > 0
         assert "avg_sentence_length" in analysis
@@ -103,7 +106,7 @@ class TestWritingStyleIntegration:
         """
 
         analysis = integration_service._analyze_sample(listicle_text)
-        
+
         assert analysis["style_characteristics"]["has_lists"] is True
         assert "avg_sentence_length" in analysis
         assert analysis["word_count"] > 0
@@ -112,9 +115,9 @@ class TestWritingStyleIntegration:
         """Test vocabulary diversity calculation"""
         # Sample with repetitive words
         repetitive_text = "The the the test test test sample sample sample."
-        
+
         analysis = integration_service._analyze_sample(repetitive_text)
-        
+
         assert "vocabulary_diversity" in analysis
         assert 0 <= analysis["vocabulary_diversity"] <= 1
 
@@ -130,12 +133,12 @@ class TestWritingStyleIntegration:
                 "has_lists": False,
                 "has_examples": True,
                 "has_quotes": False,
-                "has_code_blocks": True
-            }
+                "has_code_blocks": True,
+            },
         }
 
         guidance = integration_service._build_analysis_guidance(analysis)
-        
+
         assert "professional" in guidance
         assert "technical" in guidance
         assert "Uses clear headings" in guidance or "headings" in guidance
@@ -147,14 +150,14 @@ class TestWritingStyleIntegration:
             "detected_tone": "professional",
             "detected_style": "technical",
             "avg_sentence_length": 18.5,
-            "vocabulary_diversity": 0.85
+            "vocabulary_diversity": 0.85,
         }
 
         generated_analysis = {
             "detected_tone": "professional",
             "detected_style": "technical",
             "avg_sentence_length": 19.2,
-            "vocabulary_diversity": 0.83
+            "vocabulary_diversity": 0.83,
         }
 
         comparison = integration_service._compare_analyses(sample_analysis, generated_analysis)
@@ -173,19 +176,21 @@ class TestWritingStyleIntegration:
         """
 
         # Mock the sample retrieval
-        with patch.object(WritingStyleIntegrationService, 'get_sample_for_content_generation',
-                         return_value={
-                             "sample_text": generated_content,
-                             "analysis": {
-                                 "detected_tone": "professional",
-                                 "detected_style": "technical",
-                                 "avg_sentence_length": 18.0
-                             }
-                         }):
-            
+        with patch.object(
+            WritingStyleIntegrationService,
+            "get_sample_for_content_generation",
+            return_value={
+                "sample_text": generated_content,
+                "analysis": {
+                    "detected_tone": "professional",
+                    "detected_style": "technical",
+                    "avg_sentence_length": 18.0,
+                },
+            },
+        ):
+
             result = await integration_service.verify_style_match(
-                generated_content=generated_content,
-                writing_style_id="test-sample-123"
+                generated_content=generated_content, writing_style_id="test-sample-123"
             )
 
             assert "comparison" in result or "matched" in result
@@ -202,11 +207,11 @@ class TestCreativeAgentIntegration:
             topic="Test Topic",
             primary_keyword="test",
             target_audience="developers",
-            category="tech"
+            category="tech",
         )
 
         # Should have metadata field
-        assert hasattr(post, 'metadata')
+        assert hasattr(post, "metadata")
         assert post.metadata == {} or post.metadata is None or isinstance(post.metadata, dict)
 
     def test_metadata_sample_guidance_storage(self):
@@ -220,7 +225,7 @@ class TestCreativeAgentIntegration:
             category="tech",
             metadata={
                 "writing_sample_guidance": "Write in professional tone with clear structure."
-            }
+            },
         )
 
         assert "writing_sample_guidance" in post.metadata
@@ -237,7 +242,7 @@ class TestTaskExecutionWithSample:
             "task_name": "Blog Post",
             "topic": "AI in Healthcare",
             "writing_style_id": "sample-456",  # This should be captured
-            "user_id": "user-789"
+            "user_id": "user-789",
         }
 
         assert "writing_style_id" in task_data
@@ -249,7 +254,7 @@ class TestTaskExecutionWithSample:
             "task_id": "task-123",
             "user_id": "user-789",
             "writing_style_id": "sample-456",  # Passed to orchestrator
-            "model_selections": {}
+            "model_selections": {},
         }
 
         assert "writing_style_id" in execution_context
@@ -268,15 +273,11 @@ class TestPhase3Workflow:
         sample_upload = {
             "title": "Technical Writing Sample",
             "content": "Sample content for writing style",
-            "description": "Technical writing example"
+            "description": "Technical writing example",
         }
 
         # Phase 3.2: Sample is stored and managed
-        stored_sample = {
-            "id": "sample-123",
-            "user_id": "user-789",
-            **sample_upload
-        }
+        stored_sample = {"id": "sample-123", "user_id": "user-789", **sample_upload}
 
         # Phase 3.3: Sample is retrieved and analyzed for content generation
         assert "id" in stored_sample
@@ -291,7 +292,7 @@ class TestPhase3Workflow:
         task_request = {
             "task_name": "Blog Post",
             "topic": "AI in Healthcare",
-            "writing_style_id": sample_id  # Reference to uploaded sample
+            "writing_style_id": sample_id,  # Reference to uploaded sample
         }
 
         assert task_request["writing_style_id"] == sample_id
@@ -301,6 +302,7 @@ class TestPhase3Workflow:
 # Integration Test Scenarios
 # ============================================================================
 
+
 class TestPhase3Scenarios:
     """Real-world scenarios for Phase 3 integration"""
 
@@ -308,7 +310,7 @@ class TestPhase3Scenarios:
     async def test_scenario_create_sample_then_content(self):
         """
         Scenario: User uploads writing sample, then generates content with it
-        
+
         Flow:
         1. User uploads writing sample via WritingSampleUpload component
         2. Sample is stored in database with metadata
@@ -323,10 +325,7 @@ class TestPhase3Scenarios:
             "title": "Professional Blog Style",
             "content": "Professional writing with formal tone...",
             "word_count": 150,
-            "metadata": {
-                "tone": "professional",
-                "style": "technical"
-            }
+            "metadata": {"tone": "professional", "style": "technical"},
         }
 
         # Step 2: Sample stored
@@ -338,7 +337,7 @@ class TestPhase3Scenarios:
             "task_id": "uuid-task-1",
             "user_id": sample["user_id"],
             "writing_style_id": sample["id"],  # Reference to sample
-            "topic": "Machine Learning in Production"
+            "topic": "Machine Learning in Production",
         }
 
         assert task["writing_style_id"] == sample["id"]
@@ -353,7 +352,7 @@ class TestPhase3Scenarios:
     def test_scenario_active_sample_fallback(self):
         """
         Scenario: User has active sample, content generation falls back to it
-        
+
         Flow:
         1. User sets one sample as "active" (set_active endpoint)
         2. User creates task WITHOUT specifying writing_style_id
@@ -364,10 +363,7 @@ class TestPhase3Scenarios:
         active_sample_id = "sample-active"
 
         # When task is created without writing_style_id
-        task = {
-            "user_id": user_id,
-            "writing_style_id": None  # Not specified
-        }
+        task = {"user_id": user_id, "writing_style_id": None}  # Not specified
 
         # System should fall back to active sample
         assert task["writing_style_id"] is None
@@ -377,6 +373,7 @@ class TestPhase3Scenarios:
 # ============================================================================
 # Performance and Stability Tests
 # ============================================================================
+
 
 class TestPhase3Performance:
     """Test performance characteristics of Phase 3 integration"""
@@ -389,6 +386,7 @@ class TestPhase3Performance:
         large_sample = "Sample text. " * 5000  # Large sample
 
         import time
+
         start = time.time()
         analysis = integration_service._analyze_sample(large_sample)
         elapsed = time.time() - start
@@ -413,6 +411,7 @@ class TestPhase3Performance:
 # Documentation Tests
 # ============================================================================
 
+
 class TestPhase3Documentation:
     """Verify Phase 3 documentation and interfaces"""
 
@@ -424,7 +423,7 @@ class TestPhase3Documentation:
             "content": str,
             "description": str,
             "style": str,
-            "tone": str
+            "tone": str,
         }
 
         assert len(sample_fields) > 0
@@ -439,7 +438,7 @@ class TestPhase3Documentation:
             "PUT /api/writing-style/samples/{id}",
             "DELETE /api/writing-style/samples/{id}",
             "POST /api/writing-style/samples/{id}/set-active",
-            "GET /api/writing-style/active"
+            "GET /api/writing-style/active",
         ]
 
         assert len(endpoints) == 8

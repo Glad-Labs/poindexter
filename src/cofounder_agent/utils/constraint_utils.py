@@ -236,10 +236,10 @@ def calculate_phase_targets(
     - qa: 15% (refinement buffer - can expand/improve beyond initial draft)
     - format: 0 (formatting, not word count change)
     - finalize: 0 (final touches, not word count change)
-    
+
     This allows QA phase to expand content slightly for quality improvements
     while keeping creative as the primary content generation phase.
-    
+
     Per-phase overrides can customize this allocation if needed.
     Used in Tier 2 for detailed compliance tracking.
 
@@ -258,12 +258,16 @@ def calculate_phase_targets(
     # If overrides specified, use them
     if constraints.per_phase_overrides:
         targets = {
-            phase: constraints.per_phase_overrides.get(phase, _get_default_phase_target(phase, total_word_count))
+            phase: constraints.per_phase_overrides.get(
+                phase, _get_default_phase_target(phase, total_word_count)
+            )
             for phase in phase_names
         }
     else:
         # Default allocation by phase role
-        targets = {phase: _get_default_phase_target(phase, total_word_count) for phase in phase_names}
+        targets = {
+            phase: _get_default_phase_target(phase, total_word_count) for phase in phase_names
+        }
 
     return targets
 
@@ -271,7 +275,7 @@ def calculate_phase_targets(
 def _get_default_phase_target(phase: str, total_word_count: int) -> int:
     """
     Get default word count target for a specific phase.
-    
+
     - creative: 100% (main generation)
     - qa: 15% (refinement/expansion buffer)
     - others: 0% (supporting phases)

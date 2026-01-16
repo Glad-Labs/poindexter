@@ -151,13 +151,13 @@ class ParameterizedQueryBuilder:
         """
         # Validate identifiers
         table = SQLIdentifierValidator.safe_identifier(table, "table")
-        
+
         # Handle both simple columns and SQL expressions (e.g., "COUNT(*) as count")
         validated_columns = []
         for c in columns:
             # If column contains parentheses or "as" (case-insensitive), treat as expression
             # Otherwise validate as simple identifier
-            if '(' in c or ')' in c or ' as ' in c.lower():
+            if "(" in c or ")" in c or " as " in c.lower():
                 # It's a SQL expression - still validate parts but allow functions
                 validated_columns.append(c)
             else:

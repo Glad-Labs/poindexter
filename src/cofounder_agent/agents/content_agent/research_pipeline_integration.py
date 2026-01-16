@@ -103,13 +103,13 @@ class ResearchPipelineIntegration:
     Usage with content agent:
     ```python
     integration = ResearchPipelineIntegration()
-    
+
     # Stage 1: Research
     research = await integration.research_stage.execute(
         topic="AI in marketing",
         depth="comprehensive"
     )
-    
+
     # Stage 2: Creative (takes research data as context)
     # Stage 3: QA/Critique
     # ... etc
@@ -205,8 +205,7 @@ class ResearchPipelineIntegration:
             for result in data.get("results", []):
                 content = result.get("content", "").lower()
                 if any(
-                    word in content
-                    for word in ["trend", "growth", "emerging", "future", "latest"]
+                    word in content for word in ["trend", "growth", "emerging", "future", "latest"]
                 ):
                     trends.append(result.get("title", ""))
 

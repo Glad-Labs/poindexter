@@ -25,23 +25,23 @@ def test_app():
     except ImportError:
         # If websocket routes don't exist, just create a basic app
         websocket_router = None
-    
+
     from utils.exception_handlers import register_exception_handlers
     from utils.middleware_config import MiddlewareConfig
-    
+
     app = FastAPI(title="Test WebSocket App")
-    
+
     # Register routes if available
     if websocket_router:
         app.include_router(websocket_router)
-    
+
     # Register exception handlers
     register_exception_handlers(app)
-    
+
     # Register middleware
     middleware_config = MiddlewareConfig()
     middleware_config.register_all_middleware(app)
-    
+
     return app
 
 
@@ -83,10 +83,7 @@ class TestWebSocketRoutes:
 
     def test_websocket_requires_upgrade_header(self, client):
         """Test that WebSocket requires proper upgrade headers"""
-        response = client.get(
-            "/api/ws",
-            headers={"Connection": "Upgrade", "Upgrade": "websocket"}
-        )
+        response = client.get("/api/ws", headers={"Connection": "Upgrade", "Upgrade": "websocket"})
         # Regular client can't complete WebSocket upgrade
         assert response.status_code in [400, 405, 426, 403, 401]
 
@@ -104,9 +101,7 @@ class TestWebSocketAuthentication:
 
     def test_websocket_with_invalid_token(self, client):
         """Test WebSocket connection with invalid token"""
-        response = client.get(
-            "/api/ws/tasks/test_id/progress?token=invalid_token"
-        )
+        response = client.get("/api/ws/tasks/test_id/progress?token=invalid_token")
         # Should either reject token or require upgrade
         assert response.status_code in [400, 401, 405, 426]
 
@@ -132,13 +127,7 @@ class TestWebSocketDataFormats:
 
     def test_websocket_event_types(self, client):
         """Test supported WebSocket event types"""
-        event_types = [
-            "start",
-            "progress",
-            "complete",
-            "error",
-            "update"
-        ]
+        event_types = ["start", "progress", "complete", "error", "update"]
         # These are supported event types
         assert len(event_types) > 0
 
@@ -167,7 +156,7 @@ class TestWebSocketIntegration:
         endpoints = [
             "/api/ws/tasks/123/progress",
             "/api/ws/agents/events",
-            "/api/ws/content/generate"
+            "/api/ws/content/generate",
         ]
         # All endpoints should be different
         assert len(endpoints) == len(set(endpoints))
@@ -205,18 +194,18 @@ class TestWebSocketPerformance:
     def test_websocket_endpoint_discovery_time(self, client):
         """Test that WebSocket endpoints respond quickly"""
         import time
-        
+
         endpoints = [
             "/api/ws/tasks/test/progress",
             "/api/ws/agents/events",
-            "/api/ws/content/generate"
+            "/api/ws/content/generate",
         ]
-        
+
         for endpoint in endpoints:
             start = time.time()
             response = client.get(endpoint)
             elapsed = time.time() - start
-            
+
             # Should respond immediately (even if rejecting)
             assert elapsed < 1
 
@@ -226,7 +215,7 @@ class TestWebSocketPerformance:
         for i in range(10):
             response = client.get(f"/api/ws/tasks/test_{i}/progress")
             responses.append(response.status_code)
-        
+
         # Should handle all requests
         assert all(status in [400, 404, 405, 426] for status in responses)
 
@@ -243,19 +232,19 @@ class TestWebSocketDocumentation:
             "endpoints": {
                 "tasks": {
                     "progress": "/api/ws/tasks/{task_id}/progress",
-                    "details": "/api/ws/tasks/{task_id}/details"
+                    "details": "/api/ws/tasks/{task_id}/details",
                 },
                 "agents": {
                     "events": "/api/ws/agents/events",
-                    "status": "/api/ws/agents/{agent_type}/status"
+                    "status": "/api/ws/agents/{agent_type}/status",
                 },
                 "content": {
                     "generation": "/api/ws/content/generate",
-                    "refinement": "/api/ws/content/refine"
-                }
-            }
+                    "refinement": "/api/ws/content/refine",
+                },
+            },
         }
-        
+
         # Verify structure
         assert "base_url" in api_structure
         assert "endpoints" in api_structure
@@ -271,16 +260,16 @@ class TestWebSocketDocumentation:
                 "current_step": "int",
                 "total_steps": "int",
                 "message": "string",
-                "timestamp": "datetime"
+                "timestamp": "datetime",
             },
             "error": {
                 "type": "error",
                 "error_code": "string",
                 "error_message": "string",
-                "timestamp": "datetime"
-            }
+                "timestamp": "datetime",
+            },
         }
-        
+
         # Verify format
         assert "progress" in message_format
         assert "error" in message_format

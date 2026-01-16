@@ -58,7 +58,7 @@ except ImportError:
 # Check for Google Gemini availability and API key
 try:
     import google.genai as genai
-    
+
     GOOGLE_AVAILABLE = bool(os.getenv("GOOGLE_API_KEY"))
     if GOOGLE_AVAILABLE:
         genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))

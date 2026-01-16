@@ -476,7 +476,9 @@ class UnifiedOrchestrator:
                 logger.info(f"   Model selection: Using {selected} for {phase} phase")
                 return selected
 
-        logger.info(f"   Model selection: Using default for {phase} phase (quality={quality_preference})")
+        logger.info(
+            f"   Model selection: Using default for {phase} phase (quality={quality_preference})"
+        )
         return None
 
     # ========================================================================
@@ -517,10 +519,11 @@ class UnifiedOrchestrator:
                 if isinstance(model_selections, str):
                     try:
                         import json
+
                         model_selections = json.loads(model_selections)
                     except (json.JSONDecodeError, TypeError):
                         model_selections = {}
-            
+
             logger.info(f"[{request.request_id}] Model Configuration:")
             logger.info(f"   - Model Selections: {model_selections}")
             logger.info(f"   - Quality Preference: {quality_preference}")
@@ -546,7 +549,9 @@ class UnifiedOrchestrator:
             )
 
             # Calculate phase targets
-            phase_targets = calculate_phase_targets(constraints.word_count, constraints, num_phases=5)
+            phase_targets = calculate_phase_targets(
+                constraints.word_count, constraints, num_phases=5
+            )
             compliance_reports = []
 
             # ====================================================================
@@ -582,7 +587,7 @@ class UnifiedOrchestrator:
 
             # Get model selection for draft phase
             draft_model = self._get_model_for_phase("draft", model_selections, quality_preference)
-            
+
             # Create LLMClient with selected model
             llm_client = LLMClient(model_name=draft_model) if draft_model else LLMClient()
             creative_agent = CreativeAgent(llm_client=llm_client)
@@ -591,28 +596,33 @@ class UnifiedOrchestrator:
             writing_style_guidance = ""
             user_id = request.context.get("user_id") if request.context else None
             writing_style_id = request.context.get("writing_style_id") if request.context else None
-            
+
             if self.database_service:
                 try:
                     # Use enhanced integration service for detailed sample analysis
                     integration_svc = WritingStyleIntegrationService(self.database_service)
-                    
+
                     # Get sample with full analysis
                     sample_data = await integration_svc.get_sample_for_content_generation(
-                        writing_style_id=writing_style_id,
-                        user_id=user_id
+                        writing_style_id=writing_style_id, user_id=user_id
                     )
-                    
+
                     if sample_data:
                         writing_style_guidance = sample_data.get("writing_style_guidance", "")
                         analysis = sample_data.get("analysis", {})
-                        
+
                         sample_title = sample_data.get("sample_title", "Unknown")
                         logger.info(f"[{request.request_id}] Using writing sample: {sample_title}")
-                        logger.info(f"[{request.request_id}]   - Detected tone: {analysis.get('detected_tone')}")
-                        logger.info(f"[{request.request_id}]   - Detected style: {analysis.get('detected_style')}")
-                        logger.info(f"[{request.request_id}]   - Avg sentence length: {analysis.get('avg_sentence_length')} words")
-                    
+                        logger.info(
+                            f"[{request.request_id}]   - Detected tone: {analysis.get('detected_tone')}"
+                        )
+                        logger.info(
+                            f"[{request.request_id}]   - Detected style: {analysis.get('detected_style')}"
+                        )
+                        logger.info(
+                            f"[{request.request_id}]   - Avg sentence length: {analysis.get('avg_sentence_length')} words"
+                        )
+
                 except Exception as e:
                     logger.warning(f"[{request.request_id}] Could not retrieve writing sample: {e}")
 
@@ -625,7 +635,7 @@ class UnifiedOrchestrator:
                 research_data=research_text,
                 writing_style=style,
             )
-            
+
             # Store writing style guidance in post metadata for creative agent to use
             if writing_style_guidance:
                 post.metadata = {"writing_sample_guidance": writing_style_guidance}
@@ -633,10 +643,7 @@ class UnifiedOrchestrator:
             # Pass constraints with phase-specific word count target
             phase_target = phase_targets.get("creative", 300)
             draft_post = await creative_agent.run(
-                post, 
-                is_refinement=False,
-                word_count_target=phase_target,
-                constraints=constraints
+                post, is_refinement=False, word_count_target=phase_target, constraints=constraints
             )
             draft_text = draft_post.body if hasattr(draft_post, "body") else str(draft_post)
 
@@ -647,7 +654,9 @@ class UnifiedOrchestrator:
                 word_count_target=phase_targets.get("creative"),
             )
             compliance_reports.append(creative_compliance)
-            logger.info(f"[{request.request_id}] Draft complete: {count_words_in_content(draft_text)} words")
+            logger.info(
+                f"[{request.request_id}] Draft complete: {count_words_in_content(draft_text)} words"
+            )
 
             # ====================================================================
             # STAGE 3: QA REVIEW LOOP (45% → 60%)
@@ -668,7 +677,7 @@ class UnifiedOrchestrator:
                 quality_context = {"topic": topic}
                 if writing_style_guidance:
                     quality_context["writing_style_guidance"] = writing_style_guidance
-                
+
                 quality_result = await quality_service.evaluate(
                     content=getattr(content, "raw_content", str(content)),
                     context=quality_context,
@@ -681,31 +690,42 @@ class UnifiedOrchestrator:
 
                 # Check constraint compliance
                 if constraints:
-                    content_text = getattr(content, "body", getattr(content, "raw_content", str(content)))
+                    content_text = getattr(
+                        content, "body", getattr(content, "raw_content", str(content))
+                    )
                     compliance = validate_constraints(
-                        content_text, constraints, phase_name="qa", word_count_target=phase_targets.get("qa")
+                        content_text,
+                        constraints,
+                        phase_name="qa",
+                        word_count_target=phase_targets.get("qa"),
                     )
                     if not compliance.word_count_within_tolerance:
-                        logger.warning(f"[{request.request_id}] QA: Constraint violation - {compliance.violation_message}")
+                        logger.warning(
+                            f"[{request.request_id}] QA: Constraint violation - {compliance.violation_message}"
+                        )
                         approval_bool = False
                         feedback += f" [CONSTRAINT: {compliance.violation_message}]"
 
                 if approval_bool:
-                    logger.info(f"[{request.request_id}] QA Approved (iteration {iteration}, score: {quality_score}/100)")
+                    logger.info(
+                        f"[{request.request_id}] QA Approved (iteration {iteration}, score: {quality_score}/100)"
+                    )
                     break
                 elif iteration < max_iterations:
                     logger.info(f"[{request.request_id}] QA Rejected - Refining...")
                     # Get model selection for refine phase
-                    refine_model = self._get_model_for_phase("refine", model_selections, quality_preference)
+                    refine_model = self._get_model_for_phase(
+                        "refine", model_selections, quality_preference
+                    )
                     if refine_model:
                         # Create new LLMClient with refine model for refinement
                         refine_llm_client = LLMClient(model_name=refine_model)
                         creative_agent = CreativeAgent(llm_client=refine_llm_client)
                     content = await creative_agent.run(
-                        content, 
+                        content,
                         is_refinement=True,
                         word_count_target=phase_targets.get("creative", 300),
-                        constraints=constraints
+                        constraints=constraints,
                     )
 
             qa_compliance = validate_constraints(
@@ -736,7 +756,9 @@ class UnifiedOrchestrator:
             # STAGE 5: FORMATTING (75% → 90%)
             # ====================================================================
             logger.info(f"[{request.request_id}] STAGE 5: Formatting")
-            from agents.content_agent.agents.postgres_publishing_agent import PostgreSQLPublishingAgent
+            from agents.content_agent.agents.postgres_publishing_agent import (
+                PostgreSQLPublishingAgent,
+            )
 
             publishing_agent = PostgreSQLPublishingAgent()
             result_post = await publishing_agent.run(content)

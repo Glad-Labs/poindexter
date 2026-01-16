@@ -558,7 +558,9 @@ class NLPIntentRecognizer:
             service = registry.get_service(service_name)
 
             if not service:
-                logger.error(f"Service '{service_name}' not found for intent '{intent_match.intent_type}'")
+                logger.error(
+                    f"Service '{service_name}' not found for intent '{intent_match.intent_type}'"
+                )
                 return {
                     "success": False,
                     "error": f"Service '{service_name}' not found",
@@ -571,7 +573,7 @@ class NLPIntentRecognizer:
             execution_context["user_id"] = user_id
             execution_context["source"] = "nlp_agent"
             execution_context["raw_message"] = intent_match.raw_message
-            
+
             # Include selected model in context if provided
             if selected_model:
                 execution_context["selected_model"] = selected_model
@@ -588,7 +590,11 @@ class NLPIntentRecognizer:
                 execution_context,
             )
 
-            success = result.status == "success" if hasattr(result, "status") else result.get("success", False)
+            success = (
+                result.status == "success"
+                if hasattr(result, "status")
+                else result.get("success", False)
+            )
 
             return {
                 "success": success,

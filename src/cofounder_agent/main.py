@@ -12,6 +12,7 @@ Implements PostgreSQL database with REST API command queue integration
 import sys
 from pathlib import Path as _PathType
 
+
 def _fix_sys_path():
     """Fix sys.path to prioritize venv site-packages."""
     try:
@@ -19,15 +20,16 @@ def _fix_sys_path():
         if venv_site_packages.exists():
             venv_site_packages_str = str(venv_site_packages)
             # Ensure venv's site-packages is first in the path
-            sys.path = (
-                [venv_site_packages_str]
-                + [p for p in sys.path if p != venv_site_packages_str]
-            )
+            sys.path = [venv_site_packages_str] + [
+                p for p in sys.path if p != venv_site_packages_str
+            ]
             # Clear import caches to force fresh imports
             import importlib
+
             importlib.invalidate_caches()
     except Exception as e:
         print(f"[WARNING] Failed to fix sys.path: {e}")
+
 
 _fix_sys_path()
 del _fix_sys_path, _PathType
@@ -140,7 +142,6 @@ logger = get_logger(__name__)
 # ============================================================================
 
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -163,9 +164,7 @@ async def lifespan(app: FastAPI):
         logger.debug(f"[LIFESPAN] Services dict keys: {services.keys()}")
 
         # Inject services into app state for access in routes
-        logger.info(
-            "[LIFESPAN] Injecting services into app.state..."
-        )
+        logger.info("[LIFESPAN] Injecting services into app.state...")
         app.state.database = services["database"]
         app.state.redis_cache = services["redis_cache"]
         # app.state.orchestrator will be set to UnifiedOrchestrator below
@@ -205,9 +204,7 @@ async def lifespan(app: FastAPI):
 
         # The UnifiedOrchestrator is created here with all dependencies properly initialized
         # This ensures TaskExecutor can use it for content generation
-        logger.info(
-            "[LIFESPAN] Creating UnifiedOrchestrator with all dependencies..."
-        )
+        logger.info("[LIFESPAN] Creating UnifiedOrchestrator with all dependencies...")
         logger.debug(f"[LIFESPAN] UnifiedOrchestrator dependencies:")
         logger.debug(f"  - database_service: {db_service}")
         logger.debug(f"  - quality_service: {quality_service}")
@@ -226,9 +223,7 @@ async def lifespan(app: FastAPI):
         app.state.unified_orchestrator = unified_orchestrator
         # CRITICAL: Set as primary orchestrator for TaskExecutor to use
         app.state.orchestrator = unified_orchestrator
-        logger.info(
-            "✅ UnifiedOrchestrator initialized and set as primary orchestrator"
-        )
+        logger.info("✅ UnifiedOrchestrator initialized and set as primary orchestrator")
         logger.debug(f"[LIFESPAN] app.state.orchestrator = {app.state.orchestrator}")
 
         # CRITICAL: Inject app.state into task_executor NOW (before it processes tasks)
@@ -242,16 +237,13 @@ async def lifespan(app: FastAPI):
             )
             task_executor.app_state = app.state
             logger.debug(
-                "[LIFESPAN] TaskExecutor after injection: "
-                f"app_state={task_executor.app_state}"
+                "[LIFESPAN] TaskExecutor after injection: " f"app_state={task_executor.app_state}"
             )
             logger.debug(
                 "[LIFESPAN] TaskExecutor.orchestrator property check: "
                 f"{task_executor.orchestrator is not None}"
             )
-            logger.info(
-                "✅ TaskExecutor app.state reference updated with UnifiedOrchestrator"
-            )
+            logger.info("✅ TaskExecutor app.state reference updated with UnifiedOrchestrator")
             logger.info(
                 f"   TaskExecutor can now access orchestrator: "
                 f"{task_executor.orchestrator is not None}"
@@ -294,8 +286,8 @@ async def lifespan(app: FastAPI):
         # Initialize LangGraph orchestrator
         try:
             from services.langgraph_orchestrator import (
-            LangGraphOrchestrator,  # noqa: E402
-        )  # noqa: E402
+                LangGraphOrchestrator,  # noqa: E402
+            )  # noqa: E402
 
             langgraph_orchestrator = LangGraphOrchestrator(
                 db_service=db_service,
@@ -306,9 +298,7 @@ async def lifespan(app: FastAPI):
             app.state.langgraph_orchestrator = langgraph_orchestrator
             logger.info("✅ LangGraphOrchestrator initialized")
         except Exception as e:  # pylint: disable=broad-except
-            logger.warning(
-                f"⚠️  LangGraph initialization failed (non-critical): {str(e)}"
-            )
+            logger.warning(f"⚠️  LangGraph initialization failed (non-critical): {str(e)}")
             app.state.langgraph_orchestrator = None
 
         logger.info("[OK] Lifespan: Yielding control to FastAPI application...")
@@ -609,9 +599,7 @@ async def process_command(request: CommandRequest, background_tasks: BackgroundT
             raise HTTPException(status_code=503, detail="Orchestrator not initialized")
 
         # Always use async version with new database service
-        response = await orchestrator.process_command_async(
-            request.command, request.context
-        )
+        response = await orchestrator.process_command_async(request.command, request.context)
 
         return CommandResponse(
             response=response.get("response", "Command processed"),
@@ -619,12 +607,8 @@ async def process_command(request: CommandRequest, background_tasks: BackgroundT
             metadata=response.get("metadata"),
         )
     except Exception as e:  # pylint: disable=broad-except
-        logger.error(
-            f"Error processing command: {str(e)} | command={request.command}"
-        )
-        raise HTTPException(
-            status_code=500, detail=f"An internal error occurred: {str(e)}"
-        )
+        logger.error(f"Error processing command: {str(e)} | command={request.command}")
+        raise HTTPException(status_code=500, detail=f"An internal error occurred: {str(e)}")
 
 
 @app.get("/status", response_model=StatusResponse)
@@ -645,15 +629,11 @@ async def get_status(request):
         orchestrator = getattr(request.app.state, "orchestrator", None)
         status_data = {
             "service": (
-                "online"
-                if health.get("status") == "healthy"
-                else health.get("status", "unknown")
+                "online" if health.get("status") == "healthy" else health.get("status", "unknown")
             ),
             "database_available": database_service is not None,
             "orchestrator_initialized": orchestrator is not None,
-            "timestamp": health.get(
-                "timestamp", str(asyncio.get_event_loop().time())
-            ),
+            "timestamp": health.get("timestamp", str(asyncio.get_event_loop().time())),
         }
 
         # Include component statuses if available
@@ -662,15 +642,11 @@ async def get_status(request):
             for key, value in components.items():
                 status_data[f"component_{key}"] = value
 
-        return StatusResponse(
-            status=health.get("status", "unknown"), data=status_data
-        )
+        return StatusResponse(status=health.get("status", "unknown"), data=status_data)
 
     except Exception as e:  # pylint: disable=broad-except
         logger.error(f"Error getting status: {e}")
-        return StatusResponse(
-            status="unhealthy", data={"error": str(e)}
-        )
+        return StatusResponse(status="unhealthy", data={"error": str(e)})
 
 
 @app.get("/tasks/pending")
@@ -688,9 +664,7 @@ async def get_pending_tasks(limit: int = 10):
 
     except Exception as e:  # pylint: disable=broad-except
         logger.error(f"Error getting pending tasks: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to get tasks: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to get tasks: {str(e)}")
 
 
 @app.get("/metrics/performance")
@@ -707,10 +681,7 @@ async def get_performance_metrics(hours: int = 24):
         return {"message": "Performance monitoring not available", "status": "disabled"}
     except Exception as e:  # pylint: disable=broad-except
         logger.error(f"Error getting performance metrics: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to get performance metrics: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to get performance metrics: {str(e)}")
 
 
 @app.get("/metrics/health")
@@ -747,9 +718,7 @@ async def reset_performance_metrics():
         # Performance metrics are now logged to database
         database_service = getattr(app.state, "database", None)
         if database_service:
-            await database_service.add_log_entry(
-                "system", "info", "Performance metrics reset"
-            )
+            await database_service.add_log_entry("system", "info", "Performance metrics reset")
             return {
                 "message": "Performance metrics reset successfully",
                 "status": "success",
@@ -757,9 +726,7 @@ async def reset_performance_metrics():
         return {"message": "Database not available", "status": "disabled"}
     except Exception as e:  # pylint: disable=broad-except
         logger.error(f"Error resetting metrics: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to reset metrics: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to reset metrics: {str(e)}")
 
 
 @app.get("/")
@@ -770,7 +737,7 @@ async def root():
     return {
         "message": "Glad Labs AI Co-Founder is running",
         "version": "1.0.0",
-        "database_enabled": hasattr(app.state, 'database') and app.state.database is not None,
+        "database_enabled": hasattr(app.state, "database") and app.state.database is not None,
     }
 
 

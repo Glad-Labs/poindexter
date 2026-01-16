@@ -93,15 +93,15 @@ STATUS_DESCRIPTIONS: Dict[TaskStatus, str] = {
 
 # Frontend color mapping
 STATUS_COLORS: Dict[TaskStatus, str] = {
-    TaskStatus.PENDING: "#ffc107",           # Yellow
-    TaskStatus.IN_PROGRESS: "#2196f3",       # Blue
-    TaskStatus.AWAITING_APPROVAL: "#ff9800", # Orange
-    TaskStatus.APPROVED: "#9c27b0",          # Purple
-    TaskStatus.PUBLISHED: "#4caf50",         # Green
-    TaskStatus.FAILED: "#f44336",            # Red
-    TaskStatus.ON_HOLD: "#9e9e9e",           # Gray
-    TaskStatus.REJECTED: "#ff5722",          # Red-Orange
-    TaskStatus.CANCELLED: "#616161",         # Dark Gray
+    TaskStatus.PENDING: "#ffc107",  # Yellow
+    TaskStatus.IN_PROGRESS: "#2196f3",  # Blue
+    TaskStatus.AWAITING_APPROVAL: "#ff9800",  # Orange
+    TaskStatus.APPROVED: "#9c27b0",  # Purple
+    TaskStatus.PUBLISHED: "#4caf50",  # Green
+    TaskStatus.FAILED: "#f44336",  # Red
+    TaskStatus.ON_HOLD: "#9e9e9e",  # Gray
+    TaskStatus.REJECTED: "#ff5722",  # Red-Orange
+    TaskStatus.CANCELLED: "#616161",  # Dark Gray
 }
 
 # CSS class names for status badges
@@ -119,15 +119,15 @@ STATUS_CSS_CLASSES: Dict[TaskStatus, str] = {
 
 # Status icons for UI
 STATUS_ICONS: Dict[TaskStatus, str] = {
-    TaskStatus.PENDING: "⧗",        # Hourglass
-    TaskStatus.IN_PROGRESS: "⟳",    # Refresh/spinning
+    TaskStatus.PENDING: "⧗",  # Hourglass
+    TaskStatus.IN_PROGRESS: "⟳",  # Refresh/spinning
     TaskStatus.AWAITING_APPROVAL: "⚠",  # Warning
-    TaskStatus.APPROVED: "✓",       # Check
-    TaskStatus.PUBLISHED: "✓✓",     # Double check
-    TaskStatus.FAILED: "✗",         # X
-    TaskStatus.ON_HOLD: "⊥",        # Pause
-    TaskStatus.REJECTED: "✗",       # X
-    TaskStatus.CANCELLED: "⊙",      # Circle
+    TaskStatus.APPROVED: "✓",  # Check
+    TaskStatus.PUBLISHED: "✓✓",  # Double check
+    TaskStatus.FAILED: "✗",  # X
+    TaskStatus.ON_HOLD: "⊥",  # Pause
+    TaskStatus.REJECTED: "✗",  # X
+    TaskStatus.CANCELLED: "⊙",  # Circle
 }
 
 
@@ -313,7 +313,7 @@ class StatusTransitionValidator:
         current_status: str,
         new_status: str,
         task_id: Optional[str] = None,
-        additional_context: Optional[Dict[str, Any]] = None
+        additional_context: Optional[Dict[str, Any]] = None,
     ) -> Tuple[bool, List[str]]:
         """
         Validate a status transition with comprehensive error tracking.
@@ -352,29 +352,26 @@ class StatusTransitionValidator:
 
         # Perform additional context validation if provided
         if additional_context:
-            context_errors = self._validate_context(
-                current_status, new_status, additional_context
-            )
+            context_errors = self._validate_context(current_status, new_status, additional_context)
             errors.extend(context_errors)
 
         # Record transition attempt for audit
-        self.transition_history.append({
-            "task_id": task_id,
-            "from_status": current_status,
-            "to_status": new_status,
-            "timestamp": datetime.utcnow().isoformat(),
-            "is_valid": len(errors) == 0,
-            "errors": errors
-        })
+        self.transition_history.append(
+            {
+                "task_id": task_id,
+                "from_status": current_status,
+                "to_status": new_status,
+                "timestamp": datetime.utcnow().isoformat(),
+                "is_valid": len(errors) == 0,
+                "errors": errors,
+            }
+        )
 
         self.last_validation_errors = errors
         return len(errors) == 0, errors
 
     def _validate_context(
-        self,
-        from_status: str,
-        to_status: str,
-        context: Dict[str, Any]
+        self, from_status: str, to_status: str, context: Dict[str, Any]
     ) -> List[str]:
         """
         Validate additional context for specific transitions.

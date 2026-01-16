@@ -1,6 +1,7 @@
 import pytest
 from src.agents.financial_agent.financial_agent import FinancialAgent
 
+
 def test_get_financial_summary():
     """
     Tests that the get_financial_summary method returns a formatted string

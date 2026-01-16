@@ -53,7 +53,17 @@ class ModelConverter:
                 data[key] = str(data[key])
 
         # Handle JSONB fields
-        json_fields = ["metadata", "task_metadata", "result", "progress", "context", "provider_data", "business_state", "suggestions", "cost_breakdown"]
+        json_fields = [
+            "metadata",
+            "task_metadata",
+            "result",
+            "progress",
+            "context",
+            "provider_data",
+            "business_state",
+            "suggestions",
+            "cost_breakdown",
+        ]
         for key in json_fields:
             if key in data and data[key] is not None:
                 if isinstance(data[key], str):
@@ -73,7 +83,9 @@ class ModelConverter:
                         data[key] = [data[key]] if data[key] else None
                 # Convert UUID objects within arrays to strings
                 elif isinstance(data[key], (list, tuple)):
-                    data[key] = [str(item) if isinstance(item, UUID) else item for item in data[key]]
+                    data[key] = [
+                        str(item) if isinstance(item, UUID) else item for item in data[key]
+                    ]
 
         return data
 
@@ -93,18 +105,18 @@ class ModelConverter:
     def to_task_response(row: Any) -> TaskResponse:
         """Convert row to TaskResponse model."""
         data = ModelConverter._normalize_row_data(row)
-        
+
         # CRITICAL: Convert seo_keywords back to JSON string if it was parsed as list
         # TaskResponse expects seo_keywords as Optional[str], not List[str]
         if "seo_keywords" in data and isinstance(data["seo_keywords"], list):
             data["seo_keywords"] = json.dumps(data["seo_keywords"])
-        
+
         # CRITICAL: Map task_id (UUID string) to id for API response
         # The database has an integer 'id' column (SERIAL PK) but we use task_id (UUID string) as the logical identifier
         # The TaskResponse schema expects 'id' to be a string (the UUID)
         if "task_id" in data and data["task_id"]:
             data["id"] = data["task_id"]  # Always use task_id as the public-facing id
-        
+
         # Handle task_name mapping to title
         if "task_name" in data:
             if "title" not in data or data["title"] is None:
@@ -113,19 +125,23 @@ class ModelConverter:
             data["task_name"] = data["task_name"]
         elif "title" in data:
             data["task_name"] = data["title"]
-            
+
         # Fallback: Check task_metadata for task_name if still missing
-        if ("task_name" not in data or data["task_name"] is None) and "task_metadata" in data and isinstance(data["task_metadata"], dict):
+        if (
+            ("task_name" not in data or data["task_name"] is None)
+            and "task_metadata" in data
+            and isinstance(data["task_metadata"], dict)
+        ):
             if "task_name" in data["task_metadata"]:
                 data["task_name"] = data["task_metadata"]["task_name"]
                 if "title" not in data or data["title"] is None:
                     data["title"] = data["task_name"]
-        
+
         # IMPORTANT: Merge normalized columns back into task_metadata for UI compatibility
         # The frontend expects task_metadata to contain all content fields
         if "task_metadata" not in data or data["task_metadata"] is None:
             data["task_metadata"] = {}
-            
+
         normalized_fields = [
             "content",
             "excerpt",
@@ -301,11 +317,11 @@ class ModelConverter:
     @staticmethod
     def task_response_to_unified(task_response: TaskResponse) -> Dict[str, Any]:
         """Convert TaskResponse to UnifiedTaskResponse-compatible dict.
-        
+
         Handles conversion of seo_keywords from JSON string to list.
         """
         data = task_response.model_dump()
-        
+
         # Convert seo_keywords from JSON string to list for UnifiedTaskResponse
         if "seo_keywords" in data and isinstance(data["seo_keywords"], str):
             try:
@@ -313,7 +329,7 @@ class ModelConverter:
             except (json.JSONDecodeError, TypeError):
                 # If not valid JSON, wrap in list
                 data["seo_keywords"] = [data["seo_keywords"]] if data["seo_keywords"] else None
-        
+
         return data
 
 

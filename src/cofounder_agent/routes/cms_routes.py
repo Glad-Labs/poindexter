@@ -24,83 +24,88 @@ def convert_markdown_to_html(markdown_content: str) -> str:
     Convert markdown content to HTML for safe rendering.
     Handles both pure markdown and HTML-wrapped markdown hybrid format.
     Uses regex patterns for compatibility without external markdown library.
-    
+
     Args:
         markdown_content: Markdown formatted text
-        
+
     Returns:
         HTML content safe for rendering
     """
     if not markdown_content:
         return ""
-    
+
     try:
         import re
-        
+
         content = markdown_content.strip()
         html = content
-        
+
         # Handle setext-style headers (underlined with = or -)
         # Level 1 headers (underlined with =)
-        html = re.sub(r'^(.*?)\n=+\s*$', r'<h1>\1</h1>', html, flags=re.MULTILINE)
+        html = re.sub(r"^(.*?)\n=+\s*$", r"<h1>\1</h1>", html, flags=re.MULTILINE)
         # Level 2 headers (underlined with -)
-        html = re.sub(r'^(.*?)\n-+\s*$', r'<h2>\1</h2>', html, flags=re.MULTILINE)
-        
+        html = re.sub(r"^(.*?)\n-+\s*$", r"<h2>\1</h2>", html, flags=re.MULTILINE)
+
         # Convert ATX-style headers (# style)
-        html = re.sub(r'^### (.*?)$', r'<h3>\1</h3>', html, flags=re.MULTILINE)
-        html = re.sub(r'^## (.*?)$', r'<h2>\1</h2>', html, flags=re.MULTILINE)
-        html = re.sub(r'^# (.*?)$', r'<h1>\1</h1>', html, flags=re.MULTILINE)
-        
+        html = re.sub(r"^### (.*?)$", r"<h3>\1</h3>", html, flags=re.MULTILINE)
+        html = re.sub(r"^## (.*?)$", r"<h2>\1</h2>", html, flags=re.MULTILINE)
+        html = re.sub(r"^# (.*?)$", r"<h1>\1</h1>", html, flags=re.MULTILINE)
+
         # Remove standalone lines of dashes/equals (separator lines)
-        html = re.sub(r'^\s*={3,}\s*$', '', html, flags=re.MULTILINE)
-        html = re.sub(r'^\s*-{3,}\s*$', '', html, flags=re.MULTILINE)
-        
+        html = re.sub(r"^\s*={3,}\s*$", "", html, flags=re.MULTILINE)
+        html = re.sub(r"^\s*-{3,}\s*$", "", html, flags=re.MULTILINE)
+
         # Convert bold (**, __, **text**, __text__)
-        html = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', html)
-        html = re.sub(r'__(.*?)__', r'<strong>\1</strong>', html)
-        
+        html = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", html)
+        html = re.sub(r"__(.*?)__", r"<strong>\1</strong>", html)
+
         # Convert italic (*, _)
-        html = re.sub(r'\*(.*?)\*', r'<em>\1</em>', html)
-        html = re.sub(r'_(.*?)_', r'<em>\1</em>', html)
-        
+        html = re.sub(r"\*(.*?)\*", r"<em>\1</em>", html)
+        html = re.sub(r"_(.*?)_", r"<em>\1</em>", html)
+
         # Convert line breaks to paragraphs
-        paragraphs = html.split('\n\n')
+        paragraphs = html.split("\n\n")
         converted_paragraphs = []
         for p in paragraphs:
             p = p.strip()
             if not p:
                 continue
             # Skip if already an HTML element
-            if p.startswith('<h') or p.startswith('<ol') or p.startswith('<ul') or p.startswith('<blockquote'):
+            if (
+                p.startswith("<h")
+                or p.startswith("<ol")
+                or p.startswith("<ul")
+                or p.startswith("<blockquote")
+            ):
                 converted_paragraphs.append(p)
             # Handle numbered lists
-            elif re.match(r'^\d+\.', p):
+            elif re.match(r"^\d+\.", p):
                 items = []
-                for line in p.split('\n'):
+                for line in p.split("\n"):
                     line = line.strip()
-                    if re.match(r'^\d+\.', line):
-                        item_text = re.sub(r'^\d+\.\s*', '', line)
-                        items.append(f'<li>{item_text}</li>')
-                converted_paragraphs.append('<ol>' + ''.join(items) + '</ol>')
+                    if re.match(r"^\d+\.", line):
+                        item_text = re.sub(r"^\d+\.\s*", "", line)
+                        items.append(f"<li>{item_text}</li>")
+                converted_paragraphs.append("<ol>" + "".join(items) + "</ol>")
             # Handle bullet lists
-            elif p.startswith('-') or p.startswith('*'):
+            elif p.startswith("-") or p.startswith("*"):
                 items = []
-                for line in p.split('\n'):
+                for line in p.split("\n"):
                     line = line.strip()
-                    if line.startswith('-'):
-                        item_text = re.sub(r'^-\s*', '', line)
-                        items.append(f'<li>{item_text}</li>')
-                    elif line.startswith('*'):
-                        item_text = re.sub(r'^\*\s*', '', line)
-                        items.append(f'<li>{item_text}</li>')
+                    if line.startswith("-"):
+                        item_text = re.sub(r"^-\s*", "", line)
+                        items.append(f"<li>{item_text}</li>")
+                    elif line.startswith("*"):
+                        item_text = re.sub(r"^\*\s*", "", line)
+                        items.append(f"<li>{item_text}</li>")
                 if items:
-                    converted_paragraphs.append('<ul>' + ''.join(items) + '</ul>')
+                    converted_paragraphs.append("<ul>" + "".join(items) + "</ul>")
             else:
                 # Regular paragraph
-                converted_paragraphs.append(f'<p>{p}</p>')
-        
-        html = '\n'.join(converted_paragraphs)
-        
+                converted_paragraphs.append(f"<p>{p}</p>")
+
+        html = "\n".join(converted_paragraphs)
+
         logger.info(f"Converted markdown to HTML (len={len(html)} chars)")
         return html
     except Exception as e:
@@ -112,43 +117,43 @@ def convert_markdown_to_html(markdown_content: str) -> str:
 def generate_excerpt_from_content(content: str, length: int = 200) -> str:
     """
     Generate a clean excerpt from markdown content.
-    
+
     Args:
         content: Markdown content
         length: Maximum length of excerpt in characters
-        
+
     Returns:
         Clean excerpt text without markdown formatting
     """
     if not content:
         return ""
-    
+
     # Remove markdown headers and formatting
     lines = content.split("\n")
     excerpt_parts = []
-    
+
     for line in lines:
         # Skip empty lines and markdown headers
         if not line.strip() or line.startswith("#"):
             continue
-        
+
         # Remove markdown formatting
         cleaned = line.replace("**", "").replace("*", "").replace("__", "").replace("_", "")
         cleaned = cleaned.replace("[", "").replace("]", "").replace("(", "").replace(")", "")
         cleaned = cleaned.replace("`", "").replace("~", "")
-        
+
         if cleaned.strip():
             excerpt_parts.append(cleaned.strip())
-        
+
         # Stop when we have enough content
         if len(" ".join(excerpt_parts)) >= length:
             break
-    
+
     excerpt = " ".join(excerpt_parts)[:length].strip()
     # Add ellipsis if truncated
     if len(" ".join(excerpt_parts)) > length:
         excerpt = excerpt.rsplit(" ", 1)[0] + "..."
-    
+
     return excerpt
 
 
@@ -258,15 +263,15 @@ async def list_posts(
                 )
                 post["created_at"] = post["created_at"].isoformat() if post["created_at"] else None
                 post["updated_at"] = post["updated_at"].isoformat() if post["updated_at"] else None
-                
+
                 # Generate excerpt if missing
                 if not post.get("excerpt") and post.get("content"):
                     post["excerpt"] = generate_excerpt_from_content(post["content"])
-                
+
                 # Convert markdown content to HTML for safe rendering
                 if post.get("content"):
                     post["content"] = convert_markdown_to_html(post["content"])
-                
+
                 map_featured_image_to_coverimage(post)
 
             return {
@@ -318,11 +323,11 @@ async def get_post_by_slug(
             )
             post["created_at"] = post["created_at"].isoformat() if post["created_at"] else None
             post["updated_at"] = post["updated_at"].isoformat() if post["updated_at"] else None
-            
+
             # Generate excerpt if missing
             if not post.get("excerpt") and post.get("content"):
                 post["excerpt"] = generate_excerpt_from_content(post["content"])
-            
+
             # Convert markdown content to HTML for safe rendering
             if post.get("content"):
                 post["content"] = convert_markdown_to_html(post["content"])
@@ -498,6 +503,7 @@ async def cms_status():
             "timestamp": datetime.now().isoformat(),
         }
 
+
 # ============================================================================
 # UTILITY ENDPOINTS
 # ============================================================================
@@ -514,7 +520,7 @@ async def populate_missing_excerpts(current_user: UserProfile = Depends(get_curr
         # Check user has admin role
         if not getattr(current_user, "is_admin", False):
             raise HTTPException(status_code=403, detail="Admin access required")
-        
+
         pool = await get_db_pool()
         async with pool.acquire() as conn:
             # Find posts with missing or empty excerpts
@@ -525,7 +531,7 @@ async def populate_missing_excerpts(current_user: UserProfile = Depends(get_curr
                 WHERE excerpt IS NULL OR excerpt = ''
             """
             )
-            
+
             updated_count = 0
             for post in posts:
                 if post["content"]:
@@ -536,7 +542,7 @@ async def populate_missing_excerpts(current_user: UserProfile = Depends(get_curr
                         post["id"],
                     )
                     updated_count += 1
-            
+
             return {
                 "success": True,
                 "updated_count": updated_count,

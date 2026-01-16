@@ -478,7 +478,7 @@ class ImageService:
         if not self.pexels_api_key:
             logger.debug(f"Pexels API key not configured - skipping search for '{query}'")
             return []
-        
+
         try:
             params = {
                 "query": query,

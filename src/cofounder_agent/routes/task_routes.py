@@ -21,7 +21,6 @@ Endpoints:
 - GET /api/metrics - Aggregated task metrics
 """
 
-
 from fastapi import APIRouter, HTTPException, Depends, Query, BackgroundTasks
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
@@ -83,7 +82,12 @@ router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 # ============================================================================
 
 
-@router.post("", response_model=Dict[str, Any], summary="Create task - unified endpoint for all task types", status_code=201)
+@router.post(
+    "",
+    response_model=Dict[str, Any],
+    summary="Create task - unified endpoint for all task types",
+    status_code=201,
+)
 async def create_task(
     request: UnifiedTaskRequest,
     current_user: dict = Depends(get_current_user),
@@ -92,7 +96,7 @@ async def create_task(
 ):
     """
     Unified task creation endpoint - routes to appropriate handler based on task_type.
-    
+
     **Supported Task Types:**
     - blog_post: Blog content generation with self-critiquing pipeline
     - social_media: Multi-platform social content (Twitter, LinkedIn, Instagram)
@@ -102,14 +106,14 @@ async def create_task(
     - data_retrieval: Data extraction from multiple sources
     - market_research: Competitive intelligence and market analysis
     - financial_analysis: Financial data analysis and reporting
-    
+
     **Common Parameters (all tasks):**
     - task_type: REQUIRED - Type of task to create
     - topic: REQUIRED - Task topic/subject/query
     - models_by_phase: Optional per-phase model selection
     - quality_preference: fast|balanced|quality (default: balanced)
     - metadata: Optional additional metadata
-    
+
     **Content Task Parameters (blog_post, social_media, email, newsletter):**
     - style: technical|narrative|listicle|educational|thought-leadership
     - tone: professional|casual|academic|inspirational
@@ -117,23 +121,23 @@ async def create_task(
     - generate_featured_image: true|false (blog_post)
     - platforms: List of platforms (social_media)
     - tags: Content tags
-    
+
     **Analytics Task Parameters (business_analytics):**
     - metrics: List of metrics to analyze (revenue, churn, conversion_rate)
     - time_period: Analysis period (last_month, last_quarter, ytd)
     - business_context: Industry, size, goals context
-    
+
     **Data Task Parameters (data_retrieval):**
     - data_sources: List of source types (postgres, s3, api)
     - filters: Query filters and parameters
-    
+
     **Returns:**
     - task_id: UUID of created task
     - status: pending (will be picked up by TaskExecutor)
     - created_at: ISO timestamp
-    
+
     **Example Requests:**
-    
+
     Blog Post:
     ```json
     {
@@ -146,7 +150,7 @@ async def create_task(
       "quality_preference": "balanced"
     }
     ```
-    
+
     Social Media:
     ```json
     {
@@ -157,7 +161,7 @@ async def create_task(
       "quality_preference": "fast"
     }
     ```
-    
+
     Business Analytics:
     ```json
     {
@@ -182,37 +186,51 @@ async def create_task(
                 },
             )
 
-        logger.info(f"📥 [UNIFIED_TASK_CREATE] Received: task_type={request.task_type}, topic={request.topic}")
+        logger.info(
+            f"📥 [UNIFIED_TASK_CREATE] Received: task_type={request.task_type}, topic={request.topic}"
+        )
 
         # Route based on task_type
         if request.task_type == "blog_post":
             return await _handle_blog_post_creation(request, current_user, db_service)
-        
+
         elif request.task_type == "social_media":
             return await _handle_social_media_creation(request, current_user, db_service)
-        
+
         elif request.task_type == "email":
             return await _handle_email_creation(request, current_user, db_service)
-        
+
         elif request.task_type == "newsletter":
             return await _handle_newsletter_creation(request, current_user, db_service)
-        
+
         elif request.task_type == "business_analytics":
             return await _handle_business_analytics_creation(request, current_user, db_service)
-        
+
         elif request.task_type == "data_retrieval":
             return await _handle_data_retrieval_creation(request, current_user, db_service)
-        
+
         elif request.task_type == "market_research":
             return await _handle_market_research_creation(request, current_user, db_service)
-        
+
         elif request.task_type == "financial_analysis":
             return await _handle_financial_analysis_creation(request, current_user, db_service)
-        
+
         else:
             raise HTTPException(
                 status_code=400,
-                detail={"message": f"Unknown task_type: {request.task_type}", "supported": ["blog_post", "social_media", "email", "newsletter", "business_analytics", "data_retrieval", "market_research", "financial_analysis"]}
+                detail={
+                    "message": f"Unknown task_type: {request.task_type}",
+                    "supported": [
+                        "blog_post",
+                        "social_media",
+                        "email",
+                        "newsletter",
+                        "business_analytics",
+                        "data_retrieval",
+                        "market_research",
+                        "financial_analysis",
+                    ],
+                },
             )
 
     except HTTPException:
@@ -230,13 +248,15 @@ async def create_task(
 # ============================================================================
 
 
-async def _handle_blog_post_creation(request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService) -> Dict[str, Any]:
+async def _handle_blog_post_creation(
+    request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
+) -> Dict[str, Any]:
     """Handle blog post task creation"""
     from services.content_router_service import process_content_generation_task
     import asyncio
-    
+
     task_id = str(uuid_lib.uuid4())
-    
+
     task_data = {
         "id": task_id,
         "task_name": f"Blog Post: {request.topic}",
@@ -250,14 +270,18 @@ async def _handle_blog_post_creation(request: UnifiedTaskRequest, current_user: 
         "quality_preference": request.quality_preference or "balanced",
         "status": "pending",
         "user_id": current_user.get("id", "system"),
-        "metadata": {**(request.metadata or {}), "generate_featured_image": request.generate_featured_image, "tags": request.tags},
+        "metadata": {
+            **(request.metadata or {}),
+            "generate_featured_image": request.generate_featured_image,
+            "tags": request.tags,
+        },
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    
+
     # Store in database
     returned_task_id = await db_service.add_task(task_data)
     logger.info(f"✅ [BLOG_TASK] Created: {returned_task_id}")
-    
+
     # Schedule background generation
     async def _run_blog_generation():
         try:
@@ -276,9 +300,9 @@ async def _handle_blog_post_creation(request: UnifiedTaskRequest, current_user: 
         except Exception as e:
             logger.error(f"Blog generation failed: {e}", exc_info=True)
             await db_service.update_task(task_id, {"status": "failed", "error_message": str(e)})
-    
+
     asyncio.create_task(_run_blog_generation())
-    
+
     return {
         "id": returned_task_id,
         "task_type": "blog_post",
@@ -288,10 +312,12 @@ async def _handle_blog_post_creation(request: UnifiedTaskRequest, current_user: 
     }
 
 
-async def _handle_social_media_creation(request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService) -> Dict[str, Any]:
+async def _handle_social_media_creation(
+    request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
+) -> Dict[str, Any]:
     """Handle social media task creation"""
     task_id = str(uuid_lib.uuid4())
-    
+
     task_data = {
         "id": task_id,
         "task_name": f"Social Media: {request.topic}",
@@ -304,13 +330,17 @@ async def _handle_social_media_creation(request: UnifiedTaskRequest, current_use
         "quality_preference": request.quality_preference or "balanced",
         "status": "pending",
         "user_id": current_user.get("id", "system"),
-        "metadata": {**(request.metadata or {}), "platforms": request.platforms, "tags": request.tags},
+        "metadata": {
+            **(request.metadata or {}),
+            "platforms": request.platforms,
+            "tags": request.tags,
+        },
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    
+
     returned_task_id = await db_service.add_task(task_data)
     logger.info(f"✅ [SOCIAL_TASK] Created: {returned_task_id} - Platforms: {request.platforms}")
-    
+
     return {
         "id": returned_task_id,
         "task_type": "social_media",
@@ -320,10 +350,12 @@ async def _handle_social_media_creation(request: UnifiedTaskRequest, current_use
     }
 
 
-async def _handle_email_creation(request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService) -> Dict[str, Any]:
+async def _handle_email_creation(
+    request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
+) -> Dict[str, Any]:
     """Handle email task creation"""
     task_id = str(uuid_lib.uuid4())
-    
+
     task_data = {
         "id": task_id,
         "task_name": f"Email: {request.topic}",
@@ -338,10 +370,10 @@ async def _handle_email_creation(request: UnifiedTaskRequest, current_user: dict
         "metadata": {**(request.metadata or {}), "tags": request.tags},
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    
+
     returned_task_id = await db_service.add_task(task_data)
     logger.info(f"✅ [EMAIL_TASK] Created: {returned_task_id}")
-    
+
     return {
         "id": returned_task_id,
         "task_type": "email",
@@ -351,10 +383,12 @@ async def _handle_email_creation(request: UnifiedTaskRequest, current_user: dict
     }
 
 
-async def _handle_newsletter_creation(request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService) -> Dict[str, Any]:
+async def _handle_newsletter_creation(
+    request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
+) -> Dict[str, Any]:
     """Handle newsletter task creation"""
     task_id = str(uuid_lib.uuid4())
-    
+
     task_data = {
         "id": task_id,
         "task_name": f"Newsletter: {request.topic}",
@@ -368,10 +402,10 @@ async def _handle_newsletter_creation(request: UnifiedTaskRequest, current_user:
         "metadata": {**(request.metadata or {}), "tags": request.tags},
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    
+
     returned_task_id = await db_service.add_task(task_data)
     logger.info(f"✅ [NEWSLETTER_TASK] Created: {returned_task_id}")
-    
+
     return {
         "id": returned_task_id,
         "task_type": "newsletter",
@@ -381,10 +415,12 @@ async def _handle_newsletter_creation(request: UnifiedTaskRequest, current_user:
     }
 
 
-async def _handle_business_analytics_creation(request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService) -> Dict[str, Any]:
+async def _handle_business_analytics_creation(
+    request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
+) -> Dict[str, Any]:
     """Handle business analytics task creation"""
     task_id = str(uuid_lib.uuid4())
-    
+
     task_data = {
         "id": task_id,
         "task_name": f"Analytics: {request.topic}",
@@ -395,13 +431,18 @@ async def _handle_business_analytics_creation(request: UnifiedTaskRequest, curre
         "quality_preference": request.quality_preference or "balanced",
         "status": "pending",
         "user_id": current_user.get("id", "system"),
-        "metadata": {**(request.metadata or {}), "metrics": request.metrics, "time_period": request.time_period, "business_context": request.business_context},
+        "metadata": {
+            **(request.metadata or {}),
+            "metrics": request.metrics,
+            "time_period": request.time_period,
+            "business_context": request.business_context,
+        },
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    
+
     returned_task_id = await db_service.add_task(task_data)
     logger.info(f"✅ [ANALYTICS_TASK] Created: {returned_task_id} - Metrics: {request.metrics}")
-    
+
     return {
         "id": returned_task_id,
         "task_type": "business_analytics",
@@ -411,10 +452,12 @@ async def _handle_business_analytics_creation(request: UnifiedTaskRequest, curre
     }
 
 
-async def _handle_data_retrieval_creation(request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService) -> Dict[str, Any]:
+async def _handle_data_retrieval_creation(
+    request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
+) -> Dict[str, Any]:
     """Handle data retrieval task creation"""
     task_id = str(uuid_lib.uuid4())
-    
+
     task_data = {
         "id": task_id,
         "task_name": f"Data Retrieval: {request.topic}",
@@ -424,13 +467,17 @@ async def _handle_data_retrieval_creation(request: UnifiedTaskRequest, current_u
         "model_selections": request.models_by_phase or {},
         "status": "pending",
         "user_id": current_user.get("id", "system"),
-        "metadata": {**(request.metadata or {}), "data_sources": request.data_sources, "filters": request.filters},
+        "metadata": {
+            **(request.metadata or {}),
+            "data_sources": request.data_sources,
+            "filters": request.filters,
+        },
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    
+
     returned_task_id = await db_service.add_task(task_data)
     logger.info(f"✅ [DATA_TASK] Created: {returned_task_id} - Sources: {request.data_sources}")
-    
+
     return {
         "id": returned_task_id,
         "task_type": "data_retrieval",
@@ -440,10 +487,12 @@ async def _handle_data_retrieval_creation(request: UnifiedTaskRequest, current_u
     }
 
 
-async def _handle_market_research_creation(request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService) -> Dict[str, Any]:
+async def _handle_market_research_creation(
+    request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
+) -> Dict[str, Any]:
     """Handle market research task creation"""
     task_id = str(uuid_lib.uuid4())
-    
+
     task_data = {
         "id": task_id,
         "task_name": f"Market Research: {request.topic}",
@@ -457,10 +506,10 @@ async def _handle_market_research_creation(request: UnifiedTaskRequest, current_
         "metadata": {**(request.metadata or {})},
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    
+
     returned_task_id = await db_service.add_task(task_data)
     logger.info(f"✅ [MARKET_RESEARCH_TASK] Created: {returned_task_id}")
-    
+
     return {
         "id": returned_task_id,
         "task_type": "market_research",
@@ -470,10 +519,12 @@ async def _handle_market_research_creation(request: UnifiedTaskRequest, current_
     }
 
 
-async def _handle_financial_analysis_creation(request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService) -> Dict[str, Any]:
+async def _handle_financial_analysis_creation(
+    request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
+) -> Dict[str, Any]:
     """Handle financial analysis task creation"""
     task_id = str(uuid_lib.uuid4())
-    
+
     task_data = {
         "id": task_id,
         "task_name": f"Financial Analysis: {request.topic}",
@@ -487,10 +538,10 @@ async def _handle_financial_analysis_creation(request: UnifiedTaskRequest, curre
         "metadata": {**(request.metadata or {})},
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    
+
     returned_task_id = await db_service.add_task(task_data)
     logger.info(f"✅ [FINANCIAL_ANALYSIS_TASK] Created: {returned_task_id}")
-    
+
     return {
         "id": returned_task_id,
         "task_type": "financial_analysis",
@@ -509,7 +560,9 @@ async def _handle_financial_analysis_creation(request: UnifiedTaskRequest, curre
 async def list_tasks(
     offset: int = Query(0, ge=0, description="Pagination offset"),
     limit: int = Query(20, ge=1, le=1000, description="Pagination limit"),
-    status: Optional[str] = Query(None, description="Filter by status (queued, pending, running, completed, failed)"),
+    status: Optional[str] = Query(
+        None, description="Filter by status (queued, pending, running, completed, failed)"
+    ),
     category: Optional[str] = Query(None, description="Filter by category"),
     current_user: dict = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
@@ -535,12 +588,9 @@ async def list_tasks(
     try:
         # get_tasks_paginated returns a tuple (tasks, total)
         tasks, total = await db_service.get_tasks_paginated(
-            offset=offset,
-            limit=limit,
-            status=status,
-            category=category
+            offset=offset, limit=limit, status=status, category=category
         )
-        
+
         # Convert raw task dicts to UnifiedTaskResponse objects if needed
         validated_tasks = []
         for task in tasks:
@@ -549,18 +599,18 @@ async def list_tasks(
                 # Ensure id is a string
                 if "id" in task and isinstance(task["id"], int):
                     task["id"] = str(task["id"])
-                
+
                 # Parse seo_keywords if it's a JSON string
                 if "seo_keywords" in task and isinstance(task["seo_keywords"], str):
                     try:
                         task["seo_keywords"] = json.loads(task["seo_keywords"])
                     except (json.JSONDecodeError, TypeError):
                         task["seo_keywords"] = []
-                
+
                 validated_tasks.append(UnifiedTaskResponse(**task))
             else:
                 validated_tasks.append(task)
-        
+
         return TaskListResponse(
             tasks=validated_tasks,
             total=total,
@@ -786,8 +836,9 @@ async def update_task_status_validated(
     current_user: dict = Depends(get_current_user),
     status_service: EnhancedStatusChangeService = Depends(
         lambda: (
-            __import__("utils.route_utils", fromlist=["get_enhanced_status_change_service"])
-            .get_enhanced_status_change_service()
+            __import__(
+                "utils.route_utils", fromlist=["get_enhanced_status_change_service"]
+            ).get_enhanced_status_change_service()
         )
     ),
 ):
@@ -835,7 +886,7 @@ async def update_task_status_validated(
             new_status=update_data.status,
             reason=update_data.reason,
             metadata=update_data.metadata,
-            user_id=user_id
+            user_id=user_id,
         )
 
         return {
@@ -844,7 +895,7 @@ async def update_task_status_validated(
             "message": message,
             "errors": errors,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "updated_by": user_id
+            "updated_by": user_id,
         }
 
     except Exception as e:
@@ -949,8 +1000,9 @@ async def get_task_status_history(
     current_user: dict = Depends(get_current_user),
     status_service: EnhancedStatusChangeService = Depends(
         lambda: (
-            __import__("utils.route_utils", fromlist=["get_enhanced_status_change_service"])
-            .get_enhanced_status_change_service()
+            __import__(
+                "utils.route_utils", fromlist=["get_enhanced_status_change_service"]
+            ).get_enhanced_status_change_service()
         )
     ),
 ):
@@ -1003,10 +1055,7 @@ async def get_task_status_history(
 
     except Exception as e:
         logger.error(f"Error fetching status history for {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to fetch status history: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to fetch status history: {str(e)}")
 
 
 @router.get(
@@ -1021,8 +1070,9 @@ async def get_task_validation_failures(
     current_user: dict = Depends(get_current_user),
     status_service: EnhancedStatusChangeService = Depends(
         lambda: (
-            __import__("utils.route_utils", fromlist=["get_enhanced_status_change_service"])
-            .get_enhanced_status_change_service()
+            __import__(
+                "utils.route_utils", fromlist=["get_enhanced_status_change_service"]
+            ).get_enhanced_status_change_service()
         )
     ),
 ):
@@ -1070,8 +1120,7 @@ async def get_task_validation_failures(
     except Exception as e:
         logger.error(f"Error fetching validation failures for {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=500,
-            detail=f"Failed to fetch validation failures: {str(e)}"
+            status_code=500, detail=f"Failed to fetch validation failures: {str(e)}"
         )
 
 
@@ -1153,7 +1202,9 @@ async def update_task(
         updated_task = await db_service.get_task(task_id)
 
         # Convert to response schema with proper type conversions
-        return UnifiedTaskResponse(**ModelConverter.task_response_to_unified(ModelConverter.to_task_response(updated_task)))
+        return UnifiedTaskResponse(
+            **ModelConverter.task_response_to_unified(ModelConverter.to_task_response(updated_task))
+        )
 
     except HTTPException:
         raise
@@ -1480,7 +1531,9 @@ async def confirm_and_execute_task(
 # ============================================================================
 
 
-@router.post("/{task_id}/approve", response_model=UnifiedTaskResponse, summary="Approve task for publishing")
+@router.post(
+    "/{task_id}/approve", response_model=UnifiedTaskResponse, summary="Approve task for publishing"
+)
 async def approve_task(
     task_id: str,
     current_user: dict = Depends(get_current_user),
@@ -1523,30 +1576,33 @@ async def approve_task(
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
         # Check if task is in a state that can be approved
+        # Valid states: only awaiting_approval can transition to approved
+        # (other states are legacy compatibility)
         current_status = task.get("status", "unknown")
-        if current_status not in ["completed", "pending", "approved", "awaiting_approval"]:
+        allowed_statuses = ["awaiting_approval", "pending", "in_progress", "completed"]
+        if current_status not in allowed_statuses:
             raise HTTPException(
                 status_code=400,
-                detail=f"Cannot approve task with status '{current_status}'. Must be 'completed', 'pending', 'awaiting_approval', or 'approved'."
+                detail=f"Cannot approve task with status '{current_status}'. Task must be awaiting approval to be approved.",
             )
 
         # Update task status to approved
         logger.info(f"Approving task {task_id} (current status: {current_status})")
         approval_metadata = {
             "approved_at": datetime.now(timezone.utc).isoformat(),
-            "approved_by": current_user.get("id")
+            "approved_by": current_user.get("id"),
         }
         await db_service.update_task_status(
-            task_id,
-            "approved",
-            result=json.dumps({"metadata": approval_metadata})
+            task_id, "approved", result=json.dumps({"metadata": approval_metadata})
         )
 
         # Fetch updated task
         updated_task = await db_service.get_task(task_id)
 
         # Convert to response schema
-        return UnifiedTaskResponse(**ModelConverter.task_response_to_unified(ModelConverter.to_task_response(updated_task)))
+        return UnifiedTaskResponse(
+            **ModelConverter.task_response_to_unified(ModelConverter.to_task_response(updated_task))
+        )
 
     except HTTPException:
         raise
@@ -1555,7 +1611,9 @@ async def approve_task(
         raise HTTPException(status_code=500, detail=f"Failed to approve task: {str(e)}")
 
 
-@router.post("/{task_id}/publish", response_model=UnifiedTaskResponse, summary="Publish approved task")
+@router.post(
+    "/{task_id}/publish", response_model=UnifiedTaskResponse, summary="Publish approved task"
+)
 async def publish_task(
     task_id: str,
     current_user: dict = Depends(get_current_user),
@@ -1600,26 +1658,26 @@ async def publish_task(
         if current_status != "approved":
             raise HTTPException(
                 status_code=400,
-                detail=f"Cannot publish task with status '{current_status}'. Must be 'approved'."
+                detail=f"Cannot publish task with status '{current_status}'. Must be 'approved'.",
             )
 
         # Update task status to published
         logger.info(f"Publishing task {task_id}")
         publish_metadata = {
             "published_at": datetime.now(timezone.utc).isoformat(),
-            "published_by": current_user.get("id")
+            "published_by": current_user.get("id"),
         }
         await db_service.update_task_status(
-            task_id,
-            "published",
-            result=json.dumps({"metadata": publish_metadata})
+            task_id, "published", result=json.dumps({"metadata": publish_metadata})
         )
 
         # Fetch updated task
         updated_task = await db_service.get_task(task_id)
 
         # Convert to response schema
-        return UnifiedTaskResponse(**ModelConverter.task_response_to_unified(ModelConverter.to_task_response(updated_task)))
+        return UnifiedTaskResponse(
+            **ModelConverter.task_response_to_unified(ModelConverter.to_task_response(updated_task))
+        )
 
     except HTTPException:
         raise
@@ -1628,7 +1686,9 @@ async def publish_task(
         raise HTTPException(status_code=500, detail=f"Failed to publish task: {str(e)}")
 
 
-@router.post("/{task_id}/reject", response_model=UnifiedTaskResponse, summary="Reject task for revision")
+@router.post(
+    "/{task_id}/reject", response_model=UnifiedTaskResponse, summary="Reject task for revision"
+)
 async def reject_task(
     task_id: str,
     current_user: dict = Depends(get_current_user),
@@ -1670,26 +1730,26 @@ async def reject_task(
         if current_status not in ["completed", "approved"]:
             raise HTTPException(
                 status_code=400,
-                detail=f"Cannot reject task with status '{current_status}'. Must be 'completed' or 'approved'."
+                detail=f"Cannot reject task with status '{current_status}'. Must be 'completed' or 'approved'.",
             )
 
         # Update task status to rejected
         logger.info(f"Rejecting task {task_id} (current status: {current_status})")
         reject_metadata = {
             "rejected_at": datetime.now(timezone.utc).isoformat(),
-            "rejected_by": current_user.get("id")
+            "rejected_by": current_user.get("id"),
         }
         await db_service.update_task_status(
-            task_id,
-            "rejected",
-            result=json.dumps({"metadata": reject_metadata})
+            task_id, "rejected", result=json.dumps({"metadata": reject_metadata})
         )
 
         # Fetch updated task
         updated_task = await db_service.get_task(task_id)
 
         # Convert to response schema
-        return UnifiedTaskResponse(**ModelConverter.task_response_to_unified(ModelConverter.to_task_response(updated_task)))
+        return UnifiedTaskResponse(
+            **ModelConverter.task_response_to_unified(ModelConverter.to_task_response(updated_task))
+        )
 
     except HTTPException:
         raise

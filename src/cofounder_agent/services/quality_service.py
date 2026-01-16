@@ -355,7 +355,7 @@ class UnifiedQualityService:
             return await self._evaluate_pattern_based(content, context)
 
         logger.debug("Running LLM-based evaluation...")
-        
+
         # Using pattern-based heuristics for now (LLM evaluation can be added later if needed)
         return await self._evaluate_pattern_based(content, context)
 

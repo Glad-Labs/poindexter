@@ -363,11 +363,15 @@ async def process_content_generation_task(
         # Initialize unified services
         logger.info(f"[BG-TASK] Starting content generation for task {task_id[:8]}...")
         logger.debug(f"[BG-TASK] database_service = {database_service}")
-        logger.debug(f"[BG-TASK] database_service.tasks = {database_service.tasks if database_service else None}")
-        
+        logger.debug(
+            f"[BG-TASK] database_service.tasks = {database_service.tasks if database_service else None}"
+        )
+
         image_service = get_image_service()
         quality_service = UnifiedQualityService(database_service=database_service)
-        logger.debug(f"[BG-TASK] Services initialized: image_service={image_service}, quality_service={quality_service}")
+        logger.debug(
+            f"[BG-TASK] Services initialized: image_service={image_service}, quality_service={quality_service}"
+        )
 
         # ================================================================================
         # STAGE 1: VERIFY TASK RECORD EXISTS

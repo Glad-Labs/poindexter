@@ -38,7 +38,7 @@ class QAAgent:
         logger.debug(f"QAAgent DEBUG: post.primary_keyword = {post.primary_keyword}")
         logger.debug(f"QAAgent DEBUG: post.target_audience = {post.target_audience}")
         logger.debug(f"QAAgent DEBUG: prompts dict keys = {list(self.prompts.keys())}")
-        
+
         # Verify qa_review template exists before using it
         if "qa_review" not in self.prompts:
             available_templates = list(self.prompts.keys())
@@ -62,7 +62,10 @@ class QAAgent:
         except Exception as e:
             logger.error(f"QAAgent: Failed to get JSON from LLM: {e}")
             # Fallback: return generic rejection with error message
-            return False, f"QA system encountered an error: {str(e)[:100]}. Manual review recommended."
+            return (
+                False,
+                f"QA system encountered an error: {str(e)[:100]}. Manual review recommended.",
+            )
 
         # Validate response_data structure
         if not isinstance(response_data, dict):
@@ -73,16 +76,16 @@ class QAAgent:
         try:
             approved = response_data.get("approved", False)
             feedback = response_data.get("feedback", "No feedback provided.")
-            
+
             # Validate feedback is a string
             if not isinstance(feedback, str):
                 feedback = str(feedback) if feedback else "No feedback provided."
-            
+
             # Ensure feedback is not empty
             feedback = feedback.strip() if feedback else "No feedback provided."
             if not feedback or feedback == "null" or feedback == "None":
                 feedback = "QA review completed. Content ready for approval decision."
-            
+
             # Validate approved is boolean
             if not isinstance(approved, bool):
                 approved = str(approved).lower() in ["true", "yes", "1"]
@@ -91,7 +94,7 @@ class QAAgent:
             return False, f"QA feedback parsing error. Content requires manual review."
 
         logger.info(f"QAAgent: Review complete - Approved={approved}, Feedback={feedback[:100]}...")
-        
+
         if approved:
             return True, "Content approved by QA."
         else:

@@ -16,12 +16,14 @@ import httpx
 # Optional dependencies for enhanced functionality
 try:
     import feedparser
+
     FEEDPARSER_AVAILABLE = True
 except ImportError:
     FEEDPARSER_AVAILABLE = False
 
 try:
     from bs4 import BeautifulSoup
+
     BS4_AVAILABLE = True
 except ImportError:
     BS4_AVAILABLE = False
@@ -137,23 +139,24 @@ class SearXNGResearchService:
         }
 
         if depth in ("standard", "comprehensive"):
-            searches.update({
-                "market": f"{topic} market analysis",
-                "challenges": f"{topic} challenges solutions",
-            })
+            searches.update(
+                {
+                    "market": f"{topic} market analysis",
+                    "challenges": f"{topic} challenges solutions",
+                }
+            )
 
         if depth == "comprehensive":
-            searches.update({
-                "research": f"{topic} research studies",
-                "expert": f"{topic} expert analysis",
-                "case_studies": f"{topic} case studies examples",
-            })
+            searches.update(
+                {
+                    "research": f"{topic} research studies",
+                    "expert": f"{topic} expert analysis",
+                    "case_studies": f"{topic} case studies examples",
+                }
+            )
 
         results = {}
-        tasks = [
-            self.search(query, category="general")
-            for query in searches.values()
-        ]
+        tasks = [self.search(query, category="general") for query in searches.values()]
 
         search_results = await asyncio.gather(*tasks)
 
@@ -209,9 +212,7 @@ class SearXNGResearchService:
             logger.warning(f"Failed to fetch article from {url}: {e}")
             return None
 
-    async def get_news_feeds(
-        self, keywords: list[str], limit: int = 5
-    ) -> dict:
+    async def get_news_feeds(self, keywords: list[str], limit: int = 5) -> dict:
         """
         Aggregate RSS feeds for keywords using SearXNG.
 
@@ -290,13 +291,15 @@ class SearXNGResearchService:
         parsed = []
 
         for result in raw_results:
-            parsed.append({
-                "title": result.get("title", ""),
-                "url": result.get("url", ""),
-                "content": result.get("content", ""),
-                "engine": result.get("engine", []),
-                "score": result.get("score", 0),
-            })
+            parsed.append(
+                {
+                    "title": result.get("title", ""),
+                    "url": result.get("url", ""),
+                    "content": result.get("content", ""),
+                    "engine": result.get("engine", []),
+                    "score": result.get("score", 0),
+                }
+            )
 
         return parsed
 
@@ -320,9 +323,7 @@ async def research_content_topic(
     Returns:
         Comprehensive research data for content creation
     """
-    async with SearXNGResearchService(
-        searxng_instance=searxng_instance
-    ) as research:
+    async with SearXNGResearchService(searxng_instance=searxng_instance) as research:
 
         # Get comprehensive research
         research_data = await research.research_topic(topic, depth=depth)
@@ -337,11 +338,13 @@ async def research_content_topic(
             for result in top_results:
                 content = await research.fetch_article_content(result["url"])
                 if content:
-                    article_contents.append({
-                        "title": result["title"],
-                        "url": result["url"],
-                        "content": content,
-                    })
+                    article_contents.append(
+                        {
+                            "title": result["title"],
+                            "url": result["url"],
+                            "content": content,
+                        }
+                    )
 
             research_data["article_contents"] = article_contents
 

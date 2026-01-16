@@ -226,15 +226,9 @@ class TestDataTransformationPerformance:
         """Dictionary transformation should be <10ms for 100 transforms"""
 
         def transform_dict(data: Dict[str, Any]) -> Dict[str, Any]:
-            return {
-                k: str(v) if hasattr(v, "__str__") else v
-                for k, v in data.items()
-            }
+            return {k: str(v) if hasattr(v, "__str__") else v for k, v in data.items()}
 
-        test_data = [
-            {"key1": "value1", "key2": "value2", "key3": "value3"}
-            for _ in range(100)
-        ]
+        test_data = [{"key1": "value1", "key2": "value2", "key3": "value3"} for _ in range(100)]
 
         with PerformanceTimer("Dictionary transformations (100x)") as timer:
             for data in test_data:
@@ -248,9 +242,7 @@ class TestDataTransformationPerformance:
         def transform_list(items: List[Any]) -> List[str]:
             return [str(item) for item in items]
 
-        test_lists = [
-            ["item1", "item2", "item3", "item4", "item5"] for _ in range(100)
-        ]
+        test_lists = [["item1", "item2", "item3", "item4", "item5"] for _ in range(100)]
 
         with PerformanceTimer("List transformations (100x)") as timer:
             for items in test_lists:
@@ -328,9 +320,7 @@ class TestThroughputMetrics:
 
         # Calculate throughput: tasks per second
         throughput = (task_count / timer.elapsed) * 1000
-        assert (
-            throughput > 100
-        ), f"Throughput {throughput:.0f} tasks/sec, expected >100"
+        assert throughput > 100, f"Throughput {throughput:.0f} tasks/sec, expected >100"
 
     def test_data_transformation_throughput(self):
         """System should transform >500 items/second"""
@@ -344,9 +334,7 @@ class TestThroughputMetrics:
             results = [transform_item(item) for item in items]
 
         throughput = (len(items) / timer.elapsed) * 1000
-        assert (
-            throughput > 500
-        ), f"Throughput {throughput:.0f} items/sec, expected >500"
+        assert throughput > 500, f"Throughput {throughput:.0f} items/sec, expected >500"
         assert len(results) == 500
 
     @pytest.mark.asyncio
@@ -360,14 +348,10 @@ class TestThroughputMetrics:
         task_count = 50
 
         with PerformanceTimer(f"Execute {task_count} concurrent tasks") as timer:
-            results = await asyncio.gather(
-                *[mock_task(i) for i in range(task_count)]
-            )
+            results = await asyncio.gather(*[mock_task(i) for i in range(task_count)])
 
         throughput = (task_count / (timer.elapsed / 1000)) if timer.elapsed > 0 else 0
-        assert (
-            throughput > 50
-        ), f"Throughput {throughput:.0f} tasks/sec, expected >50"
+        assert throughput > 50, f"Throughput {throughput:.0f} tasks/sec, expected >50"
         assert len(results) == task_count
 
 
@@ -439,9 +423,7 @@ class TestComparativePerformance:
                 _ = task_map.get("SIMPLE")
 
         # Enum should be comparable or faster
-        assert (
-            enum_timer.elapsed <= string_timer.elapsed * 1.5
-        ), "Enum lookup unexpectedly slower"
+        assert enum_timer.elapsed <= string_timer.elapsed * 1.5, "Enum lookup unexpectedly slower"
 
     def test_direct_dict_access_vs_method_call(self):
         """Direct dictionary access should be faster than method calls"""
@@ -461,9 +443,7 @@ class TestComparativePerformance:
                 _ = get_value()
 
         # Direct access should be faster
-        assert (
-            direct_timer.elapsed < method_timer.elapsed
-        ), "Direct access unexpectedly slower"
+        assert direct_timer.elapsed < method_timer.elapsed, "Direct access unexpectedly slower"
 
 
 # ============================================================================
@@ -489,9 +469,7 @@ class TestPerformanceRegression:
             times.append(timer.elapsed)
 
         avg_time = sum(times) / len(times)
-        assert (
-            avg_time < 150
-        ), f"Average init time {avg_time:.2f}ms exceeds baseline"
+        assert avg_time < 150, f"Average init time {avg_time:.2f}ms exceeds baseline"
 
     def test_routing_latency_not_increasing(self):
         """Model routing latency should remain stable"""
@@ -514,6 +492,4 @@ class TestPerformanceRegression:
             round_times.append(timer.elapsed)
 
         # Latency should not increase across rounds
-        assert (
-            round_times[-1] <= round_times[0] * 1.2
-        ), "Routing latency increasing across rounds"
+        assert round_times[-1] <= round_times[0] * 1.2, "Routing latency increasing across rounds"

@@ -6,7 +6,7 @@ from ..config import config
 class PexelsClient:
     """
     Client for fetching images from the Pexels API.
-    
+
     ASYNC-FIRST: All HTTP operations use httpx (no blocking I/O)
     """
 

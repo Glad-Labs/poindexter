@@ -264,7 +264,7 @@ async def upload_training_model(
             "status": "registered",
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
-        
+
         logger.info(f"Model registered: {request.model_name} (type: {request.model_type})")
 
         return {
@@ -278,18 +278,15 @@ async def upload_training_model(
         logger.error(f"Model upload failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+        # REMOVED: /learning-patterns endpoint - unimplemented stub
+        # REMOVED: /business-metrics-analysis endpoint - unimplemented stub
+        # REMOVED: /tools endpoint - unimplemented stub
 
-# REMOVED: /learning-patterns endpoint - unimplemented stub
-# REMOVED: /business-metrics-analysis endpoint - unimplemented stub  
-# REMOVED: /tools endpoint - unimplemented stub
+        # ============================================================================
+        # BACKGROUND TASKS
+        # ============================================================================
 
-
-# ============================================================================
-# BACKGROUND TASKS
-# ============================================================================
-
-
-# REMOVED: _publish_to_channels background task - unimplemented stub
+        # REMOVED: _publish_to_channels background task - unimplemented stub
 
         logger.info(f"Task {task_id} published successfully")
 

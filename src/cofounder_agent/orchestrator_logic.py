@@ -1,6 +1,6 @@
 """
 Glad Labs AI Co-Founder Orchestrator Logic
-Updated with PostgreSQL database and API-based command queue 
+Updated with PostgreSQL database and API-based command queue
 """
 
 import logging
@@ -340,7 +340,9 @@ class Orchestrator:
             # Check command queue API health
             try:
                 async with httpx.AsyncClient() as client:
-                    response = await client.get(f"{self.api_base_url}/api/health", timeout=API_TIMEOUT_HEALTH_CHECK)
+                    response = await client.get(
+                        f"{self.api_base_url}/api/health", timeout=API_TIMEOUT_HEALTH_CHECK
+                    )
                     status_data["api_health"] = response.status_code == 200
             except Exception:
                 status_data["api_health"] = False

@@ -47,7 +47,7 @@ except ImportError:
 
 try:
     import google.genai as genai
-    
+
     GOOGLE_AVAILABLE = True
 except ImportError:
     GOOGLE_AVAILABLE = False
