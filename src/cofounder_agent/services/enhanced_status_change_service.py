@@ -6,7 +6,7 @@ from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime
 
 from utils.task_status import StatusTransitionValidator, TaskStatus, is_valid_transition
-from services.tasks_db import TaskDatabaseService
+from services.tasks_db import TasksDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class EnhancedStatusChangeService:
     """Service for validated status changes with comprehensive logging."""
 
-    def __init__(self, db_service: TaskDatabaseService):
+    def __init__(self, db_service: TasksDatabase):
         """
         Initialize service.
         
