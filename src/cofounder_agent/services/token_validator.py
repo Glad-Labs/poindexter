@@ -86,6 +86,9 @@ class JWTTokenValidator:
         if os.getenv("DISABLE_AUTH_FOR_DEV") == "true":
             return {
                 "sub": "dev-user",
+                "user_id": "dev-user-id",
+                "email": "dev@example.com",
+                "username": "dev-user",
                 "type": token_type.value,
                 "iat": datetime.now().timestamp(),
                 "exp": (datetime.now().timestamp() + 3600),
