@@ -17,7 +17,7 @@ import openai
 try:
     import google.genai as genai
 except ImportError:
-    # Fallback to old deprecated package if new one not available
+    # Fallback to old deprecated package (REMOVE THIS COMMENT WHEN DEPRECATED PACKAGE IS REMOVED)
     import google.generativeai as genai
 try:
     import ollama

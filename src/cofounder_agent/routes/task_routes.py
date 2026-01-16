@@ -476,9 +476,104 @@ async def _handle_financial_analysis_creation(request: UnifiedTaskRequest, curre
 # RETRIEVAL ENDPOINTS
 # ============================================================================
 
+
+@router.get("", response_model=TaskListResponse, summary="List all tasks with pagination")
+async def list_tasks(
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+    limit: int = Query(20, ge=1, le=1000, description="Pagination limit"),
+    status: Optional[str] = Query(None, description="Filter by status (queued, pending, running, completed, failed)"),
+    category: Optional[str] = Query(None, description="Filter by category"),
+    current_user: dict = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
+):
+    """
+    List all tasks with pagination and optional filtering.
+    
+    **Parameters:**
+    - offset: Pagination offset (default: 0)
+    - limit: Pagination limit (default: 20, max: 1000)
+    - status: Optional status filter
+    - category: Optional category filter
+    
+    **Returns:**
+    - List of tasks with total count
+    
+    **Example cURL:**
+    ```bash
+    curl -X GET "http://localhost:8000/api/tasks?offset=0&limit=20" \\
+      -H "Authorization: Bearer TOKEN"
+    ```
+    """
+    try:
+        # get_tasks_paginated returns a tuple (tasks, total)
+        tasks, total = await db_service.get_tasks_paginated(
+            offset=offset,
+            limit=limit,
+            status=status,
+            category=category
+        )
+        
+        # Convert raw task dicts to UnifiedTaskResponse objects if needed
+        validated_tasks = []
+        for task in tasks:
+            if isinstance(task, dict):
+                # Fix type mismatches from database
+                # Ensure id is a string
+                if "id" in task and isinstance(task["id"], int):
+                    task["id"] = str(task["id"])
+                
+                # Parse seo_keywords if it's a JSON string
+                if "seo_keywords" in task and isinstance(task["seo_keywords"], str):
+                    try:
+                        task["seo_keywords"] = json.loads(task["seo_keywords"])
+                    except (json.JSONDecodeError, TypeError):
+                        task["seo_keywords"] = []
+                
+                validated_tasks.append(UnifiedTaskResponse(**task))
+            else:
+                validated_tasks.append(task)
+        
+        return TaskListResponse(
+            tasks=validated_tasks,
+            total=total,
+            offset=offset,
+            limit=limit,
+        )
+    except Exception as e:
+        logger.error(f"Failed to list tasks: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to list tasks: {str(e)}")
+
+
+@router.get("/{task_id}", response_model=UnifiedTaskResponse, summary="Get task details")
+async def get_task(
+    task_id: str,
+    current_user: dict = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
+):
+    """
+    Get details of a specific task.
+    
+    **Parameters:**
+    - task_id: Task UUID
+    
+    **Returns:**
+    - Complete task object with all details
+    
+    **Example cURL:**
+    ```bash
+    curl -X GET "http://localhost:8000/api/tasks/{task_id}" \\
+      -H "Authorization: Bearer TOKEN"
+    ```
+    """
+    try:
+        task = await db_service.get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+        return task
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Failed to fetch task {task_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch task: {str(e)}")
 
 
@@ -895,7 +990,7 @@ async def approve_task(
     Changes task status from 'completed' to 'approved'.
     
     **Parameters:**
-    - task_id: Task UUID
+    - task_id: Task ID (UUID or numeric ID for backwards compatibility)
     
     **Returns:**
     - Updated task with status 'approved'
@@ -907,11 +1002,17 @@ async def approve_task(
     ```
     """
     try:
-        # Validate UUID format
+        # Accept both UUID and numeric task IDs (backwards compatibility)
+        # Try to convert numeric ID to UUID if it's a string number
         try:
             UUID(task_id)
         except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid task ID format")
+            # If not a valid UUID, check if it's a numeric ID (legacy tasks)
+            if task_id.isdigit():
+                # Convert numeric ID to string (it will work with get_task as-is)
+                pass
+            else:
+                raise HTTPException(status_code=400, detail="Invalid task ID format")
 
         # Fetch task
         task = await db_service.get_task(task_id)
@@ -978,11 +1079,13 @@ async def publish_task(
     ```
     """
     try:
-        # Validate UUID format
+        # Accept both UUID and numeric task IDs (backwards compatibility)
         try:
             UUID(task_id)
         except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid task ID format")
+            # If not a valid UUID, check if it's a numeric ID (legacy tasks)
+            if not task_id.isdigit():
+                raise HTTPException(status_code=400, detail="Invalid task ID format")
 
         # Fetch task
         task = await db_service.get_task(task_id)

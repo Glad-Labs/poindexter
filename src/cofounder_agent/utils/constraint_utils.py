@@ -283,26 +283,6 @@ def _get_default_phase_target(phase: str, total_word_count: int) -> int:
         return int(total_word_count * 0.15)
     else:
         # research, format, finalize don't produce measurable output
-        return 0{phase: _get_default_phase_target(phase, total_word_count) for phase in phase_names}
-
-    return targets
-
-
-def _get_default_phase_target(phase: str, total_word_count: int) -> int:
-    """
-    Get default word count target for a specific phase.
-    
-    - creative: 100% (main generation)
-    - qa: 15% (refinement/expansion buffer)
-    - others: 0% (supporting phases)
-    """
-    if phase == "creative":
-        return total_word_count
-    elif phase == "qa":
-        # QA can expand by up to 15% for quality improvements
-        return int(total_word_count * 0.15)
-    else:
-        # research, format, finalize don't produce measurable output
         return 0
 
 

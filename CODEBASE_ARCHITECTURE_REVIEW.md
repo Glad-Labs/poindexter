@@ -117,22 +117,29 @@ routes/
 
 #### Issue #3: Route Duplication & Confusion
 
-**Current State:**
+**Current State (Clarified):**
 
 ```
-POST /api/tasks                 → task_routes.py (generic task creation)
-POST /api/content/tasks         → content_routes.py (content-specific)
-POST /api/content/create        → (deprecated, redirects?)
-POST /api/content/create-blog-post → (deprecated?)
-GET /api/content/tasks/{id}     → content_routes.py
-GET /api/tasks/{id}             → task_routes.py
+✅ PRIMARY ENDPOINTS (IMPLEMENTED):
+POST /api/tasks                  → task_routes.py (generic task creation)
+GET  /api/tasks                  → task_routes.py (list tasks with pagination)
+GET  /api/tasks/{task_id}        → task_routes.py (get single task)
+POST /api/content/tasks          → content_routes.py (content-specific task creation)
+GET  /api/content/tasks/{id}     → content_routes.py (get content task status/result)
+POST /api/content/generate-and-publish → content_routes.py (generate + publish in one call)
+
+❌ DEPRECATED ENDPOINTS (NOT IMPLEMENTED):
+POST /api/content/create              (reference only in docstring, no handler)
+POST /api/content/create-blog-post    (reference only in docstring, no handler)
+POST /api/content/generate            (reference only in docstring, no handler)
+POST /api/v1/content/enhanced/blog-posts/create-seo-optimized (legacy, not implemented)
 ```
 
-**Problem:**
+**Resolution:**
 
-- Two separate task creation endpoints
-- Unclear which one to use
-- Inconsistent response formats
+- Unified around `/api/content/tasks` for content creation
+- Removed references to non-existent endpoints from code
+- All task types route through single `create_content_task` handler
 - Both query the same database
 
 **Fix:** Consolidate to single `/api/tasks` endpoint with `task_type` parameter:

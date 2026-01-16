@@ -27,7 +27,6 @@ def register_all_routes(
     app: FastAPI,
     database_service: Optional[Any] = None,
     workflow_history_service: Optional[Any] = None,
-    intelligent_orchestrator: Optional[Any] = None,
     training_data_service: Optional[Any] = None,
     fine_tuning_service: Optional[Any] = None,
 ) -> Dict[str, bool]:

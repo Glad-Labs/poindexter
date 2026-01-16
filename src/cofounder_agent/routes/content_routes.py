@@ -152,7 +152,6 @@ async def create_content_task(
         - task_type: Type of task created
         - polling_url: Endpoint to check progress
     """
-    print(f"[FUNC_START] create_content_task called")
     logger.info(
         f"🟢 POST /api/content/tasks called - Type: {request.task_type} - Topic: {request.topic}"
     )

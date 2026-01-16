@@ -370,30 +370,25 @@ async def process_content_generation_task(
         logger.debug(f"[BG-TASK] Services initialized: image_service={image_service}, quality_service={quality_service}")
 
         # ================================================================================
-        # STAGE 1: CREATE CONTENT_TASK RECORD
+        # STAGE 1: VERIFY TASK RECORD EXISTS
         # ================================================================================
-        logger.info("📋 STAGE 1: Creating content_task record...")
+        logger.info("📋 STAGE 1: Verifying task record exists...")
 
-        # Use consolidated add_task() method
-        logger.debug(f"[BG-TASK] Calling database_service.add_task()...")
-        task_id_created = await database_service.add_task(
-            {
-                "task_id": task_id,
-                "id": task_id,
-                "request_type": "api_request",
-                "task_type": "blog_post",
-                "status": "pending",
-                "topic": topic,
-                "style": style,
-                "tone": tone,
-                "target_length": target_length,
-                "approval_status": "pending",
-            }
-        )
-
-        result["content_task_id"] = task_id_created
-        result["stages"]["1_content_task_created"] = True
-        logger.info(f"✅ Content task created: {task_id_created}\n")
+        # Task already created by task_routes.py before background task launched
+        # Just verify it exists in database
+        logger.debug(f"[BG-TASK] Verifying task {task_id} exists in database...")
+        try:
+            existing_task = await database_service.get_task(task_id)
+            if existing_task:
+                logger.info(f"✅ Task verified in database: {task_id}\n")
+                result["content_task_id"] = task_id
+                result["stages"]["1_content_task_created"] = True
+            else:
+                logger.warning(f"⚠️  Task {task_id} not found - this should not happen")
+                result["stages"]["1_content_task_created"] = False
+        except Exception as e:
+            logger.error(f"❌ Failed to verify task: {e}")
+            result["stages"]["1_content_task_created"] = False
 
         # ================================================================================
         # STAGE 2: GENERATE BLOG CONTENT
