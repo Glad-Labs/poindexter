@@ -607,17 +607,17 @@ After deployment, update:
 
 ## Sign-Off
 
-**Deployment Checklist Completed By:** ******\_\_\_\_******  
-**Date:** ******\_\_\_\_******  
-**Time:** ******\_\_\_\_******
+**Deployment Checklist Completed By:** **\*\***\_\_\_\_**\*\***  
+**Date:** **\*\***\_\_\_\_**\*\***  
+**Time:** **\*\***\_\_\_\_**\*\***
 
 **Backend Status:** ☐ Ready ☐ Deployed  
 **Frontend Status:** ☐ Ready ☐ Deployed  
 **Database:** ☐ Ready ☐ Migrated  
 **Tests:** ☐ Passing ☐ Verified
 
-**Production URL (Backend):** **********\_**********  
-**Production URL (Frontend):** **********\_**********
+**Production URL (Backend):** ****\*\*****\_****\*\*****  
+**Production URL (Frontend):** ****\*\*****\_****\*\*****
 
 **Notes:**
 

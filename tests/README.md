@@ -36,39 +36,45 @@ tests/
 ## Test Categories
 
 ### Unit Tests (`tests/unit/`)
+
 - **Purpose**: Test individual components in isolation
 - **Dependencies**: Mock external services, databases, APIs
 - **Speed**: Fast (< 1 second each)
-- **Location**: 
+- **Location**:
   - `tests/unit/backend/` - Backend services, routes, models
   - `tests/unit/agents/` - AI agent components
   - `tests/unit/mcp/` - MCP protocol implementations
 
 **Examples**:
+
 - Model validation tests
 - Service initialization tests
 - Route parameter validation
 - Utility function tests
 
 ### Integration Tests (`tests/integration/`)
+
 - **Purpose**: Test interactions between multiple components
 - **Dependencies**: Real database (test instance), real services
 - **Speed**: Medium (1-10 seconds each)
 - **Pattern**: Test workflows that span multiple layers
 
 **Examples**:
+
 - API endpoint integration with database
 - Agent orchestration workflows
 - Model router fallback behavior
 - Full content pipeline
 
 ### End-to-End Tests (`tests/e2e/`)
+
 - **Purpose**: Test complete user workflows and system behavior
 - **Dependencies**: Full running system (backend, database, services)
 - **Speed**: Slow (10+ seconds each)
 - **Pattern**: Test real business scenarios
 
 **Examples**:
+
 - Complete task creation → processing → completion
 - Multi-step content generation pipeline
 - User authentication → task delegation → result retrieval
@@ -76,6 +82,7 @@ tests/
 ## Running Tests
 
 ### Run All Tests
+
 ```bash
 # From project root
 pytest                          # Run all tests
@@ -84,6 +91,7 @@ pytest --tb=short              # Shorter traceback format
 ```
 
 ### Run by Category
+
 ```bash
 # Unit tests only
 pytest tests/unit/
@@ -108,6 +116,7 @@ pytest tests/unit/backend/test_api_integration.py::TestAPIEndpoints::test_health
 ```
 
 ### Run by Marker
+
 ```bash
 # Skip CI tests
 pytest -m "not skip_ci"
@@ -120,6 +129,7 @@ pytest -m "performance"
 ```
 
 ### Run with Coverage
+
 ```bash
 pytest --cov=src --cov-report=html
 ```
@@ -127,6 +137,7 @@ pytest --cov=src --cov-report=html
 ## Pytest Configuration
 
 ### Primary Config: `pytest.ini` (Project Root)
+
 ```ini
 testpaths = tests          # Discover tests in this directory
 pythonpath = .;src;src/cofounder_agent  # Add to Python path
@@ -134,6 +145,7 @@ asyncio_mode = auto       # Auto-detect async tests
 ```
 
 ### Backup Config: `pyproject.toml`
+
 ```toml
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -144,25 +156,28 @@ asyncio_mode = "auto"
 ## Shared Fixtures and Utilities
 
 ### From `conftest.py`:
+
 - `event_loop` - Event loop for async tests
 - `test_config_fixture` - Test configuration
 - `project_root_path` - Path to project root
 - `performance_monitor_fixture` - Monitor async operation performance
 
 ### From `test_utils.py`:
+
 - `TestConfig` - Configuration dataclass
 - `TestUtils` - Utility functions (assertions, mock creation)
 - `PerformanceMonitor` - Track operation timing
 - `MockAPIResponse` - Mock HTTP responses
 
 ### Usage in Tests:
+
 ```python
 from tests.test_utils import test_utils, performance_monitor
 
 async def test_something(performance_monitor_fixture):
     # Use fixtures
     result, duration, success = await performance_monitor_fixture.measure_async_operation(
-        "my_operation", 
+        "my_operation",
         async_function
     )
 ```
@@ -186,6 +201,7 @@ Available pytest markers for categorizing tests:
 ## CI/CD Integration
 
 ### GitHub Actions
+
 ```yaml
 - name: Run Unit Tests
   run: pytest tests/unit/ -v
@@ -201,6 +217,7 @@ Available pytest markers for categorizing tests:
 ## Migration Notes
 
 ### Tests Moved From:
+
 - `src/cofounder_agent/tests/*` → `tests/unit/backend/`
 - `src/cofounder_agent/agents/*/tests/*` → `tests/unit/agents/`
 - `src/mcp*/test_*.py` → `tests/unit/mcp/`
@@ -208,15 +225,19 @@ Available pytest markers for categorizing tests:
 - `tests/test_phase_3_*.py` → `tests/e2e/`
 
 ### Removed:
+
 - `src/cofounder_agent/tests/firestore_client.py` (legacy, not used)
 
 ### Import Path Updates:
+
 **Old**:
+
 ```python
 from src.cofounder_agent.tests.conftest import TEST_CONFIG
 ```
 
 **New**:
+
 ```python
 import pytest
 from tests.conftest import TEST_CONFIG  # Or use fixtures
@@ -235,24 +256,31 @@ from tests.conftest import TEST_CONFIG  # Or use fixtures
 ## Troubleshooting
 
 ### Import Errors
+
 ```
 ModuleNotFoundError: No module named 'src'
 ```
+
 **Solution**: Ensure `pythonpath` in pytest.ini includes necessary paths.
 
 ### Tests Not Discovered
+
 ```
 collected 0 items
 ```
-**Solution**: 
+
+**Solution**:
+
 - Check `testpaths` in pytest.ini points to `tests/`
 - Ensure test files are named `test_*.py`
 - Check test functions are named `test_*`
 
 ### Async Test Errors
+
 ```
 RuntimeError: Event loop is closed
 ```
+
 **Solution**: Use `@pytest.mark.asyncio` or `event_loop` fixture.
 
 ## Questions?

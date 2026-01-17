@@ -80,6 +80,7 @@ in_progress → on_hold → in_progress → (continue)
 ### Examples by Status
 
 **To `awaiting_approval`:**
+
 ```python
 await status_service.validate_and_change_status(
     task_id=task_id,
@@ -89,6 +90,7 @@ await status_service.validate_and_change_status(
 ```
 
 **To `rejected`:**
+
 ```python
 await status_service.validate_and_change_status(
     task_id=task_id,
@@ -98,6 +100,7 @@ await status_service.validate_and_change_status(
 ```
 
 **To `published`:**
+
 ```python
 await status_service.validate_and_change_status(
     task_id=task_id,
@@ -209,6 +212,7 @@ print(TaskStatus.is_terminal_state("pending"))    # False
 ## 📝 Error Messages
 
 ### Invalid Transition
+
 ```json
 {
   "success": false,
@@ -218,6 +222,7 @@ print(TaskStatus.is_terminal_state("pending"))    # False
 ```
 
 ### Missing Context
+
 ```json
 {
   "success": false,
@@ -229,6 +234,7 @@ print(TaskStatus.is_terminal_state("pending"))    # False
 ```
 
 ### Task Not Found
+
 ```json
 {
   "success": false,

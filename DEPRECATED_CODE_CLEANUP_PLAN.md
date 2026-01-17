@@ -2,7 +2,7 @@
 
 **Generated:** January 16, 2026  
 **Status:** Ready for Implementation  
-**Scope:** Complete removal of legacy/deprecated code  
+**Scope:** Complete removal of legacy/deprecated code
 
 ---
 
@@ -23,8 +23,9 @@ This codebase has accumulated significant legacy code from previous architecture
 These can be deleted immediately as nothing depends on them.
 
 ### Archive Folder
+
 - **Location:** `archive/` directory
-- **Contents:** 
+- **Contents:**
   - `archive/content_orchestrator.py.archived` - Old orchestrator backup
   - `archive/diagnose_orchestrator.py` - Diagnostic script
   - `archive/FINAL_VERIFICATION.py` - Old verification script
@@ -41,6 +42,7 @@ These can be deleted immediately as nothing depends on them.
 - **Impact:** None - directory is explicitly for archived code
 
 ### Unused Route Files
+
 - **Files:**
   - `src/cofounder_agent/routes/model_selection_routes.py` - Duplicate of model_routes
   - `src/cofounder_agent/routes/orchestrator_routes.py` - Legacy orchestrator reference
@@ -52,6 +54,7 @@ These can be deleted immediately as nothing depends on them.
 - **Impact:** None - they're not included in FastAPI app
 
 ### Legacy Files in Web
+
 - **Files:**
   - `web/oversight-hub/src/components/tasks/TaskManagement-original.jsx` - Backup of refactored component
   - `web/public-site/.env.local.example` - Example env file
@@ -60,6 +63,7 @@ These can be deleted immediately as nothing depends on them.
 - **Impact:** None - these are backup/generated artifacts
 
 ### Documentation Files (Outdated)
+
 - **Files:**
   - `web/public-site/EVALUATION_REPORT.md` - Old evaluation
   - `web/public-site/MODERNIZATION_COMPLETE.md` - Outdated status report
@@ -73,6 +77,7 @@ These can be deleted immediately as nothing depends on them.
 These endpoints are still called by frontend but should be replaced with `/api/tasks` endpoint.
 
 ### `/api/content/tasks` Endpoint
+
 - **Backend File:** `src/cofounder_agent/routes/content_routes.py`
 - **Frontend Callers:**
   - `web/oversight-hub/src/services/taskService.js` - `getContentTask()` uses `/api/content/tasks/{id}`
@@ -87,17 +92,20 @@ These endpoints are still called by frontend but should be replaced with `/api/t
 - **Status:** Ready for migration
 
 ### `/api/content/metrics` Endpoint
+
 - **Backend File:** `src/cofounder_agent/routes/content_routes.py`
 - **Frontend Caller:** `web/oversight-hub/src/lib/apiClient.js` - `getContentMetrics()`
 - **Replacement:** Merge into `/api/metrics` endpoint
 - **Action:** Update apiClient.js call path
 
 ### Subtask Routes (`/api/content/subtasks/*`)
+
 - **Backend File:** `src/cofounder_agent/routes/subtask_routes.py`
 - **Current Status:** NOT registered in `route_registration.py` - safe to delete
 - **Action:** Delete entire file - subtasks are now handled by `/api/tasks` handlers
 
 ### Natural Language Routes (`/api/content/natural-language/*`)
+
 - **Backend File:** `src/cofounder_agent/routes/natural_language_content_routes.py`
 - **Current Status:** NOT registered in `route_registration.py` - safe to delete
 - **Frontend:** No callers found
@@ -110,6 +118,7 @@ These endpoints are still called by frontend but should be replaced with `/api/t
 These are documentation or analysis files that should be archived or updated.
 
 ### Files to Archive/Update
+
 - `UNIFIED_TASK_ENDPOINTS.md` - Update to remove deprecation section
 - `TASK_STATUS_STATE_MACHINE.md` - Already current
 - `QUALITY_EVALUATION_FIX.md` - Historical documentation
@@ -120,10 +129,12 @@ These are documentation or analysis files that should be archived or updated.
 ## Deprecated Functions & Imports
 
 ### In `src/cofounder_agent/main.py`
+
 - **Line 86:** Import of `content_router_service` - Still used by task_routes but should consolidate
 - **Line 189:** `get_content_task_store` - Legacy task store interface
 
 ### In `web/public-site/lib/url.js`
+
 - **Lines 30-31:** `getStrapiURL()` function - Marked as `@deprecated`, use `getAbsoluteURL()` instead
 - **This should be removed** - Function still exists but is deprecated
 
@@ -132,11 +143,13 @@ These are documentation or analysis files that should be archived or updated.
 ## Removal Order (Recommended)
 
 ### Phase 1: Safe Deletions (No Dependencies)
+
 1. Delete `/archive/` directory completely
 2. Delete unused route files (model_selection_routes, orchestrator_routes, quality_routes, services_registry_routes, training_routes)
 3. Delete backup/generated files (TaskManagement-original.jsx, coverage/, .env.local.example)
 
 ### Phase 2: Frontend Updates + Backend Removal
+
 1. Update `taskService.js` to use `/api/tasks` instead of `/api/content/tasks`
 2. Update `apiClient.js` metrics calls
 3. Delete `/api/content/tasks` endpoint from content_routes.py
@@ -146,6 +159,7 @@ These are documentation or analysis files that should be archived or updated.
 7. Delete natural_language_content_routes.py
 
 ### Phase 3: Code Cleanup
+
 1. Remove deprecated function `getStrapiURL()` from web/public-site/lib/url.js
 2. Clean up import of `content_router_service` in main.py
 3. Update documentation files
@@ -154,14 +168,14 @@ These are documentation or analysis files that should be archived or updated.
 
 ## Risk Assessment
 
-| Category | Count | Risk | Effort |
-|----------|-------|------|--------|
-| Archive deletion | 1 | Low | <5 min |
-| Unused routes | 5 | Low | 5 min |
-| Backup files | 3 | Low | 2 min |
-| Frontend API updates | 3 | Medium | 15 min |
-| Backend endpoint removal | 3 | Medium | 10 min |
-| Deprecated functions | 2 | Low | 5 min |
+| Category                 | Count | Risk   | Effort |
+| ------------------------ | ----- | ------ | ------ |
+| Archive deletion         | 1     | Low    | <5 min |
+| Unused routes            | 5     | Low    | 5 min  |
+| Backup files             | 3     | Low    | 2 min  |
+| Frontend API updates     | 3     | Medium | 15 min |
+| Backend endpoint removal | 3     | Medium | 10 min |
+| Deprecated functions     | 2     | Low    | 5 min  |
 
 **Total Estimated Time:** ~45 minutes  
 **Total Estimated Impact:** High confidence, no breaking changes expected
@@ -171,6 +185,7 @@ These are documentation or analysis files that should be archived or updated.
 ## Files Affected by Cleanup
 
 ### Backend Changes
+
 - `src/cofounder_agent/routes/content_routes.py` - Delete or drastically reduce
 - `src/cofounder_agent/routes/subtask_routes.py` - Delete entirely
 - `src/cofounder_agent/routes/natural_language_content_routes.py` - Delete entirely
@@ -183,15 +198,18 @@ These are documentation or analysis files that should be archived or updated.
 - `src/cofounder_agent/main.py` - Remove imports
 
 ### Frontend Changes
+
 - `web/oversight-hub/src/services/taskService.js` - Update API endpoints
 - `web/oversight-hub/src/lib/apiClient.js` - Update API endpoints
 - `web/oversight-hub/src/components/tasks/TaskManagement.jsx` - Update function calls
 - `web/public-site/lib/url.js` - Remove deprecated function
 
 ### Directory Deletions
+
 - `archive/` - Entire directory
 
 ### Files to Delete
+
 - `web/oversight-hub/src/components/tasks/TaskManagement-original.jsx`
 - `web/public-site/.env.local.example`
 - `web/public-site/coverage/` (entire directory)
@@ -215,6 +233,7 @@ After cleanup, verify:
 ## Dependencies Verified
 
 **Frontend → Backend Endpoints:**
+
 - ✅ `/api/tasks` - Used by TaskManagement.jsx (verified working)
 - ✅ `/api/content/tasks/{id}` - Used by taskService, can be replaced
 - ❌ `/api/content/subtasks/*` - NOT used anywhere

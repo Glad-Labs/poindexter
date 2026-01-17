@@ -5,14 +5,17 @@
 This directory now contains comprehensive logging and testing for the approval workflow. Here's what was added:
 
 ### 🎯 Start Here
+
 1. **[LOGGING_IMPLEMENTATION_COMPLETE.md](LOGGING_IMPLEMENTATION_COMPLETE.md)** - Overview of everything that was done
 2. **[HOW_TO_VIEW_LOGS.md](HOW_TO_VIEW_LOGS.md)** - How to see and monitor the logs in real-time
 
 ### 🧪 Testing
+
 3. **[APPROVAL_WORKFLOW_TESTING.md](APPROVAL_WORKFLOW_TESTING.md)** - Complete testing guide with examples
 4. **[LOGGING_AND_TEST_SUMMARY.md](LOGGING_AND_TEST_SUMMARY.md)** - Test findings and analysis
 
 ### 📁 Test Scripts
+
 - `scripts/test-approval-workflow.py` - Comprehensive test
 - `scripts/test-approval-simple.py` - Simplified test
 
@@ -21,6 +24,7 @@ This directory now contains comprehensive logging and testing for the approval w
 ## ⚡ Quick Start
 
 ### 1. **View Logs While Testing** (Easiest)
+
 ```
 1. Start services:  npm run dev
 2. Open browser:    http://localhost:3001
@@ -31,14 +35,16 @@ This directory now contains comprehensive logging and testing for the approval w
 ```
 
 ### 2. **Run Automated Test**
+
 ```bash
 cd c:\\Users\\mattm\\glad-labs-website
 python scripts/test-approval-simple.py
 ```
 
 ### 3. **Query Database After Approval**
+
 ```sql
-SELECT status, task_metadata FROM content_tasks 
+SELECT status, task_metadata FROM content_tasks
 WHERE id = (SELECT MAX(id) FROM content_tasks);
 ```
 
@@ -47,7 +53,9 @@ WHERE id = (SELECT MAX(id) FROM content_tasks);
 ## 📊 What Logs Show
 
 ### Frontend (Browser Console - F12)
+
 Shows:
+
 - Form validation (feedback length, reviewer ID)
 - Service method calls
 - API endpoint selection
@@ -55,13 +63,16 @@ Shows:
 - Success/failure status
 
 Example search terms:
+
 - `handleApprovalSubmit` - Form submission
 - `unifiedStatusService` - Service layer
 - `approve()` - Approval method
 - `[SUCCESS]` or `[FAILED]` - Quick filtering
 
 ### Backend (Terminal)
+
 Shows:
+
 - API route entry with request details
 - Status validation logic
 - Database field extraction
@@ -69,6 +80,7 @@ Shows:
 - Persisted data confirmation
 
 Look for sections marked with:
+
 - `[ROUTE]` - API endpoint hit
 - `[SERVICE]` - Business logic
 - `[DATABASE]` - Database operation
@@ -78,6 +90,7 @@ Look for sections marked with:
 ## 🔍 What's Being Tracked
 
 ### During Approval:
+
 1. ✅ Frontend validation (feedback is 10-1000 chars, reviewer ID exists)
 2. ✅ Service layer (builds payload with metadata)
 3. ✅ API routing (selects new endpoint, has fallback)
@@ -86,6 +99,7 @@ Look for sections marked with:
 6. ✅ Metadata persistence (saves approval_feedback, reviewer_notes, etc.)
 
 ### Metadata Fields Saved:
+
 ```json
 {
   "action": "approval",
@@ -101,18 +115,19 @@ Look for sections marked with:
 
 ## 📝 Documentation Map
 
-| Document | Purpose | Read Time |
-|----------|---------|-----------|
-| **LOGGING_IMPLEMENTATION_COMPLETE.md** | What was done, findings, next steps | 5 min |
-| **HOW_TO_VIEW_LOGS.md** | Where to find logs, how to monitor | 10 min |
-| **APPROVAL_WORKFLOW_TESTING.md** | Testing procedures, examples, troubleshooting | 15 min |
-| **LOGGING_AND_TEST_SUMMARY.md** | Test results, issues found, recommendations | 10 min |
+| Document                               | Purpose                                       | Read Time |
+| -------------------------------------- | --------------------------------------------- | --------- |
+| **LOGGING_IMPLEMENTATION_COMPLETE.md** | What was done, findings, next steps           | 5 min     |
+| **HOW_TO_VIEW_LOGS.md**                | Where to find logs, how to monitor            | 10 min    |
+| **APPROVAL_WORKFLOW_TESTING.md**       | Testing procedures, examples, troubleshooting | 15 min    |
+| **LOGGING_AND_TEST_SUMMARY.md**        | Test results, issues found, recommendations   | 10 min    |
 
 ---
 
 ## ✅ Verification Checklist
 
 After approval, verify:
+
 - [ ] Frontend console shows no errors
 - [ ] Backend terminal shows SUCCESS messages
 - [ ] Database query shows status = 'approved'
@@ -124,15 +139,18 @@ After approval, verify:
 ## 🚀 Files Modified
 
 ### Backend (3 files)
+
 - `src/cofounder_agent/routes/task_routes.py` - API endpoint logging
 - `src/cofounder_agent/services/enhanced_status_change_service.py` - Status change logging
 - `src/cofounder_agent/services/tasks_db.py` - Database operation logging
 
 ### Frontend (2 files)
+
 - `web/oversight-hub/src/components/tasks/ResultPreviewPanel.jsx` - Form logging
 - `web/oversight-hub/src/services/unifiedStatusService.js` - Service layer logging
 
 ### New Test Files
+
 - `scripts/test-approval-workflow.py`
 - `scripts/test-approval-simple.py`
 
@@ -141,6 +159,7 @@ After approval, verify:
 ## 🎓 Log Output Examples
 
 ### Success Flow
+
 ```
 Frontend: Form submitted → validation passed
 Frontend: Calling unifiedStatusService.approve()
@@ -157,6 +176,7 @@ Database: status = 'approved', updated_at = <recent timestamp>
 ```
 
 ### Common Issues
+
 ```
 ❌ 401 Unauthorized
    → Auth token missing or expired
@@ -178,18 +198,22 @@ Database: status = 'approved', updated_at = <recent timestamp>
 ## 📞 Quick Troubleshooting
 
 **No logs appearing?**
+
 - DevTools must be open BEFORE clicking Approve
 - Refresh the page
 
 **API returns 401?**
+
 - Need valid auth token
 - Logout/login again or use UI directly
 
 **Backend logs not showing?**
+
 - Check terminal where `npm run dev` is running
 - May need to scroll up
 
 **Database shows old status?**
+
 - Verify query is for correct task ID
 - Check network tab to see if API call succeeded
 - Check backend logs for errors

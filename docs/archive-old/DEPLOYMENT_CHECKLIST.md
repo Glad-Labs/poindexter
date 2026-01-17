@@ -8,6 +8,7 @@
 ## Pre-Deployment Verification ✅
 
 ### 1. Code Quality
+
 - [x] All tests pass (37/37)
 - [x] No lint errors
 - [x] Backward compatible
@@ -15,6 +16,7 @@
 - [x] Logging in place
 
 ### 2. Database
+
 - [x] Migration file created: `001_create_task_status_history.sql`
 - [x] Schema validated
 - [x] Indexes optimized
@@ -22,11 +24,13 @@
 - [x] Metadata JSONB support verified
 
 ### 3. API Endpoints
+
 - [x] PUT `/api/tasks/{task_id}/status/validated` - Status update with validation
 - [x] GET `/api/tasks/{task_id}/status-history` - Audit trail retrieval
 - [x] GET `/api/tasks/{task_id}/status-history/failures` - Validation failures query
 
 ### 4. Documentation
+
 - [x] Full implementation guide created
 - [x] API examples provided (Python, cURL)
 - [x] Troubleshooting guide included
@@ -40,6 +44,7 @@
 ### Phase 1: Database Migration (Production-Safe)
 
 **Preparation:**
+
 ```bash
 # 1. Backup production database
 ./scripts/backup-production-db.sh
@@ -53,6 +58,7 @@ psql -U postgres -d glad_labs_dev -c "\d task_status_history"
 ```
 
 **Production Migration:**
+
 ```bash
 # 1. Apply migration to production
 psql -U $DB_USER -d $DB_NAME -h $DB_HOST < src/cofounder_agent/migrations/001_create_task_status_history.sql
@@ -65,26 +71,28 @@ psql -U $DB_USER -d $DB_NAME -h $DB_HOST -c "\di task_status_history*"
 ```
 
 **Validation:**
+
 ```sql
 -- Check table exists
 SELECT EXISTS(
-  SELECT 1 FROM information_schema.tables 
+  SELECT 1 FROM information_schema.tables
   WHERE table_name = 'task_status_history'
 );
 
 -- Check indexes
-SELECT indexname FROM pg_indexes 
+SELECT indexname FROM pg_indexes
 WHERE tablename = 'task_status_history';
 
 -- Verify foreign key
-SELECT constraint_name FROM information_schema.table_constraints 
-WHERE table_name = 'task_status_history' 
+SELECT constraint_name FROM information_schema.table_constraints
+WHERE table_name = 'task_status_history'
 AND constraint_type = 'FOREIGN KEY';
 ```
 
 ### Phase 2: Code Deployment
 
 **Backend (FastAPI):**
+
 ```bash
 # 1. Merge to main branch
 git checkout main
@@ -102,6 +110,7 @@ curl -s http://localhost:8000/health | jq .
 ```
 
 **Verification:**
+
 ```bash
 # Test new endpoints
 curl -X GET "http://localhost:8000/api/tasks/test/status-history" \
@@ -112,6 +121,7 @@ curl -X GET "http://localhost:8000/api/tasks/test/status-history" \
 ### Phase 3: Monitoring
 
 **Monitor Logs:**
+
 ```bash
 # Watch for errors
 tail -f logs/server.log | grep -i "status\|error\|warning"
@@ -121,21 +131,22 @@ psql -U postgres -d postgres -c "SELECT count(*) FROM pg_stat_activity;"
 ```
 
 **Database Monitoring:**
+
 ```sql
 -- Monitor audit table growth
-SELECT 
+SELECT
   COUNT(*) as total_entries,
   COUNT(DISTINCT task_id) as unique_tasks,
   MAX(timestamp) as latest_change
 FROM task_status_history;
 
 -- Monitor index usage
-SELECT 
+SELECT
   indexname,
   idx_scan as scans,
   idx_tup_read as tuples_read,
   idx_tup_fetch as tuples_fetched
-FROM pg_stat_user_indexes 
+FROM pg_stat_user_indexes
 WHERE tablename = 'task_status_history'
 ORDER BY idx_scan DESC;
 ```
@@ -147,24 +158,28 @@ ORDER BY idx_scan DESC;
 If issues occur, execute in order:
 
 ### Step 1: Stop Processing New Changes
+
 ```bash
 # Kill background task processor
 pkill -f "task_executor\|orchestrator"
 ```
 
 ### Step 2: Revert Code (if needed)
+
 ```bash
 git revert HEAD  # Revert last commit
 git push origin main
 ```
 
 ### Step 3: Drop Audit Table (last resort)
+
 ```bash
 -- WARNING: Only in emergency
 DROP TABLE IF EXISTS task_status_history CASCADE;
 ```
 
 ### Step 4: Restore Database
+
 ```bash
 # Restore from backup if table needs rebuilding
 ./scripts/restore-production-db.sh
@@ -204,7 +219,7 @@ psql -U $DB_USER -d $DB_NAME -c "SELECT COUNT(*) FROM task_status_history;"
 ```sql
 -- Check query performance
 EXPLAIN ANALYZE
-SELECT * FROM task_status_history 
+SELECT * FROM task_status_history
 WHERE task_id = '550e8400-e29b-41d4-a716-446655440000'
 ORDER BY timestamp DESC LIMIT 50;
 
@@ -226,10 +241,9 @@ ORDER BY timestamp DESC LIMIT 50;
 ```javascript
 // Can start using new endpoints when ready
 async function getStatusHistory(taskId) {
-  const response = await fetch(
-    `/api/tasks/${taskId}/status-history`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
+  const response = await fetch(`/api/tasks/${taskId}/status-history`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
   return response.json();
 }
 ```
@@ -264,12 +278,12 @@ SELECT COUNT(*) FROM task_status_history;
 
 # 2. Average query time
 SELECT AVG(EXTRACT(EPOCH FROM (timestamp_end - timestamp_start)))
-FROM pg_stat_statements 
+FROM pg_stat_statements
 WHERE query LIKE '%task_status_history%';
 
 # 3. Failed transitions (error counts)
-SELECT new_status, COUNT(*) 
-FROM task_status_history 
+SELECT new_status, COUNT(*)
+FROM task_status_history
 WHERE new_status IN ('validation_failed', 'failed')
 GROUP BY new_status;
 ```
@@ -351,11 +365,11 @@ psql -U $DB_USER -d $DB_NAME -c \
 
 ## Sign-Off
 
-**Deployment Lead:** ___________________  Date: ________
+**Deployment Lead:** ********\_\_\_******** Date: **\_\_\_\_**
 
-**DBA:** ___________________  Date: ________
+**DBA:** ********\_\_\_******** Date: **\_\_\_\_**
 
-**QA:** ___________________  Date: ________
+**QA:** ********\_\_\_******** Date: **\_\_\_\_**
 
 ---
 

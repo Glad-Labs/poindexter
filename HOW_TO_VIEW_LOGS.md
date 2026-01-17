@@ -7,6 +7,7 @@ We've added comprehensive logging to track the entire approval workflow from fro
 ## 1. Frontend Console Logs (Most Visible)
 
 ### How to Access:
+
 1. Open http://localhost:3001 (Oversight Hub)
 2. Press **F12** to open Developer Tools
 3. Click **Console** tab
@@ -15,6 +16,7 @@ We've added comprehensive logging to track the entire approval workflow from fro
 6. Click "Approve & Publish"
 
 ### What You'll See:
+
 When approval is triggered, you'll see console output like:
 
 ```
@@ -40,6 +42,7 @@ When approval is triggered, you'll see console output like:
 ```
 
 ### Key Log Sections:
+
 - **Entry**: Form submission with validation
 - **Validation**: Feedback length, reviewer ID checks
 - **Service Call**: Shows unifiedStatusService.approve()
@@ -49,9 +52,11 @@ When approval is triggered, you'll see console output like:
 ## 2. Backend Logs (Terminal)
 
 ### Where to Find:
+
 The backend logs are shown in the terminal where you ran `npm run dev`
 
 Look for output starting with:
+
 ```
 INFO:     127.0.0.1:PORT - "PUT /api/tasks/... HTTP/1.1" 200 OK
 ```
@@ -59,6 +64,7 @@ INFO:     127.0.0.1:PORT - "PUT /api/tasks/... HTTP/1.1" 200 OK
 ### Backend Log Sections:
 
 **Section 1 - API Route Entry** (task_routes.py):
+
 ```
 ================================================================================
 [ROUTE] PUT /api/tasks/{task_id}/status/validated - ENTRY
@@ -71,30 +77,32 @@ INFO:     127.0.0.1:PORT - "PUT /api/tasks/... HTTP/1.1" 200 OK
 ```
 
 **Section 2 - Status Validation** (enhanced_status_change_service.py):
+
 ```
 [SERVICE] EnhancedStatusChangeService.validate_and_change_status()
    Task ID: 705cd74b-3f9a-48a5-b0b7-a6719529c82d
    Target Status: approved
    User: test-user@example.com
-   
+
    [FETCH] Fetching current task...
    [SUCCESS] Current status: awaiting_approval
-   
+
    [VALIDATE] Validating transition: awaiting_approval -> approved
    [SUCCESS] Transition valid
 ```
 
 **Section 3 - Database Update** (tasks_db.py):
+
 ```
 [DATABASE] TasksDatabase.update_task()
    Task ID: 705cd74b-3f9a-48a5-b0b7-a6719529c82d
-   
+
    [EXTRACT] Extracting metadata fields...
    [SUCCESS] Fields extracted: 4 items
-   
+
    [BUILD] Building SQL UPDATE clause...
    [SQL] UPDATE content_tasks SET status=$1, task_metadata=$2, ...
-   
+
    [EXECUTE] Executing UPDATE query...
    [SUCCESS] UPDATE SUCCESS
       Status: approved
@@ -106,25 +114,28 @@ INFO:     127.0.0.1:PORT - "PUT /api/tasks/... HTTP/1.1" 200 OK
 After approval, you can query the database directly to see the persisted data:
 
 ### Connect to Database:
+
 ```bash
 # Using the DATABASE_URL from .env.local
 psql $DATABASE_URL
 ```
 
 ### Check Task Status:
+
 ```sql
 -- Find the most recently updated task
-SELECT 
-    id, 
-    status, 
-    task_metadata, 
-    updated_at 
-FROM content_tasks 
-ORDER BY updated_at DESC 
+SELECT
+    id,
+    status,
+    task_metadata,
+    updated_at
+FROM content_tasks
+ORDER BY updated_at DESC
 LIMIT 1;
 ```
 
 ### Expected Output:
+
 ```
  id |  status  |                          task_metadata                           |         updated_at
 ----+----------+---------------------------------------------------------------------+----------------------------
@@ -133,15 +144,16 @@ LIMIT 1;
 ```
 
 ### Check Specific Fields in Metadata:
+
 ```sql
 -- Extract approval_feedback from metadata
-SELECT 
+SELECT
     id,
     status,
     task_metadata->'approval_feedback' AS feedback,
     task_metadata->'reviewer_notes' AS notes,
     task_metadata->'approved_at' AS approved_timestamp
-FROM content_tasks 
+FROM content_tasks
 WHERE id = 5;
 ```
 
@@ -162,6 +174,7 @@ In the browser console, you can filter logs:
 ## 5. Complete Approval Workflow Flow
 
 ### Step 1: Form Submission (Frontend)
+
 ```
 → Click "Approve & Publish" button
 → handleApprovalSubmit() logs entry
@@ -171,6 +184,7 @@ In the browser console, you can filter logs:
 ```
 
 ### Step 2: Service Routing (Frontend)
+
 ```
 → unifiedStatusService.approve() logs call
 → Calls updateStatus() with "approved" status
@@ -181,6 +195,7 @@ In the browser console, you can filter logs:
 ```
 
 ### Step 3: API Route Handling (Backend)
+
 ```
 → task_routes.py receives PUT request
 → Logs entry with all request details
@@ -189,6 +204,7 @@ In the browser console, you can filter logs:
 ```
 
 ### Step 4: Status Validation & Change (Backend)
+
 ```
 → EnhancedStatusChangeService receives change request
 → Fetches current task from database
@@ -198,6 +214,7 @@ In the browser console, you can filter logs:
 ```
 
 ### Step 5: Database Persistence (Backend)
+
 ```
 → TasksDatabase.update_task() receives update
 → Extracts nested fields from metadata
@@ -208,6 +225,7 @@ In the browser console, you can filter logs:
 ```
 
 ### Step 6: Confirmation (Frontend)
+
 ```
 → Frontend receives success response
 → Shows alert: "Task approved successfully!"
@@ -220,12 +238,14 @@ In the browser console, you can filter logs:
 ### ❌ No Console Logs Appearing
 
 **Check**:
+
 1. DevTools Console is open (F12, Console tab)
 2. Not filtered to error level only (should show all levels)
 3. Refresh page after opening DevTools
 4. Check network tab to see if request was sent
 
 **Solution**:
+
 1. Refresh browser
 2. Make sure DevTools is open BEFORE clicking Approve
 3. Check Network tab for the API call
@@ -233,11 +253,13 @@ In the browser console, you can filter logs:
 ### ❌ API Returns 401 Unauthorized
 
 **Check**:
+
 1. Auth token may have expired
 2. API requires authentication
 3. Oversight Hub session expired
 
 **Solution**:
+
 1. Logout and login again
 2. Check if auth token is in local storage: DevTools > Application > Local Storage
 3. Look for `auth_token` or `access_token`
@@ -245,25 +267,29 @@ In the browser console, you can filter logs:
 ### ❌ Database Shows Old Status
 
 **Check**:
+
 1. API call might have failed (check network tab for 4xx/5xx)
 2. Update query might have failed
 3. Looking at wrong task ID
 
 **Solution**:
+
 ```sql
 -- Check for errors in recent updates
-SELECT id, status, updated_at FROM content_tasks 
+SELECT id, status, updated_at FROM content_tasks
 ORDER BY updated_at DESC LIMIT 5;
 ```
 
 ### ❌ Metadata Fields Are Empty
 
 **Check**:
+
 1. Approval payload doesn't include metadata
 2. Metadata extraction in database failed
 3. SQL UPDATE didn't include task_metadata
 
 **Solution**:
+
 1. Check frontend logs for payload content
 2. Check backend logs for "UPDATE SUCCESS" section
 3. Query database to see what was actually saved:
@@ -274,12 +300,14 @@ ORDER BY updated_at DESC LIMIT 5;
 ## 7. Real-Time Log Monitoring
 
 ### Option A: Split Screen
+
 1. Terminal on left: `npm run dev` (shows backend logs)
 2. Browser on right: http://localhost:3001 (frontend with DevTools open)
 3. Perform approval workflow
 4. Watch logs appear in real time
 
 ### Option B: Log Tailing
+
 ```bash
 # In a separate terminal, tail backend logs
 # (if using log file instead of console output)
@@ -287,15 +315,18 @@ tail -f server.log | grep -i approval
 ```
 
 ### Option C: Browser Console with Filters
+
 In DevTools console, search for approval-related logs:
+
 ```javascript
 // See all approval-related logs
-console.log("Search for: handleApprovalSubmit, updateStatus, approve");
+console.log('Search for: handleApprovalSubmit, updateStatus, approve');
 ```
 
 ## 8. Expected vs Actual Comparison
 
 ### Expected Log Flow:
+
 1. Frontend: Form validation ✓
 2. Frontend: Service call ✓
 3. Frontend: Endpoint selection ✓
@@ -306,6 +337,7 @@ console.log("Search for: handleApprovalSubmit, updateStatus, approve");
 8. Frontend: Success confirmation ✓
 
 ### If Steps Are Missing:
+
 - **Missing Frontend Logs**: Check console is open, browser permissions
 - **Missing Backend Logs**: Check terminal output, might be scrolled up
 - **Missing DB Confirmation**: Query database directly
@@ -314,6 +346,7 @@ console.log("Search for: handleApprovalSubmit, updateStatus, approve");
 ## 9. Log Files Reference
 
 ### Files with Logging:
+
 - **Frontend**:
   - `/web/oversight-hub/src/components/tasks/ResultPreviewPanel.jsx` - Approval form
   - `/web/oversight-hub/src/services/unifiedStatusService.js` - Service layer
@@ -324,6 +357,7 @@ console.log("Search for: handleApprovalSubmit, updateStatus, approve");
   - `/src/cofounder_agent/services/tasks_db.py` - Database operations
 
 ### Each File Has Logging Around:
+
 - Entry points (function start)
 - Data validation
 - API requests/responses
@@ -334,6 +368,7 @@ console.log("Search for: handleApprovalSubmit, updateStatus, approve");
 ## 10. Common Log Messages
 
 ### Success Messages:
+
 ```
 [SUCCESS] Connected to database
 [PASS] All validations passed
@@ -342,6 +377,7 @@ console.log("Search for: handleApprovalSubmit, updateStatus, approve");
 ```
 
 ### Info Messages:
+
 ```
 [INFO] Sending APPROVAL request
 [INFO] Calling unifiedStatusService.approve()
@@ -349,6 +385,7 @@ console.log("Search for: handleApprovalSubmit, updateStatus, approve");
 ```
 
 ### Check Messages:
+
 ```
 [CHECK] Status: approved
 [CHECK] Metadata Persistence
@@ -356,6 +393,7 @@ console.log("Search for: handleApprovalSubmit, updateStatus, approve");
 ```
 
 ### Failed Messages:
+
 ```
 [FAILED] 401 - Unauthorized
 [FAILED] Task not found

@@ -184,7 +184,7 @@ This keeps documentation clean, maintainable, and always relevant.
 
 **Archived in This Pass (Jan 16, 2026):**
 
-- Root level: 39 session/analysis files (ADSENSE_*, FASTAPI_AUDIT, IMPLEMENTATION_*, etc.)
+- Root level: 39 session/analysis files (ADSENSE*\*, FASTAPI_AUDIT, IMPLEMENTATION*\*, etc.)
 - Docs folder: 10 feature guides & status updates (approval-workflow, phase-6, etc.)
 - **Total:** 49 files consolidated into docs/archive-old/
 

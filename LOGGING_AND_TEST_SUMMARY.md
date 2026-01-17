@@ -7,6 +7,7 @@
 Added detailed logging at every stage of the approval workflow:
 
 #### Frontend Logging (`ResultPreviewPanel.jsx` and `unifiedStatusService.js`):
+
 - Approval form submission with validation
 - Service method calls with payload details
 - Endpoint routing (new vs legacy)
@@ -14,10 +15,12 @@ Added detailed logging at every stage of the approval workflow:
 - Error tracking
 
 #### Backend Logging (`task_routes.py`):
+
 - POST `/api/tasks/{task_id}/approve` - Direct approval endpoint
 - PUT `/api/tasks/{task_id}/status/validated` - Validated approval endpoint with audit
 
 #### Backend Services Logging:
+
 - `EnhancedStatusChangeService` - Status transition validation and execution
 - `TasksDatabase.update_task()` - Database field extraction and persistence
 
@@ -31,6 +34,7 @@ Two test scripts for approval workflow verification:
 ## Key Findings from Test Run
 
 ### Test Results:
+
 ```
 [INFO] Found task: 705cd74b-3f9a-48a5-b0b7-a6719529c82d
    Current status: awaiting_approval
@@ -78,13 +82,14 @@ Since the API requires authentication, you have two options:
 6. **Watch the browser console (F12) for detailed logging**
 7. **Query database to verify persistence:**
    ```sql
-   SELECT status, task_metadata FROM content_tasks 
+   SELECT status, task_metadata FROM content_tasks
    WHERE id = (SELECT MAX(id) FROM content_tasks);
    ```
 
 ### Option 2: Add Authentication to Test Script
 
 Modify the test script to:
+
 1. Obtain an auth token
 2. Include token in API requests
 3. Then the approval flow will execute with full logging
@@ -98,6 +103,7 @@ If endpoints need to be tested without auth, add `@router.put(..., skip_auth=Tru
 When you run the approval workflow with the logging in place, you'll see:
 
 ### Console Log Example (Frontend):
+
 ```
 ================================================================================
 [TEST] handleApprovalSubmit() ENTRY
@@ -123,6 +129,7 @@ When you run the approval workflow with the logging in place, you'll see:
 ```
 
 ### Backend Log Example:
+
 ```
 ================================================================================
 [ROUTE] PUT /api/tasks/{task_id}/status/validated - ENTRY
@@ -138,7 +145,7 @@ When you run the approval workflow with the logging in place, you'll see:
 [DATABASE] TasksDatabase.update_task()
    Extracting metadata fields to dedicated columns
    Fields to update: ['status', 'task_metadata', 'updated_at']
-   
+
    [SQL] UPDATE content_tasks SET status=$1, task_metadata=$2, updated_at=$3
    [SUCCESS] UPDATE returned row
    - Status: approved
@@ -152,6 +159,7 @@ When you run the approval workflow with the logging in place, you'll see:
 ## Database Schema Considerations
 
 The test discovered:
+
 1. `content_tasks` table exists and is accessible
 2. `status_history` table may not exist (caught error)
 3. Required fields for task creation:
@@ -170,6 +178,7 @@ The test discovered:
    - Query database to verify persistence
 
 2. **Create Status History Table** (if needed):
+
    ```sql
    CREATE TABLE IF NOT EXISTS status_history (
        id SERIAL PRIMARY KEY,
@@ -217,6 +226,7 @@ The test discovered:
 ✅ **Findings**: Identified API authentication requirements and potential schema issues
 
 ⚠️ **Known Issues**:
+
 - API endpoints require authentication (expected for production)
 - `status_history` table may not exist (affects audit trail)
 - Database-direct testing doesn't exercise full API flow

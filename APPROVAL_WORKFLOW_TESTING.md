@@ -14,28 +14,33 @@ This test suite verifies the complete approval workflow with comprehensive loggi
 ### 1. Enhanced Logging Locations
 
 **Frontend (`web/oversight-hub/src/components/tasks/ResultPreviewPanel.jsx`):**
+
 - Logs approval form submission with validation
 - Tracks approval/rejection request preparation
 - Logs service method calls and responses
 - Shows detailed error messages
 
 **Service Layer (`web/oversight-hub/src/services/unifiedStatusService.js`):**
+
 - Logs approve() method entry and payload construction
 - Tracks which endpoint is being attempted (new vs legacy)
 - Shows endpoint fallback behavior
 - Logs response from backend
 
 **Backend Routes (`src/cofounder_agent/routes/task_routes.py`):**
+
 - POST `/api/tasks/{task_id}/approve`: Entry point logging, status validation, DB update
 - PUT `/api/tasks/{task_id}/status/validated`: Request logging, status change execution
 
 **Backend Services (`src/cofounder_agent/services/enhanced_status_change_service.py`):**
+
 - Logs task fetch and status validation
 - Shows transition validation results
 - Tracks history logging
 - Logs database update results
 
 **Database (`src/cofounder_agent/services/tasks_db.py`):**
+
 - Logs metadata extraction and normalization
 - Shows SQL query construction
 - Verifies data persistence with response logging
@@ -46,6 +51,7 @@ This test suite verifies the complete approval workflow with comprehensive loggi
 **File**: `scripts/test-approval-workflow.py`
 
 Comprehensive test that:
+
 1. Creates a test task via API
 2. Transitions to `awaiting_approval` status
 3. Approves with detailed feedback
@@ -89,12 +95,14 @@ python scripts/test-approval-workflow.py
 While the test runs, monitor logs in separate terminals:
 
 **Terminal 1 - Backend Logs:**
+
 ```bash
 # Logs from the running co-founder agent (if using npm run dev, it's already shown)
 # Otherwise, this logs to the terminal where you started the service
 ```
 
 **Terminal 2 - Browser DevTools (for frontend logs):**
+
 1. Open http://localhost:3001 (Oversight Hub)
 2. Press F12 to open DevTools
 3. Go to Console tab
@@ -109,15 +117,15 @@ In a separate terminal, you can query the database directly:
 psql $DATABASE_URL
 
 # Check the most recent task
-SELECT id, status, task_metadata, updated_at 
-FROM content_tasks 
-ORDER BY updated_at DESC 
+SELECT id, status, task_metadata, updated_at
+FROM content_tasks
+ORDER BY updated_at DESC
 LIMIT 1;
 
 # Check status history
-SELECT old_status, new_status, reason, created_at 
-FROM status_history 
-ORDER BY created_at DESC 
+SELECT old_status, new_status, reason, created_at
+FROM status_history
+ORDER BY created_at DESC
 LIMIT 10;
 ```
 
@@ -312,6 +320,7 @@ LIMIT 10;
    - If legacy fallback happened, check the reason (404, etc.)
 
 2. Verify backend endpoint exists:
+
    ```bash
    curl -X OPTIONS http://localhost:8000/api/tasks/test/status/validated
    ```
@@ -328,14 +337,16 @@ LIMIT 10;
 **Debugging Steps**:
 
 1. Verify task was created:
+
    ```sql
    SELECT * FROM content_tasks WHERE title LIKE '%Test Approval%';
    ```
 
 2. Check status_history for transitions:
+
    ```sql
-   SELECT * FROM status_history 
-   WHERE task_id = '<task_id>' 
+   SELECT * FROM status_history
+   WHERE task_id = '<task_id>'
    ORDER BY created_at DESC;
    ```
 
@@ -375,12 +386,12 @@ If you prefer to test manually instead of running the script:
 psql $DATABASE_URL
 
 # Check the task status
-SELECT status, task_metadata FROM content_tasks 
+SELECT status, task_metadata FROM content_tasks
 WHERE id = '<task_id>';
 
 # Check history
-SELECT old_status, new_status, reason FROM status_history 
-WHERE task_id = '<task_id>' 
+SELECT old_status, new_status, reason FROM status_history
+WHERE task_id = '<task_id>'
 ORDER BY created_at DESC;
 ```
 
@@ -419,7 +430,8 @@ After approval, verify these in the database:
 
 If all checks pass: ✅ Approval workflow is working correctly!
 
-If some checks fail: 
+If some checks fail:
+
 1. Review the logs at the failing stage
 2. Check the troubleshooting section above
 3. Verify the code changes were applied correctly

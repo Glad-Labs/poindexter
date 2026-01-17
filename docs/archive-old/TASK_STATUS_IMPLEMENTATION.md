@@ -2,7 +2,7 @@
 
 **Status:** ✅ Backend Foundation & Database Layer Complete  
 **Date:** December 22, 2025  
-**Coverage:** Foundation (Phase 1) + Database Migration (Phase 2)  
+**Coverage:** Foundation (Phase 1) + Database Migration (Phase 2)
 
 ---
 
@@ -37,6 +37,7 @@ This document describes the comprehensive task status management system implemen
 ### Phase 2: Database Migration ✅
 
 **Created Migration:**
+
 - `src/cofounder_agent/migrations/001_create_task_status_history.sql`
   - `task_status_history` table with full audit trail
   - Foreign key to `content_tasks`
@@ -44,6 +45,7 @@ This document describes the comprehensive task status management system implemen
   - JSONB metadata support
 
 **Schema:**
+
 ```sql
 -- task_status_history table
 id BIGSERIAL PRIMARY KEY
@@ -228,12 +230,12 @@ cancelled → (terminal, no transitions)
 
 ### Transition-Specific Requirements
 
-| Transition | Required Context | Example |
-|-----------|------------------|---------|
-| → awaiting_approval | approval_type | `{"approval_type": "editorial"}` |
-| → rejected | reason | `{"reason": "Quality below threshold"}` |
-| → published | result | `{"result": {"url": "post-url"}}` |
-| All | metadata (optional) | `{"quality_score": 8.5}` |
+| Transition          | Required Context    | Example                                 |
+| ------------------- | ------------------- | --------------------------------------- |
+| → awaiting_approval | approval_type       | `{"approval_type": "editorial"}`        |
+| → rejected          | reason              | `{"reason": "Quality below threshold"}` |
+| → published         | result              | `{"result": {"url": "post-url"}}`       |
+| All                 | metadata (optional) | `{"quality_score": 8.5}`                |
 
 ---
 
@@ -407,6 +409,7 @@ psql -U postgres -d glad_labs -c "\d task_status_history"
 ### 2. Deploy Backend
 
 The enhanced endpoints are automatically available once the code is deployed:
+
 - `PUT /api/tasks/{task_id}/status/validated`
 - `GET /api/tasks/{task_id}/status-history`
 - `GET /api/tasks/{task_id}/status-history/failures`

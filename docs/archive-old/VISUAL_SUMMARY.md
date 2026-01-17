@@ -246,13 +246,13 @@ Future Enhancements
 
 ## 💬 Questions?
 
-| Topic | File |
-|-------|------|
-| How do I use this? | QUICK_REFERENCE.md |
-| How does it work? | TASK_STATUS_IMPLEMENTATION.md |
-| How do I deploy? | DEPLOYMENT_CHECKLIST.md |
-| What was delivered? | IMPLEMENTATION_SUMMARY.md |
-| Can I see examples? | tests/test_*status*.py |
+| Topic               | File                          |
+| ------------------- | ----------------------------- |
+| How do I use this?  | QUICK_REFERENCE.md            |
+| How does it work?   | TASK_STATUS_IMPLEMENTATION.md |
+| How do I deploy?    | DEPLOYMENT_CHECKLIST.md       |
+| What was delivered? | IMPLEMENTATION_SUMMARY.md     |
+| Can I see examples? | tests/test\__status_.py       |
 
 ---
 

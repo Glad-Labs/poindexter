@@ -5,15 +5,18 @@
 ### 1. ✅ Added Comprehensive Logging
 
 **Frontend Logging (2 files)**:
+
 - [ResultPreviewPanel.jsx](web/oversight-hub/src/components/tasks/ResultPreviewPanel.jsx) - Approval form submission with validation
 - [unifiedStatusService.js](web/oversight-hub/src/services/unifiedStatusService.js) - Service routing and API endpoint selection
 
 **Backend Logging (3 files)**:
+
 - [task_routes.py](src/cofounder_agent/routes/task_routes.py) - Both POST and PUT approval endpoints
 - [enhanced_status_change_service.py](src/cofounder_agent/services/enhanced_status_change_service.py) - Status transition validation
 - [tasks_db.py](src/cofounder_agent/services/tasks_db.py) - Database field extraction and persistence
 
 **Logging Tracks**:
+
 - Form validation (feedback length, reviewer ID)
 - Service method calls and payloads
 - Endpoint selection (new vs legacy)
@@ -39,6 +42,7 @@
    - Clear pass/fail results
 
 **Run Tests**:
+
 ```bash
 cd c:\\Users\\mattm\\glad-labs-website
 python scripts/test-approval-simple.py
@@ -73,6 +77,7 @@ python scripts/test-approval-simple.py
 ## Key Findings
 
 ### ✅ What Works:
+
 - Logging infrastructure is in place and functional
 - Frontend properly collects approval feedback and validation
 - Service layer routes to correct backend endpoint
@@ -81,6 +86,7 @@ python scripts/test-approval-simple.py
 - Metadata extraction logic is ready
 
 ### ⚠️ Known Issues:
+
 1. **API Authentication**: Endpoints require proper auth headers
    - Current test shows 401 Unauthorized without valid token
    - This is expected for production security
@@ -92,6 +98,7 @@ python scripts/test-approval-simple.py
    - Solution: Create table or comment out history logging
 
 ### 🔍 What Still Needs Testing:
+
 1. Full approval workflow through authenticated API
 2. Database persistence with actual metadata
 3. Status history tracking (if table created)
@@ -103,6 +110,7 @@ python scripts/test-approval-simple.py
 ### Method 1: UI Testing (Recommended ⭐)
 
 1. **Start all services**:
+
    ```bash
    npm run dev  # In project root
    ```
@@ -138,17 +146,18 @@ curl -X PUT http://localhost:8000/api/tasks/{task_id}/status/validated \
 
 ```sql
 -- Check for tasks in awaiting_approval status
-SELECT id, task_id, status FROM content_tasks 
+SELECT id, task_id, status FROM content_tasks
 WHERE status = 'awaiting_approval' LIMIT 1;
 
 -- After approval, verify:
-SELECT id, status, task_metadata, updated_at 
+SELECT id, status, task_metadata, updated_at
 FROM content_tasks WHERE id = <task_id>;
 ```
 
 ## Logging Examples
 
 ### Frontend Console Output:
+
 ```
 ================================================================================
 [TEST] handleApprovalSubmit() ENTRY
@@ -187,6 +196,7 @@ FROM content_tasks WHERE id = <task_id>;
 ```
 
 ### Backend Output:
+
 ```
 ================================================================================
 [ROUTE] PUT /api/tasks/{task_id}/status/validated - ENTRY
@@ -218,6 +228,7 @@ FROM content_tasks WHERE id = <task_id>;
 ```
 
 ### Database State:
+
 ```sql
 id | task_id | status | task_metadata | updated_at
 ---|---------|--------|---------------|-----------
@@ -227,6 +238,7 @@ id | task_id | status | task_metadata | updated_at
 ## Files Changed/Created
 
 ### Modified Files (with logging added):
+
 1. `src/cofounder_agent/routes/task_routes.py` - Added logging to approval endpoints
 2. `src/cofounder_agent/services/enhanced_status_change_service.py` - Added logging to status validation
 3. `src/cofounder_agent/services/tasks_db.py` - Added logging to database updates
@@ -234,6 +246,7 @@ id | task_id | status | task_metadata | updated_at
 5. `web/oversight-hub/src/services/unifiedStatusService.js` - Added logging to status service
 
 ### New Files Created:
+
 1. `scripts/test-approval-workflow.py` - Comprehensive approval test
 2. `scripts/test-approval-simple.py` - Simplified approval test
 3. `APPROVAL_WORKFLOW_TESTING.md` - Testing guide (this directory)
@@ -287,6 +300,7 @@ python scripts/test-approval-workflow.py
 ## Success Criteria
 
 ✅ **Approval workflow is working correctly when**:
+
 1. Frontend logs show form validation + service call + endpoint selection
 2. Backend logs show route entry + status validation + database update
 3. Database query shows status = 'approved'
@@ -294,6 +308,7 @@ python scripts/test-approval-workflow.py
 5. Task list refreshes and shows updated status
 
 ❌ **Issues to watch for**:
+
 - 401 Unauthorized (need auth token)
 - Database validation errors
 - Missing metadata fields
@@ -310,6 +325,7 @@ python scripts/test-approval-workflow.py
 - **Log Monitoring**: `HOW_TO_VIEW_LOGS.md`
 
 **Choose based on your need**:
+
 - Want to **test**: Read `APPROVAL_WORKFLOW_TESTING.md`
 - Want to **monitor logs**: Read `HOW_TO_VIEW_LOGS.md`
 - Want **findings/analysis**: Read `LOGGING_AND_TEST_SUMMARY.md`

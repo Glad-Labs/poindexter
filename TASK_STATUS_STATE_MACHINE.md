@@ -8,10 +8,11 @@
 ## State Hierarchy & Distinctions
 
 ### 1. **Approval Workflow** (With Human Review)
+
 For content that requires human approval before publishing.
 
 ```
-pending/generating 
+pending/generating
     ↓
 awaiting_approval (⚠️ Orange - needs review)
     ↓
@@ -23,6 +24,7 @@ awaiting_approval (⚠️ Orange - needs review)
 ```
 
 **Colors:**
+
 - **awaiting_approval**: Orange (#ff9800) - Pulsing animation
 - **approved**: Bright Blue (#1e88e5) - Bold, waiting to publish
 - **published**: Cyan (#00bcd4) - Live on CMS ✓ DISTINCT FROM COMPLETED
@@ -31,24 +33,27 @@ awaiting_approval (⚠️ Orange - needs review)
 ---
 
 ### 2. **Direct Completion** (No Approval)
+
 For tasks that complete without human approval.
 
 ```
-pending/generating 
+pending/generating
     ↓
 completed (✓ Lime Green #7cb342 - task finished)
 ```
 
 **Color:**
+
 - **completed**: Lime Green (#7cb342) - Single task finished ✓ DISTINCT FROM PUBLISHED
 
 ---
 
 ### 3. **Error States**
+
 For failed tasks that need attention.
 
 ```
-pending/generating 
+pending/generating
     ↓
 failed (✗ Red #f44336 - error occurred)
 ```
@@ -56,6 +61,7 @@ failed (✗ Red #f44336 - error occurred)
 ---
 
 ### 4. **Management States**
+
 For paused, cancelled, or flagged tasks.
 
 ```
@@ -70,29 +76,31 @@ For paused, cancelled, or flagged tasks.
 
 ### Status Badge Colors (UI Table)
 
-| Status | Icon | Color | Background | Border | Meaning | Workflow |
-|--------|------|-------|-----------|--------|---------|----------|
-| pending | ⧗ | #ffc107 | Amber 15% | #ffc107 | Waiting to start | All |
-| in_progress | ⟳ | #2196f3 | Blue 15% | #2196f3 | Currently processing | All |
-| awaiting_approval | ⚠ | #ff6f00 | Orange 20% | #ff6f00 | Needs human review | Approval |
-| **approved** | **✓** | **#1e88e5** | **Blue 20%** | **#1e88e5** | Human approved | Approval |
-| **published** | **✓✓** | **#00bcd4** | **Cyan 15%** | **#00bcd4** | Live on CMS | Approval |
-| **completed** | **✓** | **#7cb342** | **Lime 15%** | **#7cb342** | Task finished | Direct |
-| failed | ✗ | #f44336 | Red 15% | #f44336 | Error occurred | All |
-| rejected | ✗ | #ff5722 | Orange-Red 15% | #ff5722 | Human rejected | Approval |
-| on_hold | ⊥ | #9e9e9e | Gray 15% | #9e9e9e | Paused | Management |
-| cancelled | ⊙ | #616161 | Dark Gray 15% | #616161 | Cancelled | Management |
+| Status            | Icon   | Color       | Background     | Border      | Meaning              | Workflow   |
+| ----------------- | ------ | ----------- | -------------- | ----------- | -------------------- | ---------- |
+| pending           | ⧗      | #ffc107     | Amber 15%      | #ffc107     | Waiting to start     | All        |
+| in_progress       | ⟳      | #2196f3     | Blue 15%       | #2196f3     | Currently processing | All        |
+| awaiting_approval | ⚠      | #ff6f00     | Orange 20%     | #ff6f00     | Needs human review   | Approval   |
+| **approved**      | **✓**  | **#1e88e5** | **Blue 20%**   | **#1e88e5** | Human approved       | Approval   |
+| **published**     | **✓✓** | **#00bcd4** | **Cyan 15%**   | **#00bcd4** | Live on CMS          | Approval   |
+| **completed**     | **✓**  | **#7cb342** | **Lime 15%**   | **#7cb342** | Task finished        | Direct     |
+| failed            | ✗      | #f44336     | Red 15%        | #f44336     | Error occurred       | All        |
+| rejected          | ✗      | #ff5722     | Orange-Red 15% | #ff5722     | Human rejected       | Approval   |
+| on_hold           | ⊥      | #9e9e9e     | Gray 15%       | #9e9e9e     | Paused               | Management |
+| cancelled         | ⊙      | #616161     | Dark Gray 15%  | #616161     | Cancelled            | Management |
 
 ---
 
 ## Key Distinctions
 
 ### ✓ vs ✓✓ Icons
+
 - **✓** (single check) = Task completed (one-off, no publishing)
 - **✓✓** (double check) = Published to CMS (confirmed live)
 - **✓** (single check) = Human approved (ready for next step)
 
 ### Color Meanings
+
 - **Orange (#ff9800)** = Awaiting action (approval needed)
 - **Blue (#1e88e5)** = Approved but not live (pending action)
 - **Cyan (#00bcd4)** = Live & published (final state for approval workflow)
@@ -109,21 +117,21 @@ For paused, cancelled, or flagged tasks.
 class TaskStatus(str, Enum):
     # Initial
     PENDING = "pending"
-    
+
     # Processing
     GENERATING = "generating"
     IN_PROGRESS = "in_progress"
-    
+
     # Approval workflow (for content)
     AWAITING_APPROVAL = "awaiting_approval"
     APPROVED = "approved"      # Human decision: approved
     REJECTED = "rejected"       # Human decision: rejected
-    
+
     # Terminal states
     PUBLISHED = "published"     # Approval workflow → live
     COMPLETED = "completed"     # Non-approval → finished
     FAILED = "failed"
-    
+
     # Management
     PAUSED = "paused"
     CANCELLED = "cancelled"
@@ -135,10 +143,10 @@ class TaskStatus(str, Enum):
 const getStatusColor = (status) => {
   const statusMap = {
     pending: 'status-pending',
-    awaiting_approval: 'status-awaiting-approval',  // Orange
-    approved: 'status-approved',                     // Blue
-    published: 'status-published',                   // Cyan
-    completed: 'status-completed',                   // Lime
+    awaiting_approval: 'status-awaiting-approval', // Orange
+    approved: 'status-approved', // Blue
+    published: 'status-published', // Cyan
+    completed: 'status-completed', // Lime
     failed: 'status-failed',
     rejected: 'status-rejected',
   };
@@ -230,4 +238,3 @@ const getStatusColor = (status) => {
 - Backend Status Enum: [src/cofounder_agent/schemas/task_status.py](src/cofounder_agent/schemas/task_status.py)
 - Frontend Mapping: [web/oversight-hub/src/components/tasks/TaskList.jsx](web/oversight-hub/src/components/tasks/TaskList.jsx)
 - CSS Colors: [web/oversight-hub/src/routes/TaskManagement.css](web/oversight-hub/src/routes/TaskManagement.css)
-
