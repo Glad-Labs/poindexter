@@ -460,36 +460,6 @@ async def health():
     return {"status": "ok", "service": "cofounder-agent"}
 
 
-@app.get("/health/debug")
-async def health_debug():
-    """
-    Debug endpoint - shows JWT secret configuration for troubleshooting.
-
-    WARNING: Only use for debugging - remove in production!
-
-    Returns: Configuration info for auth troubleshooting
-    """
-    import os
-    from services.token_validator import AuthConfig
-
-    jwt_secret_key = os.getenv("JWT_SECRET_KEY", "NOT_SET")
-    jwt_secret = os.getenv("JWT_SECRET", "NOT_SET")
-    environment = os.getenv("ENVIRONMENT", "NOT_SET")
-    return {
-        "status": "debug",
-        "service": "cofounder-agent",
-        "jwt_secret_key_env": "SET" if jwt_secret_key != "NOT_SET" else "NOT_SET",
-        "jwt_secret_env": "SET" if jwt_secret != "NOT_SET" else "NOT_SET",
-        "environment": environment,
-        "secret_key_length": len(AuthConfig.SECRET_KEY),
-        "secret_key_prefix": (
-            AuthConfig.SECRET_KEY[:20] + "***" if AuthConfig.SECRET_KEY else "EMPTY"
-        ),
-        "secret_algorithm": AuthConfig.ALGORITHM,
-        "access_token_expiry_minutes": AuthConfig.ACCESS_TOKEN_EXPIRE_MINUTES,
-    }
-
-
 @app.get("/api/metrics")
 async def get_metrics():
     """
@@ -538,28 +508,6 @@ async def get_metrics():
             "total_cost": 0.0,
             "error": str(e),
         }
-
-
-@app.get("/api/debug/startup")
-async def debug_startup():
-    """
-    Debug endpoint showing startup status and any errors
-    Only available in development mode
-    """
-    database_service = getattr(app.state, "database", None)
-    orchestrator = getattr(app.state, "orchestrator", None)
-    startup_error = getattr(app.state, "startup_error", None)
-    startup_complete = getattr(app.state, "startup_complete", False)
-
-    return {
-        "startup_complete": startup_complete,
-        "startup_error": startup_error,
-        "database_service_available": database_service is not None,
-        "orchestrator_available": orchestrator is not None,
-        "environment": os.getenv("ENVIRONMENT", "development"),
-        "database_url_configured": bool(os.getenv("DATABASE_URL")),
-        "api_base_url": os.getenv("API_BASE_URL", "http://localhost:8000"),
-    }
 
 
 class CommandRequest(BaseModel):
@@ -647,86 +595,6 @@ async def get_status(request):
     except Exception as e:  # pylint: disable=broad-except
         logger.error(f"Error getting status: {e}")
         return StatusResponse(status="unhealthy", data={"error": str(e)})
-
-
-@app.get("/tasks/pending")
-async def get_pending_tasks(limit: int = 10):
-    """
-    Get pending tasks from the task queue
-    """
-    try:
-        database_service = getattr(app.state, "database", None)
-        if not database_service:
-            return {"tasks": [], "message": "Running in development mode"}
-
-        tasks = await database_service.get_pending_tasks(limit)
-        return {"tasks": tasks, "count": len(tasks)}
-
-    except Exception as e:  # pylint: disable=broad-except
-        logger.error(f"Error getting pending tasks: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get tasks: {str(e)}")
-
-
-@app.get("/metrics/performance")
-async def get_performance_metrics(hours: int = 24):
-    """
-    Get comprehensive performance metrics and analytics
-    """
-    try:
-        database_service = getattr(app.state, "database", None)
-        if database_service:
-            # Query performance data from database
-            logs = await database_service.get_logs(limit=1000)
-            return {"logs": logs, "status": "success"}
-        return {"message": "Performance monitoring not available", "status": "disabled"}
-    except Exception as e:  # pylint: disable=broad-except
-        logger.error(f"Error getting performance metrics: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get performance metrics: {str(e)}")
-
-
-@app.get("/metrics/health")
-async def get_health_metrics():
-    """
-    DEPRECATED: Use GET /api/health instead.
-
-    Backward compatibility endpoint that wraps the unified /api/health endpoint.
-    Returns health metrics in the legacy format.
-    Will be removed in version 2.0.
-    """
-    try:
-        health = await api_health()
-
-        # Convert to legacy format for backward compatibility
-        components = health.get("components", {})
-        database_health = components.get("database") if isinstance(components, dict) else "unknown"
-
-        return {
-            "health": {"status": database_health, "timestamp": health.get("timestamp")},
-            "status": "success" if health.get("status") == "healthy" else "degraded",
-        }
-    except Exception as e:
-        logger.error(f"Error getting health metrics: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get health metrics: {str(e)}")
-
-
-@app.post("/metrics/reset")
-async def reset_performance_metrics():
-    """
-    Reset session-level performance metrics (admin endpoint)
-    """
-    try:
-        # Performance metrics are now logged to database
-        database_service = getattr(app.state, "database", None)
-        if database_service:
-            await database_service.add_log_entry("system", "info", "Performance metrics reset")
-            return {
-                "message": "Performance metrics reset successfully",
-                "status": "success",
-            }
-        return {"message": "Database not available", "status": "disabled"}
-    except Exception as e:  # pylint: disable=broad-except
-        logger.error(f"Error resetting metrics: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to reset metrics: {str(e)}")
 
 
 @app.get("/")
