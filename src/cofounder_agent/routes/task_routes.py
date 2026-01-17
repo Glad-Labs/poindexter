@@ -1671,6 +1671,65 @@ async def publish_task(
             task_id, "published", result=json.dumps({"metadata": publish_metadata})
         )
 
+        # Create post in posts table when publishing (not before)
+        # This ensures posts only exist for published content
+        logger.info(f"Creating posts table entry for published task {task_id}")
+        try:
+            # Get task result which contains generated content
+            task_result = task.get("result", {})
+            if isinstance(task_result, str):
+                import json as json_module
+                task_result = json_module.loads(task_result) if task_result else {}
+            
+            # Extract content from task result
+            topic = task.get("topic", "")
+            draft_content = task_result.get("draft_content", "") or task_result.get("content", "") or ""
+            seo_description = task_result.get("seo_description", "")
+            seo_keywords = task_result.get("seo_keywords", [])
+            featured_image_url = task_result.get("featured_image_url")
+            metadata = task_result.get("metadata", {})
+
+            if draft_content and topic:
+                # Create slug from topic
+                import re as re_module
+                slug = re_module.sub(r"[^\w\s-]", "", topic).lower().replace(" ", "-")[:50]
+                slug = f"{slug}-{task_id[:8]}"
+
+                # Get author and category
+                from services.content_router_service import (
+                    _get_or_create_default_author,
+                    _select_category_for_topic,
+                )
+                author_id = await _get_or_create_default_author(db_service)
+                category_id = await _select_category_for_topic(topic, db_service)
+
+                # Create post with status='published'
+                post = await db_service.create_post(
+                    {
+                        "title": topic,
+                        "slug": slug,
+                        "content": draft_content,
+                        "excerpt": seo_description,
+                        "featured_image_url": featured_image_url,
+                        "author_id": author_id,
+                        "category_id": category_id,
+                        "status": "published",  # Published, not draft
+                        "seo_title": topic,
+                        "seo_description": seo_description,
+                        "seo_keywords": ",".join(seo_keywords) if seo_keywords else "",
+                        "metadata": metadata,
+                    }
+                )
+                logger.info(f"✅ Post created with status='published': {post.id}")
+                logger.info(f"   Title: {topic}")
+                logger.info(f"   Slug: {slug}")
+            else:
+                logger.warning(f"⚠️  Skipping post creation: missing content or topic")
+        except Exception as e:
+            logger.error(f"Failed to create post for published task: {str(e)}", exc_info=True)
+            # Don't fail the publish operation if post creation fails
+            # The task is still published, just warn about the post creation issue
+
         # Fetch updated task
         updated_task = await db_service.get_task(task_id)
 

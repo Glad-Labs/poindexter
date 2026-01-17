@@ -540,46 +540,30 @@ async def process_content_generation_task(
         # ================================================================================
         # STAGE 5: CREATE POSTS RECORD
         # ================================================================================
-        logger.info("📝 STAGE 5: Creating posts record...")
-
-        # Get default author (Poindexter AI)
-        author_id = await _get_or_create_default_author(database_service)
-
-        # Select category based on topic
-        category_id = await _select_category_for_topic(topic, database_service)
-
-        # Create slug from topic
-        import re
-
-        slug = re.sub(r"[^\w\s-]", "", topic).lower().replace(" ", "-")[:50]
-        slug = f"{slug}-{task_id[:8]}"
-
-        # Create post with all data
-        post = await database_service.create_post(
-            {
-                "title": topic,
-                "slug": slug,
-                "content": content_text,
-                "excerpt": seo_description,
-                "featured_image_url": featured_image.url if featured_image else None,
-                "author_id": author_id,
-                "category_id": category_id,
-                "status": "draft",  # Always draft, human must approve
-                "seo_title": seo_title,
-                "seo_description": seo_description,
-                "seo_keywords": ",".join(seo_keywords) if seo_keywords else "",
-                "metadata": image_metadata if image_metadata else {},
-            }
-        )
-
-        result["post_id"] = str(post.id)
-        result["post_slug"] = post.slug
-        result["stages"]["5_post_created"] = True
-        logger.info(f"✅ Post created: {post.id}")
-        logger.info(f"   Title: {topic}")
-        logger.info(f"   Slug: {slug}")
-        logger.info(f"   Author: {author_id}")
-        logger.info(f"   Category: {category_id}\n")
+        # ⚠️ IMPORTANT: Do NOT create posts here in content_router_service!
+        # Posts should ONLY be created when:
+        # 1. Task is approved via POST /api/tasks/{task_id}/approve
+        # 2. Status is set to 'published' at approval time
+        #
+        # Creating draft posts here causes:
+        # - Slug conflicts when approval endpoint tries to create published post
+        # - Duplicate posts in posts table
+        # - Two-step post creation that violates single responsibility principle
+        #
+        # The approval workflow should handle all post creation:
+        # 1. content_router_service generates and stores content
+        # 2. Stores content in content_tasks table with status='completed'
+        # 3. User approves via POST /api/tasks/{task_id}/approve → status='approved'
+        # 4. Approval endpoint creates posts table entry with status='published'
+        # 5. No more posts table entries during generation
+        #
+        # This maintains clean separation: generation ≠ publishing
+        logger.info("📝 STAGE 5: Posts record creation SKIPPED")
+        logger.info("   ℹ️  Posts will be created when task is approved by user")
+        result["post_id"] = None
+        result["post_slug"] = None
+        result["stages"]["5_post_created"] = False
+        logger.info(f"ℹ️  Skipping automatic post creation\n")
 
         # ================================================================================
         # STAGE 6: CAPTURE TRAINING DATA
