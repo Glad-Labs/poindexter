@@ -265,5 +265,3 @@ function printSummary(metrics, alerts) {
     process.exit(1);
   }
 })();
-
-

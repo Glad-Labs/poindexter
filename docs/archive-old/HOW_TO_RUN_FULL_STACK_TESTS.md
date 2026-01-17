@@ -3,12 +3,14 @@
 ## Quick Start (Copy & Paste)
 
 ### Terminal Command
+
 ```bash
 cd c:\Users\mattm\glad-labs-website && \
 python -m pytest tests/test_full_stack_integration.py tests/test_ui_browser_automation.py -v
 ```
 
 ### Expected Output
+
 ```
 platform win32 -- Python 3.12.10, pytest-8.4.2, pluggy-1.6.0
 collected 47 items
@@ -67,8 +69,8 @@ tests/test_ui_browser_automation.py::TestAccessibility::test_aria_labels_present
 ### What to Expect
 
 ✅ **42 PASSED** - Tests that verify system functionality works  
-⏭️  **3 SKIPPED** - Gracefully skipped (expected - missing conditions)  
-❌ **2 FAILED** - Database auth errors (expected - no credentials configured)  
+⏭️ **3 SKIPPED** - Gracefully skipped (expected - missing conditions)  
+❌ **2 FAILED** - Database auth errors (expected - no credentials configured)
 
 **This is the EXPECTED result** ✅ means the tests ran successfully.
 
@@ -77,6 +79,7 @@ tests/test_ui_browser_automation.py::TestAccessibility::test_aria_labels_present
 ## Understanding the Results
 
 ### Why 2 Tests Failed
+
 ```
 Database authentication tests fail because DB_PASSWORD is not set in .env.local
 This is EXPECTED and normal - they are designed to skip gracefully.
@@ -84,12 +87,14 @@ You can see "no password supplied" in the error message.
 ```
 
 ### Why 3 Tests Skipped
+
 ```
 Some tests check for optional conditions and skip if not met.
 This is the correct behavior - no failure, just skipped.
 ```
 
 ### Why 42 Passed
+
 ```
 All the important tests - API endpoints, UI components, browser automation,
 integration workflows - are working correctly and passing.
@@ -102,12 +107,13 @@ integration workflows - are working correctly and passing.
 Before running tests, make sure these services are running:
 
 ### Check Services Running
+
 ```bash
 # Terminal 1: Check API
 curl http://localhost:8000/health
 # Should respond: {"status":"ok"} or similar
 
-# Terminal 2: Check UI  
+# Terminal 2: Check UI
 curl http://localhost:3001
 # Should respond with HTML page
 
@@ -117,6 +123,7 @@ curl http://localhost:3000
 ```
 
 ### If Tests Fail
+
 If you get connection errors, start the services:
 
 ```bash
@@ -126,7 +133,7 @@ npm run dev:cofounder
 # Terminal 2: Start Oversight Hub
 npm run dev:oversight-hub
 
-# Terminal 3: Start Public Site  
+# Terminal 3: Start Public Site
 npm run dev:public-site
 
 # Or start all together
@@ -138,36 +145,43 @@ npm run dev
 ## Test Variations
 
 ### Run Only Integration Tests
+
 ```bash
 pytest tests/test_full_stack_integration.py -v
 ```
 
 ### Run Only Browser Tests
+
 ```bash
 pytest tests/test_ui_browser_automation.py -v
 ```
 
 ### Run Specific Test Class
+
 ```bash
 pytest tests/test_full_stack_integration.py::TestAPIEndpoints -v
 ```
 
 ### Run Single Test
+
 ```bash
 pytest tests/test_full_stack_integration.py::TestAPIEndpoints::test_api_health_check -v
 ```
 
 ### Run with Detailed Output
+
 ```bash
 pytest tests/test_full_stack_integration.py tests/test_ui_browser_automation.py -vv
 ```
 
 ### Run with Short Output
+
 ```bash
 pytest tests/test_full_stack_integration.py tests/test_ui_browser_automation.py
 ```
 
 ### Run with Coverage Report
+
 ```bash
 pytest tests/test_full_stack_integration.py tests/test_ui_browser_automation.py \
   --cov=src/cofounder_agent \
@@ -179,42 +193,50 @@ pytest tests/test_full_stack_integration.py tests/test_ui_browser_automation.py 
 
 ## Test Execution Times
 
-| Component | Time | Notes |
-|-----------|------|-------|
-| Full-stack integration | ~16s | Includes API and integration tests |
-| Browser automation | ~12s | 25 browser tests |
-| **Total** | **~27s** | Fast enough for CI/CD |
+| Component              | Time     | Notes                              |
+| ---------------------- | -------- | ---------------------------------- |
+| Full-stack integration | ~16s     | Includes API and integration tests |
+| Browser automation     | ~12s     | 25 browser tests                   |
+| **Total**              | **~27s** | Fast enough for CI/CD              |
 
 ---
 
 ## Troubleshooting
 
 ### "Connection refused" Error
+
 **Problem:** Services not running  
 **Fix:**
+
 ```bash
 npm run dev  # Starts all 3 services
 ```
 
 ### "Module not found" Error
+
 **Problem:** Dependencies not installed  
 **Fix:**
+
 ```bash
 npm install
 pip install -r requirements.txt
 ```
 
 ### "No such table" Error
+
 **Problem:** Database not set up  
 **Fix:**
+
 ```bash
 # This is expected - DB tests skip gracefully
 # Or set up database and provide credentials in .env.local
 ```
 
 ### "Timeout" Error
+
 **Problem:** Tests taking too long  
 **Fix:**
+
 ```bash
 # Increase timeout
 pytest --timeout=60 tests/test_full_stack_integration.py -v
@@ -230,10 +252,10 @@ When you run the tests, you should see:
 ✅ **UI tests passing** - App loads, pages accessible  
 ✅ **Browser tests passing** - Navigation, components, forms work  
 ✅ **Integration tests passing** - Data flows from UI to DB  
-✅ **Performance test passing** - API responds fast  
+✅ **Performance test passing** - API responds fast
 
 ❌ **Database tests may fail** - This is OK if no credentials configured  
-⏭️  **Some tests skip** - This is OK, expected behavior  
+⏭️ **Some tests skip** - This is OK, expected behavior
 
 ---
 
@@ -269,6 +291,7 @@ After confirming tests pass:
 ## Questions?
 
 Refer to:
+
 - `FULL_STACK_TESTING_QUICK_REFERENCE.md` for quick answers
 - `FULL_STACK_TESTING_IMPLEMENTATION.md` for detailed information
 - Test file docstrings for specific test documentation
@@ -277,6 +300,7 @@ Refer to:
 ---
 
 **Ready to test? Run:**
+
 ```bash
 pytest tests/test_full_stack_integration.py tests/test_ui_browser_automation.py -v
 ```

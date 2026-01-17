@@ -56,8 +56,8 @@ jobs:
       # TEST PHASE
       # ============================================
 
-      - name: 🧪 Run frontend tests
-        run: npm run test:frontend:ci
+      - name: 🧪 Run tests
+        run: npm run test:ci
         continue-on-error: true
 
       - name: 🧪 Run backend tests

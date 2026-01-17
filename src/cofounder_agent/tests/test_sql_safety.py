@@ -383,7 +383,10 @@ class TestParameterizedQueryBuilder:
         )
 
         assert "DELETE FROM users WHERE" in sql
-        assert "status = $1 AND deleted_at IS NOT NULL" in sql or "deleted_at IS NOT NULL AND status = $1" in sql
+        assert (
+            "status = $1 AND deleted_at IS NOT NULL" in sql
+            or "deleted_at IS NOT NULL AND status = $1" in sql
+        )
 
     def test_delete_without_where_raises(self):
         """DELETE without WHERE clause should raise ValueError for safety."""

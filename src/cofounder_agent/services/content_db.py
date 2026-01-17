@@ -19,9 +19,14 @@ from asyncpg import Pool
 
 from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 from schemas.database_response_models import (
-    PostResponse, CategoryResponse, TagResponse, AuthorResponse,
-    QualityEvaluationResponse, QualityImprovementLogResponse, MetricsResponse,
-    OrchestratorTrainingDataResponse
+    PostResponse,
+    CategoryResponse,
+    TagResponse,
+    AuthorResponse,
+    QualityEvaluationResponse,
+    QualityImprovementLogResponse,
+    MetricsResponse,
+    OrchestratorTrainingDataResponse,
 )
 from schemas.model_converter import ModelConverter
 from .database_mixin import DatabaseServiceMixin
@@ -35,7 +40,7 @@ class ContentDatabase(DatabaseServiceMixin):
     def __init__(self, pool: Pool):
         """
         Initialize content database module.
-        
+
         Args:
             pool: asyncpg connection pool
         """
@@ -44,10 +49,10 @@ class ContentDatabase(DatabaseServiceMixin):
     async def create_post(self, post_data: Dict[str, Any]) -> PostResponse:
         """
         Create new post in posts table with all metadata fields.
-        
+
         Args:
             post_data: Dict with title, slug, content, excerpt, featured_image_url, etc.
-            
+
         Returns:
             Created post dict
         """
@@ -69,11 +74,15 @@ class ContentDatabase(DatabaseServiceMixin):
         # ✅ Log all values being inserted for debugging
         logger.info(f"🔍 INSERTING POST WITH THESE VALUES:")
         logger.info(f"   - id: {post_id}")
-        logger.info(f"   - title: {post_data.get('title')[:50] if post_data.get('title') else 'EMPTY'}")
+        logger.info(
+            f"   - title: {post_data.get('title')[:50] if post_data.get('title') else 'EMPTY'}"
+        )
         logger.info(f"   - slug: {post_data.get('slug')}")
         logger.info(f"   - featured_image_url: {post_data.get('featured_image_url')}")
         logger.info(f"   - seo_title: {post_data.get('seo_title')}")
-        logger.info(f"   - seo_description: {post_data.get('seo_description')[:50] if post_data.get('seo_description') else 'EMPTY'}")
+        logger.info(
+            f"   - seo_description: {post_data.get('seo_description')[:50] if post_data.get('seo_description') else 'EMPTY'}"
+        )
         logger.info(f"   - seo_keywords: {seo_keywords}")
         logger.info(f"   - status: {post_data.get('status', 'draft')}")
         logger.info(f"   - author_id: {post_data.get('author_id')}")
@@ -81,50 +90,58 @@ class ContentDatabase(DatabaseServiceMixin):
         logger.info(f"   - tag_ids: {tag_ids}")
 
         async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                INSERT INTO posts (
-                    id, 
-                    title, 
-                    slug, 
-                    content, 
-                    excerpt, 
-                    featured_image_url,
-                    cover_image_url,
-                    author_id,
-                    category_id,
+            try:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO posts (
+                        id, 
+                        title, 
+                        slug, 
+                        content, 
+                        excerpt, 
+                        featured_image_url,
+                        cover_image_url,
+                        author_id,
+                        category_id,
+                        tag_ids,
+                        status, 
+                        seo_title,
+                        seo_description,
+                        seo_keywords,
+                        created_by,
+                        updated_by,
+                        created_at, 
+                        updated_at
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW())
+                    RETURNING id, title, slug, content, excerpt, featured_image_url, cover_image_url, 
+                              author_id, category_id, tag_ids, status, created_at, updated_at
+                    """,
+                    post_id,
+                    post_data.get("title"),
+                    post_data.get("slug"),
+                    post_data.get("content"),
+                    post_data.get("excerpt"),
+                    post_data.get("featured_image_url"),
+                    post_data.get("cover_image_url"),
+                    post_data.get("author_id"),
+                    post_data.get("category_id"),
                     tag_ids,
-                    status, 
-                    seo_title,
-                    seo_description,
+                    post_data.get("status", "draft"),
+                    post_data.get("seo_title"),
+                    post_data.get("seo_description"),
                     seo_keywords,
-                    created_by,
-                    updated_by,
-                    created_at, 
-                    updated_at
+                    post_data.get("created_by"),
+                    post_data.get("updated_by"),
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW())
-                RETURNING id, title, slug, content, excerpt, featured_image_url, cover_image_url, 
-                          author_id, category_id, tag_ids, status, created_at, updated_at
-                """,
-                post_id,
-                post_data.get("title"),
-                post_data.get("slug"),
-                post_data.get("content"),
-                post_data.get("excerpt"),
-                post_data.get("featured_image_url"),
-                post_data.get("cover_image_url"),
-                post_data.get("author_id"),
-                post_data.get("category_id"),
-                tag_ids,
-                post_data.get("status", "draft"),
-                post_data.get("seo_title"),
-                post_data.get("seo_description"),
-                seo_keywords,
-                post_data.get("created_by"),
-                post_data.get("updated_by"),
-            )
-            return ModelConverter.to_post_response(row)
+                if not row:
+                    raise Exception("Insert query returned no row - post creation failed")
+
+                logger.info(f"✅ POST CREATED SUCCESSFULLY in database with ID: {post_id}")
+                return ModelConverter.to_post_response(row)
+            except Exception as db_error:
+                logger.error(f"❌ DATABASE ERROR while creating post: {db_error}", exc_info=True)
+                raise Exception(f"Failed to create post in database: {str(db_error)}")
 
     async def get_post_by_slug(self, slug: str) -> Optional[PostResponse]:
         """
@@ -139,10 +156,20 @@ class ContentDatabase(DatabaseServiceMixin):
         try:
             builder = ParameterizedQueryBuilder()
             sql, params = builder.select(
-                columns=["id", "title", "slug", "content", "excerpt", "featured_image_url", "status", "created_at", "updated_at"],
+                columns=[
+                    "id",
+                    "title",
+                    "slug",
+                    "content",
+                    "excerpt",
+                    "featured_image_url",
+                    "status",
+                    "created_at",
+                    "updated_at",
+                ],
                 table="posts",
                 where_clauses=[("slug", SQLOperator.EQ, slug)],
-                limit=1
+                limit=1,
             )
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, *params)
@@ -154,11 +181,11 @@ class ContentDatabase(DatabaseServiceMixin):
     async def update_post(self, post_id: int, updates: Dict[str, Any]) -> bool:
         """
         Update a post with new values (e.g., featured_image_url, status).
-        
+
         Args:
             post_id: Post ID
             updates: Dict of fields to update
-            
+
         Returns:
             True if updated, False otherwise
         """
@@ -218,7 +245,7 @@ class ContentDatabase(DatabaseServiceMixin):
     async def get_all_categories(self) -> List[CategoryResponse]:
         """
         Get all categories for matching.
-        
+
         Returns:
             List of category dicts
         """
@@ -235,7 +262,7 @@ class ContentDatabase(DatabaseServiceMixin):
     async def get_all_tags(self) -> List[TagResponse]:
         """
         Get all tags for matching.
-        
+
         Returns:
             List of tag dicts
         """
@@ -252,10 +279,10 @@ class ContentDatabase(DatabaseServiceMixin):
     async def get_author_by_name(self, name: str) -> Optional[AuthorResponse]:
         """
         Get author by name.
-        
+
         Args:
             name: Author name
-            
+
         Returns:
             Author dict or None if not found
         """
@@ -268,7 +295,9 @@ class ContentDatabase(DatabaseServiceMixin):
             logger.warning(f"Could not fetch author by name: {e}")
             return None
 
-    async def create_quality_evaluation(self, eval_data: Dict[str, Any]) -> QualityEvaluationResponse:
+    async def create_quality_evaluation(
+        self, eval_data: Dict[str, Any]
+    ) -> QualityEvaluationResponse:
         """
         Create quality evaluation record.
 
@@ -307,7 +336,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 eval_data.get("evaluated_by", "QualityEvaluator"),
                 eval_data.get("evaluation_method", "pattern-based"),
             ]
-            
+
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, *params)
                 logger.info(f"✅ Created quality_evaluation for {eval_data['content_id']}")
@@ -316,7 +345,9 @@ class ContentDatabase(DatabaseServiceMixin):
             logger.error(f"❌ Error creating quality_evaluation: {e}")
             raise
 
-    async def create_quality_improvement_log(self, log_data: Dict[str, Any]) -> QualityImprovementLogResponse:
+    async def create_quality_improvement_log(
+        self, log_data: Dict[str, Any]
+    ) -> QualityImprovementLogResponse:
         """
         Log content quality improvement through refinement.
 
@@ -329,7 +360,7 @@ class ContentDatabase(DatabaseServiceMixin):
         try:
             initial = log_data["initial_score"]
             improved = log_data["improved_score"]
-            
+
             sql = """
                 INSERT INTO quality_improvement_logs (
                     content_id, initial_score, improved_score, score_improvement,
@@ -359,7 +390,7 @@ class ContentDatabase(DatabaseServiceMixin):
     async def get_metrics(self) -> MetricsResponse:
         """
         Get system metrics from content_tasks database.
-        
+
         Returns:
             Dict with task counts, success rates, execution times, costs
         """
@@ -367,15 +398,13 @@ class ContentDatabase(DatabaseServiceMixin):
             async with self.pool.acquire() as conn:
                 # Get task counts from content_tasks
                 total_tasks = await conn.fetchval("SELECT COUNT(*) FROM content_tasks")
-                
+
                 # Use parameterized queries for status-based counts
                 completed_tasks = await conn.fetchval(
-                    "SELECT COUNT(*) FROM content_tasks WHERE status = $1",
-                    "completed"
+                    "SELECT COUNT(*) FROM content_tasks WHERE status = $1", "completed"
                 )
                 failed_tasks = await conn.fetchval(
-                    "SELECT COUNT(*) FROM content_tasks WHERE status = $1",
-                    "failed"
+                    "SELECT COUNT(*) FROM content_tasks WHERE status = $1", "failed"
                 )
 
                 # Calculate rates
@@ -424,7 +453,9 @@ class ContentDatabase(DatabaseServiceMixin):
                 totalCost=0,
             )
 
-    async def create_orchestrator_training_data(self, train_data: Dict[str, Any]) -> OrchestratorTrainingDataResponse:
+    async def create_orchestrator_training_data(
+        self, train_data: Dict[str, Any]
+    ) -> OrchestratorTrainingDataResponse:
         """
         Capture execution for training/learning pipeline.
 
@@ -451,10 +482,15 @@ class ContentDatabase(DatabaseServiceMixin):
                 train_data.get("execution_result"),
                 train_data.get("quality_score"),
                 train_data.get("success", False),
-                json.dumps(train_data.get("tags", [])),
+                # Handle tags - can be a list or already a JSON string
+                (
+                    train_data.get("tags", [])
+                    if isinstance(train_data.get("tags"), list)
+                    else json.loads(train_data.get("tags", "[]"))
+                ),
                 train_data.get("source_agent", "content_agent"),
             ]
-            
+
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, *params)
                 logger.info(f"✅ Created orchestrator_training_data: {train_data['execution_id']}")

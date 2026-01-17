@@ -32,12 +32,16 @@ router = APIRouter(prefix="/api/services", tags=["services"])
 
 class ServiceExecutionRequest(BaseModel):
     """Request to execute a service action"""
+
     params: Dict[str, Any] = Field(default_factory=dict, description="Action parameters")
-    context: Optional[Dict[str, Any]] = Field(None, description="Execution context (user_id, request_id, etc.)")
+    context: Optional[Dict[str, Any]] = Field(
+        None, description="Execution context (user_id, request_id, etc.)"
+    )
 
 
 class ServiceInfo(BaseModel):
     """Information about a registered service"""
+
     name: str
     version: str
     description: str
@@ -46,6 +50,7 @@ class ServiceInfo(BaseModel):
 
 class ActionInfo(BaseModel):
     """Information about a service action"""
+
     name: str
     description: str
     input_schema: Dict[str, Any]
@@ -57,6 +62,7 @@ class ActionInfo(BaseModel):
 
 class RegistrySchema(BaseModel):
     """Complete registry schema for LLM consumption"""
+
     services: List[Dict[str, Any]]
     total_services: int
     total_actions: int
@@ -71,7 +77,7 @@ class RegistrySchema(BaseModel):
     "",
     response_model=List[ServiceInfo],
     summary="List all registered services",
-    description="Get list of all available services that can be called"
+    description="Get list of all available services that can be called",
 )
 async def list_services(current_user: dict = Depends(get_current_user)):
     """
@@ -117,24 +123,24 @@ async def list_services(current_user: dict = Depends(get_current_user)):
     "/registry",
     response_model=RegistrySchema,
     summary="Get complete service registry",
-    description="Get complete registry schema with all services and actions for LLM consumption"
+    description="Get complete registry schema with all services and actions for LLM consumption",
 )
 async def get_registry(current_user: dict = Depends(get_current_user)):
     """
     Get complete service registry.
-    
+
     This endpoint provides the full schema that LLMs use to discover and understand
     all available services and actions.
-    
+
     **Returns:**
     - Complete registry with service and action definitions
-    
+
     **Usage by LLM:**
     1. Query this endpoint to get available tools
     2. Parse action input_schema to understand parameters
     3. Call actions via POST /api/services/{service}/actions/{action}
     4. Interpret results based on output_schema
-    
+
     **Example Response:**
     ```json
     {
@@ -177,12 +183,9 @@ async def get_registry(current_user: dict = Depends(get_current_user)):
 @router.get(
     "/{service_name}",
     summary="Get service details",
-    description="Get details about a specific service"
+    description="Get details about a specific service",
 )
-async def get_service_details(
-    service_name: str,
-    current_user: dict = Depends(get_current_user)
-):
+async def get_service_details(service_name: str, current_user: dict = Depends(get_current_user)):
     """
     Get details about a specific service.
     
@@ -201,15 +204,15 @@ async def get_service_details(
     try:
         registry = get_service_registry()
         service = registry.get_service(service_name)
-        
+
         if not service:
             raise HTTPException(status_code=404, detail=f"Service '{service_name}' not found")
-        
+
         return {
             "name": service.name,
             "version": service.version,
             "description": service.description,
-            "actions": [action.to_dict() for action in service.get_all_actions()]
+            "actions": [action.to_dict() for action in service.get_all_actions()],
         }
     except HTTPException:
         raise
@@ -222,12 +225,9 @@ async def get_service_details(
     "/{service_name}/actions",
     response_model=List[ActionInfo],
     summary="List service actions",
-    description="Get list of actions available in a service"
+    description="Get list of actions available in a service",
 )
-async def list_service_actions(
-    service_name: str,
-    current_user: dict = Depends(get_current_user)
-):
+async def list_service_actions(service_name: str, current_user: dict = Depends(get_current_user)):
     """
     List all actions available in a service.
     
@@ -246,13 +246,12 @@ async def list_service_actions(
     try:
         registry = get_service_registry()
         actions = registry.list_actions(service_name)
-        
+
         if not actions:
             raise HTTPException(
-                status_code=404,
-                detail=f"Service '{service_name}' not found or has no actions"
+                status_code=404, detail=f"Service '{service_name}' not found or has no actions"
             )
-        
+
         return actions
     except HTTPException:
         raise
@@ -265,14 +264,14 @@ async def list_service_actions(
     "/{service_name}/actions/{action_name}",
     response_model=Dict[str, Any],
     summary="Execute service action",
-    description="Execute an action in a service"
+    description="Execute an action in a service",
 )
 async def execute_service_action(
     service_name: str,
     action_name: str,
     request: ServiceExecutionRequest,
     current_user: dict = Depends(get_current_user),
-    background_tasks: BackgroundTasks = None
+    background_tasks: BackgroundTasks = None,
 ):
     """
     Execute a service action.
@@ -325,29 +324,26 @@ async def execute_service_action(
     try:
         logger.info(f"Executing action: {service_name}.{action_name}")
         logger.debug(f"Parameters: {request.params}")
-        
+
         # Add user context
         context = request.context or {}
         context["user_id"] = current_user.get("id")
-        
+
         registry = get_service_registry()
         result: ActionResult = await registry.execute_action(
             service_name=service_name,
             action_name=action_name,
             params=request.params,
-            context=context
+            context=context,
         )
-        
+
         logger.info(f"Action executed: {action_name} - Status: {result.status}")
-        
+
         return result.model_dump(exclude_none=True)
-        
+
     except Exception as e:
         logger.error(f"Error executing action: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to execute action: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to execute action: {str(e)}")
 
 
 # ============================================================================
@@ -358,7 +354,7 @@ async def execute_service_action(
 @router.get(
     "/health",
     summary="Check service registry health",
-    description="Verify that the service registry is operational"
+    description="Verify that the service registry is operational",
 )
 async def service_registry_health(current_user: dict = Depends(get_current_user)):
     """
@@ -376,21 +372,18 @@ async def service_registry_health(current_user: dict = Depends(get_current_user)
     try:
         registry = get_service_registry()
         service_count = len(registry.services)
-        action_count = sum(
-            len(service.get_all_actions())
-            for service in registry.services.values()
-        )
-        
+        action_count = sum(len(service.get_all_actions()) for service in registry.services.values())
+
         return {
             "status": "healthy",
             "services_registered": service_count,
             "total_actions": action_count,
-            "timestamp": str(__import__('datetime').datetime.now())
+            "timestamp": str(__import__("datetime").datetime.now()),
         }
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         return {
             "status": "unhealthy",
             "error": str(e),
-            "timestamp": str(__import__('datetime').datetime.now())
+            "timestamp": str(__import__("datetime").datetime.now()),
         }

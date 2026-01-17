@@ -16,8 +16,35 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 
-# Use conftest app and client fixtures instead
-# This ensures all routes are properly registered
+@pytest.fixture(scope="session")
+def test_app():
+    """Create test app with routes registered"""
+    from fastapi import FastAPI
+    from routes.auth_unified import router as auth_router
+    from routes.task_routes import router as task_router
+    from utils.exception_handlers import register_exception_handlers
+    from utils.middleware_config import MiddlewareConfig
+
+    app = FastAPI(title="Test Auth App")
+
+    # Register routes
+    app.include_router(auth_router)
+    app.include_router(task_router)
+
+    # Register exception handlers
+    register_exception_handlers(app)
+
+    # Register middleware
+    middleware_config = MiddlewareConfig()
+    middleware_config.register_all_middleware(app)
+
+    return app
+
+
+@pytest.fixture(scope="session")
+def client(test_app):
+    """Create test client"""
+    return TestClient(test_app)
 
 
 @pytest.mark.unit
@@ -28,8 +55,7 @@ class TestAuthUnified:
     def test_github_callback_success(self, client):
         """Test successful GitHub OAuth callback"""
         response = client.post(
-            "/api/auth/github/callback",
-            json={"code": "mock_auth_code", "state": "mock_state"}
+            "/api/auth/github/callback", json={"code": "mock_auth_code", "state": "mock_state"}
         )
         # 200 if configured, 401 if keys missing (expected in test), 500 if error
         assert response.status_code in [200, 401, 500]
@@ -39,44 +65,33 @@ class TestAuthUnified:
 
     def test_github_callback_missing_code(self, client):
         """Test GitHub callback with missing code"""
-        response = client.post(
-            "/api/auth/github/callback",
-            json={"state": "mock_state"}
-        )
+        response = client.post("/api/auth/github/callback", json={"state": "mock_state"})
         assert response.status_code in [400, 422]
 
     def test_github_callback_missing_state(self, client):
         """Test GitHub callback with missing state"""
-        response = client.post(
-            "/api/auth/github/callback",
-            json={"code": "mock_code"}
-        )
+        response = client.post("/api/auth/github/callback", json={"code": "mock_code"})
         assert response.status_code in [400, 422]
 
     def test_github_callback_invalid_json(self, client):
         """Test GitHub callback with invalid JSON"""
-        response = client.post(
-            "/api/auth/github/callback",
-            data="invalid json"
-        )
+        response = client.post("/api/auth/github/callback", data="invalid json")
         assert response.status_code in [400, 422]
 
     def test_token_refresh(self, client):
         """Test token refresh endpoint"""
         # First get a token
         auth_response = client.post(
-            "/api/auth/github/callback",
-            json={"code": "mock_code", "state": "mock_state"}
+            "/api/auth/github/callback", json={"code": "mock_code", "state": "mock_state"}
         )
-        
+
         if auth_response.status_code == 200:
             token_data = auth_response.json()
             token = token_data.get("token") or token_data.get("access_token")
-            
+
             # Try to refresh the token
             refresh_response = client.post(
-                "/api/auth/refresh",
-                headers={"Authorization": f"Bearer {token}"}
+                "/api/auth/refresh", headers={"Authorization": f"Bearer {token}"}
             )
             assert refresh_response.status_code in [200, 401]
 
@@ -87,10 +102,7 @@ class TestAuthUnified:
 
     def test_protected_endpoint_with_invalid_token(self, client):
         """Test accessing protected endpoint with invalid token"""
-        response = client.get(
-            "/api/tasks",
-            headers={"Authorization": "Bearer invalid_token"}
-        )
+        response = client.get("/api/tasks", headers={"Authorization": "Bearer invalid_token"})
         assert response.status_code == 401
 
     def test_auth_logout(self, client):
@@ -119,11 +131,7 @@ class TestAuthValidation:
     def test_callback_with_too_long_code(self, client):
         """Test callback with overly long code"""
         response = client.post(
-            "/api/auth/github/callback",
-            json={
-                "code": "x" * 10000,
-                "state": "mock_state"
-            }
+            "/api/auth/github/callback", json={"code": "x" * 10000, "state": "mock_state"}
         )
         # Should either reject or handle gracefully (401 = auth attempt with no keys)
         assert response.status_code in [400, 401, 422, 500]
@@ -132,20 +140,14 @@ class TestAuthValidation:
         """Test callback with special characters in code"""
         response = client.post(
             "/api/auth/github/callback",
-            json={
-                "code": "mock_code<script>alert('xss')</script>",
-                "state": "mock_state"
-            }
+            json={"code": "mock_code<script>alert('xss')</script>", "state": "mock_state"},
         )
         # 401 = auth attempt with no GitHub keys (expected)
         assert response.status_code in [200, 400, 401, 422, 500]
 
     def test_callback_with_null_values(self, client):
         """Test callback with null values"""
-        response = client.post(
-            "/api/auth/github/callback",
-            json={"code": None, "state": None}
-        )
+        response = client.post("/api/auth/github/callback", json={"code": None, "state": None})
         assert response.status_code in [400, 422]
 
     def test_authorization_header_formats(self, client):
@@ -156,12 +158,9 @@ class TestAuthValidation:
             "BearerToken",  # No space
             "Bearer Token Extra",  # Extra parts
         ]
-        
+
         for header in invalid_headers:
-            response = client.get(
-                "/api/tasks",
-                headers={"Authorization": header}
-            )
+            response = client.get("/api/tasks", headers={"Authorization": header})
             # Should reject invalid format
             assert response.status_code in [400, 401]
 
@@ -176,21 +175,17 @@ class TestAuthEdgeCases:
         responses = []
         for _ in range(5):
             response = client.post(
-                "/api/auth/github/callback",
-                json={"code": "mock_code", "state": "mock_state"}
+                "/api/auth/github/callback", json={"code": "mock_code", "state": "mock_state"}
             )
             responses.append(response.status_code)
-        
+
         # Should not crash, responses should be consistent (401 expected without GitHub keys)
         assert all(status in [200, 401, 429, 500] for status in responses)
 
     def test_concurrent_token_validation(self, client):
         """Test concurrent token validation requests"""
         # Single request test (full concurrency testing requires async)
-        response = client.get(
-            "/api/auth/validate",
-            headers={"Authorization": "Bearer test_token"}
-        )
+        response = client.get("/api/auth/validate", headers={"Authorization": "Bearer test_token"})
         # 404 = endpoint doesn't exist, 200/401 = endpoint exists
         assert response.status_code in [200, 401, 404]
 
@@ -201,7 +196,7 @@ class TestAuthEdgeCases:
             ("PUT", "/api/auth/github/callback"),
             ("DELETE", "/api/auth/github/callback"),
         ]
-        
+
         for method, endpoint in unsupported_methods:
             # Using TestClient's request method for flexibility
             try:

@@ -575,7 +575,12 @@ Improved version:"""
             try:
                 # Try the updated Gemini API format
                 try:
-                    import google.generativeai as genai
+                    # Import google-genai library (new package, replaces deprecated google.generativeai)
+                    try:
+                        import google.genai as genai
+                    except ImportError:
+                        # Fallback to old deprecated package if new one not available
+                        import google.generativeai as genai
 
                     genai.configure(api_key=self.gemini_key)
                     model = genai.GenerativeModel("gemini-2.5-flash")

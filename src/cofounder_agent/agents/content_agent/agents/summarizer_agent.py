@@ -4,6 +4,7 @@ from ..utils.tools import CrewAIToolsFactory
 
 logger = logging.getLogger(__name__)
 
+
 class SummarizerAgent:
     """An agent dedicated to summarizing text."""
 

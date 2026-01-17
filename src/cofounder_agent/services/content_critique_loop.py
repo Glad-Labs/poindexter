@@ -67,10 +67,10 @@ class ContentCritiqueLoop:
         try:
             # 1. Calculate heuristic metrics (always useful as baseline)
             metrics = self._calculate_metrics(content, context)
-            
+
             # 2. Try LLM-based critique
             llm_result = await self._critique_with_llm(content, context)
-            
+
             if llm_result:
                 # Use LLM result if available
                 critique_result = {
@@ -85,7 +85,7 @@ class ContentCritiqueLoop:
                         "has_structure": metrics["has_structure"],
                         "has_keywords": metrics.get("has_keywords", False),
                         "content_length": len(content),
-                        "source": "llm"
+                        "source": "llm",
                     },
                 }
                 logger.info(f"🤖 LLM Critique used (Score: {critique_result['quality_score']})")
@@ -103,10 +103,12 @@ class ContentCritiqueLoop:
                         "has_structure": metrics["has_structure"],
                         "has_keywords": metrics.get("has_keywords", False),
                         "content_length": len(content),
-                        "source": "heuristic"
+                        "source": "heuristic",
                     },
                 }
-                logger.info(f"📏 Heuristic Critique used (Score: {critique_result['quality_score']})")
+                logger.info(
+                    f"📏 Heuristic Critique used (Score: {critique_result['quality_score']})"
+                )
 
             if critique_result["approved"]:
                 self.approval_count += 1
@@ -130,7 +132,9 @@ class ContentCritiqueLoop:
                 "error": str(e),
             }
 
-    async def _critique_with_llm(self, content: str, context: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    async def _critique_with_llm(
+        self, content: str, context: Optional[Dict[str, Any]] = None
+    ) -> Optional[Dict[str, Any]]:
         """
         Perform semantic critique using LLM (Ollama).
         Returns dict with quality_score, approved, feedback, etc. or None if failed.
@@ -141,20 +145,20 @@ class ContentCritiqueLoop:
                 return None
 
             prompt = PromptTemplates.content_critique_prompt(content, context)
-            
+
             # Generate critique
             # Use 'mistral' or 'llama2' as they are good at following JSON instructions
             result = await self.ollama_client.generate(
                 prompt=prompt,
                 model="mistral",  # Prefer mistral for instruction following
                 temperature=0.2,  # Low temperature for consistent evaluation
-                max_tokens=1000
+                max_tokens=1000,
             )
-            
+
             response_text = result.get("text", "").strip()
             if not response_text:
                 return None
-                
+
             # Parse JSON
             # Handle potential markdown code blocks
             if "```json" in response_text:
@@ -163,9 +167,9 @@ class ContentCritiqueLoop:
                 json_str = response_text.split("```")[1].split("```")[0]
             else:
                 json_str = response_text
-                
+
             return json.loads(json_str.strip())
-            
+
         except Exception as e:
             logger.warning(f"LLM critique failed (falling back to heuristics): {e}")
             return None
@@ -189,8 +193,10 @@ class ContentCritiqueLoop:
             keywords = context.get("keywords", [])
             if isinstance(keywords, str):
                 keywords = [keywords]
+            elif keywords is None:
+                keywords = []
             content_lower = content.lower()
-            has_keywords = any(kw.lower() in content_lower for kw in keywords)
+            has_keywords = any(kw.lower() in content_lower for kw in keywords if kw)
 
         # Quality score calculation
         quality_score = 50  # Base score

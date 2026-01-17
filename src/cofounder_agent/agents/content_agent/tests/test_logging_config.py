@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 def test_setup_logging_without_pythonjsonlogger(monkeypatch):
     # Simulate pythonjsonlogger missing by removing module
     import sys as _sys
+
     if "pythonjsonlogger" in _sys.modules:
         del _sys.modules["pythonjsonlogger"]
 

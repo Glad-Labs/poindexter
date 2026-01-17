@@ -230,7 +230,17 @@ def calculate_phase_targets(
     """
     Calculate target word counts for each phase in the pipeline.
 
-    Distributes total word count across phases, respecting any per_phase_overrides.
+    Allocates word count to phases based on their role:
+    - research: 0 (data gathering, not output)
+    - creative: 100% (main blog content generation)
+    - qa: 15% (refinement buffer - can expand/improve beyond initial draft)
+    - format: 0 (formatting, not word count change)
+    - finalize: 0 (final touches, not word count change)
+
+    This allows QA phase to expand content slightly for quality improvements
+    while keeping creative as the primary content generation phase.
+
+    Per-phase overrides can customize this allocation if needed.
     Used in Tier 2 for detailed compliance tracking.
 
     Args:
@@ -248,14 +258,36 @@ def calculate_phase_targets(
     # If overrides specified, use them
     if constraints.per_phase_overrides:
         targets = {
-            phase: constraints.per_phase_overrides.get(phase, total_word_count // num_phases)
+            phase: constraints.per_phase_overrides.get(
+                phase, _get_default_phase_target(phase, total_word_count)
+            )
             for phase in phase_names
         }
     else:
-        # Default: distribute equally
-        targets = {phase: total_word_count // num_phases for phase in phase_names}
+        # Default allocation by phase role
+        targets = {
+            phase: _get_default_phase_target(phase, total_word_count) for phase in phase_names
+        }
 
     return targets
+
+
+def _get_default_phase_target(phase: str, total_word_count: int) -> int:
+    """
+    Get default word count target for a specific phase.
+
+    - creative: 100% (main generation)
+    - qa: 15% (refinement/expansion buffer)
+    - others: 0% (supporting phases)
+    """
+    if phase == "creative":
+        return total_word_count
+    elif phase == "qa":
+        # QA can expand by up to 15% for quality improvements
+        return int(total_word_count * 0.15)
+    else:
+        # research, format, finalize don't produce measurable output
+        return 0
 
 
 def check_tolerance(

@@ -95,7 +95,7 @@ class TestDatabaseServiceAsync:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = os.path.join(tmpdir, "test.db")
             db = DatabaseService(f"sqlite:////{db_path}")
-            
+
             # SQLite doesn't create a pool, just initializes
             await db.initialize()
             # Should not raise error
@@ -112,10 +112,9 @@ class TestDatabaseServiceAsync:
     @pytest.mark.asyncio
     async def test_postgresql_pool_configuration(self):
         """Should configure pool with environment variables"""
-        with patch.dict(os.environ, {
-            "DATABASE_POOL_MIN_SIZE": "5",
-            "DATABASE_POOL_MAX_SIZE": "15"
-        }):
+        with patch.dict(
+            os.environ, {"DATABASE_POOL_MIN_SIZE": "5", "DATABASE_POOL_MAX_SIZE": "15"}
+        ):
             # Note: This tests the configuration logic without actual PostgreSQL
             db = DatabaseService("postgresql://test")
             # Verify URL is set correctly
@@ -158,8 +157,9 @@ class TestDatabaseServiceAsyncMethods:
     def test_crud_methods_are_async(self):
         """Should have async CRUD methods"""
         import inspect
+
         db = DatabaseService()
-        
+
         # Verify key methods are async
         assert inspect.iscoroutinefunction(db.get_user_by_id)
         assert inspect.iscoroutinefunction(db.create_user)
@@ -170,8 +170,9 @@ class TestDatabaseServiceAsyncMethods:
     def test_initialize_close_are_async(self):
         """Should have async initialization and close"""
         import inspect
+
         db = DatabaseService()
-        
+
         assert inspect.iscoroutinefunction(db.initialize)
         assert inspect.iscoroutinefunction(db.close)
 
@@ -195,7 +196,7 @@ class TestDatabaseURL:
         """Should create independent database service instances"""
         db1 = DatabaseService("sqlite:///db1.db")
         db2 = DatabaseService("sqlite:///db2.db")
-        
+
         assert db1.database_url != db2.database_url
         assert db1.pool is None
         assert db2.pool is None
@@ -206,10 +207,7 @@ class TestDatabaseServiceIntegration:
 
     def test_can_instantiate_multiple_services(self):
         """Should handle multiple DatabaseService instances"""
-        services = [
-            DatabaseService(f"sqlite:///test{i}.db")
-            for i in range(3)
-        ]
+        services = [DatabaseService(f"sqlite:///test{i}.db") for i in range(3)]
         assert len(services) == 3
         assert all(s.pool is None for s in services)
 

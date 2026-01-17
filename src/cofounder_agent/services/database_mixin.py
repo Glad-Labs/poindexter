@@ -21,7 +21,7 @@ class DatabaseServiceMixin:
     def _convert_row_to_dict(row: Any) -> Dict[str, Any]:
         """
         Convert asyncpg Record to dict with proper type handling.
-        
+
         Handles:
         - UUID → string
         - JSONB → parsed dict/list
@@ -40,7 +40,16 @@ class DatabaseServiceMixin:
                 data["id"] = str(data["id"])
 
         # Handle JSONB fields
-        for key in ["tags", "task_metadata", "result", "progress", "metadata", "context", "provider_data", "business_state"]:
+        for key in [
+            "tags",
+            "task_metadata",
+            "result",
+            "progress",
+            "metadata",
+            "context",
+            "provider_data",
+            "business_state",
+        ]:
             if key in data:
                 if isinstance(data[key], str):
                     try:
@@ -49,7 +58,16 @@ class DatabaseServiceMixin:
                         data[key] = {} if key != "tags" else []
 
         # Convert timestamps to ISO strings
-        for key in ["created_at", "updated_at", "started_at", "completed_at", "last_used", "evaluation_timestamp", "refinement_timestamp", "modified_at"]:
+        for key in [
+            "created_at",
+            "updated_at",
+            "started_at",
+            "completed_at",
+            "last_used",
+            "evaluation_timestamp",
+            "refinement_timestamp",
+            "modified_at",
+        ]:
             if key in data and data[key]:
                 if hasattr(data[key], "isoformat"):
                     data[key] = data[key].isoformat()

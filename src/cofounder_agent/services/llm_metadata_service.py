@@ -45,6 +45,13 @@ try:
 except ImportError:
     OPENAI_AVAILABLE = False
 
+try:
+    import google.genai as genai
+
+    GOOGLE_AVAILABLE = True
+except ImportError:
+    GOOGLE_AVAILABLE = False
+
 
 class LLMMetadataService:
     """Generate metadata using LLMs with fallback strategies"""
@@ -57,11 +64,11 @@ class LLMMetadataService:
             model: "auto" (use best available), "claude-3-haiku", "gpt-4", etc.
         """
         self.model = model
-        self.llm_available = ANTHROPIC_AVAILABLE or OPENAI_AVAILABLE
+        self.llm_available = ANTHROPIC_AVAILABLE or OPENAI_AVAILABLE or GOOGLE_AVAILABLE
 
         if not self.llm_available:
             logger.warning(
-                "⚠️  No LLM available (Anthropic or OpenAI). Using fallback strategies only."
+                "⚠️  No LLM available (Anthropic, OpenAI, or Google Gemini). Using fallback strategies only."
             )
 
     # ========================================================================

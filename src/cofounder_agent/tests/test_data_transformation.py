@@ -31,6 +31,7 @@ from services.database_service import DatabaseService
 # Test Suite 1: Request Data Transformation
 # ============================================================================
 
+
 class TestRequestDataTransformation:
     """Test transformations of incoming request data"""
 
@@ -42,13 +43,12 @@ class TestRequestDataTransformation:
     def test_json_request_parsing(self):
         """Test: System correctly parses JSON requests"""
         # JSON request from client
-        json_str = json.dumps({
-            "task_type": "content_generation",
-            "parameters": {
-                "topic": "AI trends",
-                "length": 2000
+        json_str = json.dumps(
+            {
+                "task_type": "content_generation",
+                "parameters": {"topic": "AI trends", "length": 2000},
             }
-        })
+        )
 
         parsed = json.loads(json_str)
         assert parsed["task_type"] == "content_generation"
@@ -77,8 +77,8 @@ class TestRequestDataTransformation:
                     "settings": {
                         "auto_publish": True,
                         "notify_on_completion": False,
-                    }
-                }
+                    },
+                },
             }
         }
 
@@ -101,8 +101,8 @@ class TestRequestDataTransformation:
         # Type casting
         raw_request = {
             "priority": "1",  # String
-            "count": "10",    # String
-            "enabled": "true", # String
+            "count": "10",  # String
+            "enabled": "true",  # String
         }
 
         transformed = {
@@ -135,6 +135,7 @@ class TestRequestDataTransformation:
 # ============================================================================
 # Test Suite 2: Response Data Transformation
 # ============================================================================
+
 
 class TestResponseDataTransformation:
     """Test transformations of outgoing response data"""
@@ -203,12 +204,12 @@ class TestResponseDataTransformation:
                         "duration_ms": 1500,
                         "tokens_used": 2500,
                         "cost_cents": 3,
-                    }
+                    },
                 },
                 "metadata": {
                     "version": "1.0",
                     "processed_at": datetime.now().isoformat(),
-                }
+                },
             }
         }
 
@@ -241,6 +242,7 @@ class TestResponseDataTransformation:
 # ============================================================================
 # Test Suite 3: Enum to String Conversions
 # ============================================================================
+
 
 class TestEnumToStringConversions:
     """Test enum value conversions and serialization"""
@@ -317,6 +319,7 @@ class TestEnumToStringConversions:
 # ============================================================================
 # Test Suite 4: Type Validation and Coercion
 # ============================================================================
+
 
 class TestTypeValidationAndCoercion:
     """Test type validation and coercion during transformation"""
@@ -401,6 +404,7 @@ class TestTypeValidationAndCoercion:
 # Test Suite 5: Complex Data Flow Transformations
 # ============================================================================
 
+
 class TestComplexDataFlowTransformations:
     """Test complex multi-step data transformations"""
 
@@ -413,7 +417,7 @@ class TestComplexDataFlowTransformations:
             "parameters": {
                 "topic": "AI",
                 "length": 2000,
-            }
+            },
         }
 
         # System processing
@@ -529,6 +533,7 @@ class TestComplexDataFlowTransformations:
 # Fixtures and Utilities
 # ============================================================================
 
+
 @pytest.fixture
 def sample_json_data():
     """Sample JSON data for transformation testing"""
@@ -541,7 +546,7 @@ def sample_json_data():
         "metadata": {
             "total": 3,
             "timestamp": datetime.now().isoformat(),
-        }
+        },
     }
 
 

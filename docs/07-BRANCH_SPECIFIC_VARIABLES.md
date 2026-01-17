@@ -5,9 +5,10 @@
 **Version:** 3.0  
 **Status:** ✅ Complete | 4-Tier Branch Strategy Implemented  
 =======
->>>>>>> feat/refine
-**Purpose:** Configure Glad Labs to run different environments (local dev, staging, production) based on git branch  
-**Scope:** Environment variables, deployment targets, API endpoints, database connections
+
+> > > > > > > feat/refine
+> > > > > > > **Purpose:** Configure Glad Labs to run different environments (local dev, staging, production) based on git branch  
+> > > > > > > **Scope:** Environment variables, deployment targets, API endpoints, database connections
 
 ---
 

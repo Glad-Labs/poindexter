@@ -29,6 +29,7 @@ from services.database_service import DatabaseService
 # Test Suite 1: Task Lifecycle Workflow
 # ============================================================================
 
+
 class TestTaskLifecycleWorkflow:
     """Test complete task lifecycle from creation to completion"""
 
@@ -119,6 +120,7 @@ class TestTaskLifecycleWorkflow:
 # ============================================================================
 # Test Suite 2: Content Generation Pipeline Workflow
 # ============================================================================
+
 
 class TestContentGenerationWorkflow:
     """Test content generation pipeline as complete workflow"""
@@ -215,6 +217,7 @@ class TestContentGenerationWorkflow:
 # Test Suite 3: Model Selection Workflow
 # ============================================================================
 
+
 class TestModelSelectionWorkflow:
     """Test workflow for selecting appropriate models for tasks"""
 
@@ -286,6 +289,7 @@ class TestModelSelectionWorkflow:
 # Test Suite 4: Concurrent Task Workflow
 # ============================================================================
 
+
 class TestConcurrentTaskWorkflow:
     """Test workflows with concurrent task execution"""
 
@@ -306,19 +310,14 @@ class TestConcurrentTaskWorkflow:
     async def test_multiple_tasks_concurrent_workflow(self, model_router):
         """Test: Multiple tasks can be processed concurrently"""
         # Concurrent task workflow
-        tasks = [
-            {"id": i, "type": "task", "status": "pending"}
-            for i in range(3)
-        ]
+        tasks = [{"id": i, "type": "task", "status": "pending"} for i in range(3)]
 
         # Simulate concurrent processing
         async def process_task(task):
             task["status"] = "completed"
             return task
 
-        results = await asyncio.gather(*[
-            process_task(t) for t in tasks
-        ])
+        results = await asyncio.gather(*[process_task(t) for t in tasks])
 
         assert len(results) == 3
         assert all(r["status"] == "completed" for r in results)
@@ -344,10 +343,7 @@ class TestConcurrentTaskWorkflow:
             "workflow_3": {"status": "in_progress", "result": None},
         }
 
-        completed_count = sum(
-            1 for w in completions.values()
-            if w["status"] == "completed"
-        )
+        completed_count = sum(1 for w in completions.values() if w["status"] == "completed")
 
         assert completed_count == 2
 
@@ -355,6 +351,7 @@ class TestConcurrentTaskWorkflow:
 # ============================================================================
 # Test Suite 5: Error Handling Workflow
 # ============================================================================
+
 
 class TestErrorHandlingWorkflow:
     """Test workflows that handle errors and edge cases"""
@@ -431,6 +428,7 @@ class TestErrorHandlingWorkflow:
 # ============================================================================
 # Fixtures and Utilities
 # ============================================================================
+
 
 @pytest.fixture
 def workflow_context():

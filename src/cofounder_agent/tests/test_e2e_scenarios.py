@@ -7,7 +7,7 @@ and demonstrate production-ready behavior.
 Test Coverage:
 - Full blog post generation workflow (research → draft → review → publish)
 - Multiple concurrent content requests with shared resources
-- Task failure and retry recovery workflows  
+- Task failure and retry recovery workflows
 - Content generation with image integration
 - Multi-language content generation
 - Complex task routing and optimization
@@ -178,10 +178,7 @@ class TestConcurrentContentRequests:
         router = ModelRouter()
 
         # Simulate 5 concurrent requests
-        tasks = [
-            {"id": f"task_{i}", "complexity": TaskComplexity.MEDIUM}
-            for i in range(5)
-        ]
+        tasks = [{"id": f"task_{i}", "complexity": TaskComplexity.MEDIUM} for i in range(5)]
 
         results = []
 

@@ -27,6 +27,9 @@ from .content_critique_loop import ContentCritiqueLoop
 # Import prompt templates
 from .prompt_templates import PromptTemplates
 
+# Import model selection helper
+from routes.task_routes import get_model_for_phase
+
 # Import AI content generator for fallback
 from .ai_content_generator import AIContentGenerator
 
@@ -40,7 +43,12 @@ class TaskExecutor:
     """Background task executor service"""
 
     def __init__(
-        self, database_service, orchestrator=None, critique_loop=None, poll_interval: int = 5, app_state=None
+        self,
+        database_service,
+        orchestrator=None,
+        critique_loop=None,
+        poll_interval: int = 5,
+        app_state=None,
     ):
         """
         Initialize task executor
@@ -80,8 +88,8 @@ class TaskExecutor:
         then falls back to the initial orchestrator from startup.
         This ensures we use the properly-initialized UnifiedOrchestrator when available.
         """
-        if self.app_state and hasattr(self.app_state, 'orchestrator'):
-            orch = getattr(self.app_state, 'orchestrator', None)
+        if self.app_state and hasattr(self.app_state, "orchestrator"):
+            orch = getattr(self.app_state, "orchestrator", None)
             if orch is not None:
                 return orch
         return self.orchestrator_initial
@@ -97,7 +105,9 @@ class TaskExecutor:
         logger.info(f"   Poll interval: {self.poll_interval} seconds")
         logger.info(f"   Database service: {self.database_service is not None}")
         logger.info(f"   Orchestrator: {self.orchestrator is not None}")
-        logger.info(f"   Orchestrator type: {type(self.orchestrator).__name__ if self.orchestrator else 'None'}")
+        logger.info(
+            f"   Orchestrator type: {type(self.orchestrator).__name__ if self.orchestrator else 'None'}"
+        )
 
         # Create background task
         self._processor_task = asyncio.create_task(self._process_loop())
@@ -169,8 +179,8 @@ class TaskExecutor:
                                         "task_metadata": {
                                             "error": str(e),
                                             "timestamp": datetime.now(timezone.utc).isoformat(),
-                                        }
-                                    }
+                                        },
+                                    },
                                 )
                                 logger.info(
                                     f"📝 [TASK_EXEC_LOOP] Updated task {task_id} status to failed"
@@ -227,8 +237,11 @@ class TaskExecutor:
                 task_id,
                 {
                     "status": "in_progress",
-                    "task_metadata": {"status": "processing", "started_at": datetime.now(timezone.utc).isoformat()}
-                }
+                    "task_metadata": {
+                        "status": "processing",
+                        "started_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                },
             )
             logger.info(f"✅ [TASK_SINGLE] Task marked as in_progress")
 
@@ -242,34 +255,69 @@ class TaskExecutor:
 
             # 3. Update task status (awaiting_approval or failed based on result)
             final_status = (
-                result.get("status", "awaiting_approval") if isinstance(result, dict) else "awaiting_approval"
+                result.get("status", "awaiting_approval")
+                if isinstance(result, dict)
+                else "awaiting_approval"
             )
             logger.info(f"💾 [TASK_SINGLE] Updating task status to '{final_status}'...")
-            
+
             # Extract relevant fields from result for task_metadata (don't store entire result)
             # This prevents the entire result dict from being treated as metadata
             task_metadata_updates = {}
             if isinstance(result, dict):
                 # Extract only the fields we want in task_metadata
                 fields_to_extract = [
-                    "content", "excerpt", "title", "featured_image_url", "featured_image_data",
-                    "seo_title", "seo_description", "seo_keywords", "qa_feedback", "quality_score",
-                    "orchestrator_error", "message", "constraint_compliance", "stage", "percentage"
+                    "content",
+                    "excerpt",
+                    "title",
+                    "featured_image_url",
+                    "featured_image_data",
+                    "seo_title",
+                    "seo_description",
+                    "seo_keywords",
+                    "qa_feedback",
+                    "quality_score",
+                    "orchestrator_error",
+                    "message",
+                    "constraint_compliance",
+                    "stage",
+                    "percentage",
+                    "model_used",
                 ]
                 for field in fields_to_extract:
                     if field in result:
                         task_metadata_updates[field] = result[field]
             else:
                 task_metadata_updates["output"] = str(result)
-            
+
+            # DEBUG: Log all extracted metadata
+            logger.info(f"🔍 [DEBUG] Extracted metadata for task {task_id}:")
+            logger.info(f"   - Fields extracted: {list(task_metadata_updates.keys())}")
+            logger.info(f"   - Has 'content': {'content' in task_metadata_updates}")
+            if "content" in task_metadata_updates:
+                content_val = task_metadata_updates.get("content")
+                logger.info(f"   - Content type: {type(content_val).__name__}")
+                logger.info(
+                    f"   - Content length: {len(content_val) if isinstance(content_val, str) else 'N/A'} chars"
+                )
+                if isinstance(content_val, str):
+                    logger.info(f"   - Content preview: {content_val[:100]}...")
+
             # Use update_task to ensure normalization of content into columns
-            await self.database_service.update_task(
-                task_id,
-                {
-                    "status": final_status,
-                    "task_metadata": task_metadata_updates
-                }
+            logger.info(
+                f"📝 [DEBUG] Calling update_task with status={final_status}, metadata keys={list(task_metadata_updates.keys())}"
             )
+
+            # Also store model_used in the normalized column if it's in the result
+            update_payload = {"status": final_status, "task_metadata": task_metadata_updates}
+            if isinstance(result, dict) and "model_used" in result:
+                update_payload["model_used"] = result["model_used"]
+                logger.info(
+                    f"📝 [DEBUG] Including model_used in database update: {result['model_used']}"
+                )
+
+            await self.database_service.update_task(task_id, update_payload)
+            logger.info(f"✅ [DEBUG] update_task completed for {task_id}")
 
             if final_status == "failed":
                 logger.error(f"❌ [TASK_SINGLE] Task failed: {task_id}")
@@ -322,6 +370,10 @@ class TaskExecutor:
         logger.info(f"   Model selections: {model_selections}")
         logger.info(f"   Quality preference: {quality_preference}")
 
+        # Determine which model will be used for this task (for tracking purposes)
+        model_used = get_model_for_phase("draft", model_selections, quality_preference)
+        logger.info(f"   Determined model for execution: {model_used}")
+
         # Start usage tracking for entire task execution
         task_start_time = time.time()
         self.usage_tracker.start_operation(
@@ -349,7 +401,7 @@ class TaskExecutor:
                     category=category,
                     style=style,
                     tone=tone,
-                    target_length=target_length
+                    target_length=target_length,
                 )
 
                 # Build execution context with model information
@@ -377,7 +429,7 @@ class TaskExecutor:
                 # Result can be either an object with attributes or a dict
                 final_formatting = None
                 outputs = None
-                
+
                 # Log the actual result structure for debugging
                 logger.info(f"   Raw orchestrator result type: {type(result).__name__}")
                 if isinstance(result, dict):
@@ -385,71 +437,105 @@ class TaskExecutor:
                     # Log first 300 chars of result for debugging
                     result_str = str(result)[:300]
                     logger.info(f"   Result sample: {result_str}")
-                elif hasattr(result, '__dict__'):
+                elif hasattr(result, "__dict__"):
                     logger.info(f"   Result attributes: {list(result.__dict__.keys())}")
-                
-                if hasattr(result, 'final_formatting'):
+
+                if hasattr(result, "final_formatting"):
                     final_formatting = result.final_formatting
-                    logger.debug(f"   Found final_formatting attribute: {len(str(final_formatting)) if final_formatting else 0} chars")
+                    logger.debug(
+                        f"   Found final_formatting attribute: {len(str(final_formatting)) if final_formatting else 0} chars"
+                    )
                 elif isinstance(result, dict):
                     # Check multiple possible fields for content
                     # First check the ExecutionResult fields
-                    execution_output = result.get('output')
+                    execution_output = result.get("output")
                     if isinstance(execution_output, dict):
                         # ExecutionResult wraps the actual output, drill down
-                        logger.debug(f"   Found ExecutionResult wrapper, drilling down into 'output' field")
-                        final_formatting = execution_output.get('final_formatting') or execution_output.get('content')
-                        outputs = execution_output.get('outputs')
+                        logger.debug(
+                            f"   Found ExecutionResult wrapper, drilling down into 'output' field"
+                        )
+                        final_formatting = execution_output.get(
+                            "final_formatting"
+                        ) or execution_output.get("content")
+                        outputs = execution_output.get("outputs")
                     else:
                         # Direct result dict or error response
-                        final_formatting = result.get('final_formatting') or result.get('output') or result.get('response')
-                        outputs = result.get('outputs')
-                        
+                        final_formatting = (
+                            result.get("final_formatting")
+                            or result.get("output")
+                            or result.get("response")
+                        )
+                        outputs = result.get("outputs")
+
                         # Check if this is an error result (e.g., from UnifiedOrchestrator exception)
-                        if result.get('status') == 'failed' or result.get('feedback'):
+                        if result.get("status") == "failed" or result.get("feedback"):
                             # This might be an error from UnifiedOrchestrator
-                            orchestrator_error = result.get('feedback') or result.get('output') or "Unknown error"
-                            logger.warning(f"   ⚠️  Orchestrator returned error: {orchestrator_error}")
+                            orchestrator_error = (
+                                result.get("feedback") or result.get("output") or "Unknown error"
+                            )
+                            logger.warning(
+                                f"   ⚠️  Orchestrator returned error: {orchestrator_error}"
+                            )
                             final_formatting = None
-                        
-                        logger.debug(f"   Checked dict for final_formatting: {final_formatting is not None}")
+
+                        logger.debug(
+                            f"   Checked dict for final_formatting: {final_formatting is not None}"
+                        )
                         logger.debug(f"   Checked dict for outputs: {outputs is not None}")
-                
+
                 if final_formatting:
                     if isinstance(final_formatting, (dict, list)):
                         generated_content = json.dumps(final_formatting)
-                        logger.debug(f"   Serialized final_formatting dict/list to JSON: {len(generated_content)} chars")
+                        logger.debug(
+                            f"   Serialized final_formatting dict/list to JSON: {len(generated_content)} chars"
+                        )
                     else:
                         generated_content = str(final_formatting)
-                        logger.debug(f"   Using final_formatting as string: {len(generated_content)} chars")
-                elif outputs or (isinstance(result, dict) and result.get('outputs')):
-                    result_outputs = outputs if outputs else result.get('outputs', {})
-                    logger.debug(f"   Using outputs field, type: {type(result_outputs).__name__}, len: {len(str(result_outputs))}")
+                        logger.debug(
+                            f"   Using final_formatting as string: {len(generated_content)} chars"
+                        )
+                elif outputs or (isinstance(result, dict) and result.get("outputs")):
+                    result_outputs = outputs if outputs else result.get("outputs", {})
+                    logger.debug(
+                        f"   Using outputs field, type: {type(result_outputs).__name__}, len: {len(str(result_outputs))}"
+                    )
                     if isinstance(result_outputs, dict):
                         # Try to find content in outputs
                         for key, val in result_outputs.items():
                             if isinstance(val, dict) and "content" in val:
                                 generated_content = val["content"]
-                                logger.debug(f"   Found content in outputs[{key}]['content']: {len(str(generated_content))} chars")
+                                logger.debug(
+                                    f"   Found content in outputs[{key}]['content']: {len(str(generated_content))} chars"
+                                )
                                 break
                             if isinstance(val, str) and len(val) > 100:
                                 generated_content = val
-                                logger.debug(f"   Found long string in outputs[{key}]: {len(val)} chars")
+                                logger.debug(
+                                    f"   Found long string in outputs[{key}]: {len(val)} chars"
+                                )
                                 break
                         else:
                             generated_content = str(result_outputs)
-                            logger.debug(f"   No suitable content found, serialized outputs: {len(generated_content)} chars")
+                            logger.debug(
+                                f"   No suitable content found, serialized outputs: {len(generated_content)} chars"
+                            )
                     else:
                         generated_content = str(result_outputs)
-                        logger.debug(f"   Outputs is not dict, converting to string: {len(generated_content)} chars")
+                        logger.debug(
+                            f"   Outputs is not dict, converting to string: {len(generated_content)} chars"
+                        )
                 else:
                     generated_content = None
                     logger.debug(f"   No content found in result, setting to None")
 
                 # Debug logging for content generation
-                logger.info(f"   Generated content length: {len(generated_content) if generated_content else 0} chars")
+                logger.info(
+                    f"   Generated content length: {len(generated_content) if generated_content else 0} chars"
+                )
                 if generated_content and len(generated_content) < 200:
-                    logger.warning(f"   ⚠️  Generated content is short ({len(generated_content)} chars): {generated_content[:100]}...")
+                    logger.warning(
+                        f"   ⚠️  Generated content is short ({len(generated_content)} chars): {generated_content[:100]}..."
+                    )
 
                 # Validate that content was actually generated
                 if not generated_content or (
@@ -462,12 +548,14 @@ class TaskExecutor:
                         logger.warning(f"      Content length: {len(generated_content)}")
                         content_preview = str(generated_content)[:200]
                         logger.warning(f"      FULL content: {content_preview}")
-                    
+
                     # Try fallback content generation instead of retrying orchestrator
                     logger.info(f"   ⚙️ Attempting fallback content generation...")
                     try:
                         generated_content = await self._fallback_generate_content(task)
-                        logger.info(f"   ✅ Fallback generation succeeded: {len(generated_content)} chars")
+                        logger.info(
+                            f"   ✅ Fallback generation succeeded: {len(generated_content)} chars"
+                        )
                     except Exception as fallback_err:
                         logger.error(f"   ❌ Fallback generation also failed: {fallback_err}")
                         orchestrator_error = f"Orchestrator failed with: {orchestrator_error or 'Unknown error'}. Fallback also failed: {fallback_err}"
@@ -494,8 +582,10 @@ class TaskExecutor:
 
         # ===== PHASE 2: Critique Loop (Validate Quality) =====
         logger.info(f"🔍 [TASK_EXECUTE] PHASE 2: Validating content through critique loop...")
-        logger.info(f"   Input content length: {len(generated_content) if generated_content else 0} chars")
-        
+        logger.info(
+            f"   Input content length: {len(generated_content) if generated_content else 0} chars"
+        )
+
         # Only critique if we have content
         if generated_content:
             critique_result = await self.critique_loop.critique(
@@ -538,10 +628,14 @@ class TaskExecutor:
                 logger.info(
                     f"🔄 [TASK_EXECUTE] Attempting refinement based on critique feedback..."
                 )
-                logger.info(f"   Original content length: {len(generated_content) if generated_content else 0} chars")
+                logger.info(
+                    f"   Original content length: {len(generated_content) if generated_content else 0} chars"
+                )
                 try:
                     # Check if orchestrator supports modern process_request
-                    if hasattr(self.orchestrator, "process_request") and not hasattr(self.orchestrator, "process_command_async"):
+                    if hasattr(self.orchestrator, "process_request") and not hasattr(
+                        self.orchestrator, "process_command_async"
+                    ):
                         # UnifiedOrchestrator
                         refinement_result = await self.orchestrator.process_request(
                             user_input=f"Refine content about '{topic}' based on feedback: {critique_result.get('feedback')}",
@@ -550,7 +644,7 @@ class TaskExecutor:
                                 "feedback": critique_result.get("feedback"),
                                 "task_id": str(task_id),
                                 "model_selections": model_selections,
-                            }
+                            },
                         )
                     else:
                         # Legacy Orchestrator or basic Orchestrator
@@ -571,11 +665,13 @@ class TaskExecutor:
                             # Fallback to process_command_async
                             refinement_result = await self.orchestrator.process_command_async(
                                 command=f"Refine content about '{topic}' based on feedback: {critique_result.get('feedback')}",
-                                context={"original_content": generated_content}
+                                context={"original_content": generated_content},
                             )
 
-                    logger.info(f"   Refinement completed, result type: {type(refinement_result).__name__}")
-                    
+                    logger.info(
+                        f"   Refinement completed, result type: {type(refinement_result).__name__}"
+                    )
+
                     # Extract content from refinement result
                     refined_content = None
                     if isinstance(refinement_result, dict):
@@ -588,7 +684,10 @@ class TaskExecutor:
                             refined_content = refinement_result["response"]
                         elif "final_formatting" in refinement_result:
                             refined_content = refinement_result["final_formatting"]
-                        elif isinstance(refinement_result.get("output"), dict) and "content" in refinement_result["output"]:
+                        elif (
+                            isinstance(refinement_result.get("output"), dict)
+                            and "content" in refinement_result["output"]
+                        ):
                             refined_content = refinement_result["output"]["content"]
                         else:
                             # Fallback: If refinement didn't return content, keep original
@@ -597,15 +696,23 @@ class TaskExecutor:
                     elif isinstance(refinement_result, str):
                         # If result is just a string, use it as content
                         refined_content = refinement_result
-                        logger.info(f"   Refinement returned string content ({len(refinement_result)} chars)")
+                        logger.info(
+                            f"   Refinement returned string content ({len(refinement_result)} chars)"
+                        )
                     else:
                         # Unknown format
-                        logger.warning(f"⚠️  Unexpected refinement result type: {type(refinement_result).__name__}")
+                        logger.warning(
+                            f"⚠️  Unexpected refinement result type: {type(refinement_result).__name__}"
+                        )
                         refined_content = None
 
                     if refined_content and len(str(refined_content).strip()) > 50:
                         # Use refined content
-                        generated_content = str(refined_content) if not isinstance(refined_content, str) else refined_content
+                        generated_content = (
+                            str(refined_content)
+                            if not isinstance(refined_content, str)
+                            else refined_content
+                        )
                         logger.info(f"   ✅ Using refined content ({len(generated_content)} chars)")
 
                         # Re-critique refined content
@@ -621,13 +728,21 @@ class TaskExecutor:
                         approved = critique_result.get("approved", False)
                         logger.info(f"   Refined Quality Score: {quality_score}/100")
                     else:
-                        logger.warning(f"   ⚠️  Refined content too short ({len(str(refined_content).strip()) if refined_content else 0} chars), keeping original")
-                
+                        logger.warning(
+                            f"   ⚠️  Refined content too short ({len(str(refined_content).strip()) if refined_content else 0} chars), keeping original"
+                        )
+
                 except Exception as refine_err:
-                    logger.error(f"❌ [TASK_EXECUTE] Refinement failed: {refine_err}", exc_info=True)
-                    logger.warning(f"   Keeping original content ({len(generated_content) if generated_content else 0} chars)")
-                
-                logger.info(f"🔄 Refinement complete: approved={approved}, score={quality_score}/100, content_len={len(generated_content) if generated_content else 0}")
+                    logger.error(
+                        f"❌ [TASK_EXECUTE] Refinement failed: {refine_err}", exc_info=True
+                    )
+                    logger.warning(
+                        f"   Keeping original content ({len(generated_content) if generated_content else 0} chars)"
+                    )
+
+                logger.info(
+                    f"🔄 Refinement complete: approved={approved}, score={quality_score}/100, content_len={len(generated_content) if generated_content else 0}"
+                )
 
         # ===== Validate Content Generation =====
         # Ensure meaningful content was actually generated
@@ -658,9 +773,7 @@ class TaskExecutor:
             "status": final_status,
             # Generation phase - FULL CONTENT, not truncated!
             # Store as both "content" (for database) and "generated_content" (for debugging)
-            "content": (
-                generated_content if content_is_valid else None
-            ),  # For database storage
+            "content": (generated_content if content_is_valid else None),  # For database storage
             "generated_content": (
                 generated_content if content_is_valid else None
             ),  # For compatibility
@@ -668,6 +781,8 @@ class TaskExecutor:
                 len(generated_content) if (content_is_valid and generated_content) else 0
             ),
             "orchestrator_error": orchestrator_error,
+            # Model tracking
+            "model_used": model_used,
             # Critique phase
             "quality_score": quality_score,
             "content_approved": approved,
@@ -725,10 +840,16 @@ class TaskExecutor:
         Returns:
             Generated content as string (markdown formatted)
         """
-        topic = task.get("topic", "No Topic")
-        keyword = task.get("primary_keyword", "keyword")
-        audience = task.get("target_audience", "general audience")
-        category = task.get("category", "general")
+        topic = task.get("topic") or "Topic"
+        keyword = task.get("primary_keyword") or "keyword"
+        audience = task.get("target_audience") or "general audience"
+        category = task.get("category") or "general"
+
+        # Ensure all variables are strings and not None
+        topic = str(topic) if topic is not None else "Topic"
+        keyword = str(keyword) if keyword is not None else "keyword"
+        audience = str(audience) if audience is not None else "general audience"
+        category = str(category) if category is not None else "general"
 
         logger.info(f"📝 Using fallback content generation via AIContentGenerator")
         logger.info(f"   Topic: {topic}")

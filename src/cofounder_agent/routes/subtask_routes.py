@@ -96,7 +96,7 @@ async def run_research_subtask(
         orchestrator = app_request.app.state.orchestrator
         if not orchestrator:
             raise HTTPException(status_code=500, detail="Orchestrator not available")
-        
+
         research_output = await orchestrator._run_research(request.topic, request.keywords)
 
         # Update subtask with results
@@ -183,7 +183,7 @@ async def run_creative_subtask(
         orchestrator = app_request.app.state.orchestrator
         if not orchestrator:
             raise HTTPException(status_code=500, detail="Orchestrator not available")
-        
+
         blog_post = await orchestrator._run_creative_initial(
             topic=request.topic,
             research_data=request.research_output or "",
@@ -263,7 +263,7 @@ async def run_qa_subtask(
         orchestrator = app_request.app.state.orchestrator
         if not orchestrator:
             raise HTTPException(status_code=500, detail="Orchestrator not available")
-        
+
         final_content, feedback, quality_score = await orchestrator._run_qa_loop(
             topic=request.topic,
             draft_post=request.creative_output,
@@ -345,7 +345,7 @@ async def run_image_subtask(
         orchestrator = app_request.app.state.orchestrator
         if not orchestrator:
             raise HTTPException(status_code=500, detail="Orchestrator not available")
-        
+
         featured_image_url = await orchestrator._run_image_selection(
             request.topic, request.content or ""
         )
@@ -416,7 +416,7 @@ async def run_format_subtask(
         orchestrator = app_request.app.state.orchestrator
         if not orchestrator:
             raise HTTPException(status_code=500, detail="Orchestrator not available")
-        
+
         formatted_content, excerpt = await orchestrator._run_formatting(
             request.topic, request.content, request.featured_image_url
         )

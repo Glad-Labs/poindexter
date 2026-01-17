@@ -30,6 +30,7 @@ from services.database_service import DatabaseService
 # Test Suite 1: ModelRouter Functionality Integration
 # ============================================================================
 
+
 class TestModelRouterIntegration:
     """Test ModelRouter works correctly in realistic scenarios"""
 
@@ -93,6 +94,7 @@ class TestModelRouterIntegration:
 # Test Suite 2: DatabaseService Integration
 # ============================================================================
 
+
 class TestDatabaseServiceIntegration:
     """Test DatabaseService in realistic scenarios"""
 
@@ -142,6 +144,7 @@ class TestDatabaseServiceIntegration:
 # ============================================================================
 # Test Suite 3: Data Flow and Model Routing Integration
 # ============================================================================
+
 
 class TestDataFlowIntegration:
     """Test data flowing through multiple services"""
@@ -209,7 +212,9 @@ class TestDataFlowIntegration:
             assert ModelProvider(provider.value) == provider
 
     @pytest.mark.asyncio
-    async def test_services_coordinate_via_shared_data_structures(self, model_router, database_service):
+    async def test_services_coordinate_via_shared_data_structures(
+        self, model_router, database_service
+    ):
         """Test: Services can coordinate through shared data models"""
         # Both services work with compatible data structures
         shared_task_data = {
@@ -219,7 +224,7 @@ class TestDataFlowIntegration:
             "metadata": {
                 "provider": "openai",
                 "complexity": "simple",
-            }
+            },
         }
 
         # Data structure is valid
@@ -230,6 +235,7 @@ class TestDataFlowIntegration:
 # ============================================================================
 # Test Suite 4: Full Service Coordination
 # ============================================================================
+
 
 class TestFullServiceCoordination:
     """Test all services coordinating in realistic scenarios"""
@@ -293,11 +299,7 @@ class TestFullServiceCoordination:
         complexity = TaskComplexity.SIMPLE.value
 
         # Database should accept this in task data
-        task_data = {
-            "title": "Layer Test",
-            "complexity": complexity,
-            "status": "pending"
-        }
+        task_data = {"title": "Layer Test", "complexity": complexity, "status": "pending"}
 
         # Task data is valid
         assert isinstance(task_data["complexity"], str)
@@ -307,6 +309,7 @@ class TestFullServiceCoordination:
 # ============================================================================
 # Test Suite 5: Service State Management
 # ============================================================================
+
 
 class TestServiceStateManagement:
     """Test services maintain proper state and consistency"""
@@ -366,7 +369,7 @@ class TestServiceStateManagement:
 
         # But have same enum values
         assert router1 is not router2
-        
+
         db1 = DatabaseService()
         db2 = DatabaseService()
         assert db1 is not db2
@@ -375,17 +378,18 @@ class TestServiceStateManagement:
         """Test: Router configuration is stable after enum access"""
         # Access all provider enums
         all_providers = list(ModelProvider)
-        
+
         # Configuration should remain consistent
         first_provider = ModelProvider.OPENAI
         second_access = ModelProvider.OPENAI
-        
+
         assert first_provider == second_access
 
 
 # ============================================================================
 # Fixtures and Utilities
 # ============================================================================
+
 
 @pytest.fixture
 def mock_model_response():
@@ -458,4 +462,3 @@ data compatibility, state management, and real-world integration scenarios.
 These tests focus on observable behavior and actual service APIs,
 mocking external dependencies while validating real implementations.
 """
-

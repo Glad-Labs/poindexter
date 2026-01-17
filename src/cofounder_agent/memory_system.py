@@ -927,9 +927,13 @@ async def main(db_pool: asyncpg.Pool):
     logger.info(f"  • Memory types: {summary['memory_by_type']}")
     logger.info(f"  • User preferences: {summary['total_preferences']}")
     logger.info(f"  • Knowledge clusters: {summary['total_knowledge_clusters']}")
-    logger.info(f"  • Embedding model: {'Active' if summary['embedding_model_active'] else 'Inactive'}")
+    logger.info(
+        f"  • Embedding model: {'Active' if summary['embedding_model_active'] else 'Inactive'}"
+    )
 
 
 if __name__ == "__main__":
     logger.error("❌ This module must be used with a PostgreSQL database connection pool.")
-    logger.error("   Use from within the FastAPI application context during lifespan initialization.")
+    logger.error(
+        "   Use from within the FastAPI application context during lifespan initialization."
+    )

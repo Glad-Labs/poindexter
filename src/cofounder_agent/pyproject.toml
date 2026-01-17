@@ -9,7 +9,10 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.10,<3.13"
+python = ">=3.10,<3.14"
+
+# Use headless opencv (doesn't require X11/GUI libraries in production)
+opencv-python-headless = "^4.8.0"
 
 # Web Framework
 fastapi = "^0.100"
@@ -20,13 +23,14 @@ pydantic-settings = "^2.0"
 # Database
 sqlalchemy = "^2.0"
 alembic = "^1.0"
-asyncpg = "^0.29"
+asyncpg = "^0.31"
 psycopg2-binary = "^2.9"
 
 # AI/LLM Integration
 anthropic = "^0.7"
 openai = "^1.0"
 requests = "^2.30"
+google-generativeai = "^0.8"
 
 # Async/Concurrency
 aiohttp = "^3.9"
@@ -189,11 +193,12 @@ ignore = [
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-testpaths = ["tests"]
-python_files = ["test_*.py", "*_test.py"]
+testpaths = ["../../tests"]
+python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"
+pythonpath = ["../..", ".", "../"]
 addopts = [
     "-v",
     "--tb=short",

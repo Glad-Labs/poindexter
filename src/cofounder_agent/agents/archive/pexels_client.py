@@ -11,7 +11,7 @@ Now consolidated into unified ImageService
 Migration:
     OLD: from src.agents.content_agent.services.pexels_client import PexelsClient
     NEW: from src.cofounder_agent.services.image_service import get_image_service
-    
+
     OLD: pexels_client = PexelsClient()
          result = await pexels_client.search_and_download(query, path)
     NEW: image_service = get_image_service()
@@ -26,7 +26,7 @@ from ..config import config
 class PexelsClient:
     """
     Client for fetching images from the Pexels API.
-    
+
     ASYNC-FIRST: All HTTP operations use httpx (no blocking I/O)
     """
 

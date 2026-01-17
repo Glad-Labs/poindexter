@@ -24,6 +24,7 @@ from schemas.metrics_schemas import (
 from services.usage_tracker import get_usage_tracker
 from services.cost_aggregation_service import CostAggregationService
 from services.database_service import DatabaseService
+from utils.route_utils import get_database_dependency
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +177,7 @@ async def get_usage_metrics(
 async def get_cost_metrics(
     current_user: UserProfile = Depends(get_current_user),
     use_db: bool = Query(True, description="Use PostgreSQL database for costs (recommended)"),
+    db_service: DatabaseService = Depends(get_database_dependency),
 ) -> Dict[str, Any]:
     """
     Get AI model usage and cost metrics from database.
@@ -199,8 +201,6 @@ async def get_cost_metrics(
         # Try database-backed aggregation first
         if use_db:
             try:
-                db_service = DatabaseService()
-                await db_service.initialize()
                 cost_service = CostAggregationService(db_service=db_service)
 
                 # Get comprehensive cost summary from database
@@ -208,8 +208,6 @@ async def get_cost_metrics(
                 phase_breakdown = await cost_service.get_breakdown_by_phase(period="month")
                 model_breakdown = await cost_service.get_breakdown_by_model(period="month")
                 budget_status = await cost_service.get_budget_status(monthly_budget=150.0)
-
-                await db_service.pool.close() if db_service.pool else None
 
                 return {
                     # Summary metrics
@@ -461,6 +459,7 @@ async def track_usage(
 async def get_costs_by_phase(
     current_user: UserProfile = Depends(get_current_user),
     period: str = Query("week", regex="^(today|week|month)$"),
+    db_service: DatabaseService = Depends(get_database_dependency),
 ) -> Dict[str, Any]:
     """
     Get cost breakdown by pipeline phase for Week 2 dashboard
@@ -473,13 +472,9 @@ async def get_costs_by_phase(
     **Example:** Shows research costs $0.50, outline $0.75, draft $2.00, etc.
     """
     try:
-        db_service = DatabaseService()
-        await db_service.initialize()
         cost_service = CostAggregationService(db_service=db_service)
 
         result = await cost_service.get_breakdown_by_phase(period=period)
-
-        await db_service.pool.close() if db_service.pool else None
 
         return result
     except Exception as e:
@@ -491,6 +486,7 @@ async def get_costs_by_phase(
 async def get_costs_by_model(
     current_user: UserProfile = Depends(get_current_user),
     period: str = Query("week", regex="^(today|week|month)$"),
+    db_service: DatabaseService = Depends(get_database_dependency),
 ) -> Dict[str, Any]:
     """
     Get cost breakdown by AI model for Week 2 dashboard
@@ -504,13 +500,9 @@ async def get_costs_by_model(
     **Example:** Shows gpt-4 costs $1.50, gpt-3.5 $0.45, ollama $0.00
     """
     try:
-        db_service = DatabaseService()
-        await db_service.initialize()
         cost_service = CostAggregationService(db_service=db_service)
 
         result = await cost_service.get_breakdown_by_model(period=period)
-
-        await db_service.pool.close() if db_service.pool else None
 
         return result
     except Exception as e:
@@ -522,6 +514,7 @@ async def get_costs_by_model(
 async def get_cost_history(
     current_user: UserProfile = Depends(get_current_user),
     period: str = Query("week", regex="^(week|month)$"),
+    db_service: DatabaseService = Depends(get_database_dependency),
 ) -> Dict[str, Any]:
     """
     Get cost history and trends for Week 2 dashboard
@@ -534,13 +527,9 @@ async def get_cost_history(
     **Use case:** Visualize spending patterns, detect anomalies
     """
     try:
-        db_service = DatabaseService()
-        await db_service.initialize()
         cost_service = CostAggregationService(db_service=db_service)
 
         result = await cost_service.get_history(period=period)
-
-        await db_service.pool.close() if db_service.pool else None
 
         return result
     except Exception as e:
@@ -552,6 +541,7 @@ async def get_cost_history(
 async def get_budget_status(
     current_user: UserProfile = Depends(get_current_user),
     monthly_budget: float = Query(150.0, ge=10, le=10000),
+    db_service: DatabaseService = Depends(get_database_dependency),
 ) -> Dict[str, Any]:
     """
     Get budget status and alerts for Week 2 dashboard
@@ -569,13 +559,9 @@ async def get_budget_status(
     **Example:** Shows spent $12.50, remaining $137.50, 8.33% used, status: healthy
     """
     try:
-        db_service = DatabaseService()
-        await db_service.initialize()
         cost_service = CostAggregationService(db_service=db_service)
 
         result = await cost_service.get_budget_status(monthly_budget=monthly_budget)
-
-        await db_service.pool.close() if db_service.pool else None
 
         return result
     except Exception as e:
@@ -587,6 +573,7 @@ async def get_budget_status(
 async def get_kpi_analytics(
     current_user: UserProfile = Depends(get_current_user),
     range: str = Query("30d", description="Time range: 1d, 7d, 30d, 90d, all"),
+    db_service: DatabaseService = Depends(get_database_dependency),
 ) -> Dict[str, Any]:
     """
     Get key performance indicator (KPI) metrics for executive dashboard.
@@ -606,8 +593,6 @@ async def get_kpi_analytics(
       - Agent uptime
     """
     try:
-        db_service = DatabaseService()
-        await db_service.initialize()
         cost_service = CostAggregationService(db_service=db_service)
 
         # Calculate date range
@@ -690,8 +675,6 @@ async def get_kpi_analytics(
         # Mock engagement and uptime (would come from analytics/monitoring)
         engagement_current = 4.8
         engagement_previous = 3.2
-
-        await db_service.pool.close() if db_service.pool else None
 
         return {
             "kpis": {

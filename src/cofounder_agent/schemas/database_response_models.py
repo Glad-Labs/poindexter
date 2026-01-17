@@ -78,7 +78,7 @@ class TaskResponse(BaseModel):
     status: Optional[str] = Field(None, description="Task execution status")
     category: Optional[str] = Field(None, description="Task category")
     priority: Optional[int] = Field(default=0, ge=0, le=5, description="Priority level (0-5)")
-    
+
     # Content fields (normalized)
     style: Optional[str] = Field(None, description="Writing style")
     tone: Optional[str] = Field(None, description="Writing tone")
@@ -88,27 +88,31 @@ class TaskResponse(BaseModel):
     content: Optional[str] = Field(None, description="Generated content")
     excerpt: Optional[str] = Field(None, description="Content excerpt")
     featured_image_url: Optional[str] = Field(None, description="URL for featured image")
-    featured_image_data: Optional[Dict[str, Any]] = Field(None, description="Metadata for featured image")
-    featured_image_prompt: Optional[str] = Field(None, description="Prompt used for image generation")
-    
+    featured_image_data: Optional[Dict[str, Any]] = Field(
+        None, description="Metadata for featured image"
+    )
+    featured_image_prompt: Optional[str] = Field(
+        None, description="Prompt used for image generation"
+    )
+
     # Quality & SEO
     qa_feedback: Optional[str] = Field(None, description="QA feedback")
     quality_score: Optional[float] = Field(None, description="Quality score (0-100)")
     seo_title: Optional[str] = Field(None, description="SEO optimized title")
     seo_description: Optional[str] = Field(None, description="SEO meta description")
     seo_keywords: Optional[str] = Field(None, description="SEO keywords")
-    
+
     # Progress tracking
     stage: Optional[str] = Field(None, description="Current execution stage")
     percentage: Optional[int] = Field(None, description="Completion percentage")
     message: Optional[str] = Field(None, description="Status message")
-    
+
     # Metadata & System
     agent_id: Optional[str] = Field(None, description="ID of the agent handling the task")
     model_used: Optional[str] = Field(None, description="LLM model used")
     error_message: Optional[str] = Field(None, description="Error message if failed")
     tags: Optional[List[str]] = Field(default_factory=list, description="Task tags")
-    
+
     task_metadata: Optional[Dict[str, Any]] = Field(
         default=None, description="Additional task metadata (JSON)"
     )
@@ -220,9 +224,7 @@ class LogResponse(BaseModel):
         ..., description="Log level"
     )
     message: str = Field(..., description="Log message")
-    context: Optional[Dict[str, Any]] = Field(
-        default=None, description="Additional context (JSON)"
-    )
+    context: Optional[Dict[str, Any]] = Field(default=None, description="Additional context (JSON)")
     created_at: datetime = Field(..., description="Log creation timestamp")
 
 
@@ -338,9 +340,7 @@ class QualityEvaluationResponse(BaseModel):
     feedback: Optional[str] = Field(None, description="Evaluator feedback")
     suggestions: Optional[List[str]] = Field(None, description="Improvement suggestions")
     evaluated_by: str = Field(default="QualityEvaluator", description="Evaluator identifier")
-    evaluation_method: str = Field(
-        default="pattern-based", description="Evaluation method used"
-    )
+    evaluation_method: str = Field(default="pattern-based", description="Evaluation method used")
     evaluation_timestamp: datetime = Field(..., description="Evaluation timestamp")
 
 
@@ -356,9 +356,7 @@ class QualityImprovementLogResponse(BaseModel):
     score_improvement: float = Field(
         ..., description="Absolute improvement (improved_score - initial_score)"
     )
-    refinement_type: str = Field(
-        default="auto-critique", description="Type of refinement applied"
-    )
+    refinement_type: str = Field(default="auto-critique", description="Type of refinement applied")
     changes_made: Optional[str] = Field(None, description="Description of changes")
     refinement_timestamp: datetime = Field(..., description="Refinement timestamp")
     passed_after_refinement: bool = Field(
@@ -398,9 +396,7 @@ class OrchestratorTrainingDataResponse(BaseModel):
     execution_id: str = Field(..., description="Execution identifier")
     user_request: str = Field(..., description="Original user request")
     intent: Optional[str] = Field(None, description="Detected intent")
-    business_state: Optional[Dict[str, Any]] = Field(
-        None, description="Business context (JSON)"
-    )
+    business_state: Optional[Dict[str, Any]] = Field(None, description="Business context (JSON)")
     execution_result: Optional[str] = Field(None, description="Execution outcome")
     quality_score: Optional[float] = Field(None, ge=0.0, le=10.0, description="Quality score")
     success: bool = Field(default=False, description="Whether execution succeeded")

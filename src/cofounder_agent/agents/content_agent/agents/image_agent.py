@@ -64,9 +64,7 @@ class ImageAgent:
                     post.images.append(image_details)
 
         except Exception as e:
-            logging.error(
-                f"An error occurred during image processing: {e}", exc_info=True
-            )
+            logging.error(f"An error occurred during image processing: {e}", exc_info=True)
 
         logging.info(f"ImageAgent: Finished image processing for '{post.title}'.")
         return post
@@ -114,9 +112,9 @@ class ImageAgent:
 
             # Upload image via REST API (GCS deprecated, using REST API instead)
             try:
-                with open(local_path, 'rb') as f:
+                with open(local_path, "rb") as f:
                     file_content = f.read()
-                files = {'file': (os.path.basename(local_path), file_content, 'image/jpeg')}
+                files = {"file": (os.path.basename(local_path), file_content, "image/jpeg")}
                 async with httpx.AsyncClient(timeout=30) as client:
                     upload_response = await client.post(
                         f"{self.api_url}/api/upload",
@@ -124,7 +122,7 @@ class ImageAgent:
                     )
                     upload_response.raise_for_status()
                     result = upload_response.json()
-                    signed_url = result.get('url', local_path)
+                    signed_url = result.get("url", local_path)
             except Exception as e:
                 logging.warning(f"REST API upload failed ({e}), using local path")
                 signed_url = local_path

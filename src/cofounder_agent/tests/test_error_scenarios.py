@@ -30,6 +30,7 @@ from services.database_service import DatabaseService
 # Test Suite 1: Service Failure Scenarios
 # ============================================================================
 
+
 class TestServiceFailureScenarios:
     """Test handling of service failures"""
 
@@ -86,7 +87,7 @@ class TestServiceFailureScenarios:
         # Recovery mechanism
         db1 = DatabaseService("sqlite:///test1.db")
         db2 = DatabaseService("sqlite:///test2.db")
-        
+
         # Both should work independently
         assert db1.database_url != db2.database_url
 
@@ -94,6 +95,7 @@ class TestServiceFailureScenarios:
 # ============================================================================
 # Test Suite 2: Resource Exhaustion Scenarios
 # ============================================================================
+
 
 class TestResourceExhaustionScenarios:
     """Test handling of resource exhaustion"""
@@ -167,6 +169,7 @@ class TestResourceExhaustionScenarios:
 # Test Suite 3: Invalid Input Handling
 # ============================================================================
 
+
 class TestInvalidInputHandling:
     """Test handling of invalid inputs"""
 
@@ -202,7 +205,7 @@ class TestInvalidInputHandling:
         # Invalid complexity
         invalid_complexity = "ultra_extreme"
         valid_complexities = [e.value for e in TaskComplexity]
-        
+
         # Should not be in valid list
         assert invalid_complexity not in valid_complexities
 
@@ -222,7 +225,7 @@ class TestInvalidInputHandling:
             "task_count": "not_a_number",  # Should be int
             "priority": 5,  # Should be string
         }
-        
+
         assert isinstance(wrong_type["task_count"], str)
         assert isinstance(wrong_type["priority"], int)
 
@@ -230,6 +233,7 @@ class TestInvalidInputHandling:
 # ============================================================================
 # Test Suite 4: Data Consistency During Errors
 # ============================================================================
+
 
 class TestDataConsistencyDuringErrors:
     """Test data consistency when errors occur"""
@@ -298,6 +302,7 @@ class TestDataConsistencyDuringErrors:
 # Test Suite 5: Error Recovery and Resilience
 # ============================================================================
 
+
 class TestErrorRecoveryAndResilience:
     """Test error recovery mechanisms"""
 
@@ -329,7 +334,9 @@ class TestErrorRecoveryAndResilience:
             "multiplier": 2,
         }
 
-        assert backoff["attempt_2_delay_ms"] == backoff["attempt_1_delay_ms"] * backoff["multiplier"]
+        assert (
+            backoff["attempt_2_delay_ms"] == backoff["attempt_1_delay_ms"] * backoff["multiplier"]
+        )
 
     def test_circuit_breaker_pattern(self):
         """Test: System implements circuit breaker"""
@@ -375,6 +382,7 @@ class TestErrorRecoveryAndResilience:
 # ============================================================================
 # Fixtures and Utilities
 # ============================================================================
+
 
 @pytest.fixture
 def error_context():

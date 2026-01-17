@@ -18,21 +18,12 @@ sys.path.insert(0, str(project_root))
 # PYTEST CONFIGURATION
 # ============================================================================
 
+
 def pytest_configure(config):
     """Configure pytest with custom markers."""
+    config.addinivalue_line("markers", "unit: Unit tests for individual functions/methods")
     config.addinivalue_line(
-        "markers",
-        "unit: Unit tests for individual functions/methods"
+        "markers", "integration: Integration tests requiring multiple components"
     )
-    config.addinivalue_line(
-        "markers",
-        "integration: Integration tests requiring multiple components"
-    )
-    config.addinivalue_line(
-        "markers",
-        "api: Tests requiring API calls"
-    )
-    config.addinivalue_line(
-        "markers",
-        "slow: Slow-running tests"
-    )
+    config.addinivalue_line("markers", "api: Tests requiring API calls")
+    config.addinivalue_line("markers", "slow: Slow-running tests")

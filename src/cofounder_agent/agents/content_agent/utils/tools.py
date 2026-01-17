@@ -11,9 +11,10 @@ try:
         DirectoryReadTool,
         CodeInterpreterTool,
     )
+
     CREWAI_TOOLS_AVAILABLE = True
-except ImportError as e:
-    logging.warning(f"crewai_tools not available ({e}), using mock implementations")
+except ImportError:
+    # crewai_tools not available, using mock implementations instead
     from .crewai_tools_mock import (
         SerperDevTool,
         WebsiteSearchTool,
@@ -21,6 +22,7 @@ except ImportError as e:
         DirectoryReadTool,
         CodeInterpreterTool,
     )
+
     CREWAI_TOOLS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
@@ -31,7 +33,7 @@ class WebSearchTool(SerperDevTool):
     A tool for performing web searches to gather real-time information,
     find external links, and enrich content. This is a direct integration
     of the SerperDevTool for simplicity and robustness.
-    
+
     **API Required:** SERPER_API_KEY
     **Use Cases:** Market research, trend discovery, competitor analysis
     """
@@ -46,7 +48,7 @@ class CompetitorContentSearchTool(WebsiteSearchTool):
     """
     RAG-based search tool for analyzing competitor websites and content.
     Uses semantic search to find relevant information within web pages.
-    
+
     **Use Cases:** Competitor analysis, content benchmarking, market positioning
     **Note:** Requires CHROMA_OPENAI_API_KEY environment variable to be set
     """
@@ -58,7 +60,9 @@ class CompetitorContentSearchTool(WebsiteSearchTool):
         except Exception as e:
             # Handle missing CHROMA_OPENAI_API_KEY or other initialization errors gracefully
             logger.warning(f"CompetitorContentSearchTool initialization failed: {str(e)[:200]}")
-            logger.warning("Competitor content search will be unavailable - continuing without this tool")
+            logger.warning(
+                "Competitor content search will be unavailable - continuing without this tool"
+            )
             # Store the error for later reference, but don't raise
             self._initialization_error = str(e)
             self._is_available = False
@@ -68,7 +72,7 @@ class DocumentAccessTool(FileReadTool):
     """
     Tool for reading and extracting content from various file formats.
     Supports: txt, md, json, csv, pdf, docx, and more.
-    
+
     **Use Cases:** Research document analysis, configuration reading, data extraction
     **No API Required:** Local file access
     """
@@ -95,7 +99,7 @@ class DirectoryAccessTool(DirectoryReadTool):
     """
     Tool for navigating and analyzing directory structures.
     Useful for understanding content organization and finding related files.
-    
+
     **Use Cases:** Project exploration, documentation navigation, file discovery
     **No API Required:** Local directory access
     """
@@ -112,7 +116,7 @@ class DataProcessingTool(CodeInterpreterTool):
     """
     Tool for executing Python code to process data, run calculations,
     and transform information. Useful for data cleaning and analysis.
-    
+
     **Use Cases:** Data transformation, calculations, data analysis
     **No API Required:** Local Python execution
     **Security:** Be careful with untrusted input!
@@ -137,19 +141,19 @@ class CrewAIToolsFactory:
     """
     Factory for creating and managing CrewAI tools.
     Provides a centralized interface for all available tools.
-    
+
     **Phase 1 Tools (Available Now):**
     - WebSearchTool: Real-time web search
     - CompetitorContentSearchTool: Website content analysis
     - DocumentAccessTool: File reading
     - DirectoryAccessTool: Directory navigation
     - DataProcessingTool: Code execution
-    
+
     **Example Usage:**
     ```python
     factory = CrewAIToolsFactory()
     tools = factory.get_content_agent_tools()  # Get all tools for content agent
-    
+
     # Or get specific tools:
     web_search = factory.get_web_search_tool()
     doc_reader = factory.get_document_tool()

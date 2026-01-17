@@ -425,7 +425,7 @@ Copy this to document your testing:
 - [ ] Loads correctly
 - [ ] Animations smooth
 - [ ] Navigation works
-- **Notes:** ****\_\_\_****
+- **Notes:** \***\*\_\_\_\*\***
 
 ### Archive Page
 
@@ -433,7 +433,7 @@ Copy this to document your testing:
 - [ ] Images load
 - [ ] Pagination works
 - [ ] Responsive
-- **Notes:** ****\_\_\_****
+- **Notes:** \***\*\_\_\_\*\***
 
 ### Post Detail
 
@@ -441,7 +441,7 @@ Copy this to document your testing:
 - [ ] Images display
 - [ ] Links work
 - [ ] Mobile friendly
-- **Notes:** ****\_\_\_****
+- **Notes:** \***\*\_\_\_\*\***
 
 ### Overall
 

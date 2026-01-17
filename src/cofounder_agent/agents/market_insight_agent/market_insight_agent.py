@@ -4,10 +4,12 @@ from src.agents.content_agent.services.llm_client import LLMClient
 from src.agents.content_agent.agents.research_agent import ResearchAgent
 from src.agents.content_agent.utils.tools import CrewAIToolsFactory
 
+
 class MarketInsightAgent:
     """
     A specialized agent for analyzing market trends and suggesting content topics.
     """
+
     def __init__(self, llm_client: LLMClient):
         """Initializes the MarketInsightAgent with required clients."""
         self.llm_client = llm_client
@@ -62,21 +64,28 @@ class MarketInsightAgent:
                                         "topic": {"type": "string"},
                                         "primary_keyword": {"type": "string"},
                                         "target_audience": {"type": "string"},
-                                        "category": {"type": "string"}
+                                        "category": {"type": "string"},
                                     },
-                                    "required": ["topic", "primary_keyword", "target_audience", "category"]
-                                }
+                                    "required": [
+                                        "topic",
+                                        "primary_keyword",
+                                        "target_audience",
+                                        "category",
+                                    ],
+                                },
                             }
-                        }
-                    }
-                }
+                        },
+                    },
+                },
             }
             prompt = f"Generate three blog post ideas based on the trend: '{trend}'."
             response = self.llm_client.generate_with_tools(prompt, tools=[tool_schema])
             suggestions = response.get("ideas", [])
 
             # Tasks would be created via REST API in production
-            logging.info(f"Generated {len(suggestions)} task suggestions (REST API integration needed)")
+            logging.info(
+                f"Generated {len(suggestions)} task suggestions (REST API integration needed)"
+            )
 
             return f"I've generated {len(suggestions)} potential task ideas based on the trend: '{trend}'."
         except Exception as e:

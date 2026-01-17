@@ -44,9 +44,7 @@ def setup_logging(firestore_client: Optional[object] = None):
         logger.handlers.clear()
 
     # Create a file handler that logs messages to a file
-    file_handler = RotatingFileHandler(
-        log_file, maxBytes=1024 * 1024 * 5, backupCount=5
-    )
+    file_handler = RotatingFileHandler(log_file, maxBytes=1024 * 1024 * 5, backupCount=5)
 
     # Create formatter (JSON if available)
     formatter = _make_formatter()
@@ -68,9 +66,7 @@ def setup_logging(firestore_client: Optional[object] = None):
 
     # Also add a handler for console output for local development
     console_handler = logging.StreamHandler()
-    console_formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
+    console_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
 

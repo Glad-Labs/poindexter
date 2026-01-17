@@ -1,11 +1,13 @@
 # 🚀 QUICK REFERENCE - Approval Workflow Testing
 
 ## Status
+
 ✅ **READY TO TEST** - All fixes implemented, test task created
 
 ---
 
 ## Test Task
+
 ```
 ID:       a71e5b39-6808-4a0c-8b5d-df579e8af133
 Topic:    Emerging AI Trends in 2025
@@ -18,6 +20,7 @@ Image:    https://images.pexels.com/photos/8386441/
 ## 3-Step Test
 
 ### 1️⃣ Open Task
+
 ```
 http://localhost:3001/tasks
 → Find "Emerging AI Trends in 2025"
@@ -25,6 +28,7 @@ http://localhost:3001/tasks
 ```
 
 ### 2️⃣ Approve Task
+
 ```
 Click "Approve" button
 → Fill reviewer ID (optional)
@@ -33,7 +37,9 @@ Click "Approve" button
 ```
 
 ### 3️⃣ Verify
+
 **Backend Log** (should show):
+
 ```
 COMPLETE POST DATA BEFORE INSERT:
   featured_image_url: https://... ✅
@@ -43,12 +49,14 @@ COMPLETE POST DATA BEFORE INSERT:
 ```
 
 **Database Query**:
+
 ```sql
 SELECT featured_image_url, seo_title, seo_description, seo_keywords
 FROM posts WHERE task_id = 'a71e5b39-6808-4a0c-8b5d-df579e8af133';
 ```
 
 **Expected Result**:
+
 ```
 featured_image_url    | https://images.pexels.com/photos/8386441/...
 seo_title             | Emerging AI Trends 2025: What to Watch
@@ -60,14 +68,14 @@ seo_keywords          | AI trends, artificial intelligence, machine learning, 20
 
 ## What Was Fixed
 
-| Issue | Fix |
-|-------|-----|
-| featured_image_url NULL | Verified UI→DB flow |
-| seo_title NULL | Added fallback: metadata→title→"Untitled" |
-| seo_description NULL | Added fallback: metadata→excerpt→content→"" |
-| seo_keywords NULL | Added fallback: metadata→"" |
-| UnboundLocalError | Moved var init earlier |
-| UUID validation error | Added array conversion |
+| Issue                   | Fix                                         |
+| ----------------------- | ------------------------------------------- |
+| featured_image_url NULL | Verified UI→DB flow                         |
+| seo_title NULL          | Added fallback: metadata→title→"Untitled"   |
+| seo_description NULL    | Added fallback: metadata→excerpt→content→"" |
+| seo_keywords NULL       | Added fallback: metadata→""                 |
+| UnboundLocalError       | Moved var init earlier                      |
+| UUID validation error   | Added array conversion                      |
 
 ---
 
@@ -83,13 +91,13 @@ Database:    localhost:5432         ✅ RUNNING
 
 ## Key Files
 
-| File | Purpose |
-|------|---------|
-| `CREATE_TEST_TASK.py` | Create test tasks |
+| File                                           | Purpose                   |
+| ---------------------------------------------- | ------------------------- |
+| `CREATE_TEST_TASK.py`                          | Create test tasks         |
 | `src/cofounder_agent/routes/content_routes.py` | Approval endpoint (fixed) |
-| `src/cofounder_agent/services/content_db.py` | Post creation (fixed) |
-| `TEST_APPROVAL_WORKFLOW_GUIDE.md` | Detailed steps |
-| `APPROVAL_WORKFLOW_FIXES_SUMMARY.md` | Technical details |
+| `src/cofounder_agent/services/content_db.py`   | Post creation (fixed)     |
+| `TEST_APPROVAL_WORKFLOW_GUIDE.md`              | Detailed steps            |
+| `APPROVAL_WORKFLOW_FIXES_SUMMARY.md`           | Technical details         |
 
 ---
 
@@ -124,20 +132,24 @@ Database:    localhost:5432         ✅ RUNNING
 ## Common Issues & Fixes
 
 **Issue**: Task not showing in UI
+
 - Verify DB connection: `SELECT COUNT(*) FROM content_tasks;`
 - Check status is 'completed' and approval_status is 'pending'
 
 **Issue**: Featured image NULL in DB
+
 - Check backend log for "COMPLETE POST DATA BEFORE INSERT"
 - Verify featured_image_url is there (not NULL)
 - If NULL in log: UI not sending it, or lost in request
 
 **Issue**: SEO fields NULL in DB
+
 - Same as above
 - Also verify metadata service is returning values
 - Check if fallback chains triggered (logs will show)
 
 **Issue**: Backend error
+
 - Check full error in backend logs
 - Search for "ERROR" or "❌" in logs
 - Review traceback for exact issue
@@ -147,22 +159,25 @@ Database:    localhost:5432         ✅ RUNNING
 ## Database Queries
 
 **View Test Task**:
+
 ```sql
-SELECT task_id, topic, featured_image_url, seo_title 
-FROM content_tasks 
+SELECT task_id, topic, featured_image_url, seo_title
+FROM content_tasks
 WHERE task_id = 'a71e5b39-6808-4a0c-8b5d-df579e8af133';
 ```
 
 **View Published Post** (after approval):
+
 ```sql
 SELECT id, title, featured_image_url, seo_title, seo_description, seo_keywords
-FROM posts 
+FROM posts
 WHERE task_id = 'a71e5b39-6808-4a0c-8b5d-df579e8af133';
 ```
 
 **Count Posts with Missing SEO**:
+
 ```sql
-SELECT COUNT(*) FROM posts 
+SELECT COUNT(*) FROM posts
 WHERE seo_title IS NULL OR seo_description IS NULL;
 -- Should be 0 after fixes
 ```
@@ -172,6 +187,7 @@ WHERE seo_title IS NULL OR seo_description IS NULL;
 ## Logs to Monitor
 
 **Backend Logs Show**:
+
 ```
 [APPROVAL] Processing approval for task...
 [APPROVAL] Building post_data with safeguards...
@@ -217,6 +233,7 @@ WHERE seo_title IS NULL OR seo_description IS NULL;
 ## Success = ✅
 
 When all checks pass:
+
 ```
 ✅ Featured image saved
 ✅ SEO title saved

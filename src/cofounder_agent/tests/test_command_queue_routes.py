@@ -16,8 +16,32 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 
-# Use conftest app and client fixtures instead
-# This ensures all routes are properly registered
+@pytest.fixture(scope="session")
+def test_app():
+    """Create test app with routes registered"""
+    from routes.task_routes import router as task_router
+    from utils.exception_handlers import register_exception_handlers
+    from utils.middleware_config import MiddlewareConfig
+
+    app = FastAPI(title="Test Command Queue App")
+
+    # Register routes
+    app.include_router(task_router)
+
+    # Register exception handlers
+    register_exception_handlers(app)
+
+    # Register middleware
+    middleware_config = MiddlewareConfig()
+    middleware_config.register_all_middleware(app)
+
+    return app
+
+
+@pytest.fixture(scope="session")
+def client(test_app):
+    """Create test client"""
+    return TestClient(test_app)
 
 
 @pytest.mark.unit
@@ -29,8 +53,7 @@ class TestCommandQueueRoutes:
     def auth_headers(self, client):
         """Get auth headers for protected endpoints"""
         auth_response = client.post(
-            "/api/auth/github/callback",
-            json={"code": "test_code", "state": "test_state"}
+            "/api/auth/github/callback", json={"code": "test_code", "state": "test_state"}
         )
         if auth_response.status_code == 200:
             token_data = auth_response.json()
@@ -45,16 +68,12 @@ class TestCommandQueueRoutes:
             "command": {
                 "action": "create",
                 "task_id": "test_123",
-                "specifications": {"topic": "Test"}
-            }
+                "specifications": {"topic": "Test"},
+            },
         }
-        
-        response = client.post(
-            "/api/commands/dispatch",
-            json=command_data,
-            headers=auth_headers
-        )
-        
+
+        response = client.post("/api/commands/dispatch", json=command_data, headers=auth_headers)
+
         if auth_headers:
             assert response.status_code in [200, 201, 400, 422]
             if response.status_code in [200, 201]:
@@ -67,13 +86,10 @@ class TestCommandQueueRoutes:
         """Test dispatching to invalid agent type"""
         response = client.post(
             "/api/commands/dispatch",
-            json={
-                "agent_type": "nonexistent_agent",
-                "command": {"action": "test"}
-            },
-            headers=auth_headers
+            json={"agent_type": "nonexistent_agent", "command": {"action": "test"}},
+            headers=auth_headers,
         )
-        
+
         if auth_headers:
             assert response.status_code in [400, 422, 404]
         else:
@@ -81,11 +97,8 @@ class TestCommandQueueRoutes:
 
     def test_get_command_status(self, client, auth_headers):
         """Test checking command status"""
-        response = client.get(
-            "/api/commands/test_command_id/status",
-            headers=auth_headers
-        )
-        
+        response = client.get("/api/commands/test_command_id/status", headers=auth_headers)
+
         if auth_headers:
             assert response.status_code in [200, 404]
         else:
@@ -93,11 +106,8 @@ class TestCommandQueueRoutes:
 
     def test_get_command_result(self, client, auth_headers):
         """Test retrieving command result"""
-        response = client.get(
-            "/api/commands/test_command_id/result",
-            headers=auth_headers
-        )
-        
+        response = client.get("/api/commands/test_command_id/result", headers=auth_headers)
+
         if auth_headers:
             assert response.status_code in [200, 404]
         else:
@@ -105,11 +115,8 @@ class TestCommandQueueRoutes:
 
     def test_list_pending_commands(self, client, auth_headers):
         """Test listing pending commands"""
-        response = client.get(
-            "/api/commands/pending",
-            headers=auth_headers
-        )
-        
+        response = client.get("/api/commands/pending", headers=auth_headers)
+
         if auth_headers:
             assert response.status_code == 200
             data = response.json()
@@ -119,11 +126,8 @@ class TestCommandQueueRoutes:
 
     def test_cancel_command(self, client, auth_headers):
         """Test canceling a command"""
-        response = client.post(
-            "/api/commands/test_command_id/cancel",
-            headers=auth_headers
-        )
-        
+        response = client.post("/api/commands/test_command_id/cancel", headers=auth_headers)
+
         if auth_headers:
             assert response.status_code in [200, 404, 400]
         else:
@@ -131,11 +135,8 @@ class TestCommandQueueRoutes:
 
     def test_queue_statistics(self, client, auth_headers):
         """Test getting queue statistics"""
-        response = client.get(
-            "/api/commands/statistics",
-            headers=auth_headers
-        )
-        
+        response = client.get("/api/commands/statistics", headers=auth_headers)
+
         if auth_headers:
             assert response.status_code == 200
             data = response.json()
@@ -145,11 +146,8 @@ class TestCommandQueueRoutes:
 
     def test_clear_completed_commands(self, client, auth_headers):
         """Test clearing completed commands"""
-        response = client.post(
-            "/api/commands/clear-completed",
-            headers=auth_headers
-        )
-        
+        response = client.post("/api/commands/clear-completed", headers=auth_headers)
+
         if auth_headers:
             assert response.status_code in [200, 400]
         else:
@@ -162,11 +160,11 @@ class TestCommandQueueRoutes:
             json={
                 "target_agent": "content",
                 "intervention_type": "pause",
-                "reason": "User requested pause"
+                "reason": "User requested pause",
             },
-            headers=auth_headers
+            headers=auth_headers,
         )
-        
+
         if auth_headers:
             assert response.status_code in [200, 400, 422]
         else:
@@ -180,56 +178,40 @@ class TestCommandValidation:
 
     def test_dispatch_missing_agent_type(self, client):
         """Test dispatch with missing agent type"""
-        response = client.post(
-            "/api/commands/dispatch",
-            json={"command": {"action": "test"}}
-        )
+        response = client.post("/api/commands/dispatch", json={"command": {"action": "test"}})
         assert response.status_code in [400, 422, 401]
 
     def test_dispatch_missing_command(self, client):
         """Test dispatch with missing command"""
-        response = client.post(
-            "/api/commands/dispatch",
-            json={"agent_type": "content"}
-        )
+        response = client.post("/api/commands/dispatch", json={"agent_type": "content"})
         assert response.status_code in [400, 422, 401]
 
     def test_dispatch_empty_command(self, client):
         """Test dispatch with empty command"""
         response = client.post(
-            "/api/commands/dispatch",
-            json={"agent_type": "content", "command": {}}
+            "/api/commands/dispatch", json={"agent_type": "content", "command": {}}
         )
         # Empty command may be valid or invalid depending on implementation
         assert response.status_code in [200, 201, 400, 422, 401]
 
     def test_dispatch_invalid_json(self, client):
         """Test dispatch with invalid JSON"""
-        response = client.post(
-            "/api/commands/dispatch",
-            data="invalid json"
-        )
+        response = client.post("/api/commands/dispatch", data="invalid json")
         assert response.status_code in [400, 422]
 
     def test_get_status_invalid_command_id(self, client):
         """Test status check with invalid command ID format"""
-        response = client.get(
-            "/api/commands/<invalid>id/status"
-        )
+        response = client.get("/api/commands/<invalid>id/status")
         assert response.status_code in [404, 422, 400]
 
     def test_get_status_nonexistent_command(self, client):
         """Test status check for non-existent command"""
-        response = client.get(
-            "/api/commands/nonexistent_uuid_12345/status"
-        )
+        response = client.get("/api/commands/nonexistent_uuid_12345/status")
         assert response.status_code in [200, 404]
 
     def test_cancel_nonexistent_command(self, client):
         """Test canceling non-existent command"""
-        response = client.post(
-            "/api/commands/nonexistent_uuid_12345/cancel"
-        )
+        response = client.post("/api/commands/nonexistent_uuid_12345/cancel")
         assert response.status_code in [404, 401]
 
 
@@ -244,35 +226,32 @@ class TestCommandQueuePerformance:
         for i in range(10):
             response = client.post(
                 "/api/commands/dispatch",
-                json={
-                    "agent_type": "content",
-                    "command": {"action": f"test_{i}"}
-                }
+                json={"agent_type": "content", "command": {"action": f"test_{i}"}},
             )
             responses.append(response.status_code)
-        
+
         # Should handle rapid dispatch
         assert all(status in [200, 201, 400, 422, 401] for status in responses)
 
     def test_command_query_response_time(self, client):
         """Test that command queries respond quickly"""
         import time
-        
+
         start = time.time()
         response = client.get("/api/commands/pending")
         elapsed = time.time() - start
-        
+
         # Should respond within 5 seconds
         assert elapsed < 5 or response.status_code == 401
 
     def test_queue_statistics_response_time(self, client):
         """Test that queue statistics are generated quickly"""
         import time
-        
+
         start = time.time()
         response = client.get("/api/commands/statistics")
         elapsed = time.time() - start
-        
+
         # Should respond within 5 seconds
         assert elapsed < 5 or response.status_code == 401
 
@@ -282,7 +261,7 @@ class TestCommandQueuePerformance:
         for i in range(5):
             response = client.get(f"/api/commands/test_id_{i}/status")
             responses.append(response.status_code)
-        
+
         # All should return valid status codes
         assert all(status in [200, 404, 401] for status in responses)
 
@@ -296,17 +275,13 @@ class TestCommandQueueIntegration:
         """Test dispatching a command and checking its status"""
         # Dispatch
         dispatch_response = client.post(
-            "/api/commands/dispatch",
-            json={
-                "agent_type": "content",
-                "command": {"action": "test"}
-            }
+            "/api/commands/dispatch", json={"agent_type": "content", "command": {"action": "test"}}
         )
-        
+
         if dispatch_response.status_code in [200, 201]:
             data = dispatch_response.json()
             command_id = data.get("command_id") or data.get("id")
-            
+
             if command_id:
                 # Check status
                 status_response = client.get(f"/api/commands/{command_id}/status")
@@ -316,19 +291,16 @@ class TestCommandQueueIntegration:
         """Test sending intervention"""
         response = client.post(
             "/api/commands/intervene",
-            json={
-                "target_agent": "content",
-                "intervention_type": "pause"
-            }
+            json={"target_agent": "content", "intervention_type": "pause"},
         )
-        
+
         # Should handle intervention request
         assert response.status_code in [200, 400, 422, 401]
 
     def test_queue_statistics_shows_pending(self, client):
         """Test that queue statistics include pending commands"""
         response = client.get("/api/commands/statistics")
-        
+
         if response.status_code == 200:
             data = response.json()
             # Should contain queue information

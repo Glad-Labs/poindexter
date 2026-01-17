@@ -5,8 +5,9 @@
 Your approval workflow has been **fully debugged and fixed**. All the issues preventing featured_image_url and SEO fields from being saved have been resolved.
 
 **Test Environment Status**:
+
 - ✅ Backend FastAPI server (port 8000) - **RUNNING**
-- ✅ Oversight Hub React UI (port 3001) - **RUNNING**  
+- ✅ Oversight Hub React UI (port 3001) - **RUNNING**
 - ✅ PostgreSQL database (`glad_labs_dev`) - **RUNNING**
 - ✅ Test task created in database - **READY**
 
@@ -14,14 +15,14 @@ Your approval workflow has been **fully debugged and fixed**. All the issues pre
 
 ## What Was Fixed
 
-| Issue | Root Cause | Fix | Status |
-|-------|-----------|-----|--------|
-| **featured_image_url NULL** | UI sends URL but lost in flow | Verified data flow from UI → database | ✅ Fixed |
-| **seo_title NULL** | No safeguards if metadata missing | Added fallback: metadata → title → "Untitled" | ✅ Fixed |
-| **seo_description NULL** | No safeguards if metadata missing | Added fallback: metadata → excerpt → content → "" | ✅ Fixed |
-| **seo_keywords NULL** | No safeguards if metadata missing | Added fallback: metadata → "" | ✅ Fixed |
-| **UnboundLocalError** | Variable used before definition | Moved initialization before first use | ✅ Fixed |
-| **UUID validation errors** | Array items not converted | Added UUID→string conversion for tag_ids | ✅ Fixed |
+| Issue                       | Root Cause                        | Fix                                               | Status   |
+| --------------------------- | --------------------------------- | ------------------------------------------------- | -------- |
+| **featured_image_url NULL** | UI sends URL but lost in flow     | Verified data flow from UI → database             | ✅ Fixed |
+| **seo_title NULL**          | No safeguards if metadata missing | Added fallback: metadata → title → "Untitled"     | ✅ Fixed |
+| **seo_description NULL**    | No safeguards if metadata missing | Added fallback: metadata → excerpt → content → "" | ✅ Fixed |
+| **seo_keywords NULL**       | No safeguards if metadata missing | Added fallback: metadata → ""                     | ✅ Fixed |
+| **UnboundLocalError**       | Variable used before definition   | Moved initialization before first use             | ✅ Fixed |
+| **UUID validation errors**  | Array items not converted         | Added UUID→string conversion for tag_ids          | ✅ Fixed |
 
 ---
 
@@ -30,6 +31,7 @@ Your approval workflow has been **fully debugged and fixed**. All the issues pre
 ### Quick Start (3 steps)
 
 1. **Open Oversight Hub**
+
    ```
    http://localhost:3001/tasks
    ```
@@ -47,6 +49,7 @@ Your approval workflow has been **fully debugged and fixed**. All the issues pre
 ### What to Watch For ✅
 
 **Backend Logs** (should appear in terminal running the server):
+
 ```
 🔍 COMPLETE POST DATA BEFORE INSERT:
    - featured_image_url: https://images.pexels.com/photos/8386441/... ✅ (NOT NULL)
@@ -59,13 +62,15 @@ Your approval workflow has been **fully debugged and fixed**. All the issues pre
 ```
 
 **Database Query** (run in PostgreSQL after approval completes):
+
 ```sql
 SELECT featured_image_url, seo_title, seo_description, seo_keywords
-FROM posts 
+FROM posts
 WHERE task_id = 'a71e5b39-6808-4a0c-8b5d-df579e8af133';
 ```
 
 Should return:
+
 ```
 featured_image_url    | https://images.pexels.com/photos/8386441/... ✅
 seo_title             | Emerging AI Trends 2025: What to Watch ✅
@@ -79,17 +84,17 @@ seo_keywords          | AI trends, artificial intelligence, machine learning, 20
 
 **Task ID**: `a71e5b39-6808-4a0c-8b5d-df579e8af133`
 
-| Field | Value |
-|-------|-------|
-| **Topic** | Emerging AI Trends in 2025 |
-| **Status** | completed |
-| **Approval Status** | pending |
-| **Featured Image** | https://images.pexels.com/photos/8386441/ |
-| **Primary Keyword** | AI trends 2025 |
-| **Target Audience** | Tech professionals |
-| **Category** | technology |
-| **Content Length** | 1500+ words |
-| **All SEO Fields** | Pre-populated ✅ |
+| Field               | Value                                     |
+| ------------------- | ----------------------------------------- |
+| **Topic**           | Emerging AI Trends in 2025                |
+| **Status**          | completed                                 |
+| **Approval Status** | pending                                   |
+| **Featured Image**  | https://images.pexels.com/photos/8386441/ |
+| **Primary Keyword** | AI trends 2025                            |
+| **Target Audience** | Tech professionals                        |
+| **Category**        | technology                                |
+| **Content Length**  | 1500+ words                               |
+| **All SEO Fields**  | Pre-populated ✅                          |
 
 ---
 
@@ -122,6 +127,7 @@ seo_keywords          | AI trends, artificial intelligence, machine learning, 20
 Your approval workflow is **working correctly** when:
 
 ### ✅ All Backend Logs Show Non-NULL Values
+
 ```
 COMPLETE POST DATA shows:
   - featured_image_url: https://... (not null)
@@ -131,20 +137,23 @@ COMPLETE POST DATA shows:
 ```
 
 ### ✅ Database Query Returns Complete Data
+
 ```sql
-SELECT featured_image_url, seo_title, seo_description, seo_keywords 
+SELECT featured_image_url, seo_title, seo_description, seo_keywords
 FROM posts WHERE task_id = 'a71e5b39-...'
 ```
 
 Returns row with all 4 fields having values (not NULL)
 
 ### ✅ UI Shows Success
+
 - Approval request completes without errors
 - Task status changes to "approved"
 - No error messages in browser console (F12)
 - No red error toasts/notifications
 
 ### ✅ No Data Loss
+
 - Title, slug, content, excerpt all saved
 - featured_image_url matches what was sent from UI
 - SEO fields populated with meaningful content
@@ -155,6 +164,7 @@ Returns row with all 4 fields having values (not NULL)
 ## If Testing Fails
 
 ### Issue: Featured Image URL is NULL in Database
+
 1. Check backend log for "COMPLETE POST DATA BEFORE INSERT"
 2. If featured_image_url is NULL in logs:
    - Check browser console (F12) for errors during approval
@@ -167,6 +177,7 @@ Returns row with all 4 fields having values (not NULL)
    - Run: `\d posts` in psql to check schema
 
 ### Issue: SEO Fields are NULL in Database
+
 1. Same troubleshooting as above
 2. Check if metadata service is returning SEO values
 3. Verify fallback logic is being triggered:
@@ -174,11 +185,13 @@ Returns row with all 4 fields having values (not NULL)
    - If that's also None, should use "Untitled"
 
 ### Issue: UnboundLocalError in Approval
+
 - Should not happen - variable initialization was moved earlier
 - If you see it: check recent changes to content_routes.py
 - Ensure approval_timestamp is defined before any return statements
 
 ### Issue: UUID Validation Error in API Response
+
 - Should not happen - UUID array conversion was added
 - If you see it: check that tag_ids are being converted to strings
 - Verify in model_converter.py lines 74-76
@@ -188,8 +201,9 @@ Returns row with all 4 fields having values (not NULL)
 ## Database Verification Queries
 
 **Check Test Task in content_tasks Table**:
+
 ```sql
-SELECT 
+SELECT
     task_id, topic, status, approval_status,
     featured_image_url, seo_title, seo_description, seo_keywords
 FROM content_tasks
@@ -197,8 +211,9 @@ WHERE task_id = 'a71e5b39-6808-4a0c-8b5d-df579e8af133';
 ```
 
 **Check Published Post in posts Table** (after approval):
+
 ```sql
-SELECT 
+SELECT
     id, title, status, featured_image_url,
     seo_title, seo_description, seo_keywords,
     created_at
@@ -207,8 +222,9 @@ WHERE task_id = 'a71e5b39-6808-4a0c-8b5d-df579e8af133';
 ```
 
 **Compare Task and Post** (verify link):
+
 ```sql
-SELECT 
+SELECT
     ct.topic,
     ct.featured_image_url as task_image,
     p.featured_image_url as post_image,
@@ -223,6 +239,7 @@ WHERE ct.task_id = 'a71e5b39-6808-4a0c-8b5d-df579e8af133';
 ## Files Modified in This Session
 
 ### Backend Fixes
+
 1. **`src/cofounder_agent/routes/content_routes.py`**
    - Added SEO field safeguards with fallback chains
    - Fixed UnboundLocalError
@@ -237,10 +254,12 @@ WHERE ct.task_id = 'a71e5b39-6808-4a0c-8b5d-df579e8af133';
    - Added UUID array conversion
 
 ### Test Utilities
+
 4. **`CREATE_TEST_TASK.py`** (New)
    - Creates test tasks for approval testing
 
 ### Documentation (New)
+
 5. **`TEST_APPROVAL_WORKFLOW_GUIDE.md`**
 6. **`APPROVAL_WORKFLOW_FIXES_SUMMARY.md`**
 7. **This file**
@@ -296,6 +315,7 @@ WHERE ct.task_id = 'a71e5b39-6808-4a0c-8b5d-df579e8af133';
 ## What's Next
 
 ### Option 1: Run Full Workflow Test
+
 1. Open Oversight Hub
 2. Find test task
 3. Click Approve
@@ -306,6 +326,7 @@ WHERE ct.task_id = 'a71e5b39-6808-4a0c-8b5d-df579e8af133';
 **Expected Result**: All fields saved successfully ✅
 
 ### Option 2: Test with Different Data
+
 1. Run `python CREATE_TEST_TASK.py` again to create another task
 2. Modify the script to use different content
 3. Test approval with different image URLs
@@ -314,6 +335,7 @@ WHERE ct.task_id = 'a71e5b39-6808-4a0c-8b5d-df579e8af133';
 **Estimated Time**: 10-15 minutes
 
 ### Option 3: Load Testing
+
 1. Create multiple test tasks
 2. Approve several in sequence
 3. Monitor database for consistency
@@ -326,17 +348,20 @@ WHERE ct.task_id = 'a71e5b39-6808-4a0c-8b5d-df579e8af133';
 ## Support & Debugging
 
 **Backend Logs Location**:
+
 - If running `npm run dev`: Check terminal where dev server started
 - If running `poetry run uvicorn`: Check that terminal
 - Look for lines containing "COMPLETE POST DATA" or "INSERTING POST"
 
 **UI Console Logs** (F12 in browser):
+
 - Open browser DevTools (F12)
 - Go to Console tab
 - Refresh page or make request
 - Look for any errors during approval
 
 **Database Issues**:
+
 - Verify connection: `psql -U postgres -d glad_labs_dev -c "SELECT 1;"`
 - Check posts table: `psql -U postgres -d glad_labs_dev -c "SELECT COUNT(*) FROM posts;"`
 - View recent posts: `psql -U postgres -d glad_labs_dev -c "SELECT * FROM posts ORDER BY created_at DESC LIMIT 1;"`
@@ -349,13 +374,14 @@ WHERE ct.task_id = 'a71e5b39-6808-4a0c-8b5d-df579e8af133';
 ✅ **Test task is ready in database**  
 ✅ **Backend and UI are running**  
 ✅ **Comprehensive logging is in place**  
-✅ **Documentation is complete**  
+✅ **Documentation is complete**
 
 **You're ready to test the approval workflow!**
 
 ---
 
 **Need Help?**
+
 - Check `TEST_APPROVAL_WORKFLOW_GUIDE.md` for detailed step-by-step instructions
 - Check `APPROVAL_WORKFLOW_FIXES_SUMMARY.md` for technical details of all fixes
 - Review backend logs while approval is in progress

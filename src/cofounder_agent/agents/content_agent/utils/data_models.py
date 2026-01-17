@@ -30,7 +30,9 @@ class BlogPost(BaseModel):
     task_id: Optional[str] = None  # Firestore document ID for the task
     run_id: Optional[str] = None
     refinement_loops: int = 3
-    writing_style: Optional[str] = None  # Writing style: technical, narrative, listicle, educational, thought-leadership
+    writing_style: Optional[str] = (
+        None  # Writing style: technical, narrative, listicle, educational, thought-leadership
+    )
     # SEO & Metadata
     title: Optional[str] = None
     meta_description: Optional[str] = None
@@ -55,7 +57,10 @@ class BlogPost(BaseModel):
     qa_feedback: List[str] = Field(default_factory=list)
 
     # --- Metadata for Agent Coordination ---
-    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Metadata for agent coordination (e.g., writing_sample_guidance)")
+    metadata: Optional[Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Metadata for agent coordination (e.g., writing_sample_guidance)",
+    )
 
     # --- Publishing & Finalization ---
     strapi_post_id: Optional[int] = None

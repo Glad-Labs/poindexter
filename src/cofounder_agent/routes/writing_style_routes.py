@@ -31,8 +31,10 @@ router = APIRouter(prefix="/api/writing-style", tags=["writing-style"])
 # Pydantic Schemas
 # ============================================================================
 
+
 class WritingSampleRequest(BaseModel):
     """Request to create/update writing sample"""
+
     title: str
     description: Optional[str] = None
     content: str
@@ -41,6 +43,7 @@ class WritingSampleRequest(BaseModel):
 
 class WritingSampleResponse(BaseModel):
     """Response containing writing sample data"""
+
     id: str
     user_id: str
     title: str
@@ -56,6 +59,7 @@ class WritingSampleResponse(BaseModel):
 
 class WritingSamplesListResponse(BaseModel):
     """Response containing list of samples"""
+
     samples: List[WritingSampleResponse]
     total_count: int
     active_sample_id: Optional[str]
@@ -64,6 +68,7 @@ class WritingSamplesListResponse(BaseModel):
 # ============================================================================
 # Endpoints
 # ============================================================================
+
 
 @router.post("/upload", response_model=WritingSampleResponse)
 async def upload_writing_sample(
@@ -77,18 +82,18 @@ async def upload_writing_sample(
 ):
     """
     Upload a new writing sample.
-    
+
     Can either provide:
     - Raw text via 'content' form field
     - File upload via 'file' parameter (.txt, .md files)
-    
+
     Args:
         title: Sample title/name
         description: Optional description
         content: Writing sample text (if not uploading file)
         file: File upload (if not providing raw text)
         set_as_active: Whether to set this as active sample for the user
-        
+
     Returns:
         Created WritingSampleResponse
     """
@@ -98,13 +103,15 @@ async def upload_writing_sample(
         if file:
             if file.size and file.size > 1_000_000:  # 1MB limit
                 raise HTTPException(status_code=400, detail="File too large (max 1MB)")
-            
+
             file_content = await file.read()
             sample_content = file_content.decode("utf-8")
-        
+
         if not sample_content or not sample_content.strip():
-            raise HTTPException(status_code=400, detail="Sample content is required (provide content or file)")
-        
+            raise HTTPException(
+                status_code=400, detail="Sample content is required (provide content or file)"
+            )
+
         # Create the writing sample
         user_id = current_user.get("id") if isinstance(current_user, dict) else current_user
         sample = await db_service.writing_style.create_writing_sample(
@@ -112,12 +119,12 @@ async def upload_writing_sample(
             title=title,
             content=sample_content.strip(),
             description=description,
-            set_as_active=set_as_active
+            set_as_active=set_as_active,
         )
-        
+
         logger.info(f"✅ User {user_id} uploaded writing sample: {title}")
         return WritingSampleResponse(**sample)
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -132,27 +139,27 @@ async def list_writing_samples(
 ):
     """
     Get all writing samples for the current user.
-    
+
     Returns:
         List of WritingSampleResponse objects
     """
     try:
         user_id = current_user.get("id") if isinstance(current_user, dict) else current_user
         samples = await db_service.writing_style.get_user_writing_samples(user_id)
-        
+
         # Find active sample if any
         active_sample_id = None
         for sample in samples:
             if sample.get("is_active"):
                 active_sample_id = sample.get("id")
                 break
-        
+
         return WritingSamplesListResponse(
             samples=[WritingSampleResponse(**s) for s in samples],
             total_count=len(samples),
-            active_sample_id=active_sample_id
+            active_sample_id=active_sample_id,
         )
-        
+
     except Exception as e:
         logger.error(f"❌ Error listing writing samples: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to list samples: {str(e)}")
@@ -165,19 +172,19 @@ async def get_active_writing_sample(
 ):
     """
     Get the currently active writing sample for the user.
-    
+
     Returns:
         Active WritingSampleResponse or null if no active sample
     """
     try:
         user_id = current_user.get("id") if isinstance(current_user, dict) else current_user
         sample = await db_service.writing_style.get_active_writing_sample(user_id)
-        
+
         if not sample:
             return None
-        
+
         return WritingSampleResponse(**sample)
-        
+
     except Exception as e:
         logger.error(f"❌ Error getting active writing sample: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get active sample: {str(e)}")
@@ -191,10 +198,10 @@ async def set_active_writing_sample(
 ):
     """
     Set a writing sample as the active one for the user.
-    
+
     Args:
         sample_id: ID of sample to activate
-        
+
     Returns:
         Updated WritingSampleResponse
     """
@@ -204,16 +211,16 @@ async def set_active_writing_sample(
         sample = await db_service.writing_style.get_writing_sample(sample_id)
         if not sample:
             raise HTTPException(status_code=404, detail="Writing sample not found")
-        
+
         if sample.get("user_id") != user_id:
             raise HTTPException(status_code=403, detail="Unauthorized")
-        
+
         # Set as active
         updated = await db_service.writing_style.set_active_writing_sample(user_id, sample_id)
-        
+
         logger.info(f"✅ User {user_id} set writing sample {sample_id} as active")
         return WritingSampleResponse(**updated)
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -230,11 +237,11 @@ async def update_writing_sample(
 ):
     """
     Update a writing sample.
-    
+
     Args:
         sample_id: Sample ID to update
         request: Updated sample data
-        
+
     Returns:
         Updated WritingSampleResponse
     """
@@ -244,22 +251,22 @@ async def update_writing_sample(
         sample = await db_service.writing_style.get_writing_sample(sample_id)
         if not sample:
             raise HTTPException(status_code=404, detail="Writing sample not found")
-        
+
         if sample.get("user_id") != user_id:
             raise HTTPException(status_code=403, detail="Unauthorized")
-        
+
         # Update the sample
         updated = await db_service.writing_style.update_writing_sample(
             sample_id=sample_id,
             user_id=user_id,
             title=request.title,
             description=request.description,
-            content=request.content
+            content=request.content,
         )
-        
+
         logger.info(f"✅ User {user_id} updated writing sample {sample_id}")
         return WritingSampleResponse(**updated)
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -275,10 +282,10 @@ async def delete_writing_sample(
 ):
     """
     Delete a writing sample.
-    
+
     Args:
         sample_id: Sample ID to delete
-        
+
     Returns:
         Success message
     """
@@ -288,19 +295,19 @@ async def delete_writing_sample(
         sample = await db_service.writing_style.get_writing_sample(sample_id)
         if not sample:
             raise HTTPException(status_code=404, detail="Writing sample not found")
-        
+
         if sample.get("user_id") != user_id:
             raise HTTPException(status_code=403, detail="Unauthorized")
-        
+
         # Delete the sample
         success = await db_service.writing_style.delete_writing_sample(sample_id, user_id)
-        
+
         if not success:
             raise HTTPException(status_code=404, detail="Writing sample not found")
-        
+
         logger.info(f"✅ User {user_id} deleted writing sample {sample_id}")
         return {"status": "deleted", "sample_id": sample_id}
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -312,16 +319,18 @@ async def delete_writing_sample(
 # Phase 3.4: RAG Retrieval Endpoints
 # ============================================================================
 
+
 def _calculate_topic_similarity(content: str, query: str) -> float:
     """Calculate topic similarity using Jaccard index (keyword overlap)"""
     import re
+
     # Extract keywords
-    query_words = set(w.lower() for w in re.findall(r'\b\w+\b', query) if len(w) > 2)
-    content_words = set(w.lower() for w in re.findall(r'\b\w+\b', content) if len(w) > 2)
-    
+    query_words = set(w.lower() for w in re.findall(r"\b\w+\b", query) if len(w) > 2)
+    content_words = set(w.lower() for w in re.findall(r"\b\w+\b", content) if len(w) > 2)
+
     if not query_words or not content_words:
         return 0.0
-    
+
     # Jaccard similarity
     intersection = len(query_words & content_words)
     union = len(query_words | content_words)
@@ -335,20 +344,20 @@ async def retrieve_relevant_samples(
     preferred_tone: Optional[str] = None,
     limit: int = 3,
     current_user: str = Depends(get_current_user),
-    db_service: DatabaseService = Depends(get_database_dependency)
+    db_service: DatabaseService = Depends(get_database_dependency),
 ) -> dict:
     """
     Retrieve writing samples relevant to a topic using RAG.
-    
+
     Uses Jaccard similarity to find topically related samples,
     with optional style and tone filtering.
-    
+
     **Parameters:**
     - `query_topic`: Topic/keywords to find relevant samples
     - `preferred_style`: Optional style filter (technical, narrative, etc.)
     - `preferred_tone`: Optional tone filter (formal, casual, etc.)
     - `limit`: Number of samples to return (1-10, default 3)
-    
+
     **Response:**
     ```json
     {
@@ -370,62 +379,62 @@ async def retrieve_relevant_samples(
     """
     try:
         user_id = current_user if isinstance(current_user, str) else current_user.get("id")
-        
+
         # Get all user samples
         samples = await db_service.writing_style.get_user_writing_samples(user_id)
-        
+
         if not samples:
             return {
                 "query_topic": query_topic,
                 "found_samples": 0,
                 "samples": [],
-                "message": "No writing samples available"
+                "message": "No writing samples available",
             }
-        
+
         # Score each sample by relevance
         scored = []
         for sample in samples:
             # Calculate topic similarity
             similarity = _calculate_topic_similarity(sample.get("content", ""), query_topic)
-            
+
             # Reduce score if style doesn't match
-            sample_style = sample.get("metadata", {}).get("style") if sample.get("metadata") else None
+            sample_style = (
+                sample.get("metadata", {}).get("style") if sample.get("metadata") else None
+            )
             if preferred_style and sample_style != preferred_style:
                 similarity *= 0.7  # 30% penalty for style mismatch
-            
+
             # Reduce score if tone doesn't match
             sample_tone = sample.get("metadata", {}).get("tone") if sample.get("metadata") else None
             if preferred_tone and sample_tone != preferred_tone:
                 similarity *= 0.7  # 30% penalty for tone mismatch
-            
-            scored.append({
-                "id": sample.get("id"),
-                "title": sample.get("title"),
-                "style": sample_style,
-                "tone": sample_tone,
-                "word_count": sample.get("word_count", 0),
-                "relevance_score": similarity
-            })
-        
+
+            scored.append(
+                {
+                    "id": sample.get("id"),
+                    "title": sample.get("title"),
+                    "style": sample_style,
+                    "tone": sample_tone,
+                    "word_count": sample.get("word_count", 0),
+                    "relevance_score": similarity,
+                }
+            )
+
         # Sort by relevance and limit
         scored.sort(key=lambda x: x["relevance_score"], reverse=True)
         top_samples = scored[:limit]
-        
+
         logger.info(f"✅ Retrieved {len(top_samples)} relevant samples for user {user_id}")
-        
+
         return {
             "query_topic": query_topic,
             "found_samples": len(top_samples),
             "samples": [
-                {
-                    **s,
-                    "relevance_score": round(s["relevance_score"], 2)
-                }
-                for s in top_samples
+                {**s, "relevance_score": round(s["relevance_score"], 2)} for s in top_samples
             ],
-            "message": f"{len(top_samples)} sample(s) found matching your topic"
+            "message": f"{len(top_samples)} sample(s) found matching your topic",
         }
-        
+
     except Exception as e:
         logger.error(f"❌ Error retrieving samples: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to retrieve samples: {str(e)}")
@@ -436,18 +445,18 @@ async def retrieve_by_style(
     style: str,
     limit: int = 5,
     current_user: str = Depends(get_current_user),
-    db_service: DatabaseService = Depends(get_database_dependency)
+    db_service: DatabaseService = Depends(get_database_dependency),
 ) -> dict:
     """
     Retrieve writing samples filtered by specific style.
-    
+
     **Supported Styles:**
     - technical: Technical/instructional writing
     - narrative: Storytelling/narrative
     - listicle: List-based articles
     - educational: Educational/explanatory
     - thought-leadership: Opinion/leadership pieces
-    
+
     **Response:**
     ```json
     {
@@ -466,33 +475,37 @@ async def retrieve_by_style(
     """
     try:
         user_id = current_user if isinstance(current_user, str) else current_user.get("id")
-        
+
         # Get all user samples
         samples = await db_service.writing_style.get_user_writing_samples(user_id)
-        
+
         # Filter by style
         matching = []
         for sample in samples:
-            sample_style = sample.get("metadata", {}).get("style") if sample.get("metadata") else None
+            sample_style = (
+                sample.get("metadata", {}).get("style") if sample.get("metadata") else None
+            )
             if sample_style and sample_style.lower() == style.lower():
-                matching.append({
-                    "id": sample.get("id"),
-                    "title": sample.get("title"),
-                    "tone": sample.get("metadata", {}).get("tone") if sample.get("metadata") else None,
-                    "word_count": sample.get("word_count", 0)
-                })
-        
+                matching.append(
+                    {
+                        "id": sample.get("id"),
+                        "title": sample.get("title"),
+                        "tone": (
+                            sample.get("metadata", {}).get("tone")
+                            if sample.get("metadata")
+                            else None
+                        ),
+                        "word_count": sample.get("word_count", 0),
+                    }
+                )
+
         # Limit results
         matching = matching[:limit]
-        
+
         logger.info(f"✅ Retrieved {len(matching)} samples with style '{style}' for user {user_id}")
-        
-        return {
-            "style": style,
-            "found_samples": len(matching),
-            "samples": matching
-        }
-        
+
+        return {"style": style, "found_samples": len(matching), "samples": matching}
+
     except Exception as e:
         logger.error(f"❌ Error retrieving samples by style: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to retrieve samples: {str(e)}")
@@ -503,17 +516,17 @@ async def retrieve_by_tone(
     tone: str,
     limit: int = 5,
     current_user: str = Depends(get_current_user),
-    db_service: DatabaseService = Depends(get_database_dependency)
+    db_service: DatabaseService = Depends(get_database_dependency),
 ) -> dict:
     """
     Retrieve writing samples filtered by specific tone.
-    
+
     **Supported Tones:**
     - formal: Formal/professional
     - casual: Casual/conversational
     - authoritative: Expert/authoritative
     - conversational: Friendly/conversational
-    
+
     **Response:**
     ```json
     {
@@ -532,33 +545,35 @@ async def retrieve_by_tone(
     """
     try:
         user_id = current_user if isinstance(current_user, str) else current_user.get("id")
-        
+
         # Get all user samples
         samples = await db_service.writing_style.get_user_writing_samples(user_id)
-        
+
         # Filter by tone
         matching = []
         for sample in samples:
             sample_tone = sample.get("metadata", {}).get("tone") if sample.get("metadata") else None
             if sample_tone and sample_tone.lower() == tone.lower():
-                matching.append({
-                    "id": sample.get("id"),
-                    "title": sample.get("title"),
-                    "style": sample.get("metadata", {}).get("style") if sample.get("metadata") else None,
-                    "word_count": sample.get("word_count", 0)
-                })
-        
+                matching.append(
+                    {
+                        "id": sample.get("id"),
+                        "title": sample.get("title"),
+                        "style": (
+                            sample.get("metadata", {}).get("style")
+                            if sample.get("metadata")
+                            else None
+                        ),
+                        "word_count": sample.get("word_count", 0),
+                    }
+                )
+
         # Limit results
         matching = matching[:limit]
-        
+
         logger.info(f"✅ Retrieved {len(matching)} samples with tone '{tone}' for user {user_id}")
-        
-        return {
-            "tone": tone,
-            "found_samples": len(matching),
-            "samples": matching
-        }
-        
+
+        return {"tone": tone, "found_samples": len(matching), "samples": matching}
+
     except Exception as e:
         logger.error(f"❌ Error retrieving samples by tone: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to retrieve samples: {str(e)}")

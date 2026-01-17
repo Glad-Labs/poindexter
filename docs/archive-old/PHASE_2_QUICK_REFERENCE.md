@@ -1,4 +1,5 @@
 # Phase 2 Quick Reference Guide
+
 **Writing Style System Implementation**
 
 ---
@@ -6,42 +7,50 @@
 ## What Was Built
 
 ### 1. Database Schema Update
+
 **File:** `src/cofounder_agent/migrations/005_add_writing_style_id.sql`
 
 Adds `writing_style_id` column to `content_tasks` table:
+
 ```sql
-ALTER TABLE content_tasks 
+ALTER TABLE content_tasks
 ADD COLUMN writing_style_id INTEGER DEFAULT NULL,
-ADD CONSTRAINT fk_writing_style_id 
-    FOREIGN KEY (writing_style_id) 
-    REFERENCES writing_samples(id) 
+ADD CONSTRAINT fk_writing_style_id
+    FOREIGN KEY (writing_style_id)
+    REFERENCES writing_samples(id)
     ON DELETE SET NULL;
 ```
 
 ### 2. Frontend Components
 
 #### WritingStyleManager (Settings Page)
+
 **Location:** Settings page in Oversight Hub  
 **Features:**
+
 - Display writing samples
 - Upload new writing sample
 - Set active sample
 - View sample metadata
 
 **API Endpoints Used:**
+
 - GET /api/writing-style/samples
 - GET /api/writing-style/active
 - POST /api/writing-style/upload
 
 #### WritingStyleSelector (Task Form)
+
 **Location:** Task creation form (all task types)  
 **Features:**
+
 - Dropdown with writing style options
 - Real-time style selection
 - Integration with form submission
 - Options: Technical, Narrative, Listicle, Educational, Thought-leadership
 
 **Data Flow:**
+
 1. User selects style from dropdown
 2. Form stores selection in state
 3. On submit, includes `writing_style_id` in API request
@@ -50,6 +59,7 @@ ADD CONSTRAINT fk_writing_style_id
 ### 3. Backend API Updates
 
 **Endpoints Updated:**
+
 - POST /api/tasks - Now accepts `writing_style_id`
 - GET /api/writing-style/samples - Returns user's writing samples
 - GET /api/writing-style/active - Returns currently active sample
@@ -58,6 +68,7 @@ ADD CONSTRAINT fk_writing_style_id
 - DELETE /api/writing-style/{id} - Delete sample
 
 **Task Schema Updated:**
+
 ```python
 class TaskCreateRequest(BaseModel):
     topic: str
@@ -69,7 +80,9 @@ class TaskCreateRequest(BaseModel):
 ```
 
 ### 4. Database Table
+
 **writing_samples table:**
+
 ```
 Columns:
 - id (SERIAL PRIMARY KEY)
@@ -123,6 +136,7 @@ Columns:
 ## Key Files
 
 ### Backend
+
 ```
 src/cofounder_agent/
 ├── migrations/
@@ -138,6 +152,7 @@ src/cofounder_agent/
 ```
 
 ### Frontend
+
 ```
 web/oversight-hub/src/
 ├── components/
@@ -151,6 +166,7 @@ web/oversight-hub/src/
 ```
 
 ### Migrations
+
 ```
 src/cofounder_agent/migrations/
 ├── 001_init.sql
@@ -166,6 +182,7 @@ src/cofounder_agent/migrations/
 ## Database Changes
 
 ### New Column in content_tasks
+
 ```
 Column Name:    writing_style_id
 Type:           INTEGER
@@ -176,6 +193,7 @@ Index:          idx_content_tasks_writing_style_id
 ```
 
 ### Example Data
+
 ```
 id: 12ba1354-d510-4255-8e0a-f6315169cc0a
 topic: "Kubernetes Best Practices for Cloud Architecture"
@@ -193,9 +211,10 @@ status: "completed"
 **Passed:** 59 (96.7%)  
 **Failed:** 0  
 **Expected Failures:** 1 (upload validation)  
-**Issues Found:** 1 (migration data type) - FIXED  
+**Issues Found:** 1 (migration data type) - FIXED
 
 ### Test Coverage
+
 - ✅ Frontend component rendering
 - ✅ API endpoint responses
 - ✅ Database schema integrity
@@ -210,6 +229,7 @@ status: "completed"
 ## Known Limitations
 
 ### Phase 2 Scope
+
 - ✅ Writing style selection in task form
 - ✅ Style metadata stored with task
 - ✅ Writing sample table created
@@ -218,6 +238,7 @@ status: "completed"
 - ❌ Style evaluation in QA (Phase 3)
 
 ### Current Behavior
+
 - Writing style is stored with task
 - Style can be manually entered
 - Sample upload not yet implemented
@@ -229,32 +250,41 @@ status: "completed"
 ## Troubleshooting
 
 ### Task Creation Fails with 500 Error
+
 **Check:**
+
 1. Backend is running: `curl http://localhost:8000/health`
 2. Database connected: Check logs for connection errors
 3. Migration applied: Query `SELECT * FROM migrations_applied`
 
 **Solution:**
+
 - Restart backend: `npm run dev:cofounder`
 - Backend will auto-run migrations on startup
 
 ### WritingStyleSelector Not Showing
+
 **Check:**
+
 1. Frontend loaded: Check browser console for errors
 2. Component mounted: Verify component in DOM
 3. API responding: Check Network tab in DevTools
 
 **Solution:**
+
 - Clear browser cache: Ctrl+Shift+Delete
 - Restart frontend: `npm run dev`
 
 ### Task Submitted But Not in List
+
 **Check:**
+
 1. Backend processing: Check task status in database
 2. API returning task: Check API response
 3. Frontend refreshing: Click "Refresh" button
 
 **Solution:**
+
 - Manually refresh page: F5
 - Check backend logs for errors
 - Verify database connection
@@ -264,16 +294,19 @@ status: "completed"
 ## Performance Notes
 
 ### Database
+
 - writing_style_id lookup: <10ms (indexed)
 - Task creation with style: <100ms
 - Migration execution: <5 seconds
 
 ### API
+
 - POST /api/tasks: 50-200ms
 - GET /api/writing-style/samples: 10-50ms
 - Task content generation: 20-60 seconds
 
 ### Frontend
+
 - Form render: <100ms
 - Style selection: <50ms
 - Task submission: 100-500ms
@@ -284,18 +317,21 @@ status: "completed"
 ## Security
 
 ### Authentication
+
 - All API requests require JWT token
 - Token validated on backend
 - Tokens stored securely in localStorage
 - Token expiry checked before requests
 
 ### Authorization
+
 - User_id extracted from token
 - Writing samples scoped to user
 - Tasks belong to user
 - No cross-user access possible
 
 ### Validation
+
 - API validates all inputs
 - Database constraints enforce types
 - Frontend validates form fields
@@ -306,6 +342,7 @@ status: "completed"
 ## Configuration
 
 ### Environment Variables
+
 ```env
 DATABASE_URL=postgresql://user:pass@localhost:5432/glad_labs_dev
 OPENAI_API_KEY=sk-... (optional)
@@ -314,10 +351,12 @@ OLLAMA_BASE_URL=http://localhost:11434
 ```
 
 ### API URL
+
 - Development: http://localhost:8000
 - Frontend: http://localhost:3001
 
 ### Database
+
 - Server: localhost
 - Port: 5432
 - Database: glad_labs_dev
@@ -328,18 +367,21 @@ OLLAMA_BASE_URL=http://localhost:11434
 ## Next Steps (Phase 3)
 
 ### Writing Sample Management
+
 - [ ] Implement sample upload endpoint
 - [ ] Create WritingStyleManager full UI
 - [ ] Add sample editing
 - [ ] Add sample deletion
 
 ### Style Guidance
+
 - [ ] Integrate sample into prompt
 - [ ] Add style-aware generation
 - [ ] Implement RAG for style matching
 - [ ] Update QA to evaluate style
 
 ### Testing
+
 - [ ] Test with real writing samples
 - [ ] Verify style application
 - [ ] Test QA evaluation
@@ -350,6 +392,7 @@ OLLAMA_BASE_URL=http://localhost:11434
 ## Support Resources
 
 ### Documentation Files
+
 - `PHASE_2_FINAL_VERIFICATION_REPORT.md` - Comprehensive test report
 - `PHASE_2_FRONTEND_TESTING_REPORT.md` - Detailed 61-test case report
 - `BUG_FIX_MIGRATION_005_DATA_TYPE.md` - Bug analysis and fix
@@ -358,6 +401,7 @@ OLLAMA_BASE_URL=http://localhost:11434
 ### Code Examples
 
 **Task with Writing Style:**
+
 ```python
 task = TaskCreateRequest(
     topic="Kubernetes Best Practices",
@@ -369,12 +413,13 @@ task = TaskCreateRequest(
 ```
 
 **API Request:**
+
 ```javascript
 const response = await fetch('/api/tasks', {
   method: 'POST',
   headers: {
-    'Authorization': `Bearer ${token}`,
-    'Content-Type': 'application/json'
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json',
   },
   body: JSON.stringify({
     task_name: 'Blog: Kubernetes...',
@@ -382,9 +427,9 @@ const response = await fetch('/api/tasks', {
     style: 'technical',
     tone: 'professional',
     writing_style_id: null,
-    target_word_count: 1500
-  })
-})
+    target_word_count: 1500,
+  }),
+});
 ```
 
 ---
@@ -392,11 +437,13 @@ const response = await fetch('/api/tasks', {
 ## Contact
 
 **For Questions About Phase 2 Implementation:**
+
 - Check PHASE_2_FINAL_VERIFICATION_REPORT.md
 - Review code in src/cofounder_agent/
 - Check frontend in web/oversight-hub/
 
 **For Phase 3 Planning:**
+
 - See "Next Steps" section above
 - Review Phase 3 requirements
 - Estimated timeline: 2-3 weeks

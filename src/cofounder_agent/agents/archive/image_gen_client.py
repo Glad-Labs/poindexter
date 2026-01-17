@@ -10,7 +10,7 @@ Now consolidated into unified ImageService
 Migration:
     OLD: from src.agents.content_agent.services.image_gen_client import ImageGenClient
     NEW: from src.cofounder_agent.services.image_service import get_image_service
-    
+
     OLD: client = ImageGenClient()
          client.generate_images(prompt, output_path)
     NEW: image_service = get_image_service()
@@ -65,6 +65,4 @@ class ImageGenClient:
             image.save(output_path)
 
         except Exception as e:
-            logging.error(
-                f"Error generating image with Stable Diffusion: {e}", exc_info=True
-            )
+            logging.error(f"Error generating image with Stable Diffusion: {e}", exc_info=True)

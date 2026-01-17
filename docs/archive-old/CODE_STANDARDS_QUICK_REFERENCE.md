@@ -5,6 +5,7 @@
 ### 1. Logging (Required for All New Code)
 
 **DO:**
+
 ```python
 import logging
 logger = logging.getLogger(__name__)
@@ -16,6 +17,7 @@ logger.error("Error occurred", exc_info=True)
 ```
 
 **DON'T:**
+
 ```python
 print("Process started")  # ❌ Wrong
 print(f"Debug: {variable}")  # ❌ Wrong
@@ -24,6 +26,7 @@ print(f"Debug: {variable}")  # ❌ Wrong
 ### 2. Magic Numbers (Use Constants Instead)
 
 **DO:**
+
 ```python
 from config.constants import API_TIMEOUT_STANDARD, MAX_RETRIES
 
@@ -33,6 +36,7 @@ for attempt in range(MAX_RETRIES):
 ```
 
 **DON'T:**
+
 ```python
 response = await client.get(url, timeout=10.0)  # ❌ Hardcoded
 for attempt in range(3):  # ❌ Magic number
@@ -43,12 +47,14 @@ for attempt in range(3):  # ❌ Magic number
 **Location:** `src/cofounder_agent/config/constants.py`
 
 **When to Add a Constant:**
+
 - Value appears in more than one place
 - Value is a timeout, limit, or rate
 - Value might change based on environment
 - Value is not a literal in a formula
 
 **Current Categories:**
+
 - API Timeouts
 - Model Timeouts
 - Retry Configuration
@@ -62,11 +68,13 @@ for attempt in range(3):  # ❌ Magic number
 ## 🔧 Working with Constants
 
 ### Viewing All Constants
+
 ```bash
 cat src/cofounder_agent/config/constants.py
 ```
 
 ### Using in Your Code
+
 ```python
 # Import what you need
 from config.constants import API_TIMEOUT_STANDARD, MAX_RETRIES
@@ -76,12 +84,14 @@ timeout = API_TIMEOUT_STANDARD  # ✅ Clear and maintainable
 ```
 
 ### Adding New Constants
+
 1. Open `src/cofounder_agent/config/constants.py`
 2. Add new constant in appropriate category
 3. Document with comment
 4. Import and use in your code
 
 **Example:**
+
 ```python
 # ===== YOUR_NEW_CATEGORY =====
 NEW_CONSTANT = 100  # Description of what this controls
@@ -92,6 +102,7 @@ NEW_CONSTANT = 100  # Description of what this controls
 ## 📝 Test File Standards
 
 ### Test Infrastructure Template
+
 ```python
 #!/usr/bin/env python3
 """Test description"""
@@ -109,7 +120,7 @@ logger = logging.getLogger(__name__)
 async def test_something():
     """Test function"""
     logger.info("Starting test...")
-    
+
     try:
         # Your test code
         logger.info("✅ Test passed")
@@ -139,6 +150,7 @@ Before committing code:
 ## 🐛 Debugging with Logging
 
 ### Set Log Level in Tests
+
 ```python
 import logging
 logging.basicConfig(level=logging.DEBUG)  # See all messages
@@ -149,10 +161,11 @@ logging.basicConfig(level=logging.ERROR)  # Only errors
 ```
 
 ### View Different Log Levels
+
 ```python
 logger.debug("Detailed debugging info")    # Only with DEBUG level
 logger.info("General information")         # INFO and above
-logger.warning("Warning message")          # WARNING and above  
+logger.warning("Warning message")          # WARNING and above
 logger.error("Error occurred")             # ERROR and above
 ```
 
@@ -166,7 +179,7 @@ Your code is production-ready when:
 ✅ **Configuration:** 0% hardcoded timeouts/magic numbers  
 ✅ **Standards:** All new code follows patterns  
 ✅ **Syntax:** All files pass `py_compile`  
-✅ **Tests:** All syntax checks pass  
+✅ **Tests:** All syntax checks pass
 
 ---
 

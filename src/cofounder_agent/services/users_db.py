@@ -29,7 +29,7 @@ class UsersDatabase(DatabaseServiceMixin):
     def __init__(self, pool: Pool):
         """
         Initialize users database module.
-        
+
         Args:
             pool: asyncpg connection pool
         """
@@ -38,18 +38,16 @@ class UsersDatabase(DatabaseServiceMixin):
     async def get_user_by_id(self, user_id: str) -> Optional[UserResponse]:
         """
         Get user by ID.
-        
+
         Args:
             user_id: UUID of user
-            
+
         Returns:
             UserResponse model or None if not found
         """
         builder = ParameterizedQueryBuilder()
         sql, params = builder.select(
-            columns=["*"],
-            table="users",
-            where_clauses=[("id", SQLOperator.EQ, user_id)]
+            columns=["*"], table="users", where_clauses=[("id", SQLOperator.EQ, user_id)]
         )
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(sql, *params)
@@ -58,18 +56,16 @@ class UsersDatabase(DatabaseServiceMixin):
     async def get_user_by_email(self, email: str) -> Optional[UserResponse]:
         """
         Get user by email address.
-        
+
         Args:
             email: User email
-            
+
         Returns:
             UserResponse model or None if not found
         """
         builder = ParameterizedQueryBuilder()
         sql, params = builder.select(
-            columns=["*"],
-            table="users",
-            where_clauses=[("email", SQLOperator.EQ, email)]
+            columns=["*"], table="users", where_clauses=[("email", SQLOperator.EQ, email)]
         )
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(sql, *params)
@@ -78,18 +74,16 @@ class UsersDatabase(DatabaseServiceMixin):
     async def get_user_by_username(self, username: str) -> Optional[UserResponse]:
         """
         Get user by username.
-        
+
         Args:
             username: User username
-            
+
         Returns:
             UserResponse model or None if not found
         """
         builder = ParameterizedQueryBuilder()
         sql, params = builder.select(
-            columns=["*"],
-            table="users",
-            where_clauses=[("username", SQLOperator.EQ, username)]
+            columns=["*"], table="users", where_clauses=[("username", SQLOperator.EQ, username)]
         )
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(sql, *params)
@@ -98,10 +92,10 @@ class UsersDatabase(DatabaseServiceMixin):
     async def create_user(self, user_data: Dict[str, Any]) -> UserResponse:
         """
         Create new user.
-        
+
         Args:
             user_data: Dict with email, username, password_hash, is_active
-            
+
         Returns:
             UserResponse model with all fields
         """
@@ -118,11 +112,7 @@ class UsersDatabase(DatabaseServiceMixin):
             "created_at": now,
             "updated_at": now,
         }
-        sql, params = builder.insert(
-            table="users",
-            columns=insert_data,
-            return_columns=["*"]
-        )
+        sql, params = builder.insert(table="users", columns=insert_data, return_columns=["*"])
 
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(sql, *params)
@@ -247,19 +237,26 @@ class UsersDatabase(DatabaseServiceMixin):
     async def get_oauth_accounts(self, user_id: str) -> List[OAuthAccountResponse]:
         """
         Get all OAuth accounts linked to a user.
-        
+
         Args:
             user_id: UUID of user
-            
+
         Returns:
             List of OAuthAccountResponse models
         """
         builder = ParameterizedQueryBuilder()
         sql, params = builder.select(
-            columns=["id", "provider", "provider_user_id", "provider_data", "created_at", "last_used"],
+            columns=[
+                "id",
+                "provider",
+                "provider_user_id",
+                "provider_data",
+                "created_at",
+                "last_used",
+            ],
             table="oauth_accounts",
             where_clauses=[("user_id", SQLOperator.EQ, user_id)],
-            order_by=[("last_used", "DESC")]
+            order_by=[("last_used", "DESC")],
         )
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(sql, *params)
@@ -268,11 +265,11 @@ class UsersDatabase(DatabaseServiceMixin):
     async def unlink_oauth_account(self, user_id: str, provider: str) -> bool:
         """
         Unlink OAuth account from user.
-        
+
         Args:
             user_id: UUID of user
             provider: OAuth provider name
-            
+
         Returns:
             True if account was unlinked, False if error occurred
         """

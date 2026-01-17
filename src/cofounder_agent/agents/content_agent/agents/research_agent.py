@@ -11,7 +11,7 @@ class ResearchAgent:
     """
     Performs initial research on a given topic to provide context
     for the creative agent by calling the Serper API directly.
-    
+
     ASYNC-FIRST: All HTTP operations use httpx (no blocking I/O)
     """
 
@@ -45,9 +45,7 @@ class ResearchAgent:
         """
         try:
             search_query = f"{topic} {' '.join(keywords)}"
-            logger.info(
-                f"ResearchAgent: Conducting research for query: '{search_query}'"
-            )
+            logger.info(f"ResearchAgent: Conducting research for query: '{search_query}'")
 
             url = "https://google.serper.dev/search"
             payload = {"q": search_query}
@@ -65,9 +63,7 @@ class ResearchAgent:
             # Format the results into a string for the LLM context
             context = ""
             if search_results.get("organic"):
-                for result in search_results.get("organic", [])[
-                    :5
-                ]:  # Get top 5 results
+                for result in search_results.get("organic", [])[:5]:  # Get top 5 results
                     context += f"Title: {result.get('title', 'N/A')}\n"
                     context += f"Link: {result.get('link', 'N/A')}\n"
                     context += f"Snippet: {result.get('snippet', 'N/A')}\n---\n"

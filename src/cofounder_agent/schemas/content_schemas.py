@@ -13,6 +13,7 @@ from enum import Enum
 # ENUMS (moved from content_router_service to avoid circular imports)
 # ============================================================================
 
+
 class ContentStyle(str, Enum):
     """Content styles for generation"""
 
