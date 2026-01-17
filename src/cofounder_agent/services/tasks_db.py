@@ -331,10 +331,18 @@ class TasksDatabase(DatabaseServiceMixin):
         Returns:
             Updated task dict or None
         """
+        logger.info(f"\n{'='*80}")
+        logger.info(f"🔵 TasksDatabase.update_task() ENTRY")
+        logger.info(f"   Task ID: {task_id}")
+        logger.info(f"   Updates received: {list(updates.keys())}")
+        logger.info(f"{'='*80}")
+        
         if not updates:
+            logger.info(f"   No updates provided, returning current task")
             return await self.get_task(task_id)
 
         # Extract task_metadata for normalization
+        logger.info(f"🔍 Extracting task_metadata for normalization...")
         task_metadata = updates.get("task_metadata", {})
         if isinstance(task_metadata, str):
             try:

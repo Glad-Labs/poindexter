@@ -1756,3 +1756,69 @@ async def reject_task(
     except Exception as e:
         logger.error(f"Failed to reject task {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to reject task: {str(e)}")
+
+
+@router.delete(
+    "/{task_id}",
+    summary="Delete task",
+    tags=["Task Management"],
+    status_code=204,
+)
+async def delete_task(
+    task_id: str,
+    current_user: dict = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
+):
+    """
+    **Delete a task by ID (soft delete).**
+
+    Marks a task as deleted without removing it from the database.
+    This preserves audit trail and allows for recovery if needed.
+
+    **Parameters:**
+    - task_id: Task ID (can be UUID string or numeric ID)
+
+    **Returns:**
+    - 204 No Content on success
+
+    **Example cURL:**
+    ```bash
+    curl -X DELETE "http://localhost:8000/api/tasks/{task_id}" \
+      -H "Authorization: Bearer TOKEN"
+    ```
+
+    **Error Responses:**
+    - 404: Task not found
+    """
+    try:
+        # Fetch task to verify it exists
+        task = await db_service.get_task(task_id)
+        if not task:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Task not found: {task_id}",
+            )
+
+        # Soft delete: mark task as deleted with timestamp
+        logger.info(f"Deleting task {task_id} (user: {current_user.get('id')})")
+        
+        # Update task status to 'cancelled' and add deleted_at metadata
+        deleted_metadata = {
+            "deleted_at": datetime.now(timezone.utc).isoformat(),
+            "deleted_by": current_user.get("id"),
+            "soft_delete": True,
+        }
+        
+        await db_service.update_task_status(
+            task_id, 
+            "cancelled", 
+            result=json.dumps({"metadata": deleted_metadata})
+        )
+
+        logger.info(f"Task {task_id} deleted successfully")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete task {task_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to delete task: {str(e)}")

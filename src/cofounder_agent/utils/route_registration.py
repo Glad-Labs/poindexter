@@ -103,18 +103,6 @@ def register_all_routes(
         status["bulk_task_router"] = False
 
     try:
-        # ===== CONTENT MANAGEMENT (UNIFIED) =====
-        from routes.content_routes import content_router
-
-        # Database service now injected via Depends(get_database_dependency) in routes
-        app.include_router(content_router)
-        logger.info(" content_router registered (unified)")
-        status["content_router"] = True
-    except Exception as e:
-        logger.error(f" content_router failed: {e}")
-        status["content_router"] = False
-
-    try:
         # ===== WRITING STYLE MANAGEMENT (RAG) =====
         from routes.writing_style_routes import router as writing_style_router
 

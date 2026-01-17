@@ -636,7 +636,7 @@ async def process_content_generation_task(
         await database_service.update_task(
             task_id=task_id,
             updates={
-                "status": "completed",
+                "status": "awaiting_approval",
                 "approval_status": "pending_human_review",
                 "quality_score": int(quality_result.overall_score),
                 # 🖼️ Store featured_image_url in task_metadata for later retrieval by approval endpoint
@@ -657,7 +657,7 @@ async def process_content_generation_task(
             },
         )
 
-        result["status"] = "completed"
+        result["status"] = "awaiting_approval"
         result["approval_status"] = "pending_human_review"
 
         logger.info(f"{'='*80}")

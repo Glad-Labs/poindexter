@@ -2,10 +2,9 @@
 Unified Task Response Schema
 
 Provides a single, consolidated response format for all task-related endpoints
-across both /api/tasks and /api/content/tasks routes.
+via the /api/tasks route.
 
-This eliminates duplication and ensures frontend clients see consistent data
-regardless of which endpoint they call.
+This ensures frontend clients see consistent data format.
 
 Benefits:
 - Single source of truth for task response format
@@ -119,7 +118,7 @@ class UnifiedTaskResponse(BaseModel):
     """
     Unified response schema for all task operations.
 
-    Consolidated format supports both /api/tasks and /api/content/tasks endpoints.
+    Consolidated format supports /api/tasks endpoint.
     Provides consistent structure for task creation, retrieval, and updates.
     """
 

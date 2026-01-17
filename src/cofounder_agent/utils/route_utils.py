@@ -198,15 +198,15 @@ def get_task_executor_dependency() -> Any:
 def get_enhanced_status_change_service() -> Any:
     """FastAPI dependency for enhanced status change service."""
     from services.enhanced_status_change_service import EnhancedStatusChangeService
-    from services.tasks_db import TaskDatabaseService
+    from services.tasks_db import TasksDatabase
 
     # Get the database pool from the generic database service
     db = _services.get_database()
     if db is None:
         raise RuntimeError("Database service not initialized")
 
-    # Create TaskDatabaseService with the pool
-    task_db = TaskDatabaseService(db.pool)
+    # Create TasksDatabase with the pool
+    task_db = TasksDatabase(db.pool)
 
     # Create and return EnhancedStatusChangeService
     return EnhancedStatusChangeService(task_db)

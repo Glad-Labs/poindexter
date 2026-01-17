@@ -620,33 +620,21 @@ async def finalize_phase(
         state["completed_at"] = datetime.now()
         state["status"] = "completed"
 
-        # Save to database if service available
-        if db_service:
-            # Create unique slug by appending request_id suffix (avoid constraint violations)
-            base_slug = state["topic"].lower().replace(" ", "-").replace("_", "-")[:80]
-            # Add first 8 chars of request_id to ensure uniqueness across multiple runs with same topic
-            unique_slug = f"{base_slug}-{state['request_id'][:8]}"
-
-            # Use create_post method (which exists)
-            task_id = await db_service.create_post(
-                {
-                    "title": state["topic"],
-                    "content": state["draft"],
-                    "excerpt": state["draft"][:160] if state["draft"] else "",
-                    "slug": unique_slug,
-                    "status": "draft",
-                    "seo_title": metadata.get("title", state["topic"]),
-                    "seo_description": metadata.get("description", state["draft"][:160]),
-                    "seo_keywords": ",".join(state["keywords"]) if state["keywords"] else "",
-                    "metadata": state["metadata"],
-                }
-            )
-            state["task_id"] = task_id.get("id") if isinstance(task_id, dict) else task_id
-        else:
-            state["task_id"] = state["request_id"]
+        # ⚠️ IMPORTANT: Do NOT create posts here in the pipeline!
+        # Posts should ONLY be created when:
+        # 1. Task is approved via POST /api/content/tasks/{task_id}/approve
+        # 2. Status is set to 'published' at approval time
+        #
+        # Creating draft posts here causes:
+        # - Slug conflicts when approval endpoint tries to create published post
+        # - Duplicate posts in posts table
+        # - Stale status (draft vs published mismatch)
+        #
+        # The task_id here is the content_task ID (not post ID)
+        state["task_id"] = state["request_id"]
 
         state["messages"].append(
-            {"role": "system", "content": f"Content saved with ID: {state['task_id']}"}
+            {"role": "system", "content": f"Content generation complete. Task ready for review and approval at /api/content/tasks/{state['task_id']}/approve"}
         )
 
         # Log finalization cost

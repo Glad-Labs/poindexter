@@ -1,4 +1,4 @@
-"""Unit tests for TaskDatabaseService status history methods."""
+"""Unit tests for TasksDatabase status history methods."""
 
 import pytest
 import json
@@ -6,11 +6,11 @@ from datetime import datetime
 from uuid import uuid4
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.cofounder_agent.services.tasks_db import TaskDatabaseService
+from src.cofounder_agent.services.tasks_db import TasksDatabase
 
 
 class TestTaskDatabaseServiceStatusHistory:
-    """Test suite for status history methods in TaskDatabaseService."""
+    """Test suite for status history methods in TasksDatabase."""
 
     @pytest.fixture
     def mock_pool(self):
@@ -21,7 +21,7 @@ class TestTaskDatabaseServiceStatusHistory:
     @pytest.fixture
     def db_service(self, mock_pool):
         """Create database service with mocked pool."""
-        service = TaskDatabaseService(mock_pool)
+        service = TasksDatabase(mock_pool)
         return service
 
     @pytest.mark.asyncio
