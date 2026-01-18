@@ -8,16 +8,16 @@
 
 ## Executive Summary
 
-| Page | Status | Real Data | Buttons Work | Recommendation |
-| --- | --- | --- | --- | --- |
-| Dashboard | ✅ REAL | 70% | Yes | Keep - Executive summary |
-| Tasks | ✅ REAL | 100% | Yes | Keep - Full CRUD works |
-| Content | ❌ FAKE | 0% | No | **REMOVE** |
-| Social | ❌ FAKE | 0% | No | **REMOVE or SIMPLIFY** |
-| Models | ✅ PARTIAL | 50% | Partial | Keep - Ollama works, UI is functional |
-| Analytics | ❌ FAKE | 0% | No | **REMOVE or REPLACE** |
-| Costs | ✅ REAL | 100% | Yes | Keep - Backend integration complete |
-| Settings | ✅ REAL | 100% | Yes | Keep - Functional settings |
+| Page      | Status     | Real Data | Buttons Work | Recommendation                        |
+| --------- | ---------- | --------- | ------------ | ------------------------------------- |
+| Dashboard | ✅ REAL    | 70%       | Yes          | Keep - Executive summary              |
+| Tasks     | ✅ REAL    | 100%      | Yes          | Keep - Full CRUD works                |
+| Content   | ❌ FAKE    | 0%        | No           | **REMOVE**                            |
+| Social    | ❌ FAKE    | 0%        | No           | **REMOVE or SIMPLIFY**                |
+| Models    | ✅ PARTIAL | 50%       | Partial      | Keep - Ollama works, UI is functional |
+| Analytics | ❌ FAKE    | 0%        | No           | **REMOVE or REPLACE**                 |
+| Costs     | ✅ REAL    | 100%      | Yes          | Keep - Backend integration complete   |
+| Settings  | ✅ REAL    | 100%      | Yes          | Keep - Functional settings            |
 
 ---
 
@@ -30,6 +30,7 @@
 **Status:** ✅ REAL - Actually connected to backend
 
 **What's Real:**
+
 - Fetches real task metrics from `/api/tasks/metrics`
 - Shows actual KPI counts (76 tasks, 3 completed, etc.)
 - Task statistics are live
@@ -37,6 +38,7 @@
 - Quick action buttons work
 
 **Issues:**
+
 - Dashboard header subtitle is still somewhat generic
 - Some welcome message could be more dynamic
 
@@ -51,6 +53,7 @@
 **Status:** ✅ REAL - Full CRUD operations
 
 **What's Real:**
+
 - ✅ Fetches tasks from `/api/tasks` (line 32)
 - ✅ Create button opens modal, creates real tasks (line 23)
 - ✅ Edit button opens detail modal (line 24)
@@ -61,6 +64,7 @@
 - ✅ Task detail display shows real data
 
 **Code Quality:**
+
 ```jsx
 // Real API calls with error handling
 const fetchTasks = async () => {
@@ -82,6 +86,7 @@ const fetchTasks = async () => {
 **Status:** ❌ FAKE - Complete mock data, no backend integration
 
 **What's Fake:**
+
 - ✗ Hardcoded 3 content items (lines 5-27)
 - ✗ Stats are hardcoded: "24 Total", "18 Published", "5 Draft", "1,248 Views"
 - ✗ Categories show static "12 items" everywhere
@@ -92,6 +97,7 @@ const fetchTasks = async () => {
 - ✗ No API calls to backend
 
 **Why It's Redundant:**
+
 - Content/blog posts are already created via **Tasks** page (task_type="blog_post")
 - Tasks page already handles CRUD for content
 - Having two content management interfaces is confusing
@@ -100,6 +106,7 @@ const fetchTasks = async () => {
 **Verdict:** ❌ **REMOVE ENTIRELY**
 
 **Migration Path:**
+
 1. Remove `Content.jsx` route
 2. Remove from AppRoutes
 3. Remove from sidebar navigation
@@ -114,6 +121,7 @@ const fetchTasks = async () => {
 **Status:** ❌ FAKE - Complete mock data, no real integration
 
 **What's Fake:**
+
 - ✗ Hardcoded 4 campaigns (lines 5-38)
 - ✗ Mock metrics for Twitter, LinkedIn, Instagram, TikTok (lines 44-62)
 - ✗ No API calls to any backend
@@ -122,6 +130,7 @@ const fetchTasks = async () => {
 - ✗ Campaign management is pure UI with no data persistence
 
 **What Would Be Needed for Real Implementation:**
+
 - API endpoints for social media platform credentials
 - OAuth2 connections to Twitter, LinkedIn, Instagram, TikTok
 - Campaign creation/publishing API
@@ -129,18 +138,21 @@ const fetchTasks = async () => {
 - Content scheduling system
 
 **Current Reality:**
+
 - Tasks page can create social_media content (task_type="social_media")
 - But there's no actual social platform integration
 
 **Verdict:** ❌ **REMOVE**
 
 **Reasoning:**
+
 - Extremely complex feature requiring OAuth2 integrations
 - Would require significant backend API development
 - No real backend support exists
 - Creates false expectation of functionality
 
 **If Needed Later:**
+
 - Would need complete backend redesign
 - Would need platform API integrations
 - Estimated effort: 2-3 weeks of development
@@ -154,6 +166,7 @@ const fetchTasks = async () => {
 **Status:** ✅ PARTIAL - Mixed real and mock data
 
 **What's Real:**
+
 - ✅ Fetches Ollama models from `http://localhost:11434/api/tags` (line 66)
 - ✅ Test prompt execution against actual Ollama (line 96)
 - ✅ Can run queries against local models
@@ -161,12 +174,14 @@ const fetchTasks = async () => {
 - ✅ Temperature and token settings are functional
 
 **What's Fake:**
+
 - ✗ Model list fallback has 4 hardcoded fake models (lines 8-46)
 - ✗ Model accuracy/latency stats are fake
 - ✗ Model comparison tab shows fake data
 - ✗ Usage statistics are fake
 
 **Code Quality:**
+
 ```jsx
 // Real Ollama integration
 useEffect(() => {
@@ -182,6 +197,7 @@ useEffect(() => {
 **Verdict:** ✅ **KEEP but REFINE**
 
 **Recommendations:**
+
 1. Keep Ollama model testing (it's useful for development)
 2. Remove fake model comparison section
 3. Add actual model provider management (OpenAI API key, Anthropic key, etc.)
@@ -196,6 +212,7 @@ useEffect(() => {
 **Status:** ❌ FAKE - Complete mock data, no real analytics
 
 **What's Fake:**
+
 - ✗ All metrics are hardcoded: "12,458 users", "3.24% conversion", etc. (lines 7-19)
 - ✗ Chart data is fake 7-day data (lines 22-30)
 - ✗ Top pages are mocked (lines 33-39)
@@ -205,11 +222,13 @@ useEffect(() => {
 - ✗ No database backing
 
 **Why It's Problematic:**
+
 - Shows non-existent data as if it were real
 - Users might make decisions based on fake analytics
 - No actual website analytics system exists
 
 **What Would Be Needed:**
+
 - Integration with analytics service (Google Analytics, Mixpanel, etc.)
 - API endpoints for analytics data
 - User tracking code on public site
@@ -218,12 +237,14 @@ useEffect(() => {
 **Verdict:** ❌ **REMOVE**
 
 **Reasoning:**
+
 - Misleading to have fake analytics displayed
 - No backend support for real data
 - Public site (port 3000) doesn't have analytics tracking
 - Would require complete analytics infrastructure
 
 **If Needed Later:**
+
 - Could integrate Google Analytics
 - Or implement custom analytics with database tracking
 - Estimated effort: 1-2 weeks
@@ -237,6 +258,7 @@ useEffect(() => {
 **Status:** ✅ REAL - Connected to backend API
 
 **What's Real:**
+
 - ✅ Fetches real cost metrics from `/api/metrics/costs` (line 22)
 - ✅ Calls `getCostMetrics()` service function
 - ✅ Uses real database data
@@ -247,6 +269,7 @@ useEffect(() => {
 - ✅ Time range filtering works
 
 **Code Quality:**
+
 ```jsx
 // Real API integration with proper error handling
 useEffect(() => {
@@ -271,6 +294,7 @@ useEffect(() => {
 **Status:** ✅ REAL - Connected to Zustand store & backend
 
 **What's Real:**
+
 - ✅ Theme toggle works (light/dark mode)
 - ✅ Auto-refresh toggle works
 - ✅ Desktop notifications toggle works
@@ -278,6 +302,7 @@ useEffect(() => {
 - ✅ Writing style manager is integrated
 
 **What's in Store:**
+
 ```jsx
 // Real state management
 const theme = useStore((state) => state.theme);
@@ -323,6 +348,7 @@ const setApiKey = useStore((state) => state.setApiKey);
 ### ⚠️ PAGES TO REFINE
 
 **Models Page:**
+
 - Remove fake model comparison section
 - Focus on Ollama model testing (actually useful)
 - Add model provider configuration UI
@@ -333,6 +359,7 @@ const setApiKey = useStore((state) => state.setApiKey);
 ## File Structure After Cleanup
 
 ### Remove These Files:
+
 ```
 web/oversight-hub/src/routes/Content.jsx
 web/oversight-hub/src/routes/SocialMediaManagement.jsx
@@ -340,6 +367,7 @@ web/oversight-hub/src/routes/Analytics.jsx
 ```
 
 ### Keep These Files:
+
 ```
 web/oversight-hub/src/routes/AppRoutes.jsx (update routes)
 web/oversight-hub/src/routes/TaskManagement.jsx ✅
@@ -354,6 +382,7 @@ web/oversight-hub/src/components/pages/ExecutiveDashboard.jsx ✅
 ## Navigation Structure (After Cleanup)
 
 **Current Navigation (8 items):**
+
 ```
 - Dashboard ✅
 - Tasks ✅
@@ -366,6 +395,7 @@ web/oversight-hub/src/components/pages/ExecutiveDashboard.jsx ✅
 ```
 
 **New Navigation (5 items):**
+
 ```
 - Dashboard ✅
 - Tasks ✅
@@ -378,15 +408,15 @@ web/oversight-hub/src/components/pages/ExecutiveDashboard.jsx ✅
 
 ## Effort to Clean Up
 
-| Task | Effort | Impact |
-| --- | --- | --- |
-| Remove Content route | 10 min | High - removes confusion |
-| Remove Social route | 10 min | High - removes false promises |
-| Remove Analytics route | 10 min | High - removes misleading data |
-| Update AppRoutes.jsx | 5 min | Critical - routing |
-| Update sidebar navigation | 5 min | Critical - UI |
-| Clean up exports | 5 min | Critical |
-| **Total** | **45 min** | **Significant clarity improvement** |
+| Task                      | Effort     | Impact                              |
+| ------------------------- | ---------- | ----------------------------------- |
+| Remove Content route      | 10 min     | High - removes confusion            |
+| Remove Social route       | 10 min     | High - removes false promises       |
+| Remove Analytics route    | 10 min     | High - removes misleading data      |
+| Update AppRoutes.jsx      | 5 min      | Critical - routing                  |
+| Update sidebar navigation | 5 min      | Critical - UI                       |
+| Clean up exports          | 5 min      | Critical                            |
+| **Total**                 | **45 min** | **Significant clarity improvement** |
 
 ---
 
@@ -396,4 +426,3 @@ web/oversight-hub/src/components/pages/ExecutiveDashboard.jsx ✅
 2. **Social Media:** Confirm OK to remove? (Can be re-added if social integrations are built later)
 3. **Analytics:** Confirm OK to remove? (Dashboard has basic KPIs, that's enough?)
 4. **Models Page:** Keep as-is with Ollama testing, or enhance with provider config?
-
