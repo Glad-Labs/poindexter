@@ -215,6 +215,13 @@ class UnifiedTaskResponse(BaseModel):
     completed_at: Optional[datetime | str] = Field(None, description="Completion time")
 
     # ========================================================================
+    # PUBLISHING & DISTRIBUTION
+    # ========================================================================
+    published_url: Optional[str] = Field(None, description="Published post URL after approval/publishing")
+    post_id: Optional[str] = Field(None, description="Post ID in CMS (when published to posts table)")
+    post_slug: Optional[str] = Field(None, description="Post slug for URL generation")
+
+    # ========================================================================
     # BACKEND METADATA (For debugging)
     # ========================================================================
     agent_id: Optional[str] = Field(None, description="Agent ID that executed task")

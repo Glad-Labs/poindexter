@@ -28,9 +28,9 @@ from datetime import datetime, timezone
 from uuid import UUID
 import uuid as uuid_lib
 import json
-import json
 import logging
 import os
+import asyncio
 
 from utils.error_responses import ErrorResponseBuilder
 from utils.route_utils import get_database_dependency
@@ -1536,37 +1536,56 @@ async def confirm_and_execute_task(
 )
 async def approve_task(
     task_id: str,
+    approved: bool = True,
+    human_feedback: Optional[str] = None,
+    reviewer_id: Optional[str] = None,
+    featured_image_url: Optional[str] = None,
+    image_source: Optional[str] = None,
+    auto_publish: bool = True,
     current_user: dict = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
-    Approve a task for publishing.
+    Approve or reject a task for publishing.
     
-    Changes task status from 'completed' to 'approved'.
+    Changes task status from 'awaiting_approval' to 'approved' or 'rejected'.
+    Can include human feedback, image URL, and reviewer information.
+    Optionally auto-publishes the task immediately.
     
     **Parameters:**
     - task_id: Task ID (UUID or numeric ID for backwards compatibility)
+    - approved: Boolean - true to approve, false to reject
+    - human_feedback: Optional feedback from reviewer
+    - reviewer_id: Optional ID of reviewer
+    - featured_image_url: Optional featured image URL for the task
+    - image_source: Optional source of image (pexels, sdxl)
+    - auto_publish: Automatically publish after approval (default: true)
     
     **Returns:**
-    - Updated task with status 'approved'
+    - Updated task with status 'approved' or 'rejected' (and 'published' if auto_publish=true)
     
     **Example cURL:**
     ```bash
     curl -X POST http://localhost:8000/api/tasks/550e8400-e29b-41d4-a716-446655440000/approve \
-      -H "Authorization: Bearer YOUR_JWT_TOKEN"
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+      -d '{
+        "approved": true,
+        "human_feedback": "Great content!",
+        "reviewer_id": "user123",
+        "featured_image_url": "https://...",
+        "image_source": "pexels",
+        "auto_publish": true
+      }'
     ```
     """
     try:
         # Accept both UUID and numeric task IDs (backwards compatibility)
-        # Try to convert numeric ID to UUID if it's a string number
         try:
             UUID(task_id)
         except ValueError:
             # If not a valid UUID, check if it's a numeric ID (legacy tasks)
-            if task_id.isdigit():
-                # Convert numeric ID to string (it will work with get_task as-is)
-                pass
-            else:
+            if not task_id.isdigit():
                 raise HTTPException(status_code=400, detail="Invalid task ID format")
 
         # Fetch task
@@ -1575,40 +1594,171 @@ async def approve_task(
         if not task:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
-        # Check if task is in a state that can be approved
-        # Valid states: only awaiting_approval can transition to approved
-        # (other states are legacy compatibility)
+        # Check if task is in a state that can be approved/rejected
         current_status = task.get("status", "unknown")
-        allowed_statuses = ["awaiting_approval", "pending", "in_progress", "completed"]
+        allowed_statuses = ["awaiting_approval", "pending", "in_progress", "completed", "rejected"]
         if current_status not in allowed_statuses:
             raise HTTPException(
                 status_code=400,
-                detail=f"Cannot approve task with status '{current_status}'. Task must be awaiting approval to be approved.",
+                detail=f"Cannot approve/reject task with status '{current_status}'. Task must be awaiting approval.",
             )
 
-        # Update task status to approved
-        logger.info(f"Approving task {task_id} (current status: {current_status})")
+        # Prepare metadata
         approval_metadata = {
-            "approved_at": datetime.now(timezone.utc).isoformat(),
-            "approved_by": current_user.get("id"),
+            "approved_at" if approved else "rejected_at": datetime.now(timezone.utc).isoformat(),
+            "approved_by" if approved else "rejected_by": reviewer_id or current_user.get("id"),
         }
-        await db_service.update_task_status(
-            task_id, "approved", result=json.dumps({"metadata": approval_metadata})
-        )
+        
+        if human_feedback:
+            approval_metadata["human_feedback"] = human_feedback
+        
+        if image_source:
+            approval_metadata["image_source"] = image_source
+
+        # Update task result with featured image if provided
+        task_result = task.get("result", {})
+        if isinstance(task_result, str):
+            task_result = json.loads(task_result) if task_result else {}
+        
+        if featured_image_url:
+            task_result["featured_image_url"] = featured_image_url
+        
+        # Update task status and result
+        new_status = "approved" if approved else "rejected"
+        logger.info(f"{'Approving' if approved else 'Rejecting'} task {task_id} (current status: {current_status})")
+        
+        try:
+            await db_service.update_task_status(
+                task_id, 
+                new_status, 
+                result=json.dumps({"metadata": approval_metadata, **task_result})
+            )
+        except Exception as e:
+            logger.error(f"Failed to update task status to {new_status}: {str(e)}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Failed to update task status: {str(e)}")
+
+        # Auto-publish if approved and auto_publish=True
+        if approved and auto_publish:
+            logger.info(f"Auto-publishing approved task {task_id}")
+            try:
+                # IMPORTANT: Update task status to published FIRST, before creating post
+                # This ensures task state is consistent even if post creation fails
+                publish_metadata = {
+                    "published_at": datetime.now(timezone.utc).isoformat(),
+                    "published_by": current_user.get("id"),
+                }
+                
+                try:
+                    await db_service.update_task_status(
+                        task_id, "published", result=json.dumps({"metadata": {**approval_metadata, **publish_metadata}, **task_result})
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to update task status to published: {str(e)}", exc_info=True)
+                    # Still continue with post creation if status update fails
+                    # The task will be in 'approved' state but post may be created
+
+                # Create post in posts table when publishing (not before)
+                logger.info(f"Creating posts table entry for published task {task_id}")
+                try:
+                    # Extract content from task result
+                    topic = task.get("topic", "")
+                    draft_content = task_result.get("draft_content", "") or task_result.get("content", "") or ""
+                    seo_description = task_result.get("seo_description", "")
+                    seo_keywords = task_result.get("seo_keywords", [])
+                    featured_image = featured_image_url or task_result.get("featured_image_url")
+                    metadata = task_result.get("metadata", {})
+
+                    if draft_content and topic:
+                        # Create slug from topic
+                        import re as re_module
+                        slug = re_module.sub(r"[^\w\s-]", "", topic).lower().replace(" ", "-")[:50]
+                        slug = f"{slug}-{task_id[:8]}"
+
+                        # Get author and category
+                        from services.content_router_service import (
+                            _get_or_create_default_author,
+                            _select_category_for_topic,
+                        )
+                        author_id = await _get_or_create_default_author(db_service)
+                        category_id = await _select_category_for_topic(topic, db_service)
+
+                        # Create post with status='published'
+                        post = await db_service.create_post(
+                            {
+                                "title": topic,
+                                "slug": slug,
+                                "content": draft_content,
+                                "excerpt": seo_description,
+                                "featured_image_url": featured_image,
+                                "author_id": author_id,
+                                "category_id": category_id,
+                                "status": "published",  # Published, not draft
+                                "seo_title": topic,
+                                "seo_description": seo_description,
+                                "seo_keywords": ",".join(seo_keywords) if seo_keywords else "",
+                                "metadata": metadata,
+                            }
+                        )
+                        logger.info(f"✅ Post created with status='published': {post.id}")
+                        logger.info(f"   Title: {topic}")
+                        logger.info(f"   Slug: {slug}")
+                        
+                        # Store post info in task result for response
+                        task_result["post_id"] = str(post.id) if hasattr(post, 'id') else str(post.get('id'))
+                        task_result["post_slug"] = slug
+                        task_result["published_url"] = f"/posts/{slug}"  # Relative URL for public site
+                    else:
+                        logger.warning(f"⚠️  Skipping post creation: missing content or topic")
+                except (ValueError, KeyError, TypeError) as e:
+                    # Catch specific exceptions from post creation
+                    logger.error(f"Failed to create post for published task: {type(e).__name__}: {str(e)}", exc_info=True)
+                    # Don't fail the publish operation if post creation fails
+                    # Post table may have constraints or data issues, but task should stay published
+                except Exception as e:
+                    logger.critical(f"Unexpected error creating post for published task: {type(e).__name__}: {str(e)}", exc_info=True)
+                    # Don't fail the publish operation if post creation fails
+                    
+            except (ValueError, KeyError, TypeError) as e:
+                logger.error(f"Error during auto-publish process: {type(e).__name__}: {str(e)}", exc_info=True)
+                # Don't fail approval if auto-publish fails
+            except Exception as e:
+                logger.critical(f"Unexpected error during auto-publish: {type(e).__name__}: {str(e)}", exc_info=True)
+                # Don't fail approval if auto-publish fails
 
         # Fetch updated task
         updated_task = await db_service.get_task(task_id)
+        
+        # Extract published info from result if available
+        task_result_data = updated_task.get("result", {})
+        if isinstance(task_result_data, str):
+            task_result_data = json.loads(task_result_data) if task_result_data else {}
+        
+        published_url = task_result_data.get("published_url")
+        post_id = task_result_data.get("post_id")
+        post_slug = task_result_data.get("post_slug")
 
         # Convert to response schema
-        return UnifiedTaskResponse(
-            **ModelConverter.task_response_to_unified(ModelConverter.to_task_response(updated_task))
-        )
+        response_data = ModelConverter.task_response_to_unified(ModelConverter.to_task_response(updated_task))
+        
+        # Add published URL info to response
+        if published_url:
+            response_data["published_url"] = published_url
+        if post_id:
+            response_data["post_id"] = post_id
+        if post_slug:
+            response_data["post_slug"] = post_slug
+        
+        return UnifiedTaskResponse(**response_data)
 
     except HTTPException:
         raise
+    except (ValueError, KeyError, TypeError) as e:
+        logger.error(f"Data validation error in approve_task: {type(e).__name__}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=400, detail=f"Invalid task data: {str(e)}")
     except Exception as e:
-        logger.error(f"Failed to approve task {task_id}: {str(e)}", exc_info=True)
+        logger.error(f"Failed to approve task {task_id}: {type(e).__name__}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to approve task: {str(e)}")
+
 
 
 @router.post(
@@ -1815,6 +1965,219 @@ async def reject_task(
     except Exception as e:
         logger.error(f"Failed to reject task {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to reject task: {str(e)}")
+
+
+@router.post(
+    "/{task_id}/generate-image",
+    response_model=dict,
+    summary="Generate or fetch image for task",
+    tags=["content"],
+)
+async def generate_task_image(
+    task_id: str,
+    source: str = "pexels",
+    topic: Optional[str] = None,
+    content_summary: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
+) -> Dict[str, str]:
+    """
+    Generate or fetch an image for a task using Pexels or SDXL.
+    
+    **Parameters:**
+    - task_id: Task UUID
+    - source: Image source - "pexels" or "sdxl"
+    - topic: Topic for image search/generation
+    - content_summary: Summary of content for image generation
+    
+    **Returns:**
+    - { "image_url": "https://..." }
+    
+    **Example cURL:**
+    ```bash
+    curl -X POST http://localhost:8000/api/tasks/550e8400-e29b-41d4-a716-446655440000/generate-image \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+      -d '{
+        "source": "pexels",
+        "topic": "AI Marketing",
+        "content_summary": "How AI is transforming marketing..."
+      }'
+    ```
+    """
+    try:
+        # Validate task exists
+        task = await db_service.get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+        logger.info(f"Generating image for task {task_id} using {source}")
+
+        image_url = None
+
+        if source == "pexels":
+            # Use Pexels API to search for images
+            try:
+                import aiohttp
+                
+                pexels_key = os.getenv("PEXELS_API_KEY")
+                if not pexels_key:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Pexels API key not configured"
+                    )
+                
+                search_query = topic or task.get("topic", "business")
+                
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        "https://api.pexels.com/v1/search",
+                        params={
+                            "query": search_query,
+                            "per_page": 1,
+                            "orientation": "landscape"
+                        },
+                        headers={"Authorization": pexels_key},
+                        timeout=10.0
+                    ) as resp:
+                        if resp.status == 200:
+                            try:
+                                data = await resp.json()
+                                if data.get("photos"):
+                                    image_url = data["photos"][0]["src"]["large"]
+                                    logger.info(f"✅ Found Pexels image: {image_url}")
+                            except json.JSONDecodeError as je:
+                                logger.error(f"Failed to parse Pexels response JSON: {je}")
+                                raise ValueError(f"Invalid JSON from Pexels API: {str(je)}")
+                        elif resp.status == 429:
+                            logger.warning(f"Pexels rate limit exceeded")
+                            raise HTTPException(
+                                status_code=429,
+                                detail="Image service rate limit exceeded. Please try again later."
+                            )
+                        else:
+                            logger.warning(f"Pexels API returned {resp.status}")
+                            raise ValueError(f"Pexels API error: HTTP {resp.status}")
+                
+            except ValueError as ve:
+                logger.error(f"Pexels API error: {ve}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Error fetching image from Pexels: {str(ve)}"
+                )
+            except asyncio.TimeoutError:
+                logger.warning(f"Pexels API timeout for query: {search_query}")
+                raise HTTPException(
+                    status_code=504,
+                    detail="Pexels API timeout. Please try again."
+                )
+            except Exception as e:
+                logger.error(f"Unexpected error fetching from Pexels: {type(e).__name__}: {e}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Unexpected error fetching image from Pexels"
+                )
+
+        elif source == "sdxl":
+            # Use SDXL to generate an image
+            try:
+                import os
+                from pathlib import Path
+                from services.image_service import ImageService
+                import uuid
+                
+                image_service = ImageService()
+                
+                # Build generation prompt from topic and content
+                generation_prompt = f"{topic}"
+                if content_summary:
+                    # Extract key concepts from content summary
+                    generation_prompt = f"{topic}: {content_summary[:200]}"
+                
+                logger.info(f"🎨 Generating image with SDXL: {generation_prompt}")
+                
+                # Save to user's Downloads folder for preview
+                downloads_path = str(Path.home() / "Downloads" / "glad-labs-generated-images")
+                os.makedirs(downloads_path, exist_ok=True)
+                
+                # Create filename with UUID to prevent collisions (UUID instead of timestamp)
+                unique_id = str(uuid.uuid4())[:8]
+                output_file = f"sdxl_{unique_id}.png"
+                output_path = os.path.join(downloads_path, output_file)
+                
+                logger.info(f"📁 Generating SDXL image to: {output_path}")
+                
+                # Generate image with SDXL
+                success = await image_service.generate_image(
+                    prompt=generation_prompt,
+                    output_path=output_path,
+                    num_inference_steps=50,  # Good quality/speed balance
+                    guidance_scale=7.5,
+                    use_refinement=False,  # Refinement can be expensive
+                    high_quality=False,
+                    task_id=task_id,
+                )
+                
+                if success and os.path.exists(output_path):
+                    logger.info(f"✅ SDXL image generated: {output_path}")
+                    image_url = output_path
+                    logger.info(f"   Generated image saved locally for preview")
+                else:
+                    raise RuntimeError("SDXL image generation failed or file not created")
+                    
+            except (OSError, IOError, RuntimeError, ValueError) as e:
+                logger.error(f"SDXL image generation error - {type(e).__name__}: {e}", exc_info=True)
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"SDXL image generation failed: {str(e)}. Ensure GPU available or use 'pexels' source."
+                )
+            except asyncio.TimeoutError:
+                logger.warning(f"SDXL image generation timeout for task {task_id}")
+                raise HTTPException(
+                    status_code=408,
+                    detail="Image generation timeout. Please try again with 'pexels' source."
+                )
+            except Exception as e:
+                logger.critical(f"Unexpected error in SDXL generation: {type(e).__name__}: {e}", exc_info=True)
+                raise HTTPException(
+                    status_code=500,
+                    detail="Internal server error during image generation"
+                )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid image source: {source}. Use 'pexels' or 'sdxl'"
+            )
+
+        if not image_url:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to generate or fetch image"
+            )
+
+        # Update task metadata with generated image URL
+        task_result = task.get("result", {})
+        if isinstance(task_result, str):
+            task_result = json.loads(task_result) if task_result else {}
+        
+        task_result["featured_image_url"] = image_url
+        
+        await db_service.update_task(
+            task_id,
+            {"result": json.dumps(task_result)}
+        )
+
+        return {
+            "image_url": image_url,
+            "source": source,
+            "message": f"✅ Image generated/fetched from {source}"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to generate image for task {task_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to generate image: {str(e)}")
 
 
 @router.delete(

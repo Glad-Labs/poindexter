@@ -270,5 +270,19 @@ async def test_huggingface():
     await client.close()
 
 
+# Module-level cleanup helper for lifespan shutdown
+_active_clients: List[HuggingFaceClient] = []
+
+
+async def _session_cleanup() -> None:
+    """Cleanup all active HuggingFace client sessions on shutdown"""
+    for client in _active_clients:
+        try:
+            await client.close()
+        except Exception as e:
+            logger.warning(f"Error closing HuggingFace client: {e}")
+    _active_clients.clear()
+
+
 if __name__ == "__main__":
     asyncio.run(test_huggingface())

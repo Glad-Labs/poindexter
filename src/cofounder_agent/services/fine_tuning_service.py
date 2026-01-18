@@ -13,6 +13,7 @@ import logging
 import subprocess
 import os
 import json
+import tempfile
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from enum import Enum
@@ -79,37 +80,39 @@ class FineTuningService:
                     "error": "Ollama is not running. Please start Ollama first.",
                 }
 
-            # Create Modelfile for fine-tuning
+            # Create Modelfile for fine-tuning in temp directory (auto-cleaned up)
             modelfile_content = f"""FROM {base_model}
 PARAMETER temperature 0.7
 PARAMETER top_p 0.9
 PARAMETER learning_rate {learning_rate}
 """
-            modelfile_path = f"/tmp/Modelfile_{job_id}"
-            with open(modelfile_path, "w") as f:
-                f.write(modelfile_content)
+            # Use TemporaryDirectory to ensure cleanup even if process fails
+            with tempfile.TemporaryDirectory(prefix=f"ollama_finetune_{job_id}") as tmpdir:
+                modelfile_path = os.path.join(tmpdir, "Modelfile")
+                with open(modelfile_path, "w") as f:
+                    f.write(modelfile_content)
 
-            # Start background fine-tuning process
-            # Note: Using ollama run with dataset
-            process = await asyncio.create_subprocess_exec(
-                "ollama",
-                "create",
-                f"orchestrator-{job_id}",
-                "-f",
-                modelfile_path,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
+                # Start background fine-tuning process
+                # Note: Using ollama run with dataset
+                process = await asyncio.create_subprocess_exec(
+                    "ollama",
+                    "create",
+                    f"orchestrator-{job_id}",
+                    "-f",
+                    modelfile_path,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
 
-            self.jobs[job_id] = {
-                "status": "running",
-                "target": "ollama",
-                "base_model": base_model,
-                "process": process,
-                "start_time": datetime.now().isoformat(),
-                "dataset_path": dataset_path,
-                "model_name": f"orchestrator-{job_id}",
-            }
+                self.jobs[job_id] = {
+                    "status": "running",
+                    "target": "ollama",
+                    "base_model": base_model,
+                    "process": process,
+                    "start_time": datetime.now().isoformat(),
+                    "dataset_path": dataset_path,
+                    "model_name": f"orchestrator-{job_id}",
+                }
 
             logger.info(f"Started Ollama fine-tuning job: {job_id}")
 

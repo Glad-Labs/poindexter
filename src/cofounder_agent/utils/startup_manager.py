@@ -480,6 +480,30 @@ class StartupManager:
                 except Exception as e:
                     logger.error(f"   Error closing Redis cache: {e}", exc_info=True)
 
+            # Close HuggingFace client session (prevents connection leak)
+            try:
+                from services.model_consolidation_service import (  # noqa: F401, E402
+                    ModelConsolidationService,
+                )
+
+                # Close any HuggingFace adapter clients that may be cached
+                logger.info("  Closing HuggingFace client sessions...")
+                # The model consolidation service may have cached adapters
+                # We'll clean up any aiohttp sessions they created
+                import asyncio
+
+                # Get all tasks and look for lingering aiohttp sessions
+                try:
+                    # Import at function level to avoid import errors if module not loaded
+                    from services.huggingface_client import _session_cleanup
+
+                    await _session_cleanup()
+                    logger.info("   HuggingFace sessions closed")
+                except (ImportError, AttributeError):
+                    logger.debug("   HuggingFace client sessions already cleaned or not in use")
+            except Exception as e:
+                logger.debug(f"   HuggingFace cleanup (non-critical): {e}")
+
             # Close database connection
             if self.database_service:
                 try:

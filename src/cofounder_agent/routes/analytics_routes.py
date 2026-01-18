@@ -19,6 +19,7 @@ import logging
 
 from services.database_service import DatabaseService
 from utils.route_utils import get_database_dependency
+from utils.error_handler import handle_route_error
 from routes.auth_unified import get_current_user
 from schemas.auth_schemas import UserProfile
 
@@ -384,8 +385,7 @@ async def get_kpi_metrics(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error calculating KPI metrics: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to calculate KPI metrics: {str(e)}")
+        raise await handle_route_error(e, "get_kpi_metrics", logger)
 
 
 class TaskDistribution(BaseModel):
@@ -477,5 +477,4 @@ async def get_task_distributions(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error getting distributions: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to get task distributions: {str(e)}")
+        raise await handle_route_error(e, "get_task_distributions", logger)

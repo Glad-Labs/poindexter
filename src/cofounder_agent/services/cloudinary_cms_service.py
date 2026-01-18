@@ -20,7 +20,7 @@ Features:
 import logging
 import os
 from typing import Optional, Dict, Any, List, Tuple
-import requests
+import httpx
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import uuid4
@@ -141,19 +141,19 @@ class CloudinaryCMSService:
             # Generate unique public ID
             public_id = f"{folder}/{uuid4().hex}"
 
-            # Upload using Cloudinary API
-            response = requests.post(
-                f"{self.api_base_url}/image/upload",
-                data={
-                    "file": image_url,
-                    "public_id": public_id,
-                    "folder": folder,
-                    "resource_type": "auto",
-                    "upload_preset": "oversight-hub",  # Must be configured in Cloudinary
-                    "context": f"alt={alt_text}|title={title}" if alt_text or title else None,
-                },
-                timeout=30,
-            )
+            # Upload using Cloudinary API with async httpx
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{self.api_base_url}/image/upload",
+                    data={
+                        "file": image_url,
+                        "public_id": public_id,
+                        "folder": folder,
+                        "resource_type": "auto",
+                        "upload_preset": "oversight-hub",  # Must be configured in Cloudinary
+                        "context": f"alt={alt_text}|title={title}" if alt_text or title else None,
+                    },
+                )
 
             if response.status_code not in [200, 201]:
                 logger.error(
@@ -272,12 +272,12 @@ class CloudinaryCMSService:
             return False
 
         try:
-            response = requests.delete(
-                f"{self.api_base_url}/image/destroy",
-                data={"public_id": public_id},
-                auth=(self.api_key, self.api_secret),
-                timeout=10,
-            )
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.delete(
+                    f"{self.api_base_url}/image/destroy",
+                    data={"public_id": public_id},
+                    auth=(self.api_key, self.api_secret),
+                )
 
             if response.status_code == 200:
                 logger.info(f"✅ Image deleted: {public_id}")
@@ -296,9 +296,10 @@ class CloudinaryCMSService:
             return None
 
         try:
-            response = requests.get(
-                f"{self.api_base_url}/usage", auth=(self.api_key, self.api_secret), timeout=10
-            )
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    f"{self.api_base_url}/usage", auth=(self.api_key, self.api_secret)
+                )
 
             if response.status_code == 200:
                 return response.json()

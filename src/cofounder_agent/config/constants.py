@@ -36,3 +36,36 @@ LOG_LEVEL_DEVELOPMENT = "DEBUG"
 
 # ===== CACHE TTL (in milliseconds) =====
 CACHE_TTL_SLUG_LOOKUP = 300000  # 5 minutes
+CACHE_TTL_API_RESPONSE = 3600000  # 1 hour
+CACHE_TTL_USER_DATA = 600000  # 10 minutes
+CACHE_TTL_METRICS = 60000  # 1 minute
+
+# ===== EXTERNAL SERVICE TIMEOUTS (seconds) =====
+CLOUDINARY_UPLOAD_TIMEOUT = 30.0  # Image upload to CDN
+CLOUDINARY_DELETE_TIMEOUT = 10.0  # Image deletion
+CLOUDINARY_USAGE_TIMEOUT = 10.0  # Usage stats retrieval
+
+# ===== HUGGINGFACE API TIMEOUTS (seconds) =====
+HUGGINGFACE_QUICK_TIMEOUT = 5.0  # For quick model checks
+HUGGINGFACE_STANDARD_TIMEOUT = 30.0  # Standard inference
+HUGGINGFACE_LONG_TIMEOUT = 300.0  # Long-running operations (5 minutes)
+
+# ===== IMAGE PROCESSING =====
+IMAGE_MAX_SIZE_BYTES = 10485760  # 10 MB
+IMAGE_MAX_DIMENSION = 4096  # Max width or height in pixels
+IMAGE_QUALITY_STANDARD = 0.85  # Quality for standard images
+IMAGE_QUALITY_THUMBNAIL = 0.70  # Quality for thumbnails
+
+# ===== TASK EXECUTION =====
+TASK_TIMEOUT_MAX_SECONDS = 900  # 15 minutes max per task
+TASK_BATCH_SIZE = 10  # Tasks to process in one batch
+TASK_STATUS_UPDATE_INTERVAL = 5  # Seconds between status updates
+
+# ===== ERROR HANDLING =====
+HTTP_STATUS_OK = 200
+HTTP_STATUS_CREATED = 201
+HTTP_STATUS_BAD_REQUEST = 400
+HTTP_STATUS_FORBIDDEN = 403
+HTTP_STATUS_NOT_FOUND = 404
+HTTP_STATUS_INTERNAL_ERROR = 500
+HTTP_STATUS_SERVICE_UNAVAILABLE = 503

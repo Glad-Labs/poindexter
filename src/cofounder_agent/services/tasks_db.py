@@ -10,6 +10,7 @@ Handles all task-related database operations including:
 
 import json
 import logging
+import asyncio
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 from datetime import datetime, timedelta
@@ -74,6 +75,8 @@ class TasksDatabase(DatabaseServiceMixin):
         Returns:
             List of pending tasks as dicts
         """
+        QUERY_TIMEOUT = 5  # 5-second timeout for fetching pending tasks
+        
         try:
             if not self.pool:
                 return []
@@ -85,14 +88,22 @@ class TasksDatabase(DatabaseServiceMixin):
                 order_by=[("created_at", "DESC")],
                 limit=limit,
             )
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch(sql, *params)
-                # Convert to dicts for backward compatibility with task_executor
-                result = []
-                for row in rows:
-                    task_response = ModelConverter.to_task_response(row)
-                    result.append(ModelConverter.to_dict(task_response))
-                return result
+            try:
+                async with self.pool.acquire() as conn:
+                    # Add query timeout to prevent blocking
+                    rows = await asyncio.wait_for(
+                        conn.fetch(sql, *params),
+                        timeout=QUERY_TIMEOUT
+                    )
+                    # Convert to dicts for backward compatibility with task_executor
+                    result = []
+                    for row in rows:
+                        task_response = ModelConverter.to_task_response(row)
+                        result.append(ModelConverter.to_dict(task_response))
+                    return result
+            except asyncio.TimeoutError:
+                logger.error(f"Query timeout fetching pending tasks after {QUERY_TIMEOUT}s")
+                return []
         except Exception as e:
             if "content_tasks" in str(e) or "does not exist" in str(e) or "relation" in str(e):
                 return []

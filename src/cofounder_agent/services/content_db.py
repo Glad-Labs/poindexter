@@ -15,6 +15,7 @@ import logging
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
+import asyncpg
 from asyncpg import Pool
 
 from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
@@ -421,8 +422,10 @@ class ContentDatabase(DatabaseServiceMixin):
                     time_result = await conn.fetchrow(time_query, "completed")
                     if time_result and time_result["avg_seconds"]:
                         avg_execution_time = round(float(time_result["avg_seconds"]), 2)
+                except (ValueError, TypeError, AttributeError) as e:
+                    logger.warning(f"Could not calculate avg execution time (data type error): {e}")
                 except Exception as e:
-                    logger.warning(f"Could not calculate avg execution time: {e}")
+                    logger.error(f"Unexpected error calculating avg execution time: {type(e).__name__}: {e}")
 
                 # Calculate total cost from financial tracking (if implemented)
                 total_cost = 0
@@ -431,8 +434,13 @@ class ContentDatabase(DatabaseServiceMixin):
                     cost_result = await conn.fetchrow(cost_query)
                     if cost_result and cost_result["total"]:
                         total_cost = round(float(cost_result["total"]), 2)
-                except Exception:
-                    logger.debug("Cost tracking not available (task_costs table may not exist)")
+                except (ValueError, TypeError, AttributeError) as e:
+                    logger.debug(f"Could not calculate total cost (data type error): {e}")
+                except asyncpg.PostgresError as e:
+                    # Table may not exist or permissions issue
+                    logger.debug(f"Cost tracking not available (database error): {type(e).__name__}")
+                except Exception as e:
+                    logger.error(f"Unexpected error calculating total cost: {type(e).__name__}: {e}")
 
                 return MetricsResponse(
                     totalTasks=total_tasks or 0,

@@ -13,6 +13,7 @@ import logging
 
 from services.database_service import DatabaseService
 from routes.auth_unified import get_current_user, UserProfile
+from utils.error_handler import handle_route_error
 
 logger = logging.getLogger(__name__)
 
@@ -286,8 +287,7 @@ async def list_posts(
                 },
             }
     except Exception as e:
-        logger.error(f"Error fetching posts: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error fetching posts: {str(e)}")
+        raise await handle_route_error(e, "list_posts", logger)
 
 
 @router.get("/api/posts/{slug}")
@@ -377,8 +377,7 @@ async def get_post_by_slug(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching post: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error fetching post: {str(e)}")
+        raise await handle_route_error(e, "get_post_by_slug", logger)
 
 
 # ============================================================================
@@ -412,8 +411,7 @@ async def list_categories():
 
             return {"data": categories, "meta": {}}
     except Exception as e:
-        logger.error(f"Error fetching categories: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error fetching categories: {str(e)}")
+        raise await handle_route_error(e, "list_categories", logger)
 
 
 # ============================================================================
@@ -432,7 +430,7 @@ async def list_tags():
         async with pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT id, name, slug, description, color, created_at, updated_at
+                SELECT id, name, slug, description, created_at, updated_at
                 FROM tags
                 ORDER BY name
             """
@@ -447,8 +445,7 @@ async def list_tags():
 
             return {"data": tags, "meta": {}}
     except Exception as e:
-        logger.error(f"Error fetching tags: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error fetching tags: {str(e)}")
+        raise await handle_route_error(e, "list_tags", logger)
 
 
 # ============================================================================
@@ -551,5 +548,4 @@ async def populate_missing_excerpts(current_user: UserProfile = Depends(get_curr
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error populating excerpts: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error populating excerpts: {str(e)}")
+        raise await handle_route_error(e, "populate_missing_excerpts", logger)

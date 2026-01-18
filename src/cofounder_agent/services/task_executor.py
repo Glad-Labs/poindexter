@@ -230,6 +230,9 @@ class TaskExecutor:
         logger.info(f"   Topic: {topic}")
         logger.info(f"   Category: {category}")
 
+        # Set per-task timeout (15 minutes max for content generation)
+        TASK_TIMEOUT_SECONDS = 900  # 15 minutes
+        
         try:
             # 1. Update task status to 'in_progress'
             logger.info(f"📝 [TASK_SINGLE] Marking task as in_progress...")
@@ -245,9 +248,20 @@ class TaskExecutor:
             )
             logger.info(f"✅ [TASK_SINGLE] Task marked as in_progress")
 
-            # 2. Process through orchestrator/agent pipeline
-            logger.info(f"🚀 [TASK_SINGLE] Executing task through pipeline...")
-            result = await self._execute_task(task)
+            # 2. Process through orchestrator/agent pipeline with timeout
+            logger.info(f"🚀 [TASK_SINGLE] Executing task through pipeline (timeout: {TASK_TIMEOUT_SECONDS}s)...")
+            try:
+                result = await asyncio.wait_for(
+                    self._execute_task(task),
+                    timeout=TASK_TIMEOUT_SECONDS
+                )
+            except asyncio.TimeoutError:
+                logger.error(f"⏱️  [TASK_SINGLE] Task execution timed out after {TASK_TIMEOUT_SECONDS}s: {task_id}")
+                result = {
+                    "status": "failed",
+                    "orchestrator_error": f"Task execution timeout ({TASK_TIMEOUT_SECONDS}s exceeded)",
+                }
+            
             logger.info(f"✅ [TASK_SINGLE] Task execution completed")
             logger.debug(f"   Result type: {type(result).__name__}")
             if isinstance(result, dict):
