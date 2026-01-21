@@ -35,12 +35,14 @@ def service_unavailable(detail, operation) -> HTTPException
 ```
 
 **Benefits:**
+
 - ✅ Eliminates ~50+ lines of repeated try/except blocks
 - ✅ Consistent error logging with context
 - ✅ Automatic status code mapping
 - ✅ Type-aware error handling
 
 **Usage Pattern:**
+
 ```python
 # Before (current pattern in many routes):
 try:
@@ -106,6 +108,7 @@ HTTP_STATUS_SERVICE_UNAVAILABLE = 503
 ```
 
 **Benefits:**
+
 - ✅ Single source of truth for all timeouts
 - ✅ Easy to adjust globally
 - ✅ Self-documenting code
@@ -118,6 +121,7 @@ HTTP_STATUS_SERVICE_UNAVAILABLE = 503
 ### For Route Files
 
 **Before:**
+
 ```python
 # In many routes (e.g., cms_routes.py, analytics_routes.py, etc)
 try:
@@ -131,6 +135,7 @@ except Exception as e:
 ```
 
 **After:**
+
 ```python
 from utils.error_handler import handle_route_error
 
@@ -144,6 +149,7 @@ except Exception as e:
 ```
 
 **Files to Migrate (Priority Order):**
+
 1. `analytics_routes.py` - 5 instances
 2. `cms_routes.py` - 8 instances
 3. `metrics_routes.py` - 3 instances
@@ -158,6 +164,7 @@ except Exception as e:
 ### For Service Files
 
 **Configuration Updates Needed:**
+
 ```python
 # Before:
 async with httpx.AsyncClient(timeout=30.0) as client:  # Magic number
@@ -171,6 +178,7 @@ async with httpx.AsyncClient(timeout=CLOUDINARY_UPLOAD_TIMEOUT) as client:
 ```
 
 **Files to Update:**
+
 - `cloudinary_cms_service.py` - Use new constants (3 locations)
 - `huggingface_client.py` - Use new constants (3 locations)
 - `image_service.py` - Use new constants (2 locations)
@@ -181,17 +189,20 @@ async with httpx.AsyncClient(timeout=CLOUDINARY_UPLOAD_TIMEOUT) as client:
 ## Quick Wins Checklist
 
 ### Immediate (< 30 minutes)
+
 - [ ] Review error_handler.py implementation
 - [ ] Add error_handler import to one route file
 - [ ] Test with 3 endpoints
 - [ ] Document usage pattern
 
 ### Short-term (< 2 hours)
+
 - [ ] Migrate all error handling in top 3 route files
 - [ ] Update constants references in service files
 - [ ] Remove hardcoded timeouts
 
 ### Medium-term (< 4 hours)
+
 - [ ] Complete migration to all route files
 - [ ] Update documentation with new patterns
 - [ ] Remove obsolete error handling code
@@ -202,18 +213,21 @@ async with httpx.AsyncClient(timeout=CLOUDINARY_UPLOAD_TIMEOUT) as client:
 ## Expected Impact
 
 ### Code Quality
+
 - **Lines Removed:** ~50+ (error handling duplication)
 - **Lines Added:** ~35 (new utilities)
 - **Net Reduction:** ~15 lines of production code
 - **Improvement:** DRY principle, consistency, maintainability
 
 ### Developer Experience
+
 - **Faster Development:** Less copy-paste coding
 - **Fewer Bugs:** Consistent error handling
 - **Better Debugging:** Uniform error logging
 - **Clearer Code:** Standard patterns
 
 ### Maintainability
+
 - **Single Source:** All timeouts in constants.py
 - **Global Updates:** Change once, applies everywhere
 - **Clear Intent:** Error types are explicit
@@ -223,19 +237,20 @@ async with httpx.AsyncClient(timeout=CLOUDINARY_UPLOAD_TIMEOUT) as client:
 
 ## Files Created/Modified
 
-| File | Type | Status | Impact |
-|------|------|--------|--------|
-| `utils/error_handler.py` | NEW | ✅ Ready | Error handling consolidation |
-| `config/constants.py` | MOD | ✅ Ready | +30 new constants |
-| `CLEANUP_OPPORTUNITIES.md` | NEW | ✅ Reference | Planning document |
-| All route files | PENDING | ⏳ Next | Error handler migration |
-| Service files | PENDING | ⏳ Next | Constants migration |
+| File                       | Type    | Status       | Impact                       |
+| -------------------------- | ------- | ------------ | ---------------------------- |
+| `utils/error_handler.py`   | NEW     | ✅ Ready     | Error handling consolidation |
+| `config/constants.py`      | MOD     | ✅ Ready     | +30 new constants            |
+| `CLEANUP_OPPORTUNITIES.md` | NEW     | ✅ Reference | Planning document            |
+| All route files            | PENDING | ⏳ Next      | Error handler migration      |
+| Service files              | PENDING | ⏳ Next      | Constants migration          |
 
 ---
 
 ## Testing Recommendations
 
 ### Unit Tests
+
 ```python
 # Test error handler mappings
 async def test_handle_route_error_value_error():
@@ -256,6 +271,7 @@ def test_not_found_error():
 ```
 
 ### Integration Tests
+
 ```python
 # Test actual route with new error handler
 async def test_route_with_error_handler():
@@ -270,6 +286,7 @@ async def test_route_with_error_handler():
 ## Documentation Updates Needed
 
 ### Add to Coding Standards
+
 ```markdown
 ## Error Handling
 
@@ -279,20 +296,22 @@ Use `utils.error_handler` for consistent error responses:
 from utils.error_handler import handle_route_error
 
 try:
-    result = await service.operation()
+result = await service.operation()
 except HTTPException:
-    raise
+raise
 except Exception as e:
-    raise await handle_route_error(e, "operation_name", logger)
+raise await handle_route_error(e, "operation_name", logger)
 \`\`\`
 
 This automatically:
+
 - Maps exception types to HTTP status codes
 - Logs with appropriate levels
 - Returns formatted HTTPException
 ```
 
 ### Add to Configuration Guide
+
 ```markdown
 ## Constants
 
@@ -300,13 +319,14 @@ All timeouts and limits are in `config/constants.py`:
 
 \`\`\`python
 from config.constants import (
-    CLOUDINARY_UPLOAD_TIMEOUT,
-    HUGGINGFACE_STANDARD_TIMEOUT,
-    IMAGE_MAX_SIZE_BYTES,
+CLOUDINARY_UPLOAD_TIMEOUT,
+HUGGINGFACE_STANDARD_TIMEOUT,
+IMAGE_MAX_SIZE_BYTES,
 )
 \`\`\`
 
 To adjust globally:
+
 1. Edit `config/constants.py`
 2. No other files need changes
 3. Deploy and all services use new values
@@ -329,18 +349,21 @@ After implementing these improvements, consider:
 ## Rollout Plan
 
 ### Phase 1: Validation (This Week)
+
 - [ ] Code review of error_handler.py
 - [ ] Review constants additions
 - [ ] Create test cases
 - [ ] Pilot migration in 1 route file
 
 ### Phase 2: Deployment (Next Week)
+
 - [ ] Migrate remaining routes
 - [ ] Update all service files
 - [ ] Full test suite
 - [ ] Performance validation
 
 ### Phase 3: Documentation (Following Week)
+
 - [ ] Update coding standards
 - [ ] Create migration guide
 - [ ] Update team documentation
@@ -353,16 +376,17 @@ After implementing these improvements, consider:
 **Status:** ✅ Cleanup infrastructure ready for deployment
 
 **What's Ready:**
+
 - ✅ Error handler utility (289 lines)
 - ✅ Expanded constants (30+ new)
 - ✅ Migration guide
 - ✅ Testing recommendations
 
 **What's Next:**
+
 - ⏳ Apply error handler to 5 route files
 - ⏳ Migrate constants in 4 service files
 - ⏳ Document patterns for team
 - ⏳ Measure impact
 
 **Expected Outcome:** Cleaner, more maintainable codebase with ~50 fewer lines of duplicate code and consistent error handling across all routes.
-

@@ -616,8 +616,8 @@ After deployment, update:
 **Database:** ☐ Ready ☐ Migrated  
 **Tests:** ☐ Passing ☐ Verified
 
-**Production URL (Backend):** ****\*\*****\_****\*\*****  
-**Production URL (Frontend):** ****\*\*****\_****\*\*****
+**Production URL (Backend):** \***\*\*\*\*\***\_\***\*\*\*\*\***  
+**Production URL (Frontend):** \***\*\*\*\*\***\_\***\*\*\*\*\***
 
 **Notes:**
 
