@@ -1,0 +1,87 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Test Auth</title>
+  </head>
+  <body>
+    <h1>Auth Debug Test</h1>
+    <button onclick="testAuth()">Test Authorization Header</button>
+    <pre id="output"></pre>
+
+    <script>
+      const output = document.getElementById('output');
+
+      async function testAuth() {
+        try {
+          output.textContent = 'Testing...\n';
+
+          // Simulate what the React app does
+          const DEV_SECRET =
+            'dev-jwt-secret-change-in-production-to-random-64-chars';
+
+          // Create a basic JWT token
+          const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+          const payload = btoa(
+            JSON.stringify({
+              sub: 'dev-user',
+              user_id: 'dev-user-id',
+              email: 'dev@example.com',
+              username: 'dev-user',
+              auth_provider: 'mock',
+              type: 'access',
+              exp: Math.floor(Date.now() / 1000) + 86400,
+              iat: Math.floor(Date.now() / 1000),
+            })
+          );
+
+          // For testing, we'll use the token from curl test
+          const token =
+            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkZXYtdXNlciIsInVzZXJfaWQiOiJkZXYtdXNlci1pZCIsImVtYWlsIjoiZGV2QGV4YW1wbGUuY29tIiwidXNlcm5hbWUiOiJkZXYtdXNlciIsImF1dGhfcHJvdmlkZXIiOiJtb2NrIiwidHlwZSI6ImFjY2VzcyIsImlhdCI6MTc2OTAyMzE1MSwiZXhwIjoxNzY5MTA5NTUxfQ.7vIWqHAySNm54UTozFWPIH7ATmcVFbg1rp__PQK3JUw';
+
+          output.textContent += `Token: ${token.substring(0, 50)}...\n\n`;
+
+          // Test GET request
+          output.textContent += 'Testing GET /api/tasks...\n';
+          const getResponse = await fetch(
+            'http://localhost:8000/api/tasks?limit=1',
+            {
+              method: 'GET',
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+            }
+          );
+          output.textContent += `GET Status: ${getResponse.status}\n`;
+
+          if (getResponse.status === 200) {
+            const data = await getResponse.json();
+            output.textContent += `Tasks found: ${data.tasks ? data.tasks.length : 0}\n`;
+
+            if (data.tasks && data.tasks.length > 0) {
+              const taskId = data.tasks[0].id;
+              output.textContent += `\nTesting POST /api/tasks/${taskId}/approve...\n`;
+
+              const postResponse = await fetch(
+                `http://localhost:8000/api/tasks/${taskId}/approve`,
+                {
+                  method: 'POST',
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ feedback: 'Test feedback' }),
+                }
+              );
+              output.textContent += `POST Status: ${postResponse.status}\n`;
+              const postData = await postResponse.json();
+              output.textContent += `Response: ${JSON.stringify(postData).substring(0, 200)}\n`;
+            }
+          }
+        } catch (e) {
+          output.textContent += `Error: ${e.message}\n`;
+        }
+      }
+    </script>
+  </body>
+</html>

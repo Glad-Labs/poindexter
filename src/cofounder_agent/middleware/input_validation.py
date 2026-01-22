@@ -39,6 +39,8 @@ class InputValidationMiddleware(BaseHTTPMiddleware):
     # Routes that skip validation (health checks, etc.)
     SKIP_VALIDATION_PATHS = {
         "/api/health",
+        "/api/tasks/metrics",
+        "/api/tasks/metrics/summary",
         "/docs",
         "/redoc",
         "/openapi.json",
@@ -79,10 +81,10 @@ class InputValidationMiddleware(BaseHTTPMiddleware):
             )
         except Exception as e:
             # Log unexpected errors
-            logger.error(f"Request validation middleware error: {str(e)}", exc_info=True)
+            logger.error(f"Request validation middleware error for {request.url.path}: {type(e).__name__}: {str(e)}", exc_info=True)
             return JSONResponse(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                content={"detail": "Invalid request"},
+                content={"detail": f"Invalid request: {type(e).__name__}"},
             )
 
     def _validate_headers(self, request: Request) -> None:

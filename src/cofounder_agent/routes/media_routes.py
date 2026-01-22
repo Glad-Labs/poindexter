@@ -394,7 +394,19 @@ async def generate_featured_image(request: ImageGenerationRequest):
     ```
     """
     start_time = time.time()
-    image_service = await get_image_service()
+    
+    try:
+        image_service = await get_image_service()
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize image service: {e}", exc_info=True)
+        elapsed = time.time() - start_time
+        return ImageGenerationResponse(
+            success=False,
+            image_url="",
+            image=None,
+            message=f"❌ Image service initialization failed: {str(e)}",
+            generation_time=elapsed,
+        )
 
     try:
         image = None

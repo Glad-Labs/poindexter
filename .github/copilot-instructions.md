@@ -1,18 +1,18 @@
 # Glad Labs Copilot Instructions
 
-**Last Updated:** December 22, 2025  
+**Last Updated:** January 21, 2026  
 **Project:** Glad Labs AI Co-Founder System  
-**Version:** 1.0
+**Version:** 2.0 (Updated with Current Codebase Analysis)
 
 ## Project Overview
 
 Glad Labs is a **production-ready AI orchestration system** combining autonomous agents, multi-provider LLM routing, and full-stack web applications. It's a monorepo with three main services:
 
-- **Backend:** Python FastAPI server (port 8000) orchestrating specialized AI agents
-- **Admin UI:** React dashboard (port 3001) for monitoring and control
-- **Public Site:** Next.js website (port 3000) for content distribution
+- **Backend:** Python FastAPI server (port 8000) orchestrating specialized AI agents ("Poindexter")
+- **Admin UI:** React 18 + Material-UI dashboard (port 3001) for monitoring and control
+- **Public Site:** Next.js 15 website (port 3000) for content distribution
 
-**Key Architecture:** Multi-agent system with self-critiquing content pipeline, PostgreSQL persistence, and intelligent model router (Ollama → Claude → GPT → Gemini fallback).
+**Key Architecture:** Multi-agent system with comprehensive task orchestration, PostgreSQL persistence, intelligent model router with Ollama/OpenAI/Anthropic/Google support, and unified REST API (18+ route modules).
 
 ---
 
@@ -23,55 +23,101 @@ Glad Labs is a **production-ready AI orchestration system** combining autonomous
 **Three-service startup pattern** (all async, all required for full system):
 
 ```bash
-# From repo root - ALWAYS use this command for full dev environment:
+# From repo root - PRIMARY COMMAND for full dev environment:
 npm run dev
 
-# This concurrently starts:
-# - python -m uvicorn main:app --reload (port 8000) @ src/cofounder_agent/
-# - npm run dev (port 3000) @ web/public-site/
-# - npm start (port 3001) @ web/oversight-hub/
+# This uses concurrently to run:
+# - npm run dev:cofounder  → Python FastAPI with uvicorn (port 8000) @ src/cofounder_agent/
+# - npm run dev:public     → Next.js dev server (port 3000) @ web/public-site/
+# - npm run dev:oversight  → React dev server (port 3001) @ web/oversight-hub/
+
+# Alternative: run services individually
+npm run dev:cofounder     # Just backend
+npm run dev:backend       # Alias for dev:cofounder
+npm run dev:frontend      # Both React apps
+npm run dev:public        # Just Next.js
+npm run dev:oversight     # Just React admin
+npm run dev:all           # All three (same as npm run dev but setup may vary)
 ```
+
+**Service Startup Details:**
+
+- **Backend:** Uses `poetry run uvicorn main:app --reload` with hot reloading
+- **Public Site:** Next.js dev server (TypeScript + React 18 + TailwindCSS)
+- **Oversight Hub:** React 18 + Material-UI (port 3001)
+- **Config Path:** All services read from `.env.local` at project root (single source of truth)
 
 **Services always listen together.** Client code expects all three running. If debugging one service, still keep the others running.
 
-**Config Pattern:** All services use `.env.local` at project root (not per-service). Python agents read from `os.path.join(project_root, '.env.local')`.
+**Ports Always Used:**
+- Backend: `8000`
+- Public Site: `3000`
+- Oversight Hub: `3001`
+- PostgreSQL: `5432` (local or remote)
 
 ### 2. Backend: FastAPI + Specialized Agents
 
-**Entry Point:** [src/cofounder_agent/main.py](src/cofounder_agent/main.py) - FastAPI app with routes for tasks, agents, content, models, and health checks.
+**Entry Point:** `src/cofounder_agent/main.py` - FastAPI app with comprehensive route modules and middleware.
 
-**Core Pattern - Multi-Agent Orchestration:**
-
-```python
-# Typical agent execution flow:
-from orchestrator_logic import Orchestrator
-
-# Orchestrator coordinates agent fleet:
-# - Content Agent (6-stage self-critiquing pipeline: research → create → critique → refine → image → publish)
-# - Financial Agent (cost tracking, ROI analysis, budget alerts)
-# - Market Insight Agent (trend analysis, competitive intelligence)
-# - Compliance Agent (legal review, risk assessment)
-
-# Agents DON'T run independently - they're choreographed by Orchestrator
+**Project Structure (Backend):**
+```
+src/cofounder_agent/
+├── main.py                    # FastAPI initialization, CORS, middleware setup
+├── routes/                    # 18+ route modules
+│   ├── task_routes.py         # Task CRUD and execution
+│   ├── agents_routes.py       # Agent management
+│   ├── model_routes.py        # LLM model selection/health
+│   ├── chat_routes.py         # Real-time chat/agent communication
+│   ├── workflow_history.py    # Workflow tracking
+│   ├── analytics_routes.py    # Analytics and metrics
+│   ├── command_queue_routes.py# Task queueing system
+│   ├── bulk_task_routes.py    # Batch operations
+│   ├── cms_routes.py          # CMS integration (Strapi)
+│   ├── media_routes.py        # Media/asset management
+│   ├── websocket_routes.py    # Real-time WebSocket
+│   ├── webhooks.py            # External webhooks
+│   └── [12+ other routes]     # Settings, social, auth, etc.
+├── services/                  # 60+ service modules
+│   ├── database_service.py    # Coordinator for 5 DB modules
+│   ├── model_router.py        # Cost-optimized LLM routing
+│   ├── task_executor.py       # Task execution orchestration
+│   ├── content_critique_loop.py # Self-critiquing pipeline
+│   ├── unified_orchestrator.py # Master agent choreography
+│   └── [55+ specialized]      # OAuth, caching, webhooks, ML, etc.
+├── agents/                    # 4 core agent types
+│   ├── content_agent/         # 6-stage self-critiquing pipeline
+│   ├── financial_agent/       # Cost/ROI tracking
+│   ├── market_insight_agent/  # Trend analysis
+│   └── compliance_agent/      # Legal/risk review
+├── models/                    # Pydantic request/response schemas
+├── tasks/                     # Task execution logic
+├── middleware/                # Auth, logging, error handling
+├── tests/                     # Pytest suite (~200+ tests)
+└── config/                    # Configuration modules
 ```
 
-**Database:** PostgreSQL with [services/database_service.py](src/cofounder_agent/services/database_service.py). All persistent data (tasks, results, memories) flows through PostgreSQL, not in-memory.
+**Specialized Database Modules (DatabaseService Delegates To):**
+- `UsersDatabase` - User accounts, OAuth, authentication
+- `TasksDatabase` - Task CRUD, filtering, status tracking
+- `ContentDatabase` - Posts, quality scores, publishing metrics
+- `AdminDatabase` - Logging, financial tracking, health, settings
+- `WritingStyleDatabase` - Writing samples for RAG style matching
 
-**Model Router Pattern:** [services/model_router.py](src/cofounder_agent/services/model_router.py) implements intelligent fallback:
+**Model Router Pattern:** `services/model_router.py` implements intelligent fallback:
 
-- **Primary:** Ollama (local, zero-cost)
-- **Fallback 1:** Claude 3 Opus
-- **Fallback 2:** GPT-4
-- **Fallback 3:** Gemini
+- **Primary:** Ollama (local, zero-cost, ~20ms latency)
+- **Fallback 1:** Anthropic Claude (configurable models)
+- **Fallback 2:** OpenAI (configurable models)
+- **Fallback 3:** Google Gemini
 - **Final Fallback:** Echo/mock response
 
-Route selection is determined by API key availability + model configuration in `.env.local`. This is **NOT manual selection** - it's automatic based on what keys are set.
+Route selection is **automatic** based on API key availability + model configuration in `.env.local`. This is NOT manual selection - it's intelligent fallback.
 
 ### 3. Frontend: React (Oversight Hub) + Next.js (Public Site)
 
-**Oversight Hub** ([web/oversight-hub/](web/oversight-hub/)) - React 18 + Material-UI + Zustand state management. This is the control center for monitoring agents, viewing tasks, configuring models. REST calls to port 8000.
+**Oversight Hub** - React 18 + Material-UI + React Scripts. This is the control center for monitoring agents, viewing tasks, configuring models. REST calls to port 8000.
 
-**Public Site** ([web/public-site/](web/public-site/)) - Next.js 15 with static generation for content. Consumes from PostgreSQL via FastAPI endpoints.
+**Public Site** - Next.js 15 with TypeScript + TailwindCSS. Markdown-based content distribution with static generation. Consumes from PostgreSQL via FastAPI endpoints.
 
 **API Integration Pattern:** Both frontends use REST calls to `http://localhost:8000/*` endpoints. No direct database access from frontend.
 
@@ -100,7 +146,7 @@ npm run format:check
 
 ### 5. Content Generation Pipeline (Self-Critiquing)
 
-**6-Stage Agent Flow** for content creation (located in [src/agents/content_agent/](src/agents/content_agent/)):
+**6-Stage Agent Flow** for content creation (located in `src/cofounder_agent/agents/content_agent/`):
 
 1. **Research Agent** - Gathers background, identifies key points
 2. **Creative Agent** - Generates initial draft with brand voice
@@ -113,7 +159,7 @@ npm run format:check
 
 ### 6. Multi-Provider AI Integration (MCP)
 
-**Model Context Protocol** ([src/mcp/](src/mcp/)) provides standardized tool access and cost optimization.
+**Model Context Protocol** (`src/mcp/`) provides standardized tool access and cost optimization.
 
 **Cost Tiers (in MCPContentOrchestrator):**
 
@@ -127,17 +173,17 @@ npm run format:check
 
 ### 7. Key Files Reference
 
-| Purpose             | Path                                                                                                 | What It Does                                                    |
-| ------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| FastAPI entry       | [src/cofounder_agent/main.py](src/cofounder_agent/main.py)                                           | Route registration, middleware setup, app initialization        |
-| Agent orchestration | [src/cofounder_agent/orchestrator_logic.py](src/cofounder_agent/orchestrator_logic.py)               | Coordinates agent fleet, task distribution                      |
-| Database service    | [src/cofounder_agent/services/database_service.py](src/cofounder_agent/services/database_service.py) | PostgreSQL queries, ORM models, persistence                     |
-| Model routing       | [src/cofounder_agent/services/model_router.py](src/cofounder_agent/services/model_router.py)         | LLM provider selection with fallback chain                      |
-| Content agent       | [src/agents/content_agent/](src/agents/content_agent/)                                               | 6-stage self-critiquing pipeline                                |
-| Tasks               | [src/cofounder_agent/tasks/](src/cofounder_agent/tasks/)                                             | Task models, execution logic, status tracking                   |
-| Routes              | [src/cofounder_agent/routes/](src/cofounder_agent/routes/)                                           | `/tasks`, `/agents`, `/content`, `/models`, `/health` endpoints |
-| Oversight Hub       | [web/oversight-hub/](web/oversight-hub/)                                                             | React dashboard, agent monitoring, task management              |
-| Public Site         | [web/public-site/](web/public-site/)                                                                 | Next.js content distribution, SEO optimization                  |
+| Purpose             | Path                                                    | What It Does                                                    |
+| ------------------- | ------------------------------------------------------- | --------------------------------------------------------------- |
+| FastAPI entry       | `src/cofounder_agent/main.py`                           | Route registration, middleware setup, app initialization        |
+| Agent orchestration | `src/cofounder_agent/services/unified_orchestrator.py`  | Coordinates agent fleet, task distribution                      |
+| Database service    | `src/cofounder_agent/services/database_service.py`      | PostgreSQL queries, ORM models, persistence                     |
+| Model routing       | `src/cofounder_agent/services/model_router.py`          | LLM provider selection with fallback chain                      |
+| Content agent       | `src/cofounder_agent/agents/content_agent/`             | 6-stage self-critiquing pipeline                                |
+| Tasks               | `src/cofounder_agent/tasks/`                            | Task models, execution logic, status tracking                   |
+| Routes              | `src/cofounder_agent/routes/`                           | `/tasks`, `/agents`, `/content`, `/models`, `/health` endpoints |
+| Oversight Hub       | `web/oversight-hub/`                                    | React dashboard, agent monitoring, task management              |
+| Public Site         | `web/public-site/`                                      | Next.js content distribution, SEO optimization                  |
 
 ### 8. Common Developer Patterns
 
@@ -187,21 +233,23 @@ glad-labs-website/
 ├── src/
 │   ├── cofounder_agent/    # **Main orchestrator** (FastAPI, port 8000)
 │   │   ├── main.py         # App entry point
-│   │   ├── routes/         # 50+ REST endpoints
-│   │   ├── services/       # model_router, database_service, task_executor
+│   │   ├── routes/         # 18+ REST endpoint modules
+│   │   ├── services/       # 60+ service modules (model_router, database_service, task_executor)
 │   │   ├── models/         # Pydantic schemas for requests/responses
 │   │   ├── tasks/          # Task execution and scheduling
 │   │   ├── middleware/     # Auth, logging, error handling
-│   │   └── tests/          # pytest suite
+│   │   └── tests/          # pytest suite (~200+ tests)
 │   ├── agents/             # Specialized agent implementations
 │   │   ├── content_agent/  # 6-stage self-critiquing content pipeline
 │   │   ├── financial_agent/
 │   │   ├── market_insight_agent/
 │   │   └── compliance_agent/
-│   └── mcp/                # Model Context Protocol integration
+│   ├── mcp/                # Model Context Protocol integration
+│   ├── mcp_server/         # MCP server implementations
+│   └── services/           # Shared service modules
 └── web/
-    ├── public-site/        # **Content distribution** (Next.js, port 3000)
-    └── oversight-hub/      # **Control center** (React, port 3001)
+    ├── public-site/        # **Content distribution** (Next.js 15, port 3000)
+    └── oversight-hub/      # **Control center** (React 18 + Material-UI, port 3001)
 ```
 
 ---

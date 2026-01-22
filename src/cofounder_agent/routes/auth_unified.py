@@ -194,51 +194,67 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
             "created_at": "2025-01-15T10:30:00Z"
         }
     """
-    auth_header = request.headers.get("Authorization", "")
-
-    if not auth_header.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid authorization header",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    token = auth_header[7:]  # Remove "Bearer " prefix
-
-    # Verify token
     try:
-        claims = JWTTokenValidator.verify_token(token)
+        auth_header = request.headers.get("Authorization", "")
+        
+        # Debug logging
+        logger.debug(f"[get_current_user] Headers: {dict(request.headers)}")
+        logger.debug(f"[get_current_user] Authorization header: {auth_header[:30] if auth_header else 'NOT SET'}")
+
+        if not auth_header.startswith("Bearer "):
+            logger.warning(f"[get_current_user] Invalid auth header format: {auth_header[:50] if auth_header else 'EMPTY'}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid authorization header",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        token = auth_header[7:]  # Remove "Bearer " prefix
+
+        # Verify token
+        try:
+            claims = JWTTokenValidator.verify_token(token)
+        except Exception as e:
+            logger.warning(f"[get_current_user] Token verification failed: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        if not claims:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        user_id = claims.get("user_id")
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token claims",
+            )
+
+        # Return user info with auth provider (auto-detected from claims)
+        return {
+            "id": str(user_id),
+            "email": claims.get("email", ""),
+            "username": claims.get("username") or claims.get("sub", ""),
+            "auth_provider": claims.get("auth_provider", "jwt"),  # Auto-detected
+            "is_active": claims.get("is_active", True),
+            "created_at": claims.get("created_at", datetime.now(timezone.utc).isoformat()),
+            "token": token,  # Include token for logout operations
+        }
     except Exception as e:
+        logger.error(f"[get_current_user] Unexpected error: {type(e).__name__}: {str(e)}", exc_info=True)
+        if isinstance(e, HTTPException):
+            raise
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
+            detail="Authentication failed",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
-    if not claims:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    user_id = claims.get("user_id")
-    if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token claims",
-        )
-
-    # Return user info with auth provider (auto-detected from claims)
-    return {
-        "id": str(user_id),
-        "email": claims.get("email", ""),
-        "username": claims.get("username") or claims.get("sub", ""),
-        "auth_provider": claims.get("auth_provider", "jwt"),  # Auto-detected
-        "is_active": claims.get("is_active", True),
-        "created_at": claims.get("created_at", datetime.now(timezone.utc).isoformat()),
-        "token": token,  # Include token for logout operations
-    }
 
 
 # ============================================================================
