@@ -285,6 +285,71 @@ class ContentGenerationService:
 # ============================================================================
 
 
+async def _generate_catchy_title(topic: str, content_excerpt: str) -> Optional[str]:
+    """
+    Generate a catchy, engaging title for blog content using LLM
+    
+    Args:
+        topic: The blog topic
+        content_excerpt: First 500 chars of generated content for context
+        
+    Returns:
+        Generated title or None if generation fails
+    """
+    try:
+        from .ollama_client import OllamaClient
+        
+        ollama = OllamaClient()
+        
+        prompt = f"""You are a creative content strategist specializing in blog titles.
+Generate a single, catchy, engaging blog title based on the topic and content excerpt.
+
+Requirements:
+- Concise (max 100 characters)
+- Contains the main keyword or concept
+- Compelling and encourages clicks
+- Uses power words when appropriate
+- Avoids clickbait and maintains professionalism
+- Standalone format (no quotes, no numbering)
+
+Topic: {topic}
+
+Content excerpt:
+{content_excerpt}
+
+Generate ONLY the title, nothing else."""
+
+        # Use Ollama to generate the title
+        response = await ollama.generate(
+            prompt=prompt,
+            system="You are a professional blog title writer.",
+            model="neural-chat:latest",  # Fast and reliable model
+            stream=False,
+        )
+        
+        # Extract text from response
+        title = ""
+        if isinstance(response, dict):
+            title = response.get("text", "") or response.get("response", "") or response.get("content", "")
+        elif isinstance(response, str):
+            title = response
+            
+        if title:
+            # Clean up the title
+            title = title.strip().strip('"').strip("'").strip()
+            # Truncate if too long
+            if len(title) > 100:
+                title = title[:97] + "..."
+            logger.debug(f"Generated title: {title}")
+            return title
+        
+        return None
+        
+    except Exception as e:
+        logger.warning(f"Error generating catchy title: {e}")
+        return None
+
+
 async def process_content_generation_task(
     topic: str,
     style: str,
@@ -409,13 +474,21 @@ async def process_content_generation_task(
             logger.error(f"❌ Content generation returned None or empty")
             raise ValueError("Content generation failed: no content produced")
 
-        # Update content_task with generated content
+        # Generate catchy title based on topic and content
+        logger.info("📌 Generating title from content...")
+        title = await _generate_catchy_title(topic, content_text[:500])
+        if not title:
+            title = topic  # Fallback to topic if title generation fails
+        logger.info(f"✅ Title generated: {title}")
+
+        # Update content_task with generated content AND title
         await database_service.update_task(
-            task_id=task_id, updates={"status": "generated", "content": content_text}
+            task_id=task_id, updates={"status": "generated", "content": content_text, "title": title}
         )
 
         result["content"] = content_text
         result["content_length"] = len(content_text)
+        result["title"] = title
         result["model_used"] = model_used
         result["stages"]["2_content_generated"] = True
         logger.info(f"✅ Content generated ({len(content_text)} chars) using {model_used}\n")
@@ -648,7 +721,7 @@ async def process_content_generation_task(
         logger.info(f"✅ COMPLETE CONTENT GENERATION PIPELINE FINISHED")
         logger.info(f"{'='*80}")
         logger.info(f"   Task ID: {task_id}")
-        logger.info(f"   Post ID: {post.id}")
+        logger.info(f"   Post ID: {result.get('post_id', 'NOT_YET_CREATED')}")
         logger.info(
             f"   Featured Image: {result.get('featured_image_url', 'NONE')[:100] if result.get('featured_image_url') else 'NONE'}"
         )
@@ -664,12 +737,42 @@ async def process_content_generation_task(
         logger.error(f"[BG-TASK] Detailed traceback:", exc_info=True)
 
         # Update content_task with failure status
+        # 🔑 CRITICAL: Preserve all partially-generated data (content, image, metadata)
+        # so it's available for review/approval workflow
         try:
             logger.debug(f"[BG-TASK] Attempting to update task status to 'failed'...")
+            logger.debug(f"[BG-TASK] Preserving partial results: {list(result.keys())}")
+            
+            # Build task_metadata with whatever we successfully generated
+            failure_metadata = {
+                "content": result.get("content"),
+                "featured_image_url": result.get("featured_image_url"),
+                "featured_image_photographer": result.get("featured_image_photographer"),
+                "featured_image_source": result.get("featured_image_source"),
+                "seo_title": result.get("seo_title"),
+                "seo_description": result.get("seo_description"),
+                "seo_keywords": result.get("seo_keywords"),
+                "topic": topic,
+                "style": style,
+                "tone": tone,
+                "quality_score": result.get("quality_score"),
+                "error_stage": str(e)[:200],  # Which stage failed
+                "error_message": str(e),  # Full error for debugging
+                "stages_completed": result.get("stages", {}),
+            }
+            
+            # Remove None values from metadata
+            failure_metadata = {k: v for k, v in failure_metadata.items() if v is not None}
+            
             await database_service.update_task(
-                task_id=task_id, updates={"status": "failed", "approval_status": "failed"}
+                task_id=task_id, 
+                updates={
+                    "status": "failed", 
+                    "approval_status": "failed",
+                    "task_metadata": failure_metadata,  # ✅ Preserve all data
+                }
             )
-            logger.debug(f"[BG-TASK] ✅ Task status updated to 'failed'")
+            logger.debug(f"[BG-TASK] ✅ Task status updated to 'failed' with preserved data")
         except Exception as db_error:
             logger.error(f"❌ [BG-TASK] Failed to update task status: {db_error}", exc_info=True)
 

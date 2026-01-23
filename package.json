@@ -11,8 +11,8 @@
   ],
   "scripts": {
     "//": "=== UTILITIES ===",
-    "dev": "npm run setup:dev && concurrently \"npm run dev:cofounder\" \"npm run dev:frontend\"",
-    "dev:all": "concurrently \"npm run dev:cofounder\" \"npm run dev:public\" \"npm run dev:oversight\"",
+    "dev": "npm run setup:dev && npm run link:env && concurrently \"npm run dev:cofounder\" \"npm run dev:frontend\"",
+    "dev:all": "npm run setup:dev && npm run link:env && concurrently \"npm run dev:cofounder\" \"npm run dev:public\" \"npm run dev:oversight\"",
     "dev:backend": "npm run dev:cofounder",
     "dev:cofounder": "cd src/cofounder_agent && python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000 --log-level info",
     "dev:frontend": "concurrently \"npm run dev:public\" \"npm run dev:oversight\"",
@@ -23,6 +23,7 @@
     "setup:dev": "npm run setup:env",
     "setup:python": "poetry install",
     "setup:env": "node scripts/select-env.js",
+    "link:env": "node scripts/link-env.js",
     "clean": "rm -rf node_modules package-lock.json yarn.lock **/node_modules **/dist **/.next **/build .venv __pycache__ **/__pycache__ **/*.pyc",
     "clean:install": "npm run clean && npm run install:all",
     "build": "npm run build --workspaces --if-present",

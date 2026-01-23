@@ -74,6 +74,50 @@ from schemas.unified_task_response import UnifiedTaskResponse
 logger = logging.getLogger(__name__)
 
 
+# ============================================================================
+# HELPER FUNCTIONS FOR TASK RESPONSE FORMATTING
+# ============================================================================
+
+def _normalize_seo_keywords_in_task(task: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Normalize seo_keywords from JSON strings to lists in task dicts.
+    Handles conversion at top level, in result field, and in task_metadata field.
+    
+    Args:
+        task: Task dictionary from database
+        
+    Returns:
+        Task dictionary with seo_keywords normalized to lists
+    """
+    if not isinstance(task, dict):
+        return task
+    
+    # Parse seo_keywords at top level if it's a JSON string
+    if "seo_keywords" in task and isinstance(task["seo_keywords"], str):
+        try:
+            task["seo_keywords"] = json.loads(task["seo_keywords"])
+        except (json.JSONDecodeError, TypeError):
+            task["seo_keywords"] = []
+
+    # Parse seo_keywords inside result field if present
+    if "result" in task and isinstance(task["result"], dict):
+        if "seo_keywords" in task["result"] and isinstance(task["result"]["seo_keywords"], str):
+            try:
+                task["result"]["seo_keywords"] = json.loads(task["result"]["seo_keywords"])
+            except (json.JSONDecodeError, TypeError):
+                task["result"]["seo_keywords"] = []
+
+    # Parse seo_keywords inside task_metadata field if present
+    if "task_metadata" in task and isinstance(task["task_metadata"], dict):
+        if "seo_keywords" in task["task_metadata"] and isinstance(task["task_metadata"]["seo_keywords"], str):
+            try:
+                task["task_metadata"]["seo_keywords"] = json.loads(task["task_metadata"]["seo_keywords"])
+            except (json.JSONDecodeError, TypeError):
+                task["task_metadata"]["seo_keywords"] = []
+    
+    return task
+
+
 # Configure router with prefix and tags
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -305,7 +349,9 @@ async def _handle_blog_post_creation(
 
     return {
         "id": returned_task_id,
+        "task_id": returned_task_id,
         "task_type": "blog_post",
+        "topic": request.topic,
         "status": "pending",
         "created_at": task_data["created_at"],
         "message": "Blog post task created and queued",
@@ -343,7 +389,9 @@ async def _handle_social_media_creation(
 
     return {
         "id": returned_task_id,
+        "task_id": returned_task_id,
         "task_type": "social_media",
+        "topic": request.topic,
         "status": "pending",
         "created_at": task_data["created_at"],
         "message": f"Social media task created for platforms: {', '.join(request.platforms or ['all'])}",
@@ -595,17 +643,19 @@ async def list_tasks(
         validated_tasks = []
         for task in tasks:
             if isinstance(task, dict):
-                # Fix type mismatches from database
-                # Ensure id is a string
-                if "id" in task and isinstance(task["id"], int):
+                # Normalize seo_keywords in all nested locations
+                task = _normalize_seo_keywords_in_task(task)
+                
+                # CRITICAL: Ensure 'id' field is always populated
+                # Local database uses 'task_id' (UUID), Railway prod has integer 'id' column
+                # Frontend expects 'id' to be the primary identifier
+                if not task.get("id") or task["id"] is None:
+                    # Use task_id (UUID string) as fallback for id
+                    if task.get("task_id"):
+                        task["id"] = task["task_id"]
+                elif isinstance(task["id"], int):
+                    # Convert integer id to string for consistency
                     task["id"] = str(task["id"])
-
-                # Parse seo_keywords if it's a JSON string
-                if "seo_keywords" in task and isinstance(task["seo_keywords"], str):
-                    try:
-                        task["seo_keywords"] = json.loads(task["seo_keywords"])
-                    except (json.JSONDecodeError, TypeError):
-                        task["seo_keywords"] = []
 
                 validated_tasks.append(UnifiedTaskResponse(**task))
             else:
@@ -736,6 +786,11 @@ async def get_task(
         task = await db_service.get_task(task_id)
         if not task:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+        
+        # Convert task dict if needed, normalizing seo_keywords
+        if isinstance(task, dict):
+            task = _normalize_seo_keywords_in_task(task)
+            return UnifiedTaskResponse(**task)
         return task
     except HTTPException:
         raise
@@ -1599,7 +1654,7 @@ async def approve_task(
     reviewer_id: Optional[str] = None,
     featured_image_url: Optional[str] = None,
     image_source: Optional[str] = None,
-    auto_publish: bool = True,
+    auto_publish: bool = False,
     current_user: dict = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
@@ -1608,7 +1663,7 @@ async def approve_task(
     
     Changes task status from 'awaiting_approval' to 'approved' or 'rejected'.
     Can include human feedback, image URL, and reviewer information.
-    Optionally auto-publishes the task immediately.
+    Publishing is now a SEPARATE step - call /publish endpoint to publish.
     
     **Parameters:**
     - task_id: Task ID (UUID or numeric ID for backwards compatibility)
@@ -1617,7 +1672,7 @@ async def approve_task(
     - reviewer_id: Optional ID of reviewer
     - featured_image_url: Optional featured image URL for the task
     - image_source: Optional source of image (pexels, sdxl)
-    - auto_publish: Automatically publish after approval (default: true)
+    - auto_publish: Automatically publish after approval (default: false - publishing is manual)
     
     **Returns:**
     - Updated task with status 'approved' or 'rejected' (and 'published' if auto_publish=true)
@@ -1675,7 +1730,20 @@ async def approve_task(
         if image_source:
             approval_metadata["image_source"] = image_source
 
-        # Update task result with featured image if provided
+        # Update task result with featured image and content from task_metadata
+        # 🔑 CRITICAL: Read from task_metadata for failed/partially-generated tasks
+        task_metadata = task.get("task_metadata", {})
+        if isinstance(task_metadata, str):
+            try:
+                task_metadata = json.loads(task_metadata) if task_metadata else {}
+            except (json.JSONDecodeError, TypeError):
+                task_metadata = {}
+        elif task_metadata is None:
+            task_metadata = {}
+        elif not isinstance(task_metadata, dict):
+            task_metadata = {}
+
+        # Read from result field, but fallback to task_metadata if result is empty
         task_result = task.get("result", {})
         if isinstance(task_result, str):
             try:
@@ -1684,23 +1752,27 @@ async def approve_task(
                 task_result = {}
         elif task_result is None:
             task_result = {}
-        
-        # Ensure task_result is a dict before accessing it
-        if not isinstance(task_result, dict):
+        elif not isinstance(task_result, dict):
             task_result = {}
         
+        # ✅ Merge task_metadata into task_result to preserve all data from generation
+        # This ensures content and images from failed tasks are preserved through approval
+        merged_result = {**task_metadata, **task_result}
+        
         if featured_image_url:
-            task_result["featured_image_url"] = featured_image_url
+            merged_result["featured_image_url"] = featured_image_url
         
         # Update task status and result
         new_status = "approved" if approved else "rejected"
         logger.info(f"{'Approving' if approved else 'Rejecting'} task {task_id} (current status: {current_status})")
+        logger.info(f"   Has featured_image_url: {bool(merged_result.get('featured_image_url'))}")
+        logger.info(f"   Has content: {bool(merged_result.get('content'))}")
         
         try:
             await db_service.update_task_status(
                 task_id, 
                 new_status, 
-                result=json.dumps({"metadata": approval_metadata, **task_result})
+                result=json.dumps({"metadata": approval_metadata, **merged_result})
             )
         except Exception as e:
             logger.error(f"Failed to update task status to {new_status}: {str(e)}", exc_info=True)
@@ -1719,7 +1791,7 @@ async def approve_task(
                 
                 try:
                     await db_service.update_task_status(
-                        task_id, "published", result=json.dumps({"metadata": {**approval_metadata, **publish_metadata}, **task_result})
+                        task_id, "published", result=json.dumps({"metadata": {**approval_metadata, **publish_metadata}, **merged_result})
                     )
                 except Exception as e:
                     logger.error(f"Failed to update task status to published: {str(e)}", exc_info=True)
@@ -1729,13 +1801,13 @@ async def approve_task(
                 # Create post in posts table when publishing (not before)
                 logger.info(f"Creating posts table entry for published task {task_id}")
                 try:
-                    # Extract content from task result
-                    topic = task.get("topic", "")
-                    draft_content = task_result.get("draft_content", "") or task_result.get("content", "") or ""
-                    seo_description = task_result.get("seo_description", "")
-                    seo_keywords = task_result.get("seo_keywords", [])
-                    featured_image = featured_image_url or task_result.get("featured_image_url")
-                    metadata = task_result.get("metadata", {})
+                    # Extract content from merged_result (includes both result and task_metadata)
+                    topic = task.get("topic", "") or merged_result.get("topic", "")
+                    draft_content = merged_result.get("draft_content", "") or merged_result.get("content", "") or ""
+                    seo_description = merged_result.get("seo_description", "")
+                    seo_keywords = merged_result.get("seo_keywords", [])
+                    featured_image = featured_image_url or merged_result.get("featured_image_url")
+                    metadata = merged_result.get("metadata", {})
 
                     if draft_content and topic:
                         # Create slug from topic
@@ -1772,10 +1844,10 @@ async def approve_task(
                         logger.info(f"   Title: {topic}")
                         logger.info(f"   Slug: {slug}")
                         
-                        # Store post info in task result for response
-                        task_result["post_id"] = str(post.id) if hasattr(post, 'id') else str(post.get('id'))
-                        task_result["post_slug"] = slug
-                        task_result["published_url"] = f"/posts/{slug}"  # Relative URL for public site
+                        # Store post info in merged_result for response
+                        merged_result["post_id"] = str(post.id) if hasattr(post, 'id') else str(post.get('id'))
+                        merged_result["post_slug"] = slug
+                        merged_result["published_url"] = f"/posts/{slug}"  # Relative URL for public site
                     else:
                         logger.warning(f"⚠️  Skipping post creation: missing content or topic")
                 except (ValueError, KeyError, TypeError) as e:

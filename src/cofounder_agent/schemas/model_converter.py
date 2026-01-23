@@ -319,6 +319,7 @@ class ModelConverter:
         """Convert TaskResponse to UnifiedTaskResponse-compatible dict.
 
         Handles conversion of seo_keywords from JSON string to list.
+        Handles conversion of cost_breakdown from JSON string to dict.
         """
         data = task_response.model_dump()
 
@@ -329,6 +330,37 @@ class ModelConverter:
             except (json.JSONDecodeError, TypeError):
                 # If not valid JSON, wrap in list
                 data["seo_keywords"] = [data["seo_keywords"]] if data["seo_keywords"] else None
+
+        # CRITICAL: Also convert seo_keywords inside result field (TaskResultContent)
+        # The result dict may contain seo_keywords as a JSON string that needs to be a list
+        if "result" in data and isinstance(data["result"], dict) and data["result"]:
+            if "seo_keywords" in data["result"] and isinstance(data["result"]["seo_keywords"], str):
+                try:
+                    data["result"]["seo_keywords"] = json.loads(data["result"]["seo_keywords"])
+                except (json.JSONDecodeError, TypeError):
+                    # If not valid JSON, wrap in list
+                    seo_kw = data["result"]["seo_keywords"]
+                    data["result"]["seo_keywords"] = [seo_kw] if seo_kw else None
+
+        # CRITICAL: Also convert seo_keywords inside task_metadata dict
+        # The task_metadata may contain seo_keywords as a string that should be a list
+        if "task_metadata" in data and isinstance(data["task_metadata"], dict) and data["task_metadata"]:
+            if "seo_keywords" in data["task_metadata"] and isinstance(data["task_metadata"]["seo_keywords"], str):
+                try:
+                    data["task_metadata"]["seo_keywords"] = json.loads(data["task_metadata"]["seo_keywords"])
+                except (json.JSONDecodeError, TypeError):
+                    # If not valid JSON, wrap in list
+                    seo_kw = data["task_metadata"]["seo_keywords"]
+                    data["task_metadata"]["seo_keywords"] = [seo_kw] if seo_kw else None
+
+        # Convert cost_breakdown from JSON string to dict for UnifiedTaskResponse
+        # Similar pattern to seo_keywords - database stores as JSONB string, needs to be dict
+        if "cost_breakdown" in data and isinstance(data["cost_breakdown"], str):
+            try:
+                data["cost_breakdown"] = json.loads(data["cost_breakdown"])
+            except (json.JSONDecodeError, TypeError):
+                # If not valid JSON, set to None
+                data["cost_breakdown"] = None
 
         return data
 
