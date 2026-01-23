@@ -36,5 +36,11 @@
   "terminal.integrated.automationProfile.windows": {
     "path": "C:\\Program Files\\Git\\bin\\bash.exe",
     "args": ["--login", "-i"]
+  },
+  "[markdown]": {
+    "editor.defaultFormatter": "DavidAnson.vscode-markdownlint"
+  },
+  "[css]": {
+    "editor.defaultFormatter": "vscode.css-language-features"
   }
 }
