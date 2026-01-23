@@ -362,6 +362,8 @@ async def process_content_generation_task(
     # NEW: Model selection parameters (Week 1)
     models_by_phase: Optional[Dict[str, str]] = None,
     quality_preference: Optional[str] = None,
+    category: Optional[str] = None,
+    target_audience: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     🚀 Complete Content Generation Pipeline with Image Sourcing & SEO Metadata
@@ -644,6 +646,12 @@ async def process_content_generation_task(
         logger.info("🎓 STAGE 6: Capturing training data...")
 
         # Store quality evaluation in PostgreSQL
+        # Capture readability metrics for context_data
+        word_count = len(content_text.split())
+        paragraph_count = len([p for p in content_text.split("\n\n") if p.strip()])
+        sentences = [s.strip() for s in content_text.split(".") if s.strip()]
+        avg_sentence_length = len(sentences) / word_count if word_count > 0 else 0
+        
         await database_service.create_quality_evaluation(
             {
                 "content_id": task_id,
@@ -661,6 +669,21 @@ async def process_content_generation_task(
                 "suggestions": quality_result.suggestions,
                 "evaluated_by": "ContentQualityService",
                 "evaluation_method": quality_result.evaluation_method,
+                "content_length": len(content_text),
+                "content": content_text,
+                "context_data": {
+                    "topic": topic,
+                    "style": style,
+                    "tone": tone,
+                    "target_length": target_length,
+                    "has_featured_image": featured_image is not None,
+                    "readability_metrics": {
+                        "word_count": word_count,
+                        "paragraph_count": paragraph_count,
+                        "average_sentence_length": round(avg_sentence_length, 2),
+                        "sentence_count": len(sentences),
+                    },
+                },
             }
         )
 
@@ -696,6 +719,14 @@ async def process_content_generation_task(
                 "status": "awaiting_approval",
                 "approval_status": "pending_human_review",
                 "quality_score": int(quality_result.overall_score),
+                "featured_image_url": result.get("featured_image_url"),
+                "seo_title": seo_title,
+                "seo_description": seo_description,
+                "seo_keywords": seo_keywords,
+                "style": style,
+                "tone": tone,
+                "category": result.get("category") or category,
+                "target_audience": target_audience or "General",
                 # 🖼️ Store featured_image_url in task_metadata for later retrieval by approval endpoint
                 "task_metadata": {
                     "featured_image_url": result.get("featured_image_url"),
@@ -708,8 +739,12 @@ async def process_content_generation_task(
                     "topic": topic,
                     "style": style,
                     "tone": tone,
+                    "category": result.get("category") or category,
+                    "target_audience": target_audience or "General",
                     "post_id": result.get("post_id"),
                     "quality_score": quality_result.overall_score,
+                    "content_length": len(content_text),
+                    "word_count": len(content_text.split()),
                 },
             },
         )

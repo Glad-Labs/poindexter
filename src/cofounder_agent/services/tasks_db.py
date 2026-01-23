@@ -405,6 +405,13 @@ class TasksDatabase(DatabaseServiceMixin):
                 normalized_updates["percentage"] = task_metadata.get("percentage")
             if "message" not in normalized_updates and "message" in task_metadata:
                 normalized_updates["message"] = task_metadata.get("message")
+            if "actual_cost" not in normalized_updates and "actual_cost" in task_metadata:
+                normalized_updates["actual_cost"] = task_metadata.get("actual_cost")
+            if "cost_breakdown" not in normalized_updates and "cost_breakdown" in task_metadata:
+                cost_breakdown = task_metadata.get("cost_breakdown")
+                normalized_updates["cost_breakdown"] = json.dumps(cost_breakdown) if isinstance(cost_breakdown, dict) else cost_breakdown
+            if "published_at" not in normalized_updates and "published_at" in task_metadata:
+                normalized_updates["published_at"] = task_metadata.get("published_at")
 
         # Serialize values for PostgreSQL
         serialized_updates = {}

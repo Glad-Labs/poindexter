@@ -155,6 +155,14 @@ class ModelConverter:
             "stage",
             "percentage",
             "message",
+            "category",           # ADD: Content metadata
+            "style",              # ADD: Writing style
+            "tone",               # ADD: Writing tone
+            "target_audience",    # ADD: Target audience
+            "target_length",      # ADD: Target length
+            "primary_keyword",    # ADD: Primary SEO keyword
+            "estimated_cost",     # ADD: Cost tracking
+            "cost_breakdown",     # ADD: Cost breakdown
         ]
 
         for field in normalized_fields:

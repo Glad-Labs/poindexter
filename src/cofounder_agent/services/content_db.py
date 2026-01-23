@@ -300,24 +300,36 @@ class ContentDatabase(DatabaseServiceMixin):
         self, eval_data: Dict[str, Any]
     ) -> QualityEvaluationResponse:
         """
-        Create quality evaluation record.
+        Create quality evaluation record with enhanced context data and content metrics.
 
         Args:
-            eval_data: Dict with content_id, task_id, overall_score, criteria scores, etc.
+            eval_data: Dict with content_id, task_id, overall_score, criteria scores, context_data, content_length, etc.
 
         Returns:
             Created quality_evaluation record
         """
         try:
             criteria = eval_data.get("criteria", {})
+            
+            # Extract context data for enriched evaluation
+            context_data = eval_data.get("context_data", {})
+            if not context_data and "context" in eval_data:
+                context_data = eval_data["context"]
+            
+            # Calculate content_length if not provided
+            content_length = eval_data.get("content_length")
+            if not content_length and "content" in eval_data:
+                content_length = len(eval_data.get("content", ""))
+            
             sql = """
                 INSERT INTO quality_evaluations (
                     content_id, task_id, overall_score, clarity, accuracy, 
                     completeness, relevance, seo_quality, readability, engagement,
                     passing, feedback, suggestions, evaluated_by, evaluation_method,
+                    context_data, content_length,
                     evaluation_timestamp
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW())
                 RETURNING *
             """
             params = [
@@ -336,6 +348,8 @@ class ContentDatabase(DatabaseServiceMixin):
                 json.dumps(eval_data.get("suggestions", [])),
                 eval_data.get("evaluated_by", "QualityEvaluator"),
                 eval_data.get("evaluation_method", "pattern-based"),
+                json.dumps(context_data) if context_data else None,
+                content_length,
             ]
 
             async with self.pool.acquire() as conn:

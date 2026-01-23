@@ -31,6 +31,7 @@ import json
 import logging
 import os
 import asyncio
+import aiohttp
 
 from utils.error_responses import ErrorResponseBuilder
 from utils.route_utils import get_database_dependency
@@ -307,6 +308,8 @@ async def _handle_blog_post_creation(
         "task_type": "blog_post",
         "topic": request.topic.strip(),
         "category": request.category or "general",
+        "target_audience": request.target_audience or "General",
+        "primary_keyword": request.primary_keyword,
         "style": request.style,
         "tone": request.tone,
         "target_length": request.target_length or 1500,
@@ -340,6 +343,8 @@ async def _handle_blog_post_creation(
                 task_id=task_id,
                 models_by_phase=request.models_by_phase,
                 quality_preference=request.quality_preference or "balanced",
+                category=request.category or "general",
+                target_audience=request.target_audience or "General",
             )
         except Exception as e:
             logger.error(f"Blog generation failed: {e}", exc_info=True)
@@ -656,6 +661,13 @@ async def list_tasks(
                 elif isinstance(task["id"], int):
                     # Convert integer id to string for consistency
                     task["id"] = str(task["id"])
+
+                # CRITICAL: Parse cost_breakdown from JSON string to dict
+                if "cost_breakdown" in task and isinstance(task["cost_breakdown"], str):
+                    try:
+                        task["cost_breakdown"] = json.loads(task["cost_breakdown"])
+                    except (json.JSONDecodeError, TypeError):
+                        task["cost_breakdown"] = None
 
                 validated_tasks.append(UnifiedTaskResponse(**task))
             else:
@@ -2077,10 +2089,10 @@ async def reject_task(
 
         # Check if task is in a state that can be rejected
         current_status = task.get("status", "unknown")
-        if current_status not in ["completed", "approved"]:
+        if current_status not in ["completed", "approved", "awaiting_approval"]:
             raise HTTPException(
                 status_code=400,
-                detail=f"Cannot reject task with status '{current_status}'. Must be 'completed' or 'approved'.",
+                detail=f"Cannot reject task with status '{current_status}'. Must be 'completed', 'approved', or 'awaiting_approval'.",
             )
 
         # Update task status to rejected
@@ -2185,8 +2197,22 @@ async def generate_task_image(
                             try:
                                 data = await resp.json()
                                 if data.get("photos"):
-                                    image_url = data["photos"][0]["src"]["large"]
+                                    photo = data["photos"][0]
+                                    image_url = photo["src"]["large"]
                                     logger.info(f"✅ Found Pexels image: {image_url}")
+                                    
+                                    # Store image URL and metadata in task for persistence
+                                    await db_service.update_task(
+                                        task_id,
+                                        {
+                                            "featured_image_url": image_url,
+                                            "task_metadata": {
+                                                "featured_image_url": image_url,
+                                                "featured_image_source": "pexels",
+                                                "featured_image_photographer": photo.get("photographer", "Unknown"),
+                                            }
+                                        }
+                                    )
                             except json.JSONDecodeError as je:
                                 logger.error(f"Failed to parse Pexels response JSON: {je}")
                                 raise ValueError(f"Invalid JSON from Pexels API: {str(je)}")
@@ -2222,10 +2248,8 @@ async def generate_task_image(
         elif source == "sdxl":
             # Use SDXL to generate an image
             try:
-                import os
                 from pathlib import Path
                 from services.image_service import ImageService
-                import uuid
                 
                 image_service = ImageService()
                 
@@ -2242,7 +2266,7 @@ async def generate_task_image(
                 os.makedirs(downloads_path, exist_ok=True)
                 
                 # Create filename with UUID to prevent collisions (UUID instead of timestamp)
-                unique_id = str(uuid.uuid4())[:8]
+                unique_id = str(uuid_lib.uuid4())[:8]
                 output_file = f"sdxl_{unique_id}.png"
                 output_path = os.path.join(downloads_path, output_file)
                 
