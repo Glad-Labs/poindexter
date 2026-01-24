@@ -1374,6 +1374,42 @@ async def update_task(
 # ============================================================================
 
 
+def extract_title_from_content(content: str) -> tuple[str, str]:
+    """
+    Extract title from markdown content if present at the start.
+    
+    LLMs often generate content with a markdown title like:
+    "#Building a PC in 2026: A Comprehensive Guide"
+    
+    This function extracts that title and removes it from content.
+    
+    Args:
+        content: Raw generated content
+        
+    Returns:
+        Tuple of (extracted_title or None, cleaned_content)
+        
+    Example:
+        >>> extract_title_from_content("#My Title\\n\\nContent here")
+        ("My Title", "Content here")
+    """
+    import re
+    
+    if not content:
+        return None, content
+    
+    # Match markdown title at start: # Title or ## Title
+    match = re.match(r"^#+\s+(.+?)(?:\n|$)", content.strip())
+    
+    if match:
+        title = match.group(1).strip()
+        # Remove the title line from content
+        cleaned_content = re.sub(r"^#+\s+.+?(?:\n|$)", "", content.strip(), count=1)
+        return title, cleaned_content.strip()
+    
+    return None, content
+
+
 def clean_generated_content(content: str, title: str = "") -> str:
     """
     Clean up LLM-generated content by removing:
@@ -1828,11 +1864,25 @@ async def approve_task(
                     seo_keywords = merged_result.get("seo_keywords", [])
                     featured_image = featured_image_url or merged_result.get("featured_image_url")
                     metadata = merged_result.get("metadata", {})
+                    
+                    # 🔑 EXTRACT TITLE: LLM often generates "#Title" at start of content
+                    # Extract it and use as the post title, remove from content
+                    extracted_title, cleaned_content = extract_title_from_content(draft_content)
+                    
+                    # Use extracted title if available, otherwise fall back to topic
+                    post_title = extracted_title or merged_result.get("title") or topic
+                    
+                    # Use cleaned content (title removed)
+                    post_content = cleaned_content
+                    
+                    logger.info(f"📝 Post title: {post_title}")
+                    logger.info(f"   Extracted from content: {bool(extracted_title)}")
+                    logger.info(f"   Content length: {len(post_content)} chars")
 
-                    if draft_content and topic:
-                        # Create slug from topic
+                    if post_content and post_title:
+                        # Create slug from title
                         import re as re_module
-                        slug = re_module.sub(r"[^\w\s-]", "", topic).lower().replace(" ", "-")[:50]
+                        slug = re_module.sub(r"[^\w\s-]", "", post_title).lower().replace(" ", "-")[:50]
                         slug = f"{slug}-{task_id[:8]}"
 
                         # Get author and category
@@ -1841,27 +1891,27 @@ async def approve_task(
                             _select_category_for_topic,
                         )
                         author_id = await _get_or_create_default_author(db_service)
-                        category_id = await _select_category_for_topic(topic, db_service)
+                        category_id = await _select_category_for_topic(post_title, db_service)
 
                         # Create post with status='published'
                         post = await db_service.create_post(
                             {
-                                "title": topic,
+                                "title": post_title,
                                 "slug": slug,
-                                "content": draft_content,
+                                "content": post_content,
                                 "excerpt": seo_description,
                                 "featured_image_url": featured_image,
                                 "author_id": author_id,
                                 "category_id": category_id,
                                 "status": "published",  # Published, not draft
-                                "seo_title": topic,
+                                "seo_title": post_title,
                                 "seo_description": seo_description,
                                 "seo_keywords": ",".join(seo_keywords) if seo_keywords else "",
                                 "metadata": metadata,
                             }
                         )
                         logger.info(f"✅ Post created with status='published': {post.id}")
-                        logger.info(f"   Title: {topic}")
+                        logger.info(f"   Title: {post_title}")
                         logger.info(f"   Slug: {slug}")
                         
                         # Store post info in merged_result for response
