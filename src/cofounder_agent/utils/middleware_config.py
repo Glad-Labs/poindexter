@@ -118,7 +118,7 @@ class MiddlewareConfig:
             allow_origins=allowed_origins,
             allow_credentials=True,
             # SECURITY: Restricted from ["*"] to specific methods
-            allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
             # SECURITY: Restricted from ["*"] to specific headers
             allow_headers=["*"],
             expose_headers=["*"],

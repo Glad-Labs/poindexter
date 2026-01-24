@@ -33,6 +33,8 @@ import os
 import asyncio
 import aiohttp
 
+from utils.json_encoder import safe_json_dumps, convert_decimals
+
 from utils.error_responses import ErrorResponseBuilder
 from utils.route_utils import get_database_dependency
 from schemas.model_converter import ModelConverter
@@ -1780,11 +1782,14 @@ async def approve_task(
         logger.info(f"   Has featured_image_url: {bool(merged_result.get('featured_image_url'))}")
         logger.info(f"   Has content: {bool(merged_result.get('content'))}")
         
+        # Convert any Decimal values to float before JSON serialization
+        safe_result = convert_decimals({"metadata": approval_metadata, **merged_result})
+        
         try:
             await db_service.update_task_status(
                 task_id, 
                 new_status, 
-                result=json.dumps({"metadata": approval_metadata, **merged_result})
+                result=safe_json_dumps(safe_result)
             )
         except Exception as e:
             logger.error(f"Failed to update task status to {new_status}: {str(e)}", exc_info=True)
@@ -1801,9 +1806,12 @@ async def approve_task(
                     "published_by": current_user.get("id"),
                 }
                 
+                # Convert Decimals before serialization
+                safe_publish_result = convert_decimals({"metadata": {**approval_metadata, **publish_metadata}, **merged_result})
+                
                 try:
                     await db_service.update_task_status(
-                        task_id, "published", result=json.dumps({"metadata": {**approval_metadata, **publish_metadata}, **merged_result})
+                        task_id, "published", result=safe_json_dumps(safe_publish_result)
                     )
                 except Exception as e:
                     logger.error(f"Failed to update task status to published: {str(e)}", exc_info=True)
@@ -2321,15 +2329,36 @@ async def generate_task_image(
             )
 
         # Update task metadata with generated image URL
-        task_result = task.get("result", {})
-        if isinstance(task_result, str):
-            task_result = json.loads(task_result) if task_result else {}
+        task_result = task.get("result")
+        
+        # Handle None, empty string, or JSON string
+        if task_result is None:
+            task_result = {}
+        elif isinstance(task_result, str):
+            try:
+                task_result = json.loads(task_result) if task_result.strip() else {}
+            except (json.JSONDecodeError, AttributeError):
+                task_result = {}
+        elif not isinstance(task_result, dict):
+            task_result = {}
+        
+        # Also update task_metadata for consistency
+        task_metadata = task.get("task_metadata", {})
+        if isinstance(task_metadata, str):
+            try:
+                task_metadata = json.loads(task_metadata) if task_metadata.strip() else {}
+            except (json.JSONDecodeError, AttributeError):
+                task_metadata = {}
         
         task_result["featured_image_url"] = image_url
+        task_metadata["featured_image_url"] = image_url
         
         await db_service.update_task(
             task_id,
-            {"result": json.dumps(task_result)}
+            {
+                "result": json.dumps(task_result),
+                "task_metadata": json.dumps(task_metadata)
+            }
         )
 
         return {

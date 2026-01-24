@@ -24,10 +24,12 @@ class DatabaseServiceMixin:
 
         Handles:
         - UUID → string
+        - Decimal → float
         - JSONB → parsed dict/list
         - Timestamps → ISO format strings
         """
         import json
+        from decimal import Decimal
 
         if hasattr(row, "keys"):
             data = dict(row)
@@ -38,6 +40,11 @@ class DatabaseServiceMixin:
         if "id" in data and data["id"]:
             if isinstance(data["id"], UUID):
                 data["id"] = str(data["id"])
+        
+        # Convert Decimal to float (for cost/price fields)
+        for key, value in list(data.items()):
+            if isinstance(value, Decimal):
+                data[key] = float(value)
 
         # Handle JSONB fields
         for key in [
