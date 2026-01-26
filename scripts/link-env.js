@@ -32,10 +32,13 @@ function log(message, type = 'info') {
 try {
   const rootDir = process.cwd();
   const rootEnvPath = path.join(rootDir, '.env.local');
-  
+
   // Check if root .env.local exists
   if (!fs.existsSync(rootEnvPath)) {
-    log('⚠️ Root .env.local not found. Skipping environment linking.', 'warning');
+    log(
+      '⚠️ Root .env.local not found. Skipping environment linking.',
+      'warning'
+    );
     process.exit(0);
   }
 
@@ -43,22 +46,22 @@ try {
   const envContent = fs.readFileSync(rootEnvPath, 'utf8');
 
   // Workspace directories that need the env file
-  const workspaces = [
-    'web/public-site',
-    'web/oversight-hub',
-  ];
+  const workspaces = ['web/public-site', 'web/oversight-hub'];
 
   log('\n📦 Linking Root .env.local to Workspaces\n', 'info');
 
   workspaces.forEach((workspace) => {
     const workspaceEnvPath = path.join(rootDir, workspace, '.env.local');
-    
+
     try {
       // Copy root .env.local to workspace
       fs.copyFileSync(rootEnvPath, workspaceEnvPath);
       log(`✅ ${workspace}/.env.local`, 'success');
     } catch (error) {
-      log(`❌ Failed to link ${workspace}/.env.local: ${error.message}`, 'error');
+      log(
+        `❌ Failed to link ${workspace}/.env.local: ${error.message}`,
+        'error'
+      );
       process.exit(1);
     }
   });
@@ -66,7 +69,6 @@ try {
   log('\n✅ All workspaces linked to root .env.local\n', 'success');
   log('Note: Environment variables are sourced from root .env.local', 'info');
   log('To update: Edit /root/.env.local and run: npm run link:env\n', 'info');
-
 } catch (error) {
   log(`\n❌ Error: ${error.message}\n`, 'error');
   process.exit(1);

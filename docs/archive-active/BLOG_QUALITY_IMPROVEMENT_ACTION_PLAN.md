@@ -10,43 +10,49 @@
 
 Your blog has **3 major quality issues** that need immediate attention:
 
-| Article | Issue | Action | Timeline |
-|---------|-------|--------|----------|
-| Making delicious muffins | 🔴 Content quality: 28/100 | Remove/Rewrite | TODAY |
-| AI-Powered NPCs | ⚠️ Incomplete: Ends mid-sentence | Complete article | TODAY |
-| PC Cooling | ✅ Excellent: 92/100 | Use as template | N/A |
+| Article                  | Issue                            | Action           | Timeline |
+| ------------------------ | -------------------------------- | ---------------- | -------- |
+| Making delicious muffins | 🔴 Content quality: 28/100       | Remove/Rewrite   | TODAY    |
+| AI-Powered NPCs          | ⚠️ Incomplete: Ends mid-sentence | Complete article | TODAY    |
+| PC Cooling               | ✅ Excellent: 92/100             | Use as template  | N/A      |
 
 ---
 
 ## What's Wrong (Root Causes)
 
 ### Problem #1: Content Template Issues
+
 **Evidence:** "Making delicious muffins" appears 23+ times in an article that's supposed to be about cooking.
 
 **Root Cause:** Content generation system is using templates with variable placeholders that aren't being replaced properly.
 
-**Impact:** 
+**Impact:**
+
 - Unreadable, unprofessional content
 - Damaged brand reputation
 - Poor SEO performance
 - Bad user experience
 
 ### Problem #2: Incomplete Articles
+
 **Evidence:** "AI-Powered NPCs" article ends mid-sentence: "Furthermore, there is an ongoing"
 
 **Root Cause:** Articles being published without completion verification.
 
 **Impact:**
+
 - Users see broken, unfinished content
 - Trust in content quality is damaged
 - SEO penalties for incomplete content
 
 ### Problem #3: No Quality Gates
+
 **Evidence:** Articles with critical issues are being published without review.
 
 **Root Cause:** No automated validation before publishing to production.
 
 **Impact:**
+
 - Quality issues slip through
 - Multiple articles with the same problem
 - No early warning system
@@ -58,6 +64,7 @@ Your blog has **3 major quality issues** that need immediate attention:
 ### Action 1: Remove "Making Delicious Muffins" Article (15 min)
 
 **Steps:**
+
 ```bash
 1. Go to database or CMS managing the blog posts
 2. Find the "Making delicious muffins" post
@@ -76,17 +83,20 @@ Your blog has **3 major quality issues** that need immediate attention:
 The article is good but incomplete. It needs a conclusion section.
 
 **Current state:**
+
 - ✅ Introduction (good)
-- ✅ Evolution section (good)  
+- ✅ Evolution section (good)
 - ✅ Gameplay impact section (good)
 - ✅ Challenges section (good)
 - ❌ **MISSING: Conclusion**
 
 **What to add:**
+
 ```markdown
 ## Conclusion
 
 Summarize key points about AI-powered NPCs in gaming:
+
 - How they enhance immersion
 - Why they're important for the future of gaming
 - Call to action (future developments, further research)
@@ -95,21 +105,23 @@ Expected length: 150-200 words
 ```
 
 **Where to find it in your system:**
+
 - Either in database as incomplete task
 - Or in PostgreSQL `posts` table
 - Look for the markdown file that contains this post
 
 **Example Conclusion to Write:**
+
 ```
-As AI technology continues to evolve, AI-powered NPCs will play an increasingly 
-important role in shaping the future of gaming. By creating more intelligent, 
-responsive, and realistic characters, game developers can craft experiences that 
+As AI technology continues to evolve, AI-powered NPCs will play an increasingly
+important role in shaping the future of gaming. By creating more intelligent,
+responsive, and realistic characters, game developers can craft experiences that
 are not only more engaging but also more immersive and emotionally resonant.
 
-The challenges that currently exist are solvable, and as we continue to refine 
-AI algorithms and computational capabilities, we can expect to see even more 
-sophisticated NPCs in future games. Whether you're a casual gamer or a professional 
-developer, understanding the role of AI in gaming is essential to staying ahead 
+The challenges that currently exist are solvable, and as we continue to refine
+AI algorithms and computational capabilities, we can expect to see even more
+sophisticated NPCs in future games. Whether you're a casual gamer or a professional
+developer, understanding the role of AI in gaming is essential to staying ahead
 of the curve in this rapidly evolving industry.
 ```
 
@@ -126,6 +138,7 @@ python3 scripts/blog_quality_validator.py
 This shows you exactly what's wrong with problem articles.
 
 **Expected Output:**
+
 ```
 Making delicious muffins:
 - Score: 28/100 (CRITICAL)
@@ -156,6 +169,7 @@ find web/public-site -name "*.md" -exec python3 scripts/blog_quality_validator.p
 ```
 
 **For each article found with issues:**
+
 1. Document the issue type
 2. Prioritize by severity
 3. Create a task to fix it
@@ -177,7 +191,7 @@ async def publish_blog_post(content: str, title: str):
     # Validate before publishing
     validator = BlogQualityValidator()
     score, report = validator.validate(content, title)
-    
+
     # Don't publish if critical issues found
     if score < 70:  # Grade D or F
         return {
@@ -188,16 +202,17 @@ async def publish_blog_post(content: str, title: str):
             "message": f"Content quality too low ({score}/100). Fix issues and try again.",
             "recommendation": report['recommendation']
         }
-    
+
     if score < 85:  # Grade B-
         print(f"⚠️  Publishing with warnings (score: {score}/100)")
         print(f"Warnings: {report['warnings']}")
-    
+
     # Safe to publish
     return await publish_to_database(content, title)
 ```
 
 **This prevents publishing articles that:**
+
 - Have template variable issues
 - Are incomplete
 - Are too short
@@ -222,15 +237,16 @@ async def publish_blog_post(content: str, title: str):
    - String replacement/formatting code
 
 3. **Add validation** to the generation step:
+
    ```python
    def generate_content(topic, template):
        # Generate from template
        content = template.format(topic=topic, context=...)
-       
+
        # Validate - NEW
        validator = BlogQualityValidator()
        score, report = validator.validate(content, topic)
-       
+
        # Only return if passes validation
        if score >= 70:
            return content
@@ -245,18 +261,21 @@ async def publish_blog_post(content: str, title: str):
 ### Week 3: Quality Dashboard
 
 Create a monitoring dashboard showing:
+
 - Quality scores for all articles
 - Trends over time
 - Common issue types
 - Articles needing attention
 
 **Simple implementation:**
+
 ```bash
 # Create a CSV report of all articles
 python3 scripts/blog_quality_validator.py --report-all > quality_report.csv
 ```
 
 Then create a simple HTML page or use existing analytics:
+
 ```python
 # Articles Quality Report
 Total Articles: 7
@@ -280,6 +299,7 @@ Issues by Type:
 **Current Status:** ❌ CRITICAL - Do not publish
 
 **Issues (Count: 8):**
+
 1. Title doesn't match content (about cooking, content is generic)
 2. Template variable "Making delicious muffins" repeated 23+ times
 3. Broken reference: "its relevance to ."
@@ -291,6 +311,7 @@ Issues by Type:
 **Fix Options:**
 
 **Option A: Rewrite Completely** (1 hour)
+
 - Delete current content
 - Write actual muffin recipe/article
 - ~600 words
@@ -298,12 +319,14 @@ Issues by Type:
 - Add proper sections
 
 **Option B: Regenerate with Fixed Parameters** (30 min)
+
 - Use content generation API
 - Ensure template variables are properly replaced
 - Run quality validator
 - Check output before publishing
 
 **Option C: Use Placeholder Content** (15 min)
+
 - Keep title but acknowledge it's placeholder
 - Add note "Coming soon"
 - Fix properly later
@@ -319,6 +342,7 @@ Issues by Type:
 **Current Status:** ⚠️ NEEDS FIXING - Article is incomplete
 
 **Issues:**
+
 1. **CRITICAL:** Ends mid-sentence "Furthermore, there is an ongoing"
 2. Word count too low (414 vs 500+ target)
 3. Some citations show as empty "()" with no source
@@ -327,21 +351,17 @@ Issues by Type:
 
 1. **Complete the final sentence** (5 min):
    Find where it cuts off, complete the thought
-   
 2. **Add conclusion section** (20 min):
    Write 150-200 word conclusion about:
    - Summary of NPC evolution
    - Future of AI in gaming
    - Why it matters to readers
-   
 3. **Add missing citations** (10 min):
    Fill in any empty "()" references with actual sources
-   
 4. **Validate** (5 min):
    ```bash
    python3 scripts/blog_quality_validator.py "How AI-Powered NPCs..."
    ```
-   
 5. **Republish** after passing validation
 
 **ESTIMATED TIME:** 40 minutes  
@@ -355,6 +375,7 @@ Issues by Type:
 **Current Status:** ✅ EXCELLENT - Use as template
 
 **Why it's good:**
+
 - ✅ Clear structure (6 sections with proper hierarchy)
 - ✅ Complete content (no cut-offs)
 - ✅ Proper word count (597 words)
@@ -368,6 +389,7 @@ Issues by Type:
 **Action:** Use this as the TEMPLATE for all future articles.
 
 **What to copy:**
+
 - Opening paragraph structure
 - Section organization (What, Why, Types, How to Choose, Conclusion)
 - List formatting
@@ -381,6 +403,7 @@ Issues by Type:
 Use this rubric for your articles:
 
 **A (90-100):** PUBLISH immediately
+
 - Professional quality
 - 600+ words
 - All complete
@@ -388,24 +411,28 @@ Use this rubric for your articles:
 - Well-structured
 
 **B (80-89):** GOOD - Can publish with minor edits
+
 - ~500-599 words
 - Complete
 - Good structure
 - Minor formatting issues
 
 **C (60-79):** NEEDS WORK - Require edits before publishing
+
 - Some incomplete sections
 - ~400-500 words
 - Topic drift
 - Formatting issues
 
 **D (40-59):** MAJOR ISSUES - Significant rewrite needed
+
 - Many incomplete sections
 - <400 words
 - Topic confusion
 - Multiple template issues
 
 **F (0-39):** DO NOT PUBLISH - Reject and rewrite
+
 - Critical issues
 - Unusable content
 - Severe problems
@@ -456,11 +483,13 @@ Use this rubric for your articles:
 **What it does:** Analyzes blog post content and assigns quality score
 
 **Usage:**
+
 ```bash
 python3 scripts/blog_quality_validator.py
 ```
 
 **Features:**
+
 - ✅ Word count validation
 - ✅ Template variable detection
 - ✅ Sentence completion checking
@@ -474,6 +503,7 @@ python3 scripts/blog_quality_validator.py
 **What it does:** Tests content generation API
 
 **Usage:**
+
 ```bash
 python3 scripts/evaluate_content_quality.py "Your Topic Here"
 ```
@@ -490,22 +520,26 @@ python3 scripts/evaluate_content_quality.py "Your Topic Here"
 Track these to measure improvement:
 
 ### Baseline (Today)
+
 - Average quality score: 62/100
 - Articles with critical issues: 2
 - Publishing without validation: Yes ❌
 
 ### Week 1 Target
+
 - Average quality score: 75/100
 - Articles with critical issues: 0
 - Publishing without validation: No ✅
 
-### Month 1 Target  
+### Month 1 Target
+
 - Average quality score: 85+/100
 - All articles Grade B or better
 - Automated validation in place
 - Zero low-quality articles published
 
 ### Month 2 Target
+
 - All new content passes validation
 - No articles below Grade B
 - Quality monitoring dashboard active
@@ -516,12 +550,14 @@ Track these to measure improvement:
 ## Cost/Benefit Analysis
 
 ### Cost to Fix (Time)
+
 - Immediate actions: 2 hours
 - This week fixes: 8 hours
 - Process implementation: 12 hours
 - **Total: ~22 hours**
 
 ### Benefit of Fixing
+
 - ✅ Improved SEO (quality content ranks better)
 - ✅ Better user experience (no broken articles)
 - ✅ Increased trust (professional quality)
@@ -530,6 +566,7 @@ Track these to measure improvement:
 - ✅ Automated quality gates save time long-term
 
 ### ROI
+
 - **Initial cost:** 22 hours
 - **Ongoing benefit:** Prevents 100s of hours of fixing issues later
 - **Timeline to breakeven:** ~2 weeks
@@ -581,6 +618,7 @@ If you need help:
 **Next Review:** January 29, 2026 (after fixes)
 
 For questions or updates, refer to:
+
 - Quality assessment report: `BLOG_POST_QUALITY_ASSESSMENT.md`
 - Validator tool: `scripts/blog_quality_validator.py`
 - This action plan: `BLOG_QUALITY_IMPROVEMENT_ACTION_PLAN.md`

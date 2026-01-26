@@ -10,22 +10,22 @@
 
 ### Coverage Statistics
 
-| Category | Backend Endpoints | UI Exposed | Coverage | Status |
-|----------|-------------------|------------|----------|--------|
-| **Tasks** | 19 endpoints | 12 exposed | 63% | 🟡 Partial |
-| **Agents** | 6 endpoints | 3 exposed | 50% | 🔴 Critical |
-| **Analytics** | 8 endpoints | 2 exposed | 25% | 🔴 Critical |
-| **Workflows** | 5 endpoints | 2 exposed | 40% | 🔴 Critical |
-| **Social Media** | 6 endpoints | 0 exposed | 0% | 🔴 Missing |
-| **Media/Images** | 5 endpoints | 0 exposed | 0% | 🔴 Missing |
-| **Writing Style** | 9 endpoints | 6 exposed | 67% | 🟡 Partial |
-| **Auth** | 3 endpoints | 3 exposed | 100% | 🟢 Complete |
-| **Chat** | 4 endpoints | 4 exposed | 100% | 🟢 Complete |
-| **Settings** | 11 endpoints | 0 exposed | 0% | 🔴 Missing |
-| **Commands** | 8 endpoints | 0 exposed | 0% | 🔴 Missing |
-| **Bulk Operations** | 2 endpoints | 1 exposed | 50% | 🔴 Critical |
-| **CMS** | 6 endpoints | 0 exposed | 0% | 🔴 Missing |
-| **Ollama** | 5 endpoints | 3 exposed | 60% | 🟡 Partial |
+| Category            | Backend Endpoints | UI Exposed | Coverage | Status      |
+| ------------------- | ----------------- | ---------- | -------- | ----------- |
+| **Tasks**           | 19 endpoints      | 12 exposed | 63%      | 🟡 Partial  |
+| **Agents**          | 6 endpoints       | 3 exposed  | 50%      | 🔴 Critical |
+| **Analytics**       | 8 endpoints       | 2 exposed  | 25%      | 🔴 Critical |
+| **Workflows**       | 5 endpoints       | 2 exposed  | 40%      | 🔴 Critical |
+| **Social Media**    | 6 endpoints       | 0 exposed  | 0%       | 🔴 Missing  |
+| **Media/Images**    | 5 endpoints       | 0 exposed  | 0%       | 🔴 Missing  |
+| **Writing Style**   | 9 endpoints       | 6 exposed  | 67%      | 🟡 Partial  |
+| **Auth**            | 3 endpoints       | 3 exposed  | 100%     | 🟢 Complete |
+| **Chat**            | 4 endpoints       | 4 exposed  | 100%     | 🟢 Complete |
+| **Settings**        | 11 endpoints      | 0 exposed  | 0%       | 🔴 Missing  |
+| **Commands**        | 8 endpoints       | 0 exposed  | 0%       | 🔴 Missing  |
+| **Bulk Operations** | 2 endpoints       | 1 exposed  | 50%      | 🔴 Critical |
+| **CMS**             | 6 endpoints       | 0 exposed  | 0%       | 🔴 Missing  |
+| **Ollama**          | 5 endpoints       | 3 exposed  | 60%      | 🟡 Partial  |
 
 **Overall Coverage: 42% (77 endpoints total, 32 exposed in UI)**
 
@@ -36,6 +36,7 @@
 ### 1. **Analytics Dashboard (25% Coverage)**
 
 **Backend Capabilities (NOT in UI):**
+
 ```python
 # Available but UNUSED:
 GET /api/analytics/kpis?range=7d         # KPI metrics aggregation
@@ -46,18 +47,21 @@ GET /api/analytics/quality/scores        # Quality score distributions
 GET /api/analytics/export                # Export analytics data
 ```
 
-**Impact:** 🔴 **CRITICAL**  
+**Impact:** 🔴 **CRITICAL**
+
 - Executive dashboard cannot display KPIs
 - No cost trend visualizations
 - Missing model performance comparison
 - No quality tracking over time
 
 **UI Components Missing:**
+
 - `AnalyticsDashboard.jsx` (doesn't exist)
 - `CostTrendsChart.jsx` (doesn't exist)
 - `ModelPerformanceComparison.jsx` (doesn't exist)
 
 **Recommended Implementation:**
+
 ```javascript
 // NEEDED: web/oversight-hub/src/services/analyticsService.js
 export const getKPIMetrics = async (range = '7d') => {
@@ -78,6 +82,7 @@ export const getModelPerformance = async () => {
 ### 2. **Agent Management (50% Coverage)**
 
 **Backend Capabilities (NOT in UI):**
+
 ```python
 # Available but UNUSED:
 GET /api/agents/{agent_name}/status      # ✅ Exposed
@@ -88,18 +93,21 @@ GET /api/agents/health                   # ❌ NOT EXPOSED
 ```
 
 **UI Service (`cofounderAgentClient.js`) has methods but NO UI:**
+
 - ✅ `getAgentStatus(agentId)` - **defined but no UI component uses it**
 - ✅ `sendAgentCommand(agentId, command)` - **defined but no UI component uses it**
 - ✅ `getAgentLogs(agentId, limit)` - **defined but no UI component uses it**
 - ❌ `getAgentMemoryStats()` - **missing entirely**
 
-**Impact:** 🔴 **CRITICAL**  
+**Impact:** 🔴 **CRITICAL**
+
 - Cannot view agent logs in UI
 - No agent health monitoring
 - Cannot see agent memory usage
 - Limited agent debugging capability
 
 **UI Components Missing:**
+
 - `AgentLogsViewer.jsx` (doesn't exist)
 - `AgentHealthMonitor.jsx` (doesn't exist)
 - `AgentMemoryStats.jsx` (doesn't exist)
@@ -109,6 +117,7 @@ GET /api/agents/health                   # ❌ NOT EXPOSED
 ### 3. **Workflow History (40% Coverage)**
 
 **Backend Capabilities (NOT in UI):**
+
 ```python
 # Available but UNUSED:
 GET /api/workflow/history                # ✅ Exposed (limited use)
@@ -118,13 +127,15 @@ GET /api/workflow/performance-metrics    # ❌ NOT EXPOSED
 GET /api/workflow/{workflow_id}/history  # ❌ NOT EXPOSED
 ```
 
-**Impact:** 🔴 **CRITICAL**  
+**Impact:** 🔴 **CRITICAL**
+
 - No workflow success/failure statistics
 - Missing performance metrics
 - Cannot view workflow execution trends
 - Limited troubleshooting capability
 
 **UI Components Missing:**
+
 - `WorkflowStatistics.jsx` (doesn't exist)
 - `WorkflowPerformanceMetrics.jsx` (doesn't exist)
 
@@ -133,6 +144,7 @@ GET /api/workflow/{workflow_id}/history  # ❌ NOT EXPOSED
 ### 4. **Social Media Integration (0% Coverage)**
 
 **Backend Capabilities (FULLY BUILT but ZERO UI):**
+
 ```python
 # Backend READY but NO UI:
 GET /api/social/platforms               # List connected platforms
@@ -143,7 +155,8 @@ POST /api/social/post                   # Post to platform
 GET /api/social/analytics               # Get post analytics
 ```
 
-**Impact:** 🔴 **CRITICAL**  
+**Impact:** 🔴 **CRITICAL**
+
 - Social media features completely invisible
 - Cannot connect platforms
 - Cannot generate social content
@@ -151,6 +164,7 @@ GET /api/social/analytics               # Get post analytics
 - **Entire feature module wasted**
 
 **UI Components Needed:**
+
 - `SocialPlatformsManager.jsx` (doesn't exist)
 - `SocialContentGenerator.jsx` (doesn't exist)
 - `SocialPostsCalendar.jsx` (doesn't exist)
@@ -161,6 +175,7 @@ GET /api/social/analytics               # Get post analytics
 ### 5. **Media/Image Management (0% Coverage)**
 
 **Backend Capabilities (FULLY BUILT but ZERO UI):**
+
 ```python
 # Backend READY but NO UI:
 GET /api/media/health                    # Image service health
@@ -170,13 +185,15 @@ POST /api/media/upload                   # Upload custom images
 GET /api/media/gallery                   # View uploaded images
 ```
 
-**Impact:** 🟡 **MEDIUM**  
+**Impact:** 🟡 **MEDIUM**
+
 - Image generation works (backend auto-generates)
 - But no manual image selection UI
 - Cannot upload custom images
 - Cannot browse image gallery
 
 **UI Components Needed:**
+
 - `ImageGallery.jsx` (doesn't exist)
 - `ImageUploader.jsx` (doesn't exist)
 - `ImageSearchPanel.jsx` (doesn't exist)
@@ -186,6 +203,7 @@ GET /api/media/gallery                   # View uploaded images
 ### 6. **Settings Management (0% Coverage)**
 
 **Backend Capabilities (FULLY BUILT but ZERO UI):**
+
 ```python
 # Backend READY but NO UI:
 GET /api/settings/writing-guidelines     # Get guidelines
@@ -201,7 +219,8 @@ POST /api/settings/cost-tracking         # Update cost settings
 GET /api/settings/preferences            # Get user preferences
 ```
 
-**Impact:** 🔴 **CRITICAL**  
+**Impact:** 🔴 **CRITICAL**
+
 - Cannot configure writing guidelines
 - No brand voice customization
 - Missing SEO configuration
@@ -209,6 +228,7 @@ GET /api/settings/preferences            # Get user preferences
 - **Users stuck with defaults**
 
 **UI Components Needed:**
+
 - `SettingsPage.jsx` (doesn't exist)
 - `WritingGuidelinesEditor.jsx` (doesn't exist)
 - `BrandVoiceConfigurator.jsx` (doesn't exist)
@@ -219,6 +239,7 @@ GET /api/settings/preferences            # Get user preferences
 ### 7. **Command Queue (0% Coverage)**
 
 **Backend Capabilities (FULLY BUILT but ZERO UI):**
+
 ```python
 # Backend READY but NO UI:
 POST /api/commands                       # Create command
@@ -231,7 +252,8 @@ GET /api/commands/stats/queue-stats      # Queue statistics
 POST /api/commands/cleanup/clear-old     # Cleanup old commands
 ```
 
-**Impact:** 🟡 **MEDIUM**  
+**Impact:** 🟡 **MEDIUM**
+
 - Cannot view command queue
 - No visibility into queued tasks
 - Missing queue health monitoring
@@ -242,6 +264,7 @@ POST /api/commands/cleanup/clear-old     # Cleanup old commands
 ### 8. **CMS Integration (0% Coverage)**
 
 **Backend Capabilities (FULLY BUILT but ZERO UI):**
+
 ```python
 # Backend READY but NO UI:
 GET /api/posts                           # List all posts
@@ -252,7 +275,8 @@ GET /api/cms/status                      # CMS health
 POST /api/cms/populate-missing-excerpts  # Generate excerpts
 ```
 
-**Impact:** 🟡 **MEDIUM**  
+**Impact:** 🟡 **MEDIUM**
+
 - Can create tasks but cannot browse posts
 - Missing category/tag management
 - No CMS health monitoring
@@ -264,6 +288,7 @@ POST /api/cms/populate-missing-excerpts  # Generate excerpts
 ### 9. **Task Management (63% Coverage)**
 
 **Exposed in UI:**
+
 - ✅ Create task (`POST /api/tasks`)
 - ✅ List tasks (`GET /api/tasks`)
 - ✅ Get task (`GET /api/tasks/{id}`)
@@ -274,6 +299,7 @@ POST /api/cms/populate-missing-excerpts  # Generate excerpts
 - ✅ Delete task (`DELETE /api/tasks/{id}`)
 
 **Missing in UI:**
+
 - ❌ `GET /api/tasks/{id}/status-history` - View status audit trail
 - ❌ `GET /api/tasks/status/info` - Status transition rules
 - ❌ `POST /api/tasks/intent` - NLP intent recognition
@@ -289,6 +315,7 @@ POST /api/cms/populate-missing-excerpts  # Generate excerpts
 ### 10. **Writing Style Management (67% Coverage)**
 
 **Exposed in UI:**
+
 - ✅ Upload sample (`POST /api/writing-style/upload`)
 - ✅ List samples (`GET /api/writing-style/samples`)
 - ✅ Get active (`GET /api/writing-style/active`)
@@ -297,6 +324,7 @@ POST /api/cms/populate-missing-excerpts  # Generate excerpts
 - ✅ Delete sample (`DELETE /api/writing-style/{id}`)
 
 **Missing in UI:**
+
 - ❌ `POST /api/writing-style/retrieve-relevant` - Semantic search
 - ❌ `GET /api/writing-style/retrieve-by-style/{style}` - Filter by style
 - ❌ `GET /api/writing-style/retrieve-by-tone/{tone}` - Filter by tone
@@ -308,11 +336,13 @@ POST /api/cms/populate-missing-excerpts  # Generate excerpts
 ### 11. **Ollama Model Management (60% Coverage)**
 
 **Exposed in UI:**
+
 - ✅ Health check (`GET /api/ollama/health`)
 - ✅ List models (`GET /api/ollama/models`)
 - ✅ Warmup models (`POST /api/ollama/warmup`)
 
 **Missing in UI:**
+
 - ❌ `GET /api/ollama/status` - Detailed Ollama status
 - ❌ `POST /api/ollama/select-model` - Change active model
 
@@ -323,11 +353,13 @@ POST /api/cms/populate-missing-excerpts  # Generate excerpts
 ## 🟢 COMPLETE COVERAGE - Well Implemented
 
 ### 12. **Authentication (100% Coverage)**
+
 - ✅ OAuth callback (`POST /api/auth/github/callback`)
 - ✅ Logout (`POST /api/auth/logout`)
 - ✅ Get user profile (`GET /api/auth/me`)
 
 ### 13. **Chat Interface (100% Coverage)**
+
 - ✅ Send message (`POST /api/chat`)
 - ✅ Get history (`GET /api/chat/history/{id}`)
 - ✅ Clear history (`DELETE /api/chat/history/{id}`)
@@ -398,6 +430,7 @@ POST /api/cms/populate-missing-excerpts  # Generate excerpts
 Current problem: UI services (`cofounderAgentClient.js`) have methods defined but **no components use them**.
 
 **Example:**
+
 ```javascript
 // ✅ Defined in cofounderAgentClient.js
 export async function getAgentLogs(agentId, limit = 100) {
@@ -491,13 +524,13 @@ FastAPI Backend (18 Route Modules)
 
 After implementing recommendations, target metrics:
 
-| Metric | Current | Target | Priority |
-|--------|---------|--------|----------|
-| Endpoint Coverage | 42% | 85%+ | High |
-| Analytics Visibility | 25% | 100% | Critical |
-| Social Features | 0% | 80% | High |
-| Settings Access | 0% | 100% | Critical |
-| Agent Management | 50% | 90% | High |
+| Metric               | Current | Target | Priority |
+| -------------------- | ------- | ------ | -------- |
+| Endpoint Coverage    | 42%     | 85%+   | High     |
+| Analytics Visibility | 25%     | 100%   | Critical |
+| Social Features      | 0%      | 80%    | High     |
+| Settings Access      | 0%      | 100%   | Critical |
+| Agent Management     | 50%     | 90%    | High     |
 
 ---
 
@@ -514,6 +547,7 @@ After implementing recommendations, target metrics:
 ## 🔒 Security Considerations
 
 All routes properly implement:
+
 - ✅ JWT authentication via `get_current_user` dependency
 - ✅ CORS middleware configured
 - ✅ Input validation with Pydantic schemas
@@ -526,12 +560,14 @@ No security gaps identified in interconnectivity layer.
 ## 🏁 Conclusion
 
 **Critical Findings:**
+
 1. **58% of backend capabilities are NOT exposed in the UI**
 2. 7 entire feature modules have **zero UI integration** despite being fully built
 3. `cofounderAgentClient.js` has 40+ methods defined but **only 60% are used by UI components**
 4. Missing 25+ UI components/pages needed to access backend features
 
 **Next Steps:**
+
 1. Implement Phase 1 (Analytics + Settings + Agent Management) - **~2 weeks**
 2. Create missing service files for unexposed routes - **~3 days**
 3. Build UI components for each service method - **~2 weeks**

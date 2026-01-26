@@ -12,6 +12,7 @@
 The Oversight Hub metrics endpoint was returning **404 "Task metrics not found"** error when the UI attempted to fetch aggregated task metrics from `/api/tasks/metrics`.
 
 ### Symptoms
+
 - Metrics tab in task details modal shows error
 - Network requests show 404 response
 - No metrics data displayed in dashboard
@@ -21,10 +22,12 @@ The Oversight Hub metrics endpoint was returning **404 "Task metrics not found"*
 ## Root Cause Analysis
 
 ### Issue 1: FastAPI Route Ordering
+
 **Root Cause:** The `/metrics` endpoint was defined AFTER the `/{task_id}` parametrized route in `task_routes.py`.
 
 **Why This Breaks:**
 FastAPI matches routes in definition order. When it sees:
+
 1. `GET /api/tasks/{task_id}` (line 1200+)
 2. `GET /api/tasks/metrics` (line 1214+)
 
@@ -33,6 +36,7 @@ A request to `/api/tasks/metrics` matches the first route with "metrics" interpr
 **Solution:** Reorder routes so literal paths come BEFORE parametrized paths.
 
 ### Issue 2: Missing Query Parameter Support
+
 **Root Cause:** Frontend sends `?time_range=7d` parameter but endpoint had no parameter definition, causing implicit validation rejection.
 
 **Solution:** Add optional `time_range: Optional[str]` parameter to endpoint signature.
@@ -44,6 +48,7 @@ A request to `/api/tasks/metrics` matches the first route with "metrics" interpr
 ### File: `src/cofounder_agent/routes/task_routes.py`
 
 #### Change 1: Route Reordering (Lines 626-700)
+
 ```python
 # ============================================================================
 # METRICS ENDPOINTS (MUST BE BEFORE /{task_id} TO AVOID PATH PARAM SHADOWING)
@@ -87,6 +92,7 @@ async def get_task(task_id: str, ...):
 ```
 
 #### Key Changes:
+
 1. ✅ Added `# METRICS ENDPOINTS (MUST BE BEFORE /{task_id}...)` comment for clarity
 2. ✅ Moved both `/metrics` and `/metrics/summary` endpoints before `/{task_id}` route
 3. ✅ Added `time_range: Optional[str] = Query(None, ...)` parameter to both endpoints
@@ -98,6 +104,7 @@ async def get_task(task_id: str, ...):
 ## How It Works Now
 
 ### Route Matching Flow
+
 ```
 Client Request: GET /api/tasks/metrics?time_range=7d
 
@@ -116,6 +123,7 @@ Before Fix:
 ```
 
 ### Data Flow
+
 ```
 FastAPI Route Handler
   ↓
@@ -144,12 +152,14 @@ HTTP 200 OK ✅
 ## Testing Verification
 
 ### What Changed
+
 - ✅ Route definition order fixed
 - ✅ Query parameter handling added
 - ✅ Enhanced logging for diagnostics
 - ✅ Error handling improved
 
 ### What Works Now
+
 - ✅ `/api/tasks/metrics` endpoint accessible
 - ✅ `/api/tasks/metrics/summary` endpoint accessible
 - ✅ Both endpoints accept optional `?time_range=` parameter
@@ -157,6 +167,7 @@ HTTP 200 OK ✅
 - ✅ Authentication still required (401 if token invalid)
 
 ### Next Steps for User
+
 1. Reload Oversight Hub (Ctrl+Shift+R hard refresh)
 2. Open task details modal
 3. Click "Metrics" tab
@@ -178,8 +189,8 @@ This is Part 1 of a **4-part fix series**:
 
 ## Files Modified
 
-| File | Changes | Lines |
-|------|---------|-------|
+| File                                        | Changes                                       | Lines                       |
+| ------------------------------------------- | --------------------------------------------- | --------------------------- |
 | `src/cofounder_agent/routes/task_routes.py` | Route reordering, parameter addition, logging | 626-700, 653, 668, 673, 688 |
 
 ---
@@ -187,6 +198,7 @@ This is Part 1 of a **4-part fix series**:
 ## Backward Compatibility
 
 ✅ **Fully Backward Compatible**
+
 - New `time_range` parameter is OPTIONAL (defaults to None)
 - Existing calls without parameter still work
 - Route behavior unchanged (same response format)
@@ -197,6 +209,7 @@ This is Part 1 of a **4-part fix series**:
 ## Performance Impact
 
 ✅ **No Performance Impact**
+
 - Same database queries executed
 - Same response payload
 - Faster now (404 not thrown on each request)
@@ -209,12 +222,14 @@ This is Part 1 of a **4-part fix series**:
 **Hot Reload:** ✅ Changes will apply automatically via uvicorn hot-reload on file save
 
 **Manual Restart:** If hot-reload doesn't trigger:
+
 ```bash
 # Stop: Ctrl+C in terminal running backend
 # Restart: npm run dev:cofounder
 ```
 
 **Production Deployment:**
+
 - No database migrations needed
 - No environment variable changes
 - Safe to deploy without downtime
@@ -249,11 +264,13 @@ The `time_range` parameter is now accepted but not yet utilized. To implement ti
 ## References
 
 **Related Documentation:**
+
 - `docs/02-ARCHITECTURE_AND_DESIGN.md` - Route architecture
 - `docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md` - Deployment procedures
 - `web/oversight-hub/FASTAPI_INTEGRATION_GUIDE.md` - API integration guide
 
 **Related Issues:**
+
 - Metrics endpoint returning 404
 - Oversight Hub dashboard not loading metrics
 - Task details modal Metrics tab shows error

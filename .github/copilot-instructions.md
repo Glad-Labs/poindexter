@@ -50,6 +50,7 @@ npm run dev:all           # All three (same as npm run dev but setup may vary)
 **Services always listen together.** Client code expects all three running. If debugging one service, still keep the others running.
 
 **Ports Always Used:**
+
 - Backend: `8000`
 - Public Site: `3000`
 - Oversight Hub: `3001`
@@ -60,6 +61,7 @@ npm run dev:all           # All three (same as npm run dev but setup may vary)
 **Entry Point:** `src/cofounder_agent/main.py` - FastAPI app with comprehensive route modules and middleware.
 
 **Project Structure (Backend):**
+
 ```
 src/cofounder_agent/
 ├── main.py                    # FastAPI initialization, CORS, middleware setup
@@ -97,6 +99,7 @@ src/cofounder_agent/
 ```
 
 **Specialized Database Modules (DatabaseService Delegates To):**
+
 - `UsersDatabase` - User accounts, OAuth, authentication
 - `TasksDatabase` - Task CRUD, filtering, status tracking
 - `ContentDatabase` - Posts, quality scores, publishing metrics
@@ -173,17 +176,17 @@ npm run format:check
 
 ### 7. Key Files Reference
 
-| Purpose             | Path                                                    | What It Does                                                    |
-| ------------------- | ------------------------------------------------------- | --------------------------------------------------------------- |
-| FastAPI entry       | `src/cofounder_agent/main.py`                           | Route registration, middleware setup, app initialization        |
-| Agent orchestration | `src/cofounder_agent/services/unified_orchestrator.py`  | Coordinates agent fleet, task distribution                      |
-| Database service    | `src/cofounder_agent/services/database_service.py`      | PostgreSQL queries, ORM models, persistence                     |
-| Model routing       | `src/cofounder_agent/services/model_router.py`          | LLM provider selection with fallback chain                      |
-| Content agent       | `src/cofounder_agent/agents/content_agent/`             | 6-stage self-critiquing pipeline                                |
-| Tasks               | `src/cofounder_agent/tasks/`                            | Task models, execution logic, status tracking                   |
-| Routes              | `src/cofounder_agent/routes/`                           | `/tasks`, `/agents`, `/content`, `/models`, `/health` endpoints |
-| Oversight Hub       | `web/oversight-hub/`                                    | React dashboard, agent monitoring, task management              |
-| Public Site         | `web/public-site/`                                      | Next.js content distribution, SEO optimization                  |
+| Purpose             | Path                                                   | What It Does                                                    |
+| ------------------- | ------------------------------------------------------ | --------------------------------------------------------------- |
+| FastAPI entry       | `src/cofounder_agent/main.py`                          | Route registration, middleware setup, app initialization        |
+| Agent orchestration | `src/cofounder_agent/services/unified_orchestrator.py` | Coordinates agent fleet, task distribution                      |
+| Database service    | `src/cofounder_agent/services/database_service.py`     | PostgreSQL queries, ORM models, persistence                     |
+| Model routing       | `src/cofounder_agent/services/model_router.py`         | LLM provider selection with fallback chain                      |
+| Content agent       | `src/cofounder_agent/agents/content_agent/`            | 6-stage self-critiquing pipeline                                |
+| Tasks               | `src/cofounder_agent/tasks/`                           | Task models, execution logic, status tracking                   |
+| Routes              | `src/cofounder_agent/routes/`                          | `/tasks`, `/agents`, `/content`, `/models`, `/health` endpoints |
+| Oversight Hub       | `web/oversight-hub/`                                   | React dashboard, agent monitoring, task management              |
+| Public Site         | `web/public-site/`                                     | Next.js content distribution, SEO optimization                  |
 
 ### 8. Common Developer Patterns
 

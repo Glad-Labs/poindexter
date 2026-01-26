@@ -94,16 +94,16 @@ Implemented complete content management system with:
 **New Functions:**
 
 ```javascript
-fetchPosts()           // GET /api/posts
-handleEditPost()       // Opens PostEditor modal
-handleSavePost()       // PATCH /api/posts/{id}
-handleDeletePost()     // DELETE /api/posts/{id}
-handleViewPost()       // Opens public site URL
+fetchPosts(); // GET /api/posts
+handleEditPost(); // Opens PostEditor modal
+handleSavePost(); // PATCH /api/posts/{id}
+handleDeletePost(); // DELETE /api/posts/{id}
+handleViewPost(); // Opens public site URL
 ```
 
 ### 2. **AppRoutes.jsx - Added Content Route**
 
-**Path:** `web/oversight-hub/src/routes/AppRoutes.jsx`  
+**Path:** `web/oversight-hub/src/routes/AppRoutes.jsx`
 
 **Changes:**
 
@@ -128,7 +128,7 @@ handleViewPost()       // Opens public site URL
 
 ### 3. **apiClient.js - Added getPosts Alias**
 
-**Path:** `web/oversight-hub/src/lib/apiClient.js`  
+**Path:** `web/oversight-hub/src/lib/apiClient.js`
 
 **Changes:**
 
@@ -138,7 +138,7 @@ handleViewPost()       // Opens public site URL
 
 ### 4. **Content.css - Added Loading/Error States**
 
-**Path:** `web/oversight-hub/src/routes/Content.css`  
+**Path:** `web/oversight-hub/src/routes/Content.css`
 
 **Changes:**
 
@@ -148,7 +148,7 @@ handleViewPost()       // Opens public site URL
 
 ### 5. **Sidebar.jsx - Content Link**
 
-**Path:** `web/oversight-hub/src/components/common/Sidebar.jsx`  
+**Path:** `web/oversight-hub/src/components/common/Sidebar.jsx`
 
 **Status:** ✅ Already had Content link (no changes needed)
 

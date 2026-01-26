@@ -12,7 +12,7 @@ This guide walks through testing the complete blog post creation → approval �
 ## 🎯 Complete Pipeline Flow
 
 ```
-CreateTaskModal (React UI) 
+CreateTaskModal (React UI)
     ↓ POST /api/services/tasks/actions/create_task
 Database (tasks table, status='pending')
     ↓ AI Agent Execution
@@ -185,9 +185,9 @@ SELECT * FROM posts WHERE slug LIKE '%future-of-ai%';
 
 ```sql
 -- Should show published post
-SELECT id, title, slug, status, published_at FROM posts 
-WHERE status='published' 
-ORDER BY published_at DESC 
+SELECT id, title, slug, status, published_at FROM posts
+WHERE status='published'
+ORDER BY published_at DESC
 LIMIT 1;
 ```
 
@@ -467,7 +467,7 @@ All tests pass if:
 ✅ **Test 6:** PostEditor modal opens  
 ✅ **Test 7:** Edits saved successfully  
 ✅ **Test 8:** Updated content visible on public site  
-✅ **Test 9:** Post deleted successfully  
+✅ **Test 9:** Post deleted successfully
 
 ---
 

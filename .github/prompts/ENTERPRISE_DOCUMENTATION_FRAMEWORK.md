@@ -107,16 +107,16 @@ Root:
 **Maintenance:** Update when major decisions change, not for every feature  
 **Last Audit:** January 16, 2026 (Per docs/00-README.md)
 
-| File                                | Status   | Purpose             | Audience          | Last Updated | Update Frequency |
-| ----------------------------------- | -------- | ------------------- | ----------------- | ------------ | ---------------- |
-| 00-README.md                        | ✅ LIVE  | Navigation hub      | Everyone          | Jan 16, 2026 | Weekly           |
-| 01-SETUP_AND_OVERVIEW.md            | ✅ LIVE  | Getting started     | New developers    | Current      | Monthly          |
-| 02-ARCHITECTURE_AND_DESIGN.md       | ✅ LIVE  | System design       | Architects        | Current      | Quarterly        |
-| 03-DEPLOYMENT_AND_INFRASTRUCTURE.md | ✅ LIVE  | Deployment          | DevOps/Team Leads | Current      | As needed        |
-| 04-DEVELOPMENT_WORKFLOW.md          | ✅ LIVE  | Development process | Developers        | Current      | Quarterly        |
-| 05-AI_AGENTS_AND_INTEGRATION.md     | ✅ LIVE  | AI architecture     | AI team           | Current      | Quarterly        |
-| 06-OPERATIONS_AND_MAINTENANCE.md    | ✅ LIVE  | Operations          | Operations team   | Current      | Quarterly        |
-| 07-BRANCH_SPECIFIC_VARIABLES.md     | ✅ LIVE  | Environment config  | DevOps            | Current      | As needed        |
+| File                                | Status  | Purpose             | Audience          | Last Updated | Update Frequency |
+| ----------------------------------- | ------- | ------------------- | ----------------- | ------------ | ---------------- |
+| 00-README.md                        | ✅ LIVE | Navigation hub      | Everyone          | Jan 16, 2026 | Weekly           |
+| 01-SETUP_AND_OVERVIEW.md            | ✅ LIVE | Getting started     | New developers    | Current      | Monthly          |
+| 02-ARCHITECTURE_AND_DESIGN.md       | ✅ LIVE | System design       | Architects        | Current      | Quarterly        |
+| 03-DEPLOYMENT_AND_INFRASTRUCTURE.md | ✅ LIVE | Deployment          | DevOps/Team Leads | Current      | As needed        |
+| 04-DEVELOPMENT_WORKFLOW.md          | ✅ LIVE | Development process | Developers        | Current      | Quarterly        |
+| 05-AI_AGENTS_AND_INTEGRATION.md     | ✅ LIVE | AI architecture     | AI team           | Current      | Quarterly        |
+| 06-OPERATIONS_AND_MAINTENANCE.md    | ✅ LIVE | Operations          | Operations team   | Current      | Quarterly        |
+| 07-BRANCH_SPECIFIC_VARIABLES.md     | ✅ LIVE | Environment config  | DevOps            | Current      | As needed        |
 
 ### 2. Decisions (3 Files - Active)
 
@@ -131,6 +131,7 @@ Root:
 3. **WHY_POSTGRESQL.md** - PostgreSQL database selection rationale
 
 **Future Decisions (To be documented as made):**
+
 - Frontend-Backend Integration Architecture (noted in Jan 2026 framework)
 - Additional architectural decisions as system evolves
 
@@ -153,6 +154,7 @@ Root:
 **Current Reference Documentation:**
 
 **Core References:**
+
 - API_CONTRACTS.md - REST endpoint specifications & schemas
 - data_schemas.md - Database schema definitions
 - GLAD-LABS-STANDARDS.md - Code quality standards & guidelines
@@ -160,10 +162,12 @@ Root:
 - GITHUB_SECRETS_SETUP.md - Production secrets management
 
 **Task Management:**
+
 - TASK_STATUS_AUDIT_REPORT.md - Task status system documentation
 - TASK_STATUS_QUICK_START.md - Task status quick reference
 
 **CI/CD Pipeline:**
+
 - ci-cd/GITHUB_ACTIONS_REFERENCE.md - GitHub Actions workflows
 - ci-cd/BRANCH_HIERARCHY_IMPLEMENTATION_SUMMARY.md - Branch strategy details
 - ci-cd/BRANCH_HIERARCHY_QUICK_REFERENCE.md - Quick branch reference
@@ -232,12 +236,14 @@ Root:
 **Archive Organization (as of January 21, 2026):**
 
 **Cleanup & Maintenance Records:**
+
 - cleanup-history/ - Documentation consolidation records
 - docs-violations/ - Documentation audit findings
 - duplicates/ - File deduplication records
 - root-cleanup/ - Root directory cleanup procedures
 
 **Session & Phase Documentation:**
+
 - sessions/ - Complete session-by-session work
 - session-files/ - Additional session records
 - root-level-sessions/ - Previous root-level sessions
@@ -245,12 +251,14 @@ Root:
 - phase-specific/ - Implementation phase details
 
 **Legacy & Reference:**
+
 - legacy-root-docs/ - Previous root documentation
 - reference-deprecated/ - Deprecated reference docs
 - planned-features/ - Feature planning archive
 - cofounder-agent/ - Historical co-founder agent docs
 
 **Dated Session Files:**
+
 - 1150+ files with clear date/session naming
 - Preserved for historical context and audit trail
 - Organized chronologically (Dec 23, 2025 onward)
@@ -478,26 +486,26 @@ Documentation reflects architectural decisions:
 
 ### Documentation Inventory
 
-| Category | Files | Status | Last Updated |
-|----------|-------|--------|--------------|
-| Core Documentation | 8 | ✅ Complete | Jan 16, 2026 |
-| Decision Records | 3 | ✅ Active | Current |
-| Reference Docs | 10+ | ✅ Complete | Current |
-| Troubleshooting | 4 | ✅ Active | Current |
-| Components | 4 | ✅ Complete | Current |
-| Archive | 1150+ | ✅ Organized | Through Jan 21, 2026 |
-| **TOTAL** | **1180+** | **✅ ENTERPRISE-READY** | **Current** |
+| Category           | Files     | Status                  | Last Updated         |
+| ------------------ | --------- | ----------------------- | -------------------- |
+| Core Documentation | 8         | ✅ Complete             | Jan 16, 2026         |
+| Decision Records   | 3         | ✅ Active               | Current              |
+| Reference Docs     | 10+       | ✅ Complete             | Current              |
+| Troubleshooting    | 4         | ✅ Active               | Current              |
+| Components         | 4         | ✅ Complete             | Current              |
+| Archive            | 1150+     | ✅ Organized            | Through Jan 21, 2026 |
+| **TOTAL**          | **1180+** | **✅ ENTERPRISE-READY** | **Current**          |
 
 ### Coverage by Audience
 
-| Audience | Primary Docs | Status |
-|----------|-------------|--------|
-| New Developers | 01-SETUP | ✅ Current |
-| All Developers | 04-DEVELOPMENT_WORKFLOW | ✅ Current |
-| Architects | 02-ARCHITECTURE_AND_DESIGN | ✅ Current |
+| Audience              | Primary Docs                       | Status     |
+| --------------------- | ---------------------------------- | ---------- |
+| New Developers        | 01-SETUP                           | ✅ Current |
+| All Developers        | 04-DEVELOPMENT_WORKFLOW            | ✅ Current |
+| Architects            | 02-ARCHITECTURE_AND_DESIGN         | ✅ Current |
 | DevOps/Infrastructure | 03-DEPLOYMENT + 07-BRANCH_SPECIFIC | ✅ Current |
-| AI/Agent Team | 05-AI_AGENTS_AND_INTEGRATION | ✅ Current |
-| Operations Team | 06-OPERATIONS_AND_MAINTENANCE | ✅ Current |
+| AI/Agent Team         | 05-AI_AGENTS_AND_INTEGRATION       | ✅ Current |
+| Operations Team       | 06-OPERATIONS_AND_MAINTENANCE      | ✅ Current |
 
 ### Quality Metrics
 
@@ -565,16 +573,19 @@ Documentation reflects architectural decisions:
 ### Complete (January 21, 2026)
 
 ✅ **Core Documentation** - All 8 documents active and maintained
+
 - Last audit: January 16, 2026
 - All files present and current
 - Navigation hub updated regularly
 
 ✅ **Decisions Framework** - Master decision record system active
+
 - 3 core decision records implemented
 - Decision template in use
 - Index maintained (DECISIONS.md)
 
 ✅ **Reference Documentation** - Comprehensive technical specs library
+
 - 10+ reference documents active
 - API contracts specified
 - Database schemas documented
@@ -583,17 +594,20 @@ Documentation reflects architectural decisions:
 - Code standards documented
 
 ✅ **Troubleshooting** - Active issue resolution system
+
 - 4 documented troubleshooting files
 - Railway deployment guide
 - Build fixes documentation
 - Compilation issues covered
 
 ✅ **Component Documentation** - Multi-service architecture documented
+
 - 4 components documented (CoFounder Agent, Oversight Hub, Public Site, Strapi CMS)
 - Component troubleshooting structure in place
 - Architecture overview per component
 
 ✅ **Archive System** - 1150+ historical files organized
+
 - Complete session history preserved
 - Phase documentation archived
 - Legacy documents organized with clear dating
@@ -603,17 +617,20 @@ Documentation reflects architectural decisions:
 ### In Progress / Planned (Q1-Q2 2026)
 
 🔄 **Component Troubleshooting Expansion**
+
 - Oversight Hub specific troubleshooting guides
 - Public Site specific troubleshooting guides
 - Component-level quick references
 
 🔄 **Advanced Documentation (Phase 2)**
+
 - Architecture diagrams (Mermaid)
 - Sequence diagrams for complex flows
 - API testing guide
 - Performance tuning guide
 
 🔄 **Automation (Phase 3)**
+
 - API documentation auto-generation
 - Link validation in CI/CD
 - Documentation coverage reporting
@@ -623,7 +640,7 @@ Documentation reflects architectural decisions:
 **For questions about documentation standards:** See this framework document  
 **To add a new architectural decision:** Use the decision record template above  
 **To report broken documentation:** File an issue with the file path and location  
-**To archive documentation:** See archive guidelines in folder structure section above  
+**To archive documentation:** See archive guidelines in folder structure section above
 
 ## 📈 Current Status Summary (January 21, 2026)
 
