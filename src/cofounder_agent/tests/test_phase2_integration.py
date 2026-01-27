@@ -202,14 +202,10 @@ class TestRouteFileUpdates:
         except ImportError as e:
             pytest.fail(f"Failed to import task_routes: {e}")
 
+    @pytest.mark.skip(reason="subtask_routes module removed - consolidated into task_routes")
     def test_subtask_routes_has_dependency(self):
         """Test that subtask_routes.py has the dependency import"""
-        try:
-            from routes.subtask_routes import router as subtask_router
-
-            assert subtask_router is not None
-        except ImportError as e:
-            pytest.fail(f"Failed to import subtask_routes: {e}")
+        pass
 
     def test_bulk_task_routes_has_dependency(self):
         """Test that bulk_task_routes.py has the dependency import"""
@@ -441,14 +437,10 @@ class TestFullRouteIntegration:
         except ImportError as e:
             pytest.fail(f"Could not import content_routes: {e}")
 
+    @pytest.mark.skip(reason="subtask_routes module removed - consolidated into task_routes")
     def test_subtask_route_imports(self):
         """Test that subtask_routes can be imported and has router"""
-        try:
-            from routes.subtask_routes import router as subtask_router
-
-            assert subtask_router is not None
-        except ImportError as e:
-            pytest.fail(f"Could not import subtask_routes: {e}")
+        pass
 
     def test_bulk_task_route_imports(self):
         """Test that bulk_task_routes can be imported and has router"""

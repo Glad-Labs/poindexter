@@ -856,8 +856,8 @@ def sample_format_request():
 
 @pytest.fixture(autouse=True)
 def initialize_subtask_db_service():
-    """Initialize db_service in task_routes and subtask_routes for test execution"""
-    from routes import subtask_routes, task_routes
+    """Initialize db_service in task_routes for test execution"""
+    from routes import task_routes
     from services.database_service import DatabaseService
     from unittest.mock import AsyncMock, MagicMock
     from utils.route_utils import register_legacy_db_service
@@ -921,13 +921,11 @@ def initialize_subtask_db_service():
     register_legacy_db_service(mock_db)
     
     # Also set on the route modules for backward compatibility
-    subtask_routes.db_service = mock_db
     task_routes.db_service = mock_db
 
     yield
 
     # Cleanup
-    subtask_routes.db_service = None
     task_routes.db_service = None
     created_tasks.clear()
 
