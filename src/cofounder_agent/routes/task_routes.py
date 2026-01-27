@@ -2406,8 +2406,8 @@ async def generate_task_image(
         await db_service.update_task(
             task_id,
             {
-                "result": json.dumps(task_result),
-                "task_metadata": json.dumps(task_metadata)
+                "result": safe_json_dumps(task_result),
+                "task_metadata": safe_json_dumps(task_metadata)
             }
         )
 
