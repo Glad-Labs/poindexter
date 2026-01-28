@@ -13,6 +13,8 @@ from fastapi import APIRouter, HTTPException
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
+from services.model_constants import PROVIDER_ICONS
+
 from services.model_consolidation_service import get_model_consolidation_service
 from schemas.models_schemas import (
     ModelInfo,
@@ -51,16 +53,9 @@ async def get_available_models():
 
         # Flatten models from all providers
         models_list = []
-        provider_icons = {
-            "ollama": "🖥️",
-            "huggingface": "🌐",
-            "google": "☁️",
-            "anthropic": "🧠",
-            "openai": "⚡",
-        }
 
         for provider, model_names in models_dict.items():
-            icon = provider_icons.get(provider, "🤖")
+            icon = PROVIDER_ICONS.get(provider, "🤖")
             for model_name in model_names:
                 models_list.append(
                     ModelInfo(
@@ -132,17 +127,10 @@ async def get_recommended_models():
         # Return models in fallback chain priority order
         models_list = []
         provider_order = ["ollama", "huggingface", "google", "anthropic", "openai"]
-        provider_icons = {
-            "ollama": "🖥️",
-            "huggingface": "🌐",
-            "google": "☁️",
-            "anthropic": "🧠",
-            "openai": "⚡",
-        }
 
         for provider in provider_order:
             model_names = models_dict.get(provider, [])
-            icon = provider_icons.get(provider, "🤖")
+            icon = PROVIDER_ICONS.get(provider, "🤖")
             for model_name in model_names[:1]:  # Just first model per provider
                 models_list.append(
                     ModelInfo(
@@ -186,20 +174,13 @@ async def get_rtx5070_models():
         models_dict = service.list_models()
 
         models_list = []
-        provider_icons = {
-            "ollama": "🖥️",
-            "huggingface": "🌐",
-            "google": "☁️",
-            "anthropic": "🧠",
-            "openai": "⚡",
-        }
 
         # Ollama models first (local, use VRAM), then cloud models
         provider_order = ["ollama", "huggingface", "google", "anthropic", "openai"]
 
         for provider in provider_order:
             model_names = models_dict.get(provider, [])
-            icon = provider_icons.get(provider, "🤖")
+            icon = PROVIDER_ICONS.get(provider, "🤖")
 
             # Limit Ollama to 2 models to respect VRAM
             limit = 2 if provider == "ollama" else 3
@@ -245,16 +226,9 @@ async def get_models_list():
 
         # Flatten models from all providers
         models_list = []
-        provider_icons = {
-            "ollama": "🖥️",
-            "huggingface": "🌐",
-            "google": "☁️",
-            "anthropic": "🧠",
-            "openai": "⚡",
-        }
 
         for provider, model_names in models_dict.items():
-            icon = provider_icons.get(provider, "🤖")
+            icon = PROVIDER_ICONS.get(provider, "🤖")
             for model_name in model_names:
                 models_list.append(
                     {

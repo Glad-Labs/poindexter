@@ -26,11 +26,14 @@ class GeminiClient:
         """
         self.api_key = api_key or os.getenv("GOOGLE_API_KEY")
         self.base_url = "https://generativelanguage.googleapis.com/v1"
+        # NOTE: As of Jan 2025, these are the available Gemini models
+        # gemini-1.5-pro and gemini-1.5-flash are DEPRECATED
         self.available_models = [
-            "gemini-pro",
-            "gemini-pro-vision",
-            "gemini-1.5-pro",
-            "gemini-1.5-flash",
+            "gemini-2.5-flash",      # Latest fast model (CURRENT)
+            "gemini-2.5-pro",        # Latest high-quality model (CURRENT)
+            "gemini-2.0-flash",      # Previous fast model
+            "gemini-pro-latest",     # Alias for latest pro
+            "gemini-flash-latest",   # Alias for latest flash
         ]
 
         if not self.api_key:

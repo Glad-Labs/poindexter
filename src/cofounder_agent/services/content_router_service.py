@@ -222,6 +222,8 @@ class ContentGenerationService:
         target_length: int,
         tags: Optional[List[str]] = None,
         enhanced: bool = False,
+        preferred_model: Optional[str] = None,
+        preferred_provider: Optional[str] = None,
     ) -> tuple:
         """
         Generate blog post content
@@ -233,6 +235,8 @@ class ContentGenerationService:
             target_length: Target word count
             tags: Tags for categorization
             enhanced: Whether to use SEO enhancement
+            preferred_model: User-selected model name (e.g., 'gpt-4', 'gemini-pro')
+            preferred_provider: User-selected provider ('openai', 'anthropic', 'gemini', 'ollama')
 
         Returns:
             Tuple of (content, model_used, metrics)
@@ -264,6 +268,8 @@ class ContentGenerationService:
                 tone=tone,
                 target_length=target_length,
                 tags=tags or [],
+                preferred_model=preferred_model,
+                preferred_provider=preferred_provider,
             )
             return content, model_used, metrics
 
@@ -467,8 +473,68 @@ async def process_content_generation_task(
         logger.info("✍️  STAGE 2: Generating blog content...")
 
         content_generator = get_content_generator()
+        
+        # Extract user model preferences from models_by_phase (if provided)
+        preferred_model = None
+        preferred_provider = None
+        logger.info(f"🔍 STEP 2A: Processing model selections from UI")
+        logger.info(f"   models_by_phase = {models_by_phase}")
+        if models_by_phase:
+            # Try to get model for 'draft' phase (main content generation)
+            draft_model = models_by_phase.get('draft') or models_by_phase.get('generate') or models_by_phase.get('content')
+            logger.info(f"   draft_model = {draft_model}")
+            if draft_model and draft_model != 'auto':
+                # Clean up malformed model names (e.g., "gemini-gemini-pro" → "gemini-pro")
+                draft_model = draft_model.strip()
+                
+                # Parse provider and model from selection
+                # Format can be: "gemini", "gemini/gemini-pro", "gpt-4", "claude-3-opus", etc.
+                if '/' in draft_model:
+                    preferred_provider, preferred_model = draft_model.split('/', 1)
+                else:
+                    # Infer provider from model name
+                    draft_model_lower = draft_model.lower()
+                    
+                    # Handle duplicate provider prefixes (e.g., "gemini-gemini-pro", "gpt-gpt-4")
+                    if draft_model_lower.startswith('gemini-gemini-'):
+                        # "gemini-gemini-1.5-pro" → provider: "gemini", model: "gemini-1.5-pro"
+                        preferred_provider = 'gemini'
+                        preferred_model = draft_model_lower[7:]  # Strip first "gemini-"
+                    elif draft_model_lower.startswith('gpt-gpt-'):
+                        # "gpt-gpt-4" → provider: "openai", model: "gpt-4"
+                        preferred_provider = 'openai'
+                        preferred_model = draft_model_lower[4:]  # Strip first "gpt-"
+                    elif draft_model_lower.startswith('claude-claude-'):
+                        # "claude-claude-opus" → provider: "anthropic", model: "claude-opus"
+                        preferred_provider = 'anthropic'
+                        preferred_model = draft_model_lower[7:]  # Strip first "claude-"
+                    elif 'gemini' in draft_model_lower:
+                        preferred_provider = 'gemini'
+                        preferred_model = draft_model
+                    elif 'gpt' in draft_model_lower or 'openai' in draft_model_lower:
+                        preferred_provider = 'openai'
+                        preferred_model = draft_model
+                    elif 'claude' in draft_model_lower or 'anthropic' in draft_model_lower:
+                        preferred_provider = 'anthropic'
+                        preferred_model = draft_model
+                    elif 'ollama' in draft_model_lower or 'mistral' in draft_model_lower or 'llama' in draft_model_lower:
+                        preferred_provider = 'ollama'
+                        preferred_model = draft_model
+                    else:
+                        # Default to model name as-is
+                        preferred_model = draft_model
+                        
+                logger.info(f"   ✅ FINAL: preferred_model='{preferred_model}', preferred_provider='{preferred_provider}'")
+                logger.info(f"🎯 User selected model: {preferred_model or 'auto'} (provider: {preferred_provider or 'auto'})")
+        
         content_text, model_used, metrics = await content_generator.generate_blog_post(
-            topic=topic, style=style, tone=tone, target_length=target_length, tags=tags or []
+            topic=topic, 
+            style=style, 
+            tone=tone, 
+            target_length=target_length, 
+            tags=tags or [],
+            preferred_model=preferred_model,
+            preferred_provider=preferred_provider,
         )
 
         # Validate content_text is not None

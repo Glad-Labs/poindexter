@@ -2051,9 +2051,23 @@ async def publish_task(
             metadata = task_result.get("metadata", {})
 
             if draft_content and topic:
-                # Create slug from topic
+                # 🔑 EXTRACT TITLE: LLM often generates "#Title" at start of content
+                # Extract it and use as the post title, remove from content
+                extracted_title, cleaned_content = extract_title_from_content(draft_content)
+                
+                # Use extracted title if available, otherwise fall back to topic
+                post_title = extracted_title or task_result.get("title") or topic
+                
+                # Use cleaned content (title removed)
+                post_content = cleaned_content
+                
+                logger.info(f"📝 Post title: {post_title}")
+                logger.info(f"   Extracted from content: {bool(extracted_title)}")
+                logger.info(f"   Content length: {len(post_content)} chars")
+                
+                # Create slug from title (not topic)
                 import re as re_module
-                slug = re_module.sub(r"[^\w\s-]", "", topic).lower().replace(" ", "-")[:50]
+                slug = re_module.sub(r"[^\w\s-]", "", post_title).lower().replace(" ", "-")[:50]
                 slug = f"{slug}-{task_id[:8]}"
 
                 # Get author and category
@@ -2062,27 +2076,27 @@ async def publish_task(
                     _select_category_for_topic,
                 )
                 author_id = await _get_or_create_default_author(db_service)
-                category_id = await _select_category_for_topic(topic, db_service)
+                category_id = await _select_category_for_topic(post_title, db_service)
 
                 # Create post with status='published'
                 post = await db_service.create_post(
                     {
-                        "title": topic,
+                        "title": post_title,  # Use extracted title
                         "slug": slug,
-                        "content": draft_content,
+                        "content": post_content,  # Use cleaned content
                         "excerpt": seo_description,
                         "featured_image_url": featured_image_url,
                         "author_id": author_id,
                         "category_id": category_id,
                         "status": "published",  # Published, not draft
-                        "seo_title": topic,
+                        "seo_title": post_title,  # Use extracted title for SEO
                         "seo_description": seo_description,
                         "seo_keywords": ",".join(seo_keywords) if seo_keywords else "",
                         "metadata": metadata,
                     }
                 )
                 logger.info(f"✅ Post created with status='published': {post.id}")
-                logger.info(f"   Title: {topic}")
+                logger.info(f"   Title: {post_title}")
                 logger.info(f"   Slug: {slug}")
             else:
                 logger.warning(f"⚠️  Skipping post creation: missing content or topic")

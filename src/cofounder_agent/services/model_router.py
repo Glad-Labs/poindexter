@@ -23,6 +23,8 @@ from enum import Enum
 import structlog
 import os
 
+from .model_constants import MODEL_COSTS
+
 logger = structlog.get_logger(__name__)
 
 
@@ -139,27 +141,6 @@ class ModelRouter:
         )
         # Returns: ("gpt-3.5-turbo", 0.0003) instead of ("gpt-4", 0.006)
     """
-
-    # Model pricing (per 1K tokens, average of input/output)
-    MODEL_COSTS = {
-        # OpenAI models
-        "gpt-4-turbo": 0.045,  # $0.03 in + $0.06 out
-        "gpt-4": 0.045,
-        "gpt-3.5-turbo": 0.00175,  # $0.0015 in + $0.002 out
-        # Anthropic Claude models
-        "claude-opus-3": 0.045,  # $0.015 in + $0.075 out
-        "claude-sonnet-3": 0.015,  # $0.003 in + $0.015 out
-        "claude-haiku-3": 0.0010,  # $0.00025 in + $0.00125 out
-        "claude-instant": 0.0016,  # $0.0008 in + $0.0024 out
-        # Ollama models (100% FREE!)
-        "ollama/llama2": 0.0,  # FREE - 7B model, fast
-        "ollama/llama2:13b": 0.0,  # FREE - 13B model, excellent quality
-        "ollama/llama2:70b": 0.0,  # FREE - 70B model, outstanding
-        "ollama/mistral": 0.0,  # FREE - Very fast, excellent quality
-        "ollama/mixtral": 0.0,  # FREE - 8x7B, outstanding reasoning
-        "ollama/codellama": 0.0,  # FREE - Best for code tasks
-        "ollama/phi": 0.0,  # FREE - 2.7B, blazing fast for simple tasks
-    }
 
     # Task type complexity mapping
     TASK_COMPLEXITY = {
@@ -340,11 +321,11 @@ class ModelRouter:
                 model = recommendation["fallback"]
 
         # Calculate estimated cost
-        cost_per_1k = self.MODEL_COSTS.get(model, 0.045)
+        cost_per_1k = MODEL_COSTS.get(model, 0.045)
         estimated_cost = (estimated_tokens / 1000) * cost_per_1k
 
         # Calculate savings vs. always using GPT-4
-        premium_cost = (estimated_tokens / 1000) * self.MODEL_COSTS["gpt-4-turbo"]
+        premium_cost = (estimated_tokens / 1000) * MODEL_COSTS["gpt-4-turbo"]
         cost_saved = premium_cost - estimated_cost
 
         # Update metrics
@@ -409,7 +390,7 @@ class ModelRouter:
 
     def get_model_cost(self, model: str) -> float:
         """Get cost per 1K tokens for a model."""
-        return self.MODEL_COSTS.get(model, 0.045)
+        return MODEL_COSTS.get(model, 0.045)
 
     def get_max_tokens(self, task_type: str, context: Optional[Dict[str, Any]] = None) -> int:
         """
@@ -520,7 +501,7 @@ class ModelRouter:
             Model name or None if budget insufficient
         """
         # Sort models by cost
-        sorted_models = sorted(self.MODEL_COSTS.items(), key=lambda x: x[1])
+        sorted_models = sorted(MODEL_COSTS.items(), key=lambda x: x[1])
 
         for model, cost_per_1k in sorted_models:
             estimated_cost = (estimated_tokens / 1000) * cost_per_1k

@@ -55,11 +55,14 @@ class AIContentGenerator:
         self.ollama_available = False
         self.ollama_checked = False  # Track if we've checked Ollama async
         self.hf_token = os.getenv("HUGGINGFACE_API_TOKEN")
-        self.gemini_key = os.getenv("GEMINI_API_KEY")
+        # Support both GEMINI_API_KEY and GOOGLE_API_KEY for backward compatibility
+        self.gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         self.generation_attempts = 0
         self.max_refinement_attempts = 3
 
         logger.info("AIContentGenerator initialized (Ollama check deferred to first async call)")
+        logger.debug(f"   HuggingFace token: {'✓ set' if self.hf_token else '✗ not set'}")
+        logger.debug(f"   Gemini/Google key: {'✓ set' if self.gemini_key else '✗ not set'}")
 
     async def _check_ollama_async(self):
         """Async check if Ollama is running - call this once before using Ollama"""
@@ -176,11 +179,14 @@ class AIContentGenerator:
         tone: str,
         target_length: int,
         tags: list[str],
+        preferred_model: Optional[str] = None,
+        preferred_provider: Optional[str] = None,
     ) -> Tuple[str, str, Dict[str, Any]]:
         """
         Generate a blog post using best available model with self-checking.
 
         Features:
+        - User-selected model support (respects frontend UI choices)
         - Intelligent provider fallback (Ollama → HuggingFace → Gemini)
         - Self-validation and quality checking
         - Refinement loop for rejected content
@@ -192,6 +198,8 @@ class AIContentGenerator:
             tone: Content tone (professional, casual, etc.)
             target_length: Target word count
             tags: Content tags
+            preferred_model: User-selected model (e.g., 'gpt-4', 'claude-3-opus', 'gemini-pro')
+            preferred_provider: User-selected provider ('openai', 'anthropic', 'gemini', 'ollama', 'huggingface')
 
         Returns:
             Tuple of (content, model_used, metrics_dict)
@@ -203,11 +211,25 @@ class AIContentGenerator:
         logger.info(f"📌 Style: {style} | Tone: {tone}")
         logger.info(f"📌 Target length: {target_length} words | Tags: {tags}")
         logger.info(f"📌 Quality threshold: {self.quality_threshold}")
+        logger.info(f"📌 Preferred model: {preferred_model or 'auto'}")
+        logger.info(f"📌 Preferred provider: {preferred_provider or 'auto'}")
+        logger.info(f"📌 HuggingFace token: {'✓' if self.hf_token else '✗'}")
+        logger.info(f"📌 Gemini key: {'✓' if self.gemini_key else '✗'}")
         logger.info(f"{'='*80}\n")
 
         # Check if Ollama is available (async check, happens once)
-        await self._check_ollama_async()
-        logger.info(f"📌 Ollama available: {self.ollama_available}\n")
+        # Skip Ollama check if user explicitly selected a cloud provider
+        skip_ollama = preferred_provider and preferred_provider.lower() not in ['ollama', 'auto']
+        
+        # Use local variable to avoid polluting instance state across requests
+        use_ollama = False
+        if skip_ollama:
+            logger.info(f"📌 Skipping Ollama (user selected provider: {preferred_provider})\n")
+            use_ollama = False
+        else:
+            await self._check_ollama_async()
+            use_ollama = self.ollama_available
+            logger.info(f"📌 Ollama available: {use_ollama}\n")
 
         # Build prompts
         system_prompt = f"""You are an expert technical writer and blogger.
@@ -258,6 +280,8 @@ Improved version:"""
             "model_used": None,
             "final_quality_score": 0.0,
             "generation_time_seconds": 0,
+            "preferred_model": preferred_model,
+            "preferred_provider": preferred_provider,
         }
 
         start_time = time.time()
@@ -265,8 +289,87 @@ Improved version:"""
         # Try models in order of preference
         attempts = []
 
+        logger.info(f"🔍 PROVIDER CHECK:")
+        logger.info(f"   User selection - provider: {preferred_provider}, model: {preferred_model}")
+        logger.info(f"   Ollama - use_ollama: {use_ollama}, available: {self.ollama_available}")
+        logger.info(f"   HuggingFace - token: {'✓' if self.hf_token else '✗'}")
+        logger.info(f"   Gemini - key: {'✓' if self.gemini_key else '✗'}")
+        logger.info(f"")
+
+        # ========================================================================
+        # USER SELECTION: Try user-selected provider/model first if specified
+        # ========================================================================
+        if preferred_provider and preferred_provider.lower() == 'gemini' and self.gemini_key:
+            logger.info(f"🎯 Attempting user-selected provider: Gemini (preferred_model: {preferred_model or 'auto'})...")
+            try:
+                # Import google.generativeai library (the stable SDK)
+                try:
+                    import google.generativeai as genai
+                except ImportError:
+                    # Fallback to newer google.genai if available
+                    import google.genai as genai
+
+                genai.configure(api_key=self.gemini_key)
+                
+                # Map generic model names to actual Gemini API models
+                model_name = preferred_model if preferred_model and 'gemini' in preferred_model.lower() else "gemini-2.5-flash"
+                
+                # Handle old/generic names → real Gemini models
+                # NOTE: gemini-1.5-pro and gemini-1.5-flash are DEPRECATED
+                # Available models (as of Jan 2025): gemini-2.5-flash, gemini-2.5-pro, gemini-2.0-flash, etc.
+                model_mapping = {
+                    'gemini-pro': 'gemini-2.5-flash',  # Old name, use latest flash
+                    'gemini-2.5-pro': 'gemini-2.5-pro',  # Valid
+                    'gemini-1.5-pro': 'gemini-2.5-pro',  # DEPRECATED, use latest pro
+                    'gemini-1.5-flash': 'gemini-2.5-flash',  # DEPRECATED, use latest flash
+                    'gemini-2.5-flash': 'gemini-2.5-flash',  # Valid
+                    'gemini-pro-vision': 'gemini-2.5-flash',  # Use 2.5 flash as fallback
+                }
+                
+                # Apply mapping if model is in the mapping dict
+                if model_name.lower() in model_mapping:
+                    mapped_model = model_mapping[model_name.lower()]
+                    logger.info(f"   Model name mapped: {preferred_model} → {mapped_model} (reason: availability)")
+                    model_name = mapped_model
+                else:
+                    logger.info(f"   Model name no mapping needed: {model_name}")
+                    
+                logger.info(f"   Using Gemini model: {model_name}")
+                model = genai.GenerativeModel(model_name)
+
+                metrics["generation_attempts"] += 1
+                response = model.generate_content(
+                    f"{system_prompt}\n\n{generation_prompt}",
+                    generation_config=genai.GenerationConfig(
+                        max_output_tokens=max(8000, target_length * 3),
+                        temperature=0.7,
+                    ),
+                )
+
+                generated_content = response.text
+                if generated_content and len(generated_content) > 100:
+                    validation = self._validate_content(generated_content, topic, target_length)
+                    metrics["validation_results"].append(
+                        {
+                            "attempt": metrics["generation_attempts"],
+                            "score": validation.quality_score,
+                            "issues": validation.issues,
+                            "passed": validation.is_valid,
+                        }
+                    )
+
+                    metrics["model_used"] = f"Google Gemini ({model_name})"
+                    metrics["final_quality_score"] = validation.quality_score
+                    metrics["generation_time_seconds"] = time.time() - start_time
+                    logger.info(f"✓ Content generated with user-selected Gemini: {validation.feedback}")
+                    return generated_content, metrics["model_used"], metrics
+
+            except Exception as e:
+                logger.warning(f"User-selected Gemini failed: {e}")
+                attempts.append(("Gemini (user-selected)", str(e)))
+
         # 1. Try Ollama (local, free, no internet, RTX 5070 optimized)
-        if self.ollama_available:
+        if use_ollama:
             logger.info(f"🔄 [ATTEMPT 1/3] Trying Ollama (Local, GPU-accelerated)...")
             logger.info(f"   ├─ Endpoint: http://localhost:11434")
             logger.info(f"   ├─ Model preference order: [neural-chat, mistral, llama2]")
@@ -299,6 +402,7 @@ Improved version:"""
                             system=system_prompt,
                             model=model_name,
                             stream=False,
+                            max_tokens=max(8000, target_length * 3),  # Set explicit token limit to prevent truncation
                         )
 
                         # Extract text from response dict
@@ -406,6 +510,7 @@ Improved version:"""
                                     system=system_prompt,
                                     model=model_name,
                                     stream=False,
+                                    max_tokens=max(8000, target_length * 3),  # Set explicit token limit for refinement
                                 )
 
                                 # Extract text from response dict
@@ -531,7 +636,7 @@ Improved version:"""
                             hf.generate(
                                 model=model_id,
                                 prompt=generation_prompt,
-                                max_tokens=max(2000, target_length * 2),
+                                max_tokens=max(8000, target_length * 3),  # Increased from 2000 to 8000 to prevent truncation
                                 temperature=0.7,
                             ),
                             timeout=60,
@@ -571,58 +676,73 @@ Improved version:"""
 
         # 3. Fall back to Google Gemini (paid, but reliable)
         if self.gemini_key:
-            logger.info("Attempting content generation with Google Gemini (fallback)...")
+            logger.info(f"🔄 [ATTEMPT 3/3] Trying Google Gemini (Fallback)...")
+            logger.info(f"   ├─ API Key: {'✓ set' if self.gemini_key else '✗ not set'}")
+            logger.info(f"   ├─ Model: gemini-2.5-flash")
+            logger.info(f"   └─ Status: Initializing...\n")
             try:
                 # Try the updated Gemini API format
                 try:
-                    # Import google-genai library (new package, replaces deprecated google.generativeai)
+                    # Import google.generativeai library (stable SDK)
+                    import google.generativeai as genai
+                    logger.debug("Using google.generativeai (stable SDK)")
+                except ImportError:
+                    # Fallback to newer google.genai if available
                     try:
                         import google.genai as genai
-                    except ImportError:
-                        # Fallback to old deprecated package if new one not available
-                        import google.generativeai as genai
+                        logger.debug("Using google.genai (new SDK)")
+                    except ImportError as e:
+                        raise ImportError("Neither google.generativeai nor google.genai found") from e
 
-                    genai.configure(api_key=self.gemini_key)
-                    model = genai.GenerativeModel("gemini-2.5-flash")
+                logger.debug(f"Configuring Gemini with API key...")
+                genai.configure(api_key=self.gemini_key)
+                model = genai.GenerativeModel("gemini-2.5-flash")
+                logger.debug(f"✓ Gemini model initialized")
 
-                    metrics["generation_attempts"] += 1
-                    response = model.generate_content(
-                        f"{system_prompt}\n\n{generation_prompt}",
-                        generation_config=genai.GenerationConfig(
-                            max_output_tokens=max(2000, target_length * 2),
-                            temperature=0.7,
-                        ),
+                metrics["generation_attempts"] += 1
+                logger.info(f"   Generating content...")
+                response = model.generate_content(
+                    f"{system_prompt}\n\n{generation_prompt}",
+                    generation_config=genai.GenerationConfig(
+                        max_output_tokens=max(8000, target_length * 3),
+                        temperature=0.7,
+                    ),
+                )
+
+                generated_content = response.text
+                logger.info(f"   Generated {len(generated_content)} characters")
+                if generated_content and len(generated_content) > 100:
+                    # Self-check: Validate content quality
+                    validation = self._validate_content(generated_content, topic, target_length)
+                    metrics["validation_results"].append(
+                        {
+                            "attempt": metrics["generation_attempts"],
+                            "score": validation.quality_score,
+                            "issues": validation.issues,
+                            "passed": validation.is_valid,
+                        }
                     )
 
-                    generated_content = response.text
-                    if generated_content and len(generated_content) > 100:
-                        # Self-check: Validate content quality
-                        validation = self._validate_content(generated_content, topic, target_length)
-                        metrics["validation_results"].append(
-                            {
-                                "attempt": metrics["generation_attempts"],
-                                "score": validation.quality_score,
-                                "issues": validation.issues,
-                                "passed": validation.is_valid,
-                            }
-                        )
+                    metrics["model_used"] = "Google Gemini 2.5 Flash"
+                    metrics["final_quality_score"] = validation.quality_score
+                    metrics["generation_time_seconds"] = time.time() - start_time
+                    logger.info(f"✓ Content generated with Gemini: {validation.feedback}")
+                    return generated_content, metrics["model_used"], metrics
+                else:
+                    logger.warning(f"Gemini content too short or empty: {len(generated_content)} chars")
+                    attempts.append(("Gemini", f"Content too short: {len(generated_content)} chars"))
 
-                        metrics["model_used"] = "Google Gemini 2.5 Flash"
-                        metrics["final_quality_score"] = validation.quality_score
-                        metrics["generation_time_seconds"] = time.time() - start_time
-                        logger.info(f"✓ Content generated with Gemini: {validation.feedback}")
-                        return generated_content, metrics["model_used"], metrics
+            except (AttributeError, ImportError) as e:
+                # Fallback for older SDK versions - try client API
+                logger.warning(f"Gemini SDK format not supported: {e}")
+                attempts.append(("Gemini", f"SDK error: {str(e)[:100]}"))
 
-                except (AttributeError, ImportError):
-                    # Fallback for older SDK versions - try client API
-                    logger.warning("Gemini SDK format not supported, attempting legacy API...")
-                    attempts.append(("Gemini", "SDK version incompatible"))
-
-            except ImportError:
-                logger.warning("google.generativeai not installed, skipping Gemini")
+            except ImportError as e:
+                logger.warning(f"google.generativeai not installed: {e}")
+                attempts.append(("Gemini", "SDK not installed"))
             except Exception as e:
                 logger.warning(f"Gemini generation failed: {e}")
-                attempts.append(("Gemini", str(e)))
+                attempts.append(("Gemini", str(e)[:150]))
 
         # If all models fail, use fallback
         logger.error(f"All AI models failed. Attempts: {attempts}")

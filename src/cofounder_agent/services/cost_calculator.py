@@ -14,6 +14,8 @@ from typing import Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 from decimal import Decimal
 
+from .model_constants import MODEL_COSTS, DEFAULT_MODEL_COST
+
 logger = logging.getLogger(__name__)
 
 
@@ -55,28 +57,8 @@ class CostCalculator:
         "image_selection": 500,  # Image description generation
     }
 
-    # Model costs per 1K tokens (from model_router.py)
-    MODEL_COSTS = {
-        # OpenAI models
-        "gpt-4-turbo": 0.045,
-        "gpt-4": 0.045,
-        "gpt-3.5-turbo": 0.00175,
-        # Anthropic Claude models
-        "claude-opus-3": 0.045,
-        "claude-sonnet-3": 0.015,
-        "claude-haiku-3": 0.0010,
-        "claude-instant": 0.0016,
-        # Ollama models (FREE)
-        "ollama/llama2": 0.0,
-        "ollama/llama2:13b": 0.0,
-        "ollama/llama2:70b": 0.0,
-        "ollama/mistral": 0.0,
-        "ollama/mixtral": 0.0,
-        "ollama/codellama": 0.0,
-        "ollama/phi": 0.0,
-        # Default fallback
-        "unknown": 0.001,
-    }
+    # Model costs per 1K tokens (from model_constants.py)
+    MODEL_COSTS = MODEL_COSTS
 
     def __init__(self):
         """Initialize cost calculator with model pricing"""
