@@ -200,6 +200,8 @@ class TasksDatabase(DatabaseServiceMixin):
                 "tags": json.dumps(task_data.get("tags", [])),
                 "task_metadata": json.dumps(metadata or {}),
                 "model_used": task_data.get("model_used"),
+                "models_used_by_phase": json.dumps(task_data.get("models_used_by_phase", {})),
+                "model_selection_log": json.dumps(task_data.get("model_selection_log", {})),
                 "error_message": task_data.get("error_message"),
                 "approval_status": task_data.get("approval_status", "pending"),
                 "publish_mode": task_data.get("publish_mode", "draft"),

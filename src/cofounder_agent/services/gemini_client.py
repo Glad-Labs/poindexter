@@ -24,7 +24,7 @@ class GeminiClient:
         Args:
             api_key: Google API key (defaults to GOOGLE_API_KEY env var)
         """
-        self.api_key = api_key or os.getenv("GOOGLE_API_KEY")
+        self.api_key = api_key or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
         self.base_url = "https://generativelanguage.googleapis.com/v1"
         # NOTE: As of Jan 2025, these are the available Gemini models
         # gemini-1.5-pro and gemini-1.5-flash are DEPRECATED
@@ -86,9 +86,11 @@ class GeminiClient:
             # Import google-genai library (new package, replaces deprecated google.generativeai)
             try:
                 import google.genai as genai
+                logger.info("✅ Using google.genai (new SDK v1.61.0+) for generate()")
             except ImportError:
                 # Fallback to old deprecated package if new one not available
                 import google.generativeai as genai
+                logger.warning("⚠️  Using google.generativeai (legacy/deprecated SDK) for generate()")
 
             # Configure the API key
             genai.configure(api_key=self.api_key)
@@ -143,9 +145,11 @@ class GeminiClient:
             # Import google-genai library (new package, replaces deprecated google.generativeai)
             try:
                 import google.genai as genai
+                logger.info("✅ Using google.genai (new SDK v1.61.0+) for chat()")
             except ImportError:
                 # Fallback to old deprecated package if new one not available
                 import google.generativeai as genai
+                logger.warning("⚠️  Using google.generativeai (legacy/deprecated SDK) for chat()")
 
             genai.configure(api_key=self.api_key)
             gemini_model = genai.GenerativeModel(model)

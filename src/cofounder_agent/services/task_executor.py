@@ -317,6 +317,19 @@ class TaskExecutor:
                 if isinstance(content_val, str):
                     logger.info(f"   - Content preview: {content_val[:100]}...")
 
+            # ⚠️ IMPORTANT: Don't store incomplete content for failed tasks
+            # Only store content if task is approved/successful
+            # This prevents partial/truncated content from appearing in the database
+            if final_status == "failed" or final_status == "rejected":
+                logger.warning(
+                    f"⚠️  Task status is '{final_status}' - NOT storing content to prevent partial/truncated data"
+                )
+                # Remove content fields for failed tasks
+                task_metadata_updates.pop("content", None)
+                task_metadata_updates.pop("excerpt", None)
+                task_metadata_updates.pop("featured_image_url", None)
+                task_metadata_updates.pop("featured_image_data", None)
+
             # Use update_task to ensure normalization of content into columns
             logger.info(
                 f"📝 [DEBUG] Calling update_task with status={final_status}, metadata keys={list(task_metadata_updates.keys())}"

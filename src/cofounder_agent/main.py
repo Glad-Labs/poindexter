@@ -64,11 +64,9 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 env_local_path = os.path.join(project_root, ".env.local")
 if os.path.exists(env_local_path):
     load_dotenv(env_local_path, override=True)
-    print(f"[+] Loaded .env.local from {env_local_path}")
 else:
     # Fallback to .env.local in current directory
     load_dotenv(".env.local", override=True)
-    print("[+] Loaded .env.local from current directory")
 
 # Add the current directory (cofounder_agent) to Python path FIRST
 # This allows absolute imports like "from services.x import y" to work

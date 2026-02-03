@@ -213,8 +213,11 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
 
         # Verify token
         try:
+            print(f"DEBUG: Verifying token: {token}")
             claims = JWTTokenValidator.verify_token(token)
+            print(f"DEBUG: Claims received: {claims}")
         except Exception as e:
+            print(f"DEBUG: Token verification exception: {e}")
             logger.warning(f"[get_current_user] Token verification failed: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

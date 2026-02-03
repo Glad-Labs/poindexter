@@ -13,8 +13,9 @@ mcp>=1.0.0
 # OpenAI integration
 openai>=1.30.0
 
-# Google Generative AI
-google-generativeai>=0.8.5
+# Google Generative AI (new SDK replaces deprecated google-generativeai)
+google-genai>=0.3.0
+google-generativeai>=0.8.5  # Fallback for backward compatibility
 
 # Anthropic Claude
 anthropic>=0.18.0

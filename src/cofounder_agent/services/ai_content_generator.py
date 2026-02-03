@@ -218,13 +218,24 @@ class AIContentGenerator:
         logger.info(f"{'='*80}\n")
 
         # Check if Ollama is available (async check, happens once)
-        # Skip Ollama check if user explicitly selected a cloud provider
-        skip_ollama = preferred_provider and preferred_provider.lower() not in ['ollama', 'auto']
+        # IMPORTANT: Default provider priority when none specified:
+        # 1. Gemini (if key available) - cloud, reliable, high quality
+        # 2. Ollama (if available) - local, free
+        # 3. HuggingFace (if token available) - cloud fallback
+        
+        # Determine effective provider preference
+        effective_provider = preferred_provider
+        if not effective_provider and self.gemini_key:
+            # Default to Gemini if key is available and no provider specified
+            effective_provider = "gemini"
+            logger.info(f"📌 No provider specified, defaulting to Gemini (key available)")
+        
+        skip_ollama = effective_provider and effective_provider.lower() not in ['ollama', 'auto']
         
         # Use local variable to avoid polluting instance state across requests
         use_ollama = False
         if skip_ollama:
-            logger.info(f"📌 Skipping Ollama (user selected provider: {preferred_provider})\n")
+            logger.info(f"📌 Skipping Ollama (effective provider: {effective_provider})\n")
             use_ollama = False
         else:
             await self._check_ollama_async()
@@ -282,6 +293,21 @@ Improved version:"""
             "generation_time_seconds": 0,
             "preferred_model": preferred_model,
             "preferred_provider": preferred_provider,
+            "models_used_by_phase": {},  # NEW: Track models at each phase
+            "model_selection_log": {  # NEW: Track decision tree
+                "requested_provider": preferred_provider,
+                "requested_model": preferred_model,
+                "attempted_providers": [],
+                "skipped_ollama": skip_ollama,
+                "decision_tree": {
+                    "gemini_key_available": bool(self.gemini_key),
+                    "gemini_attempted": False,
+                    "gemini_succeeded": False,
+                    "gemini_error": None,
+                    "ollama_available": use_ollama,
+                    "huggingface_token_available": bool(self.hf_token),
+                },
+            },
         }
 
         start_time = time.time()
@@ -291,7 +317,8 @@ Improved version:"""
 
         logger.info(f"🔍 PROVIDER CHECK:")
         logger.info(f"   User selection - provider: {preferred_provider}, model: {preferred_model}")
-        logger.info(f"   Ollama - use_ollama: {use_ollama}, available: {self.ollama_available}")
+        logger.info(f"   Skip Ollama: {skip_ollama} (user explicitly selected cloud provider)")
+        logger.info(f"   Ollama - available: {self.ollama_available}")
         logger.info(f"   HuggingFace - token: {'✓' if self.hf_token else '✗'}")
         logger.info(f"   Gemini - key: {'✓' if self.gemini_key else '✗'}")
         logger.info(f"")
@@ -299,31 +326,33 @@ Improved version:"""
         # ========================================================================
         # USER SELECTION: Try user-selected provider/model first if specified
         # ========================================================================
-        if preferred_provider and preferred_provider.lower() == 'gemini' and self.gemini_key:
-            logger.info(f"🎯 Attempting user-selected provider: Gemini (preferred_model: {preferred_model or 'auto'})...")
+        if effective_provider and effective_provider.lower() == 'gemini' and self.gemini_key:
+            logger.info(f"🎯 Attempting Gemini (provider: {effective_provider}, model: {preferred_model or 'auto'})...")
+            metrics["model_selection_log"]["decision_tree"]["gemini_attempted"] = True
             try:
-                # Import google.generativeai library (the stable SDK)
+                # Import google-genai library (new package, replaces deprecated google-generativeai)
                 try:
-                    import google.generativeai as genai
-                except ImportError:
-                    # Fallback to newer google.genai if available
                     import google.genai as genai
+                    logger.info("✅ Using google.genai (new SDK) for Gemini API calls")
+                except ImportError:
+                    # Fallback to older google.generativeai if new one not available
+                    import google.generativeai as genai
+                    logger.warning("⚠️  Using google.generativeai (legacy/deprecated SDK) - upgrade to google-genai for better support")
 
                 genai.configure(api_key=self.gemini_key)
                 
                 # Map generic model names to actual Gemini API models
-                model_name = preferred_model if preferred_model and 'gemini' in preferred_model.lower() else "gemini-2.5-flash"
+                model_name = preferred_model if preferred_model and 'gemini' in preferred_model.lower() and preferred_model.lower() != 'gemini' else "gemini-2.5-flash"
                 
                 # Handle old/generic names → real Gemini models
-                # NOTE: gemini-1.5-pro and gemini-1.5-flash are DEPRECATED
-                # Available models (as of Jan 2025): gemini-2.5-flash, gemini-2.5-pro, gemini-2.0-flash, etc.
+                # NOTE: For this environment, use 2.5-flash as default
                 model_mapping = {
-                    'gemini-pro': 'gemini-2.5-flash',  # Old name, use latest flash
-                    'gemini-2.5-pro': 'gemini-2.5-pro',  # Valid
-                    'gemini-1.5-pro': 'gemini-2.5-pro',  # DEPRECATED, use latest pro
-                    'gemini-1.5-flash': 'gemini-2.5-flash',  # DEPRECATED, use latest flash
-                    'gemini-2.5-flash': 'gemini-2.5-flash',  # Valid
-                    'gemini-pro-vision': 'gemini-2.5-flash',  # Use 2.5 flash as fallback
+                    'gemini': 'gemini-2.5-flash',
+                    'gemini-pro': 'gemini-2.5-pro',
+                    'gemini-flash': 'gemini-2.5-flash',
+                    'gemini-1.5-pro': 'gemini-2.5-pro',
+                    'gemini-1.5-flash': 'gemini-2.5-flash',
+                    'gemini-2.0-flash': 'gemini-2.5-flash',
                 }
                 
                 # Apply mapping if model is in the mapping dict
@@ -338,13 +367,22 @@ Improved version:"""
                 model = genai.GenerativeModel(model_name)
 
                 metrics["generation_attempts"] += 1
-                response = model.generate_content(
-                    f"{system_prompt}\n\n{generation_prompt}",
-                    generation_config=genai.GenerationConfig(
-                        max_output_tokens=max(8000, target_length * 3),
-                        temperature=0.7,
-                    ),
-                )
+                metrics["model_selection_log"]["attempted_providers"].append("gemini")
+                
+                # Run blocking Gemini call in a thread to avoid blocking the event loop
+                def _gemini_generate():
+                    # Calculate max tokens: target ~1 token per word, plus 30% buffer
+                    max_tokens = int(target_length * 1.3)
+                    logger.debug(f"   Gemini max_output_tokens: {max_tokens} (target_length: {target_length})")
+                    return model.generate_content(
+                        f"{system_prompt}\n\n{generation_prompt}",
+                        generation_config=genai.GenerationConfig(
+                            max_output_tokens=max_tokens,
+                            temperature=0.7,
+                        ),
+                    )
+                
+                response = await asyncio.to_thread(_gemini_generate)
 
                 generated_content = response.text
                 if generated_content and len(generated_content) > 100:
@@ -359,13 +397,18 @@ Improved version:"""
                     )
 
                     metrics["model_used"] = f"Google Gemini ({model_name})"
+                    metrics["models_used_by_phase"]["draft"] = metrics["model_used"]  # NEW: Track phase
                     metrics["final_quality_score"] = validation.quality_score
                     metrics["generation_time_seconds"] = time.time() - start_time
+                    metrics["model_selection_log"]["decision_tree"]["gemini_succeeded"] = True
                     logger.info(f"✓ Content generated with user-selected Gemini: {validation.feedback}")
                     return generated_content, metrics["model_used"], metrics
 
             except Exception as e:
-                logger.warning(f"User-selected Gemini failed: {e}")
+                import traceback
+                logger.warning(f"User-selected Gemini failed: {type(e).__name__}: {str(e)}")
+                logger.debug(f"Gemini error traceback: {traceback.format_exc()}")
+                metrics["model_selection_log"]["decision_tree"]["gemini_error"] = str(e)[:200]  # Store error
                 attempts.append(("Gemini (user-selected)", str(e)))
 
         # 1. Try Ollama (local, free, no internet, RTX 5070 optimized)
@@ -397,12 +440,17 @@ Improved version:"""
                         metrics["generation_attempts"] += 1
 
                         logger.info(f"      ⏱️  Generating content (timeout: 120s)...")
+                        
+                        # Calculate max tokens: target ~1 token per word, plus 30% buffer
+                        max_tokens = int(target_length * 1.3)
+                        logger.debug(f"      Max tokens: {max_tokens} (target_length: {target_length})")
+                        
                         response = await ollama.generate(
                             prompt=generation_prompt,
                             system=system_prompt,
                             model=model_name,
                             stream=False,
-                            max_tokens=max(8000, target_length * 3),  # Set explicit token limit to prevent truncation
+                            max_tokens=max_tokens,  # Set explicit token limit for proper word count control
                         )
 
                         # Extract text from response dict
@@ -479,6 +527,7 @@ Improved version:"""
                             if validation.is_valid:
                                 logger.info(f"      ✅ Content APPROVED by QA")
                                 metrics["model_used"] = f"Ollama - {model_name}"
+                                metrics["models_used_by_phase"]["draft"] = metrics["model_used"]
                                 metrics["final_quality_score"] = validation.quality_score
                                 metrics["generation_time_seconds"] = time.time() - start_time
                                 logger.info(f"\n{'='*80}")
@@ -505,12 +554,14 @@ Improved version:"""
                                 )
 
                                 # Try to refine with same model
+                                # Calculate max tokens for refinement pass
+                                max_tokens_refinement = int(target_length * 1.3)
                                 response = await ollama.generate(
                                     prompt=refinement_prompt,
                                     system=system_prompt,
                                     model=model_name,
                                     stream=False,
-                                    max_tokens=max(8000, target_length * 3),  # Set explicit token limit for refinement
+                                    max_tokens=max_tokens_refinement,  # Refined content should respect word count target
                                 )
 
                                 # Extract text from response dict
@@ -554,6 +605,7 @@ Improved version:"""
                                     if refined_validation.is_valid:
                                         logger.info(f"      ✅ Refined content APPROVED")
                                         metrics["model_used"] = f"Ollama - {model_name} (refined)"
+                                        metrics["models_used_by_phase"]["draft"] = metrics["model_used"]  # Track phase
                                         metrics["final_quality_score"] = (
                                             refined_validation.quality_score
                                         )
@@ -582,6 +634,7 @@ Improved version:"""
                                     f"      ⚠️  Content below quality threshold but no more refinements available"
                                 )
                                 metrics["model_used"] = f"Ollama - {model_name} (below threshold)"
+                                metrics["models_used_by_phase"]["draft"] = metrics["model_used"]  # Track phase
                                 metrics["final_quality_score"] = validation.quality_score
                                 metrics["generation_time_seconds"] = time.time() - start_time
                                 logger.info(f"\n{'='*80}")
@@ -632,11 +685,13 @@ Improved version:"""
                         logger.debug(f"Trying HuggingFace model: {model_id}")
                         metrics["generation_attempts"] += 1
 
+                        # Calculate max tokens for HuggingFace generation
+                        max_tokens_hf = int(target_length * 1.3)
                         generated_content = await asyncio.wait_for(
                             hf.generate(
                                 model=model_id,
                                 prompt=generation_prompt,
-                                max_tokens=max(8000, target_length * 3),  # Increased from 2000 to 8000 to prevent truncation
+                                max_tokens=max_tokens_hf,  # Respect target word count with 30% buffer
                                 temperature=0.7,
                             ),
                             timeout=60,
@@ -658,6 +713,7 @@ Improved version:"""
 
                             if validation.is_valid:
                                 metrics["model_used"] = f"HuggingFace - {model_id.split('/')[-1]}"
+                                metrics["models_used_by_phase"]["draft"] = metrics["model_used"]  # Track phase
                                 metrics["final_quality_score"] = validation.quality_score
                                 metrics["generation_time_seconds"] = time.time() - start_time
                                 logger.info(f"✓ Content generated and approved with HuggingFace")
@@ -701,10 +757,12 @@ Improved version:"""
 
                 metrics["generation_attempts"] += 1
                 logger.info(f"   Generating content...")
+                # Calculate max tokens for Claude/fallback generation
+                max_tokens_fallback = int(target_length * 1.3)
                 response = model.generate_content(
                     f"{system_prompt}\n\n{generation_prompt}",
                     generation_config=genai.GenerationConfig(
-                        max_output_tokens=max(8000, target_length * 3),
+                        max_output_tokens=max_tokens_fallback,
                         temperature=0.7,
                     ),
                 )
@@ -724,6 +782,7 @@ Improved version:"""
                     )
 
                     metrics["model_used"] = "Google Gemini 2.5 Flash"
+                    metrics["models_used_by_phase"]["draft"] = metrics["model_used"]  # Track phase
                     metrics["final_quality_score"] = validation.quality_score
                     metrics["generation_time_seconds"] = time.time() - start_time
                     logger.info(f"✓ Content generated with Gemini: {validation.feedback}")
@@ -748,6 +807,7 @@ Improved version:"""
         logger.error(f"All AI models failed. Attempts: {attempts}")
         fallback_content = self._generate_fallback_content(topic, style, tone, tags)
         metrics["model_used"] = "Fallback (no AI models available)"
+        metrics["models_used_by_phase"]["draft"] = metrics["model_used"]  # Track phase
         metrics["final_quality_score"] = 0.0
         metrics["generation_time_seconds"] = time.time() - start_time
         return fallback_content, metrics["model_used"], metrics

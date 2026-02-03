@@ -549,15 +549,25 @@ async def process_content_generation_task(
             title = topic  # Fallback to topic if title generation fails
         logger.info(f"✅ Title generated: {title}")
 
-        # Update content_task with generated content AND title
+        # Update content_task with generated content, title, and model tracking
         await database_service.update_task(
-            task_id=task_id, updates={"status": "generated", "content": content_text, "title": title}
+            task_id=task_id, 
+            updates={
+                "status": "generated", 
+                "content": content_text, 
+                "title": title,
+                "model_used": model_used,
+                "models_used_by_phase": metrics.get("models_used_by_phase", {}),
+                "model_selection_log": metrics.get("model_selection_log", {}),
+            }
         )
 
         result["content"] = content_text
         result["content_length"] = len(content_text)
         result["title"] = title
         result["model_used"] = model_used
+        result["models_used_by_phase"] = metrics.get("models_used_by_phase", {})
+        result["model_selection_log"] = metrics.get("model_selection_log", {})
         result["stages"]["2_content_generated"] = True
         logger.info(f"✅ Content generated ({len(content_text)} chars) using {model_used}\n")
 
