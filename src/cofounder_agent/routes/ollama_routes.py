@@ -81,11 +81,10 @@ async def check_ollama_health() -> OllamaHealthResponse:
                     message=f"✅ Ollama is running with {len(models)} model(s)",
                     timestamp=datetime.utcnow().isoformat(),
                 )
-            else:
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail=f"Ollama returned {response.status_code}",
-                )
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Ollama returned {response.status_code}",
+            )
 
     except httpx.ConnectError:
         logger.warning("[Ollama] Connection refused - is Ollama running?")
@@ -144,9 +143,8 @@ async def get_ollama_models() -> dict:
 
                 logger.info(f"[Ollama] Found {len(models)} models")
                 return {"models": models, "connected": True}
-            else:
-                logger.warning(f"[Ollama] models endpoint returned {response.status_code}")
-                return {"models": ["llama2", "neural-chat", "mistral"], "connected": False}
+            logger.warning(f"[Ollama] models endpoint returned {response.status_code}")
+            return {"models": ["llama2", "neural-chat", "mistral"], "connected": False}
 
     except (httpx.ConnectError, httpx.TimeoutException):
         logger.debug("[Ollama] Could not reach Ollama - returning defaults")
@@ -250,15 +248,14 @@ async def warmup_ollama(model: str = "mistral:latest") -> OllamaWarmupResponse:
                     generation_time=gen_time,
                     timestamp=datetime.utcnow().isoformat(),
                 )
-            else:
-                logger.error(f"[Ollama] Warm-up failed with status {warmup_response.status_code}")
-                return OllamaWarmupResponse(
-                    status="error",
-                    model=model,
-                    message=f"❌ Warm-up failed: HTTP {warmup_response.status_code}",
-                    generation_time=None,
-                    timestamp=datetime.utcnow().isoformat(),
-                )
+            logger.error(f"[Ollama] Warm-up failed with status {warmup_response.status_code}")
+            return OllamaWarmupResponse(
+                status="error",
+                model=model,
+                message=f"❌ Warm-up failed: HTTP {warmup_response.status_code}",
+                generation_time=None,
+                timestamp=datetime.utcnow().isoformat(),
+            )
 
     except httpx.TimeoutException:
         logger.warning(f"[Ollama] Warm-up timeout for model: {model}")
@@ -318,15 +315,14 @@ async def get_ollama_status() -> Dict[str, Any]:
                     "models": models,
                     "last_check": datetime.utcnow().isoformat(),
                 }
-            else:
-                return {
-                    "running": False,
-                    "host": OLLAMA_HOST,
-                    "models_available": 0,
-                    "models": [],
-                    "last_check": datetime.utcnow().isoformat(),
-                    "error": f"HTTP {response.status_code}",
-                }
+            return {
+                "running": False,
+                "host": OLLAMA_HOST,
+                "models_available": 0,
+                "models": [],
+                "last_check": datetime.utcnow().isoformat(),
+                "error": f"HTTP {response.status_code}",
+            }
 
     except Exception as e:
         return {
@@ -388,15 +384,14 @@ async def select_ollama_model(request: OllamaModelSelection) -> Dict[str, Any]:
                         "available_models": available_models,
                         "timestamp": datetime.utcnow().isoformat(),
                     }
-                else:
-                    logger.warning(f"[Ollama] Model not found: {model}")
-                    return {
-                        "success": False,
-                        "selected_model": None,
-                        "message": f"❌ Model '{model}' not found. Available models: {', '.join(available_models)}",
-                        "available_models": available_models,
-                        "timestamp": datetime.utcnow().isoformat(),
-                    }
+                logger.warning(f"[Ollama] Model not found: {model}")
+                return {
+                    "success": False,
+                    "selected_model": None,
+                    "message": f"❌ Model '{model}' not found. Available models: {', '.join(available_models)}",
+                    "available_models": available_models,
+                    "timestamp": datetime.utcnow().isoformat(),
+                }
             else:
                 return {
                     "success": False,

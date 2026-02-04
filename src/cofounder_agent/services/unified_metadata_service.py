@@ -15,19 +15,13 @@ Single source of truth for all metadata operations with:
 - Featured image prompt generation
 """
 
-import json
 import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
-
-# Try to import the LLM client based on available models
-import os
-
-from .provider_checker import ProviderChecker
 
 # Check for Anthropic availability and API key
 try:
@@ -252,18 +246,18 @@ class UnifiedMetadataService:
 
         # Strategy 1: Check stored title
         if stored_title and stored_title.lower() != "untitled":
-            logger.debug(f"✓ Using stored title: {stored_title[:50]}")
+            logger.debug("Using stored title: %s", stored_title[:50])
             return stored_title[:100]
 
         # Strategy 2: Use topic
         if topic and topic.lower() != "untitled" and len(topic) > 5:
-            logger.debug(f"✓ Using topic as title: {topic[:50]}")
+            logger.debug("Using topic as title: %s", topic[:50])
             return topic[:100]
 
         # Strategy 3: Extract from content
         title = self._extract_first_meaningful_line(content)
         if title:
-            logger.debug(f"✓ Extracted title from content: {title[:50]}")
+            logger.debug("Extracted title from content: %s", title[:50])
             return title
 
         # Strategy 4: Use LLM to generate
@@ -271,14 +265,14 @@ class UnifiedMetadataService:
             try:
                 title = await self._llm_generate_title(content)
                 if title:
-                    logger.info(f"✓ LLM generated title: {title[:50]}")
+                    logger.info("LLM generated title: %s", title[:50])
                     return title
             except Exception as e:
-                logger.warning(f"⚠️  LLM title generation failed: {e}")
+                logger.warning("LLM title generation failed: %s", e)
 
         # Strategy 5: Fallback to date
         title = f"Blog Post - {datetime.now().strftime('%B %d, %Y')}"
-        logger.debug(f"✓ Using date-based fallback: {title}")
+        logger.debug("Using date-based fallback: %s", title)
         return title
 
     def _extract_first_meaningful_line(self, content: str) -> Optional[str]:
@@ -323,7 +317,7 @@ Generate ONLY the title, nothing else. No quotes, no explanation."""
                 title = response.content[0].text.strip()
                 return title[:100] if title else None
 
-            elif OPENAI_AVAILABLE:
+            if OPENAI_AVAILABLE:
                 import openai as openai_module
 
                 response = openai_module.ChatCompletion.create(
@@ -336,7 +330,7 @@ Generate ONLY the title, nothing else. No quotes, no explanation."""
                 return title[:100] if title else None
 
         except Exception as e:
-            logger.warning(f"⚠️  LLM title generation error: {e}")
+            logger.warning("LLM title generation error: %s", e)
             return None
 
     # ========================================================================
@@ -357,13 +351,13 @@ Generate ONLY the title, nothing else. No quotes, no explanation."""
 
         # Strategy 1: Use stored excerpt
         if stored_excerpt and len(stored_excerpt) > 20:
-            logger.debug(f"✓ Using stored excerpt")
+            logger.debug("Using stored excerpt")
             return stored_excerpt[:max_length]
 
         # Strategy 2: Extract first paragraph
         excerpt = self._extract_first_paragraph(content, max_length)
         if excerpt:
-            logger.debug(f"✓ Extracted excerpt from content")
+            logger.debug("Extracted excerpt from content")
             return excerpt
 
         # Strategy 3: Use LLM
@@ -371,16 +365,16 @@ Generate ONLY the title, nothing else. No quotes, no explanation."""
             try:
                 excerpt = await self._llm_generate_excerpt(content, max_length)
                 if excerpt:
-                    logger.info(f"✓ LLM generated excerpt")
+                    logger.info("LLM generated excerpt")
                     return excerpt
             except Exception as e:
-                logger.warning(f"⚠️  LLM excerpt generation failed: {e}")
+                logger.warning("LLM excerpt generation failed: %s", e)
 
         # Fallback: Use content start
         excerpt = content[:max_length]
         if len(content) > max_length:
             excerpt += "..."
-        logger.debug(f"✓ Using content start as fallback")
+        logger.debug("Using content start as fallback")
         return excerpt
 
     def _extract_first_paragraph(self, content: str, max_length: int) -> Optional[str]:
@@ -424,7 +418,7 @@ Generate ONLY the excerpt, nothing else. No quotes, no explanation."""
                 excerpt = response.content[0].text.strip()
                 return excerpt[:max_length] if excerpt else None
 
-            elif OPENAI_AVAILABLE:
+            if OPENAI_AVAILABLE:
                 import openai as openai_module
 
                 response = openai_module.ChatCompletion.create(
@@ -437,7 +431,7 @@ Generate ONLY the excerpt, nothing else. No quotes, no explanation."""
                 return excerpt[:max_length] if excerpt else None
 
         except Exception as e:
-            logger.warning(f"⚠️  LLM excerpt generation error: {e}")
+            logger.warning("LLM excerpt generation error: %s", e)
             return None
 
     # ========================================================================
@@ -472,7 +466,7 @@ Generate ONLY the excerpt, nothing else. No quotes, no explanation."""
                 else:
                     result["seo_description"] = content[:155]
             except Exception as e:
-                logger.warning(f"⚠️  LLM SEO description failed: {e}")
+                logger.warning("LLM SEO description failed: %s", e)
                 result["seo_description"] = content[:155]
         else:
             result["seo_description"] = content[:155]
@@ -489,7 +483,7 @@ Generate ONLY the excerpt, nothing else. No quotes, no explanation."""
                 if not keywords_list:
                     keywords_list = self._extract_keywords_fallback(title)
             except Exception as e:
-                logger.warning(f"⚠️  LLM keywordd extraction error: {e}")
+                logger.warning("LLM keywordd extraction error: %s", e)
                 keywords_list = self._extract_keywords_fallback(title)
         else:
             keywords_list = self._extract_keywords_fallback(title)
@@ -497,7 +491,7 @@ Generate ONLY the excerpt, nothing else. No quotes, no explanation."""
         # Convert list to comma-separated string for database storage
         result["seo_keywords"] = ", ".join(keywords_list) if keywords_list else ""
 
-        logger.debug(f"SEO metadata generated: {result['seo_title'][:40]}...")
+        logger.debug("SEO metadata generated: %s", result['seo_title'][:40])
         return result
 
     async def _llm_generate_seo_description(self, title: str, content: str) -> Optional[str]:
@@ -522,7 +516,7 @@ Generate ONLY the description, nothing else. No quotes."""
                 )
                 return response.content[0].text.strip()[:155]
 
-            elif OPENAI_AVAILABLE:
+            if OPENAI_AVAILABLE:
                 import openai as openai_module
 
                 response = openai_module.ChatCompletion.create(
@@ -534,7 +528,7 @@ Generate ONLY the description, nothing else. No quotes."""
                 return response.choices[0].message.content.strip()[:155]
 
         except Exception as e:
-            logger.warning(f"⚠️  LLM SEO description error: {e}")
+            logger.warning("LLM SEO description error: %s", e)
             return None
 
     async def _llm_extract_keywords(self, title: str, content: str) -> Optional[List[str]]:
@@ -560,7 +554,7 @@ Generate ONLY comma-separated keywords, nothing else. Example: keyword1, keyword
                 keywords_str = response.content[0].text.strip()
                 return [k.strip() for k in keywords_str.split(",")]
 
-            elif OPENAI_AVAILABLE:
+            if OPENAI_AVAILABLE:
                 import openai as openai_module
 
                 response = openai_module.ChatCompletion.create(
@@ -573,7 +567,7 @@ Generate ONLY comma-separated keywords, nothing else. Example: keyword1, keyword
                 return [k.strip() for k in keywords_str.split(",")]
 
         except Exception as e:
-            logger.warning(f"⚠️  LLM keyword extraction error: {e}")
+            logger.warning("LLM keyword extraction error: %s", e)
             return None
 
     def _extract_keywords_fallback(self, title: str) -> List[str]:
@@ -635,7 +629,7 @@ Generate ONLY comma-separated keywords, nothing else. Example: keyword1, keyword
         # Strategy 1: Simple keyword matching
         best_category, score = self._keyword_match_category(content, available_categories, title)
         if score > 0:
-            logger.debug(f"✓ Keyword matched category: {best_category.get('name')} (score={score})")
+            logger.debug("Keyword matched category: %s (score=%s)", best_category.get('name'), score)
             return best_category
 
         # Strategy 2: Use LLM for intelligent matching
@@ -643,10 +637,10 @@ Generate ONLY comma-separated keywords, nothing else. Example: keyword1, keyword
             try:
                 best_category = await self._llm_match_category(content, available_categories, title)
                 if best_category:
-                    logger.info(f"✓ LLM matched category: {best_category.get('name')}")
+                    logger.info("LLM matched category: %s", best_category.get('name'))
                     return best_category
             except Exception as e:
-                logger.warning(f"⚠️  LLM category matching failed: {e}")
+                logger.warning("LLM category matching failed: %s", e)
 
         # Fallback: return first category
         logger.debug(f"✓ Using first category as fallback: {available_categories[0].get('name')}")
@@ -714,7 +708,7 @@ Respond with ONLY the exact category name from the list, nothing else."""
                 category_name = response.content[0].text.strip()
                 return next((c for c in available_categories if c["name"] == category_name), None)
 
-            elif OPENAI_AVAILABLE:
+            if OPENAI_AVAILABLE:
                 import openai as openai_module
 
                 response = openai_module.ChatCompletion.create(
@@ -833,7 +827,7 @@ Respond with ONLY comma-separated tag names, nothing else. Example: tag1, tag2, 
                     if any(tag["name"] == name for tag in available_tags)
                 ]
 
-            elif OPENAI_AVAILABLE:
+            if OPENAI_AVAILABLE:
                 import openai as openai_module
 
                 response = openai_module.ChatCompletion.create(

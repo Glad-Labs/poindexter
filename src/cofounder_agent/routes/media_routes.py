@@ -555,14 +555,13 @@ async def generate_featured_image(request: ImageGenerationRequest):
                 message=f"✅ Image generated and saved locally (preview mode). Review and approve to publish.",
                 generation_time=elapsed,
             )
-        else:
-            elapsed = time.time() - start_time
-            return ImageGenerationResponse(
-                success=False,
-                image_url="",
-                image=None,
-                message="❌ No image found. Ensure PEXELS_API_KEY is set in environment or GPU available for SDXL.",
-                generation_time=elapsed,
+        elapsed = time.time() - start_time
+        return ImageGenerationResponse(
+            success=False,
+            image_url="",
+            image=None,
+            message="❌ No image found. Ensure PEXELS_API_KEY is set in environment or GPU available for SDXL.",
+            generation_time=elapsed,
                 preview_mode=False,
             )
 

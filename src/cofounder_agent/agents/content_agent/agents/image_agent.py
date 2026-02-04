@@ -82,9 +82,8 @@ class ImageAgent:
             metadata_json = extract_json_from_string(metadata_text)
             if metadata_json:
                 return json.loads(metadata_json)
-            else:
-                # Fallback: try parsing the raw text if extract failed (e.g. no markdown)
-                return json.loads(metadata_text)
+            # Fallback: try parsing the raw text if extract failed (e.g. no markdown)
+            return json.loads(metadata_text)
         except (json.JSONDecodeError, TypeError) as e:
             logging.error(f"Failed to parse image metadata from LLM response: {e}")
             return []

@@ -32,7 +32,7 @@ class CommandStatus(str, Enum):
 
 
 @dataclass
-class Command:
+class Command:  # pylint: disable=too-many-instance-attributes
     """Command data structure"""
 
     id: str = field(default_factory=lambda: str(uuid4()))

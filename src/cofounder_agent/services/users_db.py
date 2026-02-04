@@ -156,7 +156,7 @@ class UsersDatabase(DatabaseServiceMixin):
             if oauth_row:
                 # OAuth account already linked, get existing user
                 user_id = oauth_row["user_id"]
-                logger.info(f"✅ OAuth account found, getting user: {user_id}")
+                logger.info("✅ OAuth account found, getting user: %s", user_id)
 
                 user = await conn.fetchrow(
                     "SELECT * FROM users WHERE id = $1",
@@ -177,14 +177,15 @@ class UsersDatabase(DatabaseServiceMixin):
             if existing_user:
                 # Email exists, link OAuth account to existing user
                 user_id = existing_user["id"]
-                logger.info(f"✅ Email found, linking OAuth to user: {user_id}")
+                logger.info("✅ Email found, linking OAuth to user: %s", user_id)
 
                 # Create OAuth account link
                 provider_data_json = json.dumps(provider_data)
                 await conn.execute(
                     """
                     INSERT INTO oauth_accounts (
-                        id, user_id, provider, provider_user_id, provider_data, created_at, last_used
+                        id, user_id, provider, provider_user_id,
+                        provider_data, created_at, last_used
                     )
                     VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
                     """,
@@ -199,7 +200,7 @@ class UsersDatabase(DatabaseServiceMixin):
 
             # Create new user and OAuth account
             user_id = str(uuid4())
-            logger.info(f"✅ Creating new user from OAuth: {user_id}")
+            logger.info("✅ Creating new user from OAuth: %s", user_id)
 
             # Create user
             user = await conn.fetchrow(
@@ -232,7 +233,7 @@ class UsersDatabase(DatabaseServiceMixin):
                 provider_data_json,
             )
 
-            logger.info(f"✅ Created new OAuth user: {user_id}")
+            logger.info("✅ Created new OAuth user: %s", user_id)
             return ModelConverter.to_user_response(user) if user else None
 
     async def get_oauth_accounts(self, user_id: str) -> List[OAuthAccountResponse]:

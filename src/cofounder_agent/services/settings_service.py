@@ -5,8 +5,6 @@ Provides business logic for settings management, validation, and persistence.
 Supports validation of various setting types including enums, booleans, and custom formats.
 """
 
-from datetime import datetime
-from enum import Enum
 from typing import Any, Dict, Optional
 
 
@@ -38,9 +36,9 @@ class SettingValidator:
         # Special validation for specific enum keys
         if key == "theme":
             return SettingValidator.validate_theme_enum(value)
-        elif key == "email_frequency":
+        if key == "email_frequency":
             return SettingValidator.validate_email_frequency(value)
-        elif key == "timezone":
+        if key == "timezone":
             return SettingValidator.validate_timezone(value)
 
         # Boolean keys (infer type from key name)
@@ -50,16 +48,15 @@ class SettingValidator:
         # Validate based on type
         if setting_type == "boolean":
             return SettingValidator.validate_boolean(key, value)
-        elif setting_type == "enum":
+        if setting_type == "enum":
             return SettingValidator.validate_enum(key, value)
-        elif setting_type == "integer":
+        if setting_type == "integer":
             return SettingValidator.validate_integer(key, value)
-        elif setting_type == "string":
+        if setting_type == "string":
             return SettingValidator.validate_string(key, value)
-        elif setting_type == "json":
+        if setting_type == "json":
             return SettingValidator.validate_json(key, value)
-        else:
-            return True  # Unknown type, allow
+        return True  # Unknown type, allow
 
     @staticmethod
     def validate_boolean(key: str, value: Any) -> bool:

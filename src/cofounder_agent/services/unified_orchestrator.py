@@ -33,13 +33,10 @@ import asyncio
 import json
 import logging
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple
-
-# Quality service import (consolidated quality assessment)
-from services.quality_service import EvaluationMethod, UnifiedQualityService
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -238,11 +235,11 @@ class UnifiedOrchestrator:
 
         try:
             self.total_requests += 1
-            logger.info(f"[{request_id}] Processing: {user_input[:100]}")
+            logger.info("[%s] Processing: %s", request_id, user_input[:100])
 
             # Step 1: Parse and route request
             request = await self._parse_request(user_input, request_id, context)
-            logger.info(f"[{request_id}] Detected type: {request.request_type.value}")
+            logger.info("[%s] Detected type: %s", request_id, request.request_type.value)
 
             # Step 2: Route to appropriate handler
             if request.request_type == RequestType.CONTENT_CREATION:
@@ -275,19 +272,19 @@ class UnifiedOrchestrator:
                     await self._store_execution_result(result)
                 self.successful_requests += 1
                 return self._result_to_dict(result)
-            else:
-                # Legacy response format
-                self.successful_requests += 1
-                return result
+
+            # Legacy response format
+            self.successful_requests += 1
+            return result
 
         except Exception as e:
             self.failed_requests += 1
-            logger.error(f"[{request_id}] Error: {str(e)}", exc_info=True)
+            logger.error("[%s] Error: %s", request_id, str(e), exc_info=True)
             return {
                 "request_id": request_id,
                 "status": "error",
                 "error": str(e),
-                "message": f"An error occurred processing your request: {str(e)}",
+                "message": "An error occurred processing your request: %s" % str(e),
             }
 
     # ========================================================================
@@ -473,11 +470,11 @@ class UnifiedOrchestrator:
             selected = model_selections[phase]
             # If user selected a specific model (not "auto"), use it
             if selected and selected != "auto":
-                logger.info(f"   Model selection: Using {selected} for {phase} phase")
+                logger.info("   Model selection: Using %s for %s phase", selected, phase)
                 return selected
 
         logger.info(
-            f"   Model selection: Using default for {phase} phase (quality={quality_preference})"
+            "   Model selection: Using default for %s phase (quality=%s)", phase, quality_preference
         )
         return None
 
@@ -487,18 +484,13 @@ class UnifiedOrchestrator:
 
     async def _handle_content_creation(self, request: Request) -> ExecutionResult:
         """Handle content creation request - Full 5-stage pipeline with human approval gate"""
-        logger.info(f"[{request.request_id}] Handling content creation")
+        logger.info("[%s] Handling content creation", request.request_id)
 
-        import uuid
-
-        from utils.constraint_utils import (
+        from utils.constraint_utils import (  # pylint: disable=import-outside-toplevel
             ContentConstraints,
             apply_strict_mode,
             calculate_phase_targets,
-            check_tolerance,
             count_words_in_content,
-            extract_constraints_from_request,
-            inject_constraints_into_prompt,
             merge_compliance_reports,
             validate_constraints,
         )
@@ -519,20 +511,18 @@ class UnifiedOrchestrator:
                 quality_preference = request.context.get("quality_preference", "balanced")
                 if isinstance(model_selections, str):
                     try:
-                        import json
-
                         model_selections = json.loads(model_selections)
                     except (json.JSONDecodeError, TypeError):
                         model_selections = {}
 
-            logger.info(f"[{request.request_id}] Model Configuration:")
-            logger.info(f"   - Model Selections: {model_selections}")
-            logger.info(f"   - Quality Preference: {quality_preference}")
+            logger.info("[%s] Model Configuration:", request.request_id)
+            logger.info("   - Model Selections: %s", model_selections)
+            logger.info("   - Quality Preference: %s", quality_preference)
 
             # Generate task ID
-            task_id = f"task_{int(datetime.utcnow().timestamp())}_{uuid.uuid4().hex[:6]}"
+            task_id = "task_%s_%s" % (int(datetime.utcnow().timestamp()), uuid.uuid4().hex[:6])
 
-            logger.info(f"[{request.request_id}] Starting 5-stage pipeline for: {topic}")
+            logger.info("[%s] Starting 5-stage pipeline for: %s", request.request_id, topic)
 
             # ====================================================================
             # EXTRACT & INITIALIZE CONSTRAINTS
@@ -546,7 +536,11 @@ class UnifiedOrchestrator:
             )
 
             logger.info(
-                f"[{request.request_id}] Constraints: {constraints.word_count}±{constraints.word_count_tolerance}% words, {constraints.writing_style} style"
+                "[%s] Constraints: %s±%s%% words, %s style",
+                request.request_id,
+                constraints.word_count,
+                constraints.word_count_tolerance,
+                constraints.writing_style,
             )
 
             # Calculate phase targets
@@ -558,8 +552,10 @@ class UnifiedOrchestrator:
             # ====================================================================
             # STAGE 1: RESEARCH (10% → 25%)
             # ====================================================================
-            logger.info(f"[{request.request_id}] STAGE 1: Research")
-            from agents.content_agent.agents.research_agent import ResearchAgent
+            logger.info("[%s] STAGE 1: Research", request.request_id)
+            from agents.content_agent.agents.research_agent import (  # pylint: disable=import-outside-toplevel
+                ResearchAgent,
+            )
 
             research_agent = ResearchAgent()
             research_data = await research_agent.run(topic, keywords[:5])
@@ -573,18 +569,27 @@ class UnifiedOrchestrator:
             )
             compliance_reports.append(research_compliance)
             logger.info(
-                f"[{request.request_id}] Research complete: {count_words_in_content(research_text)} words"
+                "[%s] Research complete: %s words",
+                request.request_id,
+                count_words_in_content(research_text),
             )
 
             # ====================================================================
             # STAGE 2: CREATIVE DRAFT (25% → 45%)
             # ====================================================================
-            logger.info(f"[{request.request_id}] STAGE 2: Creative Draft")
-            from agents.content_agent.agents.creative_agent import CreativeAgent
-            from agents.content_agent.services.llm_client import LLMClient
-            from agents.content_agent.utils.data_models import BlogPost
-            from services.writing_style_integration import WritingStyleIntegrationService
-            from services.writing_style_service import WritingStyleService
+            logger.info("[%s] STAGE 2: Creative Draft", request.request_id)
+            from agents.content_agent.agents.creative_agent import (  # pylint: disable=import-outside-toplevel
+                CreativeAgent,
+            )
+            from agents.content_agent.services.llm_client import (  # pylint: disable=import-outside-toplevel
+                LLMClient,
+            )
+            from agents.content_agent.utils.data_models import (  # pylint: disable=import-outside-toplevel
+                BlogPost,
+            )
+            from services.writing_style_integration import (  # pylint: disable=import-outside-toplevel
+                WritingStyleIntegrationService,
+            )
 
             # Get model selection for draft phase
             draft_model = self._get_model_for_phase("draft", model_selections, quality_preference)
@@ -613,19 +618,29 @@ class UnifiedOrchestrator:
                         analysis = sample_data.get("analysis", {})
 
                         sample_title = sample_data.get("sample_title", "Unknown")
-                        logger.info(f"[{request.request_id}] Using writing sample: {sample_title}")
                         logger.info(
-                            f"[{request.request_id}]   - Detected tone: {analysis.get('detected_tone')}"
+                            "[%s] Using writing sample: %s", request.request_id, sample_title
                         )
                         logger.info(
-                            f"[{request.request_id}]   - Detected style: {analysis.get('detected_style')}"
+                            "[%s]   - Detected tone: %s",
+                            request.request_id,
+                            analysis.get("detected_tone"),
                         )
                         logger.info(
-                            f"[{request.request_id}]   - Avg sentence length: {analysis.get('avg_sentence_length')} words"
+                            "[%s]   - Detected style: %s",
+                            request.request_id,
+                            analysis.get("detected_style"),
+                        )
+                        logger.info(
+                            "[%s]   - Avg sentence length: %s words",
+                            request.request_id,
+                            analysis.get("avg_sentence_length"),
                         )
 
                 except Exception as e:
-                    logger.warning(f"[{request.request_id}] Could not retrieve writing sample: {e}")
+                    logger.warning(
+                        "[%s] Could not retrieve writing sample: %s", request.request_id, e
+                    )
 
             post = BlogPost(
                 topic=topic,
@@ -656,15 +671,21 @@ class UnifiedOrchestrator:
             )
             compliance_reports.append(creative_compliance)
             logger.info(
-                f"[{request.request_id}] Draft complete: {count_words_in_content(draft_text)} words"
+                "[%s] Draft complete: %s words",
+                request.request_id,
+                count_words_in_content(draft_text),
             )
 
             # ====================================================================
             # STAGE 3: QA REVIEW LOOP (45% → 60%)
             # ====================================================================
-            logger.info(f"[{request.request_id}] STAGE 3: QA Review")
-            from services.database_service import DatabaseService
-            from services.quality_service import EvaluationMethod, get_content_quality_service
+            logger.info("[%s] STAGE 3: QA Review", request.request_id)
+            from services.database_service import (  # pylint: disable=import-outside-toplevel
+                DatabaseService,
+            )
+            from services.quality_service import (  # pylint: disable=import-outside-toplevel
+                get_content_quality_service,
+            )
 
             database_service = DatabaseService()
             quality_service = get_content_quality_service(database_service=database_service)
@@ -682,12 +703,11 @@ class UnifiedOrchestrator:
                 quality_result = await quality_service.evaluate(
                     content=getattr(content, "raw_content", str(content)),
                     context=quality_context,
-                    method=EvaluationMethod.HYBRID,
                 )
 
                 approval_bool = quality_result.passing
                 feedback = quality_result.feedback
-                quality_score = int(quality_result.overall_score * 100)
+                quality_score = int(quality_result.overall_score)  # Already 0-100 from quality_service
 
                 # Check constraint compliance
                 if constraints:
@@ -702,18 +722,23 @@ class UnifiedOrchestrator:
                     )
                     if not compliance.word_count_within_tolerance:
                         logger.warning(
-                            f"[{request.request_id}] QA: Constraint violation - {compliance.violation_message}"
+                            "[%s] QA: Constraint violation - %s",
+                            request.request_id,
+                            compliance.violation_message,
                         )
                         approval_bool = False
-                        feedback += f" [CONSTRAINT: {compliance.violation_message}]"
+                        feedback += " [CONSTRAINT: %s]" % compliance.violation_message
 
                 if approval_bool:
                     logger.info(
-                        f"[{request.request_id}] QA Approved (iteration {iteration}, score: {quality_score}/100)"
+                        "[%s] QA Approved (iteration %d, score: %d/100)",
+                        request.request_id,
+                        iteration,
+                        quality_score,
                     )
                     break
                 elif iteration < max_iterations:
-                    logger.info(f"[{request.request_id}] QA Rejected - Refining...")
+                    logger.info("[%s] QA Rejected - Refining...", request.request_id)
                     # Get model selection for refine phase
                     refine_model = self._get_model_for_phase(
                         "refine", model_selections, quality_preference
@@ -740,24 +765,26 @@ class UnifiedOrchestrator:
             # ====================================================================
             # STAGE 4: IMAGE SELECTION (60% → 75%)
             # ====================================================================
-            logger.info(f"[{request.request_id}] STAGE 4: Image Selection")
+            logger.info("[%s] STAGE 4: Image Selection", request.request_id)
             featured_image_url = None
             try:
-                from services.image_service import get_image_service
+                from services.image_service import (  # pylint: disable=import-outside-toplevel
+                    get_image_service,
+                )
 
                 image_service = get_image_service()
                 featured_image = await image_service.search_featured_image(topic=topic, keywords=[])
                 if featured_image:
                     featured_image_url = featured_image.url
-                    logger.info(f"[{request.request_id}] Featured image selected")
+                    logger.info("[%s] Featured image selected", request.request_id)
             except Exception as e:
-                logger.warning(f"[{request.request_id}] Image selection failed: {e}")
+                logger.warning("[%s] Image selection failed: %s", request.request_id, e)
 
             # ====================================================================
             # STAGE 5: FORMATTING (75% → 90%)
             # ====================================================================
-            logger.info(f"[{request.request_id}] STAGE 5: Formatting")
-            from agents.content_agent.agents.postgres_publishing_agent import (
+            logger.info("[%s] STAGE 5: Formatting", request.request_id)
+            from agents.content_agent.agents.postgres_publishing_agent import (  # pylint: disable=import-outside-toplevel
                 PostgreSQLPublishingAgent,
             )
 
@@ -765,18 +792,20 @@ class UnifiedOrchestrator:
             result_post = await publishing_agent.run(content)
 
             formatted_content = getattr(result_post, "raw_content", str(content))
-            excerpt = getattr(result_post, "meta_description", f"Article about {topic}")
+            excerpt = getattr(result_post, "meta_description", "Article about %s" % topic)
 
             # ====================================================================
             # STAGE 6: AWAITING HUMAN APPROVAL (90% → 100%)
             # ====================================================================
-            logger.info(f"[{request.request_id}] STAGE 6: Awaiting Human Approval")
+            logger.info("[%s] STAGE 6: Awaiting Human Approval", request.request_id)
 
             overall_compliance = merge_compliance_reports(compliance_reports)
             strict_mode_valid, strict_mode_error = apply_strict_mode(overall_compliance)
 
             if not strict_mode_valid:
-                logger.warning(f"[{request.request_id}] STRICT MODE VIOLATION: {strict_mode_error}")
+                logger.warning(
+                    "[%s] STRICT MODE VIOLATION: %s", request.request_id, strict_mode_error
+                )
 
             result = {
                 "task_id": task_id,
@@ -797,10 +826,10 @@ class UnifiedOrchestrator:
                     "violation_message": overall_compliance.violation_message,
                 },
                 "message": "✅ Content ready for human review. Human approval required before publishing.",
-                "next_action": f"POST /api/content/tasks/{task_id}/approve with human decision",
+                "next_action": "POST /api/content/tasks/%s/approve with human decision" % task_id,
             }
 
-            logger.info(f"[{request.request_id}] ✅ Pipeline complete. Awaiting human approval.")
+            logger.info("[%s] ✅ Pipeline complete. Awaiting human approval.", request.request_id)
 
             return ExecutionResult(
                 request_id=request.request_id,
@@ -814,18 +843,22 @@ class UnifiedOrchestrator:
             )
 
         except Exception as e:
-            logger.error(f"[{request.request_id}] Content creation failed: {e}", exc_info=True)
+            logger.error(
+                "[%s] Content creation failed: %s", request.request_id, str(e), exc_info=True
+            )
             return ExecutionResult(
                 request_id=request.request_id,
                 request_type=request.request_type,
                 status=ExecutionStatus.FAILED,
                 output=str(e),
-                feedback=f"Content creation failed: {str(e)}",
+                feedback="Content creation failed: %s" % str(e),
             )
 
     async def _handle_content_subtask(self, request: Request) -> ExecutionResult:
         """Handle individual content subtask (research, creative, QA, etc.)"""
-        logger.info(f"[{request.request_id}] Handling content subtask: {request.extracted_intent}")
+        logger.info(
+            "[%s] Handling content subtask: %s", request.request_id, request.extracted_intent
+        )
 
         subtask_type = request.parameters.get("subtask_type", "research")
         topic = request.parameters.get("topic", request.original_text)
@@ -835,13 +868,13 @@ class UnifiedOrchestrator:
             request_id=request.request_id,
             request_type=request.request_type,
             status=ExecutionStatus.COMPLETED,
-            output=f"Executed {subtask_type} subtask for: {topic}",
-            feedback=f"Subtask '{subtask_type}' queued for execution",
+            output="Executed %s subtask for: %s" % (subtask_type, topic),
+            feedback="Subtask '%s' queued for execution" % subtask_type,
         )
 
     async def _handle_financial_analysis(self, request: Request) -> ExecutionResult:
         """Handle financial analysis request"""
-        logger.info(f"[{request.request_id}] Handling financial analysis")
+        logger.info("[%s] Handling financial analysis", request.request_id)
 
         agent = self.agents.get("financial_agent")
         if not agent:
@@ -867,8 +900,8 @@ class UnifiedOrchestrator:
                 output=result,
                 feedback="Financial analysis complete",
             )
-        except Exception as e:
-            logger.error(f"[{request.request_id}] Financial analysis failed: {e}")
+        except Exception as e:  # pylint: disable=broad-except
+            logger.error("[%s] Financial analysis failed: %s", request.request_id, e)
             return ExecutionResult(
                 request_id=request.request_id,
                 request_type=request.request_type,
@@ -879,7 +912,7 @@ class UnifiedOrchestrator:
 
     async def _handle_compliance_check(self, request: Request) -> ExecutionResult:
         """Handle compliance check request"""
-        logger.info(f"[{request.request_id}] Handling compliance check")
+        logger.info("[%s] Handling compliance check", request.request_id)
 
         agent = self.agents.get("compliance_agent")
         if not agent:
@@ -902,8 +935,8 @@ class UnifiedOrchestrator:
                 output=result,
                 feedback="Compliance audit complete",
             )
-        except Exception as e:
-            logger.error(f"[{request.request_id}] Compliance check failed: {e}")
+        except Exception as e:  # pylint: disable=broad-except
+            logger.error("[%s] Compliance check failed: %s", request.request_id, e)
             return ExecutionResult(
                 request_id=request.request_id,
                 request_type=request.request_type,
@@ -914,7 +947,7 @@ class UnifiedOrchestrator:
 
     async def _handle_task_management(self, request: Request) -> ExecutionResult:
         """Handle task management request"""
-        logger.info(f"[{request.request_id}] Handling task management")
+        logger.info("[%s] Handling task management", request.request_id)
 
         # This delegates to existing task routes
         return ExecutionResult(
@@ -928,7 +961,7 @@ class UnifiedOrchestrator:
 
     async def _handle_information_retrieval(self, request: Request) -> ExecutionResult:
         """Handle information retrieval request"""
-        logger.info(f"[{request.request_id}] Handling information retrieval")
+        logger.info("[%s] Handling information retrieval", request.request_id)
 
         query = request.parameters.get("query", request.original_text)
 
@@ -936,13 +969,13 @@ class UnifiedOrchestrator:
             request_id=request.request_id,
             request_type=request.request_type,
             status=ExecutionStatus.COMPLETED,
-            output=f"Retrieved information for: {query}",
+            output="Retrieved information for: %s" % query,
             feedback="Query executed",
         )
 
     async def _handle_decision_support(self, request: Request) -> ExecutionResult:
         """Handle decision support request"""
-        logger.info(f"[{request.request_id}] Handling decision support")
+        logger.info("[%s] Handling decision support", request.request_id)
 
         question = request.parameters.get("decision_question", request.original_text)
 
@@ -950,13 +983,13 @@ class UnifiedOrchestrator:
             request_id=request.request_id,
             request_type=request.request_type,
             status=ExecutionStatus.COMPLETED,
-            output=f"Decision support for: {question}",
+            output="Decision support for: %s" % question,
             feedback="Decision analysis provided",
         )
 
     async def _handle_system_operation(self, request: Request) -> ExecutionResult:
         """Handle system operation request"""
-        logger.info(f"[{request.request_id}] Handling system operation")
+        logger.info("[%s] Handling system operation", request.request_id)
 
         return ExecutionResult(
             request_id=request.request_id,
@@ -968,7 +1001,7 @@ class UnifiedOrchestrator:
 
     async def _handle_intervention(self, request: Request) -> ExecutionResult:
         """Handle manual intervention"""
-        logger.info(f"[{request.request_id}] Handling intervention")
+        logger.info("[%s] Handling intervention", request.request_id)
 
         return ExecutionResult(
             request_id=request.request_id,
@@ -980,7 +1013,7 @@ class UnifiedOrchestrator:
 
     async def _handle_unknown(self, request: Request) -> ExecutionResult:
         """Handle unknown request type"""
-        logger.info(f"[{request.request_id}] Unknown request type, treating as content creation")
+        logger.info("[%s] Unknown request type, treating as content creation", request.request_id)
 
         return await self._handle_content_creation(request)
 
@@ -1010,10 +1043,10 @@ class UnifiedOrchestrator:
                 return
 
             # Store in database (specific table logic depends on result type)
-            logger.info(f"Storing execution result: {result.request_id}")
+            logger.info("Storing execution result: %s", result.request_id)
             # Result storage is handled by TaskExecutor service after processing
-        except Exception as e:
-            logger.error(f"Failed to store execution result: {e}")
+        except Exception as e:  # pylint: disable=broad-except
+            logger.error("Failed to store execution result: %s", e)
 
     def _result_to_dict(self, result: ExecutionResult) -> Dict[str, Any]:
         """Convert ExecutionResult to dictionary"""

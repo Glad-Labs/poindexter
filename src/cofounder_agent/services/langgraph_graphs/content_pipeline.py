@@ -1,10 +1,8 @@
 """LangGraph workflow for blog post creation"""
 
-import asyncio
 import logging
-import time
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal
 
 from langgraph.graph import END, StateGraph
 
@@ -31,7 +29,7 @@ async def research_phase(
 ) -> ContentPipelineState:
     """Research: Gather information about the topic"""
 
-    logger.info(f"Starting research for topic: {state['topic']}")
+    logger.info("Starting research for topic: %s", state['topic'])
 
     # Determine which model to use for this phase
     phase = "research"
@@ -49,7 +47,7 @@ async def research_phase(
 
     # Estimate cost for this phase
     cost = model_selector.estimate_cost(phase, model)
-    logger.info(f"Research phase using {model}: Estimated cost ${cost:.6f}")
+    logger.info("Research phase using %s: Estimated cost $%.6f", model, cost)
 
     prompt = f"""Research the following topic and provide key insights:
 
@@ -108,8 +106,8 @@ Please provide:
         state["cost_breakdown"][phase] = cost
         state["total_cost"] = state.get("total_cost", 0.0) + cost
 
-    except Exception as e:
-        logger.error(f"Research phase error: {str(e)}")
+    except Exception as e:  # pylint: disable=broad-except
+        logger.error("Research phase error: %s", str(e))
         state["errors"].append(f"Research failed: {str(e)}")
         state["status"] = "failed"
 
@@ -142,7 +140,7 @@ async def outline_phase(
 ) -> ContentPipelineState:
     """Outline: Create structure for the blog post"""
 
-    logger.info(f"Creating outline for: {state['topic']}")
+    logger.info("Creating outline for: %s", state['topic'])
 
     # Determine which model to use for this phase
     phase = "outline"
@@ -158,7 +156,7 @@ async def outline_phase(
         model = model_selector.auto_select(phase, quality_enum)
 
     cost = model_selector.estimate_cost(phase, model)
-    logger.info(f"Outline phase using {model}: Estimated cost ${cost:.6f}")
+    logger.info("Outline phase using %s: Estimated cost $%.6f", model, cost)
 
     prompt = f"""Create a detailed outline for a blog post with these specifications:
 
@@ -216,8 +214,8 @@ Format as a numbered list.
         state["cost_breakdown"][phase] = cost
         state["total_cost"] = state.get("total_cost", 0.0) + cost
 
-    except Exception as e:
-        logger.error(f"Outline phase error: {str(e)}")
+    except Exception as e:  # pylint: disable=broad-except
+        logger.error("Outline phase error: %s", str(e))
         state["errors"].append(f"Outline failed: {str(e)}")
         state["status"] = "failed"
 
@@ -249,7 +247,7 @@ async def draft_phase(
 ) -> ContentPipelineState:
     """Draft: Write the full blog post"""
 
-    logger.info(f"Drafting blog post: {state['topic']}")
+    logger.info("Drafting blog post: %s", state['topic'])
 
     # Determine which model to use for this phase
     phase = "draft"
@@ -265,7 +263,7 @@ async def draft_phase(
         model = model_selector.auto_select(phase, quality_enum)
 
     cost = model_selector.estimate_cost(phase, model)
-    logger.info(f"Draft phase using {model}: Estimated cost ${cost:.6f}")
+    logger.info("Draft phase using %s: Estimated cost $%.6f", model, cost)
 
     prompt = f"""Write a comprehensive blog post based on this outline and research:
 
@@ -325,8 +323,8 @@ Write the complete blog post with proper formatting:
         state["cost_breakdown"][phase] = cost
         state["total_cost"] = state.get("total_cost", 0.0) + cost
 
-    except Exception as e:
-        logger.error(f"Draft phase error: {str(e)}")
+    except Exception as e:  # pylint: disable=broad-except
+        logger.error("Draft phase error: %s", str(e))
         state["errors"].append(f"Draft failed: {str(e)}")
         state["status"] = "failed"
 
@@ -358,7 +356,7 @@ async def assess_quality(
 ) -> ContentPipelineState:
     """Assess: Evaluate content quality"""
 
-    logger.info(f"Assessing quality for task {state['request_id']}")
+    logger.info("Assessing quality for task %s", state['request_id'])
 
     # Determine which model to use for this phase (quality assessment critical, force best)
     phase = "assess"
@@ -369,7 +367,7 @@ async def assess_quality(
         model = "gpt-4"
 
     cost = model_selector.estimate_cost(phase, model)
-    logger.info(f"Assessment phase using {model}: Estimated cost ${cost:.6f}")
+    logger.info("Assessment phase using %s: Estimated cost $%.6f", model, cost)
 
     start_time = time.time()
     try:
@@ -434,8 +432,8 @@ async def assess_quality(
         state["cost_breakdown"][phase] = cost
         state["total_cost"] = state.get("total_cost", 0.0) + cost
 
-    except Exception as e:
-        logger.error(f"Quality assessment error: {str(e)}")
+    except Exception as e:  # pylint: disable=broad-except
+        logger.error("Quality assessment error: %s", str(e))
         state["errors"].append(f"Quality assessment failed: {str(e)}")
         # Don't fail entirely - allow refinement
         state["quality_score"] = 50
@@ -464,14 +462,14 @@ def should_refine(state: ContentPipelineState) -> Literal["refine", "finalize"]:
     """Decision node: Should we refine or finalize?"""
 
     if state["passed_quality"]:
-        logger.info(f"Quality passed for {state['request_id']}")
+        logger.info("Quality passed for %s", state['request_id'])
         return "finalize"
 
     if state["refinement_count"] >= state["max_refinements"]:
-        logger.warning(f"Max refinements reached for {state['request_id']}")
+        logger.warning("Max refinements reached for %s", state['request_id'])
         return "finalize"
 
-    logger.info(f"Refining {state['request_id']} (attempt {state['refinement_count'] + 1})")
+    logger.info("Refining %s (attempt %s)", state['request_id'], state['refinement_count'] + 1)
     return "refine"
 
 
@@ -480,7 +478,7 @@ async def refine_phase(
 ) -> ContentPipelineState:
     """Refine: Improve content based on quality feedback"""
 
-    logger.info(f"Refining content for {state['request_id']}")
+    logger.info("Refining content for %s", state['request_id'])
 
     # Determine which model to use for this phase
     phase = "refine"
@@ -496,7 +494,7 @@ async def refine_phase(
         model = model_selector.auto_select(phase, quality_enum)
 
     cost = model_selector.estimate_cost(phase, model)
-    logger.info(f"Refine phase using {model}: Estimated cost ${cost:.6f}")
+    logger.info("Refine phase using %s: Estimated cost $%.6f", model, cost)
 
     prompt = f"""Improve this blog post based on the following feedback:
 
@@ -554,8 +552,8 @@ Return the improved version.
         state["cost_breakdown"][phase] = state.get("cost_breakdown", {}).get(phase, 0.0) + cost
         state["total_cost"] = state.get("total_cost", 0.0) + cost
 
-    except Exception as e:
-        logger.error(f"Refinement phase error: {str(e)}")
+    except Exception as e:  # pylint: disable=broad-except
+        logger.error("Refinement phase error: %s", str(e))
         state["errors"].append(f"Refinement failed: {str(e)}")
 
         duration_ms = int((time.time() - start_time) * 1000)
@@ -586,7 +584,7 @@ async def finalize_phase(
 ) -> ContentPipelineState:
     """Finalize: Generate metadata and save"""
 
-    logger.info(f"Finalizing content for {state['request_id']}")
+    logger.info("Finalizing content for %s", state['request_id'])
 
     # Determine which model to use for this phase
     phase = "finalize"
@@ -602,7 +600,7 @@ async def finalize_phase(
         model = model_selector.auto_select(phase, quality_enum)
 
     cost = model_selector.estimate_cost(phase, model)
-    logger.info(f"Finalize phase using {model}: Estimated cost ${cost:.6f}")
+    logger.info("Finalize phase using %s: Estimated cost $%.6f", model, cost)
 
     start_time = time.time()
     try:
@@ -673,8 +671,8 @@ async def finalize_phase(
             f"✅ Task {state['request_id']} completed. Total cost: ${state['total_cost']:.6f}"
         )
 
-    except Exception as e:
-        logger.error(f"Finalize phase error: {str(e)}")
+    except Exception as e:  # pylint: disable=broad-except
+        logger.error("Finalize phase error: %s", str(e))
         state["errors"].append(f"Finalization failed: {str(e)}")
         state["task_id"] = state["request_id"]
 

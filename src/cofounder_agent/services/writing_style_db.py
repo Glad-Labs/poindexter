@@ -8,12 +8,9 @@ Handles all writing sample operations including:
 """
 
 import logging
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from asyncpg import Pool
-
-from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 
 from .database_mixin import DatabaseServiceMixin
 
@@ -85,11 +82,11 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                 )
 
                 sample_id = row.get("id") if row else None
-                logger.info(f"✅ Created writing sample: {sample_id} for user {user_id}")
+                logger.info("Created writing sample: %s for user %s", sample_id, user_id)
                 return self._format_sample(row)
 
         except Exception as e:
-            logger.error(f"❌ Failed to create writing sample: {e}")
+            logger.error("Failed to create writing sample: %s", e)
             raise
 
     async def get_writing_sample(self, sample_id: str) -> Optional[Dict[str, Any]]:
@@ -114,7 +111,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                 )
                 return self._format_sample(row) if row else None
         except Exception as e:
-            logger.error(f"❌ Failed to get writing sample: {e}")
+            logger.error("Failed to get writing sample: %s", e)
             raise
 
     async def get_user_writing_samples(self, user_id: str) -> List[Dict[str, Any]]:
@@ -141,7 +138,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                 )
                 return [self._format_sample(row) for row in rows]
         except Exception as e:
-            logger.error(f"❌ Failed to get user writing samples: {e}")
+            logger.error("Failed to get user writing samples: %s", e)
             raise
 
     async def get_active_writing_sample(self, user_id: str) -> Optional[Dict[str, Any]]:
@@ -168,7 +165,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                 )
                 return self._format_sample(row) if row else None
         except Exception as e:
-            logger.error(f"❌ Failed to get active writing sample: {e}")
+            logger.error("Failed to get active writing sample: %s", e)
             raise
 
     async def set_active_writing_sample(self, user_id: str, sample_id: str) -> Dict[str, Any]:
@@ -207,11 +204,11 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                 if not row:
                     raise ValueError(f"Writing sample {sample_id} not found for user {user_id}")
 
-                logger.info(f"✅ Set writing sample {sample_id} as active for user {user_id}")
+                logger.info("Set writing sample %s as active for user %s", sample_id, user_id)
                 return self._format_sample(row)
 
         except Exception as e:
-            logger.error(f"❌ Failed to set active writing sample: {e}")
+            logger.error("Failed to set active writing sample: %s", e)
             raise
 
     async def update_writing_sample(
@@ -285,11 +282,11 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                 if not row:
                     raise ValueError(f"Writing sample {sample_id} not found for user {user_id}")
 
-                logger.info(f"✅ Updated writing sample: {sample_id}")
+                logger.info("Updated writing sample: %s", sample_id)
                 return self._format_sample(row)
 
         except Exception as e:
-            logger.error(f"❌ Failed to update writing sample: {e}")
+            logger.error("Failed to update writing sample: %s", e)
             raise
 
     async def delete_writing_sample(self, sample_id: str, user_id: str) -> bool:
@@ -314,14 +311,14 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                 success = "1" in result or result.endswith("1")
 
                 if success:
-                    logger.info(f"✅ Deleted writing sample: {sample_id}")
+                    logger.info("Deleted writing sample: %s", sample_id)
                 else:
-                    logger.warning(f"⚠️  Writing sample {sample_id} not found for deletion")
+                    logger.warning("Writing sample %s not found for deletion", sample_id)
 
                 return success
 
         except Exception as e:
-            logger.error(f"❌ Failed to delete writing sample: {e}")
+            logger.error("Failed to delete writing sample: %s", e)
             raise
 
     @staticmethod

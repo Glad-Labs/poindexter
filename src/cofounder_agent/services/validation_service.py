@@ -16,8 +16,6 @@ logger = logging.getLogger(__name__)
 class ValidationError(Exception):
     """Custom exception for validation failures"""
 
-    pass
-
 
 class InputValidator:
     """Validates user input across all endpoints"""
@@ -138,8 +136,8 @@ class InputValidator:
         """Validate integer input"""
         try:
             int_value = int(value)
-        except (ValueError, TypeError):
-            raise ValidationError(f"{field_name} must be an integer")
+        except (ValueError, TypeError) as exc:
+            raise ValidationError(f"{field_name} must be an integer") from exc
 
         if min_value is not None and int_value < min_value:
             raise ValidationError(f"{field_name} must be at least {min_value}")
@@ -256,8 +254,8 @@ class InputValidator:
         elif isinstance(value, str):
             try:
                 dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-            except ValueError:
-                raise ValidationError(f"{field_name} must be a valid ISO format datetime")
+            except ValueError as exc:
+                raise ValidationError(f"{field_name} must be a valid ISO format datetime") from exc
         else:
             raise ValidationError(f"{field_name} must be a datetime object or ISO string")
 

@@ -12,12 +12,9 @@ This service enhances content generation by automatically selecting the most
 relevant writing samples based on the task topic and user preferences.
 """
 
-import json
 import logging
-import math
 import re
-from collections import Counter
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from services.database_service import DatabaseService
 from services.writing_style_integration import WritingStyleIntegrationService

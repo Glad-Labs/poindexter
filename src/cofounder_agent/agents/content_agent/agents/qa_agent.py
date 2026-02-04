@@ -1,4 +1,3 @@
-import json
 import logging
 
 from ..config import config
@@ -98,5 +97,4 @@ class QAAgent:
 
         if approved:
             return True, "Content approved by QA."
-        else:
-            return False, feedback
+        return False, feedback

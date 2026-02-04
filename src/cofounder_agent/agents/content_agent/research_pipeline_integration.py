@@ -162,11 +162,10 @@ class ResearchPipelineIntegration:
 
             return context
 
-        else:
-            return {
-                "research_phase_complete": False,
-                "error": research_result.get("error"),
-            }
+        return {
+            "research_phase_complete": False,
+            "error": research_result.get("error"),
+        }
 
     def _extract_key_findings(self, research_data: dict) -> list[str]:
         """Extract key findings from research data."""
@@ -241,9 +240,8 @@ async def example_research_for_content():
 
         return context
 
-    else:
-        print(f"✗ Research failed: {context.get('error')}")
-        return None
+    print(f"✗ Research failed: {context.get('error')}")
+    return None
 
 
 if __name__ == "__main__":

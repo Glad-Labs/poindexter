@@ -275,7 +275,10 @@ class UnifiedWorkflowRouter:
             "workflows": [
                 {
                     "type": "content_generation",
-                    "description": "Generate professional blog posts with research, creative writing, QA, and publishing",
+                    "description": (
+                        "Generate professional blog posts with research, creative writing, "
+                        "QA, and publishing"
+                    ),
                     "default_pipeline": pipelines.get("content_generation", []),
                 },
                 {

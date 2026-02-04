@@ -1,5 +1,4 @@
-﻿import asyncio
-import logging
+﻿import logging
 
 logger = logging.getLogger(__name__)
 
@@ -9,8 +8,8 @@ class ContentAgentOrchestrator:
         self.api_url = api_url
         self.is_running = False
         self.pubsub_client = None
-        logger.info(f"Initialized ContentAgentOrchestrator (API: {api_url})")
+        logger.info("Initialized ContentAgentOrchestrator (API: %s)", api_url)
 
     async def start_polling(self, interval: int = 30):
         self.is_running = True
-        logger.info(f"Starting task polling (interval: {interval}s)")
+        logger.info("Starting task polling (interval: %ss)", interval)

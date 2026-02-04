@@ -14,8 +14,7 @@ and content generation (Phase 3.3).
 
 import logging
 import re
-from collections import Counter
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from services.database_service import DatabaseService
 from services.writing_style_service import WritingStyleService

@@ -156,7 +156,7 @@ async def get_all_agents_status(orchestrator=Depends(get_orchestrator)):
         )
     except Exception as e:
         logger.error(f"Error fetching all agents status: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch agents status: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch agents status: {str(e)}") from e
 
 
 @router.get("/{agent_name}/status", response_model=AgentStatus)
@@ -195,7 +195,7 @@ async def get_agent_status(agent_name: str, orchestrator=Depends(get_orchestrato
         return agent_status
     except Exception as e:
         logger.error(f"Error fetching status for agent {agent_name}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch agent status: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch agent status: {str(e)}") from e
 
 
 @router.post("/{agent_name}/command", response_model=AgentCommandResult)
@@ -258,7 +258,7 @@ async def send_agent_command(
         )
     except Exception as e:
         logger.error(f"Error sending command to agent {agent_name}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to send command: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to send command: {str(e)}") from e
 
 
 @router.get("/logs", response_model=AgentLogs)

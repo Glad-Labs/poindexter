@@ -7,7 +7,6 @@ Replaces Strapi publishing with direct database inserts to posts table.
 import logging
 from typing import Optional, Tuple
 
-from ..config import config
 from ..services.postgres_cms_client import PostgresCMSClient
 from ..utils.data_models import BlogPost
 

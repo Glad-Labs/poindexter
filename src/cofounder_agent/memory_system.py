@@ -7,17 +7,14 @@ learn from interactions, build domain expertise, and maintain context across ses
 Uses PostgreSQL for persistent storage (no SQLite).
 """
 
-import asyncio
 import hashlib
 import json
 import logging
-import os
 import pickle
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from enum import Enum
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 import asyncpg
@@ -56,7 +53,7 @@ class ImportanceLevel(int, Enum):
 
 
 @dataclass
-class Memory:
+class Memory:  # pylint: disable=too-many-instance-attributes
     """A single memory or piece of knowledge"""
 
     id: str
@@ -74,7 +71,7 @@ class Memory:
 
 
 @dataclass
-class KnowledgeCluster:
+class KnowledgeCluster:  # pylint: disable=too-many-instance-attributes
     """A cluster of related knowledge/memories"""
 
     id: str
@@ -100,7 +97,7 @@ class LearningPattern:
     discovered_at: datetime
 
 
-class AIMemorySystem:
+class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
     """
     Comprehensive memory and knowledge management system for AI co-founder.
 
@@ -180,8 +177,8 @@ class AIMemorySystem:
                         "created by init_memory_tables()"
                     )
 
-        except Exception as e:
-            self.logger.error(f"Error verifying memory tables: {e}")
+        except Exception as e:  # pylint: disable=broad-except
+            self.logger.error("Error verifying memory tables: %s", e)
             raise
 
     def _init_embedding_model(self):
@@ -194,8 +191,8 @@ class AIMemorySystem:
             else:
                 self.embedding_model = None
                 self.logger.info("Sentence transformers not available, using fallback similarity")
-        except Exception as e:
-            self.logger.error(f"Failed to initialize embedding model: {e}")
+        except Exception as e:  # pylint: disable=broad-except
+            self.logger.error("Failed to initialize embedding model: %s", e)
             self.embedding_model = None
 
     async def _load_persistent_memory(self) -> None:
@@ -245,8 +242,8 @@ class AIMemorySystem:
                     count_prefs,
                 )
 
-        except Exception as e:
-            self.logger.error(f"Error loading persistent memory: {e}")
+        except Exception as e:  # pylint: disable=broad-except
+            self.logger.error("Error loading persistent memory: %s", e)
 
     def _row_to_memory(self, row: asyncpg.Record) -> Memory:
         """Convert PostgreSQL row to Memory object"""
@@ -320,7 +317,7 @@ class AIMemorySystem:
             topics=topics,
         )
 
-    async def store_memory(
+    async def store_memory(  # pylint: disable=too-many-positional-arguments
         self,
         content: str,
         memory_type: MemoryType,
@@ -339,8 +336,8 @@ class AIMemorySystem:
         if self.embedding_model:
             try:
                 embedding = self.embedding_model.encode([content])[0].tolist()
-            except Exception as e:
-                self.logger.error(f"Error generating embedding: {e}")
+            except Exception as e:  # pylint: disable=broad-except
+                self.logger.error("Error generating embedding: %s", e)
 
         # Create memory object
         memory = Memory(
@@ -374,7 +371,7 @@ class AIMemorySystem:
         # Update knowledge clusters
         await self._update_knowledge_clusters(memory)
 
-        self.logger.info(f"Stored memory: {memory_type.value} - {content[:50]}...")
+        self.logger.info("Stored memory: %s - %s", memory_type.value, content[:50])
 
         return memory_id
 
@@ -416,10 +413,10 @@ class AIMemorySystem:
                 )
 
         except Exception as e:
-            self.logger.error(f"Error persisting memory: {e}")
+            self.logger.error("Error persisting memory: %s", e)
             raise
 
-    async def recall_memories(
+    async def recall_memories(  # pylint: disable=too-many-locals
         self,
         query: str,
         memory_types: Optional[List[MemoryType]] = None,
@@ -466,7 +463,7 @@ class AIMemorySystem:
                             np.linalg.norm(query_embedding) * np.linalg.norm(memory.embedding)
                         )
                         relevance_score = max(relevance_score, cosine_similarity)
-                    except Exception:
+                    except Exception:  # pylint: disable=broad-except
                         pass
 
                 # Combine scores
@@ -493,8 +490,8 @@ class AIMemorySystem:
 
             return result
 
-        except Exception as e:
-            self.logger.error(f"Error recalling memories: {e}")
+        except Exception as e:  # pylint: disable=broad-except
+            self.logger.error("Error recalling memories: %s", e)
             return []
 
     async def _update_memory_access(self, memory: Memory) -> None:
@@ -511,8 +508,8 @@ class AIMemorySystem:
                     memory.access_count,
                     memory.id,
                 )
-        except Exception as e:
-            self.logger.error(f"Error updating memory access: {e}")
+        except Exception as e:  # pylint: disable=broad-except
+            self.logger.error("Error updating memory access: %s", e)
 
     async def learn_user_preference(
         self,
@@ -545,9 +542,9 @@ class AIMemorySystem:
                     source,
                 )
 
-            self.logger.info(f"Learned user preference: {preference_key} = {preference_value}")
+            self.logger.info("Learned user preference: %s = %s", preference_key, preference_value)
         except Exception as e:
-            self.logger.error(f"Error learning user preference: {e}")
+            self.logger.error("Error learning user preference: %s", e)
             raise
 
     async def get_user_preferences(self, category: Optional[str] = None) -> Dict[str, Any]:
@@ -624,10 +621,7 @@ class AIMemorySystem:
                 # Question pattern analysis
                 questions = [msg for msg in user_messages if "?" in msg["content"]]
                 if len(questions) >= 3:
-                    desc = (
-                        f"User asks {len(questions)} questions, "
-                        "prefers detailed explanations"
-                    )
+                    desc = f"User asks {len(questions)} questions, " "prefers detailed explanations"
                     pattern = LearningPattern(
                         pattern_id="question_pattern",
                         pattern_type="workflow",
@@ -643,8 +637,8 @@ class AIMemorySystem:
             for pattern in patterns:
                 await self._store_learning_pattern(pattern)
 
-        except Exception as e:
-            self.logger.error(f"Error identifying learning patterns: {e}")
+        except Exception as e:  # pylint: disable=broad-except
+            self.logger.error("Error identifying learning patterns: %s", e)
 
         return patterns
 
@@ -688,7 +682,7 @@ class AIMemorySystem:
                     pattern.discovered_at,
                 )
         except Exception as e:
-            self.logger.error(f"Error storing learning pattern: {e}")
+            self.logger.error("Error storing learning pattern: %s", e)
             raise
 
     async def _update_knowledge_clusters(self, memory: Memory):
@@ -754,7 +748,7 @@ class AIMemorySystem:
                     cluster.topics if cluster.topics else None,  # Pass list directly
                 )
         except Exception as e:
-            self.logger.error(f"Error persisting knowledge cluster: {e}")
+            self.logger.error("Error persisting knowledge cluster: %s", e)
             raise
 
     async def get_contextual_knowledge(
@@ -824,9 +818,9 @@ class AIMemorySystem:
                         m for m in self.important_memories if m.id not in memory_ids
                     ]
 
-                    self.logger.info(f"Forgot {len(memory_ids)} outdated memories")
+                    self.logger.info("Forgot %s outdated memories", len(memory_ids))
         except Exception as e:
-            self.logger.error(f"Error forgetting outdated memories: {e}")
+            self.logger.error("Error forgetting outdated memories: %s", e)
             raise
 
     async def get_memory_summary(self) -> Dict[str, Any]:
@@ -860,7 +854,7 @@ class AIMemorySystem:
                 "last_updated": datetime.now().isoformat(),
             }
         except Exception as e:
-            self.logger.error(f"Error getting memory summary: {e}")
+            self.logger.error("Error getting memory summary: %s", e)
             raise
 
 

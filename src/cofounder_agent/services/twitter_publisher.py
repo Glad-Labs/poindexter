@@ -14,7 +14,6 @@ Requirements:
   - Or: TWITTER_BEARER_TOKEN (for App-only auth)
 """
 
-import json
 import logging
 import os
 from typing import Any, Dict, Optional
@@ -111,7 +110,7 @@ class TwitterPublisher:
             if response.status_code not in (200, 201):
                 error_data = response.json() if response.text else {}
                 error_msg = error_data.get("detail", f"Status {response.status_code}")
-                logger.error(f"Twitter publish failed: {error_msg}")
+                logger.error("Twitter publish failed: %s", error_msg)
                 return {
                     "success": False,
                     "error": f"Twitter API error: {error_msg}",
@@ -122,7 +121,7 @@ class TwitterPublisher:
             data = response.json().get("data", {})
             tweet_id = data.get("id")
 
-            logger.info(f"✅ Published to Twitter: {tweet_id}")
+            logger.info("Published to Twitter: %s", tweet_id)
 
             return {
                 "success": True,
@@ -131,8 +130,8 @@ class TwitterPublisher:
                 "error": None,
             }
 
-        except Exception as e:
-            logger.error(f"Twitter publishing error: {str(e)}")
+        except Exception as e:  # pylint: disable=broad-except
+            logger.error("Twitter publishing error: %s", str(e))
             return {
                 "success": False,
                 "error": f"Publishing error: {str(e)}",

@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-from .nlp_intent_recognizer import IntentMatch, NLPIntentRecognizer
+from .nlp_intent_recognizer import NLPIntentRecognizer
 
 logger = logging.getLogger(__name__)
 

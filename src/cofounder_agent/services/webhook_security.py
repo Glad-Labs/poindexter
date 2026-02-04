@@ -17,8 +17,6 @@ logger = logging.getLogger(__name__)
 class WebhookSignatureError(Exception):
     """Exception raised when webhook signature verification fails"""
 
-    pass
-
 
 class WebhookSecurity:
     """Provides webhook security utilities including signature verification"""
@@ -83,8 +81,8 @@ class WebhookSecurity:
                             f"Webhook timestamp is too old ({age.total_seconds()}s > "
                             f"{cls.SIGNATURE_VALIDITY_SECONDS}s)"
                         )
-                except ValueError:
-                    raise WebhookSignatureError("Invalid timestamp format")
+                except ValueError as exc:
+                    raise WebhookSignatureError("Invalid timestamp format") from exc
 
             # Construct signed content
             if timestamp:
@@ -105,7 +103,7 @@ class WebhookSecurity:
         except WebhookSignatureError:
             raise
         except Exception as e:
-            raise WebhookSignatureError(f"Signature verification error: {str(e)}")
+            raise WebhookSignatureError(f"Signature verification error: {str(e)}") from e
 
     @classmethod
     def calculate_signature(

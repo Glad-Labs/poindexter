@@ -12,16 +12,13 @@ Purpose:
 Phase 3 of Unified Task Orchestration System.
 """
 
-import asyncio
-import json
 import logging
-from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta
-from decimal import Decimal
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 from .model_router import ModelRouter
-from .task_intent_router import SubtaskPlan, TaskIntentRequest
+from .task_intent_router import TaskIntentRequest
 from .unified_orchestrator import UnifiedOrchestrator
 
 logger = logging.getLogger(__name__)
@@ -264,7 +261,7 @@ class TaskPlanningService:
             subtask_lower = subtask.lower()
 
             if subtask_lower not in self.STAGE_DURATIONS_MS:
-                logger.warning(f"Unknown subtask: {subtask}")
+                logger.warning("Unknown subtask: %s", subtask)
                 continue
 
             # Adjust duration based on quality preference

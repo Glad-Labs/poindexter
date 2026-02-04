@@ -65,6 +65,13 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
+from services.content_router_service import get_content_task_store
+from services.logger_config import get_logger
+from services.quality_service import UnifiedQualityService
+from services.sentry_integration import setup_sentry
+from services.telemetry import setup_telemetry
+from services.unified_orchestrator import UnifiedOrchestrator
+
 # Local application imports (must come after path setup)
 # pylint: disable=wrong-import-position,import-error
 from utils.exception_handlers import register_exception_handlers
@@ -73,17 +80,10 @@ from utils.route_registration import register_all_routes
 from utils.route_utils import initialize_services
 from utils.startup_manager import StartupManager
 
-from services.quality_service import UnifiedQualityService
-from services.sentry_integration import setup_sentry
-from services.telemetry import setup_telemetry
-from services.unified_orchestrator import UnifiedOrchestrator
-from services.logger_config import get_logger
-from services.content_router_service import get_content_task_store
 # pylint: enable=import-error
 
 try:
-    import sentry_sdk  # noqa: F401
-
+    import sentry_sdk  # pylint: disable=unused-import
     SENTRY_AVAILABLE = True
 except ImportError:
     SENTRY_AVAILABLE = False
@@ -503,7 +503,7 @@ class StatusResponse(BaseModel):
 
 
 @app.post("/command", response_model=CommandResponse)
-async def process_command(request: CommandRequest, background_tasks: BackgroundTasks):
+async def process_command(request: CommandRequest, background_tasks: BackgroundTasks):  # pylint: disable=unused-argument
     """
     Processes a command sent to the Co-Founder agent.
 
@@ -527,7 +527,7 @@ async def process_command(request: CommandRequest, background_tasks: BackgroundT
         )
     except Exception as e:  # pylint: disable=broad-except
         logger.error(f"Error processing command: {str(e)} | command={request.command}")
-        raise HTTPException(status_code=500, detail=f"An internal error occurred: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"An internal error occurred: {str(e)}") from e
 
 
 @app.get("/status", response_model=StatusResponse)

@@ -46,8 +46,8 @@ class PexelsClient:
 
                     with open(file_path, "wb") as f:
                         f.write(img_response.content)
-                    logging.info(
-                        f"Successfully downloaded image for query '{query}' to {file_path}."
+                logging.info(
+                    f"Successfully downloaded image for query '{query}' to {file_path}."
                     )
                     return True
                 else:

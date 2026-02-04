@@ -2408,6 +2408,12 @@ async def generate_task_image(
                 else:
                     raise RuntimeError("SDXL image generation failed or file not created")
 
+            except asyncio.TimeoutError:
+                logger.warning(f"SDXL image generation timeout for task {task_id}")
+                raise HTTPException(
+                    status_code=408,
+                    detail="Image generation timeout. Please try again with 'pexels' source.",
+                )
             except (OSError, IOError, RuntimeError, ValueError) as e:
                 logger.error(
                     f"SDXL image generation error - {type(e).__name__}: {e}", exc_info=True
@@ -2415,12 +2421,6 @@ async def generate_task_image(
                 raise HTTPException(
                     status_code=500,
                     detail=f"SDXL image generation failed: {str(e)}. Ensure GPU available or use 'pexels' source.",
-                )
-            except asyncio.TimeoutError:
-                logger.warning(f"SDXL image generation timeout for task {task_id}")
-                raise HTTPException(
-                    status_code=408,
-                    detail="Image generation timeout. Please try again with 'pexels' source.",
                 )
             except Exception as e:
                 logger.critical(

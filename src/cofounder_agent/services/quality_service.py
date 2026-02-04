@@ -49,14 +49,14 @@ class EvaluationMethod(str, Enum):
 class QualityScore:
     """Detailed quality evaluation result (backward compatibility with QualityEvaluator)"""
 
-    overall_score: float  # 0-10 (average of 7 criteria)
-    clarity: float  # 0-10
-    accuracy: float  # 0-10
-    completeness: float  # 0-10
-    relevance: float  # 0-10
-    seo_quality: float  # 0-10
-    readability: float  # 0-10
-    engagement: float  # 0-10
+    overall_score: float  # 0-100 (average of 7 criteria)
+    clarity: float  # 0-100
+    accuracy: float  # 0-100
+    completeness: float  # 0-100
+    relevance: float  # 0-100
+    seo_quality: float  # 0-100
+    readability: float  # 0-100
+    engagement: float  # 0-100
 
     # Feedback
     passing: bool  # True if overall_score >= 7.0
@@ -102,13 +102,13 @@ class RefinementType(str, Enum):
 class QualityDimensions:
     """7-criteria quality assessment"""
 
-    clarity: float  # 0-10
-    accuracy: float  # 0-10
-    completeness: float  # 0-10
-    relevance: float  # 0-10
-    seo_quality: float  # 0-10
-    readability: float  # 0-10
-    engagement: float  # 0-10
+    clarity: float  # 0-100
+    accuracy: float  # 0-100
+    completeness: float  # 0-100
+    relevance: float  # 0-100
+    seo_quality: float  # 0-100
+    readability: float  # 0-100
+    engagement: float  # 0-100
 
     def average(self) -> float:
         """Calculate average score"""
@@ -143,8 +143,8 @@ class QualityAssessment:
     dimensions: QualityDimensions
 
     # Overall score
-    overall_score: float  # Average of dimensions (0-10)
-    passing: bool  # True if >= 7.0
+    overall_score: float  # Average of dimensions (0-100)
+    passing: bool  # True if >= 70
 
     # Feedback
     feedback: str  # Summary feedback
@@ -267,7 +267,7 @@ class UnifiedQualityService:
                 await self._store_evaluation(assessment, context)
 
             logger.info(
-                f"✅ Evaluation complete: {assessment.overall_score:.1f}/10 "
+                f"✅ Evaluation complete: {assessment.overall_score:.0f}/100 "
                 f"({'PASS' if assessment.passing else 'FAIL'})"
             )
 
@@ -320,13 +320,13 @@ class UnifiedQualityService:
         readability_score = self._score_readability(content)
 
         dimensions = QualityDimensions(
-            clarity=clarity_score,
-            accuracy=self._score_accuracy(content, context),
-            completeness=self._score_completeness(content, context),
-            relevance=self._score_relevance(content, context),
-            seo_quality=self._score_seo(content, context),
-            readability=readability_score,
-            engagement=self._score_engagement(content),
+            clarity=clarity_score * 10,  # Convert 0-10 to 0-100
+            accuracy=self._score_accuracy(content, context) * 10,
+            completeness=self._score_completeness(content, context) * 10,
+            relevance=self._score_relevance(content, context) * 10,
+            seo_quality=self._score_seo(content, context) * 10,
+            readability=readability_score * 10,
+            engagement=self._score_engagement(content) * 10,
         )
 
         overall_score = dimensions.average()
@@ -334,7 +334,7 @@ class UnifiedQualityService:
         return QualityAssessment(
             dimensions=dimensions,
             overall_score=overall_score,
-            passing=overall_score >= 7.0,
+            passing=overall_score >= 70,  # 70/100 = 7/10
             feedback=self._generate_feedback(dimensions, context),
             suggestions=self._generate_suggestions(dimensions),
             evaluation_method=EvaluationMethod.PATTERN_BASED,
@@ -391,20 +391,18 @@ class UnifiedQualityService:
         # Ideal: 15-20 words per sentence
         if 15 <= avg_words_per_sentence <= 20:
             return 9.0
-        elif 10 <= avg_words_per_sentence <= 25:
+        if 10 <= avg_words_per_sentence <= 25:
             return 8.0
-        elif 8 <= avg_words_per_sentence <= 30:
+        if 8 <= avg_words_per_sentence <= 30:
             return 7.0
-        else:
-            return 5.0
+        return 5.0
 
     def _score_accuracy(self, content: str, context: Dict[str, Any]) -> float:
         """Score accuracy - placeholder, would check facts in real implementation"""
         # Pattern-based: check for citations, quotes, etc.
         if '"' in content or "according to" in content.lower():
             return 7.5
-        else:
-            return 6.5  # Generic content, unknown accuracy
+        return 6.5  # Generic content, unknown accuracy
 
     def _score_completeness(self, content: str, context: Dict[str, Any]) -> float:
         """Score completeness based on content depth"""
@@ -412,14 +410,13 @@ class UnifiedQualityService:
 
         if word_count >= 2000:
             return 9.0
-        elif word_count >= 1500:
+        if word_count >= 1500:
             return 8.0
-        elif word_count >= 1000:
+        if word_count >= 1000:
             return 7.5
-        elif word_count >= 500:
+        if word_count >= 500:
             return 6.5
-        else:
-            return 5.0
+        return 5.0
 
     def _score_relevance(self, content: str, context: Dict[str, Any]) -> float:
         """Score relevance based on keyword presence and focus"""
@@ -435,12 +432,11 @@ class UnifiedQualityService:
         # Ideal: 1-3% keyword density
         if 1 <= topic_density <= 3:
             return 9.0
-        elif 0.5 <= topic_density <= 5:
+        if 0.5 <= topic_density <= 5:
             return 7.5
-        elif topic_count > 0:
+        if topic_count > 0:
             return 6.0
-        else:
-            return 3.0  # Topic not mentioned
+        return 3.0  # Topic not mentioned
 
     def _score_seo(self, content: str, context: Dict[str, Any]) -> float:
         """Score SEO quality"""
@@ -530,21 +526,20 @@ class UnifiedQualityService:
         """Generate human-readable feedback"""
         overall = dimensions.average()
 
-        if overall >= 8.5:
+        if overall >= 85:
             return "Excellent content quality - publication ready"
-        elif overall >= 7.5:
+        if overall >= 75:
             return "Good quality - minor improvements recommended"
-        elif overall >= 7.0:
+        if overall >= 70:
             return "Acceptable quality - some improvements suggested"
-        elif overall >= 6.0:
+        if overall >= 60:
             return "Fair quality - significant improvements needed"
-        else:
-            return "Poor quality - major revisions required"
+        return "Poor quality - major revisions required"
 
     def _generate_suggestions(self, dimensions: QualityDimensions) -> List[str]:
         """Generate improvement suggestions based on weak dimensions"""
         suggestions = []
-        threshold = 7.0
+        threshold = 70  # 0-100 scale
 
         if dimensions.clarity < threshold:
             suggestions.append("Simplify sentence structure and use shorter sentences")

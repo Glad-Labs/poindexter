@@ -15,11 +15,9 @@ Production-ready for full blog automation!
 import asyncio
 import json
 import logging
-import os
-import sys
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 # Import model selection helper
 from routes.task_routes import get_model_for_phase

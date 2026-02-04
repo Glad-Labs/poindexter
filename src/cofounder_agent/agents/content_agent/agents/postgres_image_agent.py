@@ -6,7 +6,6 @@ Replaces Strapi image upload with direct database storage of image metadata and 
 
 import json
 import logging
-import os
 from pathlib import Path
 from typing import List, Optional
 
@@ -180,8 +179,7 @@ Only return the JSON array, no other text."""
                         ]
                         logger.debug(f"Image metadata: {result}")
                         return result
-                    else:
-                        return [parsed] if isinstance(parsed, dict) else []
+                    return [parsed] if isinstance(parsed, dict) else []
                 except json.JSONDecodeError as e:
                     logger.error(f"❌ Failed to parse JSON from extracted text: {e}")
                     logger.debug(f"Extracted JSON was: {metadata_json[:200]}...")
@@ -200,8 +198,7 @@ Only return the JSON array, no other text."""
                             )
                             for item in parsed
                         ]
-                    else:
-                        return [parsed] if isinstance(parsed, dict) else []
+                    return [parsed] if isinstance(parsed, dict) else []
                 except json.JSONDecodeError as e:
                     logger.error(f"❌ Raw JSON parse also failed: {e}")
                     logger.debug(f"Raw response was: {metadata_text[:300]}...")
@@ -263,8 +260,7 @@ Only return the JSON array, no other text."""
                         description=alt_text,
                     )
                     return image_details
-                else:
-                    logger.warning(f"⚠️  No images found on Pexels for '{query}'")
+                logger.warning(f"⚠️  No images found on Pexels for '{query}'")
             except Exception as e:
                 logger.warning(f"⚠️  Pexels search failed for '{query}': {e}")
 

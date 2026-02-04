@@ -179,10 +179,9 @@ class LLMClient:
                 if extracted_json:
                     logging.debug(f"Extracted JSON: {extracted_json[:200]}...")
                     return json.loads(extracted_json)
-                else:
-                    # Fallback: try parsing the raw text directly
-                    logging.debug("No JSON block found, attempting direct parse...")
-                    return json.loads(raw_response)
+                # Fallback: try parsing the raw text directly
+                logging.debug("No JSON block found, attempting direct parse...")
+                return json.loads(raw_response)
             else:
                 logging.error("'response' key not found in local LLM output.")
                 raise ValueError("No 'response' key in LLM output")
@@ -227,10 +226,15 @@ class LLMClient:
 
     async def _generate_text_local(self, prompt: str) -> str:
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(timeout=120) as client:  # Increased timeout for longer generation
                 response = await client.post(
                     f"{config.LOCAL_LLM_API_URL}/api/generate",
-                    json={"model": config.LOCAL_LLM_MODEL_NAME, "prompt": prompt, "stream": False},
+                    json={
+                        "model": config.LOCAL_LLM_MODEL_NAME,
+                        "prompt": prompt,
+                        "stream": False,
+                        "num_predict": 4096,  # Allow up to 4096 tokens (blog posts can be long)
+                    },
                 )
                 response.raise_for_status()
             return response.json().get("response", "")
