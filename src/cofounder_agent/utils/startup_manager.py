@@ -14,10 +14,10 @@ Handles all startup and shutdown operations for the Glad Labs AI Co-Founder:
 - Graceful shutdown
 """
 
-import os
 import logging
-from typing import Optional, Dict, Any
+import os
 from datetime import datetime
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -234,8 +234,8 @@ class StartupManager:
         """Initialize workflow history service (Phase 6)"""
         logger.info("  📊 Initializing workflow history service...")
         try:
-            from services.workflow_history import WorkflowHistoryService
             from routes.workflow_history import initialize_history_service
+            from services.workflow_history import WorkflowHistoryService
 
             if self.database_service:
                 self.workflow_history_service = WorkflowHistoryService(self.database_service.pool)
@@ -272,8 +272,8 @@ class StartupManager:
         """
         logger.info("  ⏳ Initializing background task executor (start deferred)...")
         try:
-            from services.task_executor import TaskExecutor
             from services.content_critique_loop import ContentCritiqueLoop
+            from services.task_executor import TaskExecutor
 
             logger.debug(f"  [DEBUG] TaskExecutor init: database_service={self.database_service}")
             logger.debug(
@@ -315,9 +315,9 @@ class StartupManager:
         logger.info("  📚 Initializing training data management services...")
 
         try:
-            from services.training_data_service import TrainingDataService
             from services.fine_tuning_service import FineTuningService
             from services.legacy_data_integration import LegacyDataIntegrationService
+            from services.training_data_service import TrainingDataService
 
             if self.database_service:
                 # Initialize training data service
@@ -393,8 +393,9 @@ class StartupManager:
 
         try:
             logger.info("  🎨 Warming up SDXL models (this may take 20-30 seconds)...")
-            from services.image_service import ImageService
             import tempfile
+
+            from services.image_service import ImageService
 
             # Create image service
             image_service = ImageService()

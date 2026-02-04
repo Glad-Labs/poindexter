@@ -17,12 +17,13 @@ Setup:
    Note: Use GH_OAUTH_ prefix instead of GITHUB_ because GitHub Actions blocks secrets starting with GITHUB_
 """
 
-import os
 import logging
+import os
 from typing import Optional
+
 import httpx
 
-from .oauth_provider import OAuthProvider, OAuthUser, OAuthException
+from .oauth_provider import OAuthException, OAuthProvider, OAuthUser
 
 logger = logging.getLogger(__name__)
 

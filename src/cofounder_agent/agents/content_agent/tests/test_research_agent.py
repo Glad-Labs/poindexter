@@ -3,11 +3,12 @@ Tests for Research Agent
 Tests web search via Serper API, research data collection, and source validation
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock, AsyncMock
 import sys
 import types
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
+
 import httpx
+import pytest
 
 # Mock Google Cloud modules
 if "google" not in sys.modules:

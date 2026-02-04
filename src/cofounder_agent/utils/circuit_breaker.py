@@ -7,9 +7,9 @@ and allowing them time to recover.
 
 import asyncio
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional, Callable, Awaitable, TypeVar
+from datetime import datetime, timedelta, timezone
 from enum import Enum
+from typing import Any, Awaitable, Callable, Dict, Optional, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -116,9 +116,9 @@ class CircuitBreaker:
             "state": self.state.value,
             "failure_count": self.failure_count,
             "success_count": self.success_count,
-            "last_failure_time": self.last_failure_time.isoformat()
-            if self.last_failure_time
-            else None,
+            "last_failure_time": (
+                self.last_failure_time.isoformat() if self.last_failure_time else None
+            ),
             "opened_time": self.opened_time.isoformat() if self.opened_time else None,
         }
 
@@ -277,10 +277,7 @@ class CachedResponse:
 
     def get_stats(self) -> Dict[str, Any]:
         """Get cache statistics."""
-        total_size = sum(
-            len(str(value))
-            for value, _ in self.cache.values()
-        )
+        total_size = sum(len(str(value)) for value, _ in self.cache.values())
         return {
             "cached_items": len(self.cache),
             "total_size_bytes": total_size,

@@ -1,6 +1,7 @@
 import logging
-import subprocess
 import os
+import subprocess
+
 from src.agents.content_agent.utils.tools import CrewAIToolsFactory
 
 

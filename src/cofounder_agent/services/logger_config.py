@@ -24,8 +24,8 @@ Usage:
 This ensures all loggers use the centralized configuration.
 """
 
-import os
 import logging
+import os
 import sys
 from typing import Optional
 

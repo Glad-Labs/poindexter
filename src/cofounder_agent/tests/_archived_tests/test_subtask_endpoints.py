@@ -12,11 +12,11 @@ Tests cover:
 Run with: pytest tests/test_subtask_endpoints.py -v
 """
 
+from typing import Any, Dict
+from uuid import uuid4
+
 import pytest
 from fastapi.testclient import TestClient
-from uuid import uuid4
-from typing import Dict, Any
-
 
 # ============================================================================
 # NOTE: All pytest fixtures are defined in conftest.py

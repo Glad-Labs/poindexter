@@ -5,7 +5,7 @@ Centralized storage for all system prompts and templates.
 Makes it easier to version, edit, and manage prompts.
 """
 
-from typing import Optional, Dict
+from typing import Dict, Optional
 
 
 class PromptTemplates:

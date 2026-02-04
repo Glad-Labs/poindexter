@@ -24,41 +24,32 @@ def _fix_sys_path():
                 p for p in sys.path if p != venv_site_packages_str
             ]
             # Clear import caches to force fresh imports
-            import importlib
+            import importlib  # pylint: disable=import-outside-toplevel
 
             importlib.invalidate_caches()
-    except Exception as e:
+    except (OSError, AttributeError, ValueError) as e:
         print(f"[WARNING] Failed to fix sys.path: {e}")
 
 
 _fix_sys_path()
 del _fix_sys_path, _PathType
 
-import os
-import logging
+# Standard library imports (at the top as required by pylint)
 import asyncio
-import uuid
+import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
-from starlette.exceptions import HTTPException as StarletteHTTPException
-from pydantic import BaseModel
-from typing import Dict, Any, Optional, List
-import uvicorn
+from typing import Any, Dict, Optional
 
-try:
-    import sentry_sdk
-
-    SENTRY_AVAILABLE = True
-except ImportError:
-    SENTRY_AVAILABLE = False
-
-# Load environment variables from .env.local first
+# Third-party imports
 from dotenv import load_dotenv
+from fastapi import BackgroundTasks, FastAPI, HTTPException
+from pydantic import BaseModel
 
+# CRITICAL: Environment loading must happen before service imports
+# to ensure .env.local is available for all services
+# Load environment variables from .env.local first
 # Try to load .env.local from the project root, then from current directory
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 env_local_path = os.path.join(project_root, ".env.local")
@@ -74,40 +65,35 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
-# Import database_service
-from services.database_service import DatabaseService
-from services.task_executor import TaskExecutor
-from services.content_critique_loop import ContentCritiqueLoop
-from services.telemetry import setup_telemetry  # noqa: E402
-from services.sentry_integration import setup_sentry  # noqa: E402
-from services.redis_cache import setup_redis_cache  # noqa: E402
-from services.content_router_service import (  # noqa: E402
-    get_content_task_store,
-)  # Inject DB service
-from services.migrations import run_migrations  # noqa: E402
+# Local application imports (must come after path setup)
+# pylint: disable=wrong-import-position,import-error
+from utils.exception_handlers import register_exception_handlers
+from utils.middleware_config import MiddlewareConfig
+from utils.route_registration import register_all_routes
+from utils.route_utils import initialize_services
+from utils.startup_manager import StartupManager
 
-# Import new consolidated services
-from services.unified_orchestrator import UnifiedOrchestrator  # noqa: E402
-from services.quality_service import UnifiedQualityService  # noqa: E402
+from services.quality_service import UnifiedQualityService
+from services.sentry_integration import setup_sentry
+from services.telemetry import setup_telemetry
+from services.unified_orchestrator import UnifiedOrchestrator
+from services.logger_config import get_logger
+from services.content_router_service import get_content_task_store
+# pylint: enable=import-error
 
-# Import new utility modules
-from utils.startup_manager import StartupManager  # noqa: E402
-from utils.exception_handlers import register_exception_handlers  # noqa: E402
-from utils.middleware_config import MiddlewareConfig  # noqa: E402
-from utils.route_registration import register_all_routes  # noqa: E402
-from utils.route_utils import initialize_services  # noqa: E402
+try:
+    import sentry_sdk  # noqa: F401
+
+    SENTRY_AVAILABLE = True
+except ImportError:
+    SENTRY_AVAILABLE = False
 
 # Import workflow history service dependencies (needed for startup manager)
 try:
-    from services.workflow_history import WorkflowHistoryService  # noqa: E402
-    from routes.workflow_history import initialize_history_service  # noqa: E402
-
     WORKFLOW_HISTORY_AVAILABLE = True
 except ImportError as e:
     WORKFLOW_HISTORY_AVAILABLE = False
-    WorkflowHistoryService = None
-    initialize_history_service = None
-    logging.warning(f"Workflow history service not available: {str(e)}")
+    logging.warning("Workflow history service not available: %s", str(e))
 
 # PostgreSQL database service is now the primary service
 # Legacy 'database.py' (SQLAlchemy) has been removed.
@@ -119,18 +105,7 @@ GOOGLE_CLOUD_AVAILABLE = False
 
 # Placeholder for firestore_client (for backward compatibility with tests)
 # Actual implementation uses PostgreSQL through database_service
-firestore_client = None
-
-# Use centralized logging configuration
-from services.logger_config import get_logger  # noqa: E402
-from services.model_consolidation_service import (  # noqa: E402
-    initialize_model_consolidation_service,
-)
-from services.training_data_service import TrainingDataService  # noqa: E402
-from services.fine_tuning_service import FineTuningService  # noqa: E402
-from services.legacy_data_integration import (  # noqa: E402
-    LegacyDataIntegrationService,
-)
+FIRESTORE_CLIENT = None  # noqa: invalid-name
 
 logger = get_logger(__name__)
 
@@ -141,7 +116,7 @@ logger = get_logger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
     """
     Application lifespan manager - handles startup and shutdown.
 
@@ -184,8 +159,6 @@ async def lifespan(app: FastAPI):
 
         # Initialize task store for content orchestrator
         logger.info("[LIFESPAN] Initializing ContentTaskStore...")
-        from services.content_router_service import get_content_task_store
-
         task_store = get_content_task_store(db_service)
         app.state.task_store = task_store
         logger.info("✅ ContentTaskStore initialized")
@@ -203,9 +176,9 @@ async def lifespan(app: FastAPI):
         # The UnifiedOrchestrator is created here with all dependencies properly initialized
         # This ensures TaskExecutor can use it for content generation
         logger.info("[LIFESPAN] Creating UnifiedOrchestrator with all dependencies...")
-        logger.debug(f"[LIFESPAN] UnifiedOrchestrator dependencies:")
-        logger.debug(f"  - database_service: {db_service}")
-        logger.debug(f"  - quality_service: {quality_service}")
+        logger.debug("[LIFESPAN] UnifiedOrchestrator dependencies:")
+        logger.debug("  - database_service: %s", db_service)
+        logger.debug("  - quality_service: %s", quality_service)
 
         # Initialize unified orchestrator with all available agents
         unified_orchestrator = UnifiedOrchestrator(
@@ -283,9 +256,9 @@ async def lifespan(app: FastAPI):
 
         # Initialize LangGraph orchestrator
         try:
-            from services.langgraph_orchestrator import (
-                LangGraphOrchestrator,  # noqa: E402
-            )  # noqa: E402
+            from services.langgraph_orchestrator import (  # pylint: disable=import-outside-toplevel
+                LangGraphOrchestrator,
+            )
 
             langgraph_orchestrator = LangGraphOrchestrator(
                 db_service=db_service,
@@ -296,7 +269,7 @@ async def lifespan(app: FastAPI):
             app.state.langgraph_orchestrator = langgraph_orchestrator
             logger.info("✅ LangGraphOrchestrator initialized")
         except Exception as e:  # pylint: disable=broad-except
-            logger.warning(f"⚠️  LangGraph initialization failed (non-critical): {str(e)}")
+            logger.warning("⚠️  LangGraph initialization failed (non-critical): %s", str(e))
             app.state.langgraph_orchestrator = None
 
         logger.info("[OK] Lifespan: Yielding control to FastAPI application...")
@@ -434,15 +407,15 @@ async def api_health():
             try:
                 db_health = await database_service.health_check()
                 health_data["components"]["database"] = db_health.get("status", "unknown")
-            except Exception as e:
-                logger.warning(f"Database health check failed in /api/health: {e}")
+            except Exception as e:  # pylint: disable=broad-except
+                logger.warning("Database health check failed in /api/health: %s", str(e))
                 health_data["components"]["database"] = "degraded"
         else:
             health_data["components"]["database"] = "unavailable"
 
         return health_data
-    except Exception as e:
-        logger.error(f"Health check failed: {e}", exc_info=True)
+    except Exception as e:  # pylint: disable=broad-except
+        logger.error("Health check failed: %s", str(e), exc_info=True)
         return {"status": "unhealthy", "service": "cofounder-agent", "error": str(e)}
 
 
@@ -483,19 +456,19 @@ async def get_metrics():
         if database_service:
             metrics = await database_service.get_metrics()
             return metrics
-        else:
-            # Return mock metrics if database unavailable
-            return {
-                "total_tasks": 0,
-                "completed_tasks": 0,
-                "failed_tasks": 0,
-                "pending_tasks": 0,
-                "success_rate": 0.0,
-                "avg_execution_time": 0.0,
-                "total_cost": 0.0,
-            }
-    except Exception as e:
-        logger.error(f"Metrics retrieval failed: {e}", exc_info=True)
+
+        # Return mock metrics if database unavailable
+        return {
+            "total_tasks": 0,
+            "completed_tasks": 0,
+            "failed_tasks": 0,
+            "pending_tasks": 0,
+            "success_rate": 0.0,
+            "avg_execution_time": 0.0,
+            "total_cost": 0.0,
+        }
+    except Exception as e:  # pylint: disable=broad-except
+        logger.error("Metrics retrieval failed: %s", str(e), exc_info=True)
         return {
             "total_tasks": 0,
             "completed_tasks": 0,
@@ -568,30 +541,30 @@ async def get_status(request):
     """
     try:
         # Call the unified health endpoint
-        health = await api_health()
+        health_response = await api_health()
 
         # Convert to StatusResponse format for backward compatibility
         database_service = getattr(request.app.state, "database", None)
         orchestrator = getattr(request.app.state, "orchestrator", None)
+        is_online = health_response.get("status") == "healthy"
+        service_status = "online" if is_online else health_response.get("status", "unknown")
         status_data = {
-            "service": (
-                "online" if health.get("status") == "healthy" else health.get("status", "unknown")
-            ),
+            "service": service_status,
             "database_available": database_service is not None,
             "orchestrator_initialized": orchestrator is not None,
-            "timestamp": health.get("timestamp", str(asyncio.get_event_loop().time())),
+            "timestamp": health_response.get("timestamp", str(asyncio.get_event_loop().time())),
         }
 
         # Include component statuses if available
-        components = health.get("components", {})
+        components = health_response.get("components", {})
         if isinstance(components, dict):
             for key, value in components.items():
                 status_data[f"component_{key}"] = value
 
-        return StatusResponse(status=health.get("status", "unknown"), data=status_data)
+        return StatusResponse(status=health_response.get("status", "unknown"), data=status_data)
 
     except Exception as e:  # pylint: disable=broad-except
-        logger.error(f"Error getting status: {e}")
+        logger.error("Error getting status: %s", str(e))
         return StatusResponse(status="unhealthy", data={"error": str(e)})
 
 

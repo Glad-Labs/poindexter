@@ -12,11 +12,12 @@ Requirements:
   - LINKEDIN_ACCESS_TOKEN (or obtain via OAuth flow)
 """
 
-import os
-import logging
-from typing import Optional, Dict, Any
-import httpx
 import json
+import logging
+import os
+from typing import Any, Dict, Optional
+
+import httpx
 
 logger = logging.getLogger(__name__)
 

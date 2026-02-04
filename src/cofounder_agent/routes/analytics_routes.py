@@ -11,17 +11,18 @@ Provides endpoints for the ExecutiveDashboard to display metrics:
 All endpoints aggregate real data from PostgreSQL database.
 """
 
-from fastapi import APIRouter, Query, Depends, HTTPException
-from pydantic import BaseModel, Field
-from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
 import logging
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
 
-from services.database_service import DatabaseService
-from utils.route_utils import get_database_dependency
-from utils.error_handler import handle_route_error
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
+
 from routes.auth_unified import get_current_user
 from schemas.auth_schemas import UserProfile
+from services.database_service import DatabaseService
+from utils.error_handler import handle_route_error
+from utils.route_utils import get_database_dependency
 
 logger = logging.getLogger(__name__)
 

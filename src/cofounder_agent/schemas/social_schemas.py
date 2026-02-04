@@ -3,9 +3,10 @@
 Consolidated schemas for social media integration and content posting.
 """
 
-from pydantic import BaseModel, Field, field_validator
-from typing import List, Optional
 from enum import Enum
+from typing import List, Optional
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class SocialPlatformEnum(str, Enum):

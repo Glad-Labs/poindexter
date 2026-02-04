@@ -9,11 +9,11 @@ Cost: $0/month (vs spending on expensive searches)
 ASYNC-FIRST: All operations use httpx async client (no blocking I/O)
 """
 
-import os
-import logging
 import json
-from typing import Dict, List, Any, Optional
+import logging
+import os
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 import httpx
 

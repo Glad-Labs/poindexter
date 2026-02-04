@@ -5,8 +5,9 @@ and the response format for all workflow executions.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
 from datetime import datetime
+from typing import Any, Dict, List, Optional
+
 from src.cofounder_agent.tasks.base import TaskResult
 
 

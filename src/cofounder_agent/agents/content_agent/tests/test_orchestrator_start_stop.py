@@ -1,10 +1,11 @@
 import importlib
-import pytest
-from unittest.mock import patch
 
 # Pre-stub google modules to avoid optional deps
 import sys as _sys
 import types as _types
+from unittest.mock import patch
+
+import pytest
 
 if "google" not in _sys.modules:
     _sys.modules["google"] = _types.ModuleType("google")

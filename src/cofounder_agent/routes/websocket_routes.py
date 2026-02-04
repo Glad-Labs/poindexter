@@ -5,11 +5,12 @@ Provides WebSocket endpoints for streaming generation progress to clients
 in real-time with live progress bars and status updates.
 """
 
-import logging
 import asyncio
 import json
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
+import logging
 from typing import Dict, Set
+
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 
 from services.progress_service import get_progress_service
 

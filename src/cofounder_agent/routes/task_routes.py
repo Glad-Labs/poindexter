@@ -21,57 +21,57 @@ Endpoints:
 - GET /api/metrics - Aggregated task metrics
 """
 
-from fastapi import APIRouter, HTTPException, Depends, Query, BackgroundTasks
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
-from datetime import datetime, timezone
-from uuid import UUID
-import uuid as uuid_lib
+import asyncio
 import json
 import logging
 import os
-import asyncio
+import uuid as uuid_lib
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+from uuid import UUID
+
 import aiohttp
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 
-from utils.json_encoder import safe_json_dumps, convert_decimals
-
-from utils.error_responses import ErrorResponseBuilder
-from utils.route_utils import get_database_dependency
+from routes.auth_unified import get_current_user
 from schemas.model_converter import ModelConverter
-
-# Import task status utilities (ENTERPRISE)
-from utils.task_status import (
-    TaskStatus,
-    is_valid_transition,
-    get_allowed_transitions,
-    is_terminal,
-    get_status_description,
-    StatusTransitionValidator,
+from schemas.task_schemas import (
+    IntentTaskRequest,
+    MetricsResponse,
+    TaskConfirmRequest,
+    TaskConfirmResponse,
+    TaskCreateRequest,
+    TaskIntentResponse,
+    TaskListResponse,
+    TaskStatusUpdateRequest,
+    UnifiedTaskRequest,
 )
+from schemas.task_status_schemas import (
+    TaskStatusFilterRequest,
+    TaskStatusHistoryEntry,
+    TaskStatusInfo,
+    TaskStatusStatistics,
+    TaskStatusUpdateResponse,
+)
+from schemas.unified_task_response import UnifiedTaskResponse
 
 # Import async database service
 from services.database_service import DatabaseService
 from services.enhanced_status_change_service import EnhancedStatusChangeService
-from routes.auth_unified import get_current_user
-from schemas.task_schemas import (
-    UnifiedTaskRequest,
-    TaskCreateRequest,
-    TaskStatusUpdateRequest,
-    TaskListResponse,
-    MetricsResponse,
-    IntentTaskRequest,
-    TaskIntentResponse,
-    TaskConfirmRequest,
-    TaskConfirmResponse,
+from utils.error_responses import ErrorResponseBuilder
+from utils.json_encoder import convert_decimals, safe_json_dumps
+from utils.route_utils import get_database_dependency
+
+# Import task status utilities (ENTERPRISE)
+from utils.task_status import (
+    StatusTransitionValidator,
+    TaskStatus,
+    get_allowed_transitions,
+    get_status_description,
+    is_terminal,
+    is_valid_transition,
 )
-from schemas.task_status_schemas import (
-    TaskStatusUpdateResponse,
-    TaskStatusInfo,
-    TaskStatusHistoryEntry,
-    TaskStatusFilterRequest,
-    TaskStatusStatistics,
-)
-from schemas.unified_task_response import UnifiedTaskResponse
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -81,20 +81,21 @@ logger = logging.getLogger(__name__)
 # HELPER FUNCTIONS FOR TASK RESPONSE FORMATTING
 # ============================================================================
 
+
 def _normalize_seo_keywords_in_task(task: Dict[str, Any]) -> Dict[str, Any]:
     """
     Normalize seo_keywords from JSON strings to lists in task dicts.
     Handles conversion at top level, in result field, and in task_metadata field.
-    
+
     Args:
         task: Task dictionary from database
-        
+
     Returns:
         Task dictionary with seo_keywords normalized to lists
     """
     if not isinstance(task, dict):
         return task
-    
+
     # Parse seo_keywords at top level if it's a JSON string
     if "seo_keywords" in task and isinstance(task["seo_keywords"], str):
         try:
@@ -112,12 +113,16 @@ def _normalize_seo_keywords_in_task(task: Dict[str, Any]) -> Dict[str, Any]:
 
     # Parse seo_keywords inside task_metadata field if present
     if "task_metadata" in task and isinstance(task["task_metadata"], dict):
-        if "seo_keywords" in task["task_metadata"] and isinstance(task["task_metadata"]["seo_keywords"], str):
+        if "seo_keywords" in task["task_metadata"] and isinstance(
+            task["task_metadata"]["seo_keywords"], str
+        ):
             try:
-                task["task_metadata"]["seo_keywords"] = json.loads(task["task_metadata"]["seo_keywords"])
+                task["task_metadata"]["seo_keywords"] = json.loads(
+                    task["task_metadata"]["seo_keywords"]
+                )
             except (json.JSONDecodeError, TypeError):
                 task["task_metadata"]["seo_keywords"] = []
-    
+
     return task
 
 
@@ -299,8 +304,9 @@ async def _handle_blog_post_creation(
     request: UnifiedTaskRequest, current_user: dict, db_service: DatabaseService
 ) -> Dict[str, Any]:
     """Handle blog post task creation"""
-    from services.content_router_service import process_content_generation_task
     import asyncio
+
+    from services.content_router_service import process_content_generation_task
 
     task_id = str(uuid_lib.uuid4())
 
@@ -652,7 +658,7 @@ async def list_tasks(
             if isinstance(task, dict):
                 # Normalize seo_keywords in all nested locations
                 task = _normalize_seo_keywords_in_task(task)
-                
+
                 # CRITICAL: Ensure 'id' field is always populated
                 # Local database uses 'task_id' (UUID), Railway prod has integer 'id' column
                 # Frontend expects 'id' to be the primary identifier
@@ -800,7 +806,7 @@ async def get_task(
         task = await db_service.get_task(task_id)
         if not task:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
-        
+
         # Convert task dict if needed, normalizing seo_keywords
         if isinstance(task, dict):
             task = _normalize_seo_keywords_in_task(task)
@@ -1200,14 +1206,14 @@ async def get_task_status_history(
         # Get status history directly from database service which is more reliable
         # than the enhanced service dependency injection
         from services.tasks_db import TasksDatabase
-        
-        task_db = TasksDatabase(db_service._pool if hasattr(db_service, '_pool') else None)
+
+        task_db = TasksDatabase(db_service._pool if hasattr(db_service, "_pool") else None)
         history = await task_db.get_status_history(task_id, limit)
 
         return {
             "task_id": task_id,
             "history_count": len(history) if history else 0,
-            "history": history if history else []
+            "history": history if history else [],
         }
 
     except Exception as e:
@@ -1377,36 +1383,36 @@ async def update_task(
 def extract_title_from_content(content: str) -> tuple[str, str]:
     """
     Extract title from markdown content if present at the start.
-    
+
     LLMs often generate content with a markdown title like:
     "#Building a PC in 2026: A Comprehensive Guide"
-    
+
     This function extracts that title and removes it from content.
-    
+
     Args:
         content: Raw generated content
-        
+
     Returns:
         Tuple of (extracted_title or None, cleaned_content)
-        
+
     Example:
         >>> extract_title_from_content("#My Title\\n\\nContent here")
         ("My Title", "Content here")
     """
     import re
-    
+
     if not content:
         return None, content
-    
+
     # Match markdown title at start: # Title or ## Title
     match = re.match(r"^#+\s+(.+?)(?:\n|$)", content.strip())
-    
+
     if match:
         title = match.group(1).strip()
         # Remove the title line from content
         cleaned_content = re.sub(r"^#+\s+.+?(?:\n|$)", "", content.strip(), count=1)
         return title, cleaned_content.strip()
-    
+
     return None, content
 
 
@@ -1759,9 +1765,18 @@ async def approve_task(
 
         # Check if task is in a state that can be approved/rejected
         current_status = task.get("status", "unknown")
-        # Allow approval for multiple statuses: awaiting_approval (ideal), but also handle failed, 
+        # Allow approval for multiple statuses: awaiting_approval (ideal), but also handle failed,
         # completed, pending tasks that may need approval decision
-        allowed_statuses = ["awaiting_approval", "pending", "in_progress", "completed", "rejected", "failed", "approved", "published"]
+        allowed_statuses = [
+            "awaiting_approval",
+            "pending",
+            "in_progress",
+            "completed",
+            "rejected",
+            "failed",
+            "approved",
+            "published",
+        ]
         if current_status not in allowed_statuses:
             raise HTTPException(
                 status_code=400,
@@ -1773,10 +1788,10 @@ async def approve_task(
             "approved_at" if approved else "rejected_at": datetime.now(timezone.utc).isoformat(),
             "approved_by" if approved else "rejected_by": reviewer_id or current_user.get("id"),
         }
-        
+
         if human_feedback:
             approval_metadata["human_feedback"] = human_feedback
-        
+
         if image_source:
             approval_metadata["image_source"] = image_source
 
@@ -1804,28 +1819,28 @@ async def approve_task(
             task_result = {}
         elif not isinstance(task_result, dict):
             task_result = {}
-        
+
         # ✅ Merge task_metadata into task_result to preserve all data from generation
         # This ensures content and images from failed tasks are preserved through approval
         merged_result = {**task_metadata, **task_result}
-        
+
         if featured_image_url:
             merged_result["featured_image_url"] = featured_image_url
-        
+
         # Update task status and result
         new_status = "approved" if approved else "rejected"
-        logger.info(f"{'Approving' if approved else 'Rejecting'} task {task_id} (current status: {current_status})")
+        logger.info(
+            f"{'Approving' if approved else 'Rejecting'} task {task_id} (current status: {current_status})"
+        )
         logger.info(f"   Has featured_image_url: {bool(merged_result.get('featured_image_url'))}")
         logger.info(f"   Has content: {bool(merged_result.get('content'))}")
-        
+
         # Convert any Decimal values to float before JSON serialization
         safe_result = convert_decimals({"metadata": approval_metadata, **merged_result})
-        
+
         try:
             await db_service.update_task_status(
-                task_id, 
-                new_status, 
-                result=safe_json_dumps(safe_result)
+                task_id, new_status, result=safe_json_dumps(safe_result)
             )
         except Exception as e:
             logger.error(f"Failed to update task status to {new_status}: {str(e)}", exc_info=True)
@@ -1841,16 +1856,20 @@ async def approve_task(
                     "published_at": datetime.now(timezone.utc).isoformat(),
                     "published_by": current_user.get("id"),
                 }
-                
+
                 # Convert Decimals before serialization
-                safe_publish_result = convert_decimals({"metadata": {**approval_metadata, **publish_metadata}, **merged_result})
-                
+                safe_publish_result = convert_decimals(
+                    {"metadata": {**approval_metadata, **publish_metadata}, **merged_result}
+                )
+
                 try:
                     await db_service.update_task_status(
                         task_id, "published", result=safe_json_dumps(safe_publish_result)
                     )
                 except Exception as e:
-                    logger.error(f"Failed to update task status to published: {str(e)}", exc_info=True)
+                    logger.error(
+                        f"Failed to update task status to published: {str(e)}", exc_info=True
+                    )
                     # Still continue with post creation if status update fails
                     # The task will be in 'approved' state but post may be created
 
@@ -1859,22 +1878,26 @@ async def approve_task(
                 try:
                     # Extract content from merged_result (includes both result and task_metadata)
                     topic = task.get("topic", "") or merged_result.get("topic", "")
-                    draft_content = merged_result.get("draft_content", "") or merged_result.get("content", "") or ""
+                    draft_content = (
+                        merged_result.get("draft_content", "")
+                        or merged_result.get("content", "")
+                        or ""
+                    )
                     seo_description = merged_result.get("seo_description", "")
                     seo_keywords = merged_result.get("seo_keywords", [])
                     featured_image = featured_image_url or merged_result.get("featured_image_url")
                     metadata = merged_result.get("metadata", {})
-                    
+
                     # 🔑 EXTRACT TITLE: LLM often generates "#Title" at start of content
                     # Extract it and use as the post title, remove from content
                     extracted_title, cleaned_content = extract_title_from_content(draft_content)
-                    
+
                     # Use extracted title if available, otherwise fall back to topic
                     post_title = extracted_title or merged_result.get("title") or topic
-                    
+
                     # Use cleaned content (title removed)
                     post_content = cleaned_content
-                    
+
                     logger.info(f"📝 Post title: {post_title}")
                     logger.info(f"   Extracted from content: {bool(extracted_title)}")
                     logger.info(f"   Content length: {len(post_content)} chars")
@@ -1882,7 +1905,12 @@ async def approve_task(
                     if post_content and post_title:
                         # Create slug from title
                         import re as re_module
-                        slug = re_module.sub(r"[^\w\s-]", "", post_title).lower().replace(" ", "-")[:50]
+
+                        slug = (
+                            re_module.sub(r"[^\w\s-]", "", post_title)
+                            .lower()
+                            .replace(" ", "-")[:50]
+                        )
                         slug = f"{slug}-{task_id[:8]}"
 
                         # Get author and category
@@ -1890,6 +1918,7 @@ async def approve_task(
                             _get_or_create_default_author,
                             _select_category_for_topic,
                         )
+
                         author_id = await _get_or_create_default_author(db_service)
                         category_id = await _select_category_for_topic(post_title, db_service)
 
@@ -1913,44 +1942,62 @@ async def approve_task(
                         logger.info(f"✅ Post created with status='published': {post.id}")
                         logger.info(f"   Title: {post_title}")
                         logger.info(f"   Slug: {slug}")
-                        
+
                         # Store post info in merged_result for response
-                        merged_result["post_id"] = str(post.id) if hasattr(post, 'id') else str(post.get('id'))
+                        merged_result["post_id"] = (
+                            str(post.id) if hasattr(post, "id") else str(post.get("id"))
+                        )
                         merged_result["post_slug"] = slug
-                        merged_result["published_url"] = f"/posts/{slug}"  # Relative URL for public site
+                        merged_result["published_url"] = (
+                            f"/posts/{slug}"  # Relative URL for public site
+                        )
                     else:
                         logger.warning(f"⚠️  Skipping post creation: missing content or topic")
                 except (ValueError, KeyError, TypeError) as e:
                     # Catch specific exceptions from post creation
-                    logger.error(f"Failed to create post for published task: {type(e).__name__}: {str(e)}", exc_info=True)
+                    logger.error(
+                        f"Failed to create post for published task: {type(e).__name__}: {str(e)}",
+                        exc_info=True,
+                    )
                     # Don't fail the publish operation if post creation fails
                     # Post table may have constraints or data issues, but task should stay published
                 except Exception as e:
-                    logger.critical(f"Unexpected error creating post for published task: {type(e).__name__}: {str(e)}", exc_info=True)
+                    logger.critical(
+                        f"Unexpected error creating post for published task: {type(e).__name__}: {str(e)}",
+                        exc_info=True,
+                    )
                     # Don't fail the publish operation if post creation fails
-                    
+
             except (ValueError, KeyError, TypeError) as e:
-                logger.error(f"Error during auto-publish process: {type(e).__name__}: {str(e)}", exc_info=True)
+                logger.error(
+                    f"Error during auto-publish process: {type(e).__name__}: {str(e)}",
+                    exc_info=True,
+                )
                 # Don't fail approval if auto-publish fails
             except Exception as e:
-                logger.critical(f"Unexpected error during auto-publish: {type(e).__name__}: {str(e)}", exc_info=True)
+                logger.critical(
+                    f"Unexpected error during auto-publish: {type(e).__name__}: {str(e)}",
+                    exc_info=True,
+                )
                 # Don't fail approval if auto-publish fails
 
         # Fetch updated task
         updated_task = await db_service.get_task(task_id)
-        
+
         # Extract published info from result if available
         task_result_data = updated_task.get("result", {})
         if isinstance(task_result_data, str):
             task_result_data = json.loads(task_result_data) if task_result_data else {}
-        
+
         published_url = task_result_data.get("published_url")
         post_id = task_result_data.get("post_id")
         post_slug = task_result_data.get("post_slug")
 
         # Convert to response schema
-        response_data = ModelConverter.task_response_to_unified(ModelConverter.to_task_response(updated_task))
-        
+        response_data = ModelConverter.task_response_to_unified(
+            ModelConverter.to_task_response(updated_task)
+        )
+
         # Add published URL info to response
         if published_url:
             response_data["published_url"] = published_url
@@ -1958,18 +2005,21 @@ async def approve_task(
             response_data["post_id"] = post_id
         if post_slug:
             response_data["post_slug"] = post_slug
-        
+
         return UnifiedTaskResponse(**response_data)
 
     except HTTPException:
         raise
     except (ValueError, KeyError, TypeError) as e:
-        logger.error(f"Data validation error in approve_task: {type(e).__name__}: {str(e)}", exc_info=True)
+        logger.error(
+            f"Data validation error in approve_task: {type(e).__name__}: {str(e)}", exc_info=True
+        )
         raise HTTPException(status_code=400, detail=f"Invalid task data: {str(e)}")
     except Exception as e:
-        logger.error(f"Failed to approve task {task_id}: {type(e).__name__}: {str(e)}", exc_info=True)
+        logger.error(
+            f"Failed to approve task {task_id}: {type(e).__name__}: {str(e)}", exc_info=True
+        )
         raise HTTPException(status_code=500, detail=f"Failed to approve task: {str(e)}")
-
 
 
 @router.post(
@@ -2040,11 +2090,14 @@ async def publish_task(
             task_result = task.get("result", {})
             if isinstance(task_result, str):
                 import json as json_module
+
                 task_result = json_module.loads(task_result) if task_result else {}
-            
+
             # Extract content from task result
             topic = task.get("topic", "")
-            draft_content = task_result.get("draft_content", "") or task_result.get("content", "") or ""
+            draft_content = (
+                task_result.get("draft_content", "") or task_result.get("content", "") or ""
+            )
             seo_description = task_result.get("seo_description", "")
             seo_keywords = task_result.get("seo_keywords", [])
             featured_image_url = task_result.get("featured_image_url")
@@ -2054,19 +2107,20 @@ async def publish_task(
                 # 🔑 EXTRACT TITLE: LLM often generates "#Title" at start of content
                 # Extract it and use as the post title, remove from content
                 extracted_title, cleaned_content = extract_title_from_content(draft_content)
-                
+
                 # Use extracted title if available, otherwise fall back to topic
                 post_title = extracted_title or task_result.get("title") or topic
-                
+
                 # Use cleaned content (title removed)
                 post_content = cleaned_content
-                
+
                 logger.info(f"📝 Post title: {post_title}")
                 logger.info(f"   Extracted from content: {bool(extracted_title)}")
                 logger.info(f"   Content length: {len(post_content)} chars")
-                
+
                 # Create slug from title (not topic)
                 import re as re_module
+
                 slug = re_module.sub(r"[^\w\s-]", "", post_title).lower().replace(" ", "-")[:50]
                 slug = f"{slug}-{task_id[:8]}"
 
@@ -2075,6 +2129,7 @@ async def publish_task(
                     _get_or_create_default_author,
                     _select_category_for_topic,
                 )
+
                 author_id = await _get_or_create_default_author(db_service)
                 category_id = await _select_category_for_topic(post_title, db_service)
 
@@ -2244,26 +2299,19 @@ async def generate_task_image(
             # Use Pexels API to search for images
             try:
                 import aiohttp
-                
+
                 pexels_key = os.getenv("PEXELS_API_KEY")
                 if not pexels_key:
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Pexels API key not configured"
-                    )
-                
+                    raise HTTPException(status_code=400, detail="Pexels API key not configured")
+
                 search_query = topic or task.get("topic", "business")
-                
+
                 async with aiohttp.ClientSession() as session:
                     async with session.get(
                         "https://api.pexels.com/v1/search",
-                        params={
-                            "query": search_query,
-                            "per_page": 1,
-                            "orientation": "landscape"
-                        },
+                        params={"query": search_query, "per_page": 1, "orientation": "landscape"},
                         headers={"Authorization": pexels_key},
-                        timeout=10.0
+                        timeout=10.0,
                     ) as resp:
                         if resp.status == 200:
                             try:
@@ -2272,7 +2320,7 @@ async def generate_task_image(
                                     photo = data["photos"][0]
                                     image_url = photo["src"]["large"]
                                     logger.info(f"✅ Found Pexels image: {image_url}")
-                                    
+
                                     # Store image URL and metadata in task for persistence
                                     await db_service.update_task(
                                         task_id,
@@ -2281,9 +2329,11 @@ async def generate_task_image(
                                             "task_metadata": {
                                                 "featured_image_url": image_url,
                                                 "featured_image_source": "pexels",
-                                                "featured_image_photographer": photo.get("photographer", "Unknown"),
-                                            }
-                                        }
+                                                "featured_image_photographer": photo.get(
+                                                    "photographer", "Unknown"
+                                                ),
+                                            },
+                                        },
                                     )
                             except json.JSONDecodeError as je:
                                 logger.error(f"Failed to parse Pexels response JSON: {je}")
@@ -2292,58 +2342,54 @@ async def generate_task_image(
                             logger.warning(f"Pexels rate limit exceeded")
                             raise HTTPException(
                                 status_code=429,
-                                detail="Image service rate limit exceeded. Please try again later."
+                                detail="Image service rate limit exceeded. Please try again later.",
                             )
                         else:
                             logger.warning(f"Pexels API returned {resp.status}")
                             raise ValueError(f"Pexels API error: HTTP {resp.status}")
-                
+
             except ValueError as ve:
                 logger.error(f"Pexels API error: {ve}")
                 raise HTTPException(
-                    status_code=500,
-                    detail=f"Error fetching image from Pexels: {str(ve)}"
+                    status_code=500, detail=f"Error fetching image from Pexels: {str(ve)}"
                 )
             except asyncio.TimeoutError:
                 logger.warning(f"Pexels API timeout for query: {search_query}")
-                raise HTTPException(
-                    status_code=504,
-                    detail="Pexels API timeout. Please try again."
-                )
+                raise HTTPException(status_code=504, detail="Pexels API timeout. Please try again.")
             except Exception as e:
                 logger.error(f"Unexpected error fetching from Pexels: {type(e).__name__}: {e}")
                 raise HTTPException(
-                    status_code=500,
-                    detail="Unexpected error fetching image from Pexels"
+                    status_code=500, detail="Unexpected error fetching image from Pexels"
                 )
 
         elif source == "sdxl":
             # Use SDXL to generate an image
             try:
                 from pathlib import Path
+
                 from services.image_service import ImageService
-                
+
                 image_service = ImageService()
-                
+
                 # Build generation prompt from topic and content
                 generation_prompt = f"{topic}"
                 if content_summary:
                     # Extract key concepts from content summary
                     generation_prompt = f"{topic}: {content_summary[:200]}"
-                
+
                 logger.info(f"🎨 Generating image with SDXL: {generation_prompt}")
-                
+
                 # Save to user's Downloads folder for preview
                 downloads_path = str(Path.home() / "Downloads" / "glad-labs-generated-images")
                 os.makedirs(downloads_path, exist_ok=True)
-                
+
                 # Create filename with UUID to prevent collisions (UUID instead of timestamp)
                 unique_id = str(uuid_lib.uuid4())[:8]
                 output_file = f"sdxl_{unique_id}.png"
                 output_path = os.path.join(downloads_path, output_file)
-                
+
                 logger.info(f"📁 Generating SDXL image to: {output_path}")
-                
+
                 # Generate image with SDXL
                 success = await image_service.generate_image(
                     prompt=generation_prompt,
@@ -2354,47 +2400,46 @@ async def generate_task_image(
                     high_quality=False,
                     task_id=task_id,
                 )
-                
+
                 if success and os.path.exists(output_path):
                     logger.info(f"✅ SDXL image generated: {output_path}")
                     image_url = output_path
                     logger.info(f"   Generated image saved locally for preview")
                 else:
                     raise RuntimeError("SDXL image generation failed or file not created")
-                    
+
             except (OSError, IOError, RuntimeError, ValueError) as e:
-                logger.error(f"SDXL image generation error - {type(e).__name__}: {e}", exc_info=True)
+                logger.error(
+                    f"SDXL image generation error - {type(e).__name__}: {e}", exc_info=True
+                )
                 raise HTTPException(
                     status_code=500,
-                    detail=f"SDXL image generation failed: {str(e)}. Ensure GPU available or use 'pexels' source."
+                    detail=f"SDXL image generation failed: {str(e)}. Ensure GPU available or use 'pexels' source.",
                 )
             except asyncio.TimeoutError:
                 logger.warning(f"SDXL image generation timeout for task {task_id}")
                 raise HTTPException(
                     status_code=408,
-                    detail="Image generation timeout. Please try again with 'pexels' source."
+                    detail="Image generation timeout. Please try again with 'pexels' source.",
                 )
             except Exception as e:
-                logger.critical(f"Unexpected error in SDXL generation: {type(e).__name__}: {e}", exc_info=True)
+                logger.critical(
+                    f"Unexpected error in SDXL generation: {type(e).__name__}: {e}", exc_info=True
+                )
                 raise HTTPException(
-                    status_code=500,
-                    detail="Internal server error during image generation"
+                    status_code=500, detail="Internal server error during image generation"
                 )
         else:
             raise HTTPException(
-                status_code=400,
-                detail=f"Invalid image source: {source}. Use 'pexels' or 'sdxl'"
+                status_code=400, detail=f"Invalid image source: {source}. Use 'pexels' or 'sdxl'"
             )
 
         if not image_url:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to generate or fetch image"
-            )
+            raise HTTPException(status_code=500, detail="Failed to generate or fetch image")
 
         # Update task metadata with generated image URL
         task_result = task.get("result")
-        
+
         # Handle None, empty string, or JSON string
         if task_result is None:
             task_result = {}
@@ -2405,7 +2450,7 @@ async def generate_task_image(
                 task_result = {}
         elif not isinstance(task_result, dict):
             task_result = {}
-        
+
         # Also update task_metadata for consistency
         task_metadata = task.get("task_metadata", {})
         if isinstance(task_metadata, str):
@@ -2413,22 +2458,22 @@ async def generate_task_image(
                 task_metadata = json.loads(task_metadata) if task_metadata.strip() else {}
             except (json.JSONDecodeError, AttributeError):
                 task_metadata = {}
-        
+
         task_result["featured_image_url"] = image_url
         task_metadata["featured_image_url"] = image_url
-        
+
         await db_service.update_task(
             task_id,
             {
                 "result": safe_json_dumps(task_result),
-                "task_metadata": safe_json_dumps(task_metadata)
-            }
+                "task_metadata": safe_json_dumps(task_metadata),
+            },
         )
 
         return {
             "image_url": image_url,
             "source": source,
-            "message": f"✅ Image generated/fetched from {source}"
+            "message": f"✅ Image generated/fetched from {source}",
         }
 
     except HTTPException:
@@ -2481,18 +2526,16 @@ async def delete_task(
 
         # Soft delete: mark task as deleted with timestamp
         logger.info(f"Deleting task {task_id} (user: {current_user.get('id')})")
-        
+
         # Update task status to 'cancelled' and add deleted_at metadata
         deleted_metadata = {
             "deleted_at": datetime.now(timezone.utc).isoformat(),
             "deleted_by": current_user.get("id"),
             "soft_delete": True,
         }
-        
+
         await db_service.update_task_status(
-            task_id, 
-            "cancelled", 
-            result=json.dumps({"metadata": deleted_metadata})
+            task_id, "cancelled", result=json.dumps({"metadata": deleted_metadata})
         )
 
         logger.info(f"Task {task_id} deleted successfully")

@@ -7,9 +7,9 @@ This service integrates SearXNG for the research stage of content generation.
 
 import asyncio
 import json
-from typing import Optional
-from datetime import datetime
 import logging
+from datetime import datetime
+from typing import Optional
 
 import httpx
 

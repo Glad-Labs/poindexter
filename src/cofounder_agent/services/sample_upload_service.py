@@ -7,14 +7,15 @@ for writing samples.
 """
 
 import csv
-import json
 import io
-from typing import Optional, Tuple
-from fastapi import UploadFile
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import insert
-from datetime import datetime
+import json
 import re
+from datetime import datetime
+from typing import Optional, Tuple
+
+from fastapi import UploadFile
+from sqlalchemy import insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.database_models import WritingSample
 

@@ -9,20 +9,21 @@ Provides endpoints for:
 """
 
 import logging
-from typing import Optional, Dict, Any
+import time
+from datetime import datetime
+from typing import Any, Dict, Optional
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from datetime import datetime
-import time
 
-from services.ollama_client import OllamaClient
-from services.model_router import ModelRouter, TaskComplexity
-from services.usage_tracker import get_usage_tracker
 from schemas.chat_schemas import (
     ChatMessage,
     ChatRequest,
     ChatResponse,
 )
+from services.model_router import ModelRouter, TaskComplexity
+from services.ollama_client import OllamaClient
+from services.usage_tracker import get_usage_tracker
 
 logger = logging.getLogger(__name__)
 

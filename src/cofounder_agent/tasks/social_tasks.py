@@ -1,8 +1,9 @@
 """Social media tasks - multi-platform content distribution."""
 
-from typing import Dict, Any
-from src.cofounder_agent.tasks.base import PureTask, ExecutionContext
 import logging
+from typing import Any, Dict
+
+from src.cofounder_agent.tasks.base import ExecutionContext, PureTask
 
 logger = logging.getLogger(__name__)
 

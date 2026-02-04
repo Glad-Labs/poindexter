@@ -15,13 +15,16 @@ Features:
 ASYNC-FIRST: All I/O operations use httpx async client (no blocking calls)
 """
 
-import os
-import logging
-from typing import Optional, Tuple, Dict, Any
 import asyncio
+import logging
+import os
 import re
 import time
+from typing import Any, Dict, Optional, Tuple
+
 import httpx
+
+from .provider_checker import ProviderChecker
 
 logger = logging.getLogger(__name__)
 
@@ -54,15 +57,16 @@ class AIContentGenerator:
         self.quality_threshold = quality_threshold
         self.ollama_available = False
         self.ollama_checked = False  # Track if we've checked Ollama async
-        self.hf_token = os.getenv("HUGGINGFACE_API_TOKEN")
-        # Support both GEMINI_API_KEY and GOOGLE_API_KEY for backward compatibility
-        self.gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         self.generation_attempts = 0
         self.max_refinement_attempts = 3
 
         logger.info("AIContentGenerator initialized (Ollama check deferred to first async call)")
-        logger.debug(f"   HuggingFace token: {'✓ set' if self.hf_token else '✗ not set'}")
-        logger.debug(f"   Gemini/Google key: {'✓ set' if self.gemini_key else '✗ not set'}")
+        logger.debug(
+            f"   HuggingFace token: {'✓ set' if ProviderChecker.is_huggingface_available() else '✗ not set'}"
+        )
+        logger.debug(
+            f"   Gemini/Google key: {'✓ set' if ProviderChecker.is_gemini_available() else '✗ not set'}"
+        )
 
     async def _check_ollama_async(self):
         """Async check if Ollama is running - call this once before using Ollama"""
@@ -213,8 +217,10 @@ class AIContentGenerator:
         logger.info(f"📌 Quality threshold: {self.quality_threshold}")
         logger.info(f"📌 Preferred model: {preferred_model or 'auto'}")
         logger.info(f"📌 Preferred provider: {preferred_provider or 'auto'}")
-        logger.info(f"📌 HuggingFace token: {'✓' if self.hf_token else '✗'}")
-        logger.info(f"📌 Gemini key: {'✓' if self.gemini_key else '✗'}")
+        logger.info(
+            f"📌 HuggingFace token: {'✓' if ProviderChecker.is_huggingface_available() else '✗'}"
+        )
+        logger.info(f"📌 Gemini key: {'✓' if ProviderChecker.is_gemini_available() else '✗'}")
         logger.info(f"{'='*80}\n")
 
         # Check if Ollama is available (async check, happens once)
@@ -222,16 +228,16 @@ class AIContentGenerator:
         # 1. Gemini (if key available) - cloud, reliable, high quality
         # 2. Ollama (if available) - local, free
         # 3. HuggingFace (if token available) - cloud fallback
-        
+
         # Determine effective provider preference
         effective_provider = preferred_provider
-        if not effective_provider and self.gemini_key:
+        if not effective_provider and ProviderChecker.is_gemini_available():
             # Default to Gemini if key is available and no provider specified
             effective_provider = "gemini"
             logger.info(f"📌 No provider specified, defaulting to Gemini (key available)")
-        
-        skip_ollama = effective_provider and effective_provider.lower() not in ['ollama', 'auto']
-        
+
+        skip_ollama = effective_provider and effective_provider.lower() not in ["ollama", "auto"]
+
         # Use local variable to avoid polluting instance state across requests
         use_ollama = False
         if skip_ollama:
@@ -300,12 +306,12 @@ Improved version:"""
                 "attempted_providers": [],
                 "skipped_ollama": skip_ollama,
                 "decision_tree": {
-                    "gemini_key_available": bool(self.gemini_key),
+                    "gemini_key_available": ProviderChecker.is_gemini_available(),
                     "gemini_attempted": False,
                     "gemini_succeeded": False,
                     "gemini_error": None,
                     "ollama_available": use_ollama,
-                    "huggingface_token_available": bool(self.hf_token),
+                    "huggingface_token_available": ProviderChecker.is_huggingface_available(),
                 },
             },
         }
@@ -319,61 +325,83 @@ Improved version:"""
         logger.info(f"   User selection - provider: {preferred_provider}, model: {preferred_model}")
         logger.info(f"   Skip Ollama: {skip_ollama} (user explicitly selected cloud provider)")
         logger.info(f"   Ollama - available: {self.ollama_available}")
-        logger.info(f"   HuggingFace - token: {'✓' if self.hf_token else '✗'}")
-        logger.info(f"   Gemini - key: {'✓' if self.gemini_key else '✗'}")
+        logger.info(
+            f"   HuggingFace - token: {'✓' if ProviderChecker.is_huggingface_available() else '✗'}"
+        )
+        logger.info(f"   Gemini - key: {'✓' if ProviderChecker.is_gemini_available() else '✗'}")
         logger.info(f"")
 
         # ========================================================================
         # USER SELECTION: Try user-selected provider/model first if specified
         # ========================================================================
-        if effective_provider and effective_provider.lower() == 'gemini' and self.gemini_key:
-            logger.info(f"🎯 Attempting Gemini (provider: {effective_provider}, model: {preferred_model or 'auto'})...")
+        if (
+            effective_provider
+            and effective_provider.lower() == "gemini"
+            and ProviderChecker.is_gemini_available()
+        ):
+            logger.info(
+                f"🎯 Attempting Gemini (provider: {effective_provider}, model: {preferred_model or 'auto'})..."
+            )
             metrics["model_selection_log"]["decision_tree"]["gemini_attempted"] = True
             try:
                 # Import google-genai library (new package, replaces deprecated google-generativeai)
                 try:
                     import google.genai as genai
+
                     logger.info("✅ Using google.genai (new SDK) for Gemini API calls")
                 except ImportError:
                     # Fallback to older google.generativeai if new one not available
                     import google.generativeai as genai
-                    logger.warning("⚠️  Using google.generativeai (legacy/deprecated SDK) - upgrade to google-genai for better support")
 
-                genai.configure(api_key=self.gemini_key)
-                
+                    logger.warning(
+                        "⚠️  Using google.generativeai (legacy/deprecated SDK) - upgrade to google-genai for better support"
+                    )
+
+                genai.configure(api_key=ProviderChecker.get_gemini_api_key())
+
                 # Map generic model names to actual Gemini API models
-                model_name = preferred_model if preferred_model and 'gemini' in preferred_model.lower() and preferred_model.lower() != 'gemini' else "gemini-2.5-flash"
-                
+                model_name = (
+                    preferred_model
+                    if preferred_model
+                    and "gemini" in preferred_model.lower()
+                    and preferred_model.lower() != "gemini"
+                    else "gemini-2.5-flash"
+                )
+
                 # Handle old/generic names → real Gemini models
                 # NOTE: For this environment, use 2.5-flash as default
                 model_mapping = {
-                    'gemini': 'gemini-2.5-flash',
-                    'gemini-pro': 'gemini-2.5-pro',
-                    'gemini-flash': 'gemini-2.5-flash',
-                    'gemini-1.5-pro': 'gemini-2.5-pro',
-                    'gemini-1.5-flash': 'gemini-2.5-flash',
-                    'gemini-2.0-flash': 'gemini-2.5-flash',
+                    "gemini": "gemini-2.5-flash",
+                    "gemini-pro": "gemini-2.5-pro",
+                    "gemini-flash": "gemini-2.5-flash",
+                    "gemini-1.5-pro": "gemini-2.5-pro",
+                    "gemini-1.5-flash": "gemini-2.5-flash",
+                    "gemini-2.0-flash": "gemini-2.5-flash",
                 }
-                
+
                 # Apply mapping if model is in the mapping dict
                 if model_name.lower() in model_mapping:
                     mapped_model = model_mapping[model_name.lower()]
-                    logger.info(f"   Model name mapped: {preferred_model} → {mapped_model} (reason: availability)")
+                    logger.info(
+                        f"   Model name mapped: {preferred_model} → {mapped_model} (reason: availability)"
+                    )
                     model_name = mapped_model
                 else:
                     logger.info(f"   Model name no mapping needed: {model_name}")
-                    
+
                 logger.info(f"   Using Gemini model: {model_name}")
                 model = genai.GenerativeModel(model_name)
 
                 metrics["generation_attempts"] += 1
                 metrics["model_selection_log"]["attempted_providers"].append("gemini")
-                
+
                 # Run blocking Gemini call in a thread to avoid blocking the event loop
                 def _gemini_generate():
                     # Calculate max tokens: target ~1 token per word, plus 30% buffer
                     max_tokens = int(target_length * 1.3)
-                    logger.debug(f"   Gemini max_output_tokens: {max_tokens} (target_length: {target_length})")
+                    logger.debug(
+                        f"   Gemini max_output_tokens: {max_tokens} (target_length: {target_length})"
+                    )
                     return model.generate_content(
                         f"{system_prompt}\n\n{generation_prompt}",
                         generation_config=genai.GenerationConfig(
@@ -381,7 +409,7 @@ Improved version:"""
                             temperature=0.7,
                         ),
                     )
-                
+
                 response = await asyncio.to_thread(_gemini_generate)
 
                 generated_content = response.text
@@ -397,18 +425,25 @@ Improved version:"""
                     )
 
                     metrics["model_used"] = f"Google Gemini ({model_name})"
-                    metrics["models_used_by_phase"]["draft"] = metrics["model_used"]  # NEW: Track phase
+                    metrics["models_used_by_phase"]["draft"] = metrics[
+                        "model_used"
+                    ]  # NEW: Track phase
                     metrics["final_quality_score"] = validation.quality_score
                     metrics["generation_time_seconds"] = time.time() - start_time
                     metrics["model_selection_log"]["decision_tree"]["gemini_succeeded"] = True
-                    logger.info(f"✓ Content generated with user-selected Gemini: {validation.feedback}")
+                    logger.info(
+                        f"✓ Content generated with user-selected Gemini: {validation.feedback}"
+                    )
                     return generated_content, metrics["model_used"], metrics
 
             except Exception as e:
                 import traceback
+
                 logger.warning(f"User-selected Gemini failed: {type(e).__name__}: {str(e)}")
                 logger.debug(f"Gemini error traceback: {traceback.format_exc()}")
-                metrics["model_selection_log"]["decision_tree"]["gemini_error"] = str(e)[:200]  # Store error
+                metrics["model_selection_log"]["decision_tree"]["gemini_error"] = str(e)[
+                    :200
+                ]  # Store error
                 attempts.append(("Gemini (user-selected)", str(e)))
 
         # 1. Try Ollama (local, free, no internet, RTX 5070 optimized)
@@ -440,11 +475,13 @@ Improved version:"""
                         metrics["generation_attempts"] += 1
 
                         logger.info(f"      ⏱️  Generating content (timeout: 120s)...")
-                        
+
                         # Calculate max tokens: target ~1 token per word, plus 30% buffer
                         max_tokens = int(target_length * 1.3)
-                        logger.debug(f"      Max tokens: {max_tokens} (target_length: {target_length})")
-                        
+                        logger.debug(
+                            f"      Max tokens: {max_tokens} (target_length: {target_length})"
+                        )
+
                         response = await ollama.generate(
                             prompt=generation_prompt,
                             system=system_prompt,
@@ -605,7 +642,9 @@ Improved version:"""
                                     if refined_validation.is_valid:
                                         logger.info(f"      ✅ Refined content APPROVED")
                                         metrics["model_used"] = f"Ollama - {model_name} (refined)"
-                                        metrics["models_used_by_phase"]["draft"] = metrics["model_used"]  # Track phase
+                                        metrics["models_used_by_phase"]["draft"] = metrics[
+                                            "model_used"
+                                        ]  # Track phase
                                         metrics["final_quality_score"] = (
                                             refined_validation.quality_score
                                         )
@@ -634,7 +673,9 @@ Improved version:"""
                                     f"      ⚠️  Content below quality threshold but no more refinements available"
                                 )
                                 metrics["model_used"] = f"Ollama - {model_name} (below threshold)"
-                                metrics["models_used_by_phase"]["draft"] = metrics["model_used"]  # Track phase
+                                metrics["models_used_by_phase"]["draft"] = metrics[
+                                    "model_used"
+                                ]  # Track phase
                                 metrics["final_quality_score"] = validation.quality_score
                                 metrics["generation_time_seconds"] = time.time() - start_time
                                 logger.info(f"\n{'='*80}")
@@ -668,12 +709,12 @@ Improved version:"""
                     attempts.append(("Ollama", str(e)[:150]))
 
         # 2. Try HuggingFace (free tier, online)
-        if self.hf_token:
+        if ProviderChecker.is_huggingface_available():
             logger.info("Attempting content generation with HuggingFace...")
             try:
                 from .huggingface_client import HuggingFaceClient
 
-                hf = HuggingFaceClient(api_token=self.hf_token)
+                hf = HuggingFaceClient(api_token=ProviderChecker.get_huggingface_api_key())
 
                 # Try recommended models
                 for model_id in [
@@ -713,7 +754,9 @@ Improved version:"""
 
                             if validation.is_valid:
                                 metrics["model_used"] = f"HuggingFace - {model_id.split('/')[-1]}"
-                                metrics["models_used_by_phase"]["draft"] = metrics["model_used"]  # Track phase
+                                metrics["models_used_by_phase"]["draft"] = metrics[
+                                    "model_used"
+                                ]  # Track phase
                                 metrics["final_quality_score"] = validation.quality_score
                                 metrics["generation_time_seconds"] = time.time() - start_time
                                 logger.info(f"✓ Content generated and approved with HuggingFace")
@@ -731,9 +774,11 @@ Improved version:"""
                 attempts.append(("HuggingFace", str(e)))
 
         # 3. Fall back to Google Gemini (paid, but reliable)
-        if self.gemini_key:
+        if ProviderChecker.is_gemini_available():
             logger.info(f"🔄 [ATTEMPT 3/3] Trying Google Gemini (Fallback)...")
-            logger.info(f"   ├─ API Key: {'✓ set' if self.gemini_key else '✗ not set'}")
+            logger.info(
+                f"   ├─ API Key: {'✓ set' if ProviderChecker.is_gemini_available() else '✗ not set'}"
+            )
             logger.info(f"   ├─ Model: gemini-2.5-flash")
             logger.info(f"   └─ Status: Initializing...\n")
             try:
@@ -741,17 +786,21 @@ Improved version:"""
                 try:
                     # Import google.generativeai library (stable SDK)
                     import google.generativeai as genai
+
                     logger.debug("Using google.generativeai (stable SDK)")
                 except ImportError:
                     # Fallback to newer google.genai if available
                     try:
                         import google.genai as genai
+
                         logger.debug("Using google.genai (new SDK)")
                     except ImportError as e:
-                        raise ImportError("Neither google.generativeai nor google.genai found") from e
+                        raise ImportError(
+                            "Neither google.generativeai nor google.genai found"
+                        ) from e
 
                 logger.debug(f"Configuring Gemini with API key...")
-                genai.configure(api_key=self.gemini_key)
+                genai.configure(api_key=ProviderChecker.get_gemini_api_key())
                 model = genai.GenerativeModel("gemini-2.5-flash")
                 logger.debug(f"✓ Gemini model initialized")
 
@@ -788,8 +837,12 @@ Improved version:"""
                     logger.info(f"✓ Content generated with Gemini: {validation.feedback}")
                     return generated_content, metrics["model_used"], metrics
                 else:
-                    logger.warning(f"Gemini content too short or empty: {len(generated_content)} chars")
-                    attempts.append(("Gemini", f"Content too short: {len(generated_content)} chars"))
+                    logger.warning(
+                        f"Gemini content too short or empty: {len(generated_content)} chars"
+                    )
+                    attempts.append(
+                        ("Gemini", f"Content too short: {len(generated_content)} chars")
+                    )
 
             except (AttributeError, ImportError) as e:
                 # Fallback for older SDK versions - try client API

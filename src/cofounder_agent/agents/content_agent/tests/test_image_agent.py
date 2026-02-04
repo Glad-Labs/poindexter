@@ -3,10 +3,11 @@ Tests for Image Agent
 Tests image generation, selection, and processing functionality
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
 import sys
 import types
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
 
 # Mock Google Cloud modules
 if "google" not in sys.modules:

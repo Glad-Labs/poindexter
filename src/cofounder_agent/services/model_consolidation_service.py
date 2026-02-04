@@ -28,14 +28,17 @@ Usage:
     )
 """
 
-from typing import Dict, Any, Optional, List, Tuple
+import asyncio
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple
+
 import structlog
-import os
-import asyncio
+
+from .provider_checker import ProviderChecker
 
 logger = structlog.get_logger(__name__)
 
@@ -193,20 +196,13 @@ class HuggingFaceAdapter(ProviderAdapter):
     def __init__(self):
         from .huggingface_client import HuggingFaceClient
 
-        self.token = os.getenv("HUGGINGFACE_API_TOKEN")
-        self.client = HuggingFaceClient(api_token=self.token)
+        api_token = ProviderChecker.get_huggingface_api_key()
+        self.client = HuggingFaceClient(api_token=api_token)
         self.provider_type = ProviderType.HUGGINGFACE
 
     async def is_available(self) -> bool:
         """Check if HuggingFace API is available"""
-        try:
-            is_available = await self.client.is_available()
-            if is_available:
-                logger.debug("HuggingFace available")
-            return is_available
-        except Exception as e:
-            logger.debug("HuggingFace unavailable", error=str(e))
-            return False
+        return ProviderChecker.is_huggingface_available()
 
     async def generate(
         self,
@@ -236,7 +232,7 @@ class HuggingFaceAdapter(ProviderAdapter):
                 provider=self.provider_type,
                 model=model,
                 tokens_used=len(prompt.split()) + len(response.split()),  # Rough estimate
-                cost=0.0 if not self.token else 0.0001,  # Free tier or minimal cost
+                cost=0.0 if not api_token else 0.0001,  # Free tier or minimal cost
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
@@ -318,16 +314,21 @@ class GoogleAdapter(ProviderAdapter):
             # This is synchronous but list_models() from GeminiClient returns a coroutine
             # We need to call it synchronously, so return what we know is available
             import asyncio
+
             loop = asyncio.new_event_loop()
             models = loop.run_until_complete(self.client.list_models())
             loop.close()
-            return models if models else [
-                "gemini-2.5-flash",
-                "gemini-2.5-pro",
-                "gemini-2.0-flash",
-                "gemini-pro-latest",
-                "gemini-flash-latest",
-            ]
+            return (
+                models
+                if models
+                else [
+                    "gemini-2.5-flash",
+                    "gemini-2.5-pro",
+                    "gemini-2.0-flash",
+                    "gemini-pro-latest",
+                    "gemini-flash-latest",
+                ]
+            )
         except Exception as e:
             logger.warning("Failed to get Gemini models from client, using defaults", error=str(e))
             return [
@@ -343,17 +344,18 @@ class AnthropicAdapter(ProviderAdapter):
     """Adapter for Anthropic Claude API"""
 
     def __init__(self):
-        try:
-            from anthropic import Anthropic
-
-            self.api_key = os.getenv("ANTHROPIC_API_KEY")
-            if self.api_key:
-                self.client = Anthropic(api_key=self.api_key)
-            else:
-                self.client = None
-        except ImportError:
-            logger.warning("Anthropic SDK not installed. Install with: pip install anthropic")
+        if not ProviderChecker.is_anthropic_available():
+            logger.warning("Anthropic API key not configured")
             self.client = None
+        else:
+            try:
+                from anthropic import Anthropic
+
+                self.api_key = ProviderChecker.get_anthropic_api_key()
+                self.client = Anthropic(api_key=self.api_key)
+            except ImportError:
+                logger.warning("Anthropic SDK not installed. Install with: pip install anthropic")
+                self.client = None
 
         self.provider_type = ProviderType.ANTHROPIC
 
@@ -415,17 +417,18 @@ class OpenAIAdapter(ProviderAdapter):
     """Adapter for OpenAI GPT API"""
 
     def __init__(self):
-        try:
-            from openai import OpenAI
-
-            self.api_key = os.getenv("OPENAI_API_KEY")
-            if self.api_key:
-                self.client = OpenAI(api_key=self.api_key)
-            else:
-                self.client = None
-        except ImportError:
-            logger.warning("OpenAI SDK not installed. Install with: pip install openai")
+        if not ProviderChecker.is_openai_available():
+            logger.warning("OpenAI API key not configured")
             self.client = None
+        else:
+            try:
+                from openai import OpenAI
+
+                self.api_key = ProviderChecker.get_openai_api_key()
+                self.client = OpenAI(api_key=self.api_key)
+            except ImportError:
+                logger.warning("OpenAI SDK not installed. Install with: pip install openai")
+                self.client = None
 
         self.provider_type = ProviderType.OPENAI
 

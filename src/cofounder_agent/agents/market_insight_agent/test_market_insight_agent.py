@@ -1,5 +1,6 @@
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 from src.agents.market_insight_agent.market_insight_agent import MarketInsightAgent
 
 

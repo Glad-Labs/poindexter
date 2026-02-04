@@ -5,10 +5,11 @@ Handles inference via HuggingFace Inference API (free tier)
 Supports open-source models for blog post generation
 """
 
-import os
-import logging
-from typing import Optional, AsyncGenerator, List, Dict, Any
 import asyncio
+import logging
+import os
+from typing import Any, AsyncGenerator, Dict, List, Optional
+
 import aiohttp
 
 logger = logging.getLogger(__name__)

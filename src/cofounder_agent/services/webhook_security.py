@@ -5,11 +5,11 @@ Provides HMAC-SHA256 signature verification for webhook security.
 Prevents webhook spoofing and ensures integrity of webhook payloads.
 """
 
-import hmac
 import hashlib
+import hmac
 import logging
-from typing import Optional
 from datetime import datetime, timedelta
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 

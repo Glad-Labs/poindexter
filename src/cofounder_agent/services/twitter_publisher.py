@@ -14,11 +14,12 @@ Requirements:
   - Or: TWITTER_BEARER_TOKEN (for App-only auth)
 """
 
-import os
-import logging
-from typing import Optional, Dict, Any
-import httpx
 import json
+import logging
+import os
+from typing import Any, Dict, Optional
+
+import httpx
 
 logger = logging.getLogger(__name__)
 

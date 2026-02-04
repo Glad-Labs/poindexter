@@ -18,14 +18,15 @@ All routes should use AppError classes for consistent error responses.
 Integrate retry_with_backoff and CircuitBreaker for resilience.
 """
 
-import logging
 import asyncio
+import logging
 import time
-from typing import Dict, Any, Optional, Callable, TypeVar, Coroutine
-from functools import wraps
-from enum import Enum
-from datetime import datetime, timedelta
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from enum import Enum
+from functools import wraps
+from typing import Any, Callable, Coroutine, Dict, Optional, TypeVar
+
 from fastapi import HTTPException, status
 from pydantic import BaseModel
 

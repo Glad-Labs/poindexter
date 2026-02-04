@@ -8,20 +8,20 @@ Uses PostgreSQL for persistent storage (no SQLite).
 """
 
 import asyncio
-import logging
+import hashlib
 import json
+import logging
 import os
 import pickle
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
-from dataclasses import dataclass, asdict
 from enum import Enum
 from pathlib import Path
-import hashlib
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from uuid import uuid4
 
-import numpy as np
 import asyncpg
+import numpy as np
 
 try:
     from sentence_transformers import SentenceTransformer
@@ -176,7 +176,8 @@ class AIMemorySystem:
                     self.logger.info("Memory system tables verified in PostgreSQL")
                 else:
                     self.logger.warning(
-                        "Memory tables not found - they should have been created by init_memory_tables()"
+                        "Memory tables not found - they should have been "
+                        "created by init_memory_tables()"
                     )
 
         except Exception as e:
@@ -236,8 +237,12 @@ class AIMemorySystem:
                     row["id"]: self._row_to_cluster(row) for row in cluster_rows
                 }
 
+                count_memories = len(self.recent_memories)
+                count_prefs = len(self.user_preferences)
                 self.logger.info(
-                    f"Loaded {len(self.recent_memories)} memories, {len(self.user_preferences)} preferences"
+                    "Loaded %d memories, %d preferences",
+                    count_memories,
+                    count_prefs,
                 )
 
         except Exception as e:
@@ -619,10 +624,14 @@ class AIMemorySystem:
                 # Question pattern analysis
                 questions = [msg for msg in user_messages if "?" in msg["content"]]
                 if len(questions) >= 3:
+                    desc = (
+                        f"User asks {len(questions)} questions, "
+                        "prefers detailed explanations"
+                    )
                     pattern = LearningPattern(
                         pattern_id="question_pattern",
                         pattern_type="workflow",
-                        description=f"User asks {len(questions)} questions, prefers detailed explanations",
+                        description=desc,
                         frequency=len(questions),
                         confidence=0.7,
                         examples=[q["content"] for q in questions[-3:]],
@@ -662,7 +671,8 @@ class AIMemorySystem:
                 await conn.execute(
                     """
                     INSERT INTO learning_patterns
-                    (pattern_id, pattern_type, description, frequency, confidence, examples, discovered_at)
+                    (pattern_id, pattern_type, description, frequency,
+                     confidence, examples, discovered_at)
                     VALUES ($1::uuid, $2, $3, $4, $5, $6, $7)
                     ON CONFLICT (pattern_id) DO UPDATE SET
                         frequency = $4,
@@ -725,7 +735,8 @@ class AIMemorySystem:
                 await conn.execute(
                     """
                     INSERT INTO knowledge_clusters
-                    (id, name, description, memories, confidence, last_updated, importance_score, topics)
+                    (id, name, description, memories, confidence,
+                     last_updated, importance_score, topics)
                     VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8)
                     ON CONFLICT (id) DO UPDATE SET
                         memories = $4,

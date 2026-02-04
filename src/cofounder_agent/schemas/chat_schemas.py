@@ -3,8 +3,9 @@
 Consolidated schemas for chat interactions.
 """
 
-from pydantic import BaseModel, Field
 from typing import Optional
+
+from pydantic import BaseModel, Field
 
 
 class ChatMessage(BaseModel):

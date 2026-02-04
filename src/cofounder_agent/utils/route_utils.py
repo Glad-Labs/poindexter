@@ -20,9 +20,10 @@ Found in: content_routes, task_routes, subtask_routes, bulk_task_routes, setting
 """
 
 import logging
-from typing import Optional, Any
-from fastapi import FastAPI, Request, Depends
 from functools import lru_cache
+from typing import Any, Optional
+
+from fastapi import Depends, FastAPI, Request
 
 logger = logging.getLogger(__name__)
 

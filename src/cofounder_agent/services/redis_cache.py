@@ -21,17 +21,18 @@ For local development without Redis, set REDIS_ENABLED=false
 The system will work normally but without cache benefits.
 """
 
-import os
+import asyncio
 import json
 import logging
-from typing import Optional, Any, Dict, List, Callable, TYPE_CHECKING
+import os
 from datetime import datetime, timedelta
-import asyncio
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 try:
     import redis.asyncio as aioredis
     from redis.asyncio import Redis
-    from redis.exceptions import RedisError, ConnectionError as RedisConnectionError
+    from redis.exceptions import ConnectionError as RedisConnectionError
+    from redis.exceptions import RedisError
 
     REDIS_AVAILABLE = True
 except ImportError:

@@ -7,8 +7,8 @@ in database connections and external API calls.
 
 import asyncio
 import logging
-from typing import Callable, TypeVar, Any, Awaitable
 from datetime import datetime, timezone
+from typing import Any, Awaitable, Callable, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -325,9 +325,9 @@ class RetryStats:
             "total_retries": self.total_retries,
             "success_rate": round(success_rate, 4),
             "last_failure_reason": self.last_failure_reason,
-            "last_failure_time": self.last_failure_time.isoformat()
-            if self.last_failure_time
-            else None,
+            "last_failure_time": (
+                self.last_failure_time.isoformat() if self.last_failure_time else None
+            ),
         }
 
 

@@ -11,16 +11,17 @@ Cost:
 - Much cheaper than DALL-E ($0.02/image)
 """
 
-import logging
-from typing import Optional, List
-from pydantic import BaseModel, Field
-from fastapi import APIRouter, Query
-import time
-import os
-import uuid
 import base64
+import logging
+import os
+import time
+import uuid
 from datetime import datetime
 from io import BytesIO
+from typing import List, Optional
+
+from fastapi import APIRouter, Query
+from pydantic import BaseModel, Field
 
 # Cloud storage imports
 try:
@@ -39,7 +40,7 @@ try:
 except ImportError:
     S3_AVAILABLE = False
 
-from services.image_service import ImageService, FeaturedImageMetadata
+from services.image_service import FeaturedImageMetadata, ImageService
 
 logger = logging.getLogger(__name__)
 media_router = APIRouter(prefix="/api/media", tags=["Media"])
@@ -394,7 +395,7 @@ async def generate_featured_image(request: ImageGenerationRequest):
     ```
     """
     start_time = time.time()
-    
+
     try:
         image_service = await get_image_service()
     except Exception as e:

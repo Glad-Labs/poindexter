@@ -6,9 +6,10 @@ reducing code duplication and improving maintainability.
 """
 
 import logging
-from typing import Optional, Any, Dict
-from fastapi import HTTPException
 from datetime import datetime, timezone
+from typing import Any, Dict, Optional
+
+from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,9 @@ logger = logging.getLogger(__name__)
 class ErrorResponse:
     """Standardized error response format."""
 
-    def __init__(self, status_code: int, detail: str, operation: str = None, error_type: str = None):
+    def __init__(
+        self, status_code: int, detail: str, operation: str = None, error_type: str = None
+    ):
         """
         Initialize error response.
 
@@ -171,7 +174,9 @@ def handle_service_error(
     )
 
     if fallback_value is not None:
-        log_instance.info(f"[SERVICE:{operation}] Returning fallback value: {type(fallback_value).__name__}")
+        log_instance.info(
+            f"[SERVICE:{operation}] Returning fallback value: {type(fallback_value).__name__}"
+        )
         return fallback_value
 
     # If no fallback, re-raise as HTTPException
@@ -280,7 +285,9 @@ def internal_error(detail: str = "Internal server error", operation: str = None)
     return HTTPException(status_code=500, detail=detail)
 
 
-def service_unavailable(detail: str = "Service unavailable", operation: str = None) -> HTTPException:
+def service_unavailable(
+    detail: str = "Service unavailable", operation: str = None
+) -> HTTPException:
     """Raise 503 Service Unavailable error."""
     if operation:
         logger.error(f"[{operation}] Service unavailable: {detail}")

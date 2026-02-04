@@ -5,27 +5,28 @@ Provides REST endpoints for command dispatch and monitoring
 Replaces Pub/Sub topic subscriptions with HTTP API calls
 """
 
-from fastapi import APIRouter, HTTPException, Query
-from typing import Dict, Any, Optional, List
-from pydantic import BaseModel
 import logging
-import sys
 import os
+import sys
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 # Add parent directory to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from services.command_queue import (
-    get_command_queue,
-    create_command,
-    CommandStatus,
-)
 from schemas.command_schemas import (
+    CommandErrorRequest,
+    CommandListResponse,
     CommandRequest,
     CommandResponse,
-    CommandListResponse,
     CommandResultRequest,
-    CommandErrorRequest,
+)
+from services.command_queue import (
+    CommandStatus,
+    create_command,
+    get_command_queue,
 )
 
 logger = logging.getLogger(__name__)

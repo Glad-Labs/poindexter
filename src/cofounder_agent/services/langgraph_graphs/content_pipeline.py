@@ -1,13 +1,16 @@
 """LangGraph workflow for blog post creation"""
 
-import logging
 import asyncio
-from typing import Literal, Optional
-from datetime import datetime
+import logging
 import time
-from langgraph.graph import StateGraph, END
-from .states import ContentPipelineState
+from datetime import datetime
+from typing import Literal, Optional
+
+from langgraph.graph import END, StateGraph
+
 from services.model_selector_service import ModelSelector, QualityPreference
+
+from .states import ContentPipelineState
 
 logger = logging.getLogger(__name__)
 
@@ -634,7 +637,10 @@ async def finalize_phase(
         state["task_id"] = state["request_id"]
 
         state["messages"].append(
-            {"role": "system", "content": f"Content generation complete. Task ready for review and approval at /api/content/tasks/{state['task_id']}/approve"}
+            {
+                "role": "system",
+                "content": f"Content generation complete. Task ready for review and approval at /api/content/tasks/{state['task_id']}/approve",
+            }
         )
 
         # Log finalization cost

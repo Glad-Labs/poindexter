@@ -21,12 +21,12 @@ Cost Optimization:
 - Result: $0/month vs $0.02/image with DALL-E
 """
 
-import os
-import logging
 import asyncio
+import logging
+import os
 import time
-from typing import Optional, Dict, List, Any, Callable
 from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional
 
 try:
     import httpx

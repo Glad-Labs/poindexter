@@ -12,12 +12,13 @@ Features:
 - Monthly budget tracking ($100/month limit)
 """
 
-from typing import Dict, Any, List, Optional
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
-import structlog
+from typing import Any, Dict, List, Optional
+
 import httpx
-from dataclasses import dataclass
+import structlog
 
 logger = structlog.get_logger(__name__)
 

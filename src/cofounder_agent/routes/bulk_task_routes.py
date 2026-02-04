@@ -7,23 +7,24 @@ Provides endpoints for performing bulk operations on multiple tasks such as:
 - Deleting/archiving multiple tasks
 """
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+import logging
+from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import UUID
-from datetime import datetime, timezone
-import logging
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from routes.auth_unified import get_current_user
-from services.database_service import DatabaseService
-from utils.route_utils import get_database_dependency
-from utils.error_responses import ErrorResponseBuilder
 from schemas.bulk_task_schemas import (
-    BulkTaskRequest,
-    BulkTaskResponse,
     BulkCreateTasksRequest,
     BulkCreateTasksResponse,
+    BulkTaskRequest,
+    BulkTaskResponse,
 )
+from services.database_service import DatabaseService
+from utils.error_responses import ErrorResponseBuilder
+from utils.route_utils import get_database_dependency
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +186,7 @@ async def bulk_create_tasks(
     try:
         created_tasks = []
         errors = []
-        
+
         for i, task in enumerate(request.tasks):
             try:
                 # Create task in database
@@ -200,22 +201,20 @@ async def bulk_create_tasks(
                         "target_audience": task.target_audience,
                         "category": task.category,
                     },
-                    created_by=current_user.get("user_id") if current_user else "system"
+                    created_by=current_user.get("user_id") if current_user else "system",
                 )
-                
-                created_tasks.append({
-                    "id": str(result.get("id")) if isinstance(result, dict) else str(result),
-                    "name": task.task_name,
-                    "status": "pending"
-                })
+
+                created_tasks.append(
+                    {
+                        "id": str(result.get("id")) if isinstance(result, dict) else str(result),
+                        "name": task.task_name,
+                        "status": "pending",
+                    }
+                )
             except Exception as e:
                 logger.error(f"Error creating task {i+1}: {str(e)}")
-                errors.append({
-                    "index": i,
-                    "task_name": task.task_name,
-                    "error": str(e)
-                })
-        
+                errors.append({"index": i, "task_name": task.task_name, "error": str(e)})
+
         return BulkCreateTasksResponse(
             created=len(created_tasks),
             failed=len(errors),
@@ -225,7 +224,4 @@ async def bulk_create_tasks(
         )
     except Exception as e:
         logger.error(f"Bulk create error: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Bulk create failed: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Bulk create failed: {str(e)}")

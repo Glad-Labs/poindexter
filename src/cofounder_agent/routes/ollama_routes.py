@@ -8,16 +8,17 @@ Provides endpoints for:
 """
 
 import logging
+from datetime import datetime
+from typing import Any, Dict, Optional
+
 import httpx
-from typing import Optional, Dict, Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from datetime import datetime
 
 from schemas.ollama_schemas import (
     OllamaHealthResponse,
-    OllamaWarmupResponse,
     OllamaModelSelection,
+    OllamaWarmupResponse,
 )
 
 logger = logging.getLogger(__name__)

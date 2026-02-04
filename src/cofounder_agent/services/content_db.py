@@ -18,18 +18,19 @@ from uuid import uuid4
 import asyncpg
 from asyncpg import Pool
 
-from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 from schemas.database_response_models import (
-    PostResponse,
-    CategoryResponse,
-    TagResponse,
     AuthorResponse,
-    QualityEvaluationResponse,
-    QualityImprovementLogResponse,
+    CategoryResponse,
     MetricsResponse,
     OrchestratorTrainingDataResponse,
+    PostResponse,
+    QualityEvaluationResponse,
+    QualityImprovementLogResponse,
+    TagResponse,
 )
 from schemas.model_converter import ModelConverter
+from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
+
 from .database_mixin import DatabaseServiceMixin
 
 logger = logging.getLogger(__name__)
@@ -314,17 +315,17 @@ class ContentDatabase(DatabaseServiceMixin):
         """
         try:
             criteria = eval_data.get("criteria", {})
-            
+
             # Extract context data for enriched evaluation
             context_data = eval_data.get("context_data", {})
             if not context_data and "context" in eval_data:
                 context_data = eval_data["context"]
-            
+
             # Calculate content_length if not provided
             content_length = eval_data.get("content_length")
             if not content_length and "content" in eval_data:
                 content_length = len(eval_data.get("content", ""))
-            
+
             sql = """
                 INSERT INTO quality_evaluations (
                     content_id, task_id, overall_score, clarity, accuracy, 
@@ -425,10 +426,13 @@ class ContentDatabase(DatabaseServiceMixin):
                 failed_tasks = await conn.fetchval(
                     "SELECT COUNT(*) FROM content_tasks WHERE status = $1", "failed"
                 )
-                
+
                 # Get pending/in-progress tasks
                 pending_tasks = await conn.fetchval(
-                    "SELECT COUNT(*) FROM content_tasks WHERE status IN ($1, $2, $3)", "pending", "in_progress", "queued"
+                    "SELECT COUNT(*) FROM content_tasks WHERE status IN ($1, $2, $3)",
+                    "pending",
+                    "in_progress",
+                    "queued",
                 )
 
                 # Calculate rates
@@ -448,7 +452,9 @@ class ContentDatabase(DatabaseServiceMixin):
                 except (ValueError, TypeError, AttributeError) as e:
                     logger.warning(f"Could not calculate avg execution time (data type error): {e}")
                 except Exception as e:
-                    logger.error(f"Unexpected error calculating avg execution time: {type(e).__name__}: {e}")
+                    logger.error(
+                        f"Unexpected error calculating avg execution time: {type(e).__name__}: {e}"
+                    )
 
                 # Calculate total cost from financial tracking (if implemented)
                 total_cost = 0
@@ -461,9 +467,13 @@ class ContentDatabase(DatabaseServiceMixin):
                     logger.debug(f"Could not calculate total cost (data type error): {e}")
                 except asyncpg.PostgresError as e:
                     # Table may not exist or permissions issue
-                    logger.debug(f"Cost tracking not available (database error): {type(e).__name__}")
+                    logger.debug(
+                        f"Cost tracking not available (database error): {type(e).__name__}"
+                    )
                 except Exception as e:
-                    logger.error(f"Unexpected error calculating total cost: {type(e).__name__}: {e}")
+                    logger.error(
+                        f"Unexpected error calculating total cost: {type(e).__name__}: {e}"
+                    )
 
                 return MetricsResponse(
                     total_tasks=total_tasks or 0,

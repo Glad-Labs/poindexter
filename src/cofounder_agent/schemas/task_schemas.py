@@ -4,8 +4,10 @@ Task Management Schemas
 Consolidates all Pydantic models for task management endpoints
 """
 
-from typing import Optional, Dict, Any, List, Literal
+from typing import Any, Dict, List, Literal, Optional
+
 from pydantic import BaseModel, Field
+
 from schemas.unified_task_response import UnifiedTaskResponse
 
 
@@ -91,9 +93,7 @@ class UnifiedTaskRequest(BaseModel):
         description="Target audience for content",
         max_length=100,
     )
-    primary_keyword: Optional[str] = Field(
-        None, description="Primary SEO keyword", max_length=50
-    )
+    primary_keyword: Optional[str] = Field(None, description="Primary SEO keyword", max_length=50)
     models_by_phase: Optional[Dict[str, str]] = Field(
         None, description="Per-phase model selection (research, creative, qa, etc.)"
     )

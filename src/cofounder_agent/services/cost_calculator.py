@@ -10,11 +10,11 @@ Replaces hardcoded cost values ($0.03, $0.02) with real LLM pricing.
 """
 
 import logging
-from typing import Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any, Dict, Optional, Tuple
 
-from .model_constants import MODEL_COSTS, DEFAULT_MODEL_COST
+from .model_constants import DEFAULT_MODEL_COST, MODEL_COSTS
 
 logger = logging.getLogger(__name__)
 

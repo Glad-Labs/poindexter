@@ -3,13 +3,14 @@ Performance monitoring and metrics collection for Glad Labs AI Co-Founder
 Implements structured logging, performance tracking, and operational metrics
 """
 
-import time
 import asyncio
-import logging
-from typing import Dict, Any, Optional, List
-from datetime import datetime, timedelta
 import json
+import logging
+import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
+
 import structlog
 
 # Configure structured logging for performance monitoring

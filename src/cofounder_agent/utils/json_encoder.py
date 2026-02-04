@@ -5,10 +5,10 @@ Handles serialization of PostgreSQL-specific types like Decimal, UUID, datetime.
 """
 
 import json
+from datetime import date, datetime
 from decimal import Decimal
-from datetime import datetime, date
-from uuid import UUID
 from typing import Any
+from uuid import UUID
 
 
 class DecimalEncoder(json.JSONEncoder):

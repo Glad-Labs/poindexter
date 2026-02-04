@@ -11,12 +11,12 @@ Features:
 - Aggregation for analytics
 """
 
+import json
 import logging
 import time
-from typing import Dict, Any, Optional
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from dataclasses import dataclass, field, asdict
-import json
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 

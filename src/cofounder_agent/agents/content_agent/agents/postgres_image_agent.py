@@ -4,17 +4,17 @@ PostgreSQL-based Image Agent - Stores image metadata directly to PostgreSQL.
 Replaces Strapi image upload with direct database storage of image metadata and URLs.
 """
 
+import json
 import logging
 import os
-import json
 from pathlib import Path
-from typing import Optional, List
+from typing import List, Optional
+
 from ..config import config
 from ..services.llm_client import LLMClient
 from ..services.pexels_client import PexelsClient
 from ..utils.data_models import BlogPost, ImageDetails
-from ..utils.helpers import load_prompts_from_file, extract_json_from_string
-
+from ..utils.helpers import extract_json_from_string, load_prompts_from_file
 
 logger = logging.getLogger(__name__)
 

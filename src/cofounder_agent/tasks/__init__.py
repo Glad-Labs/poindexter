@@ -8,25 +8,12 @@ Complete task inventory (16 total tasks + 5 base classes):
 - Utility: Validate, Transform, Notification, Cache, Metrics, Log (6)
 """
 
-from src.cofounder_agent.tasks.base import Task, PureTask, TaskStatus, TaskResult, ExecutionContext
-from src.cofounder_agent.tasks.registry import TaskRegistry
-
-# Content Generation Tasks (5 tasks)
-from src.cofounder_agent.tasks.content_tasks import (
-    ResearchTask,
-    CreativeTask,
-    QATask,
-    ImageSelectionTask,
-    PublishTask,
+# Automation Tasks (2 tasks)
+from src.cofounder_agent.tasks.automation_tasks import (
+    EmailGenerateTask,
+    EmailSendTask,
 )
-
-# Social Media Tasks (4 tasks)
-from src.cofounder_agent.tasks.social_tasks import (
-    SocialResearchTask,
-    SocialCreativeTask,
-    SocialImageFormatTask,
-    SocialPublishTask,
-)
+from src.cofounder_agent.tasks.base import ExecutionContext, PureTask, Task, TaskResult, TaskStatus
 
 # Business Intelligence Tasks (3 tasks)
 from src.cofounder_agent.tasks.business_tasks import (
@@ -35,20 +22,32 @@ from src.cofounder_agent.tasks.business_tasks import (
     PerformanceReviewTask,
 )
 
-# Automation Tasks (2 tasks)
-from src.cofounder_agent.tasks.automation_tasks import (
-    EmailGenerateTask,
-    EmailSendTask,
+# Content Generation Tasks (5 tasks)
+from src.cofounder_agent.tasks.content_tasks import (
+    CreativeTask,
+    ImageSelectionTask,
+    PublishTask,
+    QATask,
+    ResearchTask,
+)
+from src.cofounder_agent.tasks.registry import TaskRegistry
+
+# Social Media Tasks (4 tasks)
+from src.cofounder_agent.tasks.social_tasks import (
+    SocialCreativeTask,
+    SocialImageFormatTask,
+    SocialPublishTask,
+    SocialResearchTask,
 )
 
 # Utility Tasks (6 tasks)
 from src.cofounder_agent.tasks.utility_tasks import (
-    ValidateTask,
-    TransformTask,
-    NotificationTask,
     CacheTask,
-    MetricsTask,
     LogTask,
+    MetricsTask,
+    NotificationTask,
+    TransformTask,
+    ValidateTask,
 )
 
 __all__ = [

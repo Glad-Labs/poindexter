@@ -18,8 +18,9 @@ Includes:
 """
 
 import logging
+from typing import Any, Dict, Optional
+
 from fastapi import FastAPI
-from typing import Optional, Any, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +145,7 @@ def register_all_routes(
 
     try:
         # ===== MODELS & AI BACKENDS =====
-        from routes.model_routes import models_router, models_list_router
+        from routes.model_routes import models_list_router, models_router
 
         app.include_router(models_router)
         app.include_router(models_list_router)
@@ -258,12 +259,12 @@ def register_all_routes(
 
     try:
         # ===== WORKFLOW HISTORY (Phase 5) =====
-        from services.workflow_history import WorkflowHistoryService
+        from routes.workflow_history import alias_router as workflow_history_alias_router
         from routes.workflow_history import (
-            router as workflow_history_router,
-            alias_router as workflow_history_alias_router,
             initialize_history_service,
         )
+        from routes.workflow_history import router as workflow_history_router
+        from services.workflow_history import WorkflowHistoryService
 
         if database_service and workflow_history_service:
             initialize_history_service(database_service.pool)

@@ -20,9 +20,10 @@ Install Ollama: https://ollama.ai/download
 Pull models: ollama pull llama2
 """
 
-from typing import Dict, Any, List, Optional, AsyncIterator
-import httpx
 import json
+from typing import Any, AsyncIterator, Dict, List, Optional
+
+import httpx
 import structlog
 
 logger = structlog.get_logger(__name__)

@@ -3,8 +3,9 @@
 Consolidated schemas for command dispatching and tracking.
 """
 
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, List, Any
 
 
 class CommandRequest(BaseModel):

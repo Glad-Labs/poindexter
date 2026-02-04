@@ -6,8 +6,8 @@ workflow configurations. Phase 3 component for advanced user interaction.
 
 import logging
 import re
-from typing import Any, Dict, Optional, List, Tuple
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 

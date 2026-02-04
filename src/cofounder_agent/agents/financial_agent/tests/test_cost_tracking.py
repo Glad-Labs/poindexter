@@ -5,18 +5,18 @@ Tests budget monitoring, alert thresholds, monthly reset, projections,
 and cost optimization recommendations.
 """
 
-import pytest
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from datetime import datetime, timedelta
-from typing import Dict, Any
+from typing import Any, Dict
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
+
+import pytest
 
 from ...financial_agent.cost_tracking import (
-    CostTrackingService,
-    BudgetAlertLevel,
     BudgetAlert,
+    BudgetAlertLevel,
+    CostTrackingService,
     initialize_cost_tracking,
 )
-
 
 # ============================================================================
 # FIXTURES

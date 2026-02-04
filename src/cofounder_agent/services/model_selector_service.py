@@ -11,9 +11,9 @@ Features:
 - Model availability checking
 """
 
-from typing import Dict, List, Optional, Tuple
-from enum import Enum
 import logging
+from enum import Enum
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 

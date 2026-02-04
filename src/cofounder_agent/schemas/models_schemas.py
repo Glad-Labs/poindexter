@@ -3,8 +3,9 @@
 Consolidated schemas for model availability and provider status.
 """
 
-from pydantic import BaseModel, Field
 from typing import List, Optional
+
+from pydantic import BaseModel, Field
 
 
 class ModelInfo(BaseModel):

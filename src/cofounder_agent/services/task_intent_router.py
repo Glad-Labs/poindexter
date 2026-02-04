@@ -10,11 +10,11 @@ Connects NLPIntentRecognizer to task creation, handling:
 """
 
 import logging
-from typing import Optional, Dict, List, Any
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
 
-from .nlp_intent_recognizer import NLPIntentRecognizer, IntentMatch
+from .nlp_intent_recognizer import IntentMatch, NLPIntentRecognizer
 
 logger = logging.getLogger(__name__)
 

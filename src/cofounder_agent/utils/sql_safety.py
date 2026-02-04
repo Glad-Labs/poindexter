@@ -10,8 +10,8 @@ Provides helpers for:
 
 import logging
 import re
-from typing import Any, List, Tuple, Optional, Dict
 from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 

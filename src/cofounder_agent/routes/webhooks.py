@@ -4,13 +4,14 @@ Webhook Routes for Content Events
 Handles webhook events from Strapi CMS for content creation,  publishing, and deletion.
 """
 
-from typing import Dict, Any, Optional
-from fastapi import APIRouter, HTTPException, status, Request
 import logging
+from typing import Any, Dict, Optional
+
+from fastapi import APIRouter, HTTPException, Request, status
 
 from schemas.webhooks_schemas import (
-    WebhookEntry,
     ContentWebhookPayload,
+    WebhookEntry,
     WebhookResponse,
 )
 

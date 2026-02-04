@@ -1,5 +1,6 @@
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 from src.agents.content_agent.agents.creative_agent import CreativeAgent
 
 

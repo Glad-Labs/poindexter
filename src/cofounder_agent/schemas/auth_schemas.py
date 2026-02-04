@@ -3,8 +3,9 @@
 Consolidated schemas for authentication and user management.
 """
 
-from pydantic import BaseModel, Field
 from typing import Optional
+
+from pydantic import BaseModel, Field
 
 
 class UserProfile(BaseModel):

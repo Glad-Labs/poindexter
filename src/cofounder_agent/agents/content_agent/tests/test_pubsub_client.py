@@ -3,11 +3,12 @@ Tests for PubSub Client
 Tests Google Cloud Pub/Sub integration
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
+import json
 import sys
 import types
-import json
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
 
 # Mock Google Cloud modules
 if "google" not in sys.modules:

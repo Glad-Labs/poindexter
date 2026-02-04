@@ -8,18 +8,19 @@ Handles all task-related database operations including:
 - Task queries by date range and status
 """
 
+import asyncio
 import json
 import logging
-import asyncio
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
-from datetime import datetime, timedelta
 
 from asyncpg import Pool
 
-from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
-from schemas.database_response_models import TaskResponse, TaskCountsResponse
+from schemas.database_response_models import TaskCountsResponse, TaskResponse
 from schemas.model_converter import ModelConverter
+from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
+
 from .database_mixin import DatabaseServiceMixin
 
 logger = logging.getLogger(__name__)
@@ -76,7 +77,7 @@ class TasksDatabase(DatabaseServiceMixin):
             List of pending tasks as dicts
         """
         QUERY_TIMEOUT = 5  # 5-second timeout for fetching pending tasks
-        
+
         try:
             if not self.pool:
                 return []
@@ -91,10 +92,7 @@ class TasksDatabase(DatabaseServiceMixin):
             try:
                 async with self.pool.acquire() as conn:
                     # Add query timeout to prevent blocking
-                    rows = await asyncio.wait_for(
-                        conn.fetch(sql, *params),
-                        timeout=QUERY_TIMEOUT
-                    )
+                    rows = await asyncio.wait_for(conn.fetch(sql, *params), timeout=QUERY_TIMEOUT)
                     # Convert to dicts for backward compatibility with task_executor
                     result = []
                     for row in rows:
@@ -168,7 +166,8 @@ class TasksDatabase(DatabaseServiceMixin):
                 "request_type": task_data.get("request_type", "content_generation"),
                 "status": task_data.get("status", "pending"),
                 "topic": task_data.get("topic", ""),
-                "title": task_data.get("title") or task_data.get("task_name"),  # Support both title and task_name
+                "title": task_data.get("title")
+                or task_data.get("task_name"),  # Support both title and task_name
                 "style": task_data.get("style", "technical"),
                 "tone": task_data.get("tone", "professional"),
                 "target_length": task_data.get("target_length", 1500),
@@ -349,7 +348,7 @@ class TasksDatabase(DatabaseServiceMixin):
         logger.info(f"   Task ID: {task_id}")
         logger.info(f"   Updates received: {list(updates.keys())}")
         logger.info(f"{'='*80}")
-        
+
         if not updates:
             logger.info(f"   No updates provided, returning current task")
             return await self.get_task(task_id)
@@ -411,7 +410,11 @@ class TasksDatabase(DatabaseServiceMixin):
                 normalized_updates["actual_cost"] = task_metadata.get("actual_cost")
             if "cost_breakdown" not in normalized_updates and "cost_breakdown" in task_metadata:
                 cost_breakdown = task_metadata.get("cost_breakdown")
-                normalized_updates["cost_breakdown"] = json.dumps(cost_breakdown) if isinstance(cost_breakdown, dict) else cost_breakdown
+                normalized_updates["cost_breakdown"] = (
+                    json.dumps(cost_breakdown)
+                    if isinstance(cost_breakdown, dict)
+                    else cost_breakdown
+                )
             if "published_at" not in normalized_updates and "published_at" in task_metadata:
                 normalized_updates["published_at"] = task_metadata.get("published_at")
 

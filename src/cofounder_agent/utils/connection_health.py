@@ -5,10 +5,10 @@ Monitors database connection pool health and provides diagnostics
 for stale connections and pool exhaustion.
 """
 
-import logging
 import asyncio
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional
+import logging
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ class ConnectionPoolHealth:
                 async with self.pool.acquire() as conn:
                     # Simple query to verify connection works
                     result = await conn.fetchval("SELECT 1")
-            
+
             check_duration = asyncio.get_event_loop().time() - start_time
 
             # Get pool stats

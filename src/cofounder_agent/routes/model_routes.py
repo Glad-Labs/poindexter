@@ -7,21 +7,21 @@ Provides endpoints for:
 - Model recommendations
 """
 
-import os
 import logging
-from fastapi import APIRouter, HTTPException
-from typing import List, Dict, Any, Optional
+import os
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
-from services.model_constants import PROVIDER_ICONS
+from fastapi import APIRouter, HTTPException
 
-from services.model_consolidation_service import get_model_consolidation_service
 from schemas.models_schemas import (
     ModelInfo,
     ModelsListResponse,
-    ProviderStatus,
     ProvidersStatusResponse,
+    ProviderStatus,
 )
+from services.model_consolidation_service import get_model_consolidation_service
+from services.model_constants import PROVIDER_ICONS
 
 logger = logging.getLogger(__name__)
 

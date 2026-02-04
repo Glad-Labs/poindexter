@@ -29,17 +29,17 @@ Architecture:
 - Quality feedback loops
 """
 
-import logging
 import asyncio
 import json
+import logging
 import uuid
-from typing import Dict, Any, List, Optional, Callable, Tuple
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from dataclasses import dataclass, field, asdict
 from enum import Enum
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # Quality service import (consolidated quality assessment)
-from services.quality_service import UnifiedQualityService, EvaluationMethod
+from services.quality_service import EvaluationMethod, UnifiedQualityService
 
 logger = logging.getLogger(__name__)
 
@@ -490,16 +490,17 @@ class UnifiedOrchestrator:
         logger.info(f"[{request.request_id}] Handling content creation")
 
         import uuid
+
         from utils.constraint_utils import (
             ContentConstraints,
-            extract_constraints_from_request,
-            inject_constraints_into_prompt,
-            count_words_in_content,
-            validate_constraints,
+            apply_strict_mode,
             calculate_phase_targets,
             check_tolerance,
-            apply_strict_mode,
+            count_words_in_content,
+            extract_constraints_from_request,
+            inject_constraints_into_prompt,
             merge_compliance_reports,
+            validate_constraints,
         )
 
         try:
@@ -582,8 +583,8 @@ class UnifiedOrchestrator:
             from agents.content_agent.agents.creative_agent import CreativeAgent
             from agents.content_agent.services.llm_client import LLMClient
             from agents.content_agent.utils.data_models import BlogPost
-            from services.writing_style_service import WritingStyleService
             from services.writing_style_integration import WritingStyleIntegrationService
+            from services.writing_style_service import WritingStyleService
 
             # Get model selection for draft phase
             draft_model = self._get_model_for_phase("draft", model_selections, quality_preference)
@@ -662,8 +663,8 @@ class UnifiedOrchestrator:
             # STAGE 3: QA REVIEW LOOP (45% → 60%)
             # ====================================================================
             logger.info(f"[{request.request_id}] STAGE 3: QA Review")
-            from services.quality_service import get_content_quality_service, EvaluationMethod
             from services.database_service import DatabaseService
+            from services.quality_service import EvaluationMethod, get_content_quality_service
 
             database_service = DatabaseService()
             quality_service = get_content_quality_service(database_service=database_service)

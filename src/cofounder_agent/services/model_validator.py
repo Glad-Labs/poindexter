@@ -6,8 +6,8 @@ Ensures users can't select models that don't exist or aren't properly configured
 """
 
 import logging
-from typing import Dict, List, Optional, Set
 from dataclasses import dataclass
+from typing import Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 

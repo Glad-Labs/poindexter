@@ -13,25 +13,25 @@ Production-ready for full blog automation!
 """
 
 import asyncio
-import logging
-from typing import Optional, Dict, Any
-from datetime import datetime, timezone
 import json
-import sys
+import logging
 import os
+import sys
 import time
-
-# Import the content critique loop
-from .content_critique_loop import ContentCritiqueLoop
-
-# Import prompt templates
-from .prompt_templates import PromptTemplates
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 
 # Import model selection helper
 from routes.task_routes import get_model_for_phase
 
 # Import AI content generator for fallback
 from .ai_content_generator import AIContentGenerator
+
+# Import the content critique loop
+from .content_critique_loop import ContentCritiqueLoop
+
+# Import prompt templates
+from .prompt_templates import PromptTemplates
 
 # Import usage tracking
 from .usage_tracker import get_usage_tracker
@@ -232,7 +232,7 @@ class TaskExecutor:
 
         # Set per-task timeout (15 minutes max for content generation)
         TASK_TIMEOUT_SECONDS = 900  # 15 minutes
-        
+
         try:
             # 1. Update task status to 'in_progress'
             logger.info(f"📝 [TASK_SINGLE] Marking task as in_progress...")
@@ -249,19 +249,22 @@ class TaskExecutor:
             logger.info(f"✅ [TASK_SINGLE] Task marked as in_progress")
 
             # 2. Process through orchestrator/agent pipeline with timeout
-            logger.info(f"🚀 [TASK_SINGLE] Executing task through pipeline (timeout: {TASK_TIMEOUT_SECONDS}s)...")
+            logger.info(
+                f"🚀 [TASK_SINGLE] Executing task through pipeline (timeout: {TASK_TIMEOUT_SECONDS}s)..."
+            )
             try:
                 result = await asyncio.wait_for(
-                    self._execute_task(task),
-                    timeout=TASK_TIMEOUT_SECONDS
+                    self._execute_task(task), timeout=TASK_TIMEOUT_SECONDS
                 )
             except asyncio.TimeoutError:
-                logger.error(f"⏱️  [TASK_SINGLE] Task execution timed out after {TASK_TIMEOUT_SECONDS}s: {task_id}")
+                logger.error(
+                    f"⏱️  [TASK_SINGLE] Task execution timed out after {TASK_TIMEOUT_SECONDS}s: {task_id}"
+                )
                 result = {
                     "status": "failed",
                     "orchestrator_error": f"Task execution timeout ({TASK_TIMEOUT_SECONDS}s exceeded)",
                 }
-            
+
             logger.info(f"✅ [TASK_SINGLE] Task execution completed")
             logger.debug(f"   Result type: {type(result).__name__}")
             if isinstance(result, dict):

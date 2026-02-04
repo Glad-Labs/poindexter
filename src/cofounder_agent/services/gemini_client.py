@@ -3,10 +3,10 @@ Google Gemini Client
 Provides interface to Google's Gemini AI models
 """
 
-import os
 import logging
-from typing import Optional, Dict, Any, List
+import os
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +29,11 @@ class GeminiClient:
         # NOTE: As of Jan 2025, these are the available Gemini models
         # gemini-1.5-pro and gemini-1.5-flash are DEPRECATED
         self.available_models = [
-            "gemini-2.5-flash",      # Latest fast model (CURRENT)
-            "gemini-2.5-pro",        # Latest high-quality model (CURRENT)
-            "gemini-2.0-flash",      # Previous fast model
-            "gemini-pro-latest",     # Alias for latest pro
-            "gemini-flash-latest",   # Alias for latest flash
+            "gemini-2.5-flash",  # Latest fast model (CURRENT)
+            "gemini-2.5-pro",  # Latest high-quality model (CURRENT)
+            "gemini-2.0-flash",  # Previous fast model
+            "gemini-pro-latest",  # Alias for latest pro
+            "gemini-flash-latest",  # Alias for latest flash
         ]
 
         if not self.api_key:
@@ -86,11 +86,15 @@ class GeminiClient:
             # Import google-genai library (new package, replaces deprecated google.generativeai)
             try:
                 import google.genai as genai
+
                 logger.info("✅ Using google.genai (new SDK v1.61.0+) for generate()")
             except ImportError:
                 # Fallback to old deprecated package if new one not available
                 import google.generativeai as genai
-                logger.warning("⚠️  Using google.generativeai (legacy/deprecated SDK) for generate()")
+
+                logger.warning(
+                    "⚠️  Using google.generativeai (legacy/deprecated SDK) for generate()"
+                )
 
             # Configure the API key
             genai.configure(api_key=self.api_key)
@@ -145,10 +149,12 @@ class GeminiClient:
             # Import google-genai library (new package, replaces deprecated google.generativeai)
             try:
                 import google.genai as genai
+
                 logger.info("✅ Using google.genai (new SDK v1.61.0+) for chat()")
             except ImportError:
                 # Fallback to old deprecated package if new one not available
                 import google.generativeai as genai
+
                 logger.warning("⚠️  Using google.generativeai (legacy/deprecated SDK) for chat()")
 
             genai.configure(api_key=self.api_key)

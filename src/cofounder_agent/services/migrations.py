@@ -11,9 +11,10 @@ Usage:
 
 import logging
 import os
-import asyncpg
 from pathlib import Path
 from typing import Optional
+
+import asyncpg
 
 logger = logging.getLogger(__name__)
 

@@ -10,8 +10,8 @@ Role Hierarchy:
 - Viewer (id=3): Can only read non-sensitive settings, no modification
 """
 
-from typing import List, Optional
 from enum import Enum
+from typing import List, Optional
 
 # Note: These imports will be resolved when dependencies are installed
 # from models import User, Setting, Role, Permission

@@ -15,25 +15,27 @@ Single source of truth for all metadata operations with:
 - Featured image prompt generation
 """
 
+import json
 import logging
 import re
-import json
-from typing import Optional, Dict, List, Any, Tuple
-from datetime import datetime
 from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
 # Try to import the LLM client based on available models
 import os
 
+from .provider_checker import ProviderChecker
+
 # Check for Anthropic availability and API key
 try:
     from anthropic import Anthropic
 
-    ANTHROPIC_AVAILABLE = bool(os.getenv("ANTHROPIC_API_KEY"))
+    ANTHROPIC_AVAILABLE = ProviderChecker.is_anthropic_available()
     if ANTHROPIC_AVAILABLE:
-        anthropic_client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        anthropic_client = Anthropic(api_key=ProviderChecker.get_anthropic_api_key())
     else:
         anthropic_client = None
         logger.debug("⚠️  ANTHROPIC_API_KEY not set in environment")
@@ -46,9 +48,9 @@ except ImportError:
 try:
     import openai
 
-    OPENAI_AVAILABLE = bool(os.getenv("OPENAI_API_KEY"))
+    OPENAI_AVAILABLE = ProviderChecker.is_openai_available()
     if OPENAI_AVAILABLE:
-        openai.api_key = os.getenv("OPENAI_API_KEY")
+        openai.api_key = ProviderChecker.get_openai_api_key()
     else:
         logger.debug("⚠️  OPENAI_API_KEY not set in environment")
 except ImportError:
@@ -59,9 +61,9 @@ except ImportError:
 try:
     import google.genai as genai
 
-    GOOGLE_AVAILABLE = bool(os.getenv("GOOGLE_API_KEY"))
+    GOOGLE_AVAILABLE = ProviderChecker.is_gemini_available()
     if GOOGLE_AVAILABLE:
-        genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+        genai.configure(api_key=ProviderChecker.get_gemini_api_key())
     else:
         logger.debug("⚠️  GOOGLE_API_KEY not set in environment")
 except ImportError:

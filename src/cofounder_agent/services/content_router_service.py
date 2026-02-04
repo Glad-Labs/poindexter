@@ -14,18 +14,19 @@ Provides centralized blog post generation with:
 - Comprehensive task tracking
 """
 
-from typing import Dict, Any, Optional, List, Literal
+import logging
+import uuid
 from datetime import datetime
 from enum import Enum
-import uuid
-import logging
+from typing import Any, Dict, List, Literal, Optional
+
+from schemas.content_schemas import ContentStyle, ContentTone, PublishMode
 
 from .ai_content_generator import get_content_generator
-from .seo_content_generator import get_seo_content_generator
-from .image_service import ImageService, get_image_service
-from .quality_service import UnifiedQualityService, EvaluationMethod
 from .database_service import DatabaseService
-from schemas.content_schemas import ContentStyle, ContentTone, PublishMode
+from .image_service import ImageService, get_image_service
+from .quality_service import EvaluationMethod, UnifiedQualityService
+from .seo_content_generator import get_seo_content_generator
 
 logger = logging.getLogger(__name__)
 
@@ -294,19 +295,19 @@ class ContentGenerationService:
 async def _generate_catchy_title(topic: str, content_excerpt: str) -> Optional[str]:
     """
     Generate a catchy, engaging title for blog content using LLM
-    
+
     Args:
         topic: The blog topic
         content_excerpt: First 500 chars of generated content for context
-        
+
     Returns:
         Generated title or None if generation fails
     """
     try:
         from .ollama_client import OllamaClient
-        
+
         ollama = OllamaClient()
-        
+
         prompt = f"""You are a creative content strategist specializing in blog titles.
 Generate a single, catchy, engaging blog title based on the topic and content excerpt.
 
@@ -332,14 +333,18 @@ Generate ONLY the title, nothing else."""
             model="neural-chat:latest",  # Fast and reliable model
             stream=False,
         )
-        
+
         # Extract text from response
         title = ""
         if isinstance(response, dict):
-            title = response.get("text", "") or response.get("response", "") or response.get("content", "")
+            title = (
+                response.get("text", "")
+                or response.get("response", "")
+                or response.get("content", "")
+            )
         elif isinstance(response, str):
             title = response
-            
+
         if title:
             # Clean up the title
             title = title.strip().strip('"').strip("'").strip()
@@ -348,9 +353,9 @@ Generate ONLY the title, nothing else."""
                 title = title[:97] + "..."
             logger.debug(f"Generated title: {title}")
             return title
-        
+
         return None
-        
+
     except Exception as e:
         logger.warning(f"Error generating catchy title: {e}")
         return None
@@ -408,8 +413,8 @@ async def process_content_generation_task(
     Returns:
         Dict with complete task result including post_id, quality_score, image_url, cost_breakdown, etc.
     """
-    from uuid import uuid4
     from asyncio import gather
+    from uuid import uuid4
 
     # Generate task_id if not provided
     if not task_id:
@@ -473,7 +478,7 @@ async def process_content_generation_task(
         logger.info("✍️  STAGE 2: Generating blog content...")
 
         content_generator = get_content_generator()
-        
+
         # Extract user model preferences from models_by_phase (if provided)
         preferred_model = None
         preferred_provider = None
@@ -481,57 +486,69 @@ async def process_content_generation_task(
         logger.info(f"   models_by_phase = {models_by_phase}")
         if models_by_phase:
             # Try to get model for 'draft' phase (main content generation)
-            draft_model = models_by_phase.get('draft') or models_by_phase.get('generate') or models_by_phase.get('content')
+            draft_model = (
+                models_by_phase.get("draft")
+                or models_by_phase.get("generate")
+                or models_by_phase.get("content")
+            )
             logger.info(f"   draft_model = {draft_model}")
-            if draft_model and draft_model != 'auto':
+            if draft_model and draft_model != "auto":
                 # Clean up malformed model names (e.g., "gemini-gemini-pro" → "gemini-pro")
                 draft_model = draft_model.strip()
-                
+
                 # Parse provider and model from selection
                 # Format can be: "gemini", "gemini/gemini-pro", "gpt-4", "claude-3-opus", etc.
-                if '/' in draft_model:
-                    preferred_provider, preferred_model = draft_model.split('/', 1)
+                if "/" in draft_model:
+                    preferred_provider, preferred_model = draft_model.split("/", 1)
                 else:
                     # Infer provider from model name
                     draft_model_lower = draft_model.lower()
-                    
+
                     # Handle duplicate provider prefixes (e.g., "gemini-gemini-pro", "gpt-gpt-4")
-                    if draft_model_lower.startswith('gemini-gemini-'):
+                    if draft_model_lower.startswith("gemini-gemini-"):
                         # "gemini-gemini-1.5-pro" → provider: "gemini", model: "gemini-1.5-pro"
-                        preferred_provider = 'gemini'
+                        preferred_provider = "gemini"
                         preferred_model = draft_model_lower[7:]  # Strip first "gemini-"
-                    elif draft_model_lower.startswith('gpt-gpt-'):
+                    elif draft_model_lower.startswith("gpt-gpt-"):
                         # "gpt-gpt-4" → provider: "openai", model: "gpt-4"
-                        preferred_provider = 'openai'
+                        preferred_provider = "openai"
                         preferred_model = draft_model_lower[4:]  # Strip first "gpt-"
-                    elif draft_model_lower.startswith('claude-claude-'):
+                    elif draft_model_lower.startswith("claude-claude-"):
                         # "claude-claude-opus" → provider: "anthropic", model: "claude-opus"
-                        preferred_provider = 'anthropic'
+                        preferred_provider = "anthropic"
                         preferred_model = draft_model_lower[7:]  # Strip first "claude-"
-                    elif 'gemini' in draft_model_lower:
-                        preferred_provider = 'gemini'
+                    elif "gemini" in draft_model_lower:
+                        preferred_provider = "gemini"
                         preferred_model = draft_model
-                    elif 'gpt' in draft_model_lower or 'openai' in draft_model_lower:
-                        preferred_provider = 'openai'
+                    elif "gpt" in draft_model_lower or "openai" in draft_model_lower:
+                        preferred_provider = "openai"
                         preferred_model = draft_model
-                    elif 'claude' in draft_model_lower or 'anthropic' in draft_model_lower:
-                        preferred_provider = 'anthropic'
+                    elif "claude" in draft_model_lower or "anthropic" in draft_model_lower:
+                        preferred_provider = "anthropic"
                         preferred_model = draft_model
-                    elif 'ollama' in draft_model_lower or 'mistral' in draft_model_lower or 'llama' in draft_model_lower:
-                        preferred_provider = 'ollama'
+                    elif (
+                        "ollama" in draft_model_lower
+                        or "mistral" in draft_model_lower
+                        or "llama" in draft_model_lower
+                    ):
+                        preferred_provider = "ollama"
                         preferred_model = draft_model
                     else:
                         # Default to model name as-is
                         preferred_model = draft_model
-                        
-                logger.info(f"   ✅ FINAL: preferred_model='{preferred_model}', preferred_provider='{preferred_provider}'")
-                logger.info(f"🎯 User selected model: {preferred_model or 'auto'} (provider: {preferred_provider or 'auto'})")
-        
+
+                logger.info(
+                    f"   ✅ FINAL: preferred_model='{preferred_model}', preferred_provider='{preferred_provider}'"
+                )
+                logger.info(
+                    f"🎯 User selected model: {preferred_model or 'auto'} (provider: {preferred_provider or 'auto'})"
+                )
+
         content_text, model_used, metrics = await content_generator.generate_blog_post(
-            topic=topic, 
-            style=style, 
-            tone=tone, 
-            target_length=target_length, 
+            topic=topic,
+            style=style,
+            tone=tone,
+            target_length=target_length,
             tags=tags or [],
             preferred_model=preferred_model,
             preferred_provider=preferred_provider,
@@ -551,15 +568,15 @@ async def process_content_generation_task(
 
         # Update content_task with generated content, title, and model tracking
         await database_service.update_task(
-            task_id=task_id, 
+            task_id=task_id,
             updates={
-                "status": "generated", 
-                "content": content_text, 
+                "status": "generated",
+                "content": content_text,
                 "title": title,
                 "model_used": model_used,
                 "models_used_by_phase": metrics.get("models_used_by_phase", {}),
                 "model_selection_log": metrics.get("model_selection_log", {}),
-            }
+            },
         )
 
         result["content"] = content_text
@@ -727,7 +744,7 @@ async def process_content_generation_task(
         paragraph_count = len([p for p in content_text.split("\n\n") if p.strip()])
         sentences = [s.strip() for s in content_text.split(".") if s.strip()]
         avg_sentence_length = len(sentences) / word_count if word_count > 0 else 0
-        
+
         await database_service.create_quality_evaluation(
             {
                 "content_id": task_id,
@@ -853,7 +870,7 @@ async def process_content_generation_task(
         try:
             logger.debug(f"[BG-TASK] Attempting to update task status to 'failed'...")
             logger.debug(f"[BG-TASK] Preserving partial results: {list(result.keys())}")
-            
+
             # Build task_metadata with whatever we successfully generated
             failure_metadata = {
                 "content": result.get("content"),
@@ -871,17 +888,17 @@ async def process_content_generation_task(
                 "error_message": str(e),  # Full error for debugging
                 "stages_completed": result.get("stages", {}),
             }
-            
+
             # Remove None values from metadata
             failure_metadata = {k: v for k, v in failure_metadata.items() if v is not None}
-            
+
             await database_service.update_task(
-                task_id=task_id, 
+                task_id=task_id,
                 updates={
-                    "status": "failed", 
+                    "status": "failed",
                     "approval_status": "failed",
                     "task_metadata": failure_metadata,  # ✅ Preserve all data
-                }
+                },
             )
             logger.debug(f"[BG-TASK] ✅ Task status updated to 'failed' with preserved data")
         except Exception as db_error:

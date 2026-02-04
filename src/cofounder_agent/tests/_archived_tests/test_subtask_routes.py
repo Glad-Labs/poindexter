@@ -20,10 +20,11 @@ Current route implementation:
   - Returns: Task object with UUID, timestamps, status
 """
 
+from datetime import datetime
+from unittest.mock import MagicMock, patch
+
 import pytest
 from fastapi.testclient import TestClient
-from datetime import datetime
-from unittest.mock import patch, MagicMock
 
 from main import app
 

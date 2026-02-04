@@ -3,19 +3,20 @@ Social Media Management Routes
 Handles integration with social media platforms, content generation, posting, and analytics
 """
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
-from typing import List, Dict, Any, Optional
 import logging
 from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from schemas.social_schemas import (
-    SocialPlatformEnum,
-    ToneEnum,
-    SocialPlatformConnection,
-    SocialPost,
-    SocialAnalytics,
-    GenerateContentRequest,
     CrossPostRequest,
+    GenerateContentRequest,
+    SocialAnalytics,
+    SocialPlatformConnection,
+    SocialPlatformEnum,
+    SocialPost,
+    ToneEnum,
 )
 
 logger = logging.getLogger(__name__)

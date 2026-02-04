@@ -17,13 +17,14 @@ Connection pool is shared across all modules.
 
 import logging
 import os
-import asyncpg
 from typing import Optional
 
-from .users_db import UsersDatabase
-from .tasks_db import TasksDatabase
-from .content_db import ContentDatabase
+import asyncpg
+
 from .admin_db import AdminDatabase
+from .content_db import ContentDatabase
+from .tasks_db import TasksDatabase
+from .users_db import UsersDatabase
 from .writing_style_db import WritingStyleDatabase
 
 logger = logging.getLogger(__name__)
@@ -89,7 +90,9 @@ class DatabaseService:
                 timeout=30,
                 command_timeout=30,  # Query execution timeout
             )
-            logger.info(f"✅ Database pool initialized (size: {min_size}-{max_size}, query timeout: 30s)")
+            logger.info(
+                f"✅ Database pool initialized (size: {min_size}-{max_size}, query timeout: 30s)"
+            )
 
             # Initialize all delegate modules
             self.users = UsersDatabase(self.pool)

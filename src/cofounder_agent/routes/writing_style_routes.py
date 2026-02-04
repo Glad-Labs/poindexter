@@ -14,12 +14,13 @@ Endpoints:
 """
 
 import logging
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
-from services.database_service import DatabaseService
 from routes.auth_unified import get_current_user
+from services.database_service import DatabaseService
 from utils.route_utils import get_database_dependency
 
 logger = logging.getLogger(__name__)

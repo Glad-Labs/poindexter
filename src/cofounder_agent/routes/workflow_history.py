@@ -17,19 +17,19 @@ Async: Full async/await support
 """
 
 import logging
-from typing import Any, Dict, List, Optional
 from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Depends, Query, Path, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 
-from services.workflow_history import WorkflowHistoryService
 from routes.auth_unified import get_current_user
 from schemas.workflow_history_schemas import (
+    PerformanceMetrics,
     WorkflowExecutionDetail,
     WorkflowHistoryResponse,
     WorkflowStatistics,
-    PerformanceMetrics,
 )
+from services.workflow_history import WorkflowHistoryService
 
 logger = logging.getLogger(__name__)
 

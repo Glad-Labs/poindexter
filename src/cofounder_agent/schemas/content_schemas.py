@@ -4,10 +4,10 @@ Consolidated schemas for content creation, blog posts, drafts,
 and approval workflows.
 """
 
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any, Literal
 from enum import Enum
+from typing import Any, Dict, List, Literal, Optional
 
+from pydantic import BaseModel, Field
 
 # ============================================================================
 # ENUMS (moved from content_router_service to avoid circular imports)

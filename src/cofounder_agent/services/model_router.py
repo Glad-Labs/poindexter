@@ -18,10 +18,11 @@ Additional Savings: $2,400-$3,600/year with token limiting
 Zero-Cost Option: 100% savings with Ollama local models
 """
 
-from typing import Dict, Any, Optional, Tuple
-from enum import Enum
-import structlog
 import os
+from enum import Enum
+from typing import Any, Dict, Optional, Tuple
+
+import structlog
 
 from .model_constants import MODEL_COSTS
 

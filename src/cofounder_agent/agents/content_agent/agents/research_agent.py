@@ -1,6 +1,8 @@
-import logging
-import httpx
 import json
+import logging
+
+import httpx
+
 from ..config import config
 from ..utils.tools import CrewAIToolsFactory
 

@@ -3,10 +3,11 @@ End-to-End Tests for Content Pipeline
 Tests complete workflow from research to publishing
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
 import sys
 import types
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
 
 # Mock Google Cloud modules before imports
 if "google" not in sys.modules:
@@ -21,6 +22,7 @@ if "google.cloud.pubsub_v1" not in sys.modules:
     sys.modules["google.cloud.pubsub_v1"] = types.ModuleType("google.cloud.pubsub_v1")
 
 from orchestrator import Orchestrator
+
 from utils.data_models import BlogPost
 
 

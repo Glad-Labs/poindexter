@@ -1,5 +1,6 @@
-import logging
 import json
+import logging
+
 from ..config import config
 from ..services.llm_client import LLMClient
 from ..utils.data_models import BlogPost

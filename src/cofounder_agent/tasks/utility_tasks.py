@@ -1,9 +1,10 @@
 """Utility tasks: Generic utilities supporting all workflows."""
 
-from typing import Dict, Any, Optional
-from src.cofounder_agent.tasks.base import PureTask, ExecutionContext, TaskStatus, TaskResult
-from datetime import datetime
 import logging
+from datetime import datetime
+from typing import Any, Dict, Optional
+
+from src.cofounder_agent.tasks.base import ExecutionContext, PureTask, TaskResult, TaskStatus
 
 logger = logging.getLogger(__name__)
 

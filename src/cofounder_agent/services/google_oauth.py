@@ -16,12 +16,13 @@ Setup:
    - GOOGLE_CLIENT_SECRET
 """
 
-import os
 import logging
+import os
 from typing import Optional
+
 import httpx
 
-from .oauth_provider import OAuthProvider, OAuthUser, OAuthException
+from .oauth_provider import OAuthException, OAuthProvider, OAuthUser
 
 logger = logging.getLogger(__name__)
 

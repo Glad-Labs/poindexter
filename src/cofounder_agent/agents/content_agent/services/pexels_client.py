@@ -1,5 +1,7 @@
-import httpx
 import logging
+
+import httpx
+
 from ..config import config
 
 

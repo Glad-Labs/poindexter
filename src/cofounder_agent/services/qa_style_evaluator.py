@@ -16,9 +16,9 @@ matches the user's selected writing style and tone preferences.
 
 import logging
 import re
-from typing import Optional, Dict, Any, List, Tuple
 from collections import Counter
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 

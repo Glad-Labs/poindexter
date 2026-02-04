@@ -10,12 +10,13 @@ Integrates data from:
 - Quality evaluations
 """
 
-import asyncpg
 import logging
-from typing import Dict, List, Any, Optional
-from datetime import datetime, timedelta
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from enum import Enum
+from typing import Any, Dict, List, Optional
+
+import asyncpg
 
 logger = logging.getLogger(__name__)
 

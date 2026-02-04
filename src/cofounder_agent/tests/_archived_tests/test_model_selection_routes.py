@@ -3,12 +3,13 @@ Unit tests for model_selection_routes.py
 Tests model selection and configuration endpoints
 """
 
-import pytest
 import json
-from fastapi.testclient import TestClient
-from fastapi import FastAPI
 import os
 import sys
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 # Add parent directory to path for imports to work properly
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -19,8 +20,8 @@ if parent_dir not in sys.path:
 @pytest.fixture(scope="session")
 def test_app():
     """Create test app with routes registered"""
-    from routes.model_selection_routes import router as model_selection_router
     from routes.model_routes import models_list_router
+    from routes.model_selection_routes import router as model_selection_router
     from utils.exception_handlers import register_exception_handlers
     from utils.middleware_config import MiddlewareConfig
 

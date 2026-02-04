@@ -5,14 +5,14 @@ Tests cost analysis integration, monthly summaries, and financial
 summary generation with cost tracking.
 """
 
-import pytest
-from unittest.mock import Mock, AsyncMock, patch
 from datetime import datetime
-from typing import Dict, Any
+from typing import Any, Dict
+from unittest.mock import AsyncMock, Mock, patch
 
+import pytest
+
+from ...financial_agent.cost_tracking import BudgetAlert, BudgetAlertLevel, CostTrackingService
 from ...financial_agent.financial_agent import FinancialAgent
-from ...financial_agent.cost_tracking import CostTrackingService, BudgetAlertLevel, BudgetAlert
-
 
 # ============================================================================
 # FIXTURES

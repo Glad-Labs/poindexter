@@ -3,8 +3,9 @@
 Consolidated schemas for bulk task operations.
 """
 
+from typing import List, Optional
+
 from pydantic import BaseModel, Field
-from typing import Optional, List
 
 
 class BulkTaskRequest(BaseModel):
@@ -37,7 +38,7 @@ class BulkTaskResponse(BaseModel):
 
 class BulkCreateTaskItem(BaseModel):
     """Schema for individual task in bulk create request"""
-    
+
     task_name: str
     topic: str
     primary_keyword: str
@@ -45,7 +46,7 @@ class BulkCreateTaskItem(BaseModel):
     category: str
     priority: str = "medium"
     description: Optional[str] = None
-    
+
     class Config:
         json_schema_extra = {
             "example": {
@@ -54,16 +55,16 @@ class BulkCreateTaskItem(BaseModel):
                 "primary_keyword": "AI marketing",
                 "target_audience": "Marketing managers",
                 "category": "Tech",
-                "priority": "high"
+                "priority": "high",
             }
         }
 
 
 class BulkCreateTasksRequest(BaseModel):
     """Request schema for creating multiple tasks"""
-    
+
     tasks: List[BulkCreateTaskItem]
-    
+
     class Config:
         json_schema_extra = {
             "example": {
@@ -74,7 +75,7 @@ class BulkCreateTasksRequest(BaseModel):
                         "primary_keyword": "keyword1",
                         "target_audience": "Audience 1",
                         "category": "Tech",
-                        "priority": "high"
+                        "priority": "high",
                     }
                 ]
             }
@@ -83,7 +84,7 @@ class BulkCreateTasksRequest(BaseModel):
 
 class BulkCreateTasksResponse(BaseModel):
     """Response schema for bulk create"""
-    
+
     created: int
     failed: int
     total: int

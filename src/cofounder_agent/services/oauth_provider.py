@@ -18,7 +18,7 @@ Abstract Methods:
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 
 class OAuthException(Exception):

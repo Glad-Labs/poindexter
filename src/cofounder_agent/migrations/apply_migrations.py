@@ -4,12 +4,13 @@ Database Migration Runner
 Applies SQL migrations from the migrations/ directory to the PostgreSQL database.
 """
 
+import glob
 import os
 import sys
-import psycopg2
-import glob
 from pathlib import Path
 from urllib.parse import urlparse
+
+import psycopg2
 from dotenv import load_dotenv
 
 # Load .env.local from project root

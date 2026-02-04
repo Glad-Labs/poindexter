@@ -10,9 +10,10 @@ Configures:
 All middleware can be optionally enabled/disabled and configured via environment variables.
 """
 
-import os
 import logging
+import os
 from typing import List, Optional
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -138,8 +139,8 @@ class MiddlewareConfig:
         """
         try:
             from slowapi import Limiter
-            from slowapi.util import get_remote_address
             from slowapi.errors import RateLimitExceeded
+            from slowapi.util import get_remote_address
 
             # Create limiter instance
             self.limiter = Limiter(key_func=get_remote_address)

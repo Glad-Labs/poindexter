@@ -7,11 +7,12 @@ All endpoints require JWT authentication
 Integrates with UsageTracker service for real-time metrics collection.
 """
 
-from fastapi import APIRouter, HTTPException, Depends, Query
-from pydantic import BaseModel, Field
-from typing import Dict, Any, List, Optional
-from datetime import datetime
 import logging
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from routes.auth_unified import get_current_user
 from schemas.auth_schemas import UserProfile
@@ -21,9 +22,9 @@ from schemas.metrics_schemas import (
     HealthMetrics,
     PerformanceMetrics,
 )
-from services.usage_tracker import get_usage_tracker
 from services.cost_aggregation_service import CostAggregationService
 from services.database_service import DatabaseService
+from services.usage_tracker import get_usage_tracker
 from utils.route_utils import get_database_dependency
 
 logger = logging.getLogger(__name__)
@@ -624,7 +625,8 @@ async def get_kpi_analytics(
         total_cost = cost_summary.get("month_cost", 0.0) if cost_summary else 0.0
 
         # Query task counts from database
-        from sqlalchemy import select, and_, func
+        from sqlalchemy import and_, func, select
+
         from schemas.common_schemas import ContentTask
 
         async with db_service.get_session() as session:

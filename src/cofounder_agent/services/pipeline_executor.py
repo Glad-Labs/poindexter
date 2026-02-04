@@ -7,11 +7,11 @@ maintaining execution history, and supporting checkpoints for approval workflows
 
 import asyncio
 import logging
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
-from dataclasses import dataclass, field
 
-from src.cofounder_agent.tasks import TaskRegistry, ExecutionContext, TaskStatus, TaskResult
+from src.cofounder_agent.tasks import ExecutionContext, TaskRegistry, TaskResult, TaskStatus
 
 logger = logging.getLogger(__name__)
 

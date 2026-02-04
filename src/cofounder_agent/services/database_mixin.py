@@ -6,10 +6,10 @@ Provides common functionality like row-to-dict conversion and error handling.
 """
 
 import json
+import logging
+from datetime import datetime
 from typing import Any, Dict
 from uuid import UUID
-from datetime import datetime
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ class DatabaseServiceMixin:
         if "id" in data and data["id"]:
             if isinstance(data["id"], UUID):
                 data["id"] = str(data["id"])
-        
+
         # Convert Decimal to float (for cost/price fields)
         for key, value in list(data.items()):
             if isinstance(value, Decimal):

@@ -18,9 +18,11 @@ Architecture:
 
 import hashlib
 import json
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
 import structlog
-from .redis_cache import RedisCache, CacheConfig
+
+from .redis_cache import CacheConfig, RedisCache
 
 logger = structlog.get_logger(__name__)
 

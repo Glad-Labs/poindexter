@@ -1,6 +1,6 @@
 import os
-import sys
 import pathlib
+import sys
 
 # Ensure both project root and src/ are on sys.path so `agents.*` modules import during tests
 TEST_FILE = pathlib.Path(__file__).resolve()

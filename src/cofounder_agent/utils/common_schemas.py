@@ -17,10 +17,10 @@ Eliminates:
 - Schema maintenance across files
 """
 
-from typing import Optional, List, Any, Generic, TypeVar
 from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Any, Generic, List, Optional, TypeVar
 
+from pydantic import BaseModel, ConfigDict, Field
 
 # ============================================================================
 # PAGINATION MODELS
@@ -198,7 +198,9 @@ class ContentBaseRequest(BaseRequest):
     """Base request model for content creation/update"""
 
     title: str = Field(..., min_length=1, max_length=500, description="Content title")
-    body: Optional[str] = Field(None, max_length=10000, description="Content body")
+    body: Optional[str] = Field(
+        None, max_length=50000, description="Content body (up to 50,000 characters)"
+    )
     content_type: Optional[str] = Field("text", description="Content type (text, html, markdown)")
     topic: Optional[str] = Field(None, max_length=255, description="Content topic")
 
@@ -213,7 +215,7 @@ class ContentUpdateRequest(BaseRequest):
     """Request model for content update"""
 
     title: Optional[str] = Field(None, min_length=1, max_length=500)
-    body: Optional[str] = Field(None, max_length=10000)
+    body: Optional[str] = Field(None, max_length=50000)
     content_type: Optional[str] = Field(None)
     topic: Optional[str] = Field(None, max_length=255)
     is_published: Optional[bool] = Field(None)

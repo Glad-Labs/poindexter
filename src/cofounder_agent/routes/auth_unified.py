@@ -16,22 +16,22 @@ Routes:
 - GET  /api/auth/me             -> Get current user profile
 """
 
-from typing import Optional, Dict, Any
-from datetime import datetime, timezone, timedelta
 import logging
 import os
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
+
 import httpx
 import jwt
-
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Header
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
 
-from services.token_validator import JWTTokenValidator, AuthConfig
 from schemas.auth_schemas import (
-    UserProfile,
-    LogoutResponse,
     GitHubCallbackRequest,
+    LogoutResponse,
+    UserProfile,
 )
+from services.token_validator import AuthConfig, JWTTokenValidator
 
 logger = logging.getLogger(__name__)
 
@@ -52,10 +52,10 @@ GITHUB_CLIENT_SECRET = os.getenv("GH_OAUTH_CLIENT_SECRET", "")
 async def exchange_code_for_token(code: str) -> Dict[str, Any]:
     """
     Exchange GitHub authorization code for access token.
-    
+
     Returns:
         Dictionary containing access_token, expires_in, and other token metadata
-        
+
     Raises:
         HTTPException: If token exchange fails
     """
@@ -196,13 +196,9 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
     """
     try:
         auth_header = request.headers.get("Authorization", "")
-        
-        # Debug logging
-        logger.debug(f"[get_current_user] Headers: {dict(request.headers)}")
-        logger.debug(f"[get_current_user] Authorization header: {auth_header[:30] if auth_header else 'NOT SET'}")
 
         if not auth_header.startswith("Bearer "):
-            logger.warning(f"[get_current_user] Invalid auth header format: {auth_header[:50] if auth_header else 'EMPTY'}")
+            logger.warning(f"[get_current_user] Invalid auth header format")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Missing or invalid authorization header",
@@ -213,12 +209,9 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
 
         # Verify token
         try:
-            print(f"DEBUG: Verifying token: {token}")
             claims = JWTTokenValidator.verify_token(token)
-            print(f"DEBUG: Claims received: {claims}")
         except Exception as e:
-            print(f"DEBUG: Token verification exception: {e}")
-            logger.warning(f"[get_current_user] Token verification failed: {str(e)}")
+            logger.warning(f"[get_current_user] Token verification failed")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired token",
@@ -250,7 +243,9 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
             "token": token,  # Include token for logout operations
         }
     except Exception as e:
-        logger.error(f"[get_current_user] Unexpected error: {type(e).__name__}: {str(e)}", exc_info=True)
+        logger.error(
+            f"[get_current_user] Unexpected error: {type(e).__name__}: {str(e)}", exc_info=True
+        )
         if isinstance(e, HTTPException):
             raise
         raise HTTPException(
@@ -272,7 +267,7 @@ async def github_callback(request_data: GitHubCallbackRequest) -> Dict[str, Any]
 
     Receives authorization code from frontend, exchanges it for GitHub access token,
     fetches user information, and returns JWT token.
-    
+
     Security checks:
     - Validates code parameter is provided
     - Validates state parameter is provided (CSRF protection)
@@ -299,11 +294,11 @@ async def github_callback(request_data: GitHubCallbackRequest) -> Dict[str, Any]
         # Exchange code for GitHub access token
         github_response = await exchange_code_for_token(code)
         github_token = github_response.get("access_token")
-        
+
         if not github_token:
             logger.error("GitHub token exchange failed: no access token in response")
             raise HTTPException(status_code=401, detail="Failed to obtain GitHub access token")
-        
+
         # Check token expiration if included in response
         expires_in = github_response.get("expires_in")
         if expires_in is not None:
@@ -311,7 +306,7 @@ async def github_callback(request_data: GitHubCallbackRequest) -> Dict[str, Any]
 
         # Fetch user information
         github_user = await get_github_user(github_token)
-        
+
         if not github_user:
             logger.error("Failed to fetch GitHub user information")
             raise HTTPException(status_code=401, detail="Failed to fetch user information")

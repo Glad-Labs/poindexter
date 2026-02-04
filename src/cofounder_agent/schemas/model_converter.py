@@ -6,31 +6,31 @@ Provides type-safe conversion with automatic timestamp handling.
 """
 
 import json
-from typing import Any, Optional, Dict, Type, TypeVar, List
 from datetime import datetime
+from typing import Any, Dict, List, Optional, Type, TypeVar
 from uuid import UUID
 
 from schemas.database_response_models import (
-    UserResponse,
-    OAuthAccountResponse,
-    TaskResponse,
-    TaskCountsResponse,
-    PostResponse,
-    CategoryResponse,
-    TagResponse,
+    AgentStatusResponse,
     AuthorResponse,
-    LogResponse,
-    MetricsResponse,
+    CategoryResponse,
+    CostLogResponse,
+    ErrorResponse,
     FinancialEntryResponse,
     FinancialSummaryResponse,
-    CostLogResponse,
-    TaskCostBreakdownResponse,
+    LogResponse,
+    MetricsResponse,
+    OAuthAccountResponse,
+    OrchestratorTrainingDataResponse,
+    PostResponse,
     QualityEvaluationResponse,
     QualityImprovementLogResponse,
-    AgentStatusResponse,
-    OrchestratorTrainingDataResponse,
     SettingResponse,
-    ErrorResponse,
+    TagResponse,
+    TaskCostBreakdownResponse,
+    TaskCountsResponse,
+    TaskResponse,
+    UserResponse,
 )
 
 T = TypeVar("T")
@@ -155,14 +155,14 @@ class ModelConverter:
             "stage",
             "percentage",
             "message",
-            "category",           # ADD: Content metadata
-            "style",              # ADD: Writing style
-            "tone",               # ADD: Writing tone
-            "target_audience",    # ADD: Target audience
-            "target_length",      # ADD: Target length
-            "primary_keyword",    # ADD: Primary SEO keyword
-            "estimated_cost",     # ADD: Cost tracking
-            "cost_breakdown",     # ADD: Cost breakdown
+            "category",  # ADD: Content metadata
+            "style",  # ADD: Writing style
+            "tone",  # ADD: Writing tone
+            "target_audience",  # ADD: Target audience
+            "target_length",  # ADD: Target length
+            "primary_keyword",  # ADD: Primary SEO keyword
+            "estimated_cost",  # ADD: Cost tracking
+            "cost_breakdown",  # ADD: Cost breakdown
         ]
 
         for field in normalized_fields:
@@ -352,10 +352,18 @@ class ModelConverter:
 
         # CRITICAL: Also convert seo_keywords inside task_metadata dict
         # The task_metadata may contain seo_keywords as a string that should be a list
-        if "task_metadata" in data and isinstance(data["task_metadata"], dict) and data["task_metadata"]:
-            if "seo_keywords" in data["task_metadata"] and isinstance(data["task_metadata"]["seo_keywords"], str):
+        if (
+            "task_metadata" in data
+            and isinstance(data["task_metadata"], dict)
+            and data["task_metadata"]
+        ):
+            if "seo_keywords" in data["task_metadata"] and isinstance(
+                data["task_metadata"]["seo_keywords"], str
+            ):
                 try:
-                    data["task_metadata"]["seo_keywords"] = json.loads(data["task_metadata"]["seo_keywords"])
+                    data["task_metadata"]["seo_keywords"] = json.loads(
+                        data["task_metadata"]["seo_keywords"]
+                    )
                 except (json.JSONDecodeError, TypeError):
                     # If not valid JSON, wrap in list
                     seo_kw = data["task_metadata"]["seo_keywords"]

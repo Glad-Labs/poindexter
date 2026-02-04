@@ -1,10 +1,12 @@
-import httpx
 import json
 import logging
-from ..config import config
-from ..utils.data_models import StrapiPost, BlogPost
-from typing import Optional
 import os
+from typing import Optional
+
+import httpx
+
+from ..config import config
+from ..utils.data_models import BlogPost, StrapiPost
 
 logger = logging.getLogger(__name__)
 

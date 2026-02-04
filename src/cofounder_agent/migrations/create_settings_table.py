@@ -27,9 +27,10 @@ CREATE INDEX idx_settings_key ON settings(key);
 """
 
 import logging
-import asyncpg
 import os
 from datetime import datetime
+
+import asyncpg
 
 logger = logging.getLogger(__name__)
 

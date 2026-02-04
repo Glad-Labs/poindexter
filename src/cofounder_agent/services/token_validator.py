@@ -12,9 +12,10 @@ This is a standalone validator that:
 """
 
 import os
-from typing import Optional, Tuple, Dict, Any
 from datetime import datetime
 from enum import Enum
+from typing import Any, Dict, Optional, Tuple
+
 import jwt
 
 

@@ -34,13 +34,15 @@ def _fix_sys_path_for_venv():
 # Execute the fix immediately when this module is imported
 _fix_sys_path_for_venv()
 
+import hashlib
+import json
+import logging
+import os
+
 import httpx
+
 from agents.content_agent.config import config
 from agents.content_agent.utils.helpers import extract_json_from_string
-import logging
-import json
-import os
-import hashlib
 
 # Now try to import google-genai (new package, replaces deprecated google.generativeai)
 # With the sys.path fix above, this should work even with poetry run
@@ -196,7 +198,7 @@ class LLMClient:
         cache_path = self._get_cache_path(prompt, "txt")
         if cache_path.exists():
             logging.info(f"Returning cached text response for prompt.")
-            return cache_path.read_text()
+            return cache_path.read_text(encoding="utf-8")
 
         if self.provider == "gemini":
             result = self._generate_text_gemini(prompt)
@@ -207,7 +209,11 @@ class LLMClient:
             return ""
 
         if result:
-            cache_path.write_text(result)
+            try:
+                # Use UTF-8 encoding explicitly to avoid charmap errors on Windows
+                cache_path.write_text(result, encoding="utf-8")
+            except Exception as e:
+                logging.warning(f"Failed to cache result: {e}")
 
         return result
 

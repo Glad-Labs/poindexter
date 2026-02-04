@@ -13,9 +13,9 @@ This module provides:
 """
 
 import logging
-from typing import Dict, Any, Optional, Tuple
-from datetime import datetime
 from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 

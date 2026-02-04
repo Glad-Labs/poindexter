@@ -15,9 +15,10 @@ Models are organized by domain:
 - Settings & Configuration
 """
 
-from typing import Optional, Dict, Any, List, Literal, TypeVar, Generic
 from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict
+from typing import Any, Dict, Generic, List, Literal, Optional, TypeVar
+
+from pydantic import BaseModel, ConfigDict, Field
 
 T = TypeVar("T")
 

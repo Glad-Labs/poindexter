@@ -3,10 +3,11 @@ Tests for Summarizer Agent
 Tests text summarization functionality
 """
 
-import pytest
-from unittest.mock import Mock, patch
 import sys
 import types
+from unittest.mock import Mock, patch
+
+import pytest
 
 # Mock Google Cloud modules
 if "google" not in sys.modules:

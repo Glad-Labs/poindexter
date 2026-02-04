@@ -13,11 +13,11 @@ To add Google, Facebook, etc.:
 import secrets
 from typing import Dict, Optional, Type
 
-from .oauth_provider import OAuthProvider, OAuthUser, OAuthException
+from .facebook_oauth import FacebookOAuthProvider
 from .github_oauth import GitHubOAuthProvider
 from .google_oauth import GoogleOAuthProvider
-from .facebook_oauth import FacebookOAuthProvider
 from .microsoft_oauth import MicrosoftOAuthProvider
+from .oauth_provider import OAuthException, OAuthProvider, OAuthUser
 
 
 class OAuthManager:

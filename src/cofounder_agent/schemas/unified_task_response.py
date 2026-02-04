@@ -13,9 +13,10 @@ Benefits:
 - Backward compatible with existing frontend clients
 """
 
-from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any, List, Literal
 from datetime import datetime
+from typing import Any, Dict, List, Literal, Optional
+
+from pydantic import BaseModel, Field
 
 
 class ProgressInfo(BaseModel):
@@ -217,8 +218,12 @@ class UnifiedTaskResponse(BaseModel):
     # ========================================================================
     # PUBLISHING & DISTRIBUTION
     # ========================================================================
-    published_url: Optional[str] = Field(None, description="Published post URL after approval/publishing")
-    post_id: Optional[str] = Field(None, description="Post ID in CMS (when published to posts table)")
+    published_url: Optional[str] = Field(
+        None, description="Published post URL after approval/publishing"
+    )
+    post_id: Optional[str] = Field(
+        None, description="Post ID in CMS (when published to posts table)"
+    )
     post_slug: Optional[str] = Field(None, description="Post slug for URL generation")
 
     # ========================================================================

@@ -14,14 +14,15 @@ Requirements:
   - SMTP_USE_TLS: true/false (default: true)
 """
 
-import os
 import logging
-from typing import Optional, Dict, Any, List, cast
-import aiosmtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from email.mime.base import MIMEBase
+import os
 from email import encoders
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from typing import Any, Dict, List, Optional, cast
+
+import aiosmtplib
 import html2text
 
 logger = logging.getLogger(__name__)

@@ -5,9 +5,9 @@ This module shows how to use the research service in the 6-stage self-critiquing
 content generation pipeline.
 """
 
-from typing import Optional
 import logging
 from datetime import datetime
+from typing import Optional
 
 from research_service import research_content_topic
 

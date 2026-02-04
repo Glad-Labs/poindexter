@@ -3,11 +3,12 @@ Tests for Strapi Client
 Tests API integration with Strapi v5 CMS
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock, AsyncMock
-import httpx
 import sys
 import types
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
+
+import httpx
+import pytest
 
 # Mock Google Cloud modules
 if "google" not in sys.modules:

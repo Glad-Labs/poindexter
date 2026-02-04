@@ -6,9 +6,9 @@ to be streamed to WebSocket clients in real-time.
 """
 
 import logging
-from typing import Dict, Optional, Callable, Any
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
+from typing import Any, Callable, Dict, Optional
 
 logger = logging.getLogger(__name__)
 

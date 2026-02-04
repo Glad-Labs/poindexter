@@ -20,19 +20,20 @@ Set SENTRY_DSN environment variable to enable:
 For local development, set SENTRY_ENABLED=false to disable reporting.
 """
 
-import os
 import logging
-from typing import Optional
+import os
 from datetime import datetime
+from typing import Optional
+
 from fastapi import FastAPI
 
 try:
     import sentry_sdk
-    from sentry_sdk.integrations.fastapi import FastApiIntegration
-    from sentry_sdk.integrations.starlette import StarletteIntegration
     from sentry_sdk.integrations.asyncio import AsyncioIntegration
-    from sentry_sdk.integrations.sqlalchemy import SqlAlchemyIntegration
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
     from sentry_sdk.integrations.logging import LoggingIntegration
+    from sentry_sdk.integrations.sqlalchemy import SqlAlchemyIntegration
+    from sentry_sdk.integrations.starlette import StarletteIntegration
     from sentry_sdk.integrations.threading import ThreadingIntegration
 
     SENTRY_AVAILABLE = True

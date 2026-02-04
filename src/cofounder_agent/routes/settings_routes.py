@@ -19,26 +19,26 @@ All endpoints require:
 5. Audit logging of all changes
 """
 
-from typing import List, Optional
 from datetime import datetime, timedelta
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status, Request, Path, Body
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request, status
 from sqlalchemy.orm import Session
 
-from utils.error_responses import ErrorResponseBuilder
 from schemas.settings_schemas import (
-    SettingCategoryEnum,
-    SettingEnvironmentEnum,
-    SettingDataTypeEnum,
-    SettingBase,
-    SettingCreate,
-    SettingUpdate,
-    SettingResponse,
-    SettingListResponse,
-    SettingHistoryResponse,
-    SettingBulkUpdateRequest,
     ErrorResponse,
+    SettingBase,
+    SettingBulkUpdateRequest,
+    SettingCategoryEnum,
+    SettingCreate,
+    SettingDataTypeEnum,
+    SettingEnvironmentEnum,
+    SettingHistoryResponse,
+    SettingListResponse,
+    SettingResponse,
+    SettingUpdate,
 )
+from utils.error_responses import ErrorResponseBuilder
 
 # Create router
 router = APIRouter(prefix="/api/settings", tags=["settings"])
