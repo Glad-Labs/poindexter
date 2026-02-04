@@ -10,6 +10,7 @@ Uses PostgreSQL for persistent storage (no SQLite).
 import hashlib
 import json
 import logging
+from services.logger_config import get_logger
 import pickle
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
@@ -861,8 +862,8 @@ class AIMemorySystem:  # pylint: disable=too-many-instance-attributes
 # Example usage (requires database service with connection pool)
 async def main(db_pool: asyncpg.Pool):
     """Test the AI memory system with PostgreSQL"""
-    logging.basicConfig(level=logging.INFO)
-
+    # Use the centralized logger instead of configuring logging here
+    logger = get_logger("ai_memory_system_test")
     memory_system = AIMemorySystem(db_pool=db_pool)
     await memory_system.initialize()
 

@@ -44,8 +44,8 @@ from typing import Any, Dict, Optional
 
 # Third-party imports
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, FastAPI, HTTPException
-from pydantic import BaseModel
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
+from pydantic import BaseModel, validator
 
 # CRITICAL: Environment loading must happen before service imports
 # to ensure .env.local is available for all services
@@ -369,7 +369,7 @@ async def api_health():
     - Timestamp for monitoring systems
 
     This endpoint consolidates previous endpoints:
-    - GET /status (StatusResponse)
+    - GET /status (removed)
     - GET /metrics/health (database health)
     - GET /settings/health (removed duplicate)
     - GET /tasks/health/status (removed duplicate)
@@ -482,28 +482,47 @@ async def get_metrics():
 
 
 class CommandRequest(BaseModel):
-    """Request model for processing a command."""
+    """Request model for processing a command.
+
+    Attributes
+    ----------
+    command: The command string to be processed by the orchestrator.
+    context: Optional context dictionary that can influence command execution.
+    """
 
     command: str
     context: Optional[Dict[str, Any]] = None
-    priority: Optional[str] = "normal"
+
+    @validator("command")
+    def _command_must_not_be_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("command must be a non-empty string")
+        return v
 
 
 class CommandResponse(BaseModel):
-    """Response model for the result of a command."""
+    """Response model for the result of a command.
+
+    Attributes
+    ----------
+    response: Human‑readable response from the orchestrator.
+    task_id: Optional identifier of a background task created by the command.
+    metadata: Optional dictionary containing additional data returned by the orchestrator.
+    """
 
     response: str
     task_id: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
 
 
-class StatusResponse(BaseModel):
-    status: str
-    data: Dict[str, Any]
 
 
 @app.post("/command", response_model=CommandResponse)
-async def process_command(request: CommandRequest, background_tasks: BackgroundTasks):  # pylint: disable=unused-argument
+async def process_command(
+    request: Request,
+    command: CommandRequest,
+    background_tasks: BackgroundTasks,
+):  # pylint: disable=unused-argument
     """
     Processes a command sent to the Co-Founder agent.
 
@@ -511,14 +530,16 @@ async def process_command(request: CommandRequest, background_tasks: BackgroundT
     and returns the result. Can optionally execute tasks in the background.
     """
     try:
-        logger.info(f"Received command: {request.command}")
+        logger.info(f"Received command: {command.command}")
 
         orchestrator = getattr(request.app.state, "orchestrator", None)
         if orchestrator is None:
             raise HTTPException(status_code=503, detail="Orchestrator not initialized")
 
-        # Always use async version with new database service
-        response = await orchestrator.process_command_async(request.command, request.context)
+        # Execute the command asynchronously
+        response = await orchestrator.process_command_async(
+            command.command, command.context
+        )
 
         return CommandResponse(
             response=response.get("response", "Command processed"),
@@ -526,46 +547,15 @@ async def process_command(request: CommandRequest, background_tasks: BackgroundT
             metadata=response.get("metadata"),
         )
     except Exception as e:  # pylint: disable=broad-except
-        logger.error(f"Error processing command: {str(e)} | command={request.command}")
-        raise HTTPException(status_code=500, detail=f"An internal error occurred: {str(e)}") from e
+        logger.error(
+            f"Error processing command: {str(e)} | command={command.command}"
+        )
+        raise HTTPException(
+            status_code=500, detail=f"An internal error occurred: {str(e)}"
+        ) from e
 
 
-@app.get("/status", response_model=StatusResponse)
-async def get_status(request):
-    """
-    DEPRECATED: Use GET /api/health instead.
-
-    Backward compatibility endpoint that wraps the unified /api/health endpoint.
-    Maintained for clients that depend on StatusResponse model.
-    Will be removed in version 2.0.
-    """
-    try:
-        # Call the unified health endpoint
-        health_response = await api_health()
-
-        # Convert to StatusResponse format for backward compatibility
-        database_service = getattr(request.app.state, "database", None)
-        orchestrator = getattr(request.app.state, "orchestrator", None)
-        is_online = health_response.get("status") == "healthy"
-        service_status = "online" if is_online else health_response.get("status", "unknown")
-        status_data = {
-            "service": service_status,
-            "database_available": database_service is not None,
-            "orchestrator_initialized": orchestrator is not None,
-            "timestamp": health_response.get("timestamp", str(asyncio.get_event_loop().time())),
-        }
-
-        # Include component statuses if available
-        components = health_response.get("components", {})
-        if isinstance(components, dict):
-            for key, value in components.items():
-                status_data[f"component_{key}"] = value
-
-        return StatusResponse(status=health_response.get("status", "unknown"), data=status_data)
-
-    except Exception as e:  # pylint: disable=broad-except
-        logger.error("Error getting status: %s", str(e))
-        return StatusResponse(status="unhealthy", data={"error": str(e)})
+# The legacy /status endpoint has been removed. Clients should use /api/health.
 
 
 @app.get("/")
