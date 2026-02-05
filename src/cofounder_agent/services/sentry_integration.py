@@ -70,7 +70,7 @@ class SentryIntegration:
             bool: True if Sentry was successfully initialized, False otherwise
         """
         if not SENTRY_AVAILABLE:
-            logger.warning("❌ Sentry SDK not available - error tracking disabled")
+            logger.warning("[ERROR] Sentry SDK not available - error tracking disabled")
             return False
 
         if cls._initialized:
@@ -85,7 +85,7 @@ class SentryIntegration:
 
         # Skip initialization if DSN not configured or explicitly disabled
         if not sentry_dsn:
-            logger.info("⚠️  Sentry DSN not configured (SENTRY_DSN env var)")
+            logger.info("[WARNING] Sentry DSN not configured (SENTRY_DSN env var)")
             logger.info(
                 "   To enable error tracking, set: export SENTRY_DSN='https://key@sentry.io/project-id'"
             )
@@ -142,7 +142,7 @@ class SentryIntegration:
             sentry_sdk.set_tag("service", service_name)
             sentry_sdk.set_tag("version", release)
 
-            logger.info(f"✅ Sentry initialized successfully")
+            logger.info(f"[OK] Sentry initialized successfully")
             logger.info(f"   Environment: {environment}")
             logger.info(f"   Release: {release}")
             logger.info(f"   Traces Sample Rate: {0.1 if environment == 'production' else 1.0}")
@@ -153,7 +153,7 @@ class SentryIntegration:
             return True
 
         except Exception as e:
-            logger.error(f"❌ Failed to initialize Sentry: {str(e)}")
+            logger.error(f"[ERROR] Failed to initialize Sentry: {str(e)}")
             cls._initialized = True
             cls._sentry_enabled = False
             return False

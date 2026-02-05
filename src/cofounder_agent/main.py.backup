@@ -4,7 +4,38 @@ FastAPI application serving as the central orchestrator for the Glad Labs ecosys
 Implements PostgreSQL database with REST API command queue integration
 """
 
+# ============================================================================
+# CRITICAL: Fix sys.path for namespace packages at module import time
+# Poetry sometimes breaks namespace package resolution (e.g., google.generativeai)
+# This MUST be done before any package imports
+# ============================================================================
 import sys
+from pathlib import Path as _PathType
+
+
+def _fix_sys_path():
+    """Fix sys.path to prioritize venv site-packages."""
+    try:
+        venv_site_packages = _PathType(sys.prefix) / "Lib" / "site-packages"
+        if venv_site_packages.exists():
+            venv_site_packages_str = str(venv_site_packages)
+            # Ensure venv's site-packages is first in the path
+            sys.path = [venv_site_packages_str] + [
+                p for p in sys.path if p != venv_site_packages_str
+            ]
+            # Clear import caches to force fresh imports
+            import importlib  # pylint: disable=import-outside-toplevel
+
+            importlib.invalidate_caches()
+    except (OSError, AttributeError, ValueError) as e:
+        print(f"[WARNING] Failed to fix sys.path: {e}")
+
+
+_fix_sys_path()
+del _fix_sys_path, _PathType
+
+# Standard library imports (at the top as required by pylint)
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -12,38 +43,54 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 # Third-party imports
+from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from pydantic import BaseModel, validator
 
 # Import configuration
-from config import get_config, load_env
+from config import get_config
 
 # Load configuration
 config = get_config()
 
-# Import services
+# Add the current directory (cofounder_agent) to Python path FIRST
+# This allows absolute imports like "from services.x import y" to work
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
+from services.content_router_service import get_content_task_store
 from services.logger_config import get_logger
 from services.quality_service import UnifiedQualityService
 from services.sentry_integration import setup_sentry
 from services.telemetry import setup_telemetry
 from services.unified_orchestrator import UnifiedOrchestrator
-from services.container import service_container, get_service
-from services.auth import AuthService
 
 # Local application imports (must come after path setup)
+# pylint: disable=wrong-import-position,import-error
 from utils.exception_handlers import register_exception_handlers
 from utils.middleware_config import MiddlewareConfig
 from utils.route_registration import register_all_routes
 from utils.route_utils import initialize_services
 from utils.startup_manager import StartupManager
 
-# pylint: enable=wrong-import-error
+# Import service container
+from services.container import initialize_services
+
+# pylint: enable=import-error
 
 try:
     import sentry_sdk  # pylint: disable=unused-import
     SENTRY_AVAILABLE = True
 except ImportError:
     SENTRY_AVAILABLE = False
+
+# Import workflow history service dependencies (needed for startup manager)
+try:
+    WORKFLOW_HISTORY_AVAILABLE = True
+except ImportError as e:
+    WORKFLOW_HISTORY_AVAILABLE = False
+    logging.warning("Workflow history service not available: %s", str(e))
 
 # PostgreSQL database service is now the primary service
 # Legacy 'database.py' (SQLAlchemy) has been removed.
@@ -77,17 +124,17 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
 
     try:
         logger.info("=" * 80)
-        logger.info("[LIFESPAN] Starting application startup sequence. ..")
+        logger.info("[LIFESPAN] Starting application startup sequence...")
         logger.info("=" * 80)
 
         # Initialize all services
-        logger.info("[LIFESPAN] Calling startup_manager.initialize_all_services(). ..")
+        logger.info("[LIFESPAN] Calling startup_manager.initialize_all_services()...")
         services = await startup_manager.initialize_all_services()
         logger.info("[LIFESPAN] ✅ All services initialized by startup_manager")
         logger.debug(f"[LIFESPAN] Services dict keys: {services.keys()}")
 
         # Inject services into app state for access in routes
-        logger.info("[LIFESPAN] Injecting services into app.state. ..")
+        logger.info("[LIFESPAN] Injecting services into app.state...")
         app.state.database = services["database"]
         app.state.redis_cache = services["redis_cache"]
         # app.state.orchestrator will be set to UnifiedOrchestrator below
@@ -101,31 +148,128 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         app.state.startup_complete = True
         logger.debug("[LIFESPAN] ✅ All services injected into app.state")
 
-        # Initialize auth service
-        logger.info("[LIFESPAN] Initializing authentication service. ..")
-        auth_service = AuthService()
-        service_container.register("auth", auth_service)
-        logger.info("[LIFESPAN] ✅ Authentication service initialized")
+        # Initialize new consolidated services
+        db_service = services["database"]
+        logger.info(f"[LIFESPAN] db_service = {db_service}")
+        logger.debug(f"[LIFESPAN] db_service.pool = {db_service.pool}")
+        logger.debug(f"[LIFESPAN] db_service.tasks = {db_service.tasks}")
+
+        # Initialize task store for content orchestrator
+        logger.info("[LIFESPAN] Initializing ContentTaskStore...")
+        task_store = get_content_task_store(db_service)
+        app.state.task_store = task_store
+        logger.info("✅ ContentTaskStore initialized")
 
         # Initialize quality service
-        logger.info("[LIFESPAN] Initializing quality service. ..")
-        quality_service = UnifiedQualityService()
-        service_container.register("quality", quality_service)
-        logger.info("[LIFESPAN] ✅ Quality service initialized")
+        logger.info("[LIFESPAN] Initializing UnifiedQualityService...")
+        quality_service = UnifiedQualityService(
+            model_router=getattr(app.state, "model_router", None),
+            database_service=db_service,
+            qa_agent=None,
+        )
+        app.state.quality_service = quality_service
+        logger.info("✅ UnifiedQualityService initialized")
 
-        # Register services in the global DI container for dependency injection
-        logger.info("[LIFESPAN] Registering services in global DI container. ..")
+        # The UnifiedOrchestrator is created here with all dependencies properly initialized
+        # This ensures TaskExecutor can use it for content generation
+        logger.info("[LIFESPAN] Creating UnifiedOrchestrator with all dependencies...")
+        logger.debug("[LIFESPAN] UnifiedOrchestrator dependencies:")
+        logger.debug("  - database_service: %s", db_service)
+        logger.debug("  - quality_service: %s", quality_service)
+
+        # Initialize unified orchestrator with all available agents
+        unified_orchestrator = UnifiedOrchestrator(
+            database_service=db_service,
+            model_router=getattr(app.state, "model_router", None),
+            quality_service=quality_service,
+            memory_system=getattr(app.state, "memory_system", None),
+            # No longer needed - pipeline is built into UnifiedOrchestrator
+            content_orchestrator=None,
+            financial_agent=getattr(app.state, "financial_agent", None),
+            compliance_agent=getattr(app.state, "compliance_agent", None),
+        )
+        app.state.unified_orchestrator = unified_orchestrator
+        # CRITICAL: Set as primary orchestrator for TaskExecutor to use
+        app.state.orchestrator = unified_orchestrator
+        logger.info("✅ UnifiedOrchestrator initialized and set as primary orchestrator")
+        logger.debug(f"[LIFESPAN] app.state.orchestrator = {app.state.orchestrator}")
+
+        # CRITICAL: Inject app.state into task_executor NOW (before it processes tasks)
+        # This ensures it has access to the properly-initialized UnifiedOrchestrator
+        logger.info("[LIFESPAN] Injecting app.state into TaskExecutor...")
+        task_executor = services.get("task_executor")
+        if task_executor:
+            logger.debug(
+                "[LIFESPAN] TaskExecutor before injection: "
+                f"app_state={getattr(task_executor, 'app_state', None)}"
+            )
+            task_executor.app_state = app.state
+            logger.debug(
+                "[LIFESPAN] TaskExecutor after injection: " f"app_state={task_executor.app_state}"
+            )
+            logger.debug(
+                "[LIFESPAN] TaskExecutor.orchestrator property check: "
+                f"{task_executor.orchestrator is not None}"
+            )
+            logger.info("✅ TaskExecutor app.state reference updated with UnifiedOrchestrator")
+            logger.info(
+                f"   TaskExecutor can now access orchestrator: "
+                f"{task_executor.orchestrator is not None}"
+            )
+
+            # NOW start the task executor (after UnifiedOrchestrator is initialized)
+            logger.info("[LIFESPAN] Starting TaskExecutor background processing loop...")
+            await task_executor.start()
+            logger.info("✅ TaskExecutor started successfully with UnifiedOrchestrator")
+        else:
+            logger.warning("⚠️ TaskExecutor not found in services")
+
+        # Store db_service with alternative name for dependency injection
+        app.state.db_service = db_service
+        logger.debug(f"[LIFESPAN] app.state.db_service = {app.state.db_service}")
+
+        # Initialize ServiceContainer for Phase 2 utilities
+        # Provides 3 access patterns: get_services(), Depends(), Request.state
+        # Note: orchestrator will be UnifiedOrchestrator, set below before TaskExecutor starts
+        logger.info("[LIFESPAN] Initializing ServiceContainer...")
         initialize_services(
             app,
             database_service=services["database"],
-            orchestrator=services.get("orchestrator"),
+            orchestrator=None,  # Will be set to UnifiedOrchestrator below
             task_executor=services["task_executor"],
-            intelligent_orchestrator=services.get("intelligent_orchestrator"),
-            workflow_history=services["workflow_history"]
+            workflow_history=services["workflow_history"],
         )
-        logger.info("[LIFESPAN] ✅ Services registered in global DI container")
+        logger.debug("[LIFESPAN] ✅ ServiceContainer initialized")
 
-        logger.info("[OK] Lifespan: Yielding control to FastAPI application. ..")
+        # Register routes with initialized services
+        logger.info("[LIFESPAN] Registering routes...")
+        register_all_routes(
+            app,
+            database_service=services["database"],
+            workflow_history_service=services["workflow_history"],
+            training_data_service=services.get("training_data_service"),
+            fine_tuning_service=services.get("fine_tuning_service"),
+        )
+
+        # Initialize LangGraph orchestrator
+        try:
+            from services.langgraph_orchestrator import (  # pylint: disable=import-outside-toplevel
+                LangGraphOrchestrator,
+            )
+
+            langgraph_orchestrator = LangGraphOrchestrator(
+                db_service=db_service,
+                llm_service=getattr(app.state, "model_router", None),
+                quality_service=quality_service,
+                metadata_service=getattr(app.state, "unified_metadata_service", None),
+            )
+            app.state.langgraph_orchestrator = langgraph_orchestrator
+            logger.info("✅ LangGraphOrchestrator initialized")
+        except Exception as e:  # pylint: disable=broad-except
+            logger.warning("⚠️  LangGraph initialization failed (non-critical): %s", str(e))
+            app.state.langgraph_orchestrator = None
+
+        logger.info("[OK] Lifespan: Yielding control to FastAPI application...")
         try:
             print("[OK] Application is now running")
         except UnicodeEncodeError:
@@ -196,24 +340,19 @@ setup_telemetry(app)
 # Register all exception handlers (centralized in utils.exception_handlers)
 register_exception_handlers(app)
 
-# ===== ERROR TRACKING: SENTRY INTEGRATION =====
-# Captures exceptions, performance metrics, and error tracking
-setup_sentry(app, service_name="cofounder-agent")
+# ===== MONITORING SETUP =====
+# Setup Sentry, OpenTelemetry, and other monitoring tools
+from services.monitoring import setup_monitoring
+setup_monitoring(app, service_name="cofounder-agent")
 
 # ===== MIDDLEWARE CONFIGURATION =====
 # Register all middleware (centralized in utils.middleware_config)
 middleware_config = MiddlewareConfig()
 middleware_config.register_all_middleware(app)
 
-# ===== ROUTE REGISTRATION =====
-# Register all API routes from routes/ modules
-logger.info("[STARTUP] Registering all routes...")
-register_all_routes(app)
-logger.info("[STARTUP] ✅ All routes registered")
-
 # ===== UNIFIED HEALTH CHECK ENDPOINT =====
 # Consolidated from: /api/health, /status, /metrics/health, and route-specific health endpoints
-from services.health_service import get_health_service
+
 
 @app.get("/api/health")
 async def api_health():
@@ -227,44 +366,23 @@ async def api_health():
     - LLM providers availability
     - Timestamp for monitoring systems
 
+    This endpoint consolidates previous endpoints:
+    - GET /status (removed)
+    - GET /metrics/health (database health)
+    - GET /settings/health (removed duplicate)
+    - GET /tasks/health/status (removed duplicate)
+    - GET /models/providers/status (removed duplicate)
+
     Used by: Railway load balancers, monitoring systems, external health checks
     Authentication: Not required (critical for load balancers)
     """
     try:
+        # Get health service
+        from services.health_service import get_health_service
+        health_service = get_health_service(app)
+        
         # Build comprehensive health response
-        health_data = {
-            "status": "healthy",
-            "service": "cofounder-agent",
-            "version": "3.0.1",
-            "timestamp": datetime.utcnow().isoformat(),
-            "components": {},
-        }
-
-        # Check startup status
-        startup_error = getattr(app.state, "startup_error", None)
-        startup_complete = getattr(app.state, "startup_complete", False)
-
-        if startup_error:
-            health_data["status"] = "degraded"
-            health_data["startup_error"] = startup_error
-            health_data["startup_complete"] = startup_complete
-            logger.warning(f"Health check returning degraded status: {startup_error}")
-        elif not startup_complete:
-            health_data["status"] = "starting"
-            health_data["startup_complete"] = False
-
-        # Include database status if available
-        database_service = getattr(app.state, "database", None)
-        if database_service:
-            try:
-                db_health = await database_service.health_check()
-                health_data["components"]["database"] = db_health.get("status", "unknown")
-            except Exception as e:  # pylint: disable=broad-except
-                logger.warning("Database health check failed in /api/health: %s", str(e))
-                health_data["components"]["database"] = "degraded"
-        else:
-            health_data["components"]["database"] = "unavailable"
-
+        health_data = await health_service.check_health()
         return health_data
     except Exception as e:  # pylint: disable=broad-except
         logger.error("Health check failed: %s", str(e), exc_info=True)
@@ -283,12 +401,8 @@ async def health():
     return {"status": "ok", "service": "cofounder-agent"}
 
 
-# ===== METRICS ENDPOINT =====
-# Consolidated from: /api/metrics, /metrics, /tasks/metrics, etc.
-from services.metrics_service import get_metrics_service
-
 @app.get("/api/metrics")
-async def get_metrics_endpoint():
+async def get_metrics():
     """
     Aggregated task and system metrics endpoint.
 
@@ -308,21 +422,14 @@ async def get_metrics_endpoint():
     - total_cost: Estimated total cost in USD
     """
     try:
-        database_service = getattr(app.state, "database", None)
-        if database_service:
-            metrics = await database_service.get_metrics()
-            return metrics
+        # Get metrics service
+        from services.metrics_service import get_metrics_service
+        metrics_service = get_metrics_service()
+        
+        # Get metrics from service
+        metrics = await metrics_service.get_metrics()
+        return metrics
 
-        # Return mock metrics if database unavailable
-        return {
-            "total_tasks": 0,
-            "completed_tasks": 0,
-            "failed_tasks": 0,
-            "pending_tasks": 0,
-            "success_rate": 0.0,
-            "avg_execution_time": 0.0,
-            "total_cost": 0.0,
-        }
     except Exception as e:  # pylint: disable=broad-except
         logger.error("Metrics retrieval failed: %s", str(e), exc_info=True)
         return {
@@ -361,7 +468,7 @@ class CommandResponse(BaseModel):
 
     Attributes
     ----------
-    response: Human-readable response from the orchestrator.
+    response: Human‑readable response from the orchestrator.
     task_id: Optional identifier of a background task created by the command.
     metadata: Optional dictionary containing additional data returned by the orchestrator.
     """
@@ -369,6 +476,8 @@ class CommandResponse(BaseModel):
     response: str
     task_id: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
+
+
 
 
 @app.post("/command", response_model=CommandResponse)
@@ -409,6 +518,9 @@ async def process_command(
         ) from e
 
 
+# The legacy /status endpoint has been removed. Clients should use /api/health.
+
+
 @app.get("/")
 async def root():
     """
@@ -416,7 +528,7 @@ async def root():
     """
     return {
         "message": "Glad Labs AI Co-Founder is running",
-        "version": "3.0.1",
+        "version": "1.0.0",
         "database_enabled": hasattr(app.state, "database") and app.state.database is not None,
     }
 

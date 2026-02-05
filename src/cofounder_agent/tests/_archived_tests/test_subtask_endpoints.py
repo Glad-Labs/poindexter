@@ -216,7 +216,7 @@ class TestQASubtask:
         assert "feedback" in data["result"]
         assert "quality_score" in data["result"]
         assert isinstance(data["result"]["quality_score"], (int, float))
-        assert 0 <= data["result"]["quality_score"] <= 10
+        assert 0 <= data["result"]["quality_score"] <= 100
 
     def test_qa_missing_creative_output(self, client: TestClient, auth_headers: Dict):
         """Test validation - missing creative_output"""

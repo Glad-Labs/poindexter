@@ -165,7 +165,19 @@ PARAMETER learning_rate {learning_rate}
                     "error": "GOOGLE_API_KEY not configured",
                 }
 
-            genai.configure(api_key=key)
+            # Try new SDK first, fall back to old one
+            use_new_sdk = False
+            try:
+                import google.genai as genai
+                use_new_sdk = True
+            except ImportError:
+                import google.generativeai as genai
+
+            # Configure API key based on SDK version
+            if use_new_sdk:
+                genai.api_key = key
+            else:
+                genai.configure(api_key=key)
 
             # Upload training data
             media = genai.upload_file(dataset_path)

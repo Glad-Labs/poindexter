@@ -348,7 +348,7 @@ class StatusTransitionValidator:
         if not is_valid_transition(TaskStatus(current_status), TaskStatus(new_status)):
             error_msg = f"Invalid transition: {current_status} → {new_status}"
             errors.append(error_msg)
-            logger.warning(f"❌ {error_msg} (task_id: {task_id})")
+            logger.warning(f"[ERROR] {error_msg} (task_id: {task_id})")
 
         # Perform additional context validation if provided
         if additional_context:

@@ -4,9 +4,9 @@
     {
       "label": "Start Co-founder Agent",
       "type": "shell",
-      "command": "poetry",
+      "command": "python",
       "args": [
-        "run",
+        "-m",
         "uvicorn",
         "main:app",
         "--reload",

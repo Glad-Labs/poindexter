@@ -327,7 +327,7 @@ def initialize_services(
     # Store services in app state for request-scoped access
     app.state.services = _services
 
-    logger.info(f"✅ Services initialized: {list(_services.get_all_services().keys())}")
+    logger.info(f"[OK] Services initialized: {list(_services.get_all_services().keys())}")
 
     return _services
 

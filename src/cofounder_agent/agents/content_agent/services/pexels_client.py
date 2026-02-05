@@ -48,8 +48,8 @@ class PexelsClient:
                         f.write(img_response.content)
                 logging.info(
                     f"Successfully downloaded image for query '{query}' to {file_path}."
-                    )
-                    return True
+                )
+                return True
                 else:
                     logging.warning(f"No photos found on Pexels for query: '{query}'")
                     return False

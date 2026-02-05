@@ -3,6 +3,7 @@ Google Gemini Client
 Provides interface to Google's Gemini AI models
 """
 
+import asyncio
 import logging
 import os
 from datetime import datetime
@@ -84,31 +85,48 @@ class GeminiClient:
 
         try:
             # Import google-genai library (new package, replaces deprecated google.generativeai)
+            use_new_sdk = False
             try:
                 import google.genai as genai
-
+                use_new_sdk = True
                 logger.info("✅ Using google.genai (new SDK v1.61.0+) for generate()")
             except ImportError:
                 # Fallback to old deprecated package if new one not available
                 import google.generativeai as genai
-
                 logger.warning(
                     "⚠️  Using google.generativeai (legacy/deprecated SDK) for generate()"
                 )
 
-            # Configure the API key
-            genai.configure(api_key=self.api_key)
+            # Configure the API key based on SDK version
+            if use_new_sdk:
+                # New google.genai SDK: Pass API key directly to client
+                genai.api_key = self.api_key
+                client = genai.Client(api_key=self.api_key)
+                
+                # Generate content using new SDK
+                response = await asyncio.to_thread(
+                    lambda: client.models.generate_content(
+                        model=f"models/{model}",
+                        contents=prompt,
+                        config=genai.GenerateContentConfig(
+                            max_output_tokens=max_tokens, 
+                            temperature=temperature,
+                            **kwargs
+                        ),
+                    )
+                )
+            else:
+                # Old google.generativeai SDK: Use GenerativeModel
+                genai.configure(api_key=self.api_key)
+                gemini_model = genai.GenerativeModel(model)
 
-            # Get the model
-            gemini_model = genai.GenerativeModel(model)
-
-            # Generate content
-            response = await gemini_model.generate_content_async(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
-                    max_output_tokens=max_tokens, temperature=temperature, **kwargs
-                ),
-            )
+                # Generate content
+                response = await gemini_model.generate_content_async(
+                    prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        max_output_tokens=max_tokens, temperature=temperature, **kwargs
+                    ),
+                )
 
             return response.text
 

@@ -345,19 +345,25 @@ Improved version:"""
             metrics["model_selection_log"]["decision_tree"]["gemini_attempted"] = True
             try:
                 # Import google-genai library (new package, replaces deprecated google-generativeai)
+                use_new_sdk = False
                 try:
                     import google.genai as genai
-
+                    use_new_sdk = True
                     logger.info("✅ Using google.genai (new SDK) for Gemini API calls")
                 except ImportError:
                     # Fallback to older google.generativeai if new one not available
                     import google.generativeai as genai
-
                     logger.warning(
                         "⚠️  Using google.generativeai (legacy/deprecated SDK) - upgrade to google-genai for better support"
                     )
 
-                genai.configure(api_key=ProviderChecker.get_gemini_api_key())
+                # Configure API key based on SDK version
+                if use_new_sdk:
+                    # New google.genai SDK: Pass API key directly
+                    genai.api_key = ProviderChecker.get_gemini_api_key()
+                else:
+                    # Old google.generativeai SDK: Use configure() method
+                    genai.configure(api_key=ProviderChecker.get_gemini_api_key())
 
                 # Map generic model names to actual Gemini API models
                 model_name = (
@@ -390,25 +396,42 @@ Improved version:"""
                     logger.info(f"   Model name no mapping needed: {model_name}")
 
                 logger.info(f"   Using Gemini model: {model_name}")
-                model = genai.GenerativeModel(model_name)
 
                 metrics["generation_attempts"] += 1
                 metrics["model_selection_log"]["attempted_providers"].append("gemini")
 
                 # Run blocking Gemini call in a thread to avoid blocking the event loop
                 def _gemini_generate():
-                    # Calculate max tokens: target ~1 token per word, plus 30% buffer
-                    max_tokens = int(target_length * 1.3)
+                    # Calculate max tokens: markdown content + headers + lists need ~2-2.5 tokens per word
+                    # Using 2.5x multiplier to prevent token cutoff during generation
+                    max_tokens = int(target_length * 3.0)
                     logger.debug(
                         f"   Gemini max_output_tokens: {max_tokens} (target_length: {target_length})"
                     )
-                    return model.generate_content(
-                        f"{system_prompt}\n\n{generation_prompt}",
-                        generation_config=genai.GenerationConfig(
-                            max_output_tokens=max_tokens,
-                            temperature=0.7,
-                        ),
-                    )
+                    
+                    if use_new_sdk:
+                        # New google.genai SDK: Use client.models.generate_content()
+                        client = genai.Client(api_key=ProviderChecker.get_gemini_api_key())
+                        response = client.models.generate_content(
+                            model=f"models/{model_name}",
+                            contents=f"{system_prompt}\n\n{generation_prompt}",
+                            config=genai.GenerateContentConfig(
+                                max_output_tokens=max_tokens,
+                                temperature=0.7,
+                            ),
+                        )
+                    else:
+                        # Old google.generativeai SDK: Use GenerativeModel
+                        model = genai.GenerativeModel(model_name)
+                        response = model.generate_content(
+                            f"{system_prompt}\n\n{generation_prompt}",
+                            generation_config=genai.types.GenerationConfig(
+                                max_output_tokens=max_tokens,
+                                temperature=0.7,
+                            ),
+                        )
+                    
+                    return response
 
                 response = await asyncio.to_thread(_gemini_generate)
 
@@ -476,8 +499,9 @@ Improved version:"""
 
                         logger.info(f"      ⏱️  Generating content (timeout: 120s)...")
 
-                        # Calculate max tokens: target ~1 token per word, plus 30% buffer
-                        max_tokens = int(target_length * 1.3)
+                        # Calculate max tokens: markdown content + headers + lists need ~2-2.5 tokens per word
+                        # Using 2.5x multiplier to prevent token cutoff during generation
+                        max_tokens = int(target_length * 3.0)
                         logger.debug(
                             f"      Max tokens: {max_tokens} (target_length: {target_length})"
                         )
@@ -591,14 +615,14 @@ Improved version:"""
                                 )
 
                                 # Try to refine with same model
-                                # Calculate max tokens for refinement pass
-                                max_tokens_refinement = int(target_length * 1.3)
+                                # Calculate max tokens for refinement pass (2.5x multiplier)
+                                max_tokens_refinement = int(target_length * 3.0)
                                 response = await ollama.generate(
                                     prompt=refinement_prompt,
                                     system=system_prompt,
                                     model=model_name,
                                     stream=False,
-                                    max_tokens=max_tokens_refinement,  # Refined content should respect word count target
+                                    max_tokens=max_tokens_refinement,  # 2.0x multiplier for complete refinement
                                 )
 
                                 # Extract text from response dict
@@ -726,13 +750,13 @@ Improved version:"""
                         logger.debug(f"Trying HuggingFace model: {model_id}")
                         metrics["generation_attempts"] += 1
 
-                        # Calculate max tokens for HuggingFace generation
-                        max_tokens_hf = int(target_length * 1.3)
+                        # Calculate max tokens for HuggingFace generation (2.5x multiplier)
+                        max_tokens_hf = int(target_length * 3.0)
                         generated_content = await asyncio.wait_for(
                             hf.generate(
                                 model=model_id,
                                 prompt=generation_prompt,
-                                max_tokens=max_tokens_hf,  # Respect target word count with 30% buffer
+                                max_tokens=max_tokens_hf,  # 2.0x multiplier ensures full content generation
                                 temperature=0.7,
                             ),
                             timeout=60,
@@ -788,11 +812,12 @@ Improved version:"""
                     import google.generativeai as genai
 
                     logger.debug("Using google.generativeai (stable SDK)")
+                    use_new_sdk = False
                 except ImportError:
                     # Fallback to newer google.genai if available
                     try:
                         import google.genai as genai
-
+                        use_new_sdk = True
                         logger.debug("Using google.genai (new SDK)")
                     except ImportError as e:
                         raise ImportError(
@@ -800,21 +825,39 @@ Improved version:"""
                         ) from e
 
                 logger.debug(f"Configuring Gemini with API key...")
-                genai.configure(api_key=ProviderChecker.get_gemini_api_key())
-                model = genai.GenerativeModel("gemini-2.5-flash")
-                logger.debug(f"✓ Gemini model initialized")
+                if use_new_sdk:
+                    genai.api_key = ProviderChecker.get_gemini_api_key()
+                    client = genai.Client(api_key=ProviderChecker.get_gemini_api_key())
+                    logger.debug(f"✓ Gemini client initialized (new SDK)")
+                else:
+                    genai.configure(api_key=ProviderChecker.get_gemini_api_key())
+                    model = genai.GenerativeModel("gemini-2.5-flash")
+                    logger.debug(f"✓ Gemini model initialized (legacy SDK)")
 
                 metrics["generation_attempts"] += 1
                 logger.info(f"   Generating content...")
-                # Calculate max tokens for Claude/fallback generation
-                max_tokens_fallback = int(target_length * 1.3)
-                response = model.generate_content(
-                    f"{system_prompt}\n\n{generation_prompt}",
-                    generation_config=genai.GenerationConfig(
-                        max_output_tokens=max_tokens_fallback,
-                        temperature=0.7,
-                    ),
-                )
+                # Calculate max tokens for Claude/fallback generation - 2.5x multiplier for full content
+                max_tokens_fallback = int(target_length * 3.0)
+                
+                if use_new_sdk:
+                    # New google.genai SDK
+                    response = client.models.generate_content(
+                        model="models/gemini-2.5-flash",
+                        contents=f"{system_prompt}\n\n{generation_prompt}",
+                        config=genai.GenerateContentConfig(
+                            max_output_tokens=max_tokens_fallback,
+                            temperature=0.7,
+                        ),
+                    )
+                else:
+                    # Old google.generativeai SDK
+                    response = model.generate_content(
+                        f"{system_prompt}\n\n{generation_prompt}",
+                        generation_config=genai.types.GenerationConfig(
+                            max_output_tokens=max_tokens_fallback,
+                            temperature=0.7,
+                        ),
+                    )
 
                 generated_content = response.text
                 logger.info(f"   Generated {len(generated_content)} characters")

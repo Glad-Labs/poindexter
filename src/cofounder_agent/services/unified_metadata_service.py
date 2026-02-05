@@ -53,11 +53,21 @@ except ImportError:
 
 # Check for Google Gemini availability and API key
 try:
-    import google.genai as genai
+    # Try new SDK first, fall back to old one
+    use_new_sdk = False
+    try:
+        import google.genai as genai
+        use_new_sdk = True
+    except ImportError:
+        import google.generativeai as genai
 
     GOOGLE_AVAILABLE = ProviderChecker.is_gemini_available()
     if GOOGLE_AVAILABLE:
-        genai.configure(api_key=ProviderChecker.get_gemini_api_key())
+        # Configure API key based on SDK version
+        if use_new_sdk:
+            genai.api_key = ProviderChecker.get_gemini_api_key()
+        else:
+            genai.configure(api_key=ProviderChecker.get_gemini_api_key())
     else:
         logger.debug("⚠️  GOOGLE_API_KEY not set in environment")
 except ImportError:

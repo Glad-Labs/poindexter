@@ -97,7 +97,7 @@ class StartupManager:
             except Exception as e:
                 import traceback
 
-                logger.warning(f"⚠️  SDXL warmup failed (non-critical): {type(e).__name__}: {e}")
+                logger.warning(f"[WARNING] SDXL warmup failed (non-critical): {type(e).__name__}: {e}")
                 logger.debug(f"    Traceback: {traceback.format_exc()}")
                 # Continue anyway - SDXL will load lazily when first used
 
@@ -156,7 +156,7 @@ class StartupManager:
         except Exception as e:
             startup_error = f"FATAL: PostgreSQL connection failed: {str(e)}"
             logger.error(f"  {startup_error}", exc_info=True)
-            logger.error("  🛑 PostgreSQL is REQUIRED - cannot continue")
+            logger.error("  [FATAL] PostgreSQL is REQUIRED - cannot continue")
             logger.error("   Set DATABASE_URL or DATABASE_USER environment variables")
             logger.error(
                 "  Example DATABASE_URL: postgresql://user:password@localhost:5432/glad_labs_dev"
@@ -165,17 +165,17 @@ class StartupManager:
 
     async def _run_migrations(self) -> None:
         """Run database migrations"""
-        logger.info("  🔄 Running database migrations...")
+        logger.info("  [INFO] Running database migrations...")
         try:
             from services.migrations import run_migrations
 
             migrations_ok = await run_migrations(self.database_service)
             if migrations_ok:
-                logger.info("   ✅ Database migrations completed successfully")
+                logger.info("   [OK] Database migrations completed successfully")
             else:
-                logger.warning("   ⚠️ Database migrations failed (proceeding anyway)")
+                logger.warning("   [WARNING] Database migrations failed (proceeding anyway)")
         except Exception as e:
-            logger.warning(f"   ⚠️ Migration error: {str(e)} (proceeding anyway)")
+            logger.warning(f"   [WARNING] Migration error: {str(e)} (proceeding anyway)")
 
         # Inject database service into content task store
         try:
@@ -183,29 +183,29 @@ class StartupManager:
 
             get_content_task_store(self.database_service)
         except Exception as e:
-            logger.warning(f"   ⚠️ Content task store setup failed: {str(e)}")
+            logger.warning(f"   [WARNING] Content task store setup failed: {str(e)}")
 
     async def _setup_redis_cache(self) -> None:
         """Initialize Redis cache for query optimization"""
-        logger.info("  🚀 Initializing Redis cache for query optimization...")
+        logger.info("  [INFO] Initializing Redis cache for query optimization...")
         try:
             from services.redis_cache import RedisCache
 
             self.redis_cache = await RedisCache.create()
             if self.redis_cache._enabled:
                 logger.info(
-                    "   ✅ Redis cache initialized (query performance optimization enabled)"
+                    "   [OK] Redis cache initialized (query performance optimization enabled)"
                 )
             else:
                 logger.info(
-                    "   ℹ️  Redis cache not available (system will continue without caching)"
+                    "   [INFO] Redis cache not available (system will continue without caching)"
                 )
         except Exception as e:
-            logger.warning(f"   ⚠️ Redis cache error: {str(e)} (continuing without cache)")
+            logger.warning(f"   [WARNING] Redis cache error: {str(e)} (continuing without cache)")
 
     async def _initialize_model_consolidation(self) -> None:
         """Initialize unified model consolidation service"""
-        logger.info("  🧠 Initializing unified model consolidation service...")
+        logger.info("  [INFO] Initializing unified model consolidation service...")
         try:
             from services.model_consolidation_service import initialize_model_consolidation_service
 
@@ -373,6 +373,11 @@ class StartupManager:
         """Warmup SDXL models to avoid timeout on first request"""
         import os
 
+        # Skip warmup if explicitly disabled
+        if os.getenv("DISABLE_SDXL_WARMUP", "").lower() == "true":
+            logger.info("  SDXL warmup: Disabled via DISABLE_SDXL_WARMUP environment variable")
+            return
+
         # Check if torch is even available (optional dependency for SDXL)
         try:
             import torch
@@ -381,14 +386,9 @@ class StartupManager:
             logger.info("     To enable SDXL: pip install -r scripts/requirements-ml.txt")
             return
 
-        # Check if GPU is available first
+        # Skip warmup if GPU is not available (SDXL only works on GPU)
         if not torch.cuda.is_available():
-            logger.info("  SDXL warmup: GPU not available, skipping model warmup")
-            return
-
-        # Check if user explicitly disabled SDXL warmup
-        if os.getenv("DISABLE_SDXL_WARMUP", "").lower() == "true":
-            logger.info("  SDXL warmup: Disabled via DISABLE_SDXL_WARMUP environment variable")
+            logger.debug("  SDXL warmup: GPU not available, skipping model warmup (lazy loading enabled)")
             return
 
         try:
@@ -417,10 +417,10 @@ class StartupManager:
 
                 if success:
                     logger.info(
-                        "  ✅ SDXL models loaded successfully! First requests will be fast."
+                        "  [OK] SDXL models loaded successfully! First requests will be fast."
                     )
                 else:
-                    logger.warning("  ⚠️ SDXL warmup generation failed (will initialize lazily)")
+                    logger.warning("  [WARNING] SDXL warmup generation failed (will initialize lazily)")
 
             finally:
                 # Clean up temp file
@@ -433,7 +433,7 @@ class StartupManager:
         except Exception as e:
             import traceback
 
-            logger.warning(f"  ⚠️ SDXL warmup error (non-critical): {type(e).__name__}: {e}")
+            logger.warning(f"  [WARNING] SDXL warmup error (non-critical): {type(e).__name__}: {e}")
             logger.warning(f"     Full traceback:\n{traceback.format_exc()}")
             logger.info("     SDXL will initialize on first request")
 

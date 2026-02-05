@@ -348,7 +348,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 criteria.get("seo_quality", 0),
                 criteria.get("readability", 0),
                 criteria.get("engagement", 0),
-                eval_data["overall_score"] >= 7.0,
+                eval_data["overall_score"] >= 70,
                 eval_data.get("feedback"),
                 json.dumps(eval_data.get("suggestions", [])),
                 eval_data.get("evaluated_by", "QualityEvaluator"),
@@ -396,12 +396,12 @@ class ContentDatabase(DatabaseServiceMixin):
                 improved - initial,
                 log_data.get("refinement_type", "auto-critique"),
                 log_data.get("changes_made"),
-                improved >= 7.0,
+                improved >= 70,
             ]
 
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, *params)
-                logger.info(f"✅ Created quality_improvement_log: {initial:.1f} → {improved:.1f}")
+                logger.info(f"✅ Created quality_improvement_log: {initial:.0f} → {improved:.0f}")
                 return ModelConverter.to_quality_improvement_log_response(row)
         except Exception as e:
             logger.error(f"❌ Error creating quality_improvement_log: {e}")
