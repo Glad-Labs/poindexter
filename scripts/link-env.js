@@ -54,6 +54,10 @@ try {
     const workspaceEnvPath = path.join(rootDir, workspace, '.env.local');
 
     try {
+      if (fs.existsSync(workspaceEnvPath)) {
+        fs.unlinkSync(workspaceEnvPath);
+        log(`🧹 Removed existing ${workspace}/.env.local`, 'warning');
+      }
       // Copy root .env.local to workspace
       fs.copyFileSync(rootEnvPath, workspaceEnvPath);
       log(`✅ ${workspace}/.env.local`, 'success');
