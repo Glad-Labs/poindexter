@@ -113,7 +113,7 @@ MODAL FEATURES:
      "analytics": true,
      "advertising": false
    }
-   
+
 ✅ Google Analytics loaded (if analytics = true)
 ✅ AdSense activated (if advertising = true)
 ✅ No banner shown on any page
@@ -199,7 +199,7 @@ DESCRIPTIONS:
 ```
 Dark Theme:
 ├─ Darkest: #111827 (gray-900) - Banner background
-├─ Dark: #1f2937 (gray-800) - Modal background  
+├─ Dark: #1f2937 (gray-800) - Modal background
 ├─ Mid-Dark: #374151 (gray-700) - Buttons, borders
 ├─ Mid: #4b5563 (gray-600) - Hover states
 ├─ Light: #9ca3af (gray-400) - Descriptions
@@ -220,13 +220,13 @@ Gradient (Modal Header):
 
 ```
 localStorage:
-  cookieConsent: 
+  cookieConsent:
     {
       "essential": true,
       "analytics": true,
       "advertising": true
     }
-  
+
   cookieConsentDate:
     2025-02-06T21:45:32.123Z
 ```
@@ -241,7 +241,7 @@ localStorage:
       "analytics": false,
       "advertising": true
     }
-  
+
   cookieConsentDate:
     2025-02-06T21:48:15.456Z
 ```
@@ -256,7 +256,7 @@ localStorage:
       "analytics": false,
       "advertising": false
     }
-  
+
   cookieConsentDate:
     2025-02-06T21:50:42.789Z
 ```
@@ -417,10 +417,10 @@ AdSense ads reload/refresh
 2. **Verify layout.js imports component:**
 
    ```javascript
-   import CookieConsentBanner from '../components/CookieConsentBanner.jsx'
-   
+   import CookieConsentBanner from '../components/CookieConsentBanner.jsx';
+
    // In return:
-   <CookieConsentBanner />
+   <CookieConsentBanner />;
    ```
 
 3. **Configure environment variables:**

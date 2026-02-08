@@ -40,7 +40,7 @@
 
 **Location:** `tests/unit/` → `archive/tests-unit-legacy-not-running/unit/`  
 **Size:** 16 MB  
-**Files:** 82 Python test files  
+**Files:** 82 Python test files
 
 **Reason:** Import path issues prevented discovery via root `pytest`:
 

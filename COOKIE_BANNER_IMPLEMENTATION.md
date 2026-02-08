@@ -56,7 +56,7 @@ When user clicks "Customize", modal displays with:
 
 ```javascript
 - isVisible: Controls banner visibility after consent choice
-- showCustomize: Controls modal visibility  
+- showCustomize: Controls modal visibility
 - consent: Current saved user preferences
 - tempConsent: Temporary preferences during modal customization
 - mounted: Prevents hydration mismatch in Next.js

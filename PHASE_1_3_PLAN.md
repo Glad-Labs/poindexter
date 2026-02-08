@@ -164,17 +164,17 @@ npm run setup:all               # Install all dependencies
 
 ## Files to Reference
 
-| Purpose | File | Info |
-|---------|------|------|
-| Test config | `pytest.ini` | 20+ markers defined |
-| Python path setup | `conftest.py` (root) | PYTHONPATH priority |
-| Backend imports | `src/__init__.py` | Empty or version info |
-| Test fixtures | `tests/conftest.py` | Shared pytest fixtures |
-| E2E tests | `tests/e2e/` | 136 tests needing markers |
-| Integration tests | `tests/integration/` | 78 files, mostly passing |
-| React tests | `web/oversight-hub/__tests__/` | 11 files, expansion needed |
-| Next.js tests | `web/public-site/__tests__/` | 14 files (quality benchmark) |
-| Archived unit tests | `archive/tests-unit-legacy-not-running/` | 82 files with import issues |
+| Purpose             | File                                     | Info                         |
+| ------------------- | ---------------------------------------- | ---------------------------- |
+| Test config         | `pytest.ini`                             | 20+ markers defined          |
+| Python path setup   | `conftest.py` (root)                     | PYTHONPATH priority          |
+| Backend imports     | `src/__init__.py`                        | Empty or version info        |
+| Test fixtures       | `tests/conftest.py`                      | Shared pytest fixtures       |
+| E2E tests           | `tests/e2e/`                             | 136 tests needing markers    |
+| Integration tests   | `tests/integration/`                     | 78 files, mostly passing     |
+| React tests         | `web/oversight-hub/__tests__/`           | 11 files, expansion needed   |
+| Next.js tests       | `web/public-site/__tests__/`             | 14 files (quality benchmark) |
+| Archived unit tests | `archive/tests-unit-legacy-not-running/` | 82 files with import issues  |
 
 ---
 
@@ -184,10 +184,10 @@ npm run setup:all               # Install all dependencies
 
 Choose one:
 
-- **A) Create src/**init**.py** (simpler, allows proper src.* imports)
+- **A) Create src/**init**.py** (simpler, allows proper src.\* imports)
 - **B) Update test imports** (more surgical, preserves current structure)
 
-→ **Recommendation: A** - Enables future frontend code to import from src.*
+→ **Recommendation: A** - Enables future frontend code to import from src.\*
 
 ### Phase 1: Automate e2e Marker Addition?
 

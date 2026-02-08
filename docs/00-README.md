@@ -16,15 +16,15 @@ Start with any doc that matches your role, then use cross-links to explore. Each
 
 ### 📖 Getting Started (Pick Your Entry Point)
 
-| Need                         | Start Here                                                                |
-| ---------------------------- | ------------------------------------------------------------------------- |
-| New Developer                | [01-SETUP_AND_OVERVIEW.md](01-SETUP_AND_OVERVIEW.md)                      |
-| System Architect             | [02-ARCHITECTURE_AND_DESIGN.md](02-ARCHITECTURE_AND_DESIGN.md)            |
-| DevOps/Infrastructure        | [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](03-DEPLOYMENT_AND_INFRASTRUCTURE.md) |
-| Development Process          | [04-DEVELOPMENT_WORKFLOW.md](04-DEVELOPMENT_WORKFLOW.md)                  |
-| AI Agent Architecture        | [05-AI_AGENTS_AND_INTEGRATION.md](05-AI_AGENTS_AND_INTEGRATION.md)        |
-| Operations & Monitoring      | [06-OPERATIONS_AND_MAINTENANCE.md](06-OPERATIONS_AND_MAINTENANCE.md)      |
-| Environment Configuration    | [07-BRANCH_SPECIFIC_VARIABLES.md](07-BRANCH_SPECIFIC_VARIABLES.md)        |
+| Need                      | Start Here                                                                 |
+| ------------------------- | -------------------------------------------------------------------------- |
+| New Developer             | [01-SETUP_AND_OVERVIEW.md](01-SETUP_AND_OVERVIEW.md)                       |
+| System Architect          | [02-ARCHITECTURE_AND_DESIGN.md](02-ARCHITECTURE_AND_DESIGN.md)             |
+| DevOps/Infrastructure     | [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](03-DEPLOYMENT_AND_INFRASTRUCTURE.md) |
+| Development Process       | [04-DEVELOPMENT_WORKFLOW.md](04-DEVELOPMENT_WORKFLOW.md)                   |
+| AI Agent Architecture     | [05-AI_AGENTS_AND_INTEGRATION.md](05-AI_AGENTS_AND_INTEGRATION.md)         |
+| Operations & Monitoring   | [06-OPERATIONS_AND_MAINTENANCE.md](06-OPERATIONS_AND_MAINTENANCE.md)       |
+| Environment Configuration | [07-BRANCH_SPECIFIC_VARIABLES.md](07-BRANCH_SPECIFIC_VARIABLES.md)         |
 
 ---
 
@@ -142,13 +142,13 @@ All components of the enterprise documentation framework are now active and main
 - ✅ Update procedures documented
 
 **Result:** 🚀 Enterprise-ready documentation system fully operational and sustainable
-| 🚀 **New Developer**         | [01 - Setup & Overview](./01-SETUP_AND_OVERVIEW.md)                       |
-| 🏗️ **Understand System**     | [02 - Architecture & Design](./02-ARCHITECTURE_AND_DESIGN.md)             |
-| 🌐 **Deploy to Cloud**       | [03 - Deployment & Infrastructure](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) |
-| 🔄 **Development Process**   | [04 - Development Workflow](./04-DEVELOPMENT_WORKFLOW.md)                 |
-| 🧠 **AI Agents**             | [05 - AI Agents & Integration](./05-AI_AGENTS_AND_INTEGRATION.md)         |
-| 📊 **Production Operations** | [06 - Operations & Maintenance](./06-OPERATIONS_AND_MAINTENANCE.md)       |
-| ⚙️ **Environment Config**    | [07 - Branch-Specific Variables](./07-BRANCH_SPECIFIC_VARIABLES.md)       |
+| 🚀 **New Developer** | [01 - Setup & Overview](./01-SETUP_AND_OVERVIEW.md) |
+| 🏗️ **Understand System** | [02 - Architecture & Design](./02-ARCHITECTURE_AND_DESIGN.md) |
+| 🌐 **Deploy to Cloud** | [03 - Deployment & Infrastructure](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) |
+| 🔄 **Development Process** | [04 - Development Workflow](./04-DEVELOPMENT_WORKFLOW.md) |
+| 🧠 **AI Agents** | [05 - AI Agents & Integration](./05-AI_AGENTS_AND_INTEGRATION.md) |
+| 📊 **Production Operations** | [06 - Operations & Maintenance](./06-OPERATIONS_AND_MAINTENANCE.md) |
+| ⚙️ **Environment Config** | [07 - Branch-Specific Variables](./07-BRANCH_SPECIFIC_VARIABLES.md) |
 
 ### 📋 All 8 Core Docs at a Glance
 

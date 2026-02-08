@@ -48,8 +48,8 @@ mv unit ../../tests/
    ```python
    # Before
    from ...financial_agent.cost_tracking import CostTrackingService
-   
-   # After  
+
+   # After
    from agents.financial_agent.cost_tracking import CostTrackingService
    ```
 

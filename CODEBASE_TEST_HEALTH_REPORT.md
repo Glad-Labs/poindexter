@@ -1,4 +1,5 @@
 # Complete Codebase Test Health Report
+
 **Generated:** February 6, 2026  
 **Report Type:** Comprehensive Test Coverage & Execution Status
 
@@ -8,20 +9,21 @@
 
 Your codebase has **281 test files** with **~44,000 lines of test code** across three layers:
 
-| Layer | Test Files | Test Cases | Health | Status |
-|-------|-----------|-----------|--------|--------|
-| 🐍 **Python Backend** | 130 files | ~500+ cases | ⚠️ Mixed | 141✅ / 3❌ / 53⏭️ |
-| ⚛️ **React Oversight Hub** | 11 files | ~227 cases | ⚠️ Limited | Not run* |
-| 📄 **Next.js Public Site** | 14 files | ~443 cases | ✅ Good | Not run* |
-| **TOTAL** | **155** | **~1,170** | ⚠️ Needs work | See details below |
+| Layer                      | Test Files | Test Cases  | Health        | Status             |
+| -------------------------- | ---------- | ----------- | ------------- | ------------------ |
+| 🐍 **Python Backend**      | 130 files  | ~500+ cases | ⚠️ Mixed      | 141✅ / 3❌ / 53⏭️ |
+| ⚛️ **React Oversight Hub** | 11 files   | ~227 cases  | ⚠️ Limited    | Not run\*          |
+| 📄 **Next.js Public Site** | 14 files   | ~443 cases  | ✅ Good       | Not run\*          |
+| **TOTAL**                  | **155**    | **~1,170**  | ⚠️ Needs work | See details below  |
 
-*Frontend tests not executed this session, but code quality looks good based on inspection.
+\*Frontend tests not executed this session, but code quality looks good based on inspection.
 
 ---
 
 ## 🐍 Python Backend Tests (src/cofounder_agent + tests/)
 
 ### Overview
+
 - **130 test files** organized in three directories
 - **43,980 lines** of test code
 - **Test Framework:** pytest with asyncio support
@@ -65,11 +67,13 @@ PASS RATE:       71.6% (excluding skipped)
 ### Detailed Status
 
 #### ✅ Passing Tests (141)
+
 - Integration tests that don't require external services
 - E2E tests with mocked dependencies
 - Most standalone service tests
 
 **Example:** `tests/integration/test_langgraph_integration.py`
+
 ```python
 async def test_http_endpoint():
     """Test HTTP POST endpoint"""
@@ -78,11 +82,11 @@ async def test_http_endpoint():
 
 #### ❌ Failed Tests (3)
 
-| Test | Reason | Severity |
-|------|--------|----------|
-| `test_competitor_content_search` | ImportError: `module 'src' has no attribute 'agents'` | 🔴 High |
-| `test_database_connection` | PostgreSQL not running (expected in dev) | 🟡 Medium |
-| `test_database_schema_exists` | PostgreSQL not running (expected in dev) | 🟡 Medium |
+| Test                             | Reason                                                | Severity  |
+| -------------------------------- | ----------------------------------------------------- | --------- |
+| `test_competitor_content_search` | ImportError: `module 'src' has no attribute 'agents'` | 🔴 High   |
+| `test_database_connection`       | PostgreSQL not running (expected in dev)              | 🟡 Medium |
+| `test_database_schema_exists`    | PostgreSQL not running (expected in dev)              | 🟡 Medium |
 
 **Fix Status:** Database failures are expected when PostgreSQL isn't running.  
 **Import issue:** Fixable by updating import path in test file.
@@ -90,6 +94,7 @@ async def test_http_endpoint():
 #### ⏭️ Skipped Tests (53)
 
 **Categories:**
+
 1. **Missing Optional Dependencies** (~35 tests)
    - CrewAI tools not installed: 23 tests
    - Diffusers/tokenizers compatibility: 1 test
@@ -103,10 +108,10 @@ async def test_http_endpoint():
 
 #### ⚠️ Errors (2)
 
-| Test | Error | Status |
-|------|-------|--------|
+| Test                       | Error                                                 | Status              |
+| -------------------------- | ----------------------------------------------------- | ------------------- |
 | `test_tool_error_handling` | `CrewAIToolsFactory.reset_instances()` method missing | 🔴 High - needs fix |
-| `test_websocket_endpoint` | Module import error | 🔴 High - needs fix |
+| `test_websocket_endpoint`  | Module import error                                   | 🔴 High - needs fix |
 
 ### Test Execution Commands
 
@@ -118,7 +123,7 @@ npm run test:python
 # Run only integration tests
 npm run test:python:integration
 
-# Run only e2e tests  
+# Run only e2e tests
 npm run test:python:e2e
 
 # Generate coverage report (HTML)
@@ -129,6 +134,7 @@ npm run test:python:coverage
 ### Issues & Recommendations
 
 #### 🔴 High Priority
+
 1. **Import Path Issues**
    - `src.agents` not found in some tests
    - Fix: Update conftest.py paths or test imports
@@ -142,6 +148,7 @@ npm run test:python:coverage
    - Effort: 1 hour
 
 #### 🟡 Medium Priority
+
 1. **Unit Tests Import Structure**
    - `/tests/unit/` has scattered imports
    - Tests in unit/ have relative import issues
@@ -156,6 +163,7 @@ npm run test:python:coverage
    - Effort: 1-2 hours
 
 #### 🟢 Low Priority
+
 1. **Test Noise**
    - 53 skipped tests for dependency/service issues is expected
    - Consider adding `@pytest.mark.skip_on_ci` to avoid noise in CI
@@ -166,6 +174,7 @@ npm run test:python:coverage
 ## ⚛️ React Oversight Hub Tests
 
 ### Overview
+
 - **11 test files** (excluding node_modules)
 - **~227 test cases** (describe/it/test statements)
 - **Test Framework:** Jest + React Testing Library
@@ -202,7 +211,9 @@ web/oversight-hub/
 ### Test Quality Assessment
 
 #### ✅ Strengths
+
 1. **Good test patterns** - Using React Testing Library best practices
+
    ```javascript
    test('renders header and handles button clicks', () => {
      const handleNewTask = jest.fn();
@@ -220,10 +231,13 @@ web/oversight-hub/
 
 3. **Mocking setup** - Proper use of Jest mocks
    ```javascript
-   jest.mock('next/link', () => ({ children, href }) => <a href={href}>{children}</a>);
+   jest.mock('next/link', () => ({ children, href }) => (
+     <a href={href}>{children}</a>
+   ));
    ```
 
 #### ⚠️ Limitations
+
 1. **Limited Coverage** - Only 11 files for a large component library
    - Missing tests for many components
    - Unknown coverage percentage
@@ -250,6 +264,7 @@ npm test -- --ci --coverage --watchAll=false
 ### Issues & Recommendations
 
 #### 🟡 Medium Priority
+
 1. **Incomplete Test Suite**
    - Should test more components
    - Recommendation: Aim for 50%+ coverage
@@ -265,6 +280,7 @@ npm test -- --ci --coverage --watchAll=false
 ## 📄 Next.js Public Site Tests
 
 ### Overview
+
 - **14 test files** (excluding node_modules)
 - **~443 test cases** (describe/it/test statements)
 - **Test Frameworks:** Jest + React Testing Library + Playwright
@@ -302,7 +318,9 @@ web/public-site/
 ### Test Quality Assessment
 
 #### ✅ Strengths
+
 1. **Well-Organized** - Clear separation of unit/component/e2e tests
+
    ```
    Unit tests (lib/__tests__)
    Component tests (components/__tests__)
@@ -316,9 +334,12 @@ web/public-site/
    - E2E browser automation (accessibility, archive, home)
 
 3. **Modern Testing Patterns**
+
    ```javascript
    describe('Header Component', () => {
-     beforeEach(() => { window.scrollY = 0; });
+     beforeEach(() => {
+       window.scrollY = 0;
+     });
      test('renders navigation links', () => {
        render(<Header />);
        expect(screen.getByText('Articles')).toBeInTheDocument();
@@ -333,12 +354,17 @@ web/public-site/
    - Accessibility tests with Playwright
 
 #### ✅ Excellent Practices
+
 1. **Mocking third-party modules**
+
    ```javascript
-   jest.mock('next/link', () => ({ children, href }) => <a href={href}>{children}</a>);
+   jest.mock('next/link', () => ({ children, href }) => (
+     <a href={href}>{children}</a>
+   ));
    ```
 
 2. **Accessibility testing** - Dedicated e2e specs for a11y
+
    ```javascript
    // e2e/accessibility.spec.js
    ```
@@ -364,12 +390,13 @@ npx playwright test --ui
 ### Issues & Recommendations
 
 #### 🟢 Low Priority (This is the HEALTHIEST test suite!)
+
 1. **Minor Suggestion:** Add more E2E scenarios
    - Could add performance testing
    - Could add form submission tests
    - Low urgency - already good coverage
 
-2. **CI Integration** 
+2. **CI Integration**
    - Ensure E2E tests run in CI pipeline
    - May need service setup (PostgreSQL, backend)
    - Verify in `.github/workflows/`
@@ -413,27 +440,27 @@ timeout = 30
 
 ## 🎯 Comprehensive Health Scorecard
 
-| Area | Category | Score | Status |
-|------|----------|-------|--------|
-| **Python Backend** | Test Quantity | 8/10 | ✅ Good volume (130 files, 44K LOC) |
-| | Test Quality | 6/10 | ⚠️ Mixed (141 pass, but import issues) |
-| | Organization | 5/10 | ⚠️ Scattered (unit/ not working, root files mixed) |
-| | CI Readiness | 6/10 | ⚠️ Works but needs cleanup |
-| **Python Subtotal** | | **6.25/10** | ⚠️ **Needs Work** |
-| | | | |
-| **React Oversight Hub** | Test Quantity | 5/10 | ⚠️ Limited (11 files, 227 cases) |
-| | Test Quality | 7/10 | ✅ Good patterns, well-written |
-| | Organization | 7/10 | ✅ Clear structure |
-| | CI Readiness | 5/10 | ⚠️ Not integrated |
-| **React Subtotal** | | **6/10** | ⚠️ **Needs Expansion** |
-| | | | |
-| **Next.js Public Site** | Test Quantity | 8/10 | ✅ Good coverage (14 files, 443 cases) |
-| | Test Quality | 8/10 | ✅ Excellent patterns |
-| | Organization | 9/10 | ✅ Well-structured |
-| | CI Readiness | 7/10 | ✅ Mostly ready |
-| **Next.js Subtotal** | | **8/10** | ✅ **GOOD** |
-| | | | |
-| **OVERALL CODEBASE** | | **6.75/10** | ⚠️ **PASSING but needs focus** |
+| Area                    | Category      | Score       | Status                                             |
+| ----------------------- | ------------- | ----------- | -------------------------------------------------- |
+| **Python Backend**      | Test Quantity | 8/10        | ✅ Good volume (130 files, 44K LOC)                |
+|                         | Test Quality  | 6/10        | ⚠️ Mixed (141 pass, but import issues)             |
+|                         | Organization  | 5/10        | ⚠️ Scattered (unit/ not working, root files mixed) |
+|                         | CI Readiness  | 6/10        | ⚠️ Works but needs cleanup                         |
+| **Python Subtotal**     |               | **6.25/10** | ⚠️ **Needs Work**                                  |
+|                         |               |             |                                                    |
+| **React Oversight Hub** | Test Quantity | 5/10        | ⚠️ Limited (11 files, 227 cases)                   |
+|                         | Test Quality  | 7/10        | ✅ Good patterns, well-written                     |
+|                         | Organization  | 7/10        | ✅ Clear structure                                 |
+|                         | CI Readiness  | 5/10        | ⚠️ Not integrated                                  |
+| **React Subtotal**      |               | **6/10**    | ⚠️ **Needs Expansion**                             |
+|                         |               |             |                                                    |
+| **Next.js Public Site** | Test Quantity | 8/10        | ✅ Good coverage (14 files, 443 cases)             |
+|                         | Test Quality  | 8/10        | ✅ Excellent patterns                              |
+|                         | Organization  | 9/10        | ✅ Well-structured                                 |
+|                         | CI Readiness  | 7/10        | ✅ Mostly ready                                    |
+| **Next.js Subtotal**    |               | **8/10**    | ✅ **GOOD**                                        |
+|                         |               |             |                                                    |
+| **OVERALL CODEBASE**    |               | **6.75/10** | ⚠️ **PASSING but needs focus**                     |
 
 ---
 
@@ -471,14 +498,14 @@ timeout = 30
 
 ### Code Coverage
 
-| Layer | Estimated Coverage | Status |
-|-------|-------------------|--------|
-| Python Backend | ~25-35% | ⚠️ Unknown (no HTML report) |
-| React Oversight | ~20-30% | ⚠️ Unknown (not measured) |
-| Next.js Public | ~50-60%* | ✅ Good (multiple test layers) |
-| **Overall** | **~30-40%** | ⚠️ **Below industry standard (50-70%)** |
+| Layer           | Estimated Coverage | Status                                  |
+| --------------- | ------------------ | --------------------------------------- |
+| Python Backend  | ~25-35%            | ⚠️ Unknown (no HTML report)             |
+| React Oversight | ~20-30%            | ⚠️ Unknown (not measured)               |
+| Next.js Public  | ~50-60%\*          | ✅ Good (multiple test layers)          |
+| **Overall**     | **~30-40%**        | ⚠️ **Below industry standard (50-70%)** |
 
-*Estimated based on file count and test distribution
+\*Estimated based on file count and test distribution
 
 ### Test Execution Speed
 
@@ -494,10 +521,10 @@ TOTAL:         ~2-3 minutes for full test suite
 
 ```
 Current Failures:  3 tests (1.5% of collected)
-Expected (healthy): < 5% 
+Expected (healthy): < 5%
 Status: ✅ GOOD (within acceptable range for dev)
 
-Skipped Rate:     53 tests (26.9% of collected)  
+Skipped Rate:     53 tests (26.9% of collected)
 Expected (healthy): 10-20%
 Status: ⚠️ Slightly high (but mostly justified)
 ```
@@ -507,12 +534,14 @@ Status: ⚠️ Slightly high (but mostly justified)
 ## 🔍 Key Findings
 
 ### What's Working Well ✅
+
 1. **Next.js test suite is excellent** - Best-in-class organization and coverage
 2. **Large test volume** - 281 total files shows commitment to testing
 3. **Good test patterns** - All tests use modern libraries (Testing Library, Playwright)
 4. **Pytest configuration solid** - Markers, timeouts, async support all configured
 
 ### What Needs Attention ⚠️
+
 1. **Python test organization is messy** - Mix of archived, unit, integration scattered
 2. **Import/import path issues** - Several tests can't resolve backend modules
 3. **Missing optional dependencies** - CrewAI and related tools need installation
@@ -520,8 +549,9 @@ Status: ⚠️ Slightly high (but mostly justified)
 5. **No unified CI** - Python and JS tests run separately, coverage not aggregated
 
 ### Technical Debt 🔴
+
 1. **Archived tests** - `/src/cofounder_agent/tests/_archived_tests/` should be cleaned
-2. **Root-level test files** - Many legacy test_*.py files at project root should consolidate
+2. **Root-level test files** - Many legacy test\_\*.py files at project root should consolidate
 3. **Scattered unit tests** - `/tests/unit/` not running due to import issues
 4. **No test reports in CI** - Coverage reports not generated in pipelines
 
@@ -540,21 +570,25 @@ Status: ⚠️ Slightly high (but mostly justified)
 ## 🎓 Recommendations by Role
 
 ### For QA/Test Engineers
+
 1. Expand Oversight Hub tests (low-hanging fruit - 8-12 hours)
 2. Create test documentation/guides
 3. Set coverage targets (60% minimum)
 
 ### For Backend Developers
+
 1. Fix Python import issues (1-2 hours)
 2. Consolidate unit tests directory (2-3 hours)
 3. Add pytest markers to all tests (1 hour)
 
 ### For Frontend Developers
+
 1. Keep Next.js test standards - excellent model
 2. Apply same patterns to Oversight Hub
 3. Add visual regression testing (future)
 
 ### For DevOps/CI-CD
+
 1. Unified `npm run test:all` command
 2. Coverage report aggregation
 3. GitHub Actions workflow for all three test suites

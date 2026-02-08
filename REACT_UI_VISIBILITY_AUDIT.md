@@ -40,13 +40,13 @@ The React Admin UI is **feature-complete and fully visible**. All major componen
 
 ### Navigation Menu vs. Code Routes
 
-| Menu Button | Displayed As | Routes To | Component | Visible? |
-|---|---|---|---|---|
-| 📊 Dashboard | Dashboard | `/` | ExecutiveDashboard | ✅ YES |
-| ✅ Tasks | Tasks | `/tasks` | TaskManagement | ✅ YES |
-| 🤖 AI Studio | AI Studio | `/` (WRONG!) | Should be `/ai` → AIStudio | ❌ BROKEN |
-| 💰 Costs | Costs | `/costs` | CostMetricsDashboard | ✅ YES |
-| ⚙️ Settings | Settings | `/settings` | Settings | ✅ YES |
+| Menu Button  | Displayed As | Routes To    | Component                  | Visible?  |
+| ------------ | ------------ | ------------ | -------------------------- | --------- |
+| 📊 Dashboard | Dashboard    | `/`          | ExecutiveDashboard         | ✅ YES    |
+| ✅ Tasks     | Tasks        | `/tasks`     | TaskManagement             | ✅ YES    |
+| 🤖 AI Studio | AI Studio    | `/` (WRONG!) | Should be `/ai` → AIStudio | ❌ BROKEN |
+| 💰 Costs     | Costs        | `/costs`     | CostMetricsDashboard       | ✅ YES    |
+| ⚙️ Settings  | Settings     | `/settings`  | Settings                   | ✅ YES    |
 
 **Issue Found:** The "AI Studio" button navigates to `/` (Dashboard) instead of `/ai` or `/training`.
 
@@ -196,10 +196,10 @@ The React Admin UI is **feature-complete and fully visible**. All major componen
 - ✅ Modal title: "📝 Blog Post"
 - ✅ "← Back to Task Types" link
 - ✅ Form fields:
-  - Topic* (text input)
-  - Target Word Count* (spinner: 1500 words)
-  - Writing Style* (dropdown: Technical, Narrative, Listicle, Educational, Thought-leadership)
-  - Tone* (dropdown: Professional, Casual, Academic, Inspirational, Authoritative, Friendly)
+  - Topic\* (text input)
+  - Target Word Count\* (spinner: 1500 words)
+  - Writing Style\* (dropdown: Technical, Narrative, Listicle, Educational, Thought-leadership)
+  - Tone\* (dropdown: Professional, Casual, Academic, Inspirational, Authoritative, Friendly)
   - Word Count Tolerance (slider: 10%)
   - Enforce Constraints (checkbox)
 
@@ -315,12 +315,12 @@ The React Admin UI is **feature-complete and fully visible**. All major componen
 
 ### 9. Missing/Hidden Pages (Routes exist but not in nav menu)
 
-| Route | Component | Status | Why Hidden? |
-|---|---|---|---|
-| `/content` | Content.jsx | ❌ Not accessible | Not in navigation menu |
-| `/ai` | AIStudio.jsx | ❌ Buggy | "AI Studio" button goes to `/` instead |
-| `/training` | AIStudio.jsx | ❌ Not accessible | Not in navigation menu |
-| `/models` | AIStudio.jsx | ❌ Not accessible | Not in navigation menu |
+| Route       | Component    | Status            | Why Hidden?                            |
+| ----------- | ------------ | ----------------- | -------------------------------------- |
+| `/content`  | Content.jsx  | ❌ Not accessible | Not in navigation menu                 |
+| `/ai`       | AIStudio.jsx | ❌ Buggy          | "AI Studio" button goes to `/` instead |
+| `/training` | AIStudio.jsx | ❌ Not accessible | Not in navigation menu                 |
+| `/models`   | AIStudio.jsx | ❌ Not accessible | Not in navigation menu                 |
 
 **Code Evidence:**
 
@@ -397,19 +397,19 @@ The React Admin UI is **feature-complete and fully visible**. All major componen
 
 ## Summary Table: Visible vs. Hidden
 
-| Feature | In Code | In Nav Menu | Visible in Browser | Accessible |
-|---|---|---|---|---|
-| Dashboard | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
-| Task Management | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
-| Task Detail Modal | ✅ Yes | N/A | ✅ Yes | ✅ Yes (via table) |
-| Create Task Modal | ✅ Yes | N/A | ✅ Yes | ✅ Yes (button) |
-| Costs Dashboard | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
-| Settings | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
-| Poindexter Chat | ✅ Yes | N/A | ✅ Yes | ✅ Yes (always) |
-| **AI Studio** | ✅ Yes | ✅ Menu shows but broken | ❌ No | ❌ Bug (wrong route) |
-| **Content Management** | ✅ Yes | ❌ No | ❌ No | ❌ Manual URL only |
-| **Training Data** | ✅ Yes | ❌ No | ❌ No | ❌ Manual URL only |
-| **Writing Styles** | ✅ Yes | ❌ No | ✅ In Settings | ✅ Yes (in settings) |
+| Feature                | In Code | In Nav Menu              | Visible in Browser | Accessible           |
+| ---------------------- | ------- | ------------------------ | ------------------ | -------------------- |
+| Dashboard              | ✅ Yes  | ✅ Yes                   | ✅ Yes             | ✅ Yes               |
+| Task Management        | ✅ Yes  | ✅ Yes                   | ✅ Yes             | ✅ Yes               |
+| Task Detail Modal      | ✅ Yes  | N/A                      | ✅ Yes             | ✅ Yes (via table)   |
+| Create Task Modal      | ✅ Yes  | N/A                      | ✅ Yes             | ✅ Yes (button)      |
+| Costs Dashboard        | ✅ Yes  | ✅ Yes                   | ✅ Yes             | ✅ Yes               |
+| Settings               | ✅ Yes  | ✅ Yes                   | ✅ Yes             | ✅ Yes               |
+| Poindexter Chat        | ✅ Yes  | N/A                      | ✅ Yes             | ✅ Yes (always)      |
+| **AI Studio**          | ✅ Yes  | ✅ Menu shows but broken | ❌ No              | ❌ Bug (wrong route) |
+| **Content Management** | ✅ Yes  | ❌ No                    | ❌ No              | ❌ Manual URL only   |
+| **Training Data**      | ✅ Yes  | ❌ No                    | ❌ No              | ❌ Manual URL only   |
+| **Writing Styles**     | ✅ Yes  | ❌ No                    | ✅ In Settings     | ✅ Yes (in settings) |
 
 ---
 
@@ -432,7 +432,7 @@ The React Admin UI is **feature-complete and fully visible**. All major componen
    - **Current:** Only accessible by manually typing URL
    - **Impact:** Discoverability - users won't find these features
 
-2. **Settings Page Incomplete**
+3. **Settings Page Incomplete**
    - **Issue:** Settings page loads but UI not fully visible/functional
    - **Expected:** Complete settings form with all options
    - **Current:** Partial functionality

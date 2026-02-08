@@ -1,4 +1,5 @@
 # Web Performance & SEO Audit Report
+
 **Glad Labs Public Site**
 
 **Date:** February 5, 2026  
@@ -11,14 +12,14 @@
 
 Your public site is **exceptionally well-optimized** for both search engines and user experience. Most critical performance and SEO elements are in place. This audit identifies areas of excellence and minor optimization opportunities.
 
-| Category | Score | Status | Details |
-|----------|-------|--------|---------|
-| **Core Web Vitals** | 8.5/10 | ✅ Excellent | Image optimization, caching strategies in place |
-| **SEO Fundamentals** | 8.7/10 | ✅ Excellent | Meta tags, structured data, schema markup ready |
-| **Accessibility (WCAG 2.1)** | 8.2/10 | ✅ Good | Semantic HTML, ARIA labels present, minor gaps |
-| **Mobile Optimization** | 9/10 | ✅ Excellent | Responsive design, touch-friendly, fast |
-| **Security** | 9.5/10 | ✅ Excellent | Strong headers, CSP, HTTPS ready |
-| **Overall SEO Readiness** | 8.6/10 | ✅ Excellent | Ready for Google ranking, all key signals optimized |
+| Category                     | Score  | Status       | Details                                             |
+| ---------------------------- | ------ | ------------ | --------------------------------------------------- |
+| **Core Web Vitals**          | 8.5/10 | ✅ Excellent | Image optimization, caching strategies in place     |
+| **SEO Fundamentals**         | 8.7/10 | ✅ Excellent | Meta tags, structured data, schema markup ready     |
+| **Accessibility (WCAG 2.1)** | 8.2/10 | ✅ Good      | Semantic HTML, ARIA labels present, minor gaps      |
+| **Mobile Optimization**      | 9/10   | ✅ Excellent | Responsive design, touch-friendly, fast             |
+| **Security**                 | 9.5/10 | ✅ Excellent | Strong headers, CSP, HTTPS ready                    |
+| **Overall SEO Readiness**    | 8.6/10 | ✅ Excellent | Ready for Google ranking, all key signals optimized |
 
 ---
 
@@ -27,6 +28,7 @@ Your public site is **exceptionally well-optimized** for both search engines and
 ### ✅ What's Working Great
 
 #### 1. Image Optimization (Excellent)
+
 **Current State:** OPTIMIZED
 
 ```javascript
@@ -39,12 +41,14 @@ Your public site is **exceptionally well-optimized** for both search engines and
 ```
 
 **Performance Impact:**
+
 - AVIF format: 20-30% smaller than WebP
 - WebP format: 30-40% smaller than JPEG
 - Automatic responsive sizing reduces bandwidth
 - Modern browsers get better formats automatically
 
 **Current Page Example:**
+
 ```javascript
 // In app/page.js - using Next.js Image component:
 import Image from 'next/image';
@@ -52,6 +56,7 @@ import Image from 'next/image';
 ```
 
 #### 2. Caching Strategy (Excellent)
+
 **Current State:** OPTIMIZED
 
 ```javascript
@@ -68,12 +73,14 @@ import Image from 'next/image';
 ```
 
 **Performance Impact:**
+
 - First visit: Normal speed (HTML fetched fresh)
 - Repeat visits: 80-90% faster (static assets cached)
 - Images cached 1 year (never need refetch)
 - Search engines always get latest content
 
 #### 3. Incremental Static Regeneration (ISR) (Excellent)
+
 **Current State:** IMPLEMENTED
 
 ```javascript
@@ -84,12 +91,14 @@ const response = await fetch(url, {
 ```
 
 **Performance Impact:**
+
 - Page generates at build time (instant)
 - Updates every 1 hour (fresh content)
 - No server lag (pre-generated HTML)
 - Perfect for blog/content sites
 
 #### 4. DNS Prefetch & Performance Headers (Excellent)
+
 **Current State:** ENABLED
 
 ```javascript
@@ -98,25 +107,28 @@ const response = await fetch(url, {
 ```
 
 **Impact:** Faster connections to:
+
 - Google Analytics
 - Google AdSense
 - API calls to backend
 
 #### 5. Content Delivery (Excellent)
+
 **Current State:** OPTIMIZED
 
 ```javascript
 // ✅ Compression enabled
-compress: true
+compress: true;
 
 // ✅ ETags for cache validation
-generateEtags: true
+generateEtags: true;
 
 // ✅ Production source maps disabled (saves 30-50% bundle size)
-productionBrowserSourceMaps: false
+productionBrowserSourceMaps: false;
 ```
 
 **Performance Impact:**
+
 - ~30-50% smaller JS bundles in production
 - Automatic gzip/brotli compression
 - Smart cache validation
@@ -128,6 +140,7 @@ productionBrowserSourceMaps: false
 ### ✅ What's Working Great
 
 #### 1. Meta Tags & Open Graph (Excellent)
+
 **Current State:** COMPREHENSIVE
 
 ```javascript
@@ -141,13 +154,16 @@ export const metadata = {
     locale: 'en_US',
     url: 'https://glad-labs.com',
     title: 'Glad Labs',
-    description: 'Exploring the future of technology, AI, and digital innovation',
-    images: [{
-      url: '/og-image.jpg',
-      width: 1200,
-      height: 630,
-      alt: 'Glad Labs',
-    }],
+    description:
+      'Exploring the future of technology, AI, and digital innovation',
+    images: [
+      {
+        url: '/og-image.jpg',
+        width: 1200,
+        height: 630,
+        alt: 'Glad Labs',
+      },
+    ],
   },
   twitter: {
     card: 'summary_large_image',
@@ -165,6 +181,7 @@ export const metadata = {
 ```
 
 **SEO Impact:**
+
 - ✅ Title tags correct (unique per page)
 - ✅ Meta descriptions present
 - ✅ Open Graph tags for social sharing
@@ -175,6 +192,7 @@ export const metadata = {
 **Ranking Benefit:** Google displays preview with image, title, description in search results
 
 #### 2. Robots & Sitemap (Excellent)
+
 **Current State:** IMPLEMENTED
 
 ```javascript
@@ -185,6 +203,7 @@ export const metadata = {
 ```
 
 **SEO Impact:**
+
 - ✅ Search engines know which pages to crawl
 - ✅ Sitemap auto-generated (all pages indexed)
 - ✅ Updates on every build (fresh crawl data)
@@ -192,6 +211,7 @@ export const metadata = {
 **Google Search Console Ready:** Yes ✅
 
 #### 3. Security Headers (Excellent)
+
 **Current State:** COMPREHENSIVE
 
 ```javascript
@@ -205,12 +225,14 @@ export const metadata = {
 ```
 
 **SEO Impact:**
+
 - ✅ Google trusts your site (security signals)
 - ✅ HSTS preload ready (improve ranking)
 - ✅ No malware warnings risk
 - ✅ Better mobile search ranking
 
 #### 4. Page Structure & Internal Linking (Excellent)
+
 **Current State:** WELL-ORGANIZED
 
 ```
@@ -226,19 +248,23 @@ Home → /
 ```
 
 **SEO Impact:**
+
 - ✅ Logical hierarchy (breadcrumb-ready)
 - ✅ All pages 1-3 clicks from home
 - ✅ Good internal link distribution
 - ✅ Archive system for pagination
 
 #### 5. Structured Data / Schema Markup (Ready but Minimal)
+
 **Current State:** PARTIALLY IMPLEMENTED
 
 ✅ What's in place:
+
 - Basic organizational metadata in layout
 - Image metadata (alt text, width/height)
 
 ❌ What's missing (easy additions):
+
 - BlogPosting schema for articles
 - NewsArticle schema for content
 - BreadcrumbList schema for navigation
@@ -253,6 +279,7 @@ Home → /
 ### ✅ What's Working Great
 
 #### 1. Semantic HTML (Excellent)
+
 **Current State:** IMPLEMENTED
 
 ```javascript
@@ -266,11 +293,13 @@ Home → /
 ```
 
 **Accessibility Impact:**
+
 - ✅ Screen readers understand page structure
 - ✅ Keyboard navigation works
 - ✅ Assistive tech fully supported
 
 #### 2. ARIA Attributes (Good)
+
 **Current State:** PARTIALLY IMPLEMENTED
 
 ```javascript
@@ -283,6 +312,7 @@ alt={`Cover image for: ${title}`}        // Image alt text
 ```
 
 **Tests confirm:**
+
 ```javascript
 // ✅ From tests:
 - Footer has 'contentinfo' role
@@ -291,6 +321,7 @@ alt={`Cover image for: ${title}`}        // Image alt text
 ```
 
 #### 3. Keyboard Navigation (Excellent)
+
 **Current State:** IMPLEMENTED
 
 ```javascript
@@ -304,11 +335,13 @@ focus-visible:ring-cyan-400      // High contrast
 ```
 
 **Accessibility Impact:**
+
 - ✅ Full keyboard navigation (no mouse needed)
 - ✅ High contrast focus indicators
 - ✅ Works with screen readers (NVDA, JAWS)
 
 #### 4. Color Contrast (Excellent)
+
 **Current State:** HIGH CONTRAST
 
 ```css
@@ -322,11 +355,13 @@ focus-visible:ring-cyan-400      // High contrast
 ```
 
 **Accessibility Impact:**
+
 - ✅ Readable for colorblind users
 - ✅ Readable on low-brightness displays
 - ✅ Exceeds WCAG AAA standard
 
 #### 5. Responsive Design & Mobile (Excellent)
+
 **Current State:** FULLY RESPONSIVE
 
 ```javascript
@@ -339,6 +374,7 @@ sm: 640px  | md: 768px | lg: 1024px | xl: 1280px
 ```
 
 **Accessibility Impact:**
+
 - ✅ Touch targets 44x44px minimum
 - ✅ Readable on mobile (font sizes scale)
 - ✅ No horizontal scroll needed
@@ -346,6 +382,7 @@ sm: 640px  | md: 768px | lg: 1024px | xl: 1280px
 ### ⚠️ Minor Accessibility Gaps (Easy Fixes)
 
 #### 1. Missing Skip Link (Skip to Main Content)
+
 **Issue:** No "Skip Navigation" link for keyboard users
 
 **Impact:** Keyboard users must tab through entire header before reaching content
@@ -369,11 +406,13 @@ sm: 640px  | md: 768px | lg: 1024px | xl: 1280px
 **Benefit:** WCAG 2.1 Level AA compliance (skip navigation required)
 
 #### 2. Missing Form Labels in Data Requests Page
+
 **Issue:** Form in `/legal/data-requests` may lack explicit labels
 
 **Impact:** Screen readers can't associate labels with inputs
 
 **Recommended Fix:**
+
 ```jsx
 <label htmlFor="email">Email Address *</label>
 <input id="email" type="email" required />
@@ -382,9 +421,11 @@ sm: 640px  | md: 768px | lg: 1024px | xl: 1280px
 **Benefit:** WCAG 2.1 Level A compliance
 
 #### 3. Heading Hierarchy (Minor)
+
 **Current:** Not verified across all pages
 
 **Recommended:** Ensure only one `<h1>` per page
+
 - Page title = `<h1>`
 - Section titles = `<h2>`
 - Subsections = `<h3>`
@@ -399,14 +440,15 @@ sm: 640px  | md: 768px | lg: 1024px | xl: 1280px
 
 **Assuming images are optimized and API responds quickly:**
 
-| Category | Score | Benchmark | Status |
-|----------|-------|-----------|--------|
-| **Performance** | 85-92 | 90+ | ✅ Good |
-| **Accessibility** | 85-90 | 90+ | ✅ Good |
-| **Best Practices** | 90-95 | 90+ | ✅ Excellent |
-| **SEO** | 90-95 | 90+ | ✅ Excellent |
+| Category           | Score | Benchmark | Status       |
+| ------------------ | ----- | --------- | ------------ |
+| **Performance**    | 85-92 | 90+       | ✅ Good      |
+| **Accessibility**  | 85-90 | 90+       | ✅ Good      |
+| **Best Practices** | 90-95 | 90+       | ✅ Excellent |
+| **SEO**            | 90-95 | 90+       | ✅ Excellent |
 
 **Key Factors:**
+
 - Fast API responses (backend latency not controlled here)
 - No render-blocking resources
 - Images optimized (AVIF/WebP)
@@ -415,13 +457,14 @@ sm: 640px  | md: 768px | lg: 1024px | xl: 1280px
 
 ### Core Web Vitals Prediction
 
-| Metric | Target | Estimated | Status |
-|--------|--------|-----------|--------|
-| **LCP** (Largest Contentful Paint) | < 2.5s | 1.8-2.2s | ✅ Pass |
-| **FID** (First Input Delay) | < 100ms | < 80ms | ✅ Pass |
-| **CLS** (Cumulative Layout Shift) | < 0.1 | < 0.08 | ✅ Pass |
+| Metric                             | Target  | Estimated | Status  |
+| ---------------------------------- | ------- | --------- | ------- |
+| **LCP** (Largest Contentful Paint) | < 2.5s  | 1.8-2.2s  | ✅ Pass |
+| **FID** (First Input Delay)        | < 100ms | < 80ms    | ✅ Pass |
+| **CLS** (Cumulative Layout Shift)  | < 0.1   | < 0.08    | ✅ Pass |
 
 **Notes:**
+
 - LCP might spike if API slow (not frontend issue)
 - FID excellent (no heavy JS)
 - CLS excellent (Tailwind prevents shifts)
@@ -476,12 +519,13 @@ sm: 640px  | md: 768px | lg: 1024px | xl: 1280px
 ### 🔴 HIGH Priority (Do First - +10% ranking improvement)
 
 #### 1. Add Skip Link (Accessibility)
+
 **Effort:** 5 minutes | **Impact:** WCAG compliance + UX
 
 ```jsx
 // Add to TopNav.jsx (very first element):
-<a 
-  href="#main-content" 
+<a
+  href="#main-content"
   className="sr-only focus:not-sr-only focus:absolute focus:top-0 focus:left-0 focus:z-50 focus:bg-cyan-400 focus:text-black focus:p-2"
 >
   Skip to main content
@@ -496,13 +540,14 @@ sm: 640px  | md: 768px | lg: 1024px | xl: 1280px
 **Benefit:** Improves accessibility score by 5 points
 
 #### 2. Add BlogPosting Schema Markup
+
 **Effort:** 15 minutes | **Impact:** +5% clicks from rich snippets
 
 ```javascript
 // In app/posts/[slug]/page.js:
 export async function generateMetadata({ params }) {
   const post = await getPost(params.slug);
-  
+
   return {
     // Existing metadata...
     other: {
@@ -518,18 +563,20 @@ export async function generateMetadata({ params }) {
           '@type': 'Person',
           name: 'Glad Labs',
         },
-      })
-    }
-  }
+      }),
+    },
+  };
 }
 ```
 
 **Benefit:**
+
 - Rich snippets in Google SERP
 - Featured snippet eligibility
 - Knowledge panel links
 
 #### 3. Add Breadcrumb Schema
+
 **Effort:** 10 minutes | **Impact:** +3% clicks from breadcrumbs
 
 ```jsx
@@ -556,6 +603,7 @@ export function Breadcrumb({ items }) {
 ```
 
 **Benefit:**
+
 - Breadcrumb navigation in search results
 - Better site structure signals
 - Improved CTR
@@ -563,6 +611,7 @@ export function Breadcrumb({ items }) {
 ### 🟡 MEDIUM Priority (Do Next - +5% improvement)
 
 #### 4. Add FAQPage Schema for Legal Pages
+
 **Effort:** 20 minutes | **Impact:** +2% clicks
 
 ```javascript
@@ -572,9 +621,11 @@ export function Breadcrumb({ items }) {
 ```
 
 #### 5. Enhance About Page for E-A-T Signals
+
 **Effort:** 30 minutes | **Impact:** +3% trust signals
 
 **Add to About Page:**
+
 - Author credentials/bio
 - Company mission statement
 - Team members (with LinkedIn links)
@@ -584,13 +635,14 @@ export function Breadcrumb({ items }) {
 **Why:** Google's E-A-T (Expertise, Authoritativeness, Trustworthiness) affects ranking, especially YMYL topics
 
 #### 6. Add Open Graph Tags to Individual Posts
+
 **Effort:** 5 minutes | **Impact:** +5% social shares
 
 ```javascript
 // In app/posts/[slug]/page.js:
 export async function generateMetadata({ params }) {
   const post = await getPost(params.slug);
-  
+
   return {
     openGraph: {
       title: post.title,
@@ -609,6 +661,7 @@ export async function generateMetadata({ params }) {
 ### 🟢 LOW Priority (Nice to Have - +2% improvement)
 
 #### 7. Google Search Console Integration
+
 **Effort:** 2 minutes | **Impact:** Performance monitoring
 
 ```
@@ -621,6 +674,7 @@ export async function generateMetadata({ params }) {
 **Benefit:** Monitor impressions, clicks, ranking position
 
 #### 8. Enable Web Analytics
+
 **Effort:** Already enabled
 
 ```javascript
@@ -639,9 +693,11 @@ Google Analytics (GA4) configured
 ### What would improve to 95+/100
 
 #### 1. Optimize Images for Actual Usage
+
 **Current:** Images configured for optimization
 
 **Check:**
+
 ```bash
 # Verify images are actually served as AVIF/WebP
 curl -H "Accept: image/webp" https://glad-labs.com/og-image.jpg
@@ -652,11 +708,13 @@ curl -H "Accept: image/webp" https://glad-labs.com/og-image.jpg
 **Status:** ✅ Likely working (config is correct)
 
 #### 2. Lazy Load Below-Fold Content
+
 **Current:** Not explicitly configured
 
 **Check:** View page source, search for `loading="lazy"`
 
 **Recommendation:** Add to images in RelatedPosts component
+
 ```jsx
 <Image src={image} loading="lazy" />
 ```
@@ -664,9 +722,11 @@ curl -H "Accept: image/webp" https://glad-labs.com/og-image.jpg
 **Impact:** Saves 50KB on initial page load
 
 #### 3. Minimize Bundle Size
+
 **Current:** Production source maps disabled (good!)
 
 **Check:**
+
 ```bash
 npm run build
 # Watch for warnings about bundle size
@@ -675,9 +735,11 @@ npm run build
 **If over 200KB JS:** Code split or remove unused deps
 
 #### 4. Database Query Optimization
+
 **Note:** Backend (Python/FastAPI) likely controls this
 
 **Check:** Monitor API response times
+
 - Good: < 500ms
 - Excellent: < 200ms
 
@@ -689,16 +751,16 @@ npm run build
 
 ### WCAG 2.1 AA Compliance Checklist
 
-| Item | Status | Action |
-|------|--------|--------|
-| **Skip Link** | ❌ Missing | Add in TopNav |
-| **Form Labels** | ⚠️ Check | Verify in data-requests form |
-| **Heading Hierarchy** | ⚠️ Check | Audit all pages |
-| **Color Contrast** | ✅ Pass | Excellent (12.5:1) |
-| **Keyboard Navigation** | ✅ Pass | Full support |
-| **Focus Indicators** | ✅ Pass | High contrast |
-| **Image Alt Text** | ✅ Pass | Present |
-| **ARIA Landmarks** | ✅ Pass | Semantic HTML |
+| Item                    | Status     | Action                       |
+| ----------------------- | ---------- | ---------------------------- |
+| **Skip Link**           | ❌ Missing | Add in TopNav                |
+| **Form Labels**         | ⚠️ Check   | Verify in data-requests form |
+| **Heading Hierarchy**   | ⚠️ Check   | Audit all pages              |
+| **Color Contrast**      | ✅ Pass    | Excellent (12.5:1)           |
+| **Keyboard Navigation** | ✅ Pass    | Full support                 |
+| **Focus Indicators**    | ✅ Pass    | High contrast                |
+| **Image Alt Text**      | ✅ Pass    | Present                      |
+| **ARIA Landmarks**      | ✅ Pass    | Semantic HTML                |
 
 **Estimated Effort to Full AA Compliance:** 30 minutes
 
@@ -707,6 +769,7 @@ npm run build
 ## SEO Action Plan (30-Day Priority)
 
 ### Week 1: Quick Wins (2-3 hours)
+
 - [ ] Add skip link (5 min)
 - [ ] Add BlogPosting schema (15 min)
 - [ ] Add Breadcrumb schema (10 min)
@@ -716,6 +779,7 @@ npm run build
 **Expected Result:** +10% clicks from SERPs
 
 ### Week 2: Content Enhancement (4-6 hours)
+
 - [ ] Add FAQPage schema to legal pages (20 min)
 - [ ] Enhance About page with E-A-T signals (1 hour)
 - [ ] Add author bios to posts (1 hour)
@@ -724,6 +788,7 @@ npm run build
 **Expected Result:** +15% organic traffic
 
 ### Week 3: Technical Audit (2-3 hours)
+
 - [ ] Run Lighthouse on all page types (20 min)
 - [ ] Check Core Web Vitals in Chrome DevTools (20 min)
 - [ ] Verify images serving as AVIF/WebP (10 min)
@@ -732,6 +797,7 @@ npm run build
 **Expected Result:** Identify any gaps
 
 ### Week 4: Monitor & Refine (1-2 hours)
+
 - [ ] Set up Google Search Console (5 min)
 - [ ] Add Google Analytics goals (10 min)
 - [ ] Monitor performance in Chrome UX Report (20 min)
@@ -744,6 +810,7 @@ npm run build
 ## Files to Review/Modify
 
 ### Review (No Changes Needed)
+
 - ✅ `web/public-site/next.config.js` - Excellent config
 - ✅ `web/public-site/app/layout.js` - Good metadata
 - ✅ `web/public-site/app/page.js` - Good structure
@@ -751,12 +818,14 @@ npm run build
 - ✅ `web/public-site/components/TopNav.jsx` - Good accessibility
 
 ### Modify (Easy Additions)
+
 - 📝 `web/public-site/components/TopNav.jsx` - Add skip link
 - 📝 `web/public-site/app/posts/[slug]/page.js` - Add schema markup
 - 📝 `web/public-site/app/legal/data-requests/page.tsx` - Verify form labels
 - 📝 `web/public-site/app/about/page.js` - Add E-A-T signals
 
 ### Create (Optional)
+
 - ➕ `web/public-site/components/Breadcrumb.jsx` - Breadcrumb schema
 - ➕ `web/public-site/components/BreadcrumbSchema.jsx` - Schema only version
 
@@ -792,6 +861,7 @@ npm run build
 **Do These 3 Things Today (+10% clicks):**
 
 1. **Add Skip Link** (5 min)
+
    ```jsx
    <a href="#main-content" className="sr-only focus:not-sr-only">
      Skip to main content
@@ -799,6 +869,7 @@ npm run build
    ```
 
 2. **Add BlogPosting Schema** (15 min)
+
    ```javascript
    // In posts page, add JSON-LD structure
    '@context': 'https://schema.org',
@@ -816,6 +887,7 @@ npm run build
 ## Resources for Further Improvement
 
 ### Google Tools (Free)
+
 - [Google Search Console](https://search.google.com/search-console) - Monitor rankings
 - [Google PageSpeed Insights](https://pagespeed.web.dev) - Performance testing
 - [Google Lighthouse](https://developers.google.com/web/tools/lighthouse) - Audit (built into DevTools)
@@ -823,11 +895,13 @@ npm run build
 - [WAVE Browser Extension](https://wave.webaim.org/extension/) - Accessibility testing
 
 ### Testing Tools (Recommended)
+
 - [Screaming Frog](https://www.screamingfrog.co.uk/seo-spider/) - Site crawl audit
 - [Axe DevTools](https://www.deque.com/axe/devtools/) - Accessibility scanning
 - [WebAIM Contrast Checker](https://webaim.org/resources/contrastchecker/) - Color contrast
 
 ### Next.js Documentation
+
 - [Next.js Image Optimization](https://nextjs.org/docs/basic-features/image-optimization)
 - [Next.js Metadata](https://nextjs.org/docs/app/building-your-application/optimizing/metadata)
 - [Next.js Performance](https://nextjs.org/docs/app/building-your-application/optimizing)
@@ -836,9 +910,10 @@ npm run build
 
 ## Conclusion
 
-Your site is **exceptionally well-built** from a technical standpoint. The Next.js framework, configuration, and optimization strategies are industry-leading. 
+Your site is **exceptionally well-built** from a technical standpoint. The Next.js framework, configuration, and optimization strategies are industry-leading.
 
 **What's needed for +25% organic growth:**
+
 1. Schema markup enhancements (1 hour)
 2. E-A-T signals in content (ongoing)
 3. Keyword research & strategy (ongoing)

@@ -72,7 +72,7 @@ Your FastAPI quality evaluation system has been fully standardized to use a **0-
 
 **Speed:** ⚡ ~50ms  
 **Cost:** 💚 Free (no API calls)  
-**Accuracy:** 📊 Good for most content  
+**Accuracy:** 📊 Good for most content
 
 **Scoring Logic (0-100 scale):**
 
@@ -91,15 +91,15 @@ overall_score = dimensions.average()
 
 **7-Criteria Scoring Details:**
 
-| Criterion | Scorer Method | Heuristic | Range |
-|-----------|---------------|-----------|-------|
-| **Clarity** | `_score_clarity()` | Sentence length (15-20 words ideal) | 5-9 |
-| **Accuracy** | `_score_accuracy()` | Citations, quotes present | 6.5-7.5 |
-| **Completeness** | `_score_completeness()` | Word count (500-2000+) | 5-9 |
-| **Relevance** | `_score_relevance()` | Topic keyword density (1-3%) | 3-9 |
-| **SEO Quality** | `_score_seo()` | Headers, structure, links | 4-9 |
-| **Readability** | `_score_readability()` | Flesch-Kincaid grade level | 4-9 |
-| **Engagement** | `_score_engagement()` | Bullets, questions, variety | 5-10 |
+| Criterion        | Scorer Method           | Heuristic                           | Range   |
+| ---------------- | ----------------------- | ----------------------------------- | ------- |
+| **Clarity**      | `_score_clarity()`      | Sentence length (15-20 words ideal) | 5-9     |
+| **Accuracy**     | `_score_accuracy()`     | Citations, quotes present           | 6.5-7.5 |
+| **Completeness** | `_score_completeness()` | Word count (500-2000+)              | 5-9     |
+| **Relevance**    | `_score_relevance()`    | Topic keyword density (1-3%)        | 3-9     |
+| **SEO Quality**  | `_score_seo()`          | Headers, structure, links           | 4-9     |
+| **Readability**  | `_score_readability()`  | Flesch-Kincaid grade level          | 4-9     |
+| **Engagement**   | `_score_engagement()`   | Bullets, questions, variety         | 5-10    |
 
 **Example Scoring (900-word tech article):**
 
@@ -119,7 +119,7 @@ Overall Score:   75.64 / 100      ✅ PASS (≥70)
 
 **Speed:** 🐌 1-5 seconds (API dependent)  
 **Cost:** 💰 $0.01-0.50 per evaluation  
-**Accuracy:** 🎯 High for nuanced assessment  
+**Accuracy:** 🎯 High for nuanced assessment
 
 **Current Implementation:** Delegates to pattern-based (fallback to pattern if no model_router available)
 
@@ -134,7 +134,7 @@ Overall Score:   75.64 / 100      ✅ PASS (≥70)
 
 **Speed:** ⏱️ 1-5 seconds  
 **Cost:** 💰 Variable (pattern + LLM)  
-**Accuracy:** 🏆 Excellent (combines both)  
+**Accuracy:** 🏆 Excellent (combines both)
 
 **Current Implementation:**
 
@@ -142,12 +142,12 @@ Overall Score:   75.64 / 100      ✅ PASS (≥70)
 async def _evaluate_hybrid(self, content, context):
     # Get pattern-based assessment (fast)
     pattern_assessment = await self._evaluate_pattern_based(content, context)
-    
+
     # Get LLM assessment if available (accurate)
     if self.model_router:
         llm_assessment = await self._evaluate_llm_based(content, context)
         # Combine results (equal weight currently)
-    
+
     return pattern_assessment  # Can enhance with LLM later
 ```
 
@@ -157,13 +157,13 @@ async def _evaluate_hybrid(self, content, context):
 
 ### Scoring Scale (0-100)
 
-| Score | Category | Feedback | Color |
-|-------|----------|----------|-------|
-| **90-100** | Excellent | Publication ready | 🟢 Green |
-| **75-89** | Good | Minor improvements recommended | 🔵 Blue |
-| **70-74** | Acceptable | Some improvements suggested | 🟡 Yellow |
-| **60-69** | Fair | Significant improvements needed | 🟠 Orange |
-| **0-59** | Poor | Major revisions required | 🔴 Red |
+| Score      | Category   | Feedback                        | Color     |
+| ---------- | ---------- | ------------------------------- | --------- |
+| **90-100** | Excellent  | Publication ready               | 🟢 Green  |
+| **75-89**  | Good       | Minor improvements recommended  | 🔵 Blue   |
+| **70-74**  | Acceptable | Some improvements suggested     | 🟡 Yellow |
+| **60-69**  | Fair       | Significant improvements needed | 🟠 Orange |
+| **0-59**   | Poor       | Major revisions required        | 🔴 Red    |
 
 ### Passing Threshold
 
@@ -180,7 +180,7 @@ passing = overall_score >= 70  # 70+ = PASS
 ```python
 def _generate_feedback(self, dimensions, context):
     overall = dimensions.average()
-    
+
     if overall >= 85:
         return "Excellent content quality - publication ready"
     if overall >= 75:
@@ -280,7 +280,7 @@ passing           BOOLEAN         -- overall_score >= 70
 export const formatTaskData = (task) => {
   return {
     // ...
-    qualityScore: task.quality_score || 0,      // Raw 0-100
+    qualityScore: task.quality_score || 0, // Raw 0-100
     qualityBadge: getQualityBadge(task.quality_score),
   };
 };
@@ -288,7 +288,7 @@ export const formatTaskData = (task) => {
 // Quality badge with thresholds
 export const getQualityBadge = (score) => {
   const numScore = parseFloat(score) || 0;
-  
+
   if (numScore >= 90) return { label: 'Excellent', color: '#059669' };
   if (numScore >= 75) return { label: 'Good', color: '#0891b2' };
   if (numScore >= 60) return { label: 'Fair', color: '#d97706' };
@@ -303,7 +303,7 @@ export const getQualityBadge = (score) => {
 export const formatQualityScore = (score) => {
   if (typeof score !== 'number') return 'N/A';
   const normalized = score > 1 ? score : score * 100;
-  return `${Math.round(normalized)}/100`;  // e.g., "82/100"
+  return `${Math.round(normalized)}/100`; // e.g., "82/100"
 };
 ```
 
@@ -313,16 +313,16 @@ export const formatQualityScore = (score) => {
 
 ### Changes Applied (Feb 4, 2026)
 
-| File | Change | Reason |
-|------|--------|--------|
-| `quality_service.py` | QualityDimensions all 0-100 | Consistent internal representation |
-| `quality_service.py` | QualityAssessment passing >= 70 | Standard threshold |
-| `unified_orchestrator.py` | Removed 100x multiplication | Service now returns 0-100 |
-| `database_response_models.py` | Field constraints le=100.0 | Accept full 0-100 range |
-| `content_db.py` | Passing check >= 70 | Match backend threshold |
-| `MessageFormatters.js` | Display X/100 format | User preference |
-| `taskDataFormatter.js` | Raw 0-100 display | No conversion needed |
-| `test_subtask_endpoints.py` | Assert <= 100 | Updated test expectations |
+| File                          | Change                          | Reason                             |
+| ----------------------------- | ------------------------------- | ---------------------------------- |
+| `quality_service.py`          | QualityDimensions all 0-100     | Consistent internal representation |
+| `quality_service.py`          | QualityAssessment passing >= 70 | Standard threshold                 |
+| `unified_orchestrator.py`     | Removed 100x multiplication     | Service now returns 0-100          |
+| `database_response_models.py` | Field constraints le=100.0      | Accept full 0-100 range            |
+| `content_db.py`               | Passing check >= 70             | Match backend threshold            |
+| `MessageFormatters.js`        | Display X/100 format            | User preference                    |
+| `taskDataFormatter.js`        | Raw 0-100 display               | No conversion needed               |
+| `test_subtask_endpoints.py`   | Assert <= 100                   | Updated test expectations          |
 
 ---
 
@@ -444,7 +444,7 @@ async def evaluate_batch(articles):
     ]
     results = await asyncio.gather(*tasks)
     return results
-    
+
 # Cost: 100 × $0.01-0.50 = $1-50 for LLM-based
 # Time: ~1-5 seconds (parallel) vs 5-500ms each
 ```
@@ -492,8 +492,8 @@ async def evaluate_batch(articles):
 
 ## Version History
 
-| Date | Version | Changes |
-|------|---------|---------|
-| Feb 4, 2026 | 2.1 | ✅ Standardized 0-100 scale across all components |
-| Jan 21, 2026 | 2.0 | Introduced unified quality service |
-| Earlier | 1.0 | Initial pattern-based evaluation |
+| Date         | Version | Changes                                           |
+| ------------ | ------- | ------------------------------------------------- |
+| Feb 4, 2026  | 2.1     | ✅ Standardized 0-100 scale across all components |
+| Jan 21, 2026 | 2.0     | Introduced unified quality service                |
+| Earlier      | 1.0     | Initial pattern-based evaluation                  |

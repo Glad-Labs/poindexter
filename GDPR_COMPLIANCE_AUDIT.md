@@ -16,33 +16,33 @@ The Glad Labs public site has **good foundational GDPR compliance** with the new
 
 ### ✅ Already Implemented
 
-| Requirement | Status | Evidence |
-|---|---|---|
-| **Cookie Consent Banner** | ✅ Complete | `CookieConsentBanner.jsx` - collects granular consent |
-| **Privacy Policy** | ✅ Complete | `/legal/privacy` - comprehensive, updated |
-| **Cookie Policy** | ✅ Complete | `/legal/cookie-policy` - detailed cookie info |
-| **Terms of Service** | ✅ Complete | `/legal/terms` - full terms page |
-| **Legal Links in Footer** | ✅ Complete | Footer links to all legal pages |
-| **Essential Cookies Always On** | ✅ Complete | Cookie banner locks Essential to ON |
-| **Granular Consent Options** | ✅ Complete | Analytics & Advertising can be toggled |
-| **Cookie Persistence** | ✅ Complete | localStorage saves user preferences |
-| **Google Analytics Disclosure** | ✅ Complete | Privacy Policy & Cookie Policy mention GA |
-| **AdSense Disclosure** | ✅ Complete | Privacy Policy & Cookie Policy mention AdSense |
+| Requirement                     | Status      | Evidence                                              |
+| ------------------------------- | ----------- | ----------------------------------------------------- |
+| **Cookie Consent Banner**       | ✅ Complete | `CookieConsentBanner.jsx` - collects granular consent |
+| **Privacy Policy**              | ✅ Complete | `/legal/privacy` - comprehensive, updated             |
+| **Cookie Policy**               | ✅ Complete | `/legal/cookie-policy` - detailed cookie info         |
+| **Terms of Service**            | ✅ Complete | `/legal/terms` - full terms page                      |
+| **Legal Links in Footer**       | ✅ Complete | Footer links to all legal pages                       |
+| **Essential Cookies Always On** | ✅ Complete | Cookie banner locks Essential to ON                   |
+| **Granular Consent Options**    | ✅ Complete | Analytics & Advertising can be toggled                |
+| **Cookie Persistence**          | ✅ Complete | localStorage saves user preferences                   |
+| **Google Analytics Disclosure** | ✅ Complete | Privacy Policy & Cookie Policy mention GA             |
+| **AdSense Disclosure**          | ✅ Complete | Privacy Policy & Cookie Policy mention AdSense        |
 
 ### ⚠️ Gaps & Recommendations
 
-| Requirement | Status | Issue | Priority |
-|---|---|---|---|
-| **GDPR Data Request Page** | ❌ Missing | No page for users to request data access/deletion | HIGH |
-| **Cookie Consent Withdrawal** | ⚠️ Partial | Can only be withdrawn by clearing localStorage | MEDIUM |
-| **Data Retention Policy** | ⚠️ Vague | Privacy Policy doesn't specify retention periods | MEDIUM |
-| **Third-Party Subprocessors** | ❌ Missing | No list of data processors (Google, etc.) | MEDIUM |
-| **DPA/Privacy Shield Info** | ⚠️ Minimal | Limited info on international data transfers | MEDIUM |
-| **Right to Erasure Implementation** | ❌ Missing | No backend system for data deletion | HIGH |
-| **Data Portability** | ❌ Missing | No system to export user data | HIGH |
-| **Contact for Privacy Issues** | ⚠️ Unclear | No specific privacy@gladlabs email mentioned | MEDIUM |
-| **Automated Decision Making** | ❌ Missing | No disclosure about AI/ML decisions | LOW |
-| **Children's Privacy (COPPA)** | ❌ Missing | No age verification or child protection notice | LOW |
+| Requirement                         | Status     | Issue                                             | Priority |
+| ----------------------------------- | ---------- | ------------------------------------------------- | -------- |
+| **GDPR Data Request Page**          | ❌ Missing | No page for users to request data access/deletion | HIGH     |
+| **Cookie Consent Withdrawal**       | ⚠️ Partial | Can only be withdrawn by clearing localStorage    | MEDIUM   |
+| **Data Retention Policy**           | ⚠️ Vague   | Privacy Policy doesn't specify retention periods  | MEDIUM   |
+| **Third-Party Subprocessors**       | ❌ Missing | No list of data processors (Google, etc.)         | MEDIUM   |
+| **DPA/Privacy Shield Info**         | ⚠️ Minimal | Limited info on international data transfers      | MEDIUM   |
+| **Right to Erasure Implementation** | ❌ Missing | No backend system for data deletion               | HIGH     |
+| **Data Portability**                | ❌ Missing | No system to export user data                     | HIGH     |
+| **Contact for Privacy Issues**      | ⚠️ Unclear | No specific privacy@gladlabs email mentioned      | MEDIUM   |
+| **Automated Decision Making**       | ❌ Missing | No disclosure about AI/ML decisions               | LOW      |
+| **Children's Privacy (COPPA)**      | ❌ Missing | No age verification or child protection notice    | LOW      |
 
 ---
 
@@ -98,10 +98,13 @@ Add "Update Cookie Preferences" link in footer that re-opens modal:
 
 ```javascript
 // In Footer.js
-<Link href="#" onClick={(e) => {
-  e.preventDefault();
-  window.dispatchEvent(new CustomEvent('openCookiePreferences'));
-}}>
+<Link
+  href="#"
+  onClick={(e) => {
+    e.preventDefault();
+    window.dispatchEvent(new CustomEvent('openCookiePreferences'));
+  }}
+>
   Update Cookie Preferences
 </Link>
 ```
@@ -131,19 +134,23 @@ Update Privacy Policy with specific retention periods:
 ## Data Retention
 
 ### Google Analytics Data
+
 - Session data: 30 days
 - User identifiers: 14 months
 - Conversion data: Determined by Google's policy
 
 ### AdSense Data
+
 - Cookie duration: 30 months (subject to user activity)
 - Ad performance data: As per Google's policy
 
 ### Server Logs
+
 - IP addresses: 90 days
 - User agent/browser info: 90 days
 
 ### Email Communications
+
 - Subscriber lists: Until unsubscribed
 - Contact form submissions: 1 year
 ```
@@ -172,12 +179,12 @@ Create comprehensive list in Privacy Policy:
 ```markdown
 ## Data Processors & Third Parties
 
-| Company | Service | Data Processed | Privacy Policy |
-|---------|---------|---|---|
+| Company    | Service   | Data Processed                           | Privacy Policy                              |
+| ---------- | --------- | ---------------------------------------- | ------------------------------------------- |
 | Google LLC | Analytics | IP, Browser, Pages visited, Time on site | [Link](https://policies.google.com/privacy) |
-| Google Inc | AdSense | IP, Interests, Cookies | [Link](https://policies.google.com/privacy) |
-| Vercel | Hosting | Server logs, IP addresses | [Link](https://vercel.com/legal/privacy) |
-| NextJS | Framework | None (client-side) | [Link](https://vercel.com/legal/privacy) |
+| Google Inc | AdSense   | IP, Interests, Cookies                   | [Link](https://policies.google.com/privacy) |
+| Vercel     | Hosting   | Server logs, IP addresses                | [Link](https://vercel.com/legal/privacy)    |
+| NextJS     | Framework | None (client-side)                       | [Link](https://vercel.com/legal/privacy)    |
 ```
 
 **Estimated Effort:** 1-2 hours
@@ -205,16 +212,20 @@ Update Privacy Policy with:
 ## International Data Transfers
 
 Your data may be transferred to the United States for processing by:
+
 - Google Analytics (US-based)
 - Google AdSense (US-based)
 
 ### Legal Basis for Transfers
+
 We rely on:
+
 - **Standard Contractual Clauses (SCCs):** Google Inc. has SCCs in place
 - **Legitimate Interest:** Processing necessary for website functionality
 - **Performance of Contract:** If you've agreed to use services
 
 ### Your Rights
+
 - You have the right to restrict transfers
 - You can request where your data is stored
 - Contact us for transfer safeguard details
@@ -335,6 +346,7 @@ For complaints: [Your Privacy Authority]
 ## Contact Us
 
 For privacy-related questions or requests, contact:
+
 - Email: privacy@gladlabs.ai
 - Response Time: 30 days (per GDPR Article 12)
 ```
@@ -372,11 +384,13 @@ Add to Privacy Policy:
 ## Automated Decision Making & Profiling
 
 ### Profiling
+
 - Google AdSense uses interest-based profiling to serve ads
 - Analytics track user behavior patterns
 - **No automated decisions** are made about you that have legal effects
 
 ### Your Rights
+
 - You have the right to object to profiling
 - Request human review of algorithmic decisions
 - Submit requests via privacy@gladlabs.ai
@@ -411,11 +425,11 @@ Add Age Verification Notice:
 ```markdown
 ## Children's Privacy
 
-We do not knowingly collect personal information from children under 13 
-(US) or 16 (EU). If we learn we have collected information from a child 
+We do not knowingly collect personal information from children under 13
+(US) or 16 (EU). If we learn we have collected information from a child
 under these ages, we will delete it promptly.
 
-**For Parents:** If you believe your child's information has been collected, 
+**For Parents:** If you believe your child's information has been collected,
 please contact us at privacy@gladlabs.ai
 ```
 
@@ -425,16 +439,16 @@ please contact us at privacy@gladlabs.ai
 
 ## Compliance Scorecard
 
-| Category | Score | Notes |
-|---|---|---|
-| **Consent Management** | 95% | ✅ Excellent - granular, persistent, easy to withdraw |
-| **Transparency** | 85% | ⚠️ Good - policies in place, but missing some details |
-| **User Rights** | 60% | ⚠️ Partial - access OK, deletion/portability missing |
-| **Data Security** | 80% | ✅ Good - HTTPS, secure storage, encrypted |
-| **Third-Party Management** | 70% | ⚠️ Partial - disclosed but no processor list |
-| **Data Retention** | 65% | ⚠️ Vague - no specific periods |
-| **International Transfers** | 75% | ⚠️ Mentioned but lacks detail |
-| **Overall GDPR Compliance** | **75%** | ⚠️ MOSTLY COMPLIANT |
+| Category                    | Score   | Notes                                                 |
+| --------------------------- | ------- | ----------------------------------------------------- |
+| **Consent Management**      | 95%     | ✅ Excellent - granular, persistent, easy to withdraw |
+| **Transparency**            | 85%     | ⚠️ Good - policies in place, but missing some details |
+| **User Rights**             | 60%     | ⚠️ Partial - access OK, deletion/portability missing  |
+| **Data Security**           | 80%     | ✅ Good - HTTPS, secure storage, encrypted            |
+| **Third-Party Management**  | 70%     | ⚠️ Partial - disclosed but no processor list          |
+| **Data Retention**          | 65%     | ⚠️ Vague - no specific periods                        |
+| **International Transfers** | 75%     | ⚠️ Mentioned but lacks detail                         |
+| **Overall GDPR Compliance** | **75%** | ⚠️ MOSTLY COMPLIANT                                   |
 
 ---
 

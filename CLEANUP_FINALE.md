@@ -10,8 +10,8 @@ Your request to **"strip out anything that is not necessary any longer based on 
 
 ### Removed from Codebase
 
-- ❌ **5 archived test files** (src/cofounder_agent/tests/_archived_tests/) - 108 KB
-- ❌ **1 legacy test script** (test_summary.py) - 1.7 KB  
+- ❌ **5 archived test files** (src/cofounder_agent/tests/\_archived_tests/) - 108 KB
+- ❌ **1 legacy test script** (test_summary.py) - 1.7 KB
 - 🗃️ **82 non-running unit tests** (tests/unit/) - 16 MB → **archived for restoration if needed**
 
 **Total:** 88 files, ~17.8 MB removed from active development path
@@ -40,7 +40,7 @@ Result: ✅ ZERO BREAKAGE CONFIRMED
 ✅ **No unnecessary files** - Archived code safely stored in archive/  
 ✅ **Clear roadmap** - Phase 1-3 plan documented with time estimates  
 ✅ **Full reversibility** - All changes tracked in git  
-✅ **Zero risk** - No functional code lost  
+✅ **Zero risk** - No functional code lost
 
 ---
 
@@ -54,10 +54,10 @@ Result: ✅ ZERO BREAKAGE CONFIRMED
 ```bash
 Step 1: Create src/__init__.py (empty file)
         → Fixes: 'AttributeError: module src has no attribute agents'
-        
+
 Step 2: Add @pytest.mark.e2e to tests/e2e/*
         → Enables: 136 dormant e2e tests to run
-        
+
 Step 3: Verify: npm run test:python
         → Result: 144+ tests passing
 ```
@@ -66,7 +66,7 @@ Step 3: Verify: npm run test:python
 
 Read the 4 documentation files, then decide on timing
 
-### Option 3: Defer 💼  
+### Option 3: Defer 💼
 
 Continue other work, Phase 1 available whenever ready
 
@@ -74,12 +74,12 @@ Continue other work, Phase 1 available whenever ready
 
 ## 📈 Timeline Overview
 
-| Phase | Focus | Time | Status |
-|-------|-------|------|--------|
-| Cleanup | Remove unnecessary files | 2 hrs | ✅ DONE |
-| Phase 1 | Quick fixes (imports + e2e) | 1 hr | ⏳ READY |
-| Phase 2 | Expand React test coverage | 8-12 hrs | 📋 PLANNED |
-| Phase 3 | CI/CD integration | TBD | 🔵 FUTURE |
+| Phase   | Focus                       | Time     | Status     |
+| ------- | --------------------------- | -------- | ---------- |
+| Cleanup | Remove unnecessary files    | 2 hrs    | ✅ DONE    |
+| Phase 1 | Quick fixes (imports + e2e) | 1 hr     | ⏳ READY   |
+| Phase 2 | Expand React test coverage  | 8-12 hrs | 📋 PLANNED |
+| Phase 3 | CI/CD integration           | TBD      | 🔵 FUTURE  |
 
 ---
 
@@ -135,34 +135,34 @@ mv archive/tests-unit-legacy-not-running/unit tests/
 
 ✅ Cleaner `/tests/` directory (no non-discoverable tests)  
 ✅ Clear separation of archived vs active tests  
-✅ Test discovery won't be confused by legacy files  
+✅ Test discovery won't be confused by legacy files
 
 ### Phase 1 Benefits (1 hour work)
 
 ✅ Unlock 136 e2e tests  
 ✅ Fix import path error  
-✅ Increase passing tests from 141 → 144+  
+✅ Increase passing tests from 141 → 144+
 
 ### Phase 2 Benefits (8-12 hours)
 
 ✅ Better React testing (11 → 15+ files)  
 ✅ Oversight Hub coverage 40% → 50-60%  
-✅ Align with Next.js test quality  
+✅ Align with Next.js test quality
 
 ---
 
 ## ✨ Summary Stats
 
-| Metric | Value |
-|--------|-------|
-| Cleanup Time | 2 hours |
-| Files Deleted | 88 |
-| Data Freed | 17.8 MB |
-| Tests Broken | 0 |
-| Documentation Pages | 5 |
-| Phase 1 Estimate | 1 hour |
-| Phase 2 Estimate | 8-12 hours |
-| Risk Level | 🟢 Low |
+| Metric              | Value      |
+| ------------------- | ---------- |
+| Cleanup Time        | 2 hours    |
+| Files Deleted       | 88         |
+| Data Freed          | 17.8 MB    |
+| Tests Broken        | 0          |
+| Documentation Pages | 5          |
+| Phase 1 Estimate    | 1 hour     |
+| Phase 2 Estimate    | 8-12 hours |
+| Risk Level          | 🟢 Low     |
 
 ---
 
@@ -173,7 +173,7 @@ mv archive/tests-unit-legacy-not-running/unit tests/
 A) **Start Phase 1 immediately** (~1 hour)
 
 - Fix imports
-- Add e2e markers  
+- Add e2e markers
 - Verify tests
 
 B) **Review documentation first**
@@ -194,7 +194,7 @@ C) **Continue current work**
 **Test Health:** 141/144 passing (97.9%)  
 **Test Time:** ~60 seconds  
 **Risk:** Zero (all reversible in git)  
-**Next Phase:** Phase 1 - 1 hour of focused work  
+**Next Phase:** Phase 1 - 1 hour of focused work
 
 ---
 

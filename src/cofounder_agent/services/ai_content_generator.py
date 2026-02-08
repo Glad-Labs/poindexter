@@ -415,10 +415,10 @@ Improved version:"""
                         response = client.models.generate_content(
                             model=f"models/{model_name}",
                             contents=f"{system_prompt}\n\n{generation_prompt}",
-                            config=genai.GenerateContentConfig(
-                                max_output_tokens=max_tokens,
-                                temperature=0.7,
-                            ),
+                            config={
+                                "max_output_tokens": max_tokens,
+                                "temperature": 0.7,
+                            },
                         )
                     else:
                         # Old google.generativeai SDK: Use GenerativeModel
@@ -844,10 +844,10 @@ Improved version:"""
                     response = client.models.generate_content(
                         model="models/gemini-2.5-flash",
                         contents=f"{system_prompt}\n\n{generation_prompt}",
-                        config=genai.GenerateContentConfig(
-                            max_output_tokens=max_tokens_fallback,
-                            temperature=0.7,
-                        ),
+                        config={
+                            "max_output_tokens": max_tokens_fallback,
+                            "temperature": 0.7,
+                        },
                     )
                 else:
                     # Old google.generativeai SDK

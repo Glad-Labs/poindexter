@@ -131,8 +131,8 @@ const [mounted, setMounted] = useState(false);
 const handleAcceptAll = () => {
   const newConsent = {
     essential: true,
-    analytics: true,        // ← Enable analytics
-    advertising: true,      // ← Enable advertising
+    analytics: true, // ← Enable analytics
+    advertising: true, // ← Enable advertising
   };
   saveConsent(newConsent);
 };
@@ -149,8 +149,8 @@ const handleAcceptAll = () => {
 const handleRejectAll = () => {
   const newConsent = {
     essential: true,
-    analytics: false,       // ← Disable analytics
-    advertising: false,     // ← Disable advertising
+    analytics: false, // ← Disable analytics
+    advertising: false, // ← Disable advertising
   };
   saveConsent(newConsent);
 };
@@ -165,8 +165,8 @@ const handleRejectAll = () => {
 
 ```javascript
 const handleCustomize = () => {
-  setTempConsent(consent);      // Load current preferences
-  setShowCustomize(true);       // Open modal
+  setTempConsent(consent); // Load current preferences
+  setShowCustomize(true); // Open modal
 };
 ```
 
@@ -181,7 +181,7 @@ const handleCustomize = () => {
 
 ```javascript
 const handleCancelCustomize = () => {
-  setShowCustomize(false);  // Close modal
+  setShowCustomize(false); // Close modal
 };
 ```
 
@@ -195,8 +195,8 @@ const handleCancelCustomize = () => {
 
 ```javascript
 const handleSaveCustomize = () => {
-  saveConsent(tempConsent);     // Save temporary preferences
-  setShowCustomize(false);      // Close modal
+  saveConsent(tempConsent); // Save temporary preferences
+  setShowCustomize(false); // Close modal
 };
 ```
 
@@ -213,7 +213,7 @@ const handleSaveCustomize = () => {
 const toggleAnalytics = () => {
   setTempConsent({
     ...tempConsent,
-    analytics: !tempConsent.analytics,  // ← Flip boolean
+    analytics: !tempConsent.analytics, // ← Flip boolean
   });
 };
 ```
@@ -229,7 +229,7 @@ const toggleAnalytics = () => {
 const toggleAdvertising = () => {
   setTempConsent({
     ...tempConsent,
-    advertising: !tempConsent.advertising,  // ← Flip boolean
+    advertising: !tempConsent.advertising, // ← Flip boolean
   });
 };
 ```
@@ -245,23 +245,23 @@ const toggleAdvertising = () => {
 const saveConsent = (newConsent) => {
   // 1. Update state
   setConsent(newConsent);
-  
+
   // 2. Persist to localStorage
   localStorage.setItem('cookieConsent', JSON.stringify(newConsent));
   localStorage.setItem('cookieConsentDate', new Date().toISOString());
-  
+
   // 3. Hide banner
   setIsVisible(false);
-  
+
   // 4. Global tracking variable
   if (typeof window !== 'undefined') {
     window.__cookieConsent = newConsent;
-    
+
     // 5. Load Google Analytics if enabled
     if (newConsent.analytics) {
       loadGoogleAnalytics();
     }
-    
+
     // 6. Reload AdSense if enabled
     if (newConsent.advertising && window.adsbygoogle) {
       try {
@@ -288,16 +288,16 @@ const saveConsent = (newConsent) => {
 
 ```javascript
 const loadGoogleAnalytics = () => {
-  if (typeof window === 'undefined') return;  // SSR guard
-  
-  const gaId = 'G_XXXXX';  // Replace with actual GA ID
+  if (typeof window === 'undefined') return; // SSR guard
+
+  const gaId = 'G_XXXXX'; // Replace with actual GA ID
   console.log('📊 Loading Google Analytics:', gaId);
-  
+
   // Create script element
   const script = document.createElement('script');
   script.src = `https://www.googletagmanager.com/gtag/js?id=${gaId}`;
   script.async = true;
-  
+
   // When script loads, initialize GA
   script.onload = () => {
     window.dataLayer = window.dataLayer || [];
@@ -308,7 +308,7 @@ const loadGoogleAnalytics = () => {
     gtag('js', new Date());
     gtag('config', gaId);
   };
-  
+
   // Append to head
   document.head.appendChild(script);
 };
@@ -333,26 +333,26 @@ const loadGoogleAnalytics = () => {
 
 ```javascript
 useEffect(() => {
-  setMounted(true);  // Mark component as mounted (client-side)
-  
+  setMounted(true); // Mark component as mounted (client-side)
+
   const savedConsent = localStorage.getItem('cookieConsent');
-  
+
   if (savedConsent) {
     // Saved consent found
     try {
       const parsed = JSON.parse(savedConsent);
       setConsent(parsed);
       setTempConsent(parsed);
-      setIsVisible(false);  // Hide banner, user already consented
+      setIsVisible(false); // Hide banner, user already consented
     } catch (_e) {
       console.error('Error parsing saved consent');
-      setIsVisible(true);   // Show banner on parse error
+      setIsVisible(true); // Show banner on parse error
     }
   } else {
     // No saved consent, show banner
     setIsVisible(true);
   }
-}, []);  // Empty dependency array = run once on mount
+}, []); // Empty dependency array = run once on mount
 ```
 
 **Execution:** Runs one time when component first mounts
@@ -406,12 +406,10 @@ return (
         {/* Banner content */}
       </div>
     )}
-    
+
     {/* Modal - Show if showCustomize is true */}
     {showCustomize && (
-      <div className="fixed inset-0 z-[60] ...">
-        {/* Modal content */}
-      </div>
+      <div className="fixed inset-0 z-[60] ...">{/* Modal content */}</div>
     )}
   </>
 );
@@ -602,18 +600,18 @@ NEXT_PUBLIC_GOOGLE_ANALYTICS_ID=G_XXXXXXXXXXXXX
 ## Browser API Dependencies
 
 ```javascript
-typeof window                          // Check if client-side
-window.localStorage.getItem()          // Read from storage
-window.localStorage.setItem()          // Write to storage
-window.dataLayer                       // Google Analytics array
-window.gtag()                          // Google Analytics function
-window.adsbygoogle                     // AdSense array
-window.__cookieConsent                 // Custom global variable
-document.createElement('script')       // Create script tag
-document.head.appendChild()             // Add to document
-JSON.parse()                           // Parse JSON string
-JSON.stringify()                       // Convert to JSON string
-new Date()                             // Get current timestamp
+typeof window; // Check if client-side
+window.localStorage.getItem(); // Read from storage
+window.localStorage.setItem(); // Write to storage
+window.dataLayer; // Google Analytics array
+window.gtag(); // Google Analytics function
+window.adsbygoogle; // AdSense array
+window.__cookieConsent; // Custom global variable
+document.createElement('script'); // Create script tag
+document.head.appendChild(); // Add to document
+JSON.parse(); // Parse JSON string
+JSON.stringify(); // Convert to JSON string
+new Date(); // Get current timestamp
 ```
 
 ---
