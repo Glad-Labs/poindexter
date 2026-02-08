@@ -35,6 +35,7 @@ except ImportError:
 def setup_telemetry(app, service_name="cofounder-agent"):
     """
     Sets up OpenTelemetry tracing for the FastAPI application and OpenAI SDK.
+    Simplified to handle trace exporting only (no logs/events to avoid dependency issues).
 
     Args:
         app: The FastAPI application instance.
@@ -49,11 +50,11 @@ def setup_telemetry(app, service_name="cofounder-agent"):
 
     # Check if tracing is enabled via environment variable
     if os.getenv("ENABLE_TRACING", "false").lower() != "true":
-        print(f"[TELEMETRY] OpenTelemetry tracing disabled for {service_name}")
+        logging.debug(f"[TELEMETRY] OpenTelemetry tracing disabled for {service_name}")
         return
 
     try:
-        # Capture message content as log events
+        # Enable capturing LLM message content in traces
         os.environ["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] = "true"
 
         # Create a resource to identify the service
@@ -80,47 +81,41 @@ def setup_telemetry(app, service_name="cofounder-agent"):
             processor = BatchSpanProcessor(otlp_exporter)
             provider.add_span_processor(processor)
 
-            # Set the global TracerProvider
-            trace.set_tracer_provider(provider)
-
-            # Configure logging and events
-            _logs.set_logger_provider(LoggerProvider(resource=resource))
-            log_endpoint = os.getenv(
-                "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "http://localhost:4318/v1/logs"
-            )
-            try:
-                _logs.get_logger_provider().add_log_record_processor(
-                    BatchLogRecordProcessor(OTLPLogExporter(endpoint=log_endpoint, timeout=5))
-                )
-            except Exception as e:
-                print(f"[TELEMETRY] Warning: Could not configure log export: {e}")
-
-            _events.set_event_logger_provider(EventLoggerProvider())
-
             print(
                 f"[TELEMETRY] OpenTelemetry tracing enabled for {service_name} (Endpoint: {otlp_endpoint})"
             )
 
         except Exception as e:
-            # If OTLP endpoint is not available, set up NoOp provider and continue
-            print(f"[TELEMETRY] Warning: OTLP exporter not available ({otlp_endpoint}): {e}")
-            print(f"[TELEMETRY] Continuing with no-op tracing provider")
-            # Use the provider without exporters - traces will be no-ops but app continues
+            # If OTLP endpoint is not available, log warning but continue with no-op provider
+            logging.warning(
+                f"[TELEMETRY] Warning: OTLP exporter not available ({otlp_endpoint}): {e}. "
+                f"Spans will not be exported but application will continue."
+            )
+
+        # Set the global TracerProvider (only once, will override if already set)
+        try:
             trace.set_tracer_provider(provider)
-            _logs.set_logger_provider(LoggerProvider(resource=resource))
-            _events.set_event_logger_provider(EventLoggerProvider())
+        except RuntimeError as e:
+            # Provider already set - this is ok, just use the existing one
+            if "current TracerProvider" not in str(e):
+                raise
+            logging.debug(f"[TELEMETRY] TracerProvider already set, using existing: {e}")
 
         # Instrument the FastAPI app
-        FastAPIInstrumentor.instrument_app(app, tracer_provider=provider)
+        try:
+            FastAPIInstrumentor.instrument_app(app, tracer_provider=provider)
+        except Exception as e:
+            logging.warning(f"[TELEMETRY] Warning: Failed to instrument FastAPI: {e}")
 
         # Instrument OpenAI SDK (if available)
         if OpenAIInstrumentor is not None:
             try:
                 OpenAIInstrumentor().instrument()
+                logging.debug("[TELEMETRY] OpenAI SDK instrumented successfully")
             except Exception as e:
-                print(f"[TELEMETRY] Warning: Failed to instrument OpenAI SDK: {e}")
+                logging.warning(f"[TELEMETRY] Warning: Failed to instrument OpenAI SDK: {e}")
 
     except Exception as e:
         # If telemetry setup fails entirely, just log and continue
-        print(f"[TELEMETRY] Error setting up telemetry: {e}")
-        print(f"[TELEMETRY] Application will continue without OpenTelemetry tracing")
+        logging.error(f"[TELEMETRY] Error setting up telemetry: {e}")
+        logging.error(f"[TELEMETRY] Application will continue without OpenTelemetry tracing")
