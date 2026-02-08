@@ -550,15 +550,24 @@ def casual_sample() -> str:
 class TestToneDetection:
     """Tests for tone detection functionality"""
     
+    @pytest.mark.e2e
+
+    
     def test_detects_formal_tone(self, validator, formal_sample):
         """Should detect formal tone in content"""
         tone = validator._detect_tone(formal_sample)
         assert tone == 'formal', f"Expected 'formal', got '{tone}'"
     
+    @pytest.mark.e2e
+
+    
     def test_detects_casual_tone(self, validator, casual_sample):
         """Should detect casual tone in content"""
         tone = validator._detect_tone(casual_sample)
         assert tone == 'casual', f"Expected 'casual', got '{tone}'"
+    
+    @pytest.mark.e2e
+
     
     def test_detects_authoritative_tone(self, validator):
         """Should detect authoritative tone"""
@@ -566,17 +575,26 @@ class TestToneDetection:
         tone = validator._detect_tone(content)
         assert tone == 'authoritative'
     
+    @pytest.mark.e2e
+
+    
     def test_detects_conversational_tone(self, validator):
         """Should detect conversational tone"""
         content = "You know, let's consider this. Imagine what we could do. Here is my thinking about it."
         tone = validator._detect_tone(content)
         assert tone == 'conversational'
     
+    @pytest.mark.e2e
+
+    
     def test_neutral_tone_on_empty_content(self, validator):
         """Should return neutral for content with no tone markers"""
         content = "The cat sat on the mat. The dog ran fast."
         tone = validator._detect_tone(content)
         assert tone == 'neutral'
+    
+    @pytest.mark.e2e
+
     
     def test_case_insensitive_tone_detection(self, validator):
         """Tone detection should be case-insensitive"""
@@ -595,10 +613,16 @@ class TestToneDetection:
 class TestStyleDetection:
     """Tests for writing style detection"""
     
+    @pytest.mark.e2e
+
+    
     def test_detects_technical_style(self, validator, technical_sample):
         """Should detect technical style"""
         style = validator._detect_style(technical_sample)
         assert style == 'technical'
+    
+    @pytest.mark.e2e
+
     
     def test_detects_listicle_style(self, validator):
         """Should detect listicle style"""
@@ -606,11 +630,17 @@ class TestStyleDetection:
         style = validator._detect_style(content)
         assert style in ['listicle', 'educational']
     
+    @pytest.mark.e2e
+
+    
     def test_detects_educational_style(self, validator):
         """Should detect educational style"""
         content = "Learn the concepts. Understand the principles. The theory explains everything."
         style = validator._detect_style(content)
         assert style in ['educational', 'thought-leadership']
+    
+    @pytest.mark.e2e
+
     
     def test_detects_narrative_style(self, validator):
         """Should detect narrative style"""
@@ -618,11 +648,17 @@ class TestStyleDetection:
         style = validator._detect_style(content)
         assert style in ['narrative', 'educational']
     
+    @pytest.mark.e2e
+
+    
     def test_detects_thought_leadership_style(self, validator):
         """Should detect thought-leadership style"""
         content = 'My perspective: "The future requires strategy". Insight: vision matters. Analysis indicates transformation.'
         style = validator._detect_style(content)
         assert style in ['thought-leadership', 'educational']
+    
+    @pytest.mark.e2e
+
     
     def test_general_style_on_neutral_content(self, validator):
         """Should return general style for neutral content"""
@@ -641,6 +677,8 @@ class TestConsistencyScoring:
     """Tests for consistency score calculation"""
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_perfect_match_scores_high(self, validator):
         """Identical content should score ~0.95 on tone consistency"""
         content = "Therefore, the research demonstrates comprehensive findings fundamentally."
@@ -650,6 +688,8 @@ class TestConsistencyScoring:
         assert score >= 0.90
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_mismatched_tone_scores_low(self, validator):
         """Mismatched tone should score low"""
         content = "The quick brown fox jumped."
@@ -659,6 +699,8 @@ class TestConsistencyScoring:
         assert score < 0.75
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_related_tones_score_medium(self, validator):
         """Related tones (formal/authoritative) should get partial credit"""
         content = "Research shows evidence."
@@ -668,6 +710,8 @@ class TestConsistencyScoring:
         assert 0.6 < score < 0.9
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_no_reference_returns_default(self, validator):
         """Without reference tone, should return default score"""
         metrics = {}
@@ -676,6 +720,8 @@ class TestConsistencyScoring:
         assert score == 0.5
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_vocabulary_score_within_range(self, validator, formal_reference_metrics):
         """Vocabulary score should be between 0 and 1"""
         generated_metrics = {
@@ -686,6 +732,8 @@ class TestConsistencyScoring:
         assert 0 <= score <= 1
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_sentence_score_exact_match(self, validator, formal_reference_metrics):
         """Exact sentence length match should score high"""
         generated_metrics = {
@@ -696,6 +744,8 @@ class TestConsistencyScoring:
         assert score >= 0.90
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_formatting_score_within_range(self, validator, formal_reference_metrics):
         """Formatting score should be between 0 and 1"""
         content = "# Heading\nSome text with a quote 'here'."
@@ -704,6 +754,8 @@ class TestConsistencyScoring:
         assert 0 <= score <= 1
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_overall_consistency_weighted_correctly(self, validator):
         """Overall score should weight components correctly"""
         content = "This is a simple test sentence. It has words."
@@ -730,6 +782,8 @@ class TestComponentScores:
     """Tests for individual component score calculations"""
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_tone_component_score(self, validator):
         """Tone component should be calculated"""
         result = await validator.validate_style_consistency(
@@ -740,6 +794,8 @@ class TestComponentScores:
         assert 0 <= result.tone_consistency_score <= 1
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_vocabulary_component_score(self, validator, formal_reference_metrics):
         """Vocabulary component should be calculated"""
         result = await validator.validate_style_consistency(
@@ -752,6 +808,8 @@ class TestComponentScores:
         assert 0 <= result.vocabulary_score <= 1
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_sentence_structure_component(self, validator, formal_reference_metrics):
         """Sentence structure component should be calculated"""
         result = await validator.validate_style_consistency(
@@ -764,6 +822,8 @@ class TestComponentScores:
         assert 0 <= result.sentence_structure_score <= 1
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_formatting_component_score(self, validator, formal_reference_metrics):
         """Formatting component should be calculated"""
         result = await validator.validate_style_consistency(
@@ -776,6 +836,8 @@ class TestComponentScores:
         assert 0 <= result.formatting_score <= 1
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_all_components_sum_correctly(self, validator):
         """Component scores should contribute to overall score"""
         result = await validator.validate_style_consistency(
@@ -790,6 +852,8 @@ class TestComponentScores:
         assert 0 <= result.formatting_score <= 1
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_component_weights_are_respected(self, validator):
         """Tone should be weighted higher (0.35) than others"""
         result = await validator.validate_style_consistency(
@@ -802,6 +866,8 @@ class TestComponentScores:
         assert result.tone_consistency_score >= 0.8 or result.detected_tone == 'formal'
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_passing_threshold_at_0_75(self, validator):
         """Consistency >= 0.75 should pass"""
         result = await validator.validate_style_consistency(
@@ -821,6 +887,8 @@ class TestIssueIdentification:
     """Tests for identifying style consistency issues"""
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_identifies_style_mismatch(self, validator):
         """Should identify when detected style doesn't match reference"""
         result = await validator.validate_style_consistency(
@@ -833,6 +901,8 @@ class TestIssueIdentification:
         assert any('style' in issue.lower() for issue in result.issues)
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_identifies_tone_mismatch(self, validator):
         """Should identify when tone doesn't match"""
         result = await validator.validate_style_consistency(
@@ -844,6 +914,8 @@ class TestIssueIdentification:
         assert any('tone' in issue.lower() for issue in result.issues)
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_identifies_vocabulary_issues(self, validator, formal_reference_metrics):
         """Should identify vocabulary diversity issues"""
         # Very repetitive content
@@ -857,6 +929,8 @@ class TestIssueIdentification:
         assert any('vocabulary' in issue.lower() for issue in result.issues)
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_identifies_sentence_structure_issues(self, validator, formal_reference_metrics):
         """Should identify sentence structure mismatch"""
         # Very short sentences vs. formal requirement
@@ -870,6 +944,8 @@ class TestIssueIdentification:
         assert any('sentence' in issue.lower() for issue in result.issues)
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_no_issues_on_perfect_match(self, validator):
         """Should have no issues for perfectly matched content"""
         reference_metrics = {
@@ -893,6 +969,8 @@ class TestIssueIdentification:
         assert len(result.issues) == 0 or not any('mismatch' in i.lower() for i in result.issues)
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_issues_list_not_none(self, validator):
         """Issues list should never be None"""
         result = await validator.validate_style_consistency("Test content here.")
@@ -910,6 +988,8 @@ class TestSuggestionGeneration:
     """Tests for improvement suggestions"""
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_generates_suggestions_for_issues(self, validator):
         """Should generate suggestions when issues found"""
         result = await validator.validate_style_consistency(
@@ -921,6 +1001,8 @@ class TestSuggestionGeneration:
         assert len(result.suggestions) > 0
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_no_suggestions_for_perfect_match(self, validator):
         """Perfect match should get positive feedback"""
         reference_metrics = {
@@ -939,6 +1021,8 @@ class TestSuggestionGeneration:
         assert len(result.suggestions) > 0
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_vocabulary_suggestions(self, validator):
         """Should suggest vocabulary improvements"""
         result = await validator.validate_style_consistency(
@@ -950,6 +1034,8 @@ class TestSuggestionGeneration:
         assert len(result.suggestions) > 0
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_tone_adjustment_suggestions(self, validator):
         """Should suggest tone adjustment"""
         result = await validator.validate_style_consistency(
@@ -970,6 +1056,8 @@ class TestEdgeCases:
     """Tests for edge cases and error handling"""
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_empty_content_handling(self, validator):
         """Should handle empty content gracefully"""
         result = await validator.validate_style_consistency("")
@@ -978,6 +1066,8 @@ class TestEdgeCases:
         assert len(result.issues) > 0
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_very_short_content(self, validator):
         """Should handle very short content"""
         result = await validator.validate_style_consistency("Hi.")
@@ -986,6 +1076,8 @@ class TestEdgeCases:
         assert result.style_consistency_score <= 1
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_very_long_content(self, validator):
         """Should handle very long content"""
         long_content = "This is a sentence. " * 1000
@@ -996,6 +1088,8 @@ class TestEdgeCases:
         assert result.style_consistency_score <= 1
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_special_characters_handling(self, validator):
         """Should handle special characters"""
         content = "Test!@#$%^&*()_+-=[]{}|;:',.<>?/\\`~"
@@ -1006,6 +1100,8 @@ class TestEdgeCases:
         assert result is not None
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_unicode_content_handling(self, validator):
         """Should handle Unicode content"""
         content = "This is a test with émojis 🎉 and spëcial characters"
@@ -1016,6 +1112,8 @@ class TestEdgeCases:
         assert result is not None
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_none_reference_metrics(self, validator):
         """Should handle None reference metrics"""
         result = await validator.validate_style_consistency(
@@ -1037,6 +1135,8 @@ class TestIntegration:
     """Integration tests with full pipeline"""
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_full_style_validation_pipeline(self, validator, formal_reference_metrics):
         """Test complete validation pipeline"""
         content = "The algorithm implements comprehensive features for efficient execution."
@@ -1058,6 +1158,8 @@ class TestIntegration:
         assert isinstance(result.suggestions, list)
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_multiple_validations_consistent(self, validator):
         """Multiple validations of same content should be consistent"""
         content = "This is test content with formal language patterns."
@@ -1074,6 +1176,8 @@ class TestIntegration:
         assert abs(result1.style_consistency_score - result2.style_consistency_score) < 0.01
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_style_consistency_affects_passing(self, validator):
         """Passing determination should match consistency score"""
         content = "Test content here."
@@ -1085,6 +1189,8 @@ class TestIntegration:
         assert result.passing == expected_passing
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_validator_singleton(self):
         """Validator instances should function identically"""
         validator1 = get_style_consistency_validator()
@@ -1098,6 +1204,8 @@ class TestIntegration:
         assert hasattr(validator2, 'validate_style_consistency')
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_phase_3_3_integration_compatibility(self, validator, formal_reference_metrics):
         """Should work with Phase 3.3 reference metrics"""
         # Phase 3.3 provides analysis with these fields
@@ -1124,6 +1232,8 @@ class TestPerformance:
     """Performance-related tests"""
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_validation_completes_quickly(self, validator):
         """Validation should complete in reasonable time"""
         import time
@@ -1139,6 +1249,8 @@ class TestPerformance:
         assert result is not None
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_large_batch_validation(self, validator):
         """Should handle multiple validations"""
         contents = [f"Test content {i}. " * 50 for i in range(10)]

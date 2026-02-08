@@ -67,6 +67,9 @@ class TestJaccardSimilarityLogic:
         union = len(query_words | content_words)
         return intersection / union if union > 0 else 0.0
     
+    @pytest.mark.e2e
+
+    
     def test_identical_content(self):
         """Test Jaccard similarity with identical content"""
         query = "artificial intelligence machine learning healthcare"
@@ -74,6 +77,9 @@ class TestJaccardSimilarityLogic:
         
         similarity = self.jaccard_similarity(content, query)
         assert similarity == 1.0, "Identical content should have 1.0 similarity"
+    
+    @pytest.mark.e2e
+
     
     def test_perfect_overlap(self):
         """Test with perfect keyword overlap"""
@@ -83,6 +89,9 @@ class TestJaccardSimilarityLogic:
         similarity = self.jaccard_similarity(content, query)
         assert similarity >= 0.5, "Should have high similarity with keyword overlap"
     
+    @pytest.mark.e2e
+
+    
     def test_no_overlap(self):
         """Test with completely different topics"""
         query = "sports football basketball"
@@ -90,6 +99,9 @@ class TestJaccardSimilarityLogic:
         
         similarity = self.jaccard_similarity(content, query)
         assert similarity == 0.0, "Completely different topics should have 0 similarity"
+    
+    @pytest.mark.e2e
+
     
     def test_partial_overlap(self):
         """Test with partial keyword overlap"""
@@ -99,6 +111,9 @@ class TestJaccardSimilarityLogic:
         similarity = self.jaccard_similarity(content, query)
         assert 0.0 < similarity < 1.0, "Partial overlap should be between 0 and 1"
     
+    @pytest.mark.e2e
+
+    
     def test_case_insensitivity(self):
         """Test that similarity calculation is case-insensitive"""
         query = "ARTIFICIAL INTELLIGENCE"
@@ -106,6 +121,9 @@ class TestJaccardSimilarityLogic:
         
         similarity = self.jaccard_similarity(content, query)
         assert similarity == 1.0, "Case-insensitive matching should find identical"
+    
+    @pytest.mark.e2e
+
     
     def test_short_words_filtered(self):
         """Test that short words (< 3 chars) are filtered"""
@@ -124,6 +142,9 @@ class TestJaccardSimilarityLogic:
 class TestFilteringLogic:
     """Test style and tone filtering logic"""
     
+    @pytest.mark.e2e
+
+    
     def test_style_filter_exact_match(self, sample_writing_samples):
         """Test that style filtering returns exact matches"""
         target_style = "technical"
@@ -133,6 +154,9 @@ class TestFilteringLogic:
         
         assert len(matching) == 1
         assert matching[0]["id"] == "sample1"
+    
+    @pytest.mark.e2e
+
     
     def test_tone_filter_exact_match(self, sample_writing_samples):
         """Test that tone filtering returns exact matches"""
@@ -144,6 +168,9 @@ class TestFilteringLogic:
         assert len(matching) == 1
         assert matching[0]["id"] == "sample3"
     
+    @pytest.mark.e2e
+
+    
     def test_combined_filters(self, sample_writing_samples):
         """Test combined style + tone filtering"""
         target_style = "listicle"
@@ -154,6 +181,9 @@ class TestFilteringLogic:
         
         assert len(matching) == 1
         assert matching[0]["id"] == "sample4"
+    
+    @pytest.mark.e2e
+
     
     def test_no_matches(self, sample_writing_samples):
         """Test filtering when no matches exist"""
@@ -172,6 +202,9 @@ class TestFilteringLogic:
 class TestLimitParameter:
     """Test limit parameter for result truncation"""
     
+    @pytest.mark.e2e
+
+    
     def test_limit_smaller_than_results(self, sample_writing_samples):
         """Test limit when results exceed limit"""
         limit = 2
@@ -180,6 +213,9 @@ class TestLimitParameter:
         limited = results[:limit]
         assert len(limited) == limit
     
+    @pytest.mark.e2e
+
+    
     def test_limit_larger_than_results(self, sample_writing_samples):
         """Test limit when results are smaller than limit"""
         limit = 10
@@ -187,6 +223,9 @@ class TestLimitParameter:
         
         limited = results[:limit]
         assert len(limited) == len(sample_writing_samples)
+    
+    @pytest.mark.e2e
+
     
     def test_limit_equals_results(self, sample_writing_samples):
         """Test limit equal to result count"""
@@ -204,6 +243,9 @@ class TestLimitParameter:
 class TestPenaltyApplication:
     """Test style/tone mismatch penalty logic"""
     
+    @pytest.mark.e2e
+
+    
     def test_style_mismatch_penalty(self):
         """Test 30% penalty for style mismatch"""
         base_score = 0.8
@@ -211,6 +253,9 @@ class TestPenaltyApplication:
         
         with_penalty = base_score * penalty_multiplier
         assert abs(with_penalty - 0.56) < 0.001, "Penalty should reduce score by 30%"
+    
+    @pytest.mark.e2e
+
     
     def test_tone_mismatch_penalty(self):
         """Test 30% penalty for tone mismatch"""
@@ -220,12 +265,18 @@ class TestPenaltyApplication:
         with_penalty = base_score * penalty_multiplier
         assert abs(with_penalty - 0.56) < 0.001, "Penalty should reduce score by 30%"
     
+    @pytest.mark.e2e
+
+    
     def test_both_penalties(self):
         """Test applying both style and tone penalties"""
         base_score = 0.8
         with_both = base_score * 0.7 * 0.7
         
         assert abs(with_both - 0.392) < 0.001, "Both penalties should be applied"
+    
+    @pytest.mark.e2e
+
     
     def test_penalty_preserves_score_range(self):
         """Test that penalties keep scores in valid range"""
@@ -256,6 +307,9 @@ class TestRAGRanking:
         union = len(query_words | content_words)
         return intersection / union if union > 0 else 0.0
     
+    @pytest.mark.e2e
+
+    
     def test_ranking_with_relevance_only(self):
         """Test ranking based on topic relevance only"""
         samples = [
@@ -281,6 +335,9 @@ class TestRAGRanking:
         assert scored[0][1] > scored[1][1], "Top result should have higher score"
         assert scored[1][1] > scored[2][1], "Second result should have higher score than last"
         assert scored[2][0] == 2, "Sample 2 (no matches) should be last"
+    
+    @pytest.mark.e2e
+
     
     def test_style_preference_affects_ranking(self):
         """Test that style preference adjusts ranking"""
@@ -317,6 +374,9 @@ class TestRAGRanking:
 class TestErrorHandling:
     """Test error handling in RAG system"""
     
+    @pytest.mark.e2e
+
+    
     def test_empty_content_handled(self):
         """Test that empty content is handled safely"""
         content = ""
@@ -328,6 +388,9 @@ class TestErrorHandling:
         content_words = set(w.lower() for w in re.findall(r'\b\w+\b', content) if len(w) > 2)
         
         assert len(content_words) == 0
+    
+    @pytest.mark.e2e
+
     
     def test_empty_query_handled(self):
         """Test that empty query is handled safely"""
@@ -341,6 +404,9 @@ class TestErrorHandling:
         
         assert len(query_words) == 0
     
+    @pytest.mark.e2e
+
+    
     def test_special_characters_handled(self):
         """Test that special characters don't crash the system"""
         content = "test @#$% content !!! &"
@@ -352,6 +418,9 @@ class TestErrorHandling:
         assert "test" in words
         assert "content" in words
     
+    @pytest.mark.e2e
+
+    
     def test_none_metadata_handled(self):
         """Test that None metadata is handled"""
         sample = {"id": 1, "metadata": None}
@@ -361,6 +430,9 @@ class TestErrorHandling:
         style = metadata.get("style") if metadata else None
         
         assert style is None
+    
+    @pytest.mark.e2e
+
     
     def test_missing_fields_handled(self):
         """Test that missing sample fields are handled"""
@@ -380,6 +452,9 @@ class TestErrorHandling:
 
 class TestPerformance:
     """Test performance of RAG functions"""
+    
+    @pytest.mark.e2e
+
     
     def test_jaccard_similarity_speed(self):
         """Test that Jaccard similarity is computed quickly"""
@@ -404,6 +479,9 @@ class TestPerformance:
         
         # Should complete 1000 iterations in < 1 second
         assert elapsed < 1.0, f"Too slow: {elapsed:.2f}s for 1000 iterations"
+    
+    @pytest.mark.e2e
+
     
     def test_filtering_speed(self, sample_writing_samples):
         """Test that filtering is fast"""
@@ -431,6 +509,9 @@ class TestPerformance:
 class TestEdgeCases:
     """Test edge cases in RAG system"""
     
+    @pytest.mark.e2e
+
+    
     def test_single_sample(self):
         """Test with single sample"""
         samples = [{"id": 1, "title": "Sample"}]
@@ -439,6 +520,9 @@ class TestEdgeCases:
         limited = samples[:limit]
         assert len(limited) == 1
     
+    @pytest.mark.e2e
+
+    
     def test_zero_limit(self):
         """Test with zero limit"""
         samples = [{"id": 1}, {"id": 2}, {"id": 3}]
@@ -446,6 +530,9 @@ class TestEdgeCases:
         
         limited = samples[:limit]
         assert len(limited) == 0
+    
+    @pytest.mark.e2e
+
     
     def test_very_long_content(self):
         """Test with very long content"""
@@ -456,6 +543,9 @@ class TestEdgeCases:
         import re
         words = [w for w in re.findall(r'\b\w+\b', content) if len(w) > 2]
         assert len(words) > 100
+    
+    @pytest.mark.e2e
+
     
     def test_unicode_content(self):
         """Test with unicode content"""

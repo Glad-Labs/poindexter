@@ -319,6 +319,8 @@ class TestSampleUploadWorkflow:
     """Tests for Phase 3.1 sample upload functionality"""
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_upload_single_sample(self, samples_service):
         """Test uploading a single writing sample"""
         content = "This is a sample text for testing purposes."
@@ -336,6 +338,8 @@ class TestSampleUploadWorkflow:
         assert sample.tone == "formal"
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_retrieve_uploaded_sample(self, samples_service):
         """Test retrieving an uploaded sample"""
         sample = await samples_service.upload_sample(
@@ -351,6 +355,8 @@ class TestSampleUploadWorkflow:
         assert retrieved.title == "Sample"
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_list_all_samples(self, samples_service):
         """Test listing all uploaded samples"""
         await samples_service.upload_sample("Content 1", "Title 1", "technical", "formal")
@@ -361,6 +367,8 @@ class TestSampleUploadWorkflow:
         assert len(all_samples) == 3
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_metadata_extraction(self, samples_service):
         """Test automatic metadata extraction during upload"""
         content = "Sentence one. Sentence two. Sentence three."
@@ -376,6 +384,8 @@ class TestSampleUploadWorkflow:
         assert sample.vocabulary_diversity <= 1.0
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_delete_sample(self, samples_service):
         """Test deleting a sample"""
         sample = await samples_service.upload_sample(
@@ -389,12 +399,16 @@ class TestSampleUploadWorkflow:
         assert retrieved is None
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_delete_nonexistent_sample(self, samples_service):
         """Test deleting a non-existent sample"""
         result = await samples_service.delete_sample("nonexistent_id")
         assert result is False
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_upload_multiple_styles(self, samples_service):
         """Test uploading samples with different styles"""
         styles = ["technical", "narrative", "listicle", "educational", "thought-leadership"]
@@ -409,6 +423,8 @@ class TestSampleUploadWorkflow:
         assert {s.style for s in samples} == set(styles)
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_upload_multiple_tones(self, samples_service):
         """Test uploading samples with different tones"""
         tones = ["formal", "casual", "authoritative", "conversational", "neutral"]
@@ -431,6 +447,8 @@ class TestRAGRetrievalSystem:
     """Tests for Phase 3.4 RAG sample retrieval"""
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_retrieve_relevant_samples(self, rag_service, populated_samples):
         """Test basic sample retrieval"""
         results = await rag_service.retrieve_relevant_samples(
@@ -443,6 +461,8 @@ class TestRAGRetrievalSystem:
         assert all(isinstance(r, RAGResult) for r in results)
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_jaccard_similarity_scoring(self, rag_service, populated_samples):
         """Test Jaccard similarity calculation"""
         results = await rag_service.retrieve_relevant_samples(
@@ -455,6 +475,8 @@ class TestRAGRetrievalSystem:
         assert results[0].relevance_score >= results[-1].relevance_score
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_style_filtering(self, rag_service, populated_samples):
         """Test filtering samples by style"""
         technical_results = await rag_service.retrieve_relevant_samples(
@@ -468,6 +490,8 @@ class TestRAGRetrievalSystem:
         assert technical_results[0].style_match >= 0.5
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_tone_filtering(self, rag_service, populated_samples):
         """Test filtering samples by tone"""
         formal_results = await rag_service.retrieve_relevant_samples(
@@ -481,6 +505,8 @@ class TestRAGRetrievalSystem:
             assert result.tone_match >= 0.5  # At least matching tone
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_style_and_tone_filtering(self, rag_service, populated_samples):
         """Test filtering by both style and tone"""
         results = await rag_service.retrieve_relevant_samples(
@@ -497,6 +523,8 @@ class TestRAGRetrievalSystem:
         assert best_result.tone_match >= 0.5
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_empty_samples_retrieval(self, rag_service):
         """Test RAG retrieval with no samples"""
         results = await rag_service.retrieve_relevant_samples(
@@ -515,6 +543,8 @@ class TestContentGenerationWithSamples:
     """Tests for Phase 3.3 content generation using sample guidance"""
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_generate_without_samples(self, content_service):
         """Test content generation without reference samples"""
         result = await content_service.generate_with_samples(
@@ -528,6 +558,8 @@ class TestContentGenerationWithSamples:
         assert len(result.applied_samples) == 0
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_generate_with_single_sample(self, content_service, populated_samples):
         """Test content generation with one reference sample"""
         result = await content_service.generate_with_samples(
@@ -542,6 +574,8 @@ class TestContentGenerationWithSamples:
         assert result.applied_samples[0] == populated_samples[0].id
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_generate_with_multiple_samples(self, content_service, populated_samples):
         """Test content generation with multiple reference samples"""
         samples_subset = populated_samples[:3]
@@ -558,6 +592,8 @@ class TestContentGenerationWithSamples:
                   [s.id for s in samples_subset])
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_style_preservation(self, content_service, populated_samples):
         """Test that generated content preserves reference style"""
         technical_sample = populated_samples[0]
@@ -570,6 +606,8 @@ class TestContentGenerationWithSamples:
         assert result.style == "technical"
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_tone_preservation(self, content_service, populated_samples):
         """Test that generated content preserves reference tone"""
         casual_sample = populated_samples[1]
@@ -582,6 +620,8 @@ class TestContentGenerationWithSamples:
         assert result.tone == "casual"
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_guidance_generation(self, content_service, populated_samples):
         """Test generation of style guidance from samples"""
         result = await content_service.generate_with_samples(
@@ -594,6 +634,8 @@ class TestContentGenerationWithSamples:
         assert any("style" in str(g).lower() for g in result.guidance_points)
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_mixed_style_samples(self, content_service, populated_samples):
         """Test generation with samples of mixed styles"""
         mixed_samples = populated_samples[:2]  # technical + narrative
@@ -614,6 +656,8 @@ class TestStyleValidation:
     """Tests for Phase 3.5 style validation"""
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_validate_content_style(self, style_validator):
         """Test basic content style validation"""
         result = await style_validator.validate_style_consistency(
@@ -626,6 +670,8 @@ class TestStyleValidation:
         assert 0.0 <= result.style_consistency_score <= 1.0
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_validation_passes_for_long_content(self, style_validator):
         """Test that validation passes for reasonably long content"""
         long_content = "This is a comprehensive piece of content. " * 20
@@ -638,6 +684,8 @@ class TestStyleValidation:
         assert result.style_consistency_score >= 0.75
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_validation_fails_for_short_content(self, style_validator):
         """Test that validation fails for very short content"""
         result = await style_validator.validate_style_consistency(
@@ -649,6 +697,8 @@ class TestStyleValidation:
         assert len(result.issues) > 0
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_validation_suggestions(self, style_validator):
         """Test suggestion generation for failed validation"""
         result = await style_validator.validate_style_consistency(
@@ -660,6 +710,8 @@ class TestStyleValidation:
             assert len(result.suggestions) > 0
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_tone_consistency_scoring(self, style_validator):
         """Test tone consistency scoring"""
         result = await style_validator.validate_style_consistency(
@@ -670,6 +722,8 @@ class TestStyleValidation:
         assert 0.0 <= result.tone_consistency_score <= 1.0
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_validation_with_all_metrics(self, style_validator):
         """Test validation using all available metrics"""
         metrics = {
@@ -697,6 +751,8 @@ class TestCompleteWorkflowIntegration:
     """Tests for complete Phase 3 end-to-end workflows"""
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_upload_retrieve_generate_validate_flow(
         self, samples_service, rag_service, content_service, style_validator
     ):
@@ -737,6 +793,8 @@ class TestCompleteWorkflowIntegration:
         assert validation is not None
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_multiple_samples_workflow(
         self, samples_service, rag_service, content_service, style_validator
     ):
@@ -767,6 +825,8 @@ class TestCompleteWorkflowIntegration:
         assert generated.applied_samples is not None
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_style_consistency_across_phases(
         self, samples_service, rag_service, content_service, style_validator
     ):
@@ -804,6 +864,8 @@ class TestCompleteWorkflowIntegration:
         assert validation.style_consistency_score > 0.5
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_sample_filtering_by_tone(
         self, samples_service, rag_service, content_service, style_validator
     ):
@@ -839,6 +901,8 @@ class TestCompleteWorkflowIntegration:
         assert generated.tone == "formal"
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_batch_sample_processing(
         self, samples_service, rag_service
     ):
@@ -865,6 +929,8 @@ class TestCompleteWorkflowIntegration:
         assert len(results) == batch_size
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_sample_deletion_in_workflow(
         self, samples_service, rag_service
     ):
@@ -892,6 +958,8 @@ class TestCompleteWorkflowIntegration:
         assert sample.id not in [s.id for s in all_samples]
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_workflow_with_no_matching_samples(
         self, rag_service, content_service
     ):
@@ -912,6 +980,8 @@ class TestCompleteWorkflowIntegration:
         assert len(generated.applied_samples) == 0
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_concurrent_workflow_execution(
         self, samples_service, rag_service, content_service
     ):
@@ -931,6 +1001,8 @@ class TestCompleteWorkflowIntegration:
         assert len(results) == 3
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_error_recovery_workflow(
         self, samples_service, content_service, style_validator
     ):
@@ -958,6 +1030,8 @@ class TestEdgeCasesAndErrorHandling:
     """Tests for edge cases and error scenarios"""
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_upload_empty_content(self, samples_service):
         """Test handling empty content"""
         sample = await samples_service.upload_sample(
@@ -970,6 +1044,8 @@ class TestEdgeCasesAndErrorHandling:
         assert sample.content == ""
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_upload_very_long_content(self, samples_service):
         """Test handling very long content"""
         long_content = "Word " * 5000  # ~25KB
@@ -982,6 +1058,8 @@ class TestEdgeCasesAndErrorHandling:
         assert len(sample.content) == len(long_content)
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_special_characters_handling(self, samples_service):
         """Test handling special characters"""
         special_content = "Test!@#$%^&*() with [special] {chars} <html>"
@@ -994,6 +1072,8 @@ class TestEdgeCasesAndErrorHandling:
         assert sample.content == special_content
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_unicode_content_handling(self, samples_service):
         """Test handling Unicode content"""
         unicode_content = "Tëst çöñtëñt with émojis 🎉 and ñõñ-ASCII çhars"
@@ -1006,12 +1086,16 @@ class TestEdgeCasesAndErrorHandling:
         assert unicode_content in sample.content
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_retrieve_nonexistent_sample(self, samples_service):
         """Test retrieving non-existent sample"""
         result = await samples_service.get_sample("nonexistent")
         assert result is None
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_rag_with_empty_query(self, rag_service, populated_samples):
         """Test RAG retrieval with empty query"""
         results = await rag_service.retrieve_relevant_samples(query="")
@@ -1019,6 +1103,8 @@ class TestEdgeCasesAndErrorHandling:
         assert isinstance(results, list)
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_validation_with_none_metrics(self, style_validator):
         """Test validation with None reference metrics"""
         result = await style_validator.validate_style_consistency(
@@ -1029,6 +1115,8 @@ class TestEdgeCasesAndErrorHandling:
         assert result is not None
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_concurrent_sample_uploads(self, samples_service):
         """Test concurrent sample uploads"""
         async def upload():
@@ -1054,6 +1142,8 @@ class TestPerformanceBenchmarking:
     """Tests for performance characteristics"""
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_single_sample_upload_performance(self, samples_service):
         """Test performance of single sample upload"""
         start = time.time()
@@ -1067,6 +1157,8 @@ class TestPerformanceBenchmarking:
         assert elapsed < 0.1  # Should be < 100ms
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_batch_upload_performance(self, samples_service):
         """Test performance of batch uploads"""
         start = time.time()
@@ -1081,6 +1173,8 @@ class TestPerformanceBenchmarking:
         assert elapsed < 1.0  # 10 uploads < 1 second
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_rag_retrieval_performance(self, rag_service, populated_samples):
         """Test RAG retrieval performance"""
         start = time.time()
@@ -1092,6 +1186,8 @@ class TestPerformanceBenchmarking:
         assert elapsed < 0.5  # Should be < 500ms
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_content_generation_performance(self, content_service, populated_samples):
         """Test content generation performance"""
         start = time.time()
@@ -1103,6 +1199,8 @@ class TestPerformanceBenchmarking:
         assert elapsed < 0.5  # Should be < 500ms
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_validation_performance(self, style_validator):
         """Test validation performance"""
         start = time.time()
@@ -1122,6 +1220,8 @@ class TestPhase3SystemValidation:
     """System-wide validation tests for Phase 3"""
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_phase_3_component_integration(
         self, samples_service, rag_service, content_service, style_validator
     ):
@@ -1133,6 +1233,8 @@ class TestPhase3SystemValidation:
         assert style_validator is not None
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_data_flow_consistency(
         self, samples_service, rag_service, content_service
     ):
@@ -1154,6 +1256,8 @@ class TestPhase3SystemValidation:
         assert len(rag_results) > 0
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_metadata_preservation(
         self, samples_service, rag_service
     ):
@@ -1174,6 +1278,8 @@ class TestPhase3SystemValidation:
             assert rag_results[0].style == "thought-leadership"
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_phase_3_1_sample_upload(self, samples_service):
         """Validate Phase 3.1: Sample Upload functionality"""
         sample = await samples_service.upload_sample(
@@ -1185,6 +1291,8 @@ class TestPhase3SystemValidation:
         assert sample.id is not None
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_phase_3_3_content_generation(
         self, content_service, populated_samples
     ):
@@ -1196,6 +1304,8 @@ class TestPhase3SystemValidation:
         assert result.content is not None
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_phase_3_4_rag_retrieval(
         self, rag_service, populated_samples
     ):
@@ -1204,6 +1314,8 @@ class TestPhase3SystemValidation:
         assert isinstance(results, list)
     
     @pytest.mark.asyncio
+    @pytest.mark.e2e
+
     async def test_phase_3_5_style_validation(self, style_validator):
         """Validate Phase 3.5: Style Validation"""
         result = await style_validator.validate_style_consistency(

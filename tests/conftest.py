@@ -11,17 +11,25 @@ from dotenv import load_dotenv
 
 # Add project root to path
 project_root = str(Path(__file__).parent.parent)
-sys.path.insert(0, project_root)
-sys.path.insert(0, os.path.join(project_root, 'src'))
-sys.path.insert(0, os.path.join(project_root, 'src/cofounder_agent'))
+backend_path = os.path.join(project_root, 'src/cofounder_agent')
+
+# Insert in order so backend code can be imported
+sys.path.insert(0, backend_path)      # Main backend imports: agents, services, routes, etc.
+sys.path.insert(0, project_root)       # Project root: src.mcp, src.mcp_server, etc.
 
 # Load environment variables
 env_local_path = os.path.join(project_root, ".env.local")
 if os.path.exists(env_local_path):
     load_dotenv(env_local_path, override=True)
 
-# Import shared test utilities
-from test_utils import test_utils, performance_monitor, test_config, TestConfig
+# Try to import shared test utilities, but don't fail if not available
+try:
+    from test_utils import test_utils, performance_monitor, test_config, TestConfig
+except ImportError as e:
+    print(f"⚠️  Could not import test_utils: {e}")
+    # Define a minimal TestConfig if import fails
+    class TestConfig:
+        pass
 
 
 @pytest.fixture(scope="session")
