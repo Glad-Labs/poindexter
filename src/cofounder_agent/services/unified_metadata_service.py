@@ -19,9 +19,16 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
+
+from .model_consolidation_service import get_model_consolidation_service
+from .prompt_manager import get_prompt_manager
+from .provider_checker import ProviderChecker
 
 logger = logging.getLogger(__name__)
+
+# Legacy provider checks are kept for backward compatibility during migration
+# but new code should use unified model_router and prompt_manager
 
 # Check for Anthropic availability and API key
 try:
@@ -306,38 +313,23 @@ class UnifiedMetadataService:
         return None
 
     async def _llm_generate_title(self, content: str) -> Optional[str]:
-        """Use LLM to generate professional title from content"""
-        if not self.llm_available:
-            return None
-
-        prompt = f"""Given the following content, generate a short, engaging, professional title (max 100 characters).
-
-Content:
-{content[:500]}
-
-Generate ONLY the title, nothing else. No quotes, no explanation."""
-
+        """Use unified prompt manager and model consolidation service to generate professional title from content"""
         try:
-            if ANTHROPIC_AVAILABLE:
-                response = anthropic_client.messages.create(
-                    model="claude-3-haiku-20240307",
-                    max_tokens=100,
-                    messages=[{"role": "user", "content": prompt}],
-                )
-                title = response.content[0].text.strip()
-                return title[:100] if title else None
+            pm = get_prompt_manager()
+            service = get_model_consolidation_service()
 
-            if OPENAI_AVAILABLE:
-                import openai as openai_module
+            prompt = pm.get_prompt(
+                "seo.generate_title",
+                content=content[:500],
+                max_length=100,
+            )
 
-                response = openai_module.ChatCompletion.create(
-                    model="gpt-3.5-turbo",
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=100,
-                    temperature=0.7,
-                )
-                title = response.choices[0].message.content.strip()
-                return title[:100] if title else None
+            result = await service.generate(
+                prompt=prompt,
+                temperature=0.7,
+                # model consolidation service handles model selection automatically
+            )
+            return result.text[:100] if result and result.text else None
 
         except Exception as e:
             logger.warning("LLM title generation error: %s", e)
@@ -505,76 +497,49 @@ Generate ONLY the excerpt, nothing else. No quotes, no explanation."""
         return result
 
     async def _llm_generate_seo_description(self, title: str, content: str) -> Optional[str]:
-        """Use LLM to generate SEO meta description (155 chars)"""
-        if not self.llm_available:
-            return None
-
-        prompt = f"""Generate a compelling SEO meta description (max 155 characters) for search results.
-
-Title: {title}
-Content (first 500 chars):
-{content[:500]}
-
-Generate ONLY the description, nothing else. No quotes."""
-
+        """Use unified prompt manager and model consolidation service to generate SEO meta description (155 chars)"""
         try:
-            if ANTHROPIC_AVAILABLE:
-                response = anthropic_client.messages.create(
-                    model="claude-3-haiku-20240307",
-                    max_tokens=160,
-                    messages=[{"role": "user", "content": prompt}],
-                )
-                return response.content[0].text.strip()[:155]
+            pm = get_prompt_manager()
+            service = get_model_consolidation_service()
 
-            if OPENAI_AVAILABLE:
-                import openai as openai_module
+            prompt = pm.get_prompt(
+                "seo.generate_meta_description",
+                title=title,
+                content=content[:500],
+                max_length=155,
+            )
 
-                response = openai_module.ChatCompletion.create(
-                    model="gpt-3.5-turbo",
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=160,
-                    temperature=0.7,
-                )
-                return response.choices[0].message.content.strip()[:155]
+            result = await service.generate(
+                prompt=prompt,
+                temperature=0.7,
+            )
+            return result.text[:155] if result and result.text else None
 
         except Exception as e:
             logger.warning("LLM SEO description error: %s", e)
             return None
 
     async def _llm_extract_keywords(self, title: str, content: str) -> Optional[List[str]]:
-        """Use LLM to extract 5-7 SEO keywords"""
-        if not self.llm_available:
-            return None
-
-        prompt = f"""Extract 5-7 comma-separated SEO keywords (most important first).
-
-Title: {title}
-Content (first 500 chars):
-{content[:500]}
-
-Generate ONLY comma-separated keywords, nothing else. Example: keyword1, keyword2, keyword3"""
-
+        """Use unified prompt manager and model consolidation service to extract 5-7 SEO keywords"""
         try:
-            if ANTHROPIC_AVAILABLE:
-                response = anthropic_client.messages.create(
-                    model="claude-3-haiku-20240307",
-                    max_tokens=100,
-                    messages=[{"role": "user", "content": prompt}],
-                )
-                keywords_str = response.content[0].text.strip()
-                return [k.strip() for k in keywords_str.split(",")]
+            pm = get_prompt_manager()
+            service = get_model_consolidation_service()
 
-            if OPENAI_AVAILABLE:
-                import openai as openai_module
+            prompt = pm.get_prompt(
+                "seo.extract_keywords",
+                title=title,
+                content=content[:500],
+                count=7,
+            )
 
-                response = openai_module.ChatCompletion.create(
-                    model="gpt-3.5-turbo",
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=100,
-                    temperature=0.7,
-                )
-                keywords_str = response.choices[0].message.content.strip()
-                return [k.strip() for k in keywords_str.split(",")]
+            result = await service.generate(
+                prompt=prompt,
+                temperature=0.7,
+            )
+
+            if result and result.text:
+                return [k.strip() for k in result.text.split(",")]
+            return None
 
         except Exception as e:
             logger.warning("LLM keyword extraction error: %s", e)

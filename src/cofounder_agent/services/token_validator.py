@@ -44,8 +44,8 @@ class AuthConfig:
             )
             sys.exit(1)  # Exit if JWT secret is missing in production
         else:
-            # Development fallback only - MUST MATCH frontend mockTokenGenerator.js
-            _from_env = "dev-jwt-secret-change-in-production-to-random-64-chars"
+            # Development fallback - MUST MATCH .env.local JWT_SECRET value
+            _from_env = "development-secret-key-change-in-production"
             print(
                 "[WARNING] Using development JWT secret - SET JWT_SECRET in .env for production",
                 flush=True,

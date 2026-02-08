@@ -4,8 +4,9 @@ import re
 
 from ..config import config
 from ..services.llm_client import LLMClient
+from ....services.prompt_manager import get_prompt_manager
 from ..utils.data_models import BlogPost
-from ..utils.helpers import extract_json_from_string, load_prompts_from_file, slugify
+from ..utils.helpers import extract_json_from_string, slugify
 from ..utils.tools import CrewAIToolsFactory
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ class CreativeAgent:
 
     def __init__(self, llm_client: LLMClient):
         self.llm_client = llm_client
-        self.prompts = load_prompts_from_file(config.PROMPTS_PATH)
+        self.pm = get_prompt_manager()
         try:
             self.tools = CrewAIToolsFactory.get_content_agent_tools()
             logger.info("CreativeAgent: Initialized with all content agent tools")
@@ -56,9 +57,12 @@ class CreativeAgent:
         """
         raw_draft = ""
         if is_refinement and post.qa_feedback:
-            refinement_prompt = self.prompts["iterative_refinement"].format(
+            refinement_prompt = self.pm.get_prompt(
+                "blog_generation.iterative_refinement",
                 draft=post.raw_content,
                 critique=post.qa_feedback[-1],
+                target_audience=post.target_audience or "General",
+                primary_keyword=post.primary_keyword or "topic",
             )
 
             # Include writing sample guidance in refinement too
@@ -78,12 +82,13 @@ class CreativeAgent:
             logger.info(f"CreativeAgent: Refining content for '{post.topic}' based on QA feedback.")
             raw_draft = await self.llm_client.generate_text(refinement_prompt)
         else:
-            draft_prompt = self.prompts["initial_draft_generation"].format(
+            draft_prompt = self.pm.get_prompt(
+                "blog_generation.initial_draft",
                 topic=post.topic,
-                target_audience=post.target_audience,
-                primary_keyword=post.primary_keyword,
-                research_context=post.research_data,
-                internal_link_titles=list(post.published_posts_map.keys()),
+                target_audience=post.target_audience or "General",
+                primary_keyword=post.primary_keyword or "topic",
+                research_context=post.research_data or "No research data provided",
+                internal_link_titles=list(post.published_posts_map.keys()) if post.published_posts_map else [],
             )
 
             # Inject word count constraint at the beginning of the prompt

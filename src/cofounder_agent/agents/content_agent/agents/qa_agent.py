@@ -2,8 +2,8 @@ import logging
 
 from ..config import config
 from ..services.llm_client import LLMClient
+from ....services.prompt_manager import get_prompt_manager
 from ..utils.data_models import BlogPost
-from ..utils.helpers import load_prompts_from_file
 from ..utils.tools import CrewAIToolsFactory
 
 logger = logging.getLogger(__name__)
@@ -11,9 +11,9 @@ logger = logging.getLogger(__name__)
 
 class QAAgent:
     def __init__(self, llm_client: LLMClient):
-        logger.info("Initializing QAAgent (v2 - Fixed draft key)")
+        logger.info("Initializing QAAgent (v2 - Using centralized prompt manager)")
         self.llm_client = llm_client
-        self.prompts = load_prompts_from_file(config.PROMPTS_PATH)
+        self.pm = get_prompt_manager()
         self.tools = CrewAIToolsFactory.get_content_agent_tools()
 
     async def run(self, post: BlogPost, previous_content: str) -> tuple[bool, str]:
@@ -37,25 +37,12 @@ class QAAgent:
         logger.debug(f"QAAgent DEBUG: post.topic = {post.topic}")
         logger.debug(f"QAAgent DEBUG: post.primary_keyword = {post.primary_keyword}")
         logger.debug(f"QAAgent DEBUG: post.target_audience = {post.target_audience}")
-        logger.debug(f"QAAgent DEBUG: prompts dict keys = {list(self.prompts.keys())}")
-
-        # Verify qa_review template exists before using it
-        if "qa_review" not in self.prompts:
-            available_templates = list(self.prompts.keys())
-            error_msg = f"qa_review template not found in prompts. Available templates: {available_templates}"
-            logger.error(f"QAAgent ERROR: {error_msg}")
-            raise KeyError(error_msg)
-
-        try:
-            prompt = self.prompts["qa_review"].format(
-                primary_keyword=post.primary_keyword,
-                target_audience=post.target_audience,
-                draft=previous_content,
-            )
-        except KeyError as e:
-            logger.error(f"QAAgent: Format string error - missing key: {e}")
-            logger.error(f"QAAgent: Template = {self.prompts['qa_review'][:200]}...")
-            raise
+        prompt = self.pm.get_prompt(
+            "qa.content_review",
+            primary_keyword=post.primary_keyword or "topic",
+            target_audience=post.target_audience or "General",
+            draft=previous_content,
+        )
 
         try:
             response_data = await self.llm_client.generate_json(prompt)

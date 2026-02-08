@@ -25,6 +25,7 @@ from schemas.content_schemas import ContentStyle, ContentTone, PublishMode
 from .ai_content_generator import get_content_generator
 from .database_service import DatabaseService
 from .image_service import ImageService, get_image_service
+from .prompt_manager import get_prompt_manager
 from .quality_service import EvaluationMethod, UnifiedQualityService
 from .seo_content_generator import get_seo_content_generator
 
@@ -292,62 +293,43 @@ class ContentGenerationService:
 # ============================================================================
 
 
-async def _generate_catchy_title(topic: str, content_excerpt: str) -> Optional[str]:
+async def _generate_canonical_title(topic: str, primary_keyword: str, content_excerpt: str) -> Optional[str]:
     """
-    Generate a catchy, engaging title for blog content using LLM
+    Generate a canonical, SEO-optimized title for blog content using unified prompt manager.
+    Consolidates all title generation logic into a single, testable function.
 
     Args:
         topic: The blog topic
+        primary_keyword: Primary SEO keyword
         content_excerpt: First 500 chars of generated content for context
 
     Returns:
         Generated title or None if generation fails
     """
     try:
-        from .ollama_client import OllamaClient
+        from .model_consolidation_service import get_model_consolidation_service
 
-        ollama = OllamaClient()
+        pm = get_prompt_manager()
+        service = get_model_consolidation_service()
 
-        prompt = f"""You are a creative content strategist specializing in blog titles.
-Generate a single, catchy, engaging blog title based on the topic and content excerpt.
-
-Requirements:
-- Concise (max 100 characters)
-- Contains the main keyword or concept
-- Compelling and encourages clicks
-- Uses power words when appropriate
-- Avoids clickbait and maintains professionalism
-- Standalone format (no quotes, no numbering)
-
-Topic: {topic}
-
-Content excerpt:
-{content_excerpt}
-
-Generate ONLY the title, nothing else."""
-
-        # Use Ollama to generate the title
-        response = await ollama.generate(
-            prompt=prompt,
-            system="You are a professional blog title writer.",
-            model="neural-chat:latest",  # Fast and reliable model
-            stream=False,
+        # Use unified prompt manager to get SEO title generation prompt
+        prompt = pm.get_prompt(
+            "seo.generate_title",
+            topic=topic,
+            primary_keyword=primary_keyword or topic,
+            content_excerpt=content_excerpt,
         )
 
-        # Extract text from response
-        title = ""
-        if isinstance(response, dict):
-            title = (
-                response.get("text", "")
-                or response.get("response", "")
-                or response.get("content", "")
-            )
-        elif isinstance(response, str):
-            title = response
+        # Use model consolidation service for intelligent provider fallback
+        result = await service.generate(
+            prompt=prompt,
+            temperature=0.7,
+            # Service will automatically select best available model
+        )
 
-        if title:
+        if result and result.text:
             # Clean up the title
-            title = title.strip().strip('"').strip("'").strip()
+            title = result.text.strip().strip('"').strip("'").strip()
             # Truncate if too long
             if len(title) > 100:
                 title = title[:97] + "..."
@@ -357,7 +339,7 @@ Generate ONLY the title, nothing else."""
         return None
 
     except Exception as e:
-        logger.warning(f"Error generating catchy title: {e}")
+        logger.warning(f"Error generating canonical title: {e}")
         return None
 
 
@@ -559,9 +541,10 @@ async def process_content_generation_task(
             logger.error(f"❌ Content generation returned None or empty")
             raise ValueError("Content generation failed: no content produced")
 
-        # Generate catchy title based on topic and content
+        # Generate canonical title based on topic and content
         logger.info("📌 Generating title from content...")
-        title = await _generate_catchy_title(topic, content_text[:500])
+        primary_keyword = tags[0] if tags else topic
+        title = await _generate_canonical_title(topic, primary_keyword, content_text[:500])
         if not title:
             title = topic  # Fallback to topic if title generation fails
         logger.info(f"✅ Title generated: {title}")

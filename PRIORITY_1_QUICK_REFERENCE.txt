@@ -1,0 +1,277 @@
+PRIORITY 1 CONSOLIDATION - QUICK REFERENCE
+
+Created: Feb 7, 2026
+Status: COMPLETE & READY TO USE
+
+
+FILES CREATED
+═════════════
+
+1. prompt_manager.py (501 lines - PYTHON)
+   Location: src/cofounder_agent/services/prompt_manager.py
+   What it does: Consolidates 30+ prompts from across codebase
+   How to use: 
+     from services.prompt_manager import get_prompt_manager
+     pm = get_prompt_manager()
+     prompt = pm.get_prompt("blog_generation.initial_draft", topic="AI", ...)
+
+2. QA_SCORING_RUBRIC.md (430+ lines - DOCUMENTATION)
+   Location: src/cofounder_agent/services/QA_SCORING_RUBRIC.md
+   What it documents: 7-point quality evaluation framework & thresholds
+   Key info: ≥85=excellent, 75-84=good, 70-74=acceptable, <70=needs work
+
+3. TITLE_GENERATOR_CONSOLIDATION.md (250+ lines - ANALYSIS)
+   Location: src/cofounder_agent/services/TITLE_GENERATOR_CONSOLIDATION.md
+   What it covers: Why 3 title generators are redundant & how to fix
+   Next step: 4-hour refactor to consolidate into single generator
+
+4. PROMPT_MIGRATION_GUIDE.md (400+ lines - IMPLEMENTATION)
+   Location: src/cofounder_agent/services/PROMPT_MIGRATION_GUIDE.md
+   What it provides: Step-by-step code changes for each service
+   Time estimate: 8 hours total (can be done incrementally)
+
+5. PRIORITY_1_CONSOLIDATION_COMPLETE.md (400+ lines - SUMMARY)
+   Location: PRIORITY_1_CONSOLIDATION_COMPLETE.md (project root)
+   What it contains: Full summary, metrics, next steps
+
+
+KEY FINDINGS
+════════════
+
+✅ Scoring system ALREADY EXISTS
+   - quality_service.py has full implementation
+   - unified_task_response.py passes scores to frontend  
+   - Thresholds already defined (70/75/85)
+   - You just needed documentation (NOW PROVIDED)
+
+✅ Quality scores already on frontend
+   - Every task response includes quality_score (0-100)
+   - Can use this in UI:
+     * Quality badge
+     * Pass/fail indicator
+     * Refinement suggestions
+
+❌ Prompts are scattered & redundant
+   - 30+ prompts in 6+ different files
+   - 3 separate title generators (bug!)
+   - Different formats (JSON, Python, hardcoded)
+   - No versioning or A/B testing structure
+
+✅ Clear path to consolidation
+   - prompt_manager.py ready to use
+   - Migration guide provided (step-by-step)
+   - Can do incrementally without downtime
+   - Low risk, high benefit
+
+
+IMMEDIATE NEXT STEPS
+════════════════════
+
+1. Review prompt_manager.py (15 min)
+   - See what prompts are consolidated
+   - Understand API (get_prompt, get_metadata, list_prompts)
+   - Check examples for each prompt
+
+2. Share QA_SCORING_RUBRIC.md with team (10 min)
+   - QA team understands the 7-point rubric
+   - Thresholds are now documented
+   - Use as reference for evaluating generated content
+
+3. Plan migration timeline (30 min)
+   - Decide which service first (I recommend content_router_service.py)
+   - Estimate 2 hours per service
+   - Could do 2 per week without disruption
+
+4. Deploy prompt_manager.py (5 min)
+   - Just add the file to repo
+   - No changes needed to existing code
+   - Services can adopt at their own pace
+
+5. Start with 1 service (2 hours)
+   - Use PROMPT_MIGRATION_GUIDE.md Step 3 (content_router)
+   - Replace _generate_catchy_title() with pm.get_prompt()
+   - Run tests to verify
+   - Commit & merge
+
+
+WHAT YOU ALREADY HAVE vs WHAT'S NEW
+═════════════════════════════════════
+
+ALREADY EXISTS:
+  ✓ Quality scoring framework (quality_service.py)
+  ✓ Quality score in response (unified_task_response.py)
+  ✓ Thresholds (70/75/85)
+  ✓ Prompts (scattered across files)
+
+NOW PROVIDED:
+  ✓ Consolidated prompt_manager.py (single source of truth)
+  ✓ Scoring rubric documentation (team reference)
+  ✓ Title generator consolidation analysis (ready to implement)
+  ✓ Step-by-step migration guide (copy-paste code)
+  ✓ Completion summary (what was done)
+
+
+PROMPT MANAGER USAGE EXAMPLES
+═════════════════════════════
+
+Get a prompt:
+  pm = get_prompt_manager()
+  prompt = pm.get_prompt(
+      "blog_generation.initial_draft",
+      topic="AI in Healthcare",
+      target_audience="Doctors",
+      primary_keyword="medical AI",
+      word_count=1500,
+      research_context="[research data here]",
+      internal_link_titles=["AI Trends", "Healthcare Tech"]
+  )
+
+Get metadata:
+  metadata = pm.get_metadata("blog_generation.initial_draft")
+  print(metadata.version)        # "v1.1"
+  print(metadata.description)    # "Generate initial blog post draft..."
+  print(metadata.output_format)  # "markdown"
+  print(metadata.example_output) # Shows example output
+
+List all prompts:
+  all_prompts = pm.list_prompts()
+  blog_prompts = pm.list_prompts(
+      category=PromptCategory.BLOG_GENERATION
+  )
+
+Export for documentation:
+  json_data = pm.export_prompts_as_json()
+  # Returns JSON of all prompts with examples
+
+
+SCORING THRESHOLDS QUICK REFERENCE
+═══════════════════════════════════
+
+Score ≥ 85:  Excellent
+  → Publish immediately
+  → No refinement needed
+  → Feedback: "Publication ready"
+
+Score 75-84: Good  
+  → Publish with optional refinement
+  → Minor improvements suggested
+  → Feedback: "Good quality - minor improvements recommended"
+
+Score 70-74: Acceptable
+  → Can publish OR refine
+  → Some improvements suggested
+  → Feedback: "Acceptable quality"
+
+Score 60-69: Fair
+  → Must refine before publishing
+  → Multiple issues identified
+  → Triggers refinement loop
+  → Feedback: "Needs significant improvements"
+
+Score < 60: Poor
+  → Rejected, major revision needed
+  → Consider regenerating from scratch
+  → Feedback: "Major revisions required"
+
+
+7 QUALITY DIMENSIONS (0-100 each)
+═════════════════════════════════
+
+1. Clarity (80 = clear, easy to follow)
+2. Accuracy (90 = factually correct, well-supported)
+3. Completeness (75 = covers main topic, minor gaps)
+4. Relevance (80 = mostly on-topic)
+5. SEO Quality (72 = decent optimization, keyword gaps)
+6. Readability (85 = excellent grammar, great flow)
+7. Engagement (78 = interesting, compelling)
+
+Overall Score = Average of all 7 = 81
+
+Feedback: "Good quality - minor improvements recommended"
+→ Can publish
+
+
+TITLE GENERATOR CONSOLIDATION
+══════════════════════════════
+
+PROBLEM: 3 redundant title generators
+  1. seo_and_social_media prompt (prompts.json)
+  2. _generate_catchy_title (content_router_service.py)
+  3. _llm_generate_title (unified_metadata_service.py)
+
+SOLUTION: Single canonical generator
+  - Key: "seo.generate_canonical_title" in prompt_manager
+  - Optimized for: SEO + engagement + professionalism
+  - Time to fix: 4 hours
+  - Risk: LOW
+
+IMPROVEMENT:
+  - 3 LLM calls → 1 LLM call (faster)
+  - 3 different titles → 1 consistent title (less confusion)
+  - Hardcoded Ollama → Model router fallback (more robust)
+
+
+MIGRATION EFFORT ESTIMATE
+══════════════════════════
+
+Full migration (all services):
+  - Creative agent: 2 hours
+  - QA agent: 2 hours
+  - Content router: 2 hours
+  - Metadata service: 2 hours
+  - Task prompts: 2 hours
+  Total: 10 hours
+
+Can do incrementally:
+  - Week 1: Deploy prompt_manager + 1 service (2 hours work)
+  - Week 2: Migrate 2 services (4 hours work)
+  - Week 3: Migrate 2 services (4 hours work)
+  - Week 4: Cleanup & testing (2 hours work)
+
+Or focus on high-impact items:
+  - Priority: Title consolidation + content_router (4-6 hours)
+  - Then: Remaining services as needed
+
+
+FILES TO IMPLEMENT NEXT
+═══════════════════════
+
+When ready to migrate (from PROMPT_MIGRATION_GUIDE.md):
+
+1. src/cofounder_agent/agents/content_agent/agents/creative_agent.py (2 hrs)
+2. src/cofounder_agent/agents/content_agent/agents/qa_agent.py (1 hr)
+3. src/cofounder_agent/services/content_router_service.py (2 hrs)
+4. src/cofounder_agent/services/unified_metadata_service.py (2 hrs)
+5. src/cofounder_agent/tasks/content_tasks.py (2 hrs)
+
+All code changes are provided in the migration guide.
+
+
+QUICK CHECKLIST
+═══════════════
+
+Priority 1 Consolidation:
+  ✅ Consolidate prompts (prompt_manager.py CREATED)
+  ✅ Document scoring rubric (QA_SCORING_RUBRIC.md CREATED)
+  ✅ Add output format examples (in prompt_manager.py)
+  ✅ Analyze title generators (CONSOLIDATION.md CREATED)
+  ✅ Create migration guide (PROMPT_MIGRATION_GUIDE.md CREATED)
+
+Next steps:
+  ☐ Review all 5 files
+  ☐ Deploy prompt_manager.py
+  ☐ Plan migration timeline
+  ☐ Migrate first service (2 hours)
+  ☐ Test & verify
+  ☐ Continue with remaining services
+
+
+QUESTIONS?
+══════════
+
+Refer to:
+  • prompt_manager.py - Code & docstrings
+  • QA_SCORING_RUBRIC.md - Evaluation details
+  • TITLE_CONSOLIDATION.md - Redundancy analysis
+  • PROMPT_MIGRATION_GUIDE.md - Implementation steps
+  • PRIORITY_1_COMPLETE.md - Full summary
