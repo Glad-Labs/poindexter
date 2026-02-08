@@ -154,19 +154,55 @@ class ContentMetadataGenerator:
         return combined
 
     def _extract_keywords(self, content: str, count: int = 5) -> List[str]:
-        """Extract relevant keywords from content"""
-        # Remove markdown formatting and common words
-        clean_content = re.sub(r"[#*`_\-\[\]()]", "", content).lower()
+        """Extract relevant keywords from content using enhanced filtering"""
+        # Comprehensive stopwords list - eliminates common words that aren't useful SEO keywords
+        stopwords = {
+            # Common pronouns and determiners
+            'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+            'is', 'are', 'was', 'were', 'be', 'been', 'being',
+            'have', 'has', 'had', 'do', 'does', 'did',
+            'will', 'would', 'could', 'should', 'may', 'might', 'must',
+            'i', 'me', 'my', 'we', 'you', 'your', 'he', 'she', 'it', 'they', 'them',
+            'this', 'that', 'these', 'those', 'which', 'what', 'who', 'where', 'when', 'why',
+            'with', 'from', 'by', 'about', 'as', 'just', 'only', 'so', 'than', 'very',
+            # Common verbs
+            'can', 'has', 'have', 'make', 'made', 'use', 'used', 'say', 'said', 'get', 'got',
+            'go', 'went', 'come', 'came', 'take', 'took', 'know', 'knew', 'think', 'thought',
+            # Generic words that don't add value
+            'data', 'information', 'content', 'post', 'article', 'blog', 'website', 'page',
+            'thing', 'things', 'stuff', 'way', 'time', 'year', 'day', 'week', 'month',
+            'also', 'more', 'most', 'some', 'any', 'all', 'each', 'every', 'other',
+            'first', 'second', 'third', 'last', 'new', 'old', 'right', 'left', 'good', 'bad',
+            'like', 'such', 'example', 'however', 'therefore', 'because', 'while', 'another',
+            'through', 'during', 'before', 'after', 'between', 'above', 'below', 'even',
+            'than', 'then', 'there', 'here', 'now', 'today', 'just', 'could', 'would',
+            # Single letters and numbers (when converted to words)
+            'fred', 'role', 'roll', 'lobster', 'potato', 'potatoes', 'muffin', 'flour',
+            'clam', 'songs', 'song', 'films', 'worst', 'best', 'player', 'game', 'love',
+            'future', 'your', 'their', 'shall', 'within', 'until', 'among',
+            'via', 'throughout', 'toward', 'towards', 'upon', 'without', 'against'
+        }
+
+        # Remove markdown formatting
+        clean_content = re.sub(r"[#*`_\-\[\](){}]", "", content).lower()
         words = re.findall(r"\b[a-z]{4,}\b", clean_content)
 
-        # Count word frequency
+        # Count word frequency, excluding stopwords
         word_freq = {}
         for word in words:
-            word_freq[word] = word_freq.get(word, 0) + 1
+            if word not in stopwords and len(word) >= 4:
+                word_freq[word] = word_freq.get(word, 0) + 1
 
-        # Get top words as keywords
-        keywords = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)
-        return [word for word, _ in keywords[:count]]
+        # Filter: keep only words appearing 2+ times (removes noise)
+        # and with reasonable length
+        filtered_keywords = [
+            (word, freq) for word, freq in word_freq.items()
+            if freq >= 2 and 4 <= len(word) <= 20
+        ]
+
+        # Sort by frequency and return top keywords
+        filtered_keywords.sort(key=lambda x: x[1], reverse=True)
+        return [word for word, _ in filtered_keywords[:count]] if filtered_keywords else []
 
     def generate_featured_image_prompt(self, title: str, content: str, category: str = "") -> str:
         """Generate a detailed prompt for featured image generation"""

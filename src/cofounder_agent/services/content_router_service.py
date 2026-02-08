@@ -676,11 +676,11 @@ async def process_content_generation_task(
             raise ValueError("SEO metadata generation failed: invalid result")
 
         seo_keywords = seo_assets.get("meta_keywords") or (tags or [])
-        # Ensure seo_keywords is a list before slicing
+        # Ensure seo_keywords is a list, filter out None/empty values
         if isinstance(seo_keywords, list):
-            seo_keywords = seo_keywords[:10]
-        elif seo_keywords:
-            seo_keywords = [seo_keywords][:10]
+            seo_keywords = [kw for kw in seo_keywords if kw and isinstance(kw, str) and kw.strip()][:10]
+        elif seo_keywords and isinstance(seo_keywords, str):
+            seo_keywords = [seo_keywords.strip()][:10] if seo_keywords.strip() else []
         else:
             seo_keywords = []
 
