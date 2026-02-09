@@ -118,19 +118,21 @@ def convert_markdown_to_html(markdown_content: str) -> str:
 
 def generate_excerpt_from_content(content: str, length: int = 200) -> str:
     """
-    Generate a clean excerpt from markdown content.
+    Generate an excerpt from markdown content while preserving **basic markdown formatting**.
+
+    This keeps the excerpt as markdown so it can be rendered with formatting on the frontend.
 
     Args:
         content: Markdown content
-        length: Maximum length of excerpt in characters
+        length: Maximum length of excerpt in characters (before markdown)
 
     Returns:
-        Clean excerpt text without markdown formatting
+        Excerpt with markdown formatting preserved (e.g., **bold**, *italic*)
     """
     if not content:
         return ""
 
-    # Remove markdown headers and formatting
+    # Remove markdown headers and get meaningful paragraphs
     lines = content.split("\n")
     excerpt_parts = []
 
@@ -139,9 +141,9 @@ def generate_excerpt_from_content(content: str, length: int = 200) -> str:
         if not line.strip() or line.startswith("#"):
             continue
 
-        # Remove markdown formatting
-        cleaned = line.replace("**", "").replace("*", "").replace("__", "").replace("_", "")
-        cleaned = cleaned.replace("[", "").replace("]", "").replace("(", "").replace(")", "")
+        # Keep line as-is to preserve **bold**, *italic* formatting
+        # Only remove problematic markdown syntax
+        cleaned = line.replace("[", "").replace("]", "").replace("(", "").replace(")", "")
         cleaned = cleaned.replace("`", "").replace("~", "")
 
         if cleaned.strip():
@@ -152,7 +154,7 @@ def generate_excerpt_from_content(content: str, length: int = 200) -> str:
             break
 
     excerpt = " ".join(excerpt_parts)[:length].strip()
-    # Add ellipsis if truncated
+    # Add ellipsis if truncated (before markdown closes)
     if len(" ".join(excerpt_parts)) > length:
         excerpt = excerpt.rsplit(" ", 1)[0] + "..."
 
