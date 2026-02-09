@@ -84,7 +84,8 @@ def test_token_with_timestamps():
         try:
             claims = JWTTokenValidator.verify_token(token)
             print(f"✓ Token validation passed!")
-            print(f"  Claims: {json.dumps({k: v for k, v in claims.items() if k not in ['exp', 'iat']}, indent=2)}")
+            if claims:
+                print(f"  Claims: {json.dumps({k: v for k, v in claims.items() if k not in ['exp', 'iat']}, indent=2)}")
             return True
         except Exception as e:
             print(f"✗ Token validation failed: {e}")

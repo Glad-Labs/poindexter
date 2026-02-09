@@ -253,17 +253,17 @@ class TestModelRouterIntegration:
         assert hasattr(router, "generate_text"), "ModelRouter should have generate_text method"
 
     @pytest.mark.asyncio
-    async def test_model_router_generate_text_signature(self):
-        """Test ModelRouter.generate_text has correct signature."""
+    async def test_model_router_route_request_signature(self):
+        """Test ModelRouter.route_request has correct signature."""
         from src.cofounder_agent.services.model_router import ModelRouter
         import inspect
 
         router = ModelRouter()
-        sig = inspect.signature(router.generate_text)
+        sig = inspect.signature(router.route_request)
 
-        # Should accept prompt, temperature, max_tokens parameters
-        assert "prompt" in sig.parameters
-        assert "temperature" in sig.parameters or len(sig.parameters) >= 1
+        # Should accept task_type and other parameters
+        assert "task_type" in sig.parameters
+        assert len(sig.parameters) >= 1
 
 
 # ============================================================================
@@ -280,7 +280,7 @@ class TestContentGenerationPipeline:
         from src.cofounder_agent.agents.content_agent.agents.creative_agent import (
             CreativeAgent,
         )
-        from src.cofounder_agent.utils.data_models import BlogPost
+        from src.cofounder_agent.agents.content_agent.utils.data_models import BlogPost
 
         # Mock LLMClient
         mock_llm = AsyncMock()
@@ -295,6 +295,7 @@ class TestContentGenerationPipeline:
             topic="AI in Healthcare",
             target_audience="Medical Professionals",
             primary_keyword="medical AI",
+            category="Technology",
             research_data="Recent advances in diagnostic AI...",
             writing_style="technical",
             published_posts_map={},
@@ -321,7 +322,7 @@ class TestContentGenerationPipeline:
     async def test_qa_agent_run_structure(self):
         """Test QAAgent.run returns expected tuple."""
         from src.cofounder_agent.agents.content_agent.agents.qa_agent import QAAgent
-        from src.cofounder_agent.utils.data_models import BlogPost
+        from src.cofounder_agent.agents.content_agent.utils.data_models import BlogPost
 
         # Mock LLMClient
         mock_llm = AsyncMock()
@@ -339,6 +340,7 @@ class TestContentGenerationPipeline:
             topic="AI in Healthcare",
             target_audience="Medical Professionals",
             primary_keyword="medical AI",
+            category="Technology",
             research_data="Recent advances",
             writing_style="technical",
             published_posts_map={},
@@ -461,7 +463,7 @@ class TestErrorHandlingAndEdgeCases:
     async def test_qa_agent_handles_invalid_json(self):
         """Test QAAgent handles invalid JSON from LLM gracefully."""
         from src.cofounder_agent.agents.content_agent.agents.qa_agent import QAAgent
-        from src.cofounder_agent.utils.data_models import BlogPost
+        from src.cofounder_agent.agents.content_agent.utils.data_models import BlogPost
 
         mock_llm = AsyncMock()
         mock_llm.generate_json = AsyncMock(
@@ -474,6 +476,7 @@ class TestErrorHandlingAndEdgeCases:
             topic="Test",
             target_audience="General",
             primary_keyword="test",
+            category="General",
             research_data="None",
             writing_style="professional",
             published_posts_map={},

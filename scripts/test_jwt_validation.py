@@ -60,11 +60,12 @@ def test_token_validation(token):
         claims = JWTTokenValidator.verify_token(token, TokenType.ACCESS)
         print(f"✓ Token validation succeeded!")
         print(f"  Claims extracted:")
-        for key, value in claims.items():
-            if key not in ["exp", "iat"]:
-                print(f"    - {key}: {value}")
-            else:
-                print(f"    - {key}: {datetime.fromtimestamp(value, tz=timezone.utc)}")
+        if claims:
+            for key, value in claims.items():
+                if key not in ["exp", "iat"]:
+                    print(f"    - {key}: {value}")
+                else:
+                    print(f"    - {key}: {datetime.fromtimestamp(value, tz=timezone.utc)}")
         
         return claims
     except jwt.ExpiredSignatureError as e:
