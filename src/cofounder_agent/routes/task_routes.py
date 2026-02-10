@@ -2190,7 +2190,7 @@ async def reject_task(
     Task can be revised and resubmitted.
     
     **Parameters:**
-    - task_id: Task UUID
+    - task_id: Task UUID or numeric ID
     
     **Returns:**
     - Updated task with status 'rejected'
@@ -2202,11 +2202,13 @@ async def reject_task(
     ```
     """
     try:
-        # Validate UUID format
+        # Accept both UUID and numeric task IDs (backwards compatibility)
         try:
             UUID(task_id)
         except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid task ID format")
+            # If not a valid UUID, check if it's a numeric ID (legacy tasks)
+            if not task_id.isdigit():
+                raise HTTPException(status_code=400, detail="Invalid task ID format")
 
         # Fetch task
         task = await db_service.get_task(task_id)
