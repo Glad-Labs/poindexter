@@ -255,6 +255,17 @@ def register_all_routes(
         logger.error(f" agents_router failed: {e}")
         status["agents_router"] = False
 
+    try:
+        # ===== NEWSLETTER & EMAIL CAMPAIGNS =====
+        from routes.newsletter_routes import router as newsletter_router
+
+        app.include_router(newsletter_router)
+        logger.info(" newsletter_router registered (email campaigns & subscriptions)")
+        status["newsletter_router"] = True
+    except Exception as e:
+        logger.error(f" newsletter_router failed: {e}")
+        status["newsletter_router"] = False
+
     # ===== OPTIONAL ROUTES (Conditional on availability) =====
 
     try:
