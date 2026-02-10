@@ -315,9 +315,8 @@ async def _generate_canonical_title(topic: str, primary_keyword: str, content_ex
         # Use unified prompt manager to get SEO title generation prompt
         prompt = pm.get_prompt(
             "seo.generate_title",
-            topic=topic,
+            content=content_excerpt,
             primary_keyword=primary_keyword or topic,
-            content_excerpt=content_excerpt,
         )
 
         # Use model consolidation service for intelligent provider fallback
