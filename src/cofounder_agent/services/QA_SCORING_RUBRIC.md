@@ -32,13 +32,13 @@ Format: 0-100 scale (0-10 scale converted to percentage)
 
 # 80-100: Crystal clear, easy to follow, well-explained
 
-# 70-79:  Clear, minor complexity
+# 70-79: Clear, minor complexity
 
-# 60-69:  Generally clear but some confusing sections
+# 60-69: Generally clear but some confusing sections
 
-# 50-59:  Confusing, needs significant simplification
+# 50-59: Confusing, needs significant simplification
 
-# <50:    Very difficult to understand
+# <50: Very difficult to understand
 
 #
 
@@ -54,13 +54,13 @@ Format: 0-100 scale (0-10 scale converted to percentage)
 
 # 80-100: Accurate, well-supported, no errors
 
-# 70-79:  Mostly accurate, minor gaps
+# 70-79: Mostly accurate, minor gaps
 
-# 60-69:  Some inaccuracies or unsupported claims
+# 60-69: Some inaccuracies or unsupported claims
 
-# 50-59:  Multiple factual errors
+# 50-59: Multiple factual errors
 
-# <50:    Significantly inaccurate
+# <50: Significantly inaccurate
 
 #
 
@@ -76,13 +76,13 @@ Format: 0-100 scale (0-10 scale converted to percentage)
 
 # 80-100: Comprehensive, covers all major areas
 
-# 70-79:  Good coverage, minor gaps
+# 70-79: Good coverage, minor gaps
 
-# 60-69:  Covers main points but some gaps
+# 60-69: Covers main points but some gaps
 
-# 50-59:  Incomplete, missing key areas
+# 50-59: Incomplete, missing key areas
 
-# <50:    Severely incomplete
+# <50: Severely incomplete
 
 #
 
@@ -98,13 +98,13 @@ Format: 0-100 scale (0-10 scale converted to percentage)
 
 # 80-100: Highly relevant, everything on point
 
-# 70-79:  Mostly relevant, minor tangents
+# 70-79: Mostly relevant, minor tangents
 
-# 60-69:  Mostly relevant but some tangents
+# 60-69: Mostly relevant but some tangents
 
-# 50-59:  Mixed relevance, significant tangents
+# 50-59: Mixed relevance, significant tangents
 
-# <50:    Mostly off-topic
+# <50: Mostly off-topic
 
 #
 
@@ -122,13 +122,13 @@ Format: 0-100 scale (0-10 scale converted to percentage)
 
 # 80-100: Excellent SEO potential, keywords natural
 
-# 70-79:  Good SEO, keywords well-placed
+# 70-79: Good SEO, keywords well-placed
 
-# 60-69:  Decent SEO potential, some keyword gaps
+# 60-69: Decent SEO potential, some keyword gaps
 
-# 50-59:  Weak SEO, poor keyword integration
+# 50-59: Weak SEO, poor keyword integration
 
-# <50:    No SEO optimization
+# <50: No SEO optimization
 
 #
 
@@ -146,13 +146,13 @@ Format: 0-100 scale (0-10 scale converted to percentage)
 
 # 80-100: Excellent grammar, great flow, well-formatted
 
-# 70-79:  Good readability, minor issues
+# 70-79: Good readability, minor issues
 
-# 60-69:  Readable but some grammar/flow issues
+# 60-69: Readable but some grammar/flow issues
 
-# 50-59:  Difficult to read, multiple issues
+# 50-59: Difficult to read, multiple issues
 
-# <50:    Poor grammar/formatting, hard to read
+# <50: Poor grammar/formatting, hard to read
 
 #
 
@@ -170,13 +170,13 @@ Format: 0-100 scale (0-10 scale converted to percentage)
 
 # 80-100: Highly engaging, compelling, valuable
 
-# 70-79:  Engaging, interesting examples
+# 70-79: Engaging, interesting examples
 
-# 60-69:  Somewhat engaging, basic examples
+# 60-69: Somewhat engaging, basic examples
 
-# 50-59:  Dry or boring
+# 50-59: Dry or boring
 
-# <50:    Very boring, no engagement value
+# <50: Very boring, no engagement value
 
 #
 
@@ -196,27 +196,27 @@ Format: 0-100 scale (0-10 scale converted to percentage)
 
 # Example
 
-# Clarity: 85      (well-written)
+# Clarity: 85 (well-written)
 
-# Accuracy: 90     (well-researched)
+# Accuracy: 90 (well-researched)
 
 # Completeness: 75 (decent coverage)
 
-# Relevance: 80    (mostly on-topic)
+# Relevance: 80 (mostly on-topic)
 
-# SEO: 72          (keyword gaps)
+# SEO: 72 (keyword gaps)
 
-# Readability: 88  (excellent)
+# Readability: 88 (excellent)
 
-# Engagement: 78   (interesting)
+# Engagement: 78 (interesting)
 
 # ─────────────────
 
-# OVERALL: 81      ← Average
+# OVERALL: 81 ← Average
 
 # ============================================================================
 
-# PUBLICATION THRESHOLDS  
+# PUBLICATION THRESHOLDS
 
 # ============================================================================
 
@@ -346,15 +346,15 @@ Format: 0-100 scale (0-10 scale converted to percentage)
 
 # Example suggestions mapping
 
-# - clarity < 70   → "Simplify sentence structure and use shorter sentences"
+# - clarity < 70 → "Simplify sentence structure and use shorter sentences"
 
-# - accuracy < 70  → "Fact-check claims and add citations where appropriate"
+# - accuracy < 70 → "Fact-check claims and add citations where appropriate"
 
 # - completeness < 70 → "Add more detail and cover the topic more thoroughly"
 
 # - relevance < 70 → "Keep content focused on the main topic"
 
-# - seo < 70       → "Improve SEO with better headers, keywords, and structure"
+# - seo < 70 → "Improve SEO with better headers, keywords, and structure"
 
 # - readability < 70 → "Improve grammar and readability"
 
@@ -478,13 +478,13 @@ Format: 0-100 scale (0-10 scale converted to percentage)
 
 # - Only reject if there are SERIOUS issues
 
-# * Unclear writing
+# \* Unclear writing
 
-# * Off-topic content
+# \* Off-topic content
 
-# * Missing structure
+# \* Missing structure
 
-# * Factual hallucinations
+# \* Factual hallucinations
 
 #
 
@@ -520,7 +520,7 @@ Format: 0-100 scale (0-10 scale converted to percentage)
 
 #
 
-# EXAMPLE 2: Good Draft, Needs Polish  
+# EXAMPLE 2: Good Draft, Needs Polish
 
 # ─────────────────────────────────────
 
@@ -586,7 +586,7 @@ Format: 0-100 scale (0-10 scale converted to percentage)
 
 # SEO: 50, Readability: 50, Engagement: 40
 
-# Overall: 45.00  
+# Overall: 45.00
 
 # Action: ❌ REJECTED - Major revisions required
 

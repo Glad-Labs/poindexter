@@ -18,10 +18,10 @@ Consolidate all LLM prompts and document quality scoring thresholds.
 
 Specific tasks:
 
-  1. Consolidate all prompts into centralized, versioned system
-  2. Create scoring rubric documentation
-  3. Add output format examples to JSON prompts
-  4. Remove duplicate title generators (use single canonical version)
+1. Consolidate all prompts into centralized, versioned system
+2. Create scoring rubric documentation
+3. Add output format examples to JSON prompts
+4. Remove duplicate title generators (use single canonical version)
 
 # ============================================================================
 
@@ -30,11 +30,11 @@ Specific tasks:
 # ============================================================================
 
 ✅ TASK 1: Consolidate Prompts
-   Status: COMPLETE
+Status: COMPLETE
 
-   Deliverable: src/cofounder_agent/services/prompt_manager.py
+Deliverable: src/cofounder_agent/services/prompt_manager.py
 
-   What was created:
+What was created:
 
 - UnifiedPromptManager class (380+ lines)
 - Consolidates 30+ prompts from across codebase:
@@ -54,32 +54,32 @@ Specific tasks:
   - Version history
   - Notes/performance data
 - Methods:
-  - get_prompt(key, **kwargs) - Fetch & format prompts
+  - get_prompt(key, \*\*kwargs) - Fetch & format prompts
   - get_metadata(key) - Get prompt metadata
   - list_prompts(category) - List by category
   - export_prompts_as_json() - For documentation/migration
 - Singleton pattern: get_prompt_manager() returns global instance
 
-   Key improvements over scattered prompts:
-   ✓ Single source of truth
-   ✓ Easy to version & A/B test
-   ✓ Built-in documentation
-   ✓ Consistent parameter naming
-   ✓ Example outputs provided
-   ✓ Temperature/model hints visible
-   ✓ Easy to audit all prompts
+  Key improvements over scattered prompts:
+  ✓ Single source of truth
+  ✓ Easy to version & A/B test
+  ✓ Built-in documentation
+  ✓ Consistent parameter naming
+  ✓ Example outputs provided
+  ✓ Temperature/model hints visible
+  ✓ Easy to audit all prompts
 
 ✅ TASK 2: Document Scoring Rubric
-   Status: COMPLETE
+Status: COMPLETE
 
-   Deliverable: src/cofounder_agent/services/QA_SCORING_RUBRIC.md
+Deliverable: src/cofounder_agent/services/QA_SCORING_RUBRIC.md
 
-   What was documented:
+What was documented:
 
 - 7-point quality evaluation rubric (ALREADY EXISTED in quality_service.py)
 - Each dimension (0-100 scale):
   - Clarity - understanding and flow
-  - Accuracy - factual correctness  
+  - Accuracy - factual correctness
   - Completeness - topic coverage
   - Relevance - staying on topic
   - SEO Quality - keyword optimization
@@ -100,16 +100,16 @@ Specific tasks:
 - Iterative refinement loop logic
 - Real-world examples of each scoring tier
 
-   Key findings:
-   ✓ Scoring infrastructure ALREADY EXISTS in quality_service.py
-   ✓ Quality scores already passed to frontend
-   ✓ Thresholds already implemented (70/75/85)
-   ✓ Documentation was the missing piece (NOW PROVIDED)
+  Key findings:
+  ✓ Scoring infrastructure ALREADY EXISTS in quality_service.py
+  ✓ Quality scores already passed to frontend
+  ✓ Thresholds already implemented (70/75/85)
+  ✓ Documentation was the missing piece (NOW PROVIDED)
 
 ✅ TASK 3: Add Output Format Examples
-   Status: COMPLETE
+Status: COMPLETE
 
-   Where implemented:
+Where implemented:
 
 - prompt_manager.py includes examples for:
   - blog_generation.initial_draft - Markdown headings example
@@ -123,34 +123,34 @@ Specific tasks:
   - image.search_queries - JSON array with alt-text example
   - image.featured_image - Image description example
 
-   Format:
+  Format:
 
 - Each prompt includes example_output field
 - Shows exact format LLM should return
 - Helps prevent hallucinations
 - Useful for prompt validation/testing
 
-   Benefits:
-   ✓ Reduces model confusion about output format
-   ✓ Better for few-shot learning
-   ✓ Easier to validate responses
-   ✓ Faster to debug issues
+  Benefits:
+  ✓ Reduces model confusion about output format
+  ✓ Better for few-shot learning
+  ✓ Easier to validate responses
+  ✓ Faster to debug issues
 
 ✅ TASK 4: Consolidate Title Generators
-   Status: ANALYZED, READY FOR IMPLEMENTATION
+Status: ANALYZED, READY FOR IMPLEMENTATION
 
-   Deliverable: src/cofounder_agent/services/TITLE_GENERATOR_CONSOLIDATION.md
+Deliverable: src/cofounder_agent/services/TITLE_GENERATOR_CONSOLIDATION.md
 
-   Problem identified:
+Problem identified:
 
 - 3 redundant title generators in different services:
-     1. SEO Title from prompts.json (seo_and_social_media)
-     2. Catchy Title in content_router_service.py (_generate_catchy_title)
-     3. Professional Title in unified_metadata_service.py (_llm_generate_title)
+  1.  SEO Title from prompts.json (seo_and_social_media)
+  2.  Catchy Title in content_router_service.py (\_generate_catchy_title)
+  3.  Professional Title in unified_metadata_service.py (\_llm_generate_title)
 - Result: Same content gets 3 different titles
 - Inconsistent, inefficient, confusing for users
 
-   Solution provided:
+  Solution provided:
 
 - Single canonical title generator using prompt_manager.py
 - Key: "seo.generate_canonical_title"
@@ -161,23 +161,23 @@ Specific tasks:
 - Single LLM call instead of 3
 - Consistent title across system
 
-   Implementation roadmap:
+  Implementation roadmap:
 
 - Update content_router_service.py (30 min)
 - Update unified_metadata_service.py (30 min)
-- Verify creative_agent.py (15 min)  
+- Verify creative_agent.py (15 min)
 - Integration testing (1 hour)
 - TOTAL: ~4 hours
 - RISK: LOW (independent, easily reversed)
 
-   Migration checklist provided for team implementation
+  Migration checklist provided for team implementation
 
 ✅ TASK 5: Migration Guide  
-   Status: COMPLETE
+ Status: COMPLETE
 
-   Deliverable: src/cofounder_agent/services/PROMPT_MIGRATION_GUIDE.md
+Deliverable: src/cofounder_agent/services/PROMPT_MIGRATION_GUIDE.md
 
-   Contents:
+Contents:
 
 - Step-by-step guide for migrating each service:
   - Creative agent → use prompt_manager
@@ -193,8 +193,8 @@ Specific tasks:
 - Backward compatibility approach
 - Completion checklist
 
-   Time estimate: 8 hours for full migration
-   (Can be done incrementally without disrupting production)
+  Time estimate: 8 hours for full migration
+  (Can be done incrementally without disrupting production)
 
 # ============================================================================
 
@@ -327,16 +327,18 @@ Priority 3:
 # ============================================================================
 
 1. Review prompt_manager.py:
-   >>> from services.prompt_manager import get_prompt_manager
-   >>> pm = get_prompt_manager()
-   >>> prompt = pm.get_prompt("blog_generation.initial_draft", topic="AI", ...)
-   >>> metadata = pm.get_metadata("blog_generation.initial_draft")
-   >>> prompts = pm.list_prompts()  # All prompts
-   >>> json_export = pm.export_prompts_as_json()  # For documentation
+
+   > > > from services.prompt_manager import get_prompt_manager
+   > > > pm = get_prompt_manager()
+   > > > prompt = pm.get_prompt("blog_generation.initial_draft", topic="AI", ...)
+   > > > metadata = pm.get_metadata("blog_generation.initial_draft")
+   > > > prompts = pm.list_prompts() # All prompts
+   > > > json_export = pm.export_prompts_as_json() # For documentation
 
 2. List available prompts:
-   >>> pm.list_prompts()
->>>
+
+   > > > pm.list_prompts()
+
    # Returns all 30+ prompts organized by category
 
 3. Use in your code:
@@ -376,7 +378,7 @@ After implementation, measure:
 - Auditability: Improved (all prompts visible)
 - Version control: Improved (built-in)
 
-✓ Developer experience  
+✓ Developer experience
 
 - Time to update prompt: Before 30 min → After 5 min
 - Prompt discovery: Before searching files → After pm.list_prompts()
@@ -410,4 +412,4 @@ Questions? Refer to:
 - QA_SCORING_RUBRIC.md for evaluation details
 - TITLE_GENERATOR_CONSOLIDATION.md for redundancy analysis
 - PROMPT_MIGRATION_GUIDE.md for implementation steps
-"""
+  """

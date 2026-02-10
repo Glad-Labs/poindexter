@@ -105,15 +105,15 @@ Successfully migrated core FastAPI services to use centralized `prompt_manager.p
 
 All migrations now route through these unified prompts:
 
-| Method | Prompt Key | Model Chain |
-|--------|-----------|-----------|
-| Creative Agent - Initial Draft | `blog_generation.initial_draft` | Ollama → Gemini → Claude → OpenAI |
-| Creative Agent - Refinement | `blog_generation.iterative_refinement` | Ollama → Gemini → Claude → OpenAI |
-| QA Agent - Content Review | `qa.content_review` | Ollama → Gemini → Claude → OpenAI |
-| Title Generation | `seo.generate_canonical_title` | Ollama → Gemini → Claude → OpenAI |
-| SEO Title | `seo.generate_title` | Ollama → Gemini → Claude → OpenAI |
-| Meta Description | `seo.generate_meta_description` | Ollama → Gemini → Claude → OpenAI |
-| Keyword Extraction | `seo.extract_keywords` | Ollama → Gemini → Claude → OpenAI |
+| Method                         | Prompt Key                             | Model Chain                       |
+| ------------------------------ | -------------------------------------- | --------------------------------- |
+| Creative Agent - Initial Draft | `blog_generation.initial_draft`        | Ollama → Gemini → Claude → OpenAI |
+| Creative Agent - Refinement    | `blog_generation.iterative_refinement` | Ollama → Gemini → Claude → OpenAI |
+| QA Agent - Content Review      | `qa.content_review`                    | Ollama → Gemini → Claude → OpenAI |
+| Title Generation               | `seo.generate_canonical_title`         | Ollama → Gemini → Claude → OpenAI |
+| SEO Title                      | `seo.generate_title`                   | Ollama → Gemini → Claude → OpenAI |
+| Meta Description               | `seo.generate_meta_description`        | Ollama → Gemini → Claude → OpenAI |
+| Keyword Extraction             | `seo.extract_keywords`                 | Ollama → Gemini → Claude → OpenAI |
 
 ---
 
@@ -194,14 +194,14 @@ All migrated services maintain their original function signatures and return val
 
 ## Metrics
 
-| Metric | Value |
-|--------|-------|
-| Services Migrated | 4 |
-| Files Modified | 4 |
-| Prompts Consolidated | 7 (core) |
-| Hardcoded Ollama Calls Removed | 1 |
-| Direct LLM API Calls Eliminated | 15+ |
-| Code Duplication Reduced | ~40% (title generation) |
+| Metric                          | Value                   |
+| ------------------------------- | ----------------------- |
+| Services Migrated               | 4                       |
+| Files Modified                  | 4                       |
+| Prompts Consolidated            | 7 (core)                |
+| Hardcoded Ollama Calls Removed  | 1                       |
+| Direct LLM API Calls Eliminated | 15+                     |
+| Code Duplication Reduced        | ~40% (title generation) |
 
 ---
 

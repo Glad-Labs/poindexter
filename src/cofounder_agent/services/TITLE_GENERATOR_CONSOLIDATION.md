@@ -6,8 +6,8 @@ Current System: 3 separate title generators creating redundancy
 Problem: Multiple title generators in different services create inconsistency:
 
 1. Title in prompts.json (seo_and_social_media) - generates SEO title
-2. _generate_catchy_title() in content_router_service.py - generates catchy title  
-3. _llm_generate_title() in unified_metadata_service.py - generates professional title
+2. \_generate_catchy_title() in content_router_service.py - generates catchy title
+3. \_llm_generate_title() in unified_metadata_service.py - generates professional title
 
 Result: Same content gets 3 different titles, potential conflicts
 """
@@ -50,11 +50,11 @@ Result: Same content gets 3 different titles, potential conflicts
 
 # Output: Markdown heading extracted from generated content
 
-# GENERATOR 2: Catchy Title (_generate_catchy_title)
+# GENERATOR 2: Catchy Title (\_generate_catchy_title)
 
 # Location: services/content_router_service.py, line 295
 
-# Function: async def _generate_catchy_title(topic, content_excerpt)
+# Function: async def \_generate_catchy_title(topic, content_excerpt)
 
 # Input: Topic + content excerpt (500 chars)
 
@@ -86,11 +86,11 @@ Result: Same content gets 3 different titles, potential conflicts
 
 # - Output: Raw text string
 
-# GENERATOR 3: Professional Title (_llm_generate_title)  
+# GENERATOR 3: Professional Title (\_llm_generate_title)
 
 # Location: services/unified_metadata_service.py, line 313
 
-# Function: async def _llm_generate_title(self, content)
+# Function: async def \_llm_generate_title(self, content)
 
 # Input: Content text (first 500 chars)
 
@@ -126,17 +126,17 @@ Result: Same content gets 3 different titles, potential conflicts
 
 """
 ┌─────────────────────┬──────────────────┬──────────────────┬──────────────────┐
-│ Aspect              │ SEO Title        │ Catchy Title     │ Professional     │
+│ Aspect │ SEO Title │ Catchy Title │ Professional │
 ├─────────────────────┼──────────────────┼──────────────────┼──────────────────┤
-│ Max length          │ 60 chars         │ 100 chars        │ 100 chars        │
-│ Model               │ Content agent    │ Ollama hardcoded │ Claude/OpenAI    │
-│ Primary goal        │ SEO optimization │ Engagement       │ Professional     │
-│ Keyword focused?    │ YES (required)   │ OPTIONAL         │ NO               │
-│ Tone                │ Professional     │ Catchy/engaging  │ Professional     │
-│ Use case            │ Blog publication │ Blog routing     │ Metadata gen     │
-│ Execution point     │ Late (after QA)  │ During routing   │ Post-generation  │
-│ Override risk       │ LOW              │ MEDIUM           │ HIGH             │
-│ Consistency         │ MEDIUM           │ LOW              │ LOW              │
+│ Max length │ 60 chars │ 100 chars │ 100 chars │
+│ Model │ Content agent │ Ollama hardcoded │ Claude/OpenAI │
+│ Primary goal │ SEO optimization │ Engagement │ Professional │
+│ Keyword focused? │ YES (required) │ OPTIONAL │ NO │
+│ Tone │ Professional │ Catchy/engaging │ Professional │
+│ Use case │ Blog publication │ Blog routing │ Metadata gen │
+│ Execution point │ Late (after QA) │ During routing │ Post-generation │
+│ Override risk │ LOW │ MEDIUM │ HIGH │
+│ Consistency │ MEDIUM │ LOW │ LOW │
 └─────────────────────┴──────────────────┴──────────────────┴──────────────────┘
 
 ISSUE: Each generator produces different output for same content
@@ -144,11 +144,11 @@ ISSUE: Each generator produces different output for same content
 - User sees: Up to 3 different titles for the same post
 - Confusing: Which is the "real" title?
 - Inefficient: 3 LLM calls for same task
-"""
+  """
 
 # ============================================================================
 
-# RECOMMENDATION: CONSOLIDATE TO SINGLE GENERATOR  
+# RECOMMENDATION: CONSOLIDATE TO SINGLE GENERATOR
 
 # ============================================================================
 
@@ -226,9 +226,9 @@ ISSUE: Each generator produces different output for same content
 
 # Implementation
 
-# - Remove _generate_catchy_title from content_router_service.py
+# - Remove \_generate_catchy_title from content_router_service.py
 
-# - Remove _llm_generate_title from unified_metadata_service.py  
+# - Remove \_llm_generate_title from unified_metadata_service.py
 
 # - Use pm.get_prompt("seo.generate_canonical_title") everywhere
 
@@ -248,7 +248,7 @@ ISSUE: Each generator produces different output for same content
 
 # OLD
 
-# title = await _generate_catchy_title(topic, content_text[:500])
+# title = await \_generate_catchy_title(topic, content_text[:500])
 
 # NEW
 
@@ -270,7 +270,7 @@ ISSUE: Each generator produces different output for same content
 
 # Step 3: Update unified_metadata_service.py
 
-# Remove _llm_generate_title method entirely
+# Remove \_llm_generate_title method entirely
 
 # Use prompt_manager for any title generation
 
@@ -304,13 +304,13 @@ PHASE 1: Preparation (1 hour)
 [ ] Run tests on existing system to establish baseline
 
 PHASE 2: Update content_router_service.py (30 min)
-[ ] Locate _generate_catchy_title function (line ~295)
+[ ] Locate \_generate_catchy_title function (line ~295)
 [ ] Replace with prompt_manager call
 [ ] Test: Title generation during content routing
 [ ] Verify: Title stored correctly in task object
 
 PHASE 3: Update unified_metadata_service.py (30 min)
-[ ] Locate _llm_generate_title method (line ~313)
+[ ] Locate \_llm_generate_title method (line ~313)
 [ ] Remove method entirely
 [ ] Remove hardcoded Ollama model reference
 [ ] Use prompt_manager for any title needs

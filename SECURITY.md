@@ -221,16 +221,16 @@ console.log(`Connected to database: ${process.env.DATABASE_HOST}`);
 const apiKey = process.env.OPENAI_API_KEY;
 
 // ✅ SAFE: Use constants for public info
-const API_ENDPOINT = "https://api.openai.com/v1/chat/completions";
+const API_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
 
 // ❌ UNSAFE: Hardcoded secrets
-const apiKey = "sk-proj-abc123def456";
+const apiKey = 'sk-proj-abc123def456';
 
 // ❌ UNSAFE: Logging secrets
 console.log(`Using API key: ${process.env.OPENAI_API_KEY}`);
 
 // ✅ SAFE: Log reference info only
-console.log("API key configured:", !!process.env.OPENAI_API_KEY);
+console.log('API key configured:', !!process.env.OPENAI_API_KEY);
 ```
 
 ---
@@ -286,7 +286,7 @@ fetch('/api/chat', {
 
 ```tsx
 // ❌ BAD: Revealing internal services
-const INTERNAL_API = "http://internal-api.company.com:8000";
+const INTERNAL_API = 'http://internal-api.company.com:8000';
 
 // ✅ GOOD: Use proxied endpoints
 const API_ENDPOINT = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -387,12 +387,12 @@ const API_ENDPOINT = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 This project uses the following dependencies with security considerations:
 
-| Dependency         | License             | Audit Status     | Notes                                       |
-| ------------------ | ------------------- | ---------------- | ------------------------------------------- |
-| FastAPI            | MIT                 | ✅ Maintained    | Security updates: watch release notes      |
-| React              | MIT                 | ✅ Maintained    | Keep updated via npm audit                 |
-| Next.js            | MIT                 | ✅ Maintained    | Security patches in minor versions         |
-| PostgreSQL         | PostgreSQL License  | ✅ Maintained    | Update regularly for security fixes        |
+| Dependency | License            | Audit Status  | Notes                                 |
+| ---------- | ------------------ | ------------- | ------------------------------------- |
+| FastAPI    | MIT                | ✅ Maintained | Security updates: watch release notes |
+| React      | MIT                | ✅ Maintained | Keep updated via npm audit            |
+| Next.js    | MIT                | ✅ Maintained | Security patches in minor versions    |
+| PostgreSQL | PostgreSQL License | ✅ Maintained | Update regularly for security fixes   |
 
 **Running Security Audits:**
 
