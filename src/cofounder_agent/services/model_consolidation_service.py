@@ -309,35 +309,16 @@ class GoogleAdapter(ProviderAdapter):
 
     def list_models(self) -> List[str]:
         """List available Google models"""
-        # Return models from the GeminiClient which has the current model list
-        try:
-            # This is synchronous but list_models() from GeminiClient returns a coroutine
-            # We need to call it synchronously, so return what we know is available
-            import asyncio
-
-            loop = asyncio.new_event_loop()
-            models = loop.run_until_complete(self.client.list_models())
-            loop.close()
-            return (
-                models
-                if models
-                else [
-                    "gemini-2.5-flash",
-                    "gemini-2.5-pro",
-                    "gemini-2.0-flash",
-                    "gemini-pro-latest",
-                    "gemini-flash-latest",
-                ]
-            )
-        except Exception as e:
-            logger.warning("Failed to get Gemini models from client, using defaults", error=str(e))
-            return [
-                "gemini-2.5-flash",
-                "gemini-2.5-pro",
-                "gemini-2.0-flash",
-                "gemini-pro-latest",
-                "gemini-flash-latest",
-            ]
+        # Return known available Gemini models
+        # Note: We don't try to fetch dynamically because we're in an async context (FastAPI)
+        # and creating a new event loop while one exists causes "event loop already running" errors
+        return [
+            "gemini-2.5-flash",
+            "gemini-2.5-pro",
+            "gemini-2.0-flash",
+            "gemini-pro-latest",
+            "gemini-flash-latest",
+        ]
 
 
 class AnthropicAdapter(ProviderAdapter):

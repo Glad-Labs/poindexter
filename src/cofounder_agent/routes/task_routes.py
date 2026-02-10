@@ -2249,6 +2249,13 @@ async def reject_task(
         raise HTTPException(status_code=500, detail=f"Failed to reject task: {str(e)}")
 
 
+class GenerateImageRequest(BaseModel):
+    """Request model for image generation"""
+    source: str = "pexels"  # "pexels" or "sdxl"
+    topic: Optional[str] = None
+    content_summary: Optional[str] = None
+
+
 @router.post(
     "/{task_id}/generate-image",
     response_model=dict,
@@ -2257,20 +2264,17 @@ async def reject_task(
 )
 async def generate_task_image(
     task_id: str,
-    source: str = "pexels",
-    topic: Optional[str] = None,
-    content_summary: Optional[str] = None,
+    request: GenerateImageRequest,
     current_user: dict = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
 ) -> Dict[str, str]:
     """
     Generate or fetch an image for a task using Pexels or SDXL.
     
-    **Parameters:**
-    - task_id: Task UUID
-    - source: Image source - "pexels" or "sdxl"
-    - topic: Topic for image search/generation
-    - content_summary: Summary of content for image generation
+    **Request Body Parameters:**
+    - source: Image source - "pexels" or "sdxl" (default: "pexels")
+    - topic: Topic for image search/generation (optional)
+    - content_summary: Summary of content for image generation (optional)
     
     **Returns:**
     - { "image_url": "https://..." }
@@ -2281,7 +2285,7 @@ async def generate_task_image(
       -H "Content-Type: application/json" \
       -H "Authorization: Bearer YOUR_JWT_TOKEN" \
       -d '{
-        "source": "pexels",
+        "source": "sdxl",
         "topic": "AI Marketing",
         "content_summary": "How AI is transforming marketing..."
       }'
@@ -2293,11 +2297,11 @@ async def generate_task_image(
         if not task:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
-        logger.info(f"Generating image for task {task_id} using {source}")
+        logger.info(f"Generating image for task {task_id} using {request.source}")
 
         image_url = None
 
-        if source == "pexels":
+        if request.source == "pexels":
             # Use Pexels API to search for images
             try:
                 import aiohttp
@@ -2306,7 +2310,7 @@ async def generate_task_image(
                 if not pexels_key:
                     raise HTTPException(status_code=400, detail="Pexels API key not configured")
 
-                search_query = topic or task.get("topic", "business")
+                search_query = request.topic or task.get("topic", "business")
 
                 async with aiohttp.ClientSession() as session:
                     async with session.get(
@@ -2364,7 +2368,7 @@ async def generate_task_image(
                     status_code=500, detail="Unexpected error fetching image from Pexels"
                 )
 
-        elif source == "sdxl":
+        elif request.source == "sdxl":
             # Use SDXL to generate an image
             try:
                 from pathlib import Path
@@ -2374,10 +2378,10 @@ async def generate_task_image(
                 image_service = ImageService()
 
                 # Build generation prompt from topic and content
-                generation_prompt = f"{topic}"
-                if content_summary:
+                generation_prompt = f"{request.topic}"
+                if request.content_summary:
                     # Extract key concepts from content summary
-                    generation_prompt = f"{topic}: {content_summary[:200]}"
+                    generation_prompt = f"{request.topic}: {request.content_summary[:200]}"
 
                 logger.info(f"🎨 Generating image with SDXL: {generation_prompt}")
 
@@ -2433,7 +2437,7 @@ async def generate_task_image(
                 )
         else:
             raise HTTPException(
-                status_code=400, detail=f"Invalid image source: {source}. Use 'pexels' or 'sdxl'"
+                status_code=400, detail=f"Invalid image source: {request.source}. Use 'pexels' or 'sdxl'"
             )
 
         if not image_url:

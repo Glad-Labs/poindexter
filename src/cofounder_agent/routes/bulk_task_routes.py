@@ -4,7 +4,7 @@ Bulk Task Operations Routes
 Provides endpoints for performing bulk operations on multiple tasks such as:
 - Pausing/resuming multiple tasks
 - Cancelling batches of tasks
-- Deleting/archiving multiple tasks
+- Rejecting multiple tasks (for audit tracking)
 """
 
 import logging
@@ -46,7 +46,7 @@ async def bulk_task_operations(
     - `pause`: Set status to paused (pause execution)
     - `resume`: Resume paused tasks (set to in_progress)
     - `cancel`: Cancel pending/running tasks (set to cancelled)
-    - `delete`: Mark tasks as deleted (set to deleted)
+    - `reject`: Mark tasks as rejected (set to rejected for audit tracking)
 
     **Authentication:** Required (JWT token)
 
@@ -94,14 +94,14 @@ async def bulk_task_operations(
         )
         raise HTTPException(status_code=400, detail=error_response.model_dump())
 
-    if request.action not in ["pause", "resume", "cancel", "delete"]:
+    if request.action not in ["pause", "resume", "cancel", "reject"]:
         error_response = (
             ErrorResponseBuilder()
             .error_code("VALIDATION_ERROR")
             .message("Invalid action specified")
             .with_field_error(
                 "action",
-                f"Must be one of: pause, resume, cancel, or delete. Got: {request.action}",
+                f"Must be one of: pause, resume, cancel, or reject. Got: {request.action}",
                 "INVALID_CHOICE",
             )
             .build()
@@ -113,7 +113,7 @@ async def bulk_task_operations(
         "pause": "paused",
         "resume": "in_progress",
         "cancel": "cancelled",
-        "delete": "deleted",
+        "reject": "rejected",
     }
     new_status = status_map[request.action]
 
