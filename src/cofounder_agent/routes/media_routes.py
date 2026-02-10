@@ -532,6 +532,12 @@ async def generate_featured_image(request: ImageGenerationRequest):
             elapsed = time.time() - start_time
 
             # ═══════════════════════════════════════════════════════════
+            # Unload SDXL models after generation to free memory
+            # ═══════════════════════════════════════════════════════════
+            if hasattr(image_service, '_unload_sdxl'):
+                image_service._unload_sdxl()
+
+            # ═══════════════════════════════════════════════════════════
             # NOTE: Image is in Downloads folder for preview/approval
             # Frontend should store local_path in task metadata
             # Approval endpoint will upload to Cloudinary and update posts table
@@ -555,6 +561,13 @@ async def generate_featured_image(request: ImageGenerationRequest):
                 message=f"✅ Image generated and saved locally (preview mode). Review and approve to publish.",
                 generation_time=elapsed,
             )
+        
+        # ═══════════════════════════════════════════════════════════
+        # Unload SDXL models if generation was requested but failed
+        # ═══════════════════════════════════════════════════════════
+        if request.use_generation and hasattr(image_service, '_unload_sdxl'):
+            image_service._unload_sdxl()
+        
         elapsed = time.time() - start_time
         return ImageGenerationResponse(
             success=False,
