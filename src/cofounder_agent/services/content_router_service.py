@@ -603,8 +603,8 @@ async def process_content_generation_task(
         }
         result["stages"]["2b_quality_evaluated_initial"] = True
         logger.info(f"✅ Initial quality evaluation complete:")
-        logger.info(f"   Overall Score: {quality_result.overall_score:.1f}/10")
-        logger.info(f"   Passing: {quality_result.passing} (threshold ≥7.0)\n")
+        logger.info(f"   Overall Score: {quality_result.overall_score:.1f}/100")
+        logger.info(f"   Passing: {quality_result.passing} (threshold ≥70.0)\n")
 
         # ================================================================================
         # STAGE 3: SOURCE FEATURED IMAGE FROM UNIFIED IMAGE SERVICE

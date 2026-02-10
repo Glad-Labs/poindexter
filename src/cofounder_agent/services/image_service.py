@@ -348,6 +348,8 @@ class ImageService:
         Returns:
             FeaturedImageMetadata or None if no image found
         """
+        import random
+        
         if not self.pexels_api_key:
             logger.warning("Pexels API key not configured")
             return None
@@ -397,12 +399,14 @@ class ImageService:
             try:
                 logger.info(f"Searching Pexels for: '{query}' (page {page})")
                 images = await self._pexels_search(
-                    query, per_page=3, orientation=orientation, size=size, page=page
+                    query, per_page=5, orientation=orientation, size=size, page=page
                 )
                 if images:
-                    metadata = images[0]
+                    # RANDOMIZE IMAGE SELECTION: Pick random image from results instead of always first
+                    # This prevents all posts from using the same image when topics are similar
+                    metadata = random.choice(images)
                     logger.info(
-                        f"✅ Found featured image for '{topic}' using query '{query}' (page {page})"
+                        f"✅ Found featured image for '{topic}' using query '{query}' (page {page}) - randomly selected from {len(images)} results"
                     )
                     return metadata
             except Exception as e:

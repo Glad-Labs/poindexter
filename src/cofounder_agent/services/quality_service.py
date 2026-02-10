@@ -59,7 +59,7 @@ class QualityScore:
     engagement: float  # 0-100
 
     # Feedback
-    passing: bool  # True if overall_score >= 7.0
+    passing: bool  # True if overall_score >= 70.0 (70/100 = passing for 0-100 scale)
     feedback: str  # Human-readable feedback
     suggestions: List[str]  # Improvement suggestions
 

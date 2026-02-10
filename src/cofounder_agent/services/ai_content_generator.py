@@ -264,15 +264,25 @@ Tags: {', '.join(tags) if tags else 'general'}"""
 
         generation_prompt = f"""Write a professional blog post about: {topic}
 
-Requirements:
-- Target length: approximately {target_length} words
+CRITICAL REQUIREMENTS:
+- **WORD COUNT**: Must be AT LEAST {target_length} words - ABSOLUTELY NO SHORTER POSTS
+- **MINIMUM SECTIONS**: Include at least 5 main sections with H2 headings
+- **CONTENT DEPTH**: Each section must be detailed and substantial (100-300 words minimum per section)
 - Style: {style}
 - Tone: {tone}
-- Format: Markdown with clear structure
-- Include practical examples and insights
-- End with a clear call-to-action
+- Format: Markdown with clear structure (# Title, ## Sections, ### Subsections)
+- **REQUIRED ELEMENTS**: 
+  - Detailed introduction paragraph (100+ words)
+  - At least 5 main content sections with practical examples
+  - Multiple bullet points and/or numbered lists in each section
+  - Real-world examples and case studies
+  - Detailed conclusion with clear call-to-action (100+ words)
 
-Start writing now:"""
+**IMPORTANT**: This must be a COMPLETE, COMPREHENSIVE post of {target_length}+ words. Do NOT abbreviate or cut short.
+
+Start writing the complete blog post now. Make it comprehensive and detailed:
+
+# """ 
 
         # Refinement prompt for content that doesn't pass QA
         refinement_prompt_template = """The following blog post was rejected for quality reasons. Please improve it:
@@ -402,11 +412,11 @@ Improved version:"""
 
                 # Run blocking Gemini call in a thread to avoid blocking the event loop
                 def _gemini_generate():
-                    # Calculate max tokens: markdown content + headers + lists need ~2-2.5 tokens per word
-                    # Using 2.5x multiplier to prevent token cutoff during generation
-                    max_tokens = int(target_length * 3.0)
+                    # Calculate max tokens: For Gemini, use higher multiplier for better word count coverage
+                    # Gemini uses different tokenization: ~3.5-4 tokens per word for markdown with formatting
+                    max_tokens = int(target_length * 4.5)  # Increased from 3.0 to 4.5 for better completion
                     logger.debug(
-                        f"   Gemini max_output_tokens: {max_tokens} (target_length: {target_length})"
+                        f"   Gemini max_output_tokens: {max_tokens} (target_length: {target_length}, multiplier: 4.5x)"
                     )
                     
                     if use_new_sdk:
@@ -435,7 +445,29 @@ Improved version:"""
 
                 response = await asyncio.to_thread(_gemini_generate)
 
-                generated_content = response.text
+                # Extract text from response - handle both old and new SDK response formats
+                generated_content = ""
+                try:
+                    if use_new_sdk:
+                        # New google.genai SDK: response.text
+                        if hasattr(response, 'text'):
+                            generated_content = response.text or ""
+                        elif hasattr(response, 'content'):
+                            generated_content = response.content or ""
+                        else:
+                            logger.error(f"Gemini response missing text/content attribute. Keys: {dir(response)}")
+                            generated_content = ""
+                    else:
+                        # Old google.generativeai SDK: response.text
+                        if hasattr(response, 'text'):
+                            generated_content = response.text or ""
+                        else:
+                            logger.error(f"Gemini response missing text attribute. Type: {type(response)}")
+                            generated_content = ""
+                except AttributeError as e:
+                    logger.error(f"Failed to extract text from Gemini response: {e}")
+                    generated_content = ""
+                
                 if generated_content and len(generated_content) > 100:
                     validation = self._validate_content(generated_content, topic, target_length)
                     metrics["validation_results"].append(
@@ -615,14 +647,14 @@ Improved version:"""
                                 )
 
                                 # Try to refine with same model
-                                # Calculate max tokens for refinement pass (2.5x multiplier)
-                                max_tokens_refinement = int(target_length * 3.0)
+                                # Calculate max tokens for refinement pass (4.5x multiplier for comprehensive refinement)
+                                max_tokens_refinement = int(target_length * 4.5)
                                 response = await ollama.generate(
                                     prompt=refinement_prompt,
                                     system=system_prompt,
                                     model=model_name,
                                     stream=False,
-                                    max_tokens=max_tokens_refinement,  # 2.0x multiplier for complete refinement
+                                    max_tokens=max_tokens_refinement,  # 4.5x multiplier for complete refinement with better word count
                                 )
 
                                 # Extract text from response dict

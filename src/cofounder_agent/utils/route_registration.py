@@ -256,6 +256,17 @@ def register_all_routes(
         status["agents_router"] = False
 
     try:
+        # ===== PRIVACY & GDPR COMPLIANCE =====
+        from routes.privacy_routes import router as privacy_router
+
+        app.include_router(privacy_router)
+        logger.info(" privacy_router registered (GDPR data subject requests)")
+        status["privacy_router"] = True
+    except Exception as e:
+        logger.error(f" privacy_router failed: {e}")
+        status["privacy_router"] = False
+
+    try:
         # ===== NEWSLETTER & EMAIL CAMPAIGNS =====
         from routes.newsletter_routes import router as newsletter_router
 

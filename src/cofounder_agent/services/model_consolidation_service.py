@@ -130,14 +130,21 @@ class OllamaAdapter(ProviderAdapter):
     async def is_available(self) -> bool:
         """Check if Ollama service is running"""
         try:
-            # Try to list models
-            models = await self.client.list_models()
-            is_available = len(models) > 0
-            if is_available:
-                logger.debug("Ollama available", model_count=len(models))
-            return is_available
+            # Simple health check - ping the Ollama API endpoint directly
+            import httpx
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                response = await client.get(f"{self.host}/api/tags")
+                is_available = response.status_code == 200
+                if is_available:
+                    logger.debug("Ollama available", host=self.host, status_code=response.status_code)
+                else:
+                    logger.debug("Ollama returning non-200 status", status_code=response.status_code)
+                return is_available
+        except asyncio.TimeoutError:
+            logger.debug("Ollama health check timed out (3s)", host=self.host)
+            return False
         except Exception as e:
-            logger.debug("Ollama unavailable", error=str(e))
+            logger.debug("Ollama unavailable", error=str(e), host=self.host)
             return False
 
     async def generate(
@@ -610,20 +617,24 @@ class ModelConsolidationService:
 
         # Try each provider in order
         last_error = None
+        logger.info(f"🔗 Starting provider fallback chain ({len(chain)} providers to try)", chain=[p.value for p in chain])
+        
         for provider_type in chain:
             try:
                 # Check availability
+                logger.debug(f"⏳ Checking {provider_type.value} availability...")
                 is_available = await self._check_provider_availability(provider_type)
                 if not is_available:
-                    logger.debug("Provider not available, skipping", provider=provider_type.value)
+                    logger.info(f"⏭️  {provider_type.value} not available, skipping", provider=provider_type.value)
                     continue
 
                 # Try to generate
                 adapter = self.adapters.get(provider_type)
                 if not adapter:
+                    logger.warning(f"⚠️  No adapter for {provider_type.value}, skipping", provider=provider_type.value)
                     continue
 
-                logger.info("Attempting generation with provider", provider=provider_type.value)
+                logger.info(f"🚀 Attempting generation with {provider_type.value}...", provider=provider_type.value)
 
                 response = await adapter.generate(
                     prompt=prompt,
@@ -647,7 +658,7 @@ class ModelConsolidationService:
                 self.metrics["by_provider"][provider_type.value]["cost"] += response.cost
 
                 logger.info(
-                    "Generation successful",
+                    f"✅ {provider_type.value} generation successful",
                     provider=provider_type.value,
                     response_time_ms=response.response_time_ms,
                     cost=response.cost,
@@ -658,14 +669,14 @@ class ModelConsolidationService:
             except Exception as e:
                 last_error = e
                 logger.warning(
-                    "Provider generation failed", provider=provider_type.value, error=str(e)
+                    f"❌ {provider_type.value} generation failed", provider=provider_type.value, error=str(e)
                 )
                 continue
 
         # All providers failed
         self.metrics["failed_requests"] += 1
         error_msg = f"All model providers failed. Last error: {str(last_error)}"
-        logger.error("All providers exhausted", error=error_msg)
+        logger.error("🚨 All providers exhausted", error=error_msg)
         raise Exception(error_msg)
 
     def get_status(self) -> Dict[str, Any]:
