@@ -12,30 +12,30 @@
 
 ## 🎯 Core Documentation - 7 Essential Files
 
-| Component                 | Start Here                                                                 |
+| Component                 | File                                                                       |
 | ------------------------- | -------------------------------------------------------------------------- |
-| Fundamentals              | [01-SETUP_AND_OVERVIEW.md](01-SETUP_AND_OVERVIEW.md)                       |
+| Fundamentals & Setup      | [01-SETUP_AND_OVERVIEW.md](01-SETUP_AND_OVERVIEW.md)                       |
 | System Architecture       | [02-ARCHITECTURE_AND_DESIGN.md](02-ARCHITECTURE_AND_DESIGN.md)             |
-| Intelligence & Agents      | [03-AI_AGENTS_AND_INTEGRATION.md](03-AI_AGENTS_AND_INTEGRATION.md)         |
-| Model Router & MCP         | [04-MODEL_ROUTER_AND_MCP.md](04-MODEL_ROUTER_AND_MCP.md)                   |
-| Environment & Config       | [05-ENVIRONMENT_VARIABLES.md](05-ENVIRONMENT_VARIABLES.md)                 |
-| Deployment & Infra         | [06-DEPLOYMENT_GUIDE.md](06-DEPLOYMENT_GUIDE.md)                           |
-| Operations & Maintenance   | [07-OPERATIONS_AND_MAINTENANCE.md](07-OPERATIONS_AND_MAINTENANCE.md)       |
+| Deployment & Infrastructure | [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](03-DEPLOYMENT_AND_INFRASTRUCTURE.md) |
+| Development Workflow      | [04-DEVELOPMENT_WORKFLOW.md](04-DEVELOPMENT_WORKFLOW.md)                   |
+| AI Agents & Integration   | [05-AI_AGENTS_AND_INTEGRATION.md](05-AI_AGENTS_AND_INTEGRATION.md)         |
+| Operations & Maintenance  | [06-OPERATIONS_AND_MAINTENANCE.md](06-OPERATIONS_AND_MAINTENANCE.md)       |
+| Environment & Variables   | [07-BRANCH_SPECIFIC_VARIABLES.md](07-BRANCH_SPECIFIC_VARIABLES.md)         |
 
 ---
 
 ## 📁 Documentation Structure Overview
 
-### 1. Core Documentation (7 Files) ✅ REVAMPED
+### 1. Numbered Core Documentation (7 Files) ✅ CURRENT
 
 - [00-README.md](00-README.md) - Navigation hub
 - [01-SETUP_AND_OVERVIEW.md](01-SETUP_AND_OVERVIEW.md) - Getting started
-- [02-ARCHITECTURE_AND_DESIGN.md](02-ARCHITECTURE_AND_DESIGN.md) - System design
-- [03-AI_AGENTS_AND_INTEGRATION.md](03-AI_AGENTS_AND_INTEGRATION.md) - AI & Agents (Refined)
-- [04-MODEL_ROUTER_AND_MCP.md](04-MODEL_ROUTER_AND_MCP.md) - Routing engine (New)
-- [05-ENVIRONMENT_VARIABLES.md](05-ENVIRONMENT_VARIABLES.md) - Consolidated config
-- [06-DEPLOYMENT_GUIDE.md](06-DEPLOYMENT_GUIDE.md) - Infrastructure
-- [07-OPERATIONS_AND_MAINTENANCE.md](07-OPERATIONS_AND_MAINTENANCE.md) - Operations (Updated)
+- [02-ARCHITECTURE_AND_DESIGN.md](02-ARCHITECTURE_AND_DESIGN.md) - System Design
+- [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](03-DEPLOYMENT_AND_INFRASTRUCTURE.md) - Deployment & Infrastructure
+- [04-DEVELOPMENT_WORKFLOW.md](04-DEVELOPMENT_WORKFLOW.md) - Development Workflow
+- [05-AI_AGENTS_AND_INTEGRATION.md](05-AI_AGENTS_AND_INTEGRATION.md) - AI Agents & Integration
+- [06-OPERATIONS_AND_MAINTENANCE.md](06-OPERATIONS_AND_MAINTENANCE.md) - Operations & Maintenance
+- [07-BRANCH_SPECIFIC_VARIABLES.md](07-BRANCH_SPECIFIC_VARIABLES.md) - Branch-Specific Variables
 
 ### 2. Decisions (3 Files) ✅ ACTIVE
 
@@ -105,7 +105,7 @@
 - ✅ Build fixes documentation
 - ✅ Compilation issues covered
 
-### Component Documentation
+### Service Components Coverage
 
 - ✅ 3 components documented
 - ✅ Component troubleshooting structure in place

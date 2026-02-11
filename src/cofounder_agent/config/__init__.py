@@ -55,28 +55,31 @@ def load_env() -> None:
     # Try to load .env.local from the project root
     # File location: src/cofounder_agent/config/__init__.py
     # Go up 3 levels: config/ → cofounder_agent/ → src/ → project_root/
+    import logging
+    logger = logging.getLogger(__name__)
+    
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
     env_local_path = os.path.join(project_root, ".env.local")
     
     if os.path.exists(env_local_path):
         load_dotenv(env_local_path, override=True)
         try:
-            print(f"[INFO] Loaded .env.local from: {env_local_path}")
+            logger.info(f"[INFO] Loaded .env.local from: {env_local_path}")
         except UnicodeEncodeError:
             # Windows cp1252 encoding issue with emojis
-            print(f"[INFO] Loaded .env.local from: {env_local_path}")
+            logger.info(f"[INFO] Loaded .env.local from: {env_local_path}")
     else:
         # Fallback: try current working directory
         current_dir_env = os.path.join(os.getcwd(), ".env.local")
         if os.path.exists(current_dir_env):
             load_dotenv(current_dir_env, override=True)
             try:
-                print(f"[INFO] Loaded .env.local from: {current_dir_env}")
+                logger.info(f"[INFO] Loaded .env.local from: {current_dir_env}")
             except UnicodeEncodeError:
                 # Windows cp1252 encoding issue with emojis
-                print(f"[INFO] Loaded .env.local from: {current_dir_env}")
+                logger.info(f"[INFO] Loaded .env.local from: {current_dir_env}")
         else:
-            print(f"[WARNING] .env.local not found at {env_local_path} or {current_dir_env}")
+            logger.warning(f"[WARNING] .env.local not found at {env_local_path} or {current_dir_env}")
     
     _ENV_LOADED = True
 

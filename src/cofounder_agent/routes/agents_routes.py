@@ -447,7 +447,8 @@ async def get_agent_system_health(orchestrator=Depends(get_orchestrator)):
                 details[f"{agent_name}_agent"] = status_obj.status
                 if status_obj.status == "error":
                     error_count += 1
-            except Exception:
+            except (KeyError, AttributeError, ValueError):
+                # Agent may not exist or status cannot be determined
                 details[f"{agent_name}_agent"] = "error"
                 error_count += 1
 

@@ -226,10 +226,10 @@ async def example_research_for_content():
     )
 
     if context["research_phase_complete"]:
-        print(f"✓ Research complete for: {context['topic']}")
-        print(f"  - Key findings: {len(context['key_findings'])} extracted")
-        print(f"  - Sources: {len(context['sources'])} identified")
-        print(f"  - Trends: {context['trends']}")
+        logger.info(f"✓ Research complete for: {context['topic']}")
+        logger.info(f"  - Key findings: {len(context['key_findings'])} extracted")
+        logger.info(f"  - Sources: {len(context['sources'])} identified")
+        logger.info(f"  - Trends: {context['trends']}")
 
         # This context is now ready to pass to Creative Agent
         # creative_result = await creative_agent.execute(
@@ -240,7 +240,7 @@ async def example_research_for_content():
 
         return context
 
-    print(f"✗ Research failed: {context.get('error')}")
+    logger.error(f"✗ Research failed: {context.get('error')}")
     return None
 
 

@@ -361,6 +361,6 @@ if __name__ == "__main__":
             depth="comprehensive",
             fetch_articles=True,
         )
-        print(json.dumps(data, indent=2, default=str))
+        logger.info(json.dumps(data, indent=2, default=str))
 
     asyncio.run(main())

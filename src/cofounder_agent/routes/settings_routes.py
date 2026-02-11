@@ -38,7 +38,9 @@ from schemas.settings_schemas import (
     SettingResponse,
     SettingUpdate,
 )
+from services.database_service import DatabaseService
 from utils.error_responses import ErrorResponseBuilder
+from utils.route_utils import get_database_dependency
 
 # Create router
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -100,7 +102,7 @@ async def list_settings(
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     per_page: int = Query(20, ge=1, le=100, description="Items per page"),
     current_user=Depends(get_current_user),
-    # db: Session = Depends(get_db),
+    db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
     List all settings with role-based filtering.
@@ -123,35 +125,45 @@ async def list_settings(
     - `page`: Page number for pagination
     - `per_page`: Number of items per page (max 100)
     """
-    # Mock implementation for testing
-    total = 10
-    offset = (page - 1) * per_page
-    pages = (total + per_page - 1) // per_page
+    try:
+        # Get all active settings from database (optionally filtered by category)
+        all_settings = await db_service.get_all_settings(category=category.value if category else None)
+        
+        # Apply pagination
+        total = len(all_settings)
+        offset = (page - 1) * per_page
+        pages = (total + per_page - 1) // per_page if per_page > 0 else 1
+        
+        # Slice for pagination
+        paginated_items = all_settings[offset:offset + per_page]
+        
+        # Convert to SettingResponse objects
+        items = [
+            SettingResponse(
+                id=setting.get("id") or idx,
+                key=setting.get("key", ""),
+                value=setting.get("value", ""),
+                data_type=SettingDataTypeEnum.STRING,
+                category=SettingCategoryEnum.DATABASE,
+                environment=SettingEnvironmentEnum.PRODUCTION,
+                description=setting.get("description", ""),
+                is_encrypted=False,
+                is_read_only=False,
+                tags=[],
+                created_at=setting.get("created_at") or datetime.utcnow(),
+                updated_at=setting.get("updated_at") or datetime.utcnow(),
+                created_by_id=1,
+                updated_by_id=None,
+                value_preview=setting.get("value", "")[:50],
+            )
+            for idx, setting in enumerate(paginated_items)
+        ]
 
-    mock_settings = [
-        SettingResponse(
-            id=i + 1,
-            key=f"setting_{i+1}",
-            value=f"value_{i+1}",
-            data_type=SettingDataTypeEnum.STRING,
-            category=SettingCategoryEnum.DATABASE,
-            environment=SettingEnvironmentEnum.DEVELOPMENT,
-            description=f"Test setting {i+1}",
-            is_encrypted=False,
-            is_read_only=False,
-            tags=["test"],
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
-            created_by_id=1,
-            updated_by_id=None,
-            value_preview=f"value_{i+1}",
+        return SettingListResponse(
+            total=total, page=page, per_page=per_page, pages=pages, items=items
         )
-        for i in range(offset, min(offset + per_page, total))
-    ]
-
-    return SettingListResponse(
-        total=total, page=page, per_page=per_page, pages=pages, items=mock_settings
-    )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve settings: {str(e)}")
 
 
 @router.get(
@@ -169,6 +181,7 @@ async def list_settings(
 async def get_setting(
     setting_id: str = Path(..., description="Setting ID or key name"),
     current_user=Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
     Get details of a specific setting.
@@ -186,33 +199,35 @@ async def get_setting(
     **Path Parameters:**
     - `setting_id`: ID or key name of the setting to retrieve
     """
-    # Mock implementation for testing
-    # Try to convert to int, if fails treat as key name
     try:
-        setting_id_int = int(setting_id)
-        if setting_id_int < 1 or setting_id_int > 10:
-            raise HTTPException(status_code=404, detail="Setting not found")
-    except ValueError:
-        # Treat as key name
-        setting_id_int = hash(setting_id) % 10 + 1
-
-    return SettingResponse(
-        id=setting_id_int,
-        key=f"setting_{setting_id_int}",
-        value=f"value_{setting_id_int}",
-        data_type=SettingDataTypeEnum.STRING,
-        category=SettingCategoryEnum.DATABASE,
-        environment=SettingEnvironmentEnum.DEVELOPMENT,
-        description=f"Test setting {setting_id_int}",
-        is_encrypted=False,
-        is_read_only=False,
-        tags=["test"],
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-        created_by_id=1,
-        updated_by_id=None,
-        value_preview=f"value_{setting_id_int}",
-    )
+        # Try to get setting from database by key
+        setting = await db_service.get_setting(setting_id)
+        
+        if not setting:
+            raise HTTPException(status_code=404, detail=f"Setting '{setting_id}' not found")
+        
+        # Convert database result to SettingResponse
+        return SettingResponse(
+            id=setting.get("id") or 1,
+            key=setting.get("key", setting_id),
+            value=setting.get("value", ""),
+            data_type=SettingDataTypeEnum.STRING,
+            category=SettingCategoryEnum.DATABASE,
+            environment=SettingEnvironmentEnum.PRODUCTION,
+            description=setting.get("description", ""),
+            is_encrypted=False,
+            is_read_only=False,
+            tags=[],
+            created_at=setting.get("created_at") or datetime.utcnow(),
+            updated_at=setting.get("updated_at") or datetime.utcnow(),
+            created_by_id=1,
+            updated_by_id=None,
+            value_preview=setting.get("value", "")[:50],
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve setting: {str(e)}")
 
 
 @router.post(
@@ -231,6 +246,7 @@ async def get_setting(
 async def create_setting(
     setting_data: SettingCreate,
     current_user=Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
     Create a new setting (admin only).
@@ -265,41 +281,52 @@ async def create_setting(
     }
     ```
     """
-    # Mock implementation for testing - handle optional fields with defaults
-    import random
-    import string
-
-    # Generate a random key if not provided
-    if not setting_data.key:
-        key = f"setting_{''.join(random.choices(string.ascii_lowercase + string.digits, k=8))}"
-    else:
-        key = setting_data.key
-
-    value = setting_data.value or "default_value"
-    data_type = setting_data.data_type or SettingDataTypeEnum.STRING
-    category = setting_data.category or SettingCategoryEnum.SYSTEM
-    environment = setting_data.environment or SettingEnvironmentEnum.ALL
-    is_encrypted = setting_data.is_encrypted if setting_data.is_encrypted is not None else False
-    is_read_only = setting_data.is_read_only if setting_data.is_read_only is not None else False
-    tags = setting_data.tags or []
-
-    return SettingResponse(
-        id=11,
-        key=key,
-        value=value,
-        data_type=data_type,
-        category=category,
-        environment=environment,
-        description=setting_data.description or f"Setting: {key}",
-        is_encrypted=is_encrypted,
-        is_read_only=is_read_only,
-        tags=tags,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-        created_by_id=1,
-        updated_by_id=None,
-        value_preview=value if not is_encrypted else f"{value[:10]}...",
-    )
+    try:
+        # Validate key is provided
+        if not setting_data.key:
+            raise HTTPException(status_code=400, detail="Setting key is required")
+        
+        # Check if setting already exists
+        existing = await db_service.setting_exists(setting_data.key)
+        if existing:
+            raise HTTPException(status_code=409, detail=f"Setting key '{setting_data.key}' already exists")
+        
+        # Create setting in database
+        success = await db_service.set_setting(
+            key=setting_data.key,
+            value=setting_data.value or "default",
+            category=setting_data.category.value if setting_data.category else None,
+            display_name=setting_data.key,
+            description=setting_data.description or f"Setting: {setting_data.key}",
+        )
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to create setting")
+        
+        # Fetch created setting
+        created_setting = await db_service.get_setting(setting_data.key)
+        
+        return SettingResponse(
+            id=created_setting.get("id") or 1,
+            key=created_setting.get("key", setting_data.key),
+            value=created_setting.get("value", ""),
+            data_type=setting_data.data_type or SettingDataTypeEnum.STRING,
+            category=setting_data.category or SettingCategoryEnum.SYSTEM,
+            environment=setting_data.environment or SettingEnvironmentEnum.PRODUCTION,
+            description=created_setting.get("description", ""),
+            is_encrypted=False,
+            is_read_only=False,
+            tags=setting_data.tags or [],
+            created_at=created_setting.get("created_at") or datetime.utcnow(),
+            updated_at=created_setting.get("updated_at") or datetime.utcnow(),
+            created_by_id=1,
+            updated_by_id=None,
+            value_preview=created_setting.get("value", "")[:50],
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create setting: {str(e)}")
 
 
 @router.put(
@@ -456,8 +483,9 @@ async def update_setting(
     },
 )
 async def delete_setting(
-    setting_id: int = Path(..., gt=0, description="Setting ID"),
+    setting_id: str = Path(..., description="Setting ID or key name"),
     current_user=Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
     request: Request = None,
 ):
     """
@@ -484,26 +512,24 @@ async def delete_setting(
     - 204 No Content on success
     - No response body
     """
-    # Mock implementation for testing
-    if setting_id < 1 or setting_id > 10:
-        raise HTTPException(status_code=404, detail="Setting not found")
-
-    # Log the deletion for audit trail
-    log_audit(
-        action=SettingsAuditLogger.ACTION_DELETE,
-        setting_id=str(setting_id),
-        user_id=current_user.get("user_id", "unknown"),
-        old_value=f"old_value_{setting_id}",
-        new_value=None,
-        user_email=current_user.get("email", "unknown"),
-        change_description=f"Deleted setting {setting_id}",
-        ip_address=request.client.host if request else None,
-        user_agent=request.headers.get("user-agent") if request else None,
-    )
-
-    # Return 204 No Content (successful deletion)
-    # No response body needed for 204 status
-    return
+    try:
+        # Check if setting exists
+        existing = await db_service.get_setting(setting_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail=f"Setting '{setting_id}' not found")
+        
+        # Delete setting from database
+        success = await db_service.delete_setting(setting_id)
+        
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to delete setting")
+        
+        # Return 204 No Content (successful deletion)
+        return None
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete setting: {str(e)}")
 
 
 # ============================================================================

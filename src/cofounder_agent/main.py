@@ -122,27 +122,27 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
 
         logger.info("[OK] Lifespan: Yielding control to FastAPI application. ..")
         try:
-            print("[OK] Application is now running")
+            logger.info("[OK] Application is now running")
         except UnicodeEncodeError:
-            print("[OK] Application is now running")
+            logger.info("[OK] Application is now running")
 
         yield  # Application runs here
 
     except Exception as e:
         logger.error(f"Critical startup failure: {str(e)}", exc_info=True)
         try:
-            print(f"[ERROR] EXCEPTION IN LIFESPAN: {str(e)}")
+            logger.error(f"[ERROR] EXCEPTION IN LIFESPAN: {str(e)}")
         except UnicodeEncodeError:
-            print(f"[ERROR] EXCEPTION IN LIFESPAN: {str(e)}")
+            logger.error(f"[ERROR] EXCEPTION IN LIFESPAN: {str(e)}")
         app.state.startup_error = str(e)
         app.state.startup_complete = True
         raise
 
     finally:
         try:
-            print("[STOP] Shutting down application")
+            logger.info("[STOP] Shutting down application")
         except UnicodeEncodeError:
-            print("[STOP] Shutting down application")
+            logger.info("[STOP] Shutting down application")
         await startup_manager.shutdown()
 
 
@@ -419,7 +419,7 @@ if __name__ == "__main__":
     # NOTE: Use 'python -m uvicorn main:app --reload' instead of 'python main.py'
     # This file is imported by uvicorn when using the module syntax, so running
     # uvicorn.run() here creates nested server conflicts.
-    print("ERROR: Do not run 'python main.py' directly.")
-    print("Instead, use:")
-    print("  python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000")
+    logger.error("ERROR: Do not run 'python main.py' directly.")
+    logger.error("Instead, use:")
+    logger.error("  python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000")
     sys.exit(1)

@@ -1,7 +1,10 @@
 import asyncio
+import logging
 import os
 from services.database_service import DatabaseService
 from services.migrations import MigrationService
+
+logger = logging.getLogger(__name__)
 
 async def run_migrations():
     # Initialize database service
@@ -13,9 +16,9 @@ async def run_migrations():
     success = await migration_service.run_migrations()
     
     if success:
-        print('✅ Migrations completed successfully')
+        logger.info('✅ Migrations completed successfully')
     else:
-        print('❌ Migrations failed')
+        logger.error('❌ Migrations failed')
 
 if __name__ == "__main__":
     asyncio.run(run_migrations())

@@ -216,10 +216,10 @@ if __name__ == "__main__":
         )
 
         post_id, post_url = await strapi_client.create_post(sample_post)
-        print(f"Created post: ID={post_id}, URL={post_url}")
+        logger.info(f"Created post: ID={post_id}, URL={post_url}")
 
         # Fetch all published posts for internal linking
         published_posts = await strapi_client.get_all_published_posts()
-        print("Published Posts:", published_posts)
+        logger.info("Published Posts: %s", published_posts)
 
     asyncio.run(main())

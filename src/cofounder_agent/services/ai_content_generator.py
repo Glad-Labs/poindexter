@@ -1057,14 +1057,16 @@ def get_content_generator() -> AIContentGenerator:
 
 async def test_generation():
     """Test content generation"""
+    from services.logger_config import get_logger
+    logger = get_logger(__name__)
     generator = get_content_generator()
 
-    print("Testing content generation...")
-    print(f"Ollama available: {generator.ollama_available}")
-    print(f"HuggingFace token: {'✓' if generator.hf_token else '✗'}")
-    print(f"Gemini key: {'✓' if generator.gemini_key else '✗'}")
+    logger.info("Testing content generation...")
+    logger.debug(f"Ollama available: {generator.ollama_available}")
+    logger.debug(f"HuggingFace token: {'✓' if generator.hf_token else '✗'}")
+    logger.debug(f"Gemini key: {'✓' if generator.gemini_key else '✗'}")
 
-    print("\nGenerating blog post...")
+    logger.info("Generating blog post...")
     content, model, metrics = await generator.generate_blog_post(
         topic="AI-Powered Content Creation for Modern Marketing",
         style="technical",
@@ -1073,12 +1075,12 @@ async def test_generation():
         tags=["AI", "Marketing", "Technology"],
     )
 
-    print(f"\nModel used: {model}")
-    print(f"Content length: {len(content)} characters")
-    print(f"Quality score: {metrics['final_quality_score']}/10")
-    print(f"Generation attempts: {metrics['generation_attempts']}")
-    print(f"Time taken: {metrics['generation_time_seconds']:.2f} seconds")
-    print(f"\nFirst 500 characters:\n{content[:500]}...")
+    logger.info(f"Model used: {model}")
+    logger.info(f"Content length: {len(content)} characters")
+    logger.info(f"Quality score: {metrics['final_quality_score']}/10")
+    logger.info(f"Generation attempts: {metrics['generation_attempts']}")
+    logger.info(f"Time taken: {metrics['generation_time_seconds']:.2f} seconds")
+    logger.info(f"First 500 characters:\n{content[:500]}...")
 
 
 if __name__ == "__main__":

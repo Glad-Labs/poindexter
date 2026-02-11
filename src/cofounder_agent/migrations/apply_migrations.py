@@ -5,6 +5,7 @@ Applies SQL migrations from the migrations/ directory to the PostgreSQL database
 """
 
 import glob
+import logging
 import os
 import sys
 from pathlib import Path
@@ -13,21 +14,25 @@ from urllib.parse import urlparse
 import psycopg2
 from dotenv import load_dotenv
 
+# Setup logging
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+logger = logging.getLogger(__name__)
+
 # Load .env.local from project root
 env_path = Path(__file__).parent.parent.parent.parent / '.env.local'
 if env_path.exists():
     load_dotenv(env_path)
-    print(f"📄 Loaded environment from: {env_path}")
+    logger.info(f"📄 Loaded environment from: {env_path}")
 else:
-    print(f"⚠️  .env.local not found at {env_path}")
-    print(f"   Checking for environment variables instead...")
+    logger.warning(f"⚠️  .env.local not found at {env_path}")
+    logger.info(f"   Checking for environment variables instead...")
 
 def get_database_url():
     """Get DATABASE_URL from environment"""
     db_url = os.getenv('DATABASE_URL')
     if not db_url:
-        print("❌ DATABASE_URL environment variable not set")
-        print("Please set DATABASE_URL in .env.local or as an environment variable")
+        logger.error("❌ DATABASE_URL environment variable not set")
+        logger.error("Please set DATABASE_URL in .env.local or as an environment variable")
         sys.exit(1)
     return db_url
 
@@ -47,15 +52,15 @@ def apply_migrations():
     db_url = get_database_url()  # Use environment variable, not hardcoded!
     db_config = parse_db_url(db_url)
     
-    print("🔄 Applying database migrations...")
-    print(f"📍 Target: {db_config['host']}:{db_config['port']}/{db_config['database']}")
+    logger.info("🔄 Applying database migrations...")
+    logger.info(f"📍 Target: {db_config['host']}:{db_config['port']}/{db_config['database']}")
     
     # Connect to database
     try:
         conn = psycopg2.connect(**db_config)
         cursor = conn.cursor()
     except Exception as e:
-        print(f"❌ Failed to connect to database: {e}")
+        logger.error(f"❌ Failed to connect to database: {e}")
         sys.exit(1)
     
     # Get migrations directory
@@ -63,7 +68,7 @@ def apply_migrations():
     migration_files = sorted(glob.glob(str(migrations_dir / "*.sql")))
     
     if not migration_files:
-        print("⚠️  No migration files found")
+        logger.warning("⚠️  No migration files found")
         cursor.close()
         conn.close()
         return
@@ -99,7 +104,7 @@ def apply_migrations():
     # Apply each migration
     for migration_file in migration_files:
         migration_name = Path(migration_file).name
-        print(f"\n📝 Applying migration: {migration_name}")
+        logger.info(f"\n📝 Applying migration: {migration_name}")
         
         try:
             with open(migration_file, 'r') as f:
@@ -107,18 +112,18 @@ def apply_migrations():
             
             cursor.execute(sql)
             conn.commit()
-            print(f"✅ Migration completed: {migration_name}")
+            logger.info(f"✅ Migration completed: {migration_name}")
         except Exception as e:
             conn.rollback()
-            print(f"❌ Migration failed: {migration_name}")
-            print(f"   Error: {e}")
+            logger.error(f"❌ Migration failed: {migration_name}")
+            logger.error(f"   Error: {e}")
             cursor.close()
             conn.close()
             sys.exit(1)
     
     cursor.close()
     conn.close()
-    print("\n✅ All database migrations applied successfully!")
+    logger.info("\n✅ All database migrations applied successfully!")
 
 if __name__ == '__main__':
     apply_migrations()

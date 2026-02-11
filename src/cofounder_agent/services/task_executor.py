@@ -841,7 +841,29 @@ class TaskExecutor:
         )
 
         # End operation with correct signature
-        self.usage_tracker.end_operation(f"task_execution_{task_id}", success=True, error=None)
+        operation_metrics = self.usage_tracker.end_operation(f"task_execution_{task_id}", success=True, error=None)
+
+        # Persist cost metrics to database for historical reporting
+        if operation_metrics and self.database_service:
+            try:
+                cost_log = {
+                    "task_id": str(task_id),
+                    "user_id": task.get("user_id"),
+                    "phase": "content_generation",  # Single phase for overall task
+                    "model": operation_metrics.get("model_name", "unknown"),
+                    "provider": operation_metrics.get("model_provider", "unknown"),
+                    "input_tokens": operation_metrics.get("input_tokens", 0),
+                    "output_tokens": operation_metrics.get("output_tokens", 0),
+                    "total_tokens": operation_metrics.get("input_tokens", 0) + operation_metrics.get("output_tokens", 0),
+                    "cost_usd": operation_metrics.get("total_cost_usd", 0.0),
+                    "quality_score": quality_score,
+                    "duration_ms": int(operation_metrics.get("duration_ms", 0)),
+                    "success": True,
+                }
+                await self.database_service.log_cost(cost_log)
+                logger.debug(f"✅ Logged task cost: ${cost_log['cost_usd']:.6f} to database")
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to persist cost metrics: {e}")
 
         # Store metadata in result
         metadata = {
