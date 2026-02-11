@@ -11,7 +11,7 @@ import logging
 from typing import Any, Dict, Optional
 
 from .ollama_client import OllamaClient
-from .prompt_templates import PromptTemplates
+from .prompt_manager import get_prompt_manager
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +144,19 @@ class ContentCritiqueLoop:
             if not await self.ollama_client.check_health():
                 return None
 
-            prompt = PromptTemplates.content_critique_prompt(content, context)
+            # Use centralized prompt manager for consistent, versioned prompts
+            pm = get_prompt_manager()
+            prompt = pm.get_prompt(
+                "qa.self_critique",
+                topic=context.get("topic", "") if context else "",
+                target_audience=context.get("target_audience", "") if context else "",
+                primary_keyword=context.get("primary_keyword", "") if context else "",
+                style=context.get("style", "") if context else "",
+                tone=context.get("tone", "") if context else "",
+                target_length=context.get("target_length", 1500) if context else 1500,
+                writing_style_reference=context.get("writing_style_guidance", "") if context else "",
+                content=content
+            )
 
             # Generate critique
             # Use 'mistral' or 'llama2' as they are good at following JSON instructions

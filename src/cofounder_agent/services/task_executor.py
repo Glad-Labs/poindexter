@@ -28,8 +28,8 @@ from .ai_content_generator import AIContentGenerator
 # Import the content critique loop
 from .content_critique_loop import ContentCritiqueLoop
 
-# Import prompt templates
-from .prompt_templates import PromptTemplates
+# Import prompt manager for centralized prompts
+from .prompt_manager import get_prompt_manager
 
 # Import usage tracking
 from .usage_tracker import get_usage_tracker
@@ -421,15 +421,17 @@ class TaskExecutor:
 
                 # Using UnifiedOrchestrator (IntelligentOrchestrator is deprecated)
                 logger.info(f"   🚀 Using UnifiedOrchestrator (unified system)")
-                # Construct natural language request using centralized template
-                prompt = PromptTemplates.blog_generation_prompt(
+                # Construct natural language request using centralized prompt manager
+                pm = get_prompt_manager()
+                prompt = pm.get_prompt(
+                    "blog_generation.blog_generation_request",
                     topic=topic,
-                    primary_keyword=primary_keyword,
-                    target_audience=target_audience,
-                    category=category,
-                    style=style,
-                    tone=tone,
-                    target_length=target_length,
+                    primary_keyword=primary_keyword or "",
+                    target_audience=target_audience or "",
+                    category=category or "",
+                    style=style or "",
+                    tone=tone or "",
+                    target_length=target_length
                 )
 
                 # Build execution context with model information

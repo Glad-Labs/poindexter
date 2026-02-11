@@ -1,24 +1,8 @@
 # 05 - AI Agents & Integration
 
-**Last Updated:** November 5, 2025  
-<<<<<<< HEAD
-**Version:** 3.0  
-**Status:** ✅ Production Ready | CrewAI Tools Integrated | Self-Critiquing Pipeline Active
-=======
-**Version:** 1.1  
-**Status:** ✅ Production Ready
-
-> > > > > > > feat/refine
-
----
-
-## 🎯 Quick Links
-
-- **[Agent Architecture](#agent-architecture)** - How agents work
-- **[Specialized Agents](#specialized-agents)** - Agent capabilities
-- **[Multi-Agent Orchestration](#multi-agent-orchestration)** - Agent coordination
-- **[Memory System](#memory-system)** - Context and learning
-- **[MCP Integration](#mcp-integration)** - Model Context Protocol
+**Last Updated:** February 10, 2026  
+**Version:** 3.1.0  
+**Status:** ✅ Production Ready | Multi-Agent Orchestration | Self-Critiquing Pipeline Active
 
 ---
 
@@ -26,19 +10,20 @@
 
 ### Self-Critiquing Pipeline System
 
-Glad Labs implements a sophisticated self-critiquing content generation pipeline where agents evaluate each other's work and provide feedback for continuous improvement. This ensures high-quality, publication-ready content.
+Glad Labs implements a sophisticated self-critiquing content generation pipeline where agents evaluate each other's work and provide feedback.
+
+**Location:** `src/cofounder_agent/agents/content_agent/`
 
 ```text
 ┌─────────────────────────────────────────────┐
 │         Oversight Hub (UI)                  │
 └──────────────────┬──────────────────────────┘
-                   │ REST API
+                   │ POST /api/tasks
 ┌──────────────────▼──────────────────────────┐
 │  Co-Founder Orchestrator (FastAPI)          │
-│  - Request routing                          │
-│  - Agent coordination                       │
-│  - Task distribution                        │
-│  - Result aggregation                       │
+│  - Task Queueing                            │
+│  - TaskExecutor (Polling Loop)              │
+│  - UnifiedOrchestrator                      │
 └──────────────────┬──────────────────────────┘
                    │
         ┌──────────┴──────────────────────────┐
@@ -60,41 +45,16 @@ Glad Labs implements a sophisticated self-critiquing content generation pipeline
                                    │
         ┌──────────────────────────▼──────────┐
         │ Model Router (Multi-Provider)       │
-        │ Ollama → Claude → GPT → Gemini      │
-        │ (Prioritized fallback chain)        │
+        │ [See 04-MODEL_ROUTER_AND_MCP.md]    │
         └─────────────────────────────────────┘
 ```
 
-### Agent Base Class
+### Agent Discovery & Execution
 
-```python
-# src/agents/base_agent.py
-from abc import ABC, abstractmethod
+Agents are discovered dynamically via the `service_container` in `src/cofounder_agent/services/container.py`.
 
-class BaseAgent(ABC):
-    def __init__(self, name: str, model: str = None):
-        self.name = name
-        self.model = model  # Can be overridden per agent
-        self.memory = MemorySystem()
-        self.llm_client = LLMClient()  # Handles model routing
-
-    @abstractmethod
-    async def execute(self, task: Task) -> Result:
-        """Execute agent task"""
-        pass
-
-    async def think(self, prompt: str) -> str:
-        """Query LLM with model fallback (Ollama first)"""
-        return await self.llm_client.query(prompt, self.model)
-
-    async def critique(self, content: str, criteria: str) -> str:
-        """Provide constructive feedback"""
-        pass
-
-    async def remember(self, context: str) -> None:
-        """Store in memory for future use"""
-        pass
-```
+- **Entry Point:** `UnifiedOrchestrator.process_request()`
+- **Routing:** Handled via `RequestType` detection and intent parsing.
 
 ---
 
@@ -205,7 +165,7 @@ async def generate_blog_post(topic: str):
 
 **Usage Patterns:**
 
-- **End-to-end generation:** POST `/api/content/generate-blog-post` → Full 6-agent pipeline with self-critique
+- **End-to-end generation:** POST `/api/tasks` with `task_type: "blog_post"` → Full 6-agent pipeline with self-critique
 - **Individual agents:** POST `/api/agents/{research|create|qa|image|publish}` → Use specific agent
 - **Custom workflows:** Combine agents in any order for flexible content workflows
 

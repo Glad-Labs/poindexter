@@ -5,8 +5,6 @@ Implements PostgreSQL database with REST API command queue integration
 """
 
 import sys
-import logging
-import os
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any, Dict, Optional
@@ -16,7 +14,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from pydantic import BaseModel, validator
 
 # Import configuration
-from config import get_config, load_env
+from config import get_config
 
 # Load configuration
 config = get_config()
@@ -26,8 +24,7 @@ from services.logger_config import get_logger
 from services.quality_service import UnifiedQualityService
 from services.sentry_integration import setup_sentry
 from services.telemetry import setup_telemetry
-from services.unified_orchestrator import UnifiedOrchestrator
-from services.container import service_container, get_service
+from services.container import service_container
 from services.auth import AuthService
 
 # Local application imports (must come after path setup)
@@ -36,8 +33,6 @@ from utils.middleware_config import MiddlewareConfig
 from utils.route_registration import register_all_routes
 from utils.route_utils import initialize_services
 from utils.startup_manager import StartupManager
-
-# pylint: enable=wrong-import-error
 
 try:
     import sentry_sdk  # pylint: disable=unused-import
@@ -213,7 +208,6 @@ logger.info("[STARTUP] ✅ All routes registered")
 
 # ===== UNIFIED HEALTH CHECK ENDPOINT =====
 # Consolidated from: /api/health, /status, /metrics/health, and route-specific health endpoints
-from services.health_service import get_health_service
 
 @app.get("/api/health")
 async def api_health():
@@ -285,7 +279,6 @@ async def health():
 
 # ===== METRICS ENDPOINT =====
 # Consolidated from: /api/metrics, /metrics, /tasks/metrics, etc.
-from services.metrics_service import get_metrics_service
 
 @app.get("/api/metrics")
 async def get_metrics_endpoint():
@@ -350,7 +343,7 @@ class CommandRequest(BaseModel):
     context: Optional[Dict[str, Any]] = None
 
     @validator("command")
-    def _command_must_not_be_empty(cls, v: str) -> str:
+    def _command_must_not_be_empty(cls, v: str) -> str:  # pylint: disable=no-self-argument
         if not v or not v.strip():
             raise ValueError("command must be a non-empty string")
         return v

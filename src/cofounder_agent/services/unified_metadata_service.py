@@ -403,12 +403,13 @@ class UnifiedMetadataService:
         if not self.llm_available:
             return None
 
-        prompt = f"""Generate a concise, engaging summary (max {max_length} characters) for social media/blog preview.
-
-Content:
-{content[:800]}
-
-Generate ONLY the excerpt, nothing else. No quotes, no explanation."""
+        # Use centralized prompt manager
+        pm = get_prompt_manager()
+        prompt = pm.get_prompt(
+            "seo.generate_excerpt",
+            max_length=max_length,
+            content=content[:800]
+        )
 
         try:
             if ANTHROPIC_AVAILABLE:
@@ -662,16 +663,14 @@ Generate ONLY the excerpt, nothing else. No quotes, no explanation."""
             [f"- {cat['name']}: {cat.get('description', 'N/A')}" for cat in available_categories]
         )
 
-        prompt = f"""Select the BEST category for this content.
-
-Title: {title or 'N/A'}
-Content (first 500 chars):
-{content[:500]}
-
-Available Categories:
-{categories_text}
-
-Respond with ONLY the exact category name from the list, nothing else."""
+        # Use centralized prompt manager
+        pm = get_prompt_manager()
+        prompt = pm.get_prompt(
+            "seo.match_category",
+            title=title or "N/A",
+            content=content[:500],
+            categories_list=categories_text
+        )
 
         try:
             if ANTHROPIC_AVAILABLE:
@@ -777,15 +776,15 @@ Respond with ONLY the exact category name from the list, nothing else."""
 
         tags_text = ", ".join([f"{tag['name']}" for tag in available_tags])
 
-        prompt = f"""Extract the {max_tags} most relevant tags for this content.
-
-Title: {title or 'N/A'}
-Content (first 500 chars):
-{content[:500]}
-
-Available Tags: {tags_text}
-
-Respond with ONLY comma-separated tag names, nothing else. Example: tag1, tag2, tag3"""
+        # Use centralized prompt manager
+        pm = get_prompt_manager()
+        prompt = pm.get_prompt(
+            "seo.extract_tags",
+            max_tags=max_tags,
+            title=title or "N/A",
+            content=content[:500],
+            tags_list=tags_text
+        )
 
         try:
             if ANTHROPIC_AVAILABLE:
@@ -828,26 +827,18 @@ Respond with ONLY comma-separated tag names, nothing else. Example: tag1, tag2, 
     # ========================================================================
 
     def generate_featured_image_prompt(self, title: str, content: str, category: str = "") -> str:
-        """Generate prompt for featured image generation with NO PEOPLE requirement"""
+        """Generate prompt for featured image generation using centralized prompt manager"""
         first_section = content.split("\n\n")[0:3]
         context = " ".join(first_section)[:200]
 
-        prompt = f"""Generate a professional, modern featured image for a blog post.
-
-Title: {title}
-Category: {category}
-Context: {context}
-
-Requirements:
-- Professional and visually appealing
-- Relevant to the topic
-- High quality (1200x630px optimal)
-- Modern design aesthetic
-- ⚠️  NO PEOPLE - Absolutely no human figures, faces, or portraits
-- Focus on: objects, nature, technology, concepts, landscapes
-- If showing scale, use buildings, vehicles, or other non-human elements
-
-Create an image suitable for social media sharing and blog display."""
+        # Use centralized prompt manager
+        pm = get_prompt_manager()
+        return pm.get_prompt(
+            "image.featured_image",
+            title=title,
+            category=category or "General",
+            content_context=context
+        )
 
         return prompt
 

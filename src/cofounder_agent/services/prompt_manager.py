@@ -96,10 +96,18 @@ The primary keyword to focus on is '{primary_keyword}'.
 ⭐ CRITICAL REQUIREMENTS:
 1. Start your response with a Markdown heading (# Your Title Here) on the first line
 2. Include 3-5 main sections with ## subheadings
-3. Incorporate research context provided below
-4. Add [IMAGE-1], [IMAGE-2], etc. where visuals would enhance the content
-5. Target word count: {word_count} words (±10% tolerance acceptable)
-6. Format: Valid Markdown with proper structure
+3. ⚠️ SECTION TITLES MUST BE CATCHY AND CREATIVE - NOT GENERIC!
+   ❌ AVOID these boring titles: Introduction, Background, Overview, Conclusion, Summary, The End, Final Thoughts, Wrap-up
+   ✅ USE these approaches:
+      - Curiosity-driven: "Why Most People Get [Topic] Wrong", "The Hidden Truth About [Topic]"
+      - Benefit-focused: "How to [Benefit]", "The [Number] Ways [Outcome]", "Your Guide to Better [Result]"
+      - Action-oriented: "Start With [Action]", "Never [Mistake] Again", "The Quickest Way to [Goal]"
+      - Insight-focused: "What the Data Shows", "Industry Insiders Reveal", "The Surprising Connection"
+      - Story-based: "From [Problem] to [Solution]", "How [Entity] Transformed"
+4. Incorporate research context provided below
+5. Add [IMAGE-1], [IMAGE-2], etc. where visuals would enhance the content
+6. Target word count: {word_count} words (±10% tolerance acceptable)
+7. Format: Valid Markdown with proper structure
 
 ⭐ RESEARCH CONTEXT TO INCORPORATE:
 {research_context}
@@ -110,22 +118,22 @@ The primary keyword to focus on is '{primary_keyword}'.
 Ensure the tone is professional and engaging. 
 Include placeholders like '[IMAGE-1]', '[IMAGE-2]', etc., where you think images would be appropriate. 
 Also, suggest a list of external URLs to credible sources that would support the content.""",
-            description="Generate initial blog post draft with research context",
+            description="Generate initial blog post draft with research context and creative section titles",
             output_format="markdown",
             example_output="""# The Future of AI in Healthcare: 2025 Trends
 
-## Introduction
+## Why Hospitals Are Rushing to Deploy AI Right Now
 Healthcare is undergoing a transformation...
 
-## Key Trend 1: Diagnostic AI Systems
+## The Diagnostic AI Revolution: 94% Accuracy and Counting
 [IMAGE-1]
-...
+Modern AI systems are now beating human radiologists...
 
-## Conclusion
-The integration of AI...
+## From Theory to Practice: How Top Hospitals Use AI Today
+Real-world implementations showing tangible results...
 
 **Related: [[Internal Link 1]], [[Internal Link 2]]**""",
-            notes="v1.0: Added word count tolerance guidance, research context structure"
+            notes="v2.0: Added explicit guidance on creative section titles with examples, avoiding generic titles"
         )
 
         self._register_prompt(
@@ -180,18 +188,22 @@ Incorporate all feedback to improve quality while maintaining professional tone 
 {critique}
 ---END CRITIQUE---
 
-⭐ REQUIREMENTS:
+⭐ CRITICAL REQUIREMENTS:
 1. Start with Markdown heading (# Title) on first line
 2. Preserve all original insights and data points
 3. Improve clarity, structure, and engagement
 4. Address ALL critique points
 5. Maintain professional tone for {target_audience}
 6. Ensure word count falls within specified range
+7. ⚠️ SECTION TITLES MUST BE CATCHY AND CREATIVE - NOT GENERIC!
+   ❌ AVOID: Introduction, Background, Conclusion, Summary, Wrap-up, Final Thoughts
+   ✅ USE: Curiosity-driven ("Why X Fails"), Benefit-focused ("How to Achieve Y"), Action-oriented ("Start With Z")
+   Examples: "The Hidden Cost", "Why Companies Struggle", "The 3-Step Solution", "What You're Missing"
 
 Improved version:""",
-            description="Refine blog post based on QA feedback",
+            description="Refine blog post based on QA feedback with focus on creative titles",
             output_format="markdown",
-            notes="v1.0: Added constraint about preserving insights, explicit audience focus"
+            notes="v2.0: Added creative section title guidance and examples, avoiding generic titles"
         )
 
         # ======================================================================
@@ -269,6 +281,10 @@ CONTEXT:
 Evaluate across 6 dimensions:
 1. Tone and Voice: Professional and appropriate for audience?
 2. Structure: Clear intro, body sections, conclusion? Effective headings?
+   ⚠️ CRITICAL: Check section titles for quality:
+   ❌ RED FLAG if using generic titles: Introduction, Conclusion, Summary, Background, Overview, Wrap-up, The End, Final Thoughts
+   ✅ GOOD if using catchy titles: curiosity-driven, benefit-focused, action-oriented, problem-solution
+   Provision feedback: "Section titles are generic - suggest more creative options"
 3. SEO Quality: Keywords used naturally? Good meta potential?
 4. Engagement: Compelling? Valuable? Would readers care?
 5. Accuracy: Factually sound within general knowledge?
@@ -278,13 +294,13 @@ Return ONLY valid JSON:
 {{
   "quality_score": FLOAT 0-100,
   "approved": BOOLEAN (true if score >= 75),
-  "feedback": "summary feedback",
+  "feedback": "summary feedback (include section title feedback if applicable)",
   "suggestions": ["suggestion 1", "suggestion 2"],
   "needs_refinement": BOOLEAN (true if score < 85)
 }}""",
-            description="Self-critique with style matching support",
+            description="Self-critique with section title quality check",
             output_format="json",
-            notes="v1.0: Supports optional writing style reference for RAG-based style matching"
+            notes="v2.0: Added check for generic section titles in Structure evaluation"
         )
 
         # ======================================================================
@@ -581,6 +597,330 @@ Begin writing now:""",
             description="System prompt for blog content generation",
             output_format="markdown",
             notes="v1.0: Includes role, style, quality standards, and formatting guidance"
+        )
+
+        # ======================================================================
+        # METADATA GENERATION PROMPTS
+        # ======================================================================
+        
+        self._register_prompt(
+            key="seo.generate_excerpt",
+            category=PromptCategory.SEO_METADATA,
+            template="""Generate a concise, engaging excerpt (max {max_length} characters) suitable for social media preview and blog snippets.
+
+Content: {content}
+
+⭐ REQUIREMENTS:
+- Maximum {max_length} characters
+- Engaging hook that entices reading the full post
+- Front-load the main value proposition
+- Professional and compelling tone
+- Include a subtle call-to-action (optional)
+
+Generate ONLY the excerpt, nothing else. No quotes, no explanation.""",
+            description="Generate social media excerpt (character-limited)",
+            output_format="text",
+            example_output="Discover how AI is transforming healthcare diagnostics. New research shows 45% improvement in accuracy rates. Learn what this means for patient outcomes.",
+            notes="v1.0: Character limit enforced, CTA encouraged"
+        )
+
+        self._register_prompt(
+            key="seo.match_category",
+            category=PromptCategory.SEO_METADATA,
+            template="""Select the BEST category for this content from the available options.
+
+Title: {title}
+Content (first 500 characters): {content}
+
+Available Categories:
+{categories_list}
+
+⭐ REQUIREMENTS:
+1. Choose only one category that BEST fits the content
+2. Consider the content's main theme and primary audience
+3. Respond with ONLY the exact category name from the list above
+4. No explanation, no other text
+
+Examples: If list includes "Technology", "Business", "Health", respond with only: "Technology" """,
+            description="Match content to best category",
+            output_format="text",
+            example_output="Healthcare Technology",
+            notes="v1.0: Single-select only, exact name required, no explanation"
+        )
+
+        self._register_prompt(
+            key="seo.extract_tags",
+            category=PromptCategory.SEO_METADATA,
+            template="""Extract the {max_tags} most relevant tags for this content from the available tags list.
+
+Title: {title}
+Content (first 500 characters): {content}
+
+Available Tags: {tags_list}
+
+⭐ REQUIREMENTS:
+1. Select exactly {max_tags} tags (or fewer if content doesn't support that many)
+2. Choose ONLY tags from the available list provided
+3. Tags should accurately describe the content's main topics
+4. More specific tags are better than generic ones
+5. Respond with ONLY comma-separated tag names, nothing else
+
+Example Response Format: tag1, tag2, tag3, tag4, tag5""",
+            description="Extract content tags from available pool",
+            output_format="text",
+            example_output="AI, Healthcare, Technology, Diagnostics, Innovation",
+            notes="v1.0: Strict selection from available list, comma-separated format"
+        )
+
+        self._register_prompt(
+            key="blog_generation.blog_system_prompt",
+            category=PromptCategory.BLOG_GENERATION,
+            template="""You are an expert technical writer and blogger.
+Your writing style is {style}.
+Your tone is {tone}.
+Write for an educated but general audience.
+Generate approximately {target_length} words.
+Format as Markdown with proper headings (# for title, ## for sections, ### for subsections).
+
+⭐ CRITICAL GUIDANCE ON SECTION TITLES:
+- Create CATCHY, ENGAGING section titles - NOT generic!
+- ❌ NEVER use: Introduction, Conclusion, Summary, Background, Overview, The End, Wrap-up, Final Thoughts
+- ✅ USE creative approaches:
+  * Curiosity-driven: "Why Most People Get This Wrong", "The Hidden Cost Nobody Talks About"
+  * Benefit-focused: "How to Achieve X in 30 Days", "The 5 Ways This Changes Everything"
+  * Problem-solution: "From Struggling With X to Mastering Y", "The Biggest Mistake (And How to Avoid It)"
+  * Data-driven: "What 10,000 Users Taught Us", "The Surprising Statistic Nobody Expected"
+  * Action-oriented: "Start Implementing This Today", "The Quick Win Strategy"
+
+Include:
+- Compelling introduction (creative title that hooks the reader)
+- 3-5 main sections with catchy titles and practical insights
+- Real-world examples or bullet points
+- Clear conclusion with call-to-action (avoid "Conclusion" as title - use something like "Your Next Step", "Ready to Begin?")
+Tags: {tags}""",
+            description="System prompt for blog generation with creative title guidance",
+            output_format="markdown",
+            notes="v2.0: Added explicit guidance on creative section titles with examples"
+        )
+
+        self._register_prompt(
+            key="blog_generation.blog_generation_request",
+            category=PromptCategory.BLOG_GENERATION,
+            template="""Generate a blog post request with the following parameters:
+
+Topic: {topic}
+Primary Keyword: {primary_keyword}
+Target Audience: {target_audience}
+Category: {category}
+Style: {style}
+Tone: {tone}
+Target Length: {target_length} words
+
+Create a comprehensive request that can guide content generation.""",
+            description="Format blog generation request parameters",
+            output_format="text",
+            notes="v1.0: Structured request format for orchestration"
+        )
+
+        # ======================================================================
+        # TASK-SPECIFIC PROMPTS (Content, Business, Social, Automation)
+        # ======================================================================
+        
+        self._register_prompt(
+            key="task.creative_blog_generation",
+            category=PromptCategory.BLOG_GENERATION,
+            template="""Create a high-quality {style} blog post about:
+
+Topic: {topic}
+Word Count: {length} words
+Style: {style}
+
+{research_context}
+
+⭐ CRITICAL REQUIREMENTS:
+1. Compelling title (creative and benefit-driven)
+2. Clear outline with H2 section headers
+   ⚠️ Section titles MUST be catchy and creative - NOT generic!
+   ❌ AVOID: Introduction, Conclusion, Summary, Background, Overview
+   ✅ USE: "Why This Matters", "The Biggest Challenge", "Your Quick Win", "How This Transforms"
+3. Engaging introduction
+4. Well-structured body with key points and real examples
+5. Strong conclusion with clear call-to-action (avoid "Conclusion" as title)
+
+Format: Markdown with proper headings and formatting""",
+            description="Generate blog post with creative section titles",
+            output_format="markdown",
+            notes="v2.0: Added explicit creative title requirements with examples"
+        )
+
+        self._register_prompt(
+            key="task.qa_content_evaluation",
+            category=PromptCategory.CONTENT_QA,
+            template="""Evaluate this content for quality:
+
+Topic: {topic}
+
+Content:
+{content}
+
+Evaluation Criteria:
+{criteria_list}
+
+For each criterion, provide:
+1. Rating (1-10)
+2. Specific feedback
+3. Improvement suggestions
+
+Format as JSON with keys: scores (dict), feedback (str), suggestions (list), overall_score (float)""",
+            description="QA evaluation for content tasks",
+            output_format="json",
+            example_output='{"scores":{"clarity":8,"accuracy":9},"feedback":"Well-written","suggestions":["Add more examples"],"overall_score":8.5}',
+            notes="v1.0: Structured QA with per-criterion ratings"
+        )
+
+        self._register_prompt(
+            key="task.business_financial_impact",
+            category=PromptCategory.FINANCIAL,
+            template="""Analyze financial impact of this content workflow:
+
+Workflow Type: {workflow_type}
+Content Pieces: {content_count}
+Social Platforms: {platform_count}
+Time Period: {time_period}
+
+Cost Breakdown:
+{cost_details}
+
+Estimated Revenue: ${estimated_revenue:.2f}
+Estimated ROI: {estimated_roi:.1f}%
+
+Provide:
+1. Cost optimization recommendations
+2. Revenue increase opportunities
+3. Break-even analysis
+4. 3-month projection
+
+Format as JSON with keys: recommendations, opportunities, breakeven_units, projection""",
+            description="Financial impact analysis for content workflows",
+            output_format="json",
+            example_output='{"recommendations":["Reduce API calls","Automate distribution"],"opportunities":["Expand platforms"],"breakeven_units":50,"projection":{}}',
+            notes="v1.0: ROI and cost-benefit analysis"
+        )
+
+        self._register_prompt(
+            key="task.business_market_analysis",
+            category=PromptCategory.MARKET_ANALYSIS,
+            template="""Perform detailed market analysis for: {topic}
+
+Target audience: {target_audience}
+Time period: {period}
+Geographic focus: {geography}
+
+Analyze:
+1. Market size and growth trends
+2. Competitive landscape (top 3-5 players and their strategies)
+3. Customer demographics and pain points
+4. Price positioning strategies
+5. Market opportunities and gaps
+6. Barriers to entry
+7. Key success factors
+
+Format as JSON with keys: market_size, competitors, demographics, pricing, opportunities, barriers, success_factors""",
+            description="Market analysis for business intelligence",
+            output_format="json",
+            notes="v1.0: Comprehensive competitive and market research"
+        )
+
+        self._register_prompt(
+            key="task.business_performance_analysis",
+            category=PromptCategory.FINANCIAL,
+            template="""Analyze performance for {period} period:
+
+Total Content Created: {content_count}
+Traffic Generated: {traffic}
+Conversions: {conversions}
+Revenue: ${revenue:.2f}
+
+Provide:
+1. Key metrics summary
+2. Performance trends (up/down analysis)
+3. Top performing content types
+4. Underperforming areas
+5. Actionable recommendations for improvement
+
+Format as JSON with keys: summary, trends, top_performers, underperforming, recommendations""",
+            description="Content performance and metrics analysis",
+            output_format="json",
+            notes="v1.0: Performance metrics and trend analysis"
+        )
+
+        self._register_prompt(
+            key="task.automation_email_campaign",
+            category=PromptCategory.SOCIAL_MEDIA,
+            template="""Generate a professional email campaign:
+
+Campaign Name: {campaign_name}
+Target Audience: {target_audience}
+Campaign Goal: {goal}
+Tone: {tone}
+
+Create:
+1. Subject line (compelling, <60 chars)
+2. Preview text
+3. Email body (HTML formatted, professional)
+4. Call-to-action button text
+5. Footer with unsubscribe link
+
+Format as JSON with keys: subject, preview, body, cta_text, footer""",
+            description="Email campaign generation",
+            output_format="json",
+            example_output='{"subject":"Limited Time Offer","preview":"Exclusive deal inside","body":"<html>...","cta_text":"Claim Now","footer":"Unsubscribe"}',
+            notes="v1.0: Multi-part email template generation"
+        )
+
+        self._register_prompt(
+            key="task.content_summarization",
+            category=PromptCategory.UTILITY,
+            template="""Summarize this content in {length} format:
+
+Original Content:
+{content}
+
+⭐ REQUIREMENTS:
+- Output length: {length}
+- Capture key points only
+- Maintain original tone
+- Be concise and clear
+- Include main takeaways
+
+Generate ONLY the summary, nothing else.""",
+            description="Content summarization at various lengths",
+            output_format="text",
+            example_output="This article discusses AI trends in 2025, focusing on adoption rates, costs, and ethical considerations across industries.",
+            notes="v1.0: Flexible length summarization"
+        )
+
+        self._register_prompt(
+            key="task.utility_json_conversion",
+            category=PromptCategory.UTILITY,
+            template="""Convert this content to JSON structure:
+
+Original Format:
+{content}
+
+Target Structure: {target_structure}
+
+⭐ REQUIREMENTS:
+1. Maintain all original information
+2. Organize logically into JSON keys
+3. Ensure valid JSON format
+4. Include metadata if applicable
+5. Preserve relationships between data
+
+Return ONLY valid JSON, nothing else.""",
+            description="Convert content to JSON format",
+            output_format="json",
+            notes="v1.0: Flexible JSON structure conversion"
         )
 
     def _register_prompt(

@@ -80,24 +80,26 @@
 │  └────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────┘
                               ↕️ Internal APIs
-┌──────────────────────────────────────────────────────────────────┐
-│                   SPECIALIZED AGENT FLEET                        │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐             │
-│  │   Content    │ │  Financial   │ │   Market     │ etc.        │
-│  │    Agent     │ │    Agent     │ │   Insight    │             │
-│  └──────────────┘ └──────────────┘ └──────────────┘             │
-└──────────────────────────────────────────────────────────────────┘
-                              ↕️ REST/API Calls
-┌──────────────────────────────────────────────────────────────────┐
-│                EXTERNAL INTEGRATIONS                             │
-│  ┌─────────────┐ ┌──────────┐ ┌────────────┐ ┌───────────┐     │
-│  │  PostgreSQL │ │ External │ │  Social    │ │  AI       │     │
-│  │  (Direct)   │ │ Services │ │   Media    │ │  Models   │     │
-│  └─────────────┘ └──────────┘ └────────────┘ └───────────┘     │
-└──────────────────────────────────────────────────────────────────┘
-                              ↕️ Network/API Calls
-┌──────────────────────────────────────────────────────────────────┐
-│              DATA & STORAGE LAYER                                │
+### Backend: FastAPI Orchestrator (Port 8000)
+
+The backend is built with FastAPI and handles all asynchronous task execution and agent orchestration.
+
+**Key Architecture Shifts (Feb 2026):**
+- **Unified Task API:** Synchronous route modules (like `/api/content`) have been consolidated into a single `/api/tasks` entry point.
+- **Async DB Engine:** Replaced SQLAlchemy ORM with **asyncpg** for high-performance PostgreSQL interaction.
+- **Worker Polling:** The `TaskExecutor` service runs a background polling loop (every 5s) to pick up new tasks.
+
+**Request Flow:**
+1. **POST `/api/tasks`**: User creates a task (e.g., `task_type="blog_post"`).
+2. **PostgreSQL**: Task is stored as `pending`.
+3. **TaskExecutor**: Background polling picks up the task and calls `UnifiedOrchestrator`.
+4. **UnifiedOrchestrator**: Parses intent and routes to the correct Agent Pipeline.
+
+### Data Architecture
+
+- **Primary DB**: PostgreSQL 15+
+- **Driver**: `asyncpg` (Full Async)
+- **Schema Management**: Managed via `DatabaseService` delegates (`TasksDatabase`, `UsersDatabase`, etc.).
 │  ┌────────────┐ ┌────────────┐ ┌──────────┐ ┌──────────┐       │
 │  │  PostgreSQL│ │            │ │  Redis   │ │ Storage  │       │
 │  │ (Production)│ │            │ │  Cache   │ │ (Media)  │       │
@@ -411,7 +413,7 @@ GET  /api/tags                     # List tags
 
 **Usage Patterns:**
 
-- **End-to-end:** POST `/api/content/generate-blog-post` → Full pipeline
+- **End-to-end Content:** POST `/api/tasks` → Executes agent pipeline via TaskExecutor
 - **Individual agents:** POST `/api/agents/{agent-name}` → Specific capability
 - **Custom workflows:** Combine agents in any order for flexible pipelines
 

@@ -3,6 +3,7 @@
 import logging
 from typing import Any, Dict
 
+from src.cofounder_agent.services.prompt_manager import get_prompt_manager
 from src.cofounder_agent.tasks.base import ExecutionContext, PureTask
 
 logger = logging.getLogger(__name__)
@@ -62,31 +63,27 @@ class FinancialAnalysisTask(PureTask):
         estimated_revenue = estimated_traffic * 0.02  # 2% conversion at $10 avg
         roi = ((estimated_revenue - total_cost) / total_cost * 100) if total_cost > 0 else 0
 
-        prompt = f"""Analyze financial impact of this content workflow:
-
-Workflow Type: {workflow_type}
-Content Pieces: {content_created}
-Social Platforms: {len(platforms)}
-Time Period: {time_period}
-
-Costs:
-- LLM Calls: ${cost_breakdown['llm_calls']:.2f}
+        # Build cost details for prompt
+        cost_details = f"""- LLM Calls: ${cost_breakdown['llm_calls']:.2f}
 - Images: ${cost_breakdown['image_search']:.2f}
 - Social Distribution: ${cost_breakdown['social_distribution']:.2f}
 - Storage: ${cost_breakdown['storage']:.2f}
 - Other APIs: ${cost_breakdown['api_calls']:.2f}
 
-Total Cost: ${total_cost:.2f}
-Estimated Revenue: ${estimated_revenue:.2f}
-Estimated ROI: {roi:.1f}%
+Total Cost: ${total_cost:.2f}"""
 
-Provide:
-1. Cost optimization recommendations
-2. Revenue increase opportunities
-3. Break-even analysis
-4. 3-month projection
-
-Format as JSON with keys: recommendations, opportunities, breakeven_units, projection"""
+        # Use centralized prompt manager
+        pm = get_prompt_manager()
+        prompt = pm.get_prompt(
+            "task.business_financial_impact",
+            workflow_type=workflow_type,
+            content_count=content_created,
+            platform_count=len(platforms),
+            time_period=time_period,
+            cost_details=cost_details,
+            estimated_revenue=estimated_revenue,
+            estimated_roi=roi
+        )
 
         response = await model_router.query_with_fallback(
             prompt=prompt,
@@ -155,22 +152,15 @@ class MarketAnalysisTask(PureTask):
         competitors = input_data.get("competitors", [])
         target_audience = input_data.get("target_audience", "general")
 
-        prompt = f"""Perform detailed market analysis for: {topic}
-
-Target Audience: {target_audience}
-Competitors: {', '.join(competitors) if competitors else 'None specified'}
-
-Analyze:
-1. Market size and growth rate
-2. Current trends (last 12 months)
-3. Competitor strategies and positioning
-4. Market gaps and opportunities
-5. Customer pain points
-6. Recommended positioning strategy
-
-Provide specific, data-driven insights.
-
-Format as JSON with keys: market_size, growth_rate, trends, gaps, customer_insights, positioning"""
+        # Use centralized prompt manager
+        pm = get_prompt_manager()
+        prompt = pm.get_prompt(
+            "task.business_market_analysis",
+            topic=topic,
+            target_audience=target_audience,
+            period="12 months",
+            geography="Global"
+        )
 
         response = await model_router.query_with_fallback(
             prompt=prompt,
@@ -244,19 +234,16 @@ class PerformanceReviewTask(PureTask):
             else "No metrics provided"
         )
 
-        prompt = f"""Analyze performance for {period} period:
-
-Metrics:
-{metrics_str}
-
-Provide:
-1. Overall performance summary
-2. Key insights (what worked, what didn't)
-3. Recommended improvements
-4. Performance trend analysis
-5. Action items for next period
-
-Format as JSON with keys: summary, insights, improvements, trend, trend_percentage, action_items"""
+        # Use centralized prompt manager
+        pm = get_prompt_manager()
+        prompt = pm.get_prompt(
+            "task.business_performance_analysis",
+            period=period,
+            content_count=metrics.get("content_count", 0),
+            traffic=metrics.get("traffic", 0),
+            conversions=metrics.get("conversions", 0),
+            revenue=metrics.get("revenue", 0.0)
+        )
 
         response = await model_router.query_with_fallback(
             prompt=prompt,

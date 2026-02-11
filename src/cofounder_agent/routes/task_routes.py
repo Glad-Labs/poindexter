@@ -2254,6 +2254,7 @@ class GenerateImageRequest(BaseModel):
     source: str = "pexels"  # "pexels" or "sdxl"
     topic: Optional[str] = None
     content_summary: Optional[str] = None
+    page: int = 1  # Pagination for Pexels results (1-based)
 
 
 @router.post(
@@ -2297,11 +2298,13 @@ async def generate_task_image(
         if not task:
             raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
-        logger.info(f"Generating image for task {task_id} using {request.source}")
+        # Extract source from request for consistency
+        source = request.source
+        logger.info(f"Generating image for task {task_id} using {source}")
 
         image_url = None
 
-        if request.source == "pexels":
+        if source == "pexels":
             # Use Pexels API to search for images
             try:
                 import aiohttp
@@ -2311,24 +2314,89 @@ async def generate_task_image(
                     raise HTTPException(status_code=400, detail="Pexels API key not configured")
 
                 search_query = request.topic or task.get("topic", "business")
+                current_image_url = task.get("featured_image_url")
+                page = max(1, request.page)  # Ensure page is at least 1
+                
+                logger.info(f"🔎 Pexels API request:")
+                logger.info(f"   - Query: '{search_query}'")
+                logger.info(f"   - Page: {page}")
+                logger.info(f"   - Per page: 50")
+                logger.info(f"   - Current featured image: {current_image_url[:80]}..." if current_image_url else "   - No current image")
 
                 async with aiohttp.ClientSession() as session:
                     async with session.get(
                         "https://api.pexels.com/v1/search",
-                        params={"query": search_query, "per_page": 1, "orientation": "landscape"},
+                        params={
+                            "query": search_query,
+                            "per_page": 50,  # Get more results for better variety
+                            "page": page,
+                            "orientation": "landscape"
+                        },
                         headers={"Authorization": pexels_key},
                         timeout=10.0,
                     ) as resp:
                         if resp.status == 200:
                             try:
+                                import random
                                 data = await resp.json()
+                                logger.info(f"✅ Pexels API response: {resp.status} OK")
+                                logger.info(f"   - Response size: {len(str(data))} bytes")
+                                
                                 if data.get("photos"):
-                                    photo = data["photos"][0]
-                                    image_url = photo["src"]["large"]
-                                    logger.info(f"✅ Found Pexels image: {image_url}")
+                                    photos_count = len(data.get("photos", []))
+                                    logger.info(f"   - Total photos in response: {photos_count}")
+                                    # Filter out the current image URL AND recent images to get variety
+                                    # Get list of recently used image URLs from task metadata
+                                    recently_used = []
+                                    if task_metadata := task.get("task_metadata"):
+                                        if isinstance(task_metadata, dict):
+                                            recently_used = task_metadata.get("recent_image_urls", [])
+                                        elif isinstance(task_metadata, str):
+                                            try:
+                                                meta = json.loads(task_metadata)
+                                                recently_used = meta.get("recent_image_urls", [])
+                                            except json.JSONDecodeError:
+                                                recently_used = []
+                                    
+                                    # Create comprehensive exclusion list
+                                    excluded_urls = set(recently_used) if recently_used else set()
+                                    if current_image_url:
+                                        excluded_urls.add(current_image_url)
+                                    
+                                    logger.info(f"🔍 Image filtering debug:")
+                                    logger.info(f"   - Pexels returned {len(data['photos'])} total photos")
+                                    logger.info(f"   - Currently using: {current_image_url}")
+                                    logger.info(f"   - Recently used: {recently_used[:3]}..." if len(recently_used) > 3 else f"   - Recently used: {recently_used}")
+                                    logger.info(f"   - Total excluded URLs: {len(excluded_urls)}")
+                                    
+                                    # Filter out any previously used images
+                                    photos = [
+                                        p for p in data["photos"] 
+                                        if p["src"]["large"] not in excluded_urls
+                                    ]
+                                    
+                                    logger.info(f"   - After filtering: {len(photos)} available photos")
+                                    
+                                    # If no new images available (rare), use the original list
+                                    if not photos:
+                                        logger.warning(f"⚠️ No new images after filtering, using all {len(data['photos'])} available")
+                                        photos = data["photos"]
+                                    
+                                    if photos:
+                                        # Randomly select instead of always picking first
+                                        photo = random.choice(photos)
+                                        image_url = photo["src"]["large"]
+                                        logger.info(f"✅ Selected image #{photos.index(photo) + 1}: {image_url}")
+                                        logger.info(f"   - Photographer: {photo.get('photographer', 'Unknown')}")
+                                        logger.info(f"   - Source: {photo['src']['original']}")
 
-                                    # Store image URL and metadata in task for persistence
-                                    await db_service.update_task(
+                                        # Store image URL and metadata in task for persistence
+                                        # Track this image URL in recent_image_urls for future filtering
+                                        updated_recent_urls = recently_used + [image_url] if recently_used else [image_url]
+                                        # Keep only last 10 images to avoid list getting too long
+                                        updated_recent_urls = updated_recent_urls[-10:]
+                                        
+                                        await db_service.update_task(
                                         task_id,
                                         {
                                             "featured_image_url": image_url,
@@ -2338,6 +2406,7 @@ async def generate_task_image(
                                                 "featured_image_photographer": photo.get(
                                                     "photographer", "Unknown"
                                                 ),
+                                                "recent_image_urls": updated_recent_urls,
                                             },
                                         },
                                     )
@@ -2368,7 +2437,7 @@ async def generate_task_image(
                     status_code=500, detail="Unexpected error fetching image from Pexels"
                 )
 
-        elif request.source == "sdxl":
+        elif source == "sdxl":
             # Use SDXL to generate an image
             try:
                 from pathlib import Path
@@ -2437,7 +2506,7 @@ async def generate_task_image(
                 )
         else:
             raise HTTPException(
-                status_code=400, detail=f"Invalid image source: {request.source}. Use 'pexels' or 'sdxl'"
+                status_code=400, detail=f"Invalid image source: {source}. Use 'pexels' or 'sdxl'"
             )
 
         if not image_url:

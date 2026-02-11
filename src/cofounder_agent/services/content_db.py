@@ -12,6 +12,7 @@ Handles all content-related database operations including:
 
 import json
 import logging
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -97,6 +98,9 @@ class ContentDatabase(DatabaseServiceMixin):
 
         async with self.pool.acquire() as conn:
             try:
+                # Determine published_at timestamp based on status
+                is_published = post_data.get("status") == "published"
+                
                 row = await conn.fetchrow(
                     """
                     INSERT INTO posts (
@@ -111,6 +115,7 @@ class ContentDatabase(DatabaseServiceMixin):
                         category_id,
                         tag_ids,
                         status, 
+                        published_at,
                         seo_title,
                         seo_description,
                         seo_keywords,
@@ -119,9 +124,9 @@ class ContentDatabase(DatabaseServiceMixin):
                         created_at, 
                         updated_at
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW())
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW(), NOW())
                     RETURNING id, title, slug, content, excerpt, featured_image_url, cover_image_url, 
-                              author_id, category_id, tag_ids, status, created_at, updated_at
+                              author_id, category_id, tag_ids, status, published_at, created_at, updated_at
                     """,
                     post_id,
                     post_data.get("title"),
@@ -134,6 +139,8 @@ class ContentDatabase(DatabaseServiceMixin):
                     post_data.get("category_id"),
                     tag_ids,
                     post_data.get("status", "draft"),
+                    # published_at: Set to NOW() if published, None if draft
+                    datetime.utcnow() if is_published else None,
                     post_data.get("seo_title"),
                     post_data.get("seo_description"),
                     seo_keywords,
@@ -144,6 +151,8 @@ class ContentDatabase(DatabaseServiceMixin):
                     raise Exception("Insert query returned no row - post creation failed")
 
                 logger.info(f"✅ POST CREATED SUCCESSFULLY in database with ID: {post_id}")
+                logger.info(f"   - Status: {post_data.get('status', 'draft')}")
+                logger.info(f"   - Published at: {row.get('published_at')}")
                 return ModelConverter.to_post_response(row)
             except Exception as db_error:
                 logger.error(f"❌ DATABASE ERROR while creating post: {db_error}", exc_info=True)

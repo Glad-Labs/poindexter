@@ -25,6 +25,7 @@ from typing import Any, Dict, Optional, Tuple
 import httpx
 
 from .provider_checker import ProviderChecker
+from .prompt_manager import get_prompt_manager
 
 logger = logging.getLogger(__name__)
 
@@ -71,22 +72,27 @@ class AIContentGenerator:
     async def _check_ollama_async(self):
         """Async check if Ollama is running - call this once before using Ollama"""
         if self.ollama_checked:
+            logger.debug(f"ℹ️ Ollama already checked previously: {self.ollama_available}")
             return
 
+        logger.info("🔍 Checking if Ollama server is running...")
         try:
-            async with httpx.AsyncClient(timeout=2) as client:
+            async with httpx.AsyncClient(timeout=5) as client:
+                logger.debug("   → Sending request to http://localhost:11434/api/tags")
                 response = await client.get("http://localhost:11434/api/tags")
                 self.ollama_available = response.status_code == 200
+                logger.debug(f"   ← Response status: {response.status_code}")
 
             if self.ollama_available:
-                logger.info("✓ Ollama available at http://localhost:11434")
+                logger.info("✅ Ollama IS running at http://localhost:11434")
             else:
-                logger.debug("Ollama not available (status check failed)")
+                logger.warning(f"⚠️ Ollama returned non-200 status: {response.status_code}")
         except Exception as e:
-            logger.debug(f"Ollama not available: {e}")
+            logger.warning(f"⚠️ Ollama health check failed: {type(e).__name__}: {e}")
             self.ollama_available = False
         finally:
             self.ollama_checked = True
+            logger.debug(f"   → Ollama checked. Result: {self.ollama_available}")
 
     def _validate_content(
         self, content: str, topic: str, target_length: int
@@ -241,62 +247,72 @@ class AIContentGenerator:
         # Use local variable to avoid polluting instance state across requests
         use_ollama = False
         if skip_ollama:
-            logger.info(f"📌 Skipping Ollama (effective provider: {effective_provider})\n")
+            logger.info(f"📌 Skipping Ollama (user selected: {effective_provider})\n")
             use_ollama = False
         else:
             await self._check_ollama_async()
             use_ollama = self.ollama_available
-            logger.info(f"📌 Ollama available: {use_ollama}\n")
+            logger.info(f"📌 Ollama check result: {use_ollama}\n")
 
-        # Build prompts
-        system_prompt = f"""You are an expert technical writer and blogger.
-Your writing style is {style}.
-Your tone is {tone}.
-Write for an educated but general audience.
-Generate approximately {target_length} words.
-Format as Markdown with proper headings (# for title, ## for sections, ### for subsections).
-Include:
-- Compelling introduction
-- 3-5 main sections with practical insights
-- Real-world examples or bullet points
-- Clear conclusion with call-to-action
-Tags: {', '.join(tags) if tags else 'general'}"""
-
-        generation_prompt = f"""Write a professional blog post about: {topic}
-
-CRITICAL REQUIREMENTS:
-- **WORD COUNT**: Must be AT LEAST {target_length} words - ABSOLUTELY NO SHORTER POSTS
-- **MINIMUM SECTIONS**: Include at least 5 main sections with H2 headings
-- **CONTENT DEPTH**: Each section must be detailed and substantial (100-300 words minimum per section)
-- Style: {style}
-- Tone: {tone}
-- Format: Markdown with clear structure (# Title, ## Sections, ### Subsections)
-- **REQUIRED ELEMENTS**: 
-  - Detailed introduction paragraph (100+ words)
-  - At least 5 main content sections with practical examples
-  - Multiple bullet points and/or numbered lists in each section
-  - Real-world examples and case studies
-  - Detailed conclusion with clear call-to-action (100+ words)
-
-**IMPORTANT**: This must be a COMPLETE, COMPREHENSIVE post of {target_length}+ words. Do NOT abbreviate or cut short.
-
-Start writing the complete blog post now. Make it comprehensive and detailed:
-
-# """ 
-
-        # Refinement prompt for content that doesn't pass QA
-        refinement_prompt_template = """The following blog post was rejected for quality reasons. Please improve it:
-
-FEEDBACK: {feedback}
-
-ISSUES: {issues}
-
-Please rewrite the content addressing all issues. Keep the same structure but improve quality:
-
-Original content:
-{content}
-
-Improved version:"""
+        # Get prompt manager for centralized prompt management
+        try:
+            pm = get_prompt_manager()
+            logger.info("✓ Prompt manager loaded successfully")
+        except Exception as e:
+            logger.error(f"Failed to load prompt manager: {e}")
+            raise
+        
+        # Fetch prompts from centralized manager instead of hardcoding
+        # This ensures all prompts are versioned, documented, and easy to maintain
+        try:
+            logger.info("📝 Loading system prompt...")
+            system_prompt = pm.get_prompt(
+                "blog_generation.blog_system_prompt",
+                style=style,
+                tone=tone,
+                target_length=target_length,
+                tags=', '.join(tags) if tags else 'general'
+            )
+            logger.info(f"✓ System prompt loaded ({len(system_prompt)} chars)")
+        except Exception as e:
+            logger.error(f"Failed to load system prompt: {e}")
+            raise
+        
+        try:
+            logger.info("📝 Loading generation prompt...")
+            # Format internal_link_titles as a string for template
+            internal_link_titles = []  # Initialize empty list for internal links (future: fetch from existing posts)
+            internal_links_str = "\n".join(internal_link_titles) if internal_link_titles else ""
+            
+            generation_prompt = pm.get_prompt(
+                "blog_generation.initial_draft",
+                topic=topic,
+                target_audience=style,
+                primary_keyword=tags[0] if tags else "",
+                research_context="",
+                internal_link_titles=internal_links_str,
+                word_count=target_length,
+                style=style,
+                tone=tone
+            )
+            logger.info(f"✓ Generation prompt loaded ({len(generation_prompt)} chars)")
+        except Exception as e:
+            logger.error(f"Failed to load generation prompt: {type(e).__name__}: {e}")
+            raise
+        
+        # Create a callable refinement prompt getter
+        def get_refinement_prompt(feedback: str, issues: list, content: str) -> str:
+            try:
+                return pm.get_prompt(
+                    "blog_generation.iterative_refinement",
+                    draft=content,
+                    critique=f"FEEDBACK: {feedback}\nISSUES: {chr(10).join(issues)}",
+                    word_count_constraint=f"Target: {target_length} words",
+                    target_audience=style
+                )
+            except Exception as e:
+                logger.error(f"Failed to load refinement prompt: {e}")
+                raise
 
         # Track metrics
         metrics = {
@@ -331,15 +347,18 @@ Improved version:"""
         # Try models in order of preference
         attempts = []
 
-        logger.info(f"🔍 PROVIDER CHECK:")
-        logger.info(f"   User selection - provider: {preferred_provider}, model: {preferred_model}")
-        logger.info(f"   Skip Ollama: {skip_ollama} (user explicitly selected cloud provider)")
-        logger.info(f"   Ollama - available: {self.ollama_available}")
-        logger.info(
-            f"   HuggingFace - token: {'✓' if ProviderChecker.is_huggingface_available() else '✗'}"
-        )
-        logger.info(f"   Gemini - key: {'✓' if ProviderChecker.is_gemini_available() else '✗'}")
+        logger.info(f"\n{'='*80}")
+        logger.info(f"🔍 PROVIDER DECISION TREE:")
+        logger.info(f"{'='*80}")
+        logger.info(f"   User selection: provider={preferred_provider}, model={preferred_model}")
+        logger.info(f"   Effective provider: {effective_provider}")
         logger.info(f"")
+        logger.info(f"   Provider Status:")
+        logger.info(f"   ├─ Ollama (local):     {'✓ available' if use_ollama else '✗ not available/skipped'}")
+        logger.info(f"   ├─ Gemini (cloud):     {'✓ key set' if ProviderChecker.is_gemini_available() else '✗ no key'}")
+        logger.info(f"   ├─ HuggingFace (cloud): {'✓ token set' if ProviderChecker.is_huggingface_available() else '✗ no token'}")
+        logger.info(f"   └─ Fallback:           Available (generic template)")
+        logger.info(f"{'='*80}\n")
 
         # ========================================================================
         # USER SELECTION: Try user-selected provider/model first if specified
@@ -349,6 +368,9 @@ Improved version:"""
             and effective_provider.lower() == "gemini"
             and ProviderChecker.is_gemini_available()
         ):
+            logger.info(
+                f"🎯 PLAN: Will attempt Gemini (user selection)\n"
+            )
             logger.info(
                 f"🎯 Attempting Gemini (provider: {effective_provider}, model: {preferred_model or 'auto'})..."
             )
@@ -502,11 +524,13 @@ Improved version:"""
                 attempts.append(("Gemini (user-selected)", str(e)))
 
         # 1. Try Ollama (local, free, no internet, RTX 5070 optimized)
-        if use_ollama:
+        if not use_ollama:
+            logger.info(f"⏭️ SKIPPING Ollama (skip_ollama={skip_ollama}, effective_provider={effective_provider})\n")
+        else:
             logger.info(f"🔄 [ATTEMPT 1/3] Trying Ollama (Local, GPU-accelerated)...")
             logger.info(f"   ├─ Endpoint: http://localhost:11434")
-            logger.info(f"   ├─ Model preference order: [neural-chat, mistral, llama2]")
-            logger.info(f"   └─ Status: Checking connection...\n")
+            logger.info(f"   ├─ Model preference order: [neural-chat, llama2, qwen2]")
+            logger.info(f"   └─ Status: Connecting...\n")
             try:
                 from .ollama_client import OllamaClient
 
@@ -515,7 +539,6 @@ Improved version:"""
 
                 # Try stable, fast models first, avoid slow/problematic ones
                 # neural-chat:latest - PROVEN RELIABLE & FAST ✓✓✓
-                # mistral:latest - Fast but crashes with "llama runner process terminated"
                 # llama2:latest - Reasonable but occasional timeouts
                 # qwen2.5:14b - TOO SLOW (10-20 tokens/sec), causes timeouts
                 # qwen3:14b - Better than qwen2.5 but still slow
@@ -640,9 +663,9 @@ Improved version:"""
                                 )
 
                                 metrics["refinement_attempts"] += 1
-                                refinement_prompt = refinement_prompt_template.format(
+                                refinement_prompt = get_refinement_prompt(
                                     feedback=validation.feedback,
-                                    issues="\n".join(validation.issues),
+                                    issues=validation.issues,
                                     content=generated_content,
                                 )
 
@@ -932,7 +955,18 @@ Improved version:"""
                 attempts.append(("Gemini", str(e)[:150]))
 
         # If all models fail, use fallback
-        logger.error(f"All AI models failed. Attempts: {attempts}")
+        logger.error(f"\n{'='*80}")
+        logger.error(f"❌ ALL AI MODELS FAILED - Using fallback template")
+        logger.error(f"{'='*80}")
+        logger.error(f"Attempts made: {len(attempts)}")
+        for provider, error in attempts:
+            logger.error(f"   ✗ {provider}: {error}")
+        logger.error(f"Provider summary:")
+        logger.error(f"   - Ollama:     {use_ollama} (tried/available)")
+        logger.error(f"   - Gemini:     {ProviderChecker.is_gemini_available()} (key available)")
+        logger.error(f"   - HuggingFace: {ProviderChecker.is_huggingface_available()} (token available)")
+        logger.error(f"{'='*80}\n")
+        
         fallback_content = self._generate_fallback_content(topic, style, tone, tags)
         metrics["model_used"] = "Fallback (no AI models available)"
         metrics["models_used_by_phase"]["draft"] = metrics["model_used"]  # Track phase

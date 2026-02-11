@@ -21,6 +21,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
+from .prompt_manager import get_prompt_manager
+
 logger = logging.getLogger(__name__)
 
 
@@ -210,28 +212,14 @@ class ContentMetadataGenerator:
         first_section = content.split("\n\n")[0:3]
         context = " ".join(first_section)[:200]
 
-        prompt = f"""Generate a professional, modern featured image for a blog post with the following details:
-
-Title: {title}
-Category: {category}
-Context: {context}
-
-Requirements:
-- Professional and visually appealing
-- Relevant to the topic
-- High quality, suitable for blog thumbnail
-- Modern design aesthetic
-- 1200x630px optimal ratio
-- ⚠️  NO PEOPLE - Do not include any human figures, faces, or portraits
-- Focus on: objects, nature, technology, abstract concepts, landscapes
-- If must show scale, use non-human elements (buildings, vehicles, props)
-
-Absolutely NO: People, faces, portraits, humans of any kind
-Focus on: The topic/concept, not people
-
-Create an image that would work well for social media sharing and blog display."""
-
-        return prompt
+        # Use centralized prompt manager
+        pm = get_prompt_manager()
+        return pm.get_prompt(
+            "image.featured_image",
+            title=title,
+            category=category or "General",
+            content_context=context
+        )
 
     def generate_json_ld_schema(self, blog_post: Dict[str, Any]) -> Dict[str, Any]:
         """Generate JSON-LD structured data for rich snippets"""

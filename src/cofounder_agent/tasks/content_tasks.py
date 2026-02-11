@@ -3,6 +3,7 @@
 import logging
 from typing import Any, Dict
 
+from src.cofounder_agent.services.prompt_manager import get_prompt_manager
 from src.cofounder_agent.tasks.base import ExecutionContext, PureTask
 
 logger = logging.getLogger(__name__)
@@ -60,21 +61,14 @@ class ResearchTask(PureTask):
             search_context += f"   URL: {result.get('link', 'No URL')}\n"
             search_context += f"   Snippet: {result.get('snippet', 'No snippet')}\n\n"
 
-        # Build research prompt with REAL search data
-        prompt = f"""Analyze the following search results for the topic: "{topic}"
-        
-Search Results:
-{search_context}
-
-Depth: {depth}
-
-Based ONLY on the search results above (and your general knowledge to fill gaps), provide:
-1. Key findings (list 5-10 main points)
-2. Current trends mentioned
-3. Important statistics found
-4. Recommended sources (use the URLs provided)
-
-Format as JSON with keys: key_points, trends, statistics, sources"""
+        # Use centralized prompt manager
+        pm = get_prompt_manager()
+        prompt = pm.get_prompt(
+            "research.analyze_search_results",
+            topic=topic,
+            depth=depth,
+            search_context=search_context
+        )
 
         # Query LLM with fallback chain
         response_obj = await model_service.generate(
@@ -166,21 +160,15 @@ Research Context:
 - Statistics: {research_data.get('statistics', [])}
 """
 
-        prompt = f"""Create a high-quality {style} blog post about:
-
-Topic: {topic}
-Word Count: {length} words
-Style: {style}
-{research_context}
-
-Include:
-1. Compelling title
-2. Clear outline (H2 sections)
-3. Engaging introduction
-4. Well-structured body with key points
-5. Strong conclusion with call-to-action
-
-Format: Markdown with proper headings and formatting"""
+        # Use centralized prompt manager
+        pm = get_prompt_manager()
+        prompt = pm.get_prompt(
+            "task.creative_blog_generation",
+            style=style,
+            topic=topic,
+            length=length,
+            research_context=research_context
+        )
 
         # Query LLM
         response_obj = await model_service.generate(
@@ -250,22 +238,14 @@ class QATask(PureTask):
         # Build QA prompt
         criteria_str = "\n".join(f"- {c}" for c in criteria)
 
-        prompt = f"""Evaluate this content for quality:
-
-Topic: {topic}
-
-Content:
-{content}
-
-Evaluation Criteria:
-{criteria_str}
-
-For each criterion, provide:
-1. Rating (1-10)
-2. Specific feedback
-3. Improvement suggestions
-
-Format as JSON with keys: scores (dict), feedback (str), suggestions (list), overall_score (float)"""
+        # Use centralized prompt manager
+        pm = get_prompt_manager()
+        prompt = pm.get_prompt(
+            "task.qa_content_evaluation",
+            topic=topic,
+            content=content,
+            criteria_list=criteria_str
+        )
 
         # Query LLM
         response_obj = await model_service.generate(
@@ -338,17 +318,14 @@ class ImageSelectionTask(PureTask):
         content = input_data.get("content", "")
         count = input_data.get("count", 3)
 
-        # Get LLM suggestions for image searches
-        prompt = f"""Suggest {count} specific image searches for this content:
-
-Topic: {topic}
-
-Content preview: {content[:500]}
-
-Return JSON with list of search queries.
-Each query should be specific and visual (not just text).
-
-Format: {{"search_queries": ["query1", "query2", "query3"]}}"""
+        # Use centralized prompt manager
+        pm = get_prompt_manager()
+        prompt = pm.get_prompt(
+            "image.search_queries",
+            num_images=count,
+            title=topic,
+            content=content[:500]
+        )
 
         response_obj = await model_service.generate(
             prompt=prompt, temperature=0.5, max_tokens=300, response_format="json"

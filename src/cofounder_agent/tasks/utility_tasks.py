@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict
 
+from src.cofounder_agent.services.prompt_manager import get_prompt_manager
 from src.cofounder_agent.tasks.base import ExecutionContext, PureTask
 
 logger = logging.getLogger(__name__)
@@ -105,12 +106,13 @@ class TransformTask(PureTask):
         from_format = input_data.get("from_format", "auto")
 
         if to_format == "json" and isinstance(content, str):
-            prompt = f"""Convert this content to JSON structure:
-
-Content:
-{content}
-
-Create JSON with keys: title, summary, body, metadata"""
+            # Use centralized prompt manager
+            pm = get_prompt_manager()
+            prompt = pm.get_prompt(
+                "task.utility_json_conversion",
+                content=content,
+                target_structure="title, summary, body, metadata"
+            )
 
             response = await model_router.query_with_fallback(
                 prompt=prompt,

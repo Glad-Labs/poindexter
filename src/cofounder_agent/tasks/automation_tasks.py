@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict
 
+from src.cofounder_agent.services.prompt_manager import get_prompt_manager
 from src.cofounder_agent.tasks.base import ExecutionContext, PureTask
 
 logger = logging.getLogger(__name__)
@@ -47,21 +48,15 @@ class EmailGenerateTask(PureTask):
         style = input_data.get("style", "informational")
         include_cta = input_data.get("include_cta", True)
 
-        prompt = f"""Generate a professional email campaign:
-
-Topic: {topic}
-Target Audience: {audience}
-Style: {style}
-Include CTA: {include_cta}
-
-Create:
-1. Compelling subject line (50 chars max)
-2. Preview text (100 chars max)
-3. HTML email body (well-formatted, professional)
-4. Strong call-to-action (if requested)
-5. Unsubscribe note
-
-Format as JSON with keys: subject, preview, body, cta_text, cta_url"""
+        # Use centralized prompt manager
+        pm = get_prompt_manager()
+        prompt = pm.get_prompt(
+            "task.automation_email_campaign",
+            campaign_name=topic,
+            target_audience=audience,
+            goal="Engagement" if style == "promotional" else "Inform",
+            tone=style
+        )
 
         response = await model_router.query_with_fallback(
             prompt=prompt,
@@ -199,17 +194,13 @@ class SummarizeTask(PureTask):
 
         config = length_config.get(length, length_config["medium"])
 
-        prompt = f"""Summarize this content in {length} format:
-
-Content:
-{content}
-
-Create:
-1. Summary ({config['sentences']} sentences, ~{config['words']} words)
-2. 5-7 key points
-3. Main takeaway
-
-Format as JSON with keys: summary, key_points, main_takeaway"""
+        # Use centralized prompt manager
+        pm = get_prompt_manager()
+        prompt = pm.get_prompt(
+            "task.content_summarization",
+            length=length,
+            content=content
+        )
 
         response = await model_router.query_with_fallback(
             prompt=prompt,

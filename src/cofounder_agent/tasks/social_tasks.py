@@ -3,6 +3,7 @@
 import logging
 from typing import Any, Dict
 
+from src.cofounder_agent.services.prompt_manager import get_prompt_manager
 from src.cofounder_agent.tasks.base import ExecutionContext, PureTask
 
 logger = logging.getLogger(__name__)
@@ -41,18 +42,13 @@ class SocialResearchTask(PureTask):
         topic = input_data["topic"]
         platforms = input_data.get("platforms", ["twitter", "linkedin", "instagram"])
 
-        prompt = f"""Analyze social media trends for: {topic}
-
-Target platforms: {", ".join(platforms)}
-
-Provide:
-1. Platform-specific trends (what's working on each platform)
-2. 10-15 relevant hashtags
-3. Current audience sentiment
-4. Best times to post
-5. Recommended content formats per platform
-
-Format as JSON with keys: trends_by_platform, hashtags, sentiment, posting_times, content_formats"""
+        # Use centralized prompt manager
+        pm = get_prompt_manager()
+        prompt = pm.get_prompt(
+            "social.research_trends",
+            topic=topic,
+            platforms=", ".join(platforms)
+        )
 
         response = await model_router.query_with_fallback(
             prompt=prompt,
@@ -130,22 +126,18 @@ class SocialCreativeTask(PureTask):
 
         config = platform_config.get(platform, {"char_limit": 280, "format": "post"})
 
-        prompt = f"""Create a {style} social media {content_type} for {platform}:
-
-Topic: {topic}
-Platform: {platform}
-Style: {style}
-Content Type: {content_type}
-Character Limit: {config['char_limit']}
-
-Guidelines:
-- Hook in first line
-- Platform-native language and emojis
-- Include 3-5 relevant hashtags
-- End with strong call-to-action
-- Keep {style} tone throughout
-
-Format as JSON with keys: post_text, hashtags, cta"""
+        # Use centralized prompt manager
+        pm = get_prompt_manager()
+        prompt = pm.get_prompt(
+            "social.create_post",
+            style=style,
+            content_type=content_type,
+            platform=platform,
+            topic=topic,
+            char_limit=config['char_limit'],
+            format_guide=config['format'],
+            hashtag_count="3-5"
+        )
 
         response = await model_router.query_with_fallback(
             prompt=prompt,

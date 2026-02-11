@@ -1,45 +1,41 @@
 # 📚 Glad Labs Documentation Hub
 
-**Last Updated:** January 21, 2026  
-**Status:** ✅ Enterprise-Ready | All 8 Core Docs Active | 49 Session Files Archived  
-**Structure:** 8 Core Docs | Reference & Decisions | Components | Troubleshooting | Archive  
-**Project:** Glad Labs AI Co-Founder System v3.0.1 | AGPL-3.0 License  
-**Policy:** 🎯 **HIGH-LEVEL ONLY** (Architecture-focused, sustainable maintenance)
+**Last Updated:** February 10, 2026  
+**Status:** ✅ Production-Ready | Revamped Core Docs | Optimized Workflow  
+**Structure:** 7 Core Docs | Intelligence Layer | Infrastructure & Ops | Optimized Archive  
+**Project:** Glad Labs AI Co-Founder System v3.1.0 | AGPL-3.0 License  
+**Policy:** 🎯 **HIGH-LEVEL ONLY** (Architecture-focused, source-of-truth documentation)
 
-> **Documentation Philosophy:** This hub contains only high-level, architecture-stable documentation. Implementation details belong in code. Feature how-tos belong in code comments. Status updates are archived. This keeps documentation focused on what matters: system design, deployment, operations, and AI agent orchestration.
+> **Documentation Philosophy:** This hub contains only high-level, architecture-stable documentation. Implementation details belong in code. This set has been revamped to reflect the **Unified Task API** and **Async PostgreSQL Architecture**.
 
 ---
 
-## 🎯 Core Documentation - 8 Essential Files
+## 🎯 Core Documentation - 7 Essential Files
 
-Start with any doc that matches your role, then use cross-links to explore. Each doc is self-contained and high-level.
-
-### 📖 Getting Started (Pick Your Entry Point)
-
-| Need                      | Start Here                                                                 |
+| Component                 | Start Here                                                                 |
 | ------------------------- | -------------------------------------------------------------------------- |
-| New Developer             | [01-SETUP_AND_OVERVIEW.md](01-SETUP_AND_OVERVIEW.md)                       |
-| System Architect          | [02-ARCHITECTURE_AND_DESIGN.md](02-ARCHITECTURE_AND_DESIGN.md)             |
-| DevOps/Infrastructure     | [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](03-DEPLOYMENT_AND_INFRASTRUCTURE.md) |
-| Development Process       | [04-DEVELOPMENT_WORKFLOW.md](04-DEVELOPMENT_WORKFLOW.md)                   |
-| AI Agent Architecture     | [05-AI_AGENTS_AND_INTEGRATION.md](05-AI_AGENTS_AND_INTEGRATION.md)         |
-| Operations & Monitoring   | [06-OPERATIONS_AND_MAINTENANCE.md](06-OPERATIONS_AND_MAINTENANCE.md)       |
-| Environment Configuration | [07-BRANCH_SPECIFIC_VARIABLES.md](07-BRANCH_SPECIFIC_VARIABLES.md)         |
+| Fundamentals              | [01-SETUP_AND_OVERVIEW.md](01-SETUP_AND_OVERVIEW.md)                       |
+| System Architecture       | [02-ARCHITECTURE_AND_DESIGN.md](02-ARCHITECTURE_AND_DESIGN.md)             |
+| Intelligence & Agents      | [03-AI_AGENTS_AND_INTEGRATION.md](03-AI_AGENTS_AND_INTEGRATION.md)         |
+| Model Router & MCP         | [04-MODEL_ROUTER_AND_MCP.md](04-MODEL_ROUTER_AND_MCP.md)                   |
+| Environment & Config       | [05-ENVIRONMENT_VARIABLES.md](05-ENVIRONMENT_VARIABLES.md)                 |
+| Deployment & Infra         | [06-DEPLOYMENT_GUIDE.md](06-DEPLOYMENT_GUIDE.md)                           |
+| Operations & Maintenance   | [07-OPERATIONS_AND_MAINTENANCE.md](07-OPERATIONS_AND_MAINTENANCE.md)       |
 
 ---
 
 ## 📁 Documentation Structure Overview
 
-### 1. Core Documentation (8 Files) ✅ ACTIVE
+### 1. Core Documentation (7 Files) ✅ REVAMPED
 
 - [00-README.md](00-README.md) - Navigation hub
 - [01-SETUP_AND_OVERVIEW.md](01-SETUP_AND_OVERVIEW.md) - Getting started
 - [02-ARCHITECTURE_AND_DESIGN.md](02-ARCHITECTURE_AND_DESIGN.md) - System design
-- [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](03-DEPLOYMENT_AND_INFRASTRUCTURE.md) - Deployment
-- [04-DEVELOPMENT_WORKFLOW.md](04-DEVELOPMENT_WORKFLOW.md) - Development process
-- [05-AI_AGENTS_AND_INTEGRATION.md](05-AI_AGENTS_AND_INTEGRATION.md) - AI architecture
-- [06-OPERATIONS_AND_MAINTENANCE.md](06-OPERATIONS_AND_MAINTENANCE.md) - Operations
-- [07-BRANCH_SPECIFIC_VARIABLES.md](07-BRANCH_SPECIFIC_VARIABLES.md) - Environment config
+- [03-AI_AGENTS_AND_INTEGRATION.md](03-AI_AGENTS_AND_INTEGRATION.md) - AI & Agents (Refined)
+- [04-MODEL_ROUTER_AND_MCP.md](04-MODEL_ROUTER_AND_MCP.md) - Routing engine (New)
+- [05-ENVIRONMENT_VARIABLES.md](05-ENVIRONMENT_VARIABLES.md) - Consolidated config
+- [06-DEPLOYMENT_GUIDE.md](06-DEPLOYMENT_GUIDE.md) - Infrastructure
+- [07-OPERATIONS_AND_MAINTENANCE.md](07-OPERATIONS_AND_MAINTENANCE.md) - Operations (Updated)
 
 ### 2. Decisions (3 Files) ✅ ACTIVE
 
@@ -65,18 +61,18 @@ Start with any doc that matches your role, then use cross-links to explore. Each
 - [troubleshooting/04-build-fixes.md](troubleshooting/04-build-fixes.md) - Build errors
 - [troubleshooting/05-compilation.md](troubleshooting/05-compilation.md) - Compilation issues
 
-### 5. Component Documentation (4 Components) ✅ ACTIVE
+### 5. Service-Specific Documentation (4 Components) ✅ ACTIVE
 
 - [components/cofounder-agent/README.md](components/cofounder-agent/README.md) - Co-founder Agent
 - [components/oversight-hub/README.md](components/oversight-hub/README.md) - Oversight Hub
 - [components/public-site/README.md](components/public-site/README.md) - Public Site
 - [components/strapi-cms/README.md](components/strapi-cms/README.md) - Strapi CMS
 
-### 6. Archive (1150+ Files) ✅ ORGANIZED
+### 6. Archive (Updated) ✅ ORGANIZED
 
-- [archive-old-sessions.tar.gz](archive-old-sessions.tar.gz) - Historical sessions
-- [archive-root-consolidated.tar.gz](archive-root-consolidated.tar.gz) - Root cleanup
-- [ARCHIVE_INDEX.md](ARCHIVE_INDEX.md) - Archive index
+- [archive/](archive-active/historical-reports/) - Historical session logs and reports
+- [ARCHIVE_INDEX.md](archive-active/historical-reports/ARCHIVE_INDEX.md) - Archive index
+
 
 ---
 
