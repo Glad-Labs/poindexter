@@ -1,42 +1,61 @@
 """
-Content Critique Loop Service
+Content Critique Loop Service - WRAPPER/BACKWARD COMPATIBILITY LAYER
 
-Validates generated content and provides feedback for refinement.
-Ensures all published content meets quality standards before posting to Strapi.
+⚠️ DEPRECATED: This service is now a thin wrapper around UnifiedQualityService
+to maintain backward compatibility with TaskExecutor and other legacy code paths.
+
+The actual quality evaluation logic is centralized in quality_service.py.
+
+For new code, use UnifiedQualityService directly:
+    from services.quality_service import UnifiedQualityService
+    service = UnifiedQualityService()
+    result = await service.evaluate(content, context)
 """
 
-import asyncio
-import json
 import logging
 from typing import Any, Dict, Optional
 
-from .ollama_client import OllamaClient
-from .prompt_manager import get_prompt_manager
+from .quality_service import UnifiedQualityService
 
 logger = logging.getLogger(__name__)
 
 
 class ContentCritiqueLoop:
-    """Validates and critiques generated content"""
+    """
+    BACKWARD COMPATIBILITY WRAPPER around UnifiedQualityService.
+    
+    This class exists solely to maintain compatibility with existing code
+    that imports/uses ContentCritiqueLoop (e.g., TaskExecutor).
+    
+    All actual quality evaluation is delegated to UnifiedQualityService.
+    """
 
     def __init__(self, model_router=None):
         """
-        Initialize content critique loop
-
+        Initialize content critique loop wrapper
+        
         Args:
-            model_router: Optional ModelRouter for LLM calls (fallback to mock if None)
+            model_router: Optional ModelRouter (kept for backward compatibility, not used)
+        
+        Note: model_router parameter is ignored in favor of UnifiedQualityService integration
         """
-        self.model_router = model_router
-        self.ollama_client = OllamaClient()
+        # Initialize the actual quality service
+        self.quality_service = UnifiedQualityService()
+        
+        # Keep stats for backward compatibility
         self.critique_count = 0
         self.approval_count = 0
         self.rejection_count = 0
+        
+        logger.info("ContentCritiqueLoop initialized as wrapper around UnifiedQualityService")
 
     async def critique(
         self, content: str, context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Critique generated content and provide feedback
+        Critique generated content and provide feedback.
+        
+        DELEGATES to UnifiedQualityService.evaluate() for backward compatibility.
 
         Args:
             content: Generated content to critique
@@ -44,11 +63,11 @@ class ContentCritiqueLoop:
 
         Returns:
             Dict with:
-            - approved: bool
-            - quality_score: 0-100
-            - feedback: str (specific feedback)
-            - suggestions: list (improvement suggestions)
-            - needs_refinement: bool
+            - approved: bool (passing from quality service)
+            - quality_score: 0-100 (overall_score from quality service)
+            - feedback: str (feedback from quality service)
+            - suggestions: list (suggestions from quality service)
+            - needs_refinement: bool (True if not passing)
         """
         self.critique_count += 1
 
@@ -62,67 +81,49 @@ class ContentCritiqueLoop:
                 "needs_refinement": True,
             }
 
-        logger.debug(f"🔍 Critiquing content ({len(content)} chars)")
+        logger.debug(f"🔍 Critiquing content ({len(content)} chars) via UnifiedQualityService")
 
         try:
-            # 1. Calculate heuristic metrics (always useful as baseline)
-            metrics = self._calculate_metrics(content, context)
+            # Delegate to UnifiedQualityService
+            quality_result = await self.quality_service.evaluate(
+                content=content,
+                context=context,
+                use_llm=True,  # Use LLM-based evaluation
+            )
 
-            # 2. Try LLM-based critique
-            llm_result = await self._critique_with_llm(content, context)
+            # Map QualityScore to ContentCritiqueLoop format for backward compatibility
+            result = {
+                "approved": quality_result.passing,
+                "quality_score": int(quality_result.overall_score),
+                "feedback": quality_result.feedback,
+                "suggestions": quality_result.suggestions,
+                "needs_refinement": not quality_result.passing,
+                "metrics": {
+                    "clarity": quality_result.clarity,
+                    "accuracy": quality_result.accuracy,
+                    "completeness": quality_result.completeness,
+                    "relevance": quality_result.relevance,
+                    "seo_quality": quality_result.seo_quality,
+                    "readability": quality_result.readability,
+                    "engagement": quality_result.engagement,
+                    "source": "quality_service",
+                },
+            }
 
-            if llm_result:
-                # Use LLM result if available
-                critique_result = {
-                    "approved": llm_result.get("approved", False),
-                    "quality_score": llm_result.get("quality_score", 0),
-                    "feedback": llm_result.get("feedback", "No feedback provided"),
-                    "suggestions": llm_result.get("suggestions", []),
-                    "needs_refinement": llm_result.get("needs_refinement", True),
-                    "metrics": {
-                        "word_count": metrics["word_count"],
-                        "readability_score": metrics["readability_score"],
-                        "has_structure": metrics["has_structure"],
-                        "has_keywords": metrics.get("has_keywords", False),
-                        "content_length": len(content),
-                        "source": "llm",
-                    },
-                }
-                logger.info(f"🤖 LLM Critique used (Score: {critique_result['quality_score']})")
-            else:
-                # Fallback to heuristics
-                critique_result = {
-                    "approved": metrics["quality_score"] >= 75,
-                    "quality_score": metrics["quality_score"],
-                    "feedback": self._generate_feedback(metrics),
-                    "suggestions": self._generate_suggestions(metrics),
-                    "needs_refinement": metrics["quality_score"] < 85,
-                    "metrics": {
-                        "word_count": metrics["word_count"],
-                        "readability_score": metrics["readability_score"],
-                        "has_structure": metrics["has_structure"],
-                        "has_keywords": metrics.get("has_keywords", False),
-                        "content_length": len(content),
-                        "source": "heuristic",
-                    },
-                }
-                logger.info(
-                    f"📏 Heuristic Critique used (Score: {critique_result['quality_score']})"
-                )
-
-            if critique_result["approved"]:
+            # Update stats
+            if result["approved"]:
                 self.approval_count += 1
-                logger.info(f"✅ Content approved (score: {critique_result['quality_score']}/100)")
+                logger.info(f"✅ Content approved (score: {result['quality_score']}/100)")
             else:
                 self.rejection_count += 1
                 logger.warning(
-                    f"⚠️ Content needs improvement (score: {critique_result['quality_score']}/100)"
+                    f"⚠️ Content needs improvement (score: {result['quality_score']}/100)"
                 )
 
-            return critique_result
+            return result
 
         except Exception as e:
-            logger.error(f"❌ Critique error: {e}")
+            logger.error(f"❌ Critique error: {e}", exc_info=True)
             return {
                 "approved": False,
                 "quality_score": 0,
@@ -132,179 +133,6 @@ class ContentCritiqueLoop:
                 "error": str(e),
             }
 
-    async def _critique_with_llm(
-        self, content: str, context: Optional[Dict[str, Any]] = None
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Perform semantic critique using LLM (Ollama).
-        Returns dict with quality_score, approved, feedback, etc. or None if failed.
-        """
-        try:
-            # Check if Ollama is available
-            if not await self.ollama_client.check_health():
-                return None
-
-            # Use centralized prompt manager for consistent, versioned prompts
-            pm = get_prompt_manager()
-            prompt = pm.get_prompt(
-                "qa.self_critique",
-                topic=context.get("topic", "") if context else "",
-                target_audience=context.get("target_audience", "") if context else "",
-                primary_keyword=context.get("primary_keyword", "") if context else "",
-                style=context.get("style", "") if context else "",
-                tone=context.get("tone", "") if context else "",
-                target_length=context.get("target_length", 1500) if context else 1500,
-                writing_style_reference=context.get("writing_style_guidance", "") if context else "",
-                content=content
-            )
-
-            # Generate critique
-            # Use 'mistral' or 'llama2' as they are good at following JSON instructions
-            result = await self.ollama_client.generate(
-                prompt=prompt,
-                model="mistral",  # Prefer mistral for instruction following
-                temperature=0.2,  # Low temperature for consistent evaluation
-                max_tokens=1000,
-            )
-
-            response_text = result.get("text", "").strip()
-            if not response_text:
-                return None
-
-            # Parse JSON
-            # Handle potential markdown code blocks
-            if "```json" in response_text:
-                json_str = response_text.split("```json")[1].split("```")[0]
-            elif "```" in response_text:
-                json_str = response_text.split("```")[1].split("```")[0]
-            else:
-                json_str = response_text
-
-            return json.loads(json_str.strip())
-
-        except Exception as e:
-            logger.warning(f"LLM critique failed (falling back to heuristics): {e}")
-            return None
-
-    def _calculate_metrics(
-        self, content: str, context: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """Calculate content quality metrics"""
-        word_count = len(content.split())
-        lines = content.split("\n")
-        has_structure = len([l for l in lines if l.strip().startswith("#")]) > 0
-
-        # Basic readability: longer paragraphs are harder to read
-        paragraphs = [p for p in content.split("\n\n") if p.strip()]
-        avg_para_length = word_count / max(len(paragraphs), 1)
-        readability_score = max(0, min(100, 100 - (avg_para_length / 150) * 30))
-
-        # Check for keywords if context provided
-        has_keywords = False
-        if context and "keywords" in context:
-            keywords = context.get("keywords", [])
-            if isinstance(keywords, str):
-                keywords = [keywords]
-            elif keywords is None:
-                keywords = []
-            content_lower = content.lower()
-            has_keywords = any(kw.lower() in content_lower for kw in keywords if kw)
-
-        # Quality score calculation
-        quality_score = 50  # Base score
-
-        # Add points for structure
-        if has_structure:
-            quality_score += 15
-        else:
-            quality_score += 5  # Some structure without headings
-
-        # Add points for readability
-        quality_score += min(20, readability_score / 5)
-
-        # Add points for length
-        if word_count >= 300:
-            quality_score += 15
-        elif word_count >= 150:
-            quality_score += 10
-        else:
-            quality_score += 5
-
-        # Add points for keywords
-        if has_keywords:
-            quality_score += 10
-
-        # Add points for punctuation/polish
-        if content.count(".") > word_count / 50:  # Reasonable sentence count
-            quality_score += 10
-
-        # Cap at 100
-        quality_score = min(100, quality_score)
-
-        return {
-            "word_count": word_count,
-            "has_structure": has_structure,
-            "readability_score": readability_score,
-            "has_keywords": has_keywords,
-            "paragraph_count": len(paragraphs),
-            "quality_score": int(quality_score),
-        }
-
-    def _generate_feedback(self, metrics: Dict[str, Any]) -> str:
-        """Generate specific feedback based on metrics"""
-        if not metrics:
-            return "Unable to generate feedback"
-
-        feedback_parts = []
-
-        if metrics.get("quality_score", 50) >= 90:
-            feedback_parts.append("Excellent content quality")
-        elif metrics.get("quality_score", 50) >= 80:
-            feedback_parts.append("Good content quality")
-        elif metrics.get("quality_score", 50) >= 70:
-            feedback_parts.append("Acceptable content with room for improvement")
-        else:
-            feedback_parts.append("Content needs significant improvement")
-
-        if metrics.get("word_count", 0) < 150:
-            feedback_parts.append("Consider expanding content for more depth")
-        elif metrics.get("word_count", 0) > 3000:
-            feedback_parts.append("Consider breaking into multiple posts")
-        else:
-            feedback_parts.append("Good word count for publication")
-
-        if not metrics.get("has_structure", False):
-            feedback_parts.append("Add headings to improve structure and readability")
-
-        if metrics.get("readability_score", 100) < 60:
-            feedback_parts.append("Break up long paragraphs for better readability")
-
-        if not metrics.get("has_keywords", False):
-            feedback_parts.append("Include target keywords naturally in content")
-
-        return ". ".join(feedback_parts) if feedback_parts else "Content is ready for publication"
-
-    def _generate_suggestions(self, metrics: Dict[str, Any]) -> list:
-        """Generate specific improvement suggestions"""
-        if not metrics:
-            return ["Content is ready for publication"]
-
-        suggestions = []
-
-        if metrics.get("word_count", 0) < 200:
-            suggestions.append("Expand content to at least 200-300 words for better SEO")
-
-        if not metrics.get("has_structure", False):
-            suggestions.append("Add H2/H3 headings to organize main points")
-
-        if metrics.get("readability_score", 100) < 70:
-            suggestions.append("Shorten paragraphs (max 3-4 sentences)")
-
-        if metrics.get("paragraph_count", 0) < 3:
-            suggestions.append("Add more paragraphs to improve content flow")
-
-        if not metrics.get("has_keywords", False):
-            suggestions.append("Incorporate 2-3 target keywords naturally")
 
         if metrics.get("quality_score", 100) < 75:
             suggestions.append("Review for grammar, spelling, and clarity")

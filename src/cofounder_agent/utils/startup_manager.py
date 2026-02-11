@@ -69,28 +69,25 @@ class StartupManager:
             # Step 4: Initialize model consolidation
             await self._initialize_model_consolidation()
 
-            # Step 5: Initialize orchestrator
-            await self._initialize_orchestrator()
-
-            # Step 6: Initialize workflow history service
+            # Step 5: Initialize workflow history service
             await self._initialize_workflow_history()
 
-            # Step 8: Initialize content critique loop
+            # Step 6: Initialize content critique loop
             await self._initialize_content_critique()
 
-            # Step 9: Initialize background task executor
+            # Step 7: Initialize background task executor
             await self._initialize_task_executor()
 
-            # Step 10: Initialize training data services
+            # Step 8: Initialize training data services
             await self._initialize_training_services()
 
-            # Step 11: Verify connections
+            # Step 9: Verify connections
             await self._verify_connections()
 
-            # Step 12: Register services with routes
+            # Step 10: Register services with routes
             await self._register_route_services()
 
-            # Step 13: Warmup SDXL models (async, non-blocking)
+            # Step 11: Warmup SDXL models (async, non-blocking)
             # Only if GPU is available - this prevents timeout issues when users first request SDXL
             try:
                 await self._warmup_sdxl_models()
@@ -217,18 +214,6 @@ class StartupManager:
             error_msg = f"Model consolidation initialization failed: {str(e)}"
             logger.error(f"   {error_msg}", exc_info=True)
             # Don't fail startup - models are optional
-
-    async def _initialize_orchestrator(self) -> None:
-        """Orchestrator initialization - SKIPPED
-
-        The orchestrator is now created in main.py lifespan as UnifiedOrchestrator
-        after all dependencies are properly initialized.
-
-        This method is kept for backward compatibility but does nothing.
-        """
-        logger.info("  🤖 Orchestrator initialization (deferred to main.py lifespan)...")
-        logger.info("     UnifiedOrchestrator will be created with all dependencies ready")
-        # self.orchestrator stays None - will be set in main.py lifespan
 
     async def _initialize_workflow_history(self) -> None:
         """Initialize workflow history service (Phase 6)"""

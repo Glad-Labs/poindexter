@@ -61,12 +61,11 @@
 - [troubleshooting/04-build-fixes.md](troubleshooting/04-build-fixes.md) - Build errors
 - [troubleshooting/05-compilation.md](troubleshooting/05-compilation.md) - Compilation issues
 
-### 5. Service-Specific Documentation (4 Components) ✅ ACTIVE
+### 5. Service-Specific Documentation (3 Components) ✅ ACTIVE
 
 - [components/cofounder-agent/README.md](components/cofounder-agent/README.md) - Co-founder Agent
 - [components/oversight-hub/README.md](components/oversight-hub/README.md) - Oversight Hub
 - [components/public-site/README.md](components/public-site/README.md) - Public Site
-- [components/strapi-cms/README.md](components/strapi-cms/README.md) - Strapi CMS
 
 ### 6. Archive (Updated) ✅ ORGANIZED
 
@@ -108,7 +107,7 @@
 
 ### Component Documentation
 
-- ✅ 4 components documented
+- ✅ 3 components documented
 - ✅ Component troubleshooting structure in place
 - ✅ Architecture overview per component
 
@@ -182,7 +181,6 @@ All components of the enterprise documentation framework are now active and main
 - [Co-founder Agent](./components/cofounder-agent/README.md) - AI agent architecture
 - [Oversight Hub](./components/oversight-hub/README.md) - Admin dashboard
 - [Public Site](./components/public-site/README.md) - Customer website
-- [Strapi CMS](./components/strapi-cms/README.md) - Content management system
 
 ### Troubleshooting & Support
 

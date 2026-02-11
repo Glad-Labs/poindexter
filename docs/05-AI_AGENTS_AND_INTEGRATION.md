@@ -45,9 +45,75 @@ Glad Labs implements a sophisticated self-critiquing content generation pipeline
                                    │
         ┌──────────────────────────▼──────────┐
         │ Model Router (Multi-Provider)       │
-        │ [See 04-MODEL_ROUTER_AND_MCP.md]    │
+        │ Ollama → Claude → OpenAI → Gemini   │
         └─────────────────────────────────────┘
 ```
+
+---
+
+## 🔀 Model Router & Multi-Provider LLM Access
+
+### Intelligent Fallback Routing
+
+Glad Labs uses an intelligent fallback routing system to ensure high availability and cost efficiency. All LLM calls pass through the `ModelRouter` service.
+
+**Location:** `src/cofounder_agent/services/model_router.py`
+
+### Provider Priority Chain
+
+The system attempts providers in the following order (based on keys available in `.env.local`):
+
+1. **Ollama** (Local, Zero-Cost, Highest Speed)
+2. **Anthropic Claude** (Claude 3.5 Sonnet / Opus)
+3. **OpenAI** (GPT-4o / GPT-4 Turbo)
+4. **Google Gemini** (Gemini 1.5 Pro)
+
+### Cost-Tier Execution Logic
+
+Instead of hardcoding model names, the system uses **Cost Tiers** for intelligent execution:
+
+| Tier | Primary Model | Usage Case |
+|---|---|---|
+| **Ultra Cheap** | Ollama (Llama 3) | Drafting, Initial Research |
+| **Cheap** | Gemini 1.5 Flash | Classification, Tagging |
+| **Balanced** | Claude 3.5 Sonnet | Writing, QA (Standard) |
+| **Premium** | Claude 3 Opus / GPT-4o | Complex Reasoning, Final Review |
+
+---
+
+## 🛠️ Model Context Protocol (MCP)
+
+**Location:** `src/mcp/`
+
+The MCP provides a standardized interface for agents to interact with external tools and resources:
+
+**Available Tools:**
+
+- **Search:** Serper integration for web search
+- **Data Retrieval:** PostgreSQL database queries
+- **Media:** Pexels for image selection
+- **Context:** Dynamic memory and RAG-based context injection
+
+### Implementing a New MCP Tool
+
+To add a custom tool:
+
+1. Define tool logic in `src/mcp_server/`
+2. Register the tool in `MCPContentOrchestrator`
+3. Update `unified_orchestrator` to include the tool in agent prompts
+4. Test via `POST /api/agents/test-mcp-tool`
+
+---
+
+## 📊 Monitoring & Cost Tracking
+
+Usage is tracked per-task and per-user using the `UsageTracker` service.
+
+- **Metrics Service:** `src/cofounder_agent/services/usage_tracker.py`
+- **Dashboard:** Real-time costs in **Oversight Hub** (Port 3001)
+- **Reports:** Cost breakdown by model, agent, task type
+
+---
 
 ### Agent Discovery & Execution
 
