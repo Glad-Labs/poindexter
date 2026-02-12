@@ -106,7 +106,10 @@ The primary keyword to focus on is '{primary_keyword}'.
       - Story-based: "From [Problem] to [Solution]", "How [Entity] Transformed"
 4. Incorporate research context provided below
 5. Add [IMAGE-1], [IMAGE-2], etc. where visuals would enhance the content
-6. Target word count: {word_count} words (±10% tolerance acceptable)
+6. ⚠️ MANDATORY: Write FULL CONTENT to reach approximately {word_count} words. 
+   This is NOT a suggestion - your response MUST be comprehensive and thorough to hit this target.
+   Break content into multiple detailed sections to meet word count.
+   If you're at 50% of target, you're not done - continue adding value and details.
 7. Format: Valid Markdown with proper structure
 
 ⭐ RESEARCH CONTEXT TO INCORPORATE:

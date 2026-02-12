@@ -434,11 +434,14 @@ class AIContentGenerator:
 
                 # Run blocking Gemini call in a thread to avoid blocking the event loop
                 def _gemini_generate():
-                    # Calculate max tokens: For Gemini, use higher multiplier for better word count coverage
-                    # Gemini uses different tokenization: ~3.5-4 tokens per word for markdown with formatting
-                    max_tokens = int(target_length * 4.5)  # Increased from 3.0 to 4.5 for better completion
+                    # Calculate max tokens: For Gemini, use MUCH higher multiplier for large outputs
+                    # Gemini sometimes throttles long outputs, so we need to give it extra room
+                    # Using 6x multiplier to ensure Gemini has enough token budget to complete full response
+                    max_tokens = int(target_length * 6.0)  # Using 6x for large outputs (3000+ words)
+                    # Cap at Gemini's reasonable maximum to avoid API issues
+                    max_tokens = min(max_tokens, 32000)  # Gemini-pro-15 supports up to 32k output
                     logger.debug(
-                        f"   Gemini max_output_tokens: {max_tokens} (target_length: {target_length}, multiplier: 4.5x)"
+                        f"   Gemini max_output_tokens: {max_tokens} (target_length: {target_length}, multiplier: 6.0x, capped at 32k)"
                     )
                     
                     if use_new_sdk:
@@ -492,26 +495,45 @@ class AIContentGenerator:
                 
                 if generated_content and len(generated_content) > 100:
                     validation = self._validate_content(generated_content, topic, target_length)
-                    metrics["validation_results"].append(
-                        {
-                            "attempt": metrics["generation_attempts"],
-                            "score": validation.quality_score,
-                            "issues": validation.issues,
-                            "passed": validation.is_valid,
-                        }
-                    )
+                    
+                    # Check if content is significantly under target (less than 60% of target)
+                    word_count = len(generated_content.split())
+                    min_acceptable = int(target_length * 0.6)
+                    
+                    if word_count < min_acceptable:
+                        logger.warning(
+                            f"⚠️ Gemini returned short content: {word_count} words (target: {target_length}, minimum acceptable: {min_acceptable})"
+                        )
+                        attempts.append(
+                            ("Gemini (undershoot)", f"Content too short: {word_count} words vs {target_length} target")
+                        )
+                        # Continue to next provider instead of accepting short content
+                        pass  # Fall through to try next provider
+                    else:
+                        # Content is acceptable length
+                        metrics["validation_results"].append(
+                            {
+                                "attempt": metrics["generation_attempts"],
+                                "score": validation.quality_score,
+                                "issues": validation.issues,
+                                "passed": validation.is_valid,
+                            }
+                        )
 
-                    metrics["model_used"] = f"Google Gemini ({model_name})"
-                    metrics["models_used_by_phase"]["draft"] = metrics[
-                        "model_used"
-                    ]  # NEW: Track phase
-                    metrics["final_quality_score"] = validation.quality_score
-                    metrics["generation_time_seconds"] = time.time() - start_time
-                    metrics["model_selection_log"]["decision_tree"]["gemini_succeeded"] = True
-                    logger.info(
-                        f"✓ Content generated with user-selected Gemini: {validation.feedback}"
-                    )
-                    return generated_content, metrics["model_used"], metrics
+                        metrics["model_used"] = f"Google Gemini ({model_name})"
+                        metrics["models_used_by_phase"]["draft"] = metrics[
+                            "model_used"
+                        ]  # NEW: Track phase
+                        metrics["final_quality_score"] = validation.quality_score
+                        metrics["generation_time_seconds"] = time.time() - start_time
+                        metrics["model_selection_log"]["decision_tree"]["gemini_succeeded"] = True
+                        logger.info(
+                            f"✓ Content generated with Gemini: {validation.feedback} ({word_count} words)"
+                        )
+                        return generated_content, metrics["model_used"], metrics
+                else:
+                    logger.warning(f"Gemini returned empty or very short content: {len(generated_content) if generated_content else 0} chars")
+                    attempts.append(("Gemini", "Empty or very short response"))
 
             except Exception as e:
                 import traceback
