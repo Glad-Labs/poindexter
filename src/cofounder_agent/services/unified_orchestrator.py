@@ -208,6 +208,91 @@ class UnifiedOrchestrator:
             ", ".join(self.agents.keys()),
         )
 
+    def _get_agent_instance(self, agent_name: str, **kwargs) -> Any:
+        """
+        Get an agent instance from the registry, with fallback to direct import.
+
+        This method enables dynamic agent selection and instantiation, allowing:
+        - Runtime agent discovery via AgentRegistry
+        - Custom parameter passing (e.g., LLMClient for CreativeAgent)
+        - Graceful fallback to direct imports for backward compatibility
+
+        Args:
+            agent_name: Name of the agent to instantiate (e.g., "research_agent", "creative_agent")
+            **kwargs: Additional keyword arguments to pass to agent constructor
+
+        Returns:
+            Instantiated agent object
+
+        Example:
+            ```python
+            # Dynamic instantiation from registry
+            research_agent = self._get_agent_instance("research_agent")
+
+            # With custom parameters
+            llm_client = LLMClient(model_name="claude-3-sonnet")
+            creative_agent = self._get_agent_instance(
+                "creative_agent",
+                llm_client=llm_client
+            )
+
+            # Fallback to direct import if registry not populated
+            # Will still work if agent classes are importable
+            ```
+        """
+        try:
+            from agents.registry import get_agent_registry
+
+            registry = get_agent_registry()
+            
+            # Try to get agent class from registry
+            agent_class = registry.get_agent_class(agent_name)
+            
+            if agent_class:
+                logger.debug(f"Instantiating agent '{agent_name}' from registry with kwargs: {kwargs.keys()}")
+                try:
+                    return agent_class(**kwargs)
+                except TypeError as e:
+                    # Agent doesn't accept kwargs, try without
+                    logger.debug(f"Agent '{agent_name}' doesn't accept kwargs, instantiating without: {e}")
+                    return agent_class()
+            
+            logger.debug(f"Agent '{agent_name}' not found in registry, falling back to direct import")
+        except Exception as e:
+            logger.debug(f"Registry lookup failed for '{agent_name}': {e}, falling back to direct import")
+
+        # Fallback: Direct import based on agent name
+        # This maintains backward compatibility if registry is not populated
+        agent_mapping = {
+            "research_agent": "agents.content_agent.agents.research_agent:ResearchAgent",
+            "creative_agent": "agents.content_agent.agents.creative_agent:CreativeAgent",
+            "qa_agent": "agents.content_agent.agents.qa_agent:QAAgent",
+            "image_agent": "agents.content_agent.agents.image_agent:ImageAgent",
+            "publishing_agent": "agents.content_agent.agents.postgres_publishing_agent:PostgreSQLPublishingAgent",
+            "financial_agent": "agents.financial_agent:FinancialAgent",
+            "market_agent": "agents.market_insight_agent:MarketInsightAgent",
+            "compliance_agent": "agents.compliance_agent:ComplianceAgent",
+        }
+
+        if agent_name in agent_mapping:
+            module_path, class_name = agent_mapping[agent_name].rsplit(":", 1)
+            try:
+                module = __import__(module_path, fromlist=[class_name])
+                agent_class = getattr(module, class_name)
+                logger.debug(f"Instantiating agent '{agent_name}' via direct import with kwargs: {kwargs.keys()}")
+                
+                try:
+                    return agent_class(**kwargs)
+                except TypeError:
+                    # Agent doesn't accept kwargs, try without
+                    logger.debug(f"Agent '{agent_name}' doesn't accept kwargs, instantiating without")
+                    return agent_class()
+            except (ImportError, AttributeError) as e:
+                logger.error(f"Failed to import agent '{agent_name}': {e}")
+                raise ValueError(f"Agent '{agent_name}' not found in registry or importable via fallback")
+
+        raise ValueError(f"Unknown agent: '{agent_name}'. Not in registry or fallback mapping.")
+
     async def process_request(
         self, user_input: str, context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
@@ -553,11 +638,9 @@ class UnifiedOrchestrator:
             # STAGE 1: RESEARCH (10% → 25%)
             # ====================================================================
             logger.info("[%s] STAGE 1: Research", request.request_id)
-            from agents.content_agent.agents.research_agent import (  # pylint: disable=import-outside-toplevel
-                ResearchAgent,
-            )
-
-            research_agent = ResearchAgent()
+            
+            # Instantiate research agent (with registry fallback support)
+            research_agent = self._get_agent_instance("research_agent")
             research_data = await research_agent.run(topic, keywords[:5])
             research_text = research_data if isinstance(research_data, str) else str(research_data)
 
@@ -578,9 +661,6 @@ class UnifiedOrchestrator:
             # STAGE 2: CREATIVE DRAFT (25% → 45%)
             # ====================================================================
             logger.info("[%s] STAGE 2: Creative Draft", request.request_id)
-            from agents.content_agent.agents.creative_agent import (  # pylint: disable=import-outside-toplevel
-                CreativeAgent,
-            )
             from agents.content_agent.services.llm_client import (  # pylint: disable=import-outside-toplevel
                 LLMClient,
             )
@@ -596,7 +676,9 @@ class UnifiedOrchestrator:
 
             # Create LLMClient with selected model
             llm_client = LLMClient(model_name=draft_model) if draft_model else LLMClient()
-            creative_agent = CreativeAgent(llm_client=llm_client)
+            
+            # Instantiate creative agent with custom parameter (registry fallback support)
+            creative_agent = self._get_agent_instance("creative_agent", llm_client=llm_client)
 
             # Retrieve writing style guidance - either from specific writing_style_id or active sample
             writing_style_guidance = ""
@@ -746,7 +828,7 @@ class UnifiedOrchestrator:
                     if refine_model:
                         # Create new LLMClient with refine model for refinement
                         refine_llm_client = LLMClient(model_name=refine_model)
-                        creative_agent = CreativeAgent(llm_client=refine_llm_client)
+                        creative_agent = self._get_agent_instance("creative_agent", llm_client=refine_llm_client)
                     content = await creative_agent.run(
                         content,
                         is_refinement=True,
@@ -784,11 +866,9 @@ class UnifiedOrchestrator:
             # STAGE 5: FORMATTING (75% → 90%)
             # ====================================================================
             logger.info("[%s] STAGE 5: Formatting", request.request_id)
-            from agents.content_agent.agents.postgres_publishing_agent import (  # pylint: disable=import-outside-toplevel
-                PostgreSQLPublishingAgent,
-            )
-
-            publishing_agent = PostgreSQLPublishingAgent()
+            
+            # Instantiate publishing agent (with registry fallback support)
+            publishing_agent = self._get_agent_instance("publishing_agent")
             result_post = await publishing_agent.run(content)
 
             formatted_content = getattr(result_post, "raw_content", str(content))

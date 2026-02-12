@@ -312,6 +312,39 @@ def register_all_routes(
     status["intelligent_orchestrator_router"] = False
 
     try:
+        # ===== SERVICE REGISTRY - Service discovery and introspection =====
+        from routes.service_registry_routes import router as service_registry_router
+
+        app.include_router(service_registry_router)
+        logger.info(" service_registry_router registered (service discovery)")
+        status["service_registry_router"] = True
+    except Exception as e:
+        logger.error(f" service_registry_router failed: {e}")
+        status["service_registry_router"] = False
+
+    try:
+        # ===== AGENT REGISTRY - Agent discovery and metadata =====
+        from routes.agent_registry_routes import router as agent_registry_router
+
+        app.include_router(agent_registry_router)
+        logger.info(" agent_registry_router registered (agent discovery)")
+        status["agent_registry_router"] = True
+    except Exception as e:
+        logger.error(f" agent_registry_router failed: {e}")
+        status["agent_registry_router"] = False
+
+    try:
+        # ===== WORKFLOW MANAGEMENT - Workflow execution and orchestration =====
+        from routes.workflow_routes import router as workflow_router
+
+        app.include_router(workflow_router)
+        logger.info(" workflow_router registered (workflow orchestration)")
+        status["workflow_router"] = True
+    except Exception as e:
+        logger.error(f" workflow_router failed: {e}")
+        status["workflow_router"] = False
+
+    try:
         # ===== WEBSOCKET - Real-time progress tracking =====
         from routes.websocket_routes import websocket_router
 

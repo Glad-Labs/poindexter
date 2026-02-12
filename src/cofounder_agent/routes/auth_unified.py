@@ -382,6 +382,22 @@ async def github_callback(request_data: GitHubCallbackRequest) -> Dict[str, Any]
         raise HTTPException(status_code=500, detail="Authentication error")
 
 
+@router.post("/github-callback")
+async def github_callback_fallback(request_data: GitHubCallbackRequest) -> Dict[str, Any]:
+    """
+    Fallback endpoint for GitHub OAuth callback (old endpoint path).
+    
+    This endpoint exists for backward compatibility with clients using
+    the old /api/auth/github-callback path. All requests are forwarded
+    to the new /api/auth/github/callback endpoint.
+    
+    DEPRECATED: Use /api/auth/github/callback instead.
+    """
+    logger.warning("Deprecated endpoint /api/auth/github-callback called. Use /api/auth/github/callback instead.")
+    # Forward to the main handler
+    return await github_callback(request_data)
+
+
 @router.post("/logout", response_model=LogoutResponse)
 async def unified_logout(
     current_user: Dict[str, Any] = Depends(get_current_user),

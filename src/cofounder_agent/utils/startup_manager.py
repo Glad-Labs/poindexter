@@ -87,7 +87,10 @@ class StartupManager:
             # Step 10: Register services with routes
             await self._register_route_services()
 
-            # Step 11: Warmup SDXL models (async, non-blocking)
+            # Step 11: Initialize agent registry
+            await self._initialize_agent_registry()
+
+            # Step 12: Warmup SDXL models (async, non-blocking)
             # Only if GPU is available - this prevents timeout issues when users first request SDXL
             try:
                 await self._warmup_sdxl_models()
@@ -353,6 +356,20 @@ class StartupManager:
             logger.debug(
                 "   Database service available via dependency injection (get_database_dependency)"
             )
+
+    async def _initialize_agent_registry(self) -> None:
+        """Initialize agent registry with all available agents"""
+        try:
+            from agents.registry import get_agent_registry
+            from utils.agent_initialization import register_all_agents
+
+            registry = get_agent_registry()
+            initialized_registry = register_all_agents(registry)
+            agent_count = len(initialized_registry)
+            logger.info(f"  Agent registry initialized with {agent_count} agents")
+        except Exception as e:
+            logger.warning(f"[WARNING] Agent registry initialization failed (non-critical): {type(e).__name__}: {e}")
+            # Continue anyway - system can function without agent registry
 
     async def _warmup_sdxl_models(self) -> None:
         """Warmup SDXL models to avoid timeout on first request"""
