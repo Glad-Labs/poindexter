@@ -119,24 +119,30 @@ async def exchange_code_for_token(code: str) -> Dict[str, Any]:
                 timeout=10.0,
             )
 
+            logger.debug(f"GitHub token exchange response status: {response.status_code}")
+            
             if response.status_code != 200:
-                logger.error(f"GitHub token exchange failed: {response.status_code}")
-                raise HTTPException(status_code=401, detail="GitHub authentication failed")
+                response_text = response.text
+                logger.error(f"GitHub token exchange failed with status {response.status_code}: {response_text}")
+                raise HTTPException(status_code=401, detail="GitHub authentication failed - invalid code or credentials")
 
             data = response.json()
+            logger.debug(f"GitHub response keys: {data.keys()}")
 
             if "error" in data:
-                logger.error(f"GitHub error: {data.get('error_description', 'Unknown error')}")
+                error_description = data.get('error_description', 'Unknown error')
+                logger.error(f"GitHub error: {data.get('error')} - {error_description}")
                 raise HTTPException(
                     status_code=401,
-                    detail=data.get("error_description", "GitHub authentication failed"),
+                    detail=f"GitHub rejected request: {error_description}",
                 )
 
             access_token = data.get("access_token", "")
             if not access_token:
-                logger.error("No access token returned from GitHub")
+                logger.error(f"No access token in GitHub response. Keys: {list(data.keys())}")
                 raise HTTPException(status_code=401, detail="Invalid token response from GitHub")
 
+            logger.info("Successfully obtained GitHub access token")
             # Return full response with expiration info
             return {
                 "access_token": access_token,
@@ -173,11 +179,16 @@ async def get_github_user(access_token: str) -> Dict[str, Any]:
             timeout=10.0,
         )
 
+        logger.debug(f"GitHub user API response status: {response.status_code}")
+        
         if response.status_code != 200:
-            logger.error(f"GitHub API error: {response.status_code}")
-            raise HTTPException(status_code=401, detail="Failed to fetch GitHub user")
+            response_text = response.text
+            logger.error(f"GitHub API error: {response.status_code} - {response_text}")
+            raise HTTPException(status_code=401, detail=f"Failed to fetch GitHub user: {response.status_code}")
 
-        return response.json()
+        user_data = response.json()
+        logger.info(f"Successfully fetched GitHub user: {user_data.get('login')}")
+        return user_data
 
 
 def create_jwt_token(user_data: Dict[str, Any]) -> str:
