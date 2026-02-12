@@ -164,10 +164,8 @@ class OllamaAdapter(ProviderAdapter):
                 prompt=prompt,
                 model=model,
                 stream=False,
-                options={
-                    "num_predict": max_tokens,
-                    "temperature": temperature,
-                },
+                temperature=temperature,
+                max_tokens=max_tokens,
             )
 
             elapsed_ms = (datetime.utcnow() - start_time).total_seconds() * 1000

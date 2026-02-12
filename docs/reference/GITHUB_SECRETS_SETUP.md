@@ -1,8 +1,10 @@
 # 🔐 Complete GitHub Secrets Configuration Guide
 
 **Status:** ✅ Authoritative Reference  
-**Last Updated:** October 25, 2025  
+**Last Updated:** February 11, 2026  
 **Purpose:** Single source of truth for GitHub Secrets setup across all environments
+
+> **⚠️ Note:** Strapi CMS has been deprecated. References to `STRAPI_*` variables in this guide are legacy. Content is now managed via markdown files. PostgreSQL database credentials and API keys are the primary secrets needed.
 
 ---
 

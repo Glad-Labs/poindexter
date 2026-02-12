@@ -84,49 +84,21 @@ class GeminiClient:
             raise Exception("Gemini API key not configured")
 
         try:
-            # Import google-genai library (new package, replaces deprecated google.generativeai)
-            use_new_sdk = False
-            try:
-                import google.genai as genai
-                use_new_sdk = True
-                logger.info("✅ Using google.genai (new SDK v1.61.0+) for generate()")
-            except ImportError:
-                # Fallback to old deprecated package if new one not available
-                import google.generativeai as genai
-                logger.warning(
-                    "⚠️  Using google.generativeai (legacy/deprecated SDK) for generate()"
-                )
+            # Use google.generativeai SDK (stable, widely supported)
+            import google.generativeai as genai
 
-            # Configure the API key based on SDK version
-            if use_new_sdk:
-                # New google.genai SDK: Pass API key directly to client
-                genai.api_key = self.api_key
-                client = genai.Client(api_key=self.api_key)
-                
-                # Generate content using new SDK
-                response = await asyncio.to_thread(
-                    lambda: client.models.generate_content(
-                        model=f"models/{model}",
-                        contents=prompt,
-                        config=genai.GenerateContentConfig(
-                            max_output_tokens=max_tokens, 
-                            temperature=temperature,
-                            **kwargs
-                        ),
-                    )
-                )
-            else:
-                # Old google.generativeai SDK: Use GenerativeModel
-                genai.configure(api_key=self.api_key)
-                gemini_model = genai.GenerativeModel(model)
+            genai.configure(api_key=self.api_key)
+            gemini_model = genai.GenerativeModel(model)
 
-                # Generate content
-                response = await gemini_model.generate_content_async(
-                    prompt,
-                    generation_config=genai.types.GenerationConfig(
-                        max_output_tokens=max_tokens, temperature=temperature, **kwargs
-                    ),
-                )
+            # Generate content using stable SDK
+            response = await gemini_model.generate_content_async(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    max_output_tokens=max_tokens,
+                    temperature=temperature,
+                    **kwargs
+                ),
+            )
 
             return response.text
 
@@ -164,16 +136,8 @@ class GeminiClient:
             raise Exception("Gemini API key not configured")
 
         try:
-            # Import google-genai library (new package, replaces deprecated google.generativeai)
-            try:
-                import google.genai as genai
-
-                logger.info("✅ Using google.genai (new SDK v1.61.0+) for chat()")
-            except ImportError:
-                # Fallback to old deprecated package if new one not available
-                import google.generativeai as genai
-
-                logger.warning("⚠️  Using google.generativeai (legacy/deprecated SDK) for chat()")
+            # Use google.generativeai SDK (stable, widely supported)
+            import google.generativeai as genai
 
             genai.configure(api_key=self.api_key)
             gemini_model = genai.GenerativeModel(model)

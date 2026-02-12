@@ -1,153 +1,151 @@
-# **Data Schemas for Glad Labs Content Platform v2.0**
+# **Data Schemas for Glad Labs Platform**
 
-This document defines the data schemas for the content platform, including Strapi v5 content types, API structures, and supporting data models used throughout the system.
+This document defines the database schemas for the operational system, built on PostgreSQL 15+ with asyncpg for async access patterns.
 
-**Last Updated:** October 13, 2025  
-**Version:** 2.0  
-**Architecture:** Strapi v5 + Next.js + AI Content Agents
-
----
-
-## **Strapi v5 Content Types**
-
-### 1. `posts` Content Type
-
-Represents blog posts and articles created by the content agents or manually.
-
-**Strapi Schema:**
-
-```json
-{
-  "id": "number", // Auto-generated primary key
-  "documentId": "string", // Strapi v5 document identifier
-  "title": "string", // Post title (required)
-  "slug": "string", // URL-friendly identifier (required, unique)
-  "content": "string", // Main post content in markdown format
-  "excerpt": "string", // Short description/summary for previews
-  "date": "datetime", // Publication date
-  "featured": "boolean", // Whether post should be featured on homepage
-  "coverImage": "media", // Featured image for the post
-  "category": "relation", // Belongs to one category
-  "tags": "relation", // Many-to-many relationship with tags
-  "seo": {
-    "metaTitle": "string",
-    "metaDescription": "string",
-    "metaKeywords": "string"
-  },
-  "createdAt": "datetime", // Auto-generated creation timestamp
-  "updatedAt": "datetime", // Auto-generated update timestamp
-  "publishedAt": "datetime" // Publication timestamp
-}
-```
-
-**API Response Structure:**
-
-```json
-{
-  "data": [
-    {
-      "id": 16,
-      "documentId": "vl126xqnf9wf3wsvf5vgnqaz",
-      "title": "Building Neural Networks for Computer Vision",
-      "slug": "building-neural-networks-computer-vision",
-      "content": "# Building Neural Networks...",
-      "excerpt": "A comprehensive guide to implementing...",
-      "date": "2025-02-01T00:00:00.000Z",
-      "featured": true,
-      "coverImage": null,
-      "category": {
-        "id": 4,
-        "name": "AI & Machine Learning",
-        "slug": "ai-machine-learning"
-      },
-      "tags": [
-        {
-          "id": 8,
-          "name": "Neural Networks",
-          "slug": "neural-networks"
-        }
-      ],
-      "createdAt": "2025-10-13T03:58:25.579Z",
-      "updatedAt": "2025-10-13T05:01:13.053Z",
-      "publishedAt": "2025-10-13T05:01:13.062Z"
-    }
-  ],
-  "meta": {
-    "pagination": {
-      "page": 1,
-      "pageSize": 25,
-      "pageCount": 1,
-      "total": 5
-    }
-  }
-}
-```
-
-### 2. `categories` Content Type
-
-Organizes posts into topical categories.
-
-**Strapi Schema:**
-
-```json
-{
-  "id": "number",
-  "documentId": "string",
-  "name": "string", // Category name (required)
-  "slug": "string", // URL-friendly identifier (required, unique)
-  "description": "text", // Optional category description
-  "posts": "relation", // One-to-many relationship with posts
-  "createdAt": "datetime",
-  "updatedAt": "datetime",
-  "publishedAt": "datetime"
-}
-```
-
-### 3. `tags` Content Type
-
-Provides flexible tagging system for posts.
-
-**Strapi Schema:**
-
-```json
-{
-  "id": "number",
-  "documentId": "string",
-  "name": "string", // Tag name (required)
-  "slug": "string", // URL-friendly identifier (required, unique)
-  "posts": "relation", // Many-to-many relationship with posts
-  "createdAt": "datetime",
-  "updatedAt": "datetime",
-  "publishedAt": "datetime"
-}
-```
-
-### 4. `pages` Content Type (Optional)
-
-For static pages like About, Privacy Policy, etc.
-
-**Strapi Schema:**
-
-```json
-{
-  "id": "number",
-  "documentId": "string",
-  "title": "string",
-  "slug": "string",
-  "content": "string", // Markdown content
-  "seo": {
-    "metaTitle": "string",
-    "metaDescription": "string"
-  },
-  "createdAt": "datetime",
-  "updatedAt": "datetime",
-  "publishedAt": "datetime"
-}
-```
+**Last Updated:** February 11, 2026  
+**Version:** 3.0 (PostgreSQL)  
+**Architecture:** PostgreSQL 15+ + FastAPI + async task workers
 
 ---
 
-## **Content Agent Data Models**
+## **PostgreSQL Database Module Overview**
+
+The system uses a modular database architecture with 5 specialized database modules, each handling domain-specific operations:
+
+1. **UsersDatabase** - User accounts, OAuth, authentication
+2. **TasksDatabase** - Task CRUD, filtering, status management
+3. **ContentDatabase** - Posts, articles, publishing metadata
+4. **AdminDatabase** - Logging, financial tracking, system health
+5. **WritingStyleDatabase** - Writing samples for RAG-based style matching
+
+---
+
+## **Core Database Tables**
+
+### 1. `users` Table
+
+Stores user accounts and authentication data.
+
+```sql
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    username VARCHAR(255) NOT NULL UNIQUE,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(500),
+    oauth_provider VARCHAR(50),
+    oauth_id VARCHAR(255),
+    full_name VARCHAR(255),
+    avatar_url TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    is_admin BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_oauth UNIQUE(oauth_provider, oauth_id)
+);
+
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_username ON users(username);
+```
+
+### 2. `tasks` Table
+
+Stores all tasks created by agents and users.
+
+```sql
+CREATE TABLE tasks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title VARCHAR(500) NOT NULL,
+    description TEXT,
+    status VARCHAR(50) NOT NULL DEFAULT 'pending',
+    priority VARCHAR(20) DEFAULT 'medium',
+    task_type VARCHAR(50),
+    metadata JSONB DEFAULT '{}',
+    assigned_agent VARCHAR(100),
+    started_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_tasks_user_id ON tasks(user_id);
+CREATE INDEX idx_tasks_status ON tasks(status);
+CREATE INDEX idx_tasks_created_at ON tasks(created_at DESC);
+```
+
+### 3. `content` Table
+
+Stores blog posts, articles, and published content.
+
+```sql
+CREATE TABLE content (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title VARCHAR(500) NOT NULL,
+    slug VARCHAR(500) NOT NULL UNIQUE,
+    content TEXT,
+    excerpt VARCHAR(1000),
+    cover_image_url TEXT,
+    featured BOOLEAN DEFAULT FALSE,
+    publish_status VARCHAR(50) DEFAULT 'draft',
+    quality_score FLOAT DEFAULT 0,
+    seo_title VARCHAR(255),
+    seo_description VARCHAR(500),
+    seo_keywords TEXT,
+    author VARCHAR(255),
+    tags TEXT[],
+    category VARCHAR(100),
+    view_count INTEGER DEFAULT 0,
+    published_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_content_slug ON content(slug);
+CREATE INDEX idx_content_status ON content(publish_status);
+CREATE INDEX idx_content_published_at ON content(published_at DESC);
+```
+
+### 4. `admin_logs` Table
+
+Tracks system operations, errors, and audit events.
+
+```sql
+CREATE TABLE admin_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_type VARCHAR(100) NOT NULL,
+    user_id UUID REFERENCES users(id),
+    agent_name VARCHAR(100),
+    description TEXT,
+    metadata JSONB DEFAULT '{}',
+    status VARCHAR(50),
+    error_message TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_logs_type ON admin_logs(event_type);
+CREATE INDEX idx_logs_created_at ON admin_logs(created_at DESC);
+```
+
+### 5. `writing_samples` Table
+
+Stores user writing samples for RAG-based style matching.
+
+```sql
+CREATE TABLE writing_samples (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title VARCHAR(500),
+    content TEXT NOT NULL,
+    embedding bytea,
+    style_attributes JSONB,
+    quality_score FLOAT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_writing_samples_user_id ON writing_samples(user_id);
+CREATE INDEX idx_writing_samples_created_at ON writing_samples(created_at DESC);
+```
 
 ### 1. `BlogPost` Model (Python)
 

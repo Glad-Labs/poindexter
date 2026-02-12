@@ -127,7 +127,7 @@ src/cofounder_agent/
 │   ├── test_content_pipeline.py     # Content creation pipeline
 │   │
 │   ├── Other:
-│   ├── firestore_client.py          # Firestore mock
+│   ├── database_fixtures.py         # PostgreSQL mock fixtures
 │   └── run_tests.py                 # Test runner script
 ```
 
