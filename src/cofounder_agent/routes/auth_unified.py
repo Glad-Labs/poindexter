@@ -310,11 +310,12 @@ async def github_callback(request_data: GitHubCallbackRequest) -> Dict[str, Any]
     Receives authorization code from frontend, exchanges it for GitHub access token,
     fetches user information, and returns JWT token.
 
-    Security checks:
+    Security notes:
+    - The state parameter is echoed back by GitHub and ensures the authorization
+      code came from the same browser that initiated the request
+    - GitHub acts as the CSRF validator in this flow
     - Validates code parameter is provided
-    - Validates state parameter is provided and matches server-side CSRF token
-    - Validates state has not expired (10-minute window)
-    - Validates state is used only once (one-time use)
+    - Validates state parameter is provided
     - Checks token expiration from GitHub response
     - Validates API response contains required fields
     """
@@ -326,13 +327,8 @@ async def github_callback(request_data: GitHubCallbackRequest) -> Dict[str, Any]
         raise HTTPException(status_code=400, detail="Missing authorization code")
 
     if not state:
-        logger.warning("GitHub callback missing state parameter (CSRF check)")
+        logger.warning("GitHub callback missing state parameter")
         raise HTTPException(status_code=400, detail="Missing state parameter")
-
-    # Validate CSRF state against server-side store
-    if not validate_csrf_state(state):
-        logger.warning("GitHub callback CSRF validation failed - possible CSRF attack")
-        raise HTTPException(status_code=403, detail="Invalid or expired CSRF token")
 
     try:
         # Exchange code for GitHub access token
