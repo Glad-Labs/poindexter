@@ -23,7 +23,6 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request, status
-from sqlalchemy.orm import Session
 
 from schemas.settings_schemas import (
     ErrorResponse,

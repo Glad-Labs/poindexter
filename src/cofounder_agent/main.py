@@ -41,16 +41,11 @@ except ImportError:
     SENTRY_AVAILABLE = False
 
 # PostgreSQL database service is now the primary service
-# Legacy 'database.py' (SQLAlchemy) has been removed.
 DATABASE_SERVICE_AVAILABLE = True
 
 # Flag for Google Cloud availability (for test mocking)
 # Google Cloud services have been replaced with PostgreSQL + task store
 GOOGLE_CLOUD_AVAILABLE = False
-
-# Placeholder for firestore_client (for backward compatibility with tests)
-# Actual implementation uses PostgreSQL through database_service
-FIRESTORE_CLIENT = None  # noqa: invalid-name
 
 logger = get_logger(__name__)
 
@@ -91,6 +86,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         app.state.workflow_history = services["workflow_history"]
         app.state.training_data_service = services.get("training_data_service")
         app.state.fine_tuning_service = services.get("fine_tuning_service")
+        app.state.custom_workflows_service = services.get("custom_workflows_service")
         app.state.legacy_data_service = services.get("legacy_data_service")
         app.state.startup_error = services["startup_error"]
         app.state.startup_complete = True
