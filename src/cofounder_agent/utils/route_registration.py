@@ -356,6 +356,17 @@ def register_all_routes(
         status["custom_workflows_router"] = False
 
     try:
+        # ===== CAPABILITY TASKS - Composable capability-based task system =====
+        from routes.capability_tasks_routes import router as capability_tasks_router
+
+        app.include_router(capability_tasks_router)
+        logger.info(" capability_tasks_router registered (capability composition)")
+        status["capability_tasks_router"] = True
+    except Exception as e:
+        logger.error(f" capability_tasks_router failed: {e}")
+        status["capability_tasks_router"] = False
+
+    try:
         # ===== WEBSOCKET - Real-time progress tracking =====
         from routes.websocket_routes import websocket_router
 

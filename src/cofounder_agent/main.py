@@ -98,6 +98,16 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         service_container.register("auth", auth_service)
         logger.info("[LIFESPAN] ✅ Authentication service initialized")
 
+        # Initialize capability system
+        logger.info("[LIFESPAN] Initializing capability system. ..")
+        try:
+            from services.capability_examples import register_example_capabilities
+            register_example_capabilities()
+            logger.info("[LIFESPAN] ✅ Capability system initialized with example capabilities")
+        except Exception as e:
+            logger.warning(f"[LIFESPAN] ⚠️ Failed to initialize capabilities: {e}")
+
+
         # Initialize quality service
         logger.info("[LIFESPAN] Initializing quality service. ..")
         quality_service = UnifiedQualityService()
