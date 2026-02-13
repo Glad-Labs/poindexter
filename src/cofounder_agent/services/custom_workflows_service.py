@@ -496,3 +496,225 @@ class CustomWorkflowsService:
             tags=tags,
             is_template=row.get("is_template", False),
         )
+
+    # ========== Workflow Execution Persistence ==========
+
+    async def persist_workflow_execution(
+        self,
+        execution_id: str,
+        workflow_id: str,
+        owner_id: str,
+        execution_status: str,
+        phase_results: dict,
+        duration_ms: int,
+        initial_input: Optional[dict] = None,
+        final_output: Optional[dict] = None,
+        error_message: Optional[str] = None,
+        completed_phases: int = 0,
+        total_phases: int = 0,
+        progress_percent: int = 0,
+        tags: Optional[list] = None,
+        metadata: Optional[dict] = None,
+    ) -> bool:
+        """
+        Save workflow execution results to database.
+        
+        Args:
+            execution_id: Unique execution ID
+            workflow_id: ID of the workflow executed
+            owner_id: User ID who owns the workflow
+            execution_status: Final status (completed, failed, cancelled)
+            phase_results: Dict of phase name -> PhaseResult
+            duration_ms: Total execution time
+            initial_input: Input data for workflow
+            final_output: Final output from workflow
+            error_message: Error message if failed
+            completed_phases: Number of phases completed
+            total_phases: Total phases in workflow
+            progress_percent: Completion percentage
+            tags: Optional tags for execution
+            metadata: Optional metadata
+            
+        Returns:
+            True if successful
+        """
+        try:
+            from datetime import datetime, timezone
+            
+            now = datetime.now(timezone.utc)
+            
+            # Convert phase results to JSON
+            phase_results_json = json.dumps(phase_results) if phase_results else "{}"
+            
+            await self.database_service.pool.execute(
+                """
+                INSERT INTO workflow_executions (
+                    id, workflow_id, owner_id, execution_status,
+                    created_at, started_at, completed_at, duration_ms,
+                    initial_input, phase_results, final_output, error_message,
+                    progress_percent, completed_phases, total_phases,
+                    tags, metadata
+                ) VALUES (
+                    $1, $2, $3, $4,
+                    $5, $6, $7, $8,
+                    $9, $10, $11, $12,
+                    $13, $14, $15,
+                    $16, $17
+                )
+                """,
+                execution_id,
+                workflow_id,
+                owner_id,
+                execution_status,
+                now,  # created_at
+                now,  # started_at
+                now if execution_status in ["completed", "failed"] else None,  # completed_at
+                duration_ms,
+                json.dumps(initial_input) if initial_input else None,
+                phase_results_json,
+                json.dumps(final_output) if final_output else None,
+                error_message,
+                progress_percent,
+                completed_phases,
+                total_phases,
+                json.dumps(tags or []),
+                json.dumps(metadata or {}),
+            )
+            
+            logger.info(
+                f"Persisted workflow execution: {execution_id} for workflow {workflow_id}, "
+                f"status: {execution_status}, duration: {duration_ms}ms"
+            )
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to persist workflow execution {execution_id}: {e}", exc_info=True)
+            return False
+
+    async def get_workflow_execution(
+        self, execution_id: str, owner_id: Optional[str] = None
+    ) -> Optional[Dict]:
+        """
+        Get a workflow execution by ID.
+        
+        Args:
+            execution_id: ID of execution to retrieve
+            owner_id: Optional owner ID to verify ownership
+            
+        Returns:
+            Execution record or None if not found
+        """
+        try:
+            if owner_id:
+                row = await self.database_service.pool.fetchrow(
+                    "SELECT * FROM workflow_executions WHERE id = $1 AND owner_id = $2",
+                    execution_id,
+                    owner_id,
+                )
+            else:
+                row = await self.database_service.pool.fetchrow(
+                    "SELECT * FROM workflow_executions WHERE id = $1",
+                    execution_id,
+                )
+            
+            if not row:
+                return None
+            
+            return self._row_to_execution(row)
+            
+        except Exception as e:
+            logger.error(f"Failed to get workflow execution {execution_id}: {e}")
+            return None
+
+    async def get_workflow_executions(
+        self,
+        workflow_id: str,
+        owner_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        status: Optional[str] = None,
+    ):
+        """
+        Get executions for a workflow.
+        
+        Args:
+            workflow_id: ID of workflow
+            owner_id: Owner ID for authorization
+            limit: Max results
+            offset: Pagination offset
+            status: Optional status filter (completed, failed, pending)
+            
+        Returns:
+            List of execution records and total count
+        """
+        try:
+            # Build query
+            where_clauses = ["workflow_id = $1", "owner_id = $2"]
+            params = [workflow_id, owner_id]
+            param_index = 3
+            
+            if status:
+                where_clauses.append(f"execution_status = ${param_index}")
+                params.append(status)
+                param_index += 1
+            
+            where_sql = " AND ".join(where_clauses)
+            
+            # Get total count
+            total_count = await self.database_service.pool.fetchval(
+                f"SELECT COUNT(*) FROM workflow_executions WHERE {where_sql}",
+                *params,
+            )
+            
+            # Get paginated results
+            rows = await self.database_service.pool.fetch(
+                f"""
+                SELECT * FROM workflow_executions
+                WHERE {where_sql}
+                ORDER BY created_at DESC
+                LIMIT ${param_index} OFFSET ${param_index + 1}
+                """,
+                *params,
+                limit,
+                offset,
+            )
+            
+            executions = [self._row_to_execution(row) for row in rows]
+            
+            return {
+                "total": total_count,
+                "executions": executions,
+                "limit": limit,
+                "offset": offset,
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get workflow executions for {workflow_id}: {e}")
+            return {
+                "total": 0,
+                "executions": [],
+                "limit": limit,
+                "offset": offset,
+            }
+
+    def _row_to_execution(self, row) -> Dict:
+        """Convert database row to execution dictionary"""
+        return {
+            "id": str(row["id"]),
+            "workflow_id": str(row["workflow_id"]),
+            "owner_id": row["owner_id"],
+            "execution_status": row["execution_status"],
+            "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+            "started_at": row["started_at"].isoformat() if row["started_at"] else None,
+            "completed_at": row["completed_at"].isoformat() if row["completed_at"] else None,
+            "duration_ms": row["duration_ms"],
+            "initial_input": json.loads(row["initial_input"]) if row["initial_input"] else None,
+            "phase_results": json.loads(row["phase_results"]) if row["phase_results"] else {},
+            "final_output": json.loads(row["final_output"]) if row["final_output"] else None,
+            "error_message": row["error_message"],
+            "progress_percent": row["progress_percent"],
+            "completed_phases": row["completed_phases"],
+            "total_phases": row["total_phases"],
+            "tags": json.loads(row["tags"]) if row["tags"] else [],
+            "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
+        }

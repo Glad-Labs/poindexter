@@ -30,10 +30,11 @@ async def create_phase_handler(
     Create an async handler for a workflow phase.
     
     The handler executes the specified agent/service for the phase.
+    Supports multiple agent types with different execution methods.
     
     Args:
         phase_name: Name of the phase (e.g., 'research', 'draft')
-        agent_name: Name of the agent to execute (e.g., 'content_agent')
+        agent_name: Name of the agent to execute (e.g., 'content_agent', 'financial_agent')
         database_service: Database service for persistence
         
     Returns:
@@ -42,49 +43,77 @@ async def create_phase_handler(
     
     async def phase_handler(context: Any, **kwargs) -> Any:
         """
-        Execute a workflow phase.
+        Execute a workflow phase by routing to appropriate agent.
+        
+        Supports agents with various execution methods:
+        - async execute(input_data, **kwargs)
+        - async run(input_data, **kwargs)
+        - async process(input_data, **kwargs)
+        - sync methods (wrapped in executor)
         
         Args:
             context: WorkflowContext with state and results
             **kwargs: Additional parameters
             
         Returns:
-            Result of phase execution
+            PhaseResult with execution status and output
         """
         from services.workflow_engine import PhaseResult, PhaseStatus
+        import inspect
+        import time
+        
+        start_time = time.time()
         
         try:
-            logger.info(f"[{context.workflow_id}] Executing phase: {phase_name}")
+            logger.info(
+                f"[{context.workflow_id}] Executing phase: {phase_name} "
+                f"(agent: {agent_name})"
+            )
             
-            # TODO: Implement actual agent execution based on agent_name
-            # For now, return mock result
-            # In production, this would:
-            # 1. Load the appropriate agent/service
-            # 2. Parse context.initial_input for phase input
-            # 3. Call agent with phase-specific parameters
-            # 4. Return structured result
+            # Get phase input from context
+            phase_input = context.initial_input or {}
             
-            # Mock execution
-            await asyncio.sleep(0.1)  # Simulate work
+            # Get and instantiate agent
+            agent_instance = await _get_agent_instance_async(agent_name)
             
-            result = {
-                "phase": phase_name,
-                "status": "completed",
-                "output": f"Completed {phase_name} phase with {agent_name}",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
+            if not agent_instance:
+                raise ValueError(f"Could not instantiate agent: {agent_name}")
+            
+            logger.debug(
+                f"[{context.workflow_id}] Instantiated agent {agent_name}: "
+                f"{type(agent_instance).__name__}"
+            )
+            
+            # Call agent with appropriate method
+            result = await _execute_agent_method(
+                agent_instance, agent_name, phase_name, phase_input, context
+            )
+            
+            duration_ms = int((time.time() - start_time) * 1000)
+            
+            logger.info(
+                f"[{context.workflow_id}] Phase completed: {phase_name} "
+                f"({duration_ms}ms)"
+            )
             
             return PhaseResult(
                 phase_name=phase_name,
                 status=PhaseStatus.COMPLETED,
                 output=result,
-                duration_ms=100,
+                duration_ms=duration_ms,
                 retry_count=0,
-                metadata={"agent": agent_name}
+                metadata={
+                    "agent": agent_name,
+                    "agent_type": type(agent_instance).__name__
+                }
             )
             
         except Exception as e:
-            logger.error(f"[{context.workflow_id}] Phase failed: {phase_name} - {str(e)}")
+            duration_ms = int((time.time() - start_time) * 1000)
+            logger.error(
+                f"[{context.workflow_id}] Phase failed: {phase_name} - {str(e)}",
+                exc_info=True
+            )
             
             from services.workflow_engine import PhaseResult, PhaseStatus
             
@@ -92,12 +121,120 @@ async def create_phase_handler(
                 phase_name=phase_name,
                 status=PhaseStatus.FAILED,
                 error=str(e),
-                duration_ms=0,
+                duration_ms=duration_ms,
                 retry_count=0,
-                metadata={"agent": agent_name}
+                metadata={"agent": agent_name, "error_type": type(e).__name__}
             )
     
     return phase_handler
+
+
+async def _get_agent_instance_async(agent_name: str) -> Any:
+    """
+    Get an agent instance by name.
+    
+    Uses the UnifiedOrchestrator pattern with registry and fallback imports.
+    
+    Args:
+        agent_name: Name of agent to instantiate
+        
+    Returns:
+        Instantiated agent instance or None
+    """
+    try:
+        from services.unified_orchestrator import UnifiedOrchestrator
+        
+        # Create orchestrator and use its agent instantiation logic
+        orchestrator = UnifiedOrchestrator()
+        return orchestrator._get_agent_instance(agent_name)
+        
+    except Exception as e:
+        logger.warning(f"Could not instantiate agent {agent_name}: {e}")
+        return None
+
+
+async def _execute_agent_method(
+    agent: Any, agent_name: str, phase_name: str, input_data: Dict[str, Any], context: Any
+) -> Dict[str, Any]:
+    """
+    Execute an appropriate method on the agent.
+    
+    Tries multiple execution patterns:
+    1. execute(input_data, phase_name=...) - most explicit
+    2. run(input_data) - common pattern
+    3. process(input_data) - alternative pattern
+    4. Sync method in executor - fallback for sync agents
+    
+    Args:
+        agent: Instantiated agent object
+        agent_name: Name of agent (for logging)
+        phase_name: Name of phase (for context)
+        input_data: Input data for agent
+        context: Workflow context
+        
+    Returns:
+        Structured result from agent execution
+    """
+    import inspect
+    
+    logger.debug(f"Agent {agent_name} methods: {[m for m in dir(agent) if not m.startswith('_')]}")
+    
+    # Try execute() method first
+    if hasattr(agent, 'execute') and callable(getattr(agent, 'execute')):
+        execute_method = getattr(agent, 'execute')
+        if inspect.iscoroutinefunction(execute_method):
+            logger.debug(f"Calling async execute() on {agent_name}")
+            result = await execute_method(input_data, phase_name=phase_name)
+        else:
+            logger.debug(f"Calling sync execute() on {agent_name} in executor")
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None, lambda: execute_method(input_data, phase_name=phase_name)
+            )
+    
+    # Try run() method
+    elif hasattr(agent, 'run') and callable(getattr(agent, 'run')):
+        run_method = getattr(agent, 'run')
+        if inspect.iscoroutinefunction(run_method):
+            logger.debug(f"Calling async run() on {agent_name}")
+            result = await run_method(input_data)
+        else:
+            logger.debug(f"Calling sync run() on {agent_name} in executor")
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, lambda: run_method(input_data))
+    
+    # Try process() method
+    elif hasattr(agent, 'process') and callable(getattr(agent, 'process')):
+        process_method = getattr(agent, 'process')
+        if inspect.iscoroutinefunction(process_method):
+            logger.debug(f"Calling async process() on {agent_name}")
+            result = await process_method(input_data)
+        else:
+            logger.debug(f"Calling sync process() on {agent_name} in executor")
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, lambda: process_method(input_data))
+    
+    else:
+        raise ValueError(
+            f"Agent {agent_name} has no callable execute/run/process methods. "
+            f"Available methods: {[m for m in dir(agent) if not m.startswith('_')]}"
+        )
+    
+    # Wrap result if not already structured
+    if isinstance(result, dict):
+        return result
+    elif isinstance(result, str):
+        return {
+            "phase": phase_name,
+            "output": result,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    else:
+        return {
+            "phase": phase_name,
+            "output": str(result),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
 
 
 async def execute_custom_workflow(
@@ -237,14 +374,64 @@ async def _execute_workflow_background(
             f"{final_context.status.value}"
         )
         
-        # TODO: Store execution results in workflow_executions table
-        # await database_service.persist_workflow_execution(
-        #     execution_id=context.request_id,
-        #     workflow_id=str(custom_workflow.id),
-        #     status=final_context.status.value,
-        #     results=final_context.results,
-        #     duration_ms=0,  # Calculate from timestamps
-        # )
+        # Calculate duration and prepare results
+        from datetime import datetime, timezone
+        
+        # Calculate duration from phase results
+        duration_ms = 0
+        if final_context.results:
+            duration_ms = int(sum(
+                r.duration_ms for r in final_context.results.values() 
+                if r.duration_ms is not None
+            ))
+        
+        # Convert phase results to JSON-serializable dict
+        phase_results = {}
+        if final_context.results:
+            for phase_name, phase_result in final_context.results.items():
+                phase_results[phase_name] = {
+                    "status": phase_result.status.value if hasattr(phase_result.status, 'value') else str(phase_result.status),
+                    "output": phase_result.output,
+                    "error": phase_result.error,
+                    "duration_ms": phase_result.duration_ms,
+                    "metadata": phase_result.metadata or {},
+                }
+        
+        # Count completed phases
+        completed_phases_count = len([r for r in phase_results.values() if r.get("status") == "completed"])
+        total_phases_count = len(phases) if phases else 0
+        progress = int((completed_phases_count / total_phases_count * 100)) if total_phases_count > 0 else 0
+        
+        # Persist execution results
+        from services.custom_workflows_service import CustomWorkflowsService
+        
+        workflows_service = CustomWorkflowsService(database_service)
+        
+        persist_success = await workflows_service.persist_workflow_execution(
+            execution_id=context.request_id,
+            workflow_id=str(custom_workflow.id),
+            owner_id=custom_workflow.owner_id,
+            execution_status=final_context.status.value,
+            phase_results=phase_results,
+            duration_ms=duration_ms,
+            initial_input=context.initial_input,
+            final_output=context.accumulated_output,
+            error_message=None,
+            completed_phases=completed_phases_count,
+            total_phases=total_phases_count,
+            progress_percent=progress,
+            tags=custom_workflow.tags or [],
+            metadata={
+                "execution_id": context.request_id,
+                "workflow_name": custom_workflow.name,
+                "phase_count": total_phases_count,
+            }
+        )
+        
+        if persist_success:
+            logger.info(f"[{context.workflow_id}] Execution results persisted to database")
+        else:
+            logger.warning(f"[{context.workflow_id}] Failed to persist execution results")
         
     except Exception as e:
         logger.error(

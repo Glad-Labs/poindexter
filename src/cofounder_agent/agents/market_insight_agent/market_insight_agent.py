@@ -1,9 +1,9 @@
 import json
 import logging
 
-from src.agents.content_agent.agents.research_agent import ResearchAgent
-from src.agents.content_agent.services.llm_client import LLMClient
-from src.agents.content_agent.utils.tools import CrewAIToolsFactory
+from ..content_agent.agents.research_agent import ResearchAgent
+from ..content_agent.services.llm_client import LLMClient
+from ..content_agent.utils.tools import CrewAIToolsFactory
 
 
 class MarketInsightAgent:
