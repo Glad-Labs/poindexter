@@ -284,21 +284,35 @@ async def execute_custom_workflow(
         if not workflow:
             raise HTTPException(status_code=404, detail=f"Workflow '{workflow_id}' not found")
 
-        # TODO: Implement workflow execution with UnifiedOrchestrator
-        # For now, return placeholder response
-        import uuid
-        from datetime import datetime, timezone
-
-        execution_id = str(uuid.uuid4())
-        return WorkflowExecutionResponse(
-            workflow_id=workflow_id,
-            execution_id=execution_id,
-            status="pending",
-            started_at=datetime.now(timezone.utc),
-            phases=[p.name for p in workflow.phases],
-            progress_percent=0,
+        # Execute workflow using the adapter
+        from services.workflow_execution_adapter import execute_custom_workflow
+        
+        # Get input data from request body
+        input_data = request_body if request_body else {}
+        
+        # Get database service from app state
+        database_service = getattr(request.app.state, "database_service", None)
+        if not database_service:
+            raise HTTPException(status_code=503, detail="Database service not initialized")
+        
+        # Execute workflow asynchronously (returns execution ID immediately)
+        result = await execute_custom_workflow(
+            custom_workflow=workflow,
+            input_data=input_data,
+            database_service=database_service,
+            queue_async=True  # Execute in background
         )
-
+        
+        logger.info(f"Workflow execution started: {result['execution_id']}")
+        
+        return WorkflowExecutionResponse(
+            workflow_id=result["workflow_id"],
+            execution_id=result["execution_id"],
+            status=result["status"],
+            started_at=result["started_at"],
+            phases=result["phases"],
+            progress_percent=result.get("progress_percent", 0),
+        )
     except HTTPException:
         raise
     except Exception as e:
