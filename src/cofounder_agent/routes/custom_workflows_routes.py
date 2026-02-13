@@ -15,6 +15,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+import jwt
 
 from schemas.custom_workflow_schemas import (
     AvailablePhasesResponse,
@@ -25,6 +26,7 @@ from schemas.custom_workflow_schemas import (
     WorkflowListResponse,
 )
 from services.custom_workflows_service import CustomWorkflowsService
+from services.token_validator import JWTTokenValidator
 
 logger = logging.getLogger(__name__)
 
@@ -44,14 +46,51 @@ def get_workflows_service(request: Request) -> CustomWorkflowsService:
 
 
 def get_user_id(request: Request) -> str:
-    """Get user ID from request context (from auth middleware)"""
-    # TODO: Extract from JWT token or session
-    # For now, use a test user ID
+    """
+    Get user ID from JWT token in Authorization header or request context.
+    
+    Flow:
+    1. Try to extract from Authorization: Bearer {token} header
+    2. Fall back to request.state.user_id if set by middleware
+    3. Use test user ID in development mode
+    
+    Returns:
+        User ID string
+        
+    Raises:
+        HTTPException: 401 if token is invalid
+    """
+    # Check if user_id already in request context (from auth middleware)
     user_id = getattr(request.state, "user_id", None)
-    if not user_id:
-        # Fallback for development
-        user_id = "test-user-123"
-    return user_id
+    if user_id:
+        return str(user_id)
+    
+    # Try to extract from Authorization header
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        try:
+            token = auth_header[7:]  # Remove "Bearer " prefix
+            claims = JWTTokenValidator.verify_token(token)
+            if claims and "user_id" in claims:
+                return str(claims["user_id"])
+        except jwt.ExpiredSignatureError:
+            logger.warning("JWT token expired in get_user_id()")
+            raise HTTPException(status_code=401, detail="Token expired")
+        except jwt.InvalidTokenError as e:
+            logger.warning(f"Invalid JWT token in get_user_id(): {e}")
+            raise HTTPException(status_code=401, detail="Invalid token")
+        except Exception as e:
+            logger.warning(f"Error extracting user ID from JWT: {e}")
+            raise HTTPException(status_code=401, detail="Authentication failed")
+    
+    # Development fallback (no token provided)
+    if not auth_header:
+        logger.debug("No authorization header provided, using test user for development")
+        return "test-user-123"
+    
+    # Authorization header present but invalid format
+    logger.warning(f"Invalid authorization header format: {auth_header[:20]}...")
+    raise HTTPException(status_code=401, detail="Invalid authorization header format")
 
 
 @router.post("/custom", response_model=CustomWorkflow, name="Create Custom Workflow")
