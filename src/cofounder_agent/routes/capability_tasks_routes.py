@@ -26,6 +26,7 @@ from services.capability_task_executor import (
     execute_capability_task,
 )
 from services.capability_tasks_service import CapabilityTasksService
+from services.capability_natural_language_composer import get_composer
 
 
 # ============ Request/Response Models ============
@@ -242,6 +243,113 @@ async def get_capability(name: str):
     )
 
 
+# ============ Natural Language Composition Endpoints - MUST COME BEFORE GENERIC /tasks/capability ============
+
+class NaturalLanguageRequest(BaseModel):
+    """Request to compose a task from natural language."""
+    request: str = Field(..., min_length=10, description="Natural language request")
+    auto_execute: bool = Field(False, description="Whether to execute task immediately")
+    save_task: bool = Field(True, description="Whether to save the composed task")
+
+
+class NaturalLanguageResponse(BaseModel):
+    """Response containing composed task suggestion."""
+    success: bool
+    task_definition: Optional[dict] = None  # The suggested task
+    explanation: str  # Human-readable explanation
+    confidence: float  # 0-1 confidence in composition
+    execution_id: Optional[str] = None  # If auto-executed
+    error: Optional[str] = None
+
+
+@router.post("/tasks/capability/compose-from-natural-language", response_model=NaturalLanguageResponse)
+async def compose_task_from_natural_language(
+    payload: NaturalLanguageRequest,
+    owner_id: str = Depends(lambda: "user-123"),  # TODO: Extract from auth
+):
+    """
+    Compose a capability task from a natural language request.
+    
+    The LLM analyzes the request and suggests a chain of capabilities to accomplish the goal.
+    
+    Example:
+        Request: "Write a blog post about AI trends, add images, and post to social media"
+        Result: Task with steps [research → generate_content → select_images → publish]
+    """
+    try:
+        composer = get_composer()
+        
+        # Compose task from natural language
+        result = await composer.compose_from_request(
+            request=payload.request,
+            auto_execute=payload.auto_execute,
+            owner_id=owner_id,
+        )
+        
+        if not result.success:
+            return NaturalLanguageResponse(
+                success=False,
+                explanation=result.explanation,
+                error=result.error,
+                confidence=0.0,
+            )
+        
+        # Convert task definition to dict for response
+        task_dict = None
+        if result.task_definition:
+            task_dict = {
+                "name": result.task_definition.name,
+                "description": result.task_definition.description,
+                "steps": [
+                    {
+                        "capability_name": step.capability_name,
+                        "inputs": step.inputs,
+                        "output_key": step.output_key,
+                        "order": step.order,
+                    }
+                    for step in result.task_definition.steps
+                ],
+                "tags": result.task_definition.tags,
+            }
+        
+        # Optionally save the task
+        if payload.save_task and result.task_definition:
+            # TODO: Save to database
+            pass
+        
+        return NaturalLanguageResponse(
+            success=True,
+            task_definition=task_dict or result.suggested_task,
+            explanation=result.explanation,
+            confidence=result.confidence,
+            execution_id=result.execution_id,
+        )
+        
+    except Exception as e:
+        return NaturalLanguageResponse(
+            success=False,
+            explanation="Error composing task from natural language",
+            error=str(e),
+            confidence=0.0,
+        )
+
+
+@router.post("/tasks/capability/compose-and-execute", response_model=NaturalLanguageResponse)
+async def compose_and_execute(
+    payload: NaturalLanguageRequest,
+    owner_id: str = Depends(lambda: "user-123"),  # TODO: Extract from auth
+):
+    """
+    Compose and immediately execute a task from natural language.
+    
+    Returns execution results as they complete.
+    """
+    # Use the same endpoint but force auto_execute
+    payload.auto_execute = True
+    payload.save_task = True
+    return await compose_task_from_natural_language(payload, owner_id)
+
+
 # ============ Task Management Endpoints ============
 
 @router.post("/tasks/capability", response_model=TaskResponse)
@@ -401,3 +509,4 @@ async def list_executions(
         "skip": skip,
         "limit": limit,
     }
+
