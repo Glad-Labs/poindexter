@@ -151,7 +151,7 @@ async def list_custom_workflows(
 
         workflows = [
             WorkflowListResponse(
-                id=w.id,
+                id=str(w.id),
                 name=w.name,
                 description=w.description,
                 phase_count=len(w.phases),
@@ -326,11 +326,22 @@ async def execute_custom_workflow(
         # Execute workflow using the adapter
         from services.workflow_execution_adapter import execute_custom_workflow
         
-        # Get input data from request body
-        input_data = request_body if request_body else {}
-        
-        # Get database service from app state
-        database_service = getattr(request.app.state, "database_service", None)
+        # Accept both payload styles:
+        # - {"input_data": {...}} (frontend client)
+        # - {...} (raw workflow input)
+        if isinstance(request_body, dict):
+            input_data = request_body.get("input_data", request_body)
+            if input_data is None:
+                input_data = {}
+        else:
+            input_data = {}
+
+        # Get database service from app state, with fallback to injected workflows service
+        database_service = (
+            getattr(request.app.state, "database_service", None)
+            or getattr(request.app.state, "database", None)
+            or getattr(service, "database_service", None)
+        )
         if not database_service:
             raise HTTPException(status_code=503, detail="Database service not initialized")
         

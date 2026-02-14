@@ -79,11 +79,24 @@ export const createWorkflow = async (workflowDefinition) => {
  */
 export const listWorkflows = async (options = {}) => {
   try {
-    const { skip = 0, limit = 50, include_templates = false } = options;
+    const {
+      skip = 0,
+      limit = 50,
+      page,
+      page_size,
+      include_templates = false,
+    } = options;
+
+    const resolvedPageSize =
+      Number(page_size) > 0 ? Number(page_size) : Number(limit) || 50;
+    const resolvedPage =
+      Number(page) > 0
+        ? Number(page)
+        : Math.floor(Number(skip) / resolvedPageSize) + 1;
 
     const queryParams = new URLSearchParams({
-      skip,
-      limit,
+      page: String(resolvedPage),
+      page_size: String(resolvedPageSize),
       include_templates,
     });
 

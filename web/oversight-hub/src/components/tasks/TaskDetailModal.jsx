@@ -186,7 +186,7 @@ const TaskDetailModal = ({ onClose, onUpdate }) => {
       onClose={onClose}
       maxWidth="lg"
       fullWidth
-      SlotProps={{
+      slotProps={{
         backdrop: {
           sx: {
             backgroundColor: 'rgba(0, 0, 0, 0.7)',

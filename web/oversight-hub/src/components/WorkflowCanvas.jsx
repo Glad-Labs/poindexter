@@ -43,8 +43,42 @@ const nodeTypes = {
   phase: PhaseNode,
 };
 
+const PHASE_TO_AGENT_MAP = {
+  research: 'research_agent',
+  draft: 'creative_agent',
+  refine: 'creative_agent',
+  assess: 'qa_agent',
+  image: 'image_agent',
+  image_selection: 'image_agent',
+  publish: 'publishing_agent',
+  finalize: 'publishing_agent',
+};
+
+const KNOWN_AGENT_IDS = new Set(Object.values(PHASE_TO_AGENT_MAP));
+
 const normalizePhaseName = (name) =>
   typeof name === 'string' ? name.trim() : '';
+
+const isValidAgentId = (agentId = '') => {
+  const normalized = normalizePhaseName(agentId);
+  return (
+    Boolean(normalized) &&
+    (KNOWN_AGENT_IDS.has(normalized) || normalized.endsWith('_agent'))
+  );
+};
+
+const getDefaultAgentForPhaseType = (phaseType = '') =>
+  PHASE_TO_AGENT_MAP[normalizePhaseName(phaseType)] || 'creative_agent';
+
+const resolvePhaseAgent = (phase = {}) => {
+  const configuredAgent = normalizePhaseName(phase?.agent);
+  if (isValidAgentId(configuredAgent)) {
+    return configuredAgent;
+  }
+
+  const phaseType = inferBasePhaseType(phase);
+  return getDefaultAgentForPhaseType(phaseType);
+};
 
 const inferBasePhaseType = (phase = {}) => {
   const explicitType = normalizePhaseName(phase?.metadata?.phase_type);
@@ -129,7 +163,7 @@ const ensureUniqueWorkflowPhases = (phases = []) => {
     return {
       ...phase,
       name: uniqueName,
-      agent: baseType,
+      agent: resolvePhaseAgent(phase),
       metadata: {
         ...buildPhaseMetadata(phase),
         phase_type: baseType,
@@ -252,7 +286,7 @@ const WorkflowCanvas = ({ onSave, availablePhases, workflow = null }) => {
     const phaseConfig = {
       ...phase,
       name: uniqueName,
-      agent: baseType,
+      agent: resolvePhaseAgent(phase),
       metadata: {
         ...buildPhaseMetadata(phase),
         phase_type: baseType,
@@ -369,7 +403,7 @@ const WorkflowCanvas = ({ onSave, availablePhases, workflow = null }) => {
 
     const phases = nodes.map((node) => ({
       name: normalizePhaseName(node?.data?.phase?.name),
-      agent: inferBasePhaseType(node?.data?.phase),
+      agent: resolvePhaseAgent(node?.data?.phase),
       description: node?.data?.phase?.description,
       timeout_seconds: node?.data?.phase?.timeout_seconds || 300,
       max_retries: node?.data?.phase?.max_retries || 3,
@@ -551,6 +585,7 @@ const WorkflowCanvas = ({ onSave, availablePhases, workflow = null }) => {
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           onNodeClick={(_, node) => setSelectedNode(node)}
+          onPaneClick={() => setSelectedNode(null)}
           nodeTypes={nodeTypes}
         >
           <Background />
@@ -582,6 +617,15 @@ const WorkflowCanvas = ({ onSave, availablePhases, workflow = null }) => {
         <CardContent>
           {selectedNode ? (
             <Stack spacing={2}>
+              <Button
+                variant="text"
+                size="small"
+                onClick={() => setSelectedNode(null)}
+                sx={{ alignSelf: 'flex-start', textTransform: 'none' }}
+              >
+                Back to workflow details
+              </Button>
+
               <PhaseConfigPanel
                 nodeId={selectedNode.id}
                 phase={selectedNode.data.phase}
