@@ -594,8 +594,8 @@ const UnifiedServicesPanel = () => {
         <Box sx={{ p: 3 }}>
           {workflows.length === 0 ? (
             <Typography color="textSecondary" align="center" sx={{ py: 4 }}>
-              No custom workflows yet. Create one in the "Create Custom
-              Workflow" tab.
+              No custom workflows yet. Create one in the &quot;Create Custom
+              Workflow&quot; tab.
             </Typography>
           ) : (
             <TableContainer>

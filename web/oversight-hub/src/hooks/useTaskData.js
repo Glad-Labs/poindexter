@@ -8,14 +8,7 @@
  * - KPI calculation from all tasks
  */
 
-import {
-  useState,
-  useEffect,
-  useRef,
-  useCallback,
-  useReducer,
-  useMemo,
-} from 'react';
+import { useEffect, useRef, useCallback, useReducer, useMemo } from 'react';
 import { getTasks } from '../services/taskService';
 
 /**

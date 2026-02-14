@@ -157,7 +157,7 @@ export async function logout() {
   try {
     // Attempt to notify backend of logout
     await makeRequest('/api/auth/logout', 'POST');
-  } catch (error) {
+  } catch (_error) {
     // Continue with local logout even if API call fails
   }
   // Note: Actual state clearing happens in AuthContext.logout()
