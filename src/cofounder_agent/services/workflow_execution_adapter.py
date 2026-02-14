@@ -24,7 +24,10 @@ logger = logging.getLogger(__name__)
 
 
 async def create_phase_handler(
-    phase_name: str, agent_name: str, database_service: Any
+    phase_name: str,
+    agent_name: str,
+    database_service: Any,
+    phase_metadata: Optional[Dict[str, Any]] = None,
 ) -> Callable:
     """
     Create an async handler for a workflow phase.
@@ -70,8 +73,15 @@ async def create_phase_handler(
                 f"(agent: {agent_name})"
             )
             
-            # Get phase input from context
-            phase_input = context.initial_input or {}
+            # Merge workflow-level input with phase-specific configured inputs
+            base_input = context.initial_input or {}
+            metadata = phase_metadata or {}
+            phase_inputs = metadata.get("phase_inputs") or {}
+            selected_model = metadata.get("selected_model")
+
+            phase_input = {**base_input, **phase_inputs}
+            if selected_model:
+                phase_input["selected_model"] = selected_model
             
             # Get and instantiate agent
             agent_instance = await _get_agent_instance_async(agent_name)
@@ -104,7 +114,9 @@ async def create_phase_handler(
                 retry_count=0,
                 metadata={
                     "agent": agent_name,
-                    "agent_type": type(agent_instance).__name__
+                    "agent_type": type(agent_instance).__name__,
+                    "selected_model": selected_model,
+                    "phase_inputs": phase_inputs,
                 }
             )
             
@@ -274,23 +286,41 @@ async def execute_custom_workflow(
         phases: List[WorkflowPhase] = []
         
         for phase_config in custom_workflow.phases:
+            if hasattr(phase_config, "model_dump"):
+                phase_data = phase_config.model_dump()
+            elif isinstance(phase_config, dict):
+                phase_data = phase_config
+            else:
+                phase_data = {
+                    "name": getattr(phase_config, "name", None),
+                    "agent": getattr(phase_config, "agent", None),
+                    "description": getattr(phase_config, "description", ""),
+                    "timeout_seconds": getattr(phase_config, "timeout_seconds", 300),
+                    "max_retries": getattr(phase_config, "max_retries", 2),
+                    "skip_on_error": getattr(phase_config, "skip_on_error", False),
+                    "required": getattr(phase_config, "required", True),
+                    "quality_threshold": getattr(phase_config, "quality_threshold", None),
+                    "metadata": getattr(phase_config, "metadata", {}),
+                }
+
             # Get handler for this phase
             handler = await create_phase_handler(
-                phase_name=phase_config.get("name"),
-                agent_name=phase_config.get("agent"),
-                database_service=database_service
+                phase_name=phase_data.get("name"),
+                agent_name=phase_data.get("agent"),
+                database_service=database_service,
+                phase_metadata=phase_data.get("metadata") or {},
             )
             
             # Create WorkflowPhase with configuration from custom workflow
             phase = WorkflowPhase(
-                name=phase_config.get("name"),
+                name=phase_data.get("name"),
                 handler=handler,
-                description=phase_config.get("description", ""),
-                timeout_seconds=phase_config.get("timeout_seconds", 300),
-                max_retries=phase_config.get("max_retries", 2),
-                skip_on_error=phase_config.get("skip_on_error", False),
-                required=phase_config.get("required", True),
-                metadata=phase_config.get("metadata", {})
+                description=phase_data.get("description", ""),
+                timeout_seconds=phase_data.get("timeout_seconds", 300),
+                max_retries=phase_data.get("max_retries", 2),
+                skip_on_error=phase_data.get("skip_on_error", False),
+                required=phase_data.get("required", True),
+                metadata=phase_data.get("metadata", {}),
             )
             phases.append(phase)
         

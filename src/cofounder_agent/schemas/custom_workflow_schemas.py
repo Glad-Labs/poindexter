@@ -138,6 +138,20 @@ class WorkflowValidationResult(BaseModel):
     warnings: List[str] = Field(default_factory=list, description="Validation warnings")
 
 
+class PhaseInputField(BaseModel):
+    """UI/runtime input field definition for a workflow phase."""
+
+    key: str = Field(..., description="Unique key for this input value")
+    label: str = Field(..., description="Human-readable field label")
+    input_type: str = Field(
+        "text", description="Input control type: text, textarea, number, select, boolean"
+    )
+    required: bool = Field(False, description="Whether this input is required")
+    placeholder: Optional[str] = Field(None, description="Optional placeholder text")
+    default_value: Optional[Any] = Field(None, description="Optional default value")
+    options: List[str] = Field(default_factory=list, description="Select options when input_type=select")
+
+
 class AvailablePhase(BaseModel):
     """Information about an available phase for workflow building"""
 
@@ -148,6 +162,13 @@ class AvailablePhase(BaseModel):
     compatible_agents: List[str] = Field(..., description="Agents that can handle this phase")
     capabilities: List[str] = Field(..., description="Capabilities provided (e.g., web_search)")
     default_retries: int = Field(..., description="Recommended retry count")
+    supports_model_selection: bool = Field(
+        True, description="Whether per-phase model selection is supported"
+    )
+    input_fields: List[PhaseInputField] = Field(
+        default_factory=list,
+        description="Phase-specific input fields to collect from user",
+    )
     version: str = Field("1.0", description="Phase handler version")
 
 
