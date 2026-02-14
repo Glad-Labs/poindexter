@@ -145,10 +145,9 @@ def register_all_routes(
 
     try:
         # ===== MODELS & AI BACKENDS =====
-        from routes.model_routes import models_list_router, models_router
+        from routes.model_routes import models_router
 
         app.include_router(models_router)
-        app.include_router(models_list_router)
         logger.info(" models_router registered")
         status["models_router"] = True
     except Exception as e:
