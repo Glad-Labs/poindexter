@@ -16,7 +16,8 @@ import json
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
 
-from services.capability_registry import get_registry, CapabilityTaskDefinition, CapabilityStep
+from services.capability_registry import get_registry
+from services.capability_task_executor import CapabilityTaskDefinition, CapabilityStep
 from services.model_router import ModelRouter
 from services.capability_task_executor import execute_capability_task
 
