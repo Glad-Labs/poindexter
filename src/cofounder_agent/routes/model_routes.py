@@ -12,7 +12,7 @@ import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from schemas.models_schemas import (
     ModelInfo,
@@ -26,15 +26,56 @@ from services.model_constants import PROVIDER_ICONS
 logger = logging.getLogger(__name__)
 
 # Router for all model-related endpoints
-models_router = APIRouter(prefix="/api/v1/models", tags=["models-v1"])
+models_router = APIRouter(prefix="/api/models", tags=["models"])
 
-# Additional router for /api/models endpoint (legacy support)
-models_list_router = APIRouter(prefix="/api/models", tags=["models"])
+
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+
+async def _get_provider_health_cached(redis_cache):
+    """
+    Get provider health status with caching.
+    
+    Shared logic for all provider health endpoints to avoid duplication.
+    
+    Args:
+        redis_cache: Redis cache instance (can be None)
+    
+    Returns:
+        Dict with timestamp and provider status
+    """
+    cache_key = "provider_health_status"
+    
+    # Try to get from cache first
+    if redis_cache:
+        cached_result = await redis_cache.get(cache_key)
+        if cached_result is not None:
+            logger.debug(f"Provider health status cache hit")
+            return cached_result
+    
+    # Cache miss - fetch fresh data
+    try:
+        service = get_model_consolidation_service()
+        status = service.get_status()
+        
+        result = {"timestamp": datetime.now().isoformat(), "providers": status}
+        
+        # Cache the result with 60s TTL
+        if redis_cache:
+            await redis_cache.set(cache_key, result, ttl=60)
+            logger.debug(f"Provider health status cached with TTL 60s")
+        
+        return result
+    except Exception as e:
+        logger.error(f"Error fetching provider health: {e}")
+        raise
 
 
 # ============================================================================
 # API ENDPOINTS
 # ============================================================================
+
 
 
 @models_router.get(
@@ -83,7 +124,7 @@ async def get_available_models():
 
 
 @models_router.get("/status", description="Get status of all model providers")
-async def get_provider_status():
+async def get_provider_status(request: Request):
     """
     Get availability status of all model providers in the consolidation service.
 
@@ -94,14 +135,40 @@ async def get_provider_status():
     - Number of available models
     """
     try:
-        service = get_model_consolidation_service()
-        status = service.get_status()
-
-        return {"timestamp": datetime.now().isoformat(), "providers": status}
-
+        redis_cache = getattr(request.app.state, "redis_cache", None)
+        return await _get_provider_health_cached(redis_cache)
     except Exception as e:
         logger.error(f"Error getting provider status: {e}")
         raise HTTPException(status_code=500, detail=f"Error getting provider status: {str(e)}")
+
+
+@models_router.post("/health/refresh", description="Refresh model provider health check cache")
+async def refresh_provider_health(request: Request):
+    """
+    Refresh the provider health check cache.
+    
+    Use this endpoint to immediately update provider status cache instead of waiting for TTL expiration.
+    Useful for testing or when you want to force a fresh health check.
+    
+    Returns:
+        Current provider status immediately after cache invalidation and fresh check
+    """
+    try:
+        redis_cache = getattr(request.app.state, "redis_cache", None)
+        cache_key = "provider_health_status"
+        
+        # Invalidate cache
+        if redis_cache:
+            await redis_cache.delete(cache_key)
+            logger.debug(f"Provider health status cache invalidated")
+        
+        # Fetch fresh data and cache it
+        result = await _get_provider_health_cached(redis_cache)
+        result["cache_refreshed"] = True
+        return result
+    except Exception as e:
+        logger.error(f"Error refreshing provider health: {e}")
+        raise HTTPException(status_code=500, detail=f"Error refreshing provider health: {str(e)}")
 
 
 @models_router.get(
@@ -214,42 +281,4 @@ async def get_rtx5070_models():
 # ========== ADDITIONAL ENDPOINTS FOR /api/models (legacy support) ==========
 
 
-@models_list_router.get("", description="Get list of available AI models (legacy endpoint)")
-async def get_models_list():
-    """
-    Get all currently available models - legacy endpoint for /api/models.
-    Redirects to the new /api/v1/models/available endpoint logic.
-    """
-    try:
-        service = get_model_consolidation_service()
-        models_dict = service.list_models()
 
-        # Flatten models from all providers
-        models_list = []
-
-        for provider, model_names in models_dict.items():
-            icon = PROVIDER_ICONS.get(provider, "🤖")
-            for model_name in model_names:
-                models_list.append(
-                    {
-                        "name": model_name,
-                        "displayName": f"{model_name} ({provider})",
-                        "provider": provider,
-                        "isFree": provider in ["ollama", "huggingface"],
-                        "size": "unknown",
-                        "estimatedVramGb": 0,
-                        "description": f"Model from {provider}",
-                        "icon": icon,
-                        "requiresInternet": provider != "ollama",
-                    }
-                )
-
-        return {
-            "models": models_list,
-            "total": len(models_list),
-            "timestamp": datetime.now().isoformat(),
-        }
-
-    except Exception as e:
-        logger.error(f"Error getting models: {e}")
-        raise HTTPException(status_code=500, detail=f"Error getting models: {str(e)}")

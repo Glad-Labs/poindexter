@@ -93,7 +93,7 @@ else {
 Log-Test "Available Models Endpoint"
 
 try {
-    $modelsResponse = Invoke-WebRequest -Uri "$BACKEND_URL/api/v1/models/available" -Method Get -TimeoutSec 5 | Select-Object -ExpandProperty Content
+    $modelsResponse = Invoke-WebRequest -Uri "$BACKEND_URL/api/models/available" -Method Get -TimeoutSec 5 | Select-Object -ExpandProperty Content
     $modelsJson = $modelsResponse | ConvertFrom-Json
     Log-Pass "Models endpoint returns valid JSON"
     
@@ -122,7 +122,7 @@ catch {
 Log-Test "Provider Status Check"
 
 try {
-    $statusResponse = Invoke-WebRequest -Uri "$BACKEND_URL/api/v1/models/status" -Method Get -TimeoutSec 5 | Select-Object -ExpandProperty Content
+    $statusResponse = Invoke-WebRequest -Uri "$BACKEND_URL/api/models/status" -Method Get -TimeoutSec 5 | Select-Object -ExpandProperty Content
     $statusJson = $statusResponse | ConvertFrom-Json
     Log-Pass "Provider status endpoint returns valid JSON"
     

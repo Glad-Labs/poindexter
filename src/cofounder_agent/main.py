@@ -230,6 +230,17 @@ async def api_health():
     Used by: Railway load balancers, monitoring systems, external health checks
     Authentication: Not required (critical for load balancers)
     """
+    # Try to get from cache first (note: health checks may be called very frequently)
+    if hasattr(app.state, 'redis_cache'):
+        redis_cache = app.state.redis_cache
+        cache_key = "database_health_check"
+        cached_result = await redis_cache.get(cache_key)
+        if cached_result is not None:
+            logger.debug(f"Database health check cache hit for key: {cache_key}")
+            return cached_result
+    else:
+        redis_cache = None
+    
     try:
         # Build comprehensive health response
         health_data = {
@@ -264,6 +275,11 @@ async def api_health():
                 health_data["components"]["database"] = "degraded"
         else:
             health_data["components"]["database"] = "unavailable"
+
+        # Cache the result with 30s TTL
+        if redis_cache:
+            await redis_cache.set("database_health_check", health_data, ttl=30)
+            logger.debug(f"Database health check cached with TTL 30s")
 
         return health_data
     except Exception as e:  # pylint: disable=broad-except

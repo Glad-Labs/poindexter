@@ -86,7 +86,7 @@ fi
 
 log_test "Available Models Endpoint"
 
-MODELS_RESPONSE=$(curl -s "$BACKEND_URL/api/v1/models/available")
+MODELS_RESPONSE=$(curl -s "$BACKEND_URL/api/models/available")
 
 if echo "$MODELS_RESPONSE" | jq . > /dev/null 2>&1; then
     log_pass "Models endpoint returns valid JSON"
@@ -109,7 +109,7 @@ fi
 
 log_test "Provider Status Check"
 
-STATUS_RESPONSE=$(curl -s "$BACKEND_URL/api/v1/models/status")
+STATUS_RESPONSE=$(curl -s "$BACKEND_URL/api/models/status")
 
 if echo "$STATUS_RESPONSE" | jq . > /dev/null 2>&1; then
     log_pass "Provider status endpoint returns valid JSON"
@@ -254,7 +254,7 @@ fi
 
 log_test "Fallback Chain Verification"
 
-FALLBACK_RESPONSE=$(curl -s "$BACKEND_URL/api/v1/models/available" | jq '.models | group_by(.provider) | map({provider: .[0].provider, count: length})')
+FALLBACK_RESPONSE=$(curl -s "$BACKEND_URL/api/models/available" | jq '.models | group_by(.provider) | map({provider: .[0].provider, count: length})')
 
 log_info "Available providers and model counts:"
 echo "$FALLBACK_RESPONSE" | jq '.'
