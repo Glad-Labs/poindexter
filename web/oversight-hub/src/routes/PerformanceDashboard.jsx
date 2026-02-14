@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import './PerformanceDashboard.css';
-import { apiCall } from '../services/cofounderAgentClient';
 
 function PerformanceDashboard() {
   const [performanceData, setPerformanceData] = useState(null);
@@ -16,17 +15,36 @@ function PerformanceDashboard() {
         setLoading(true);
         setError(null);
 
-        const response = await apiCall('/metrics/performance', 'GET');
+        const API_BASE_URL =
+          process.env.REACT_APP_API_URL || 'http://localhost:8000';
+        const response = await fetch(
+          `${API_BASE_URL}/api/metrics/performance`,
+          {
+            headers: {
+              Accept: 'application/json',
+            },
+          }
+        );
 
-        if (!response || typeof response !== 'object') {
+        if (!response.ok) {
+          throw new Error(
+            `Failed to fetch performance metrics: ${response.status}`
+          );
+        }
+
+        const data = await response.json();
+
+        if (!data || typeof data !== 'object') {
           throw new Error('Invalid performance data format');
         }
 
-        setPerformanceData(response);
+        setPerformanceData(data);
       } catch (err) {
         console.error('Error fetching performance data:', err);
         setError(
-          err instanceof Error ? err.message : 'Failed to fetch performance data'
+          err instanceof Error
+            ? err.message
+            : 'Failed to fetch performance data'
         );
         setPerformanceData(null);
       } finally {
@@ -35,7 +53,9 @@ function PerformanceDashboard() {
     };
 
     fetchPerformanceData();
-    const interval = autoRefresh ? setInterval(fetchPerformanceData, 5000) : null;
+    const interval = autoRefresh
+      ? setInterval(fetchPerformanceData, 5000)
+      : null;
 
     return () => {
       if (interval) clearInterval(interval);
@@ -96,8 +116,7 @@ function PerformanceDashboard() {
         provider.charAt(0).toUpperCase() + provider.slice(1).toLowerCase(),
       count,
       percentage: (
-        (count /
-          Object.values(modelDecisions).reduce((a, b) => a + b, 1)) *
+        (count / Object.values(modelDecisions).reduce((a, b) => a + b, 1)) *
         100
       ).toFixed(1),
     }));
@@ -178,7 +197,9 @@ function PerformanceDashboard() {
                   <h3 className="cache-label">{card.label}</h3>
                   <p className="cache-hit-rate">{card.hitRate}</p>
                   <p className="cache-ttl">TTL: {card.ttl}</p>
-                  <div className={`cache-indicator ${card.positive ? 'good' : 'fair'}`}>
+                  <div
+                    className={`cache-indicator ${card.positive ? 'good' : 'fair'}`}
+                  >
                     {card.positive ? '✅' : '⏱️'}
                   </div>
                 </div>
@@ -189,7 +210,9 @@ function PerformanceDashboard() {
           {/* Route Latencies */}
           {latencyChartData.length > 0 && (
             <div className="latency-section">
-              <h2 className="section-title">⏱️ Route Latencies (P50/P95/P99)</h2>
+              <h2 className="section-title">
+                ⏱️ Route Latencies (P50/P95/P99)
+              </h2>
               <div className="latency-chart">
                 {latencyChartData.map((route, idx) => (
                   <div key={idx} className="latency-row">
@@ -247,7 +270,9 @@ function PerformanceDashboard() {
                   <div key={idx} className="model-row">
                     <div className="model-info">
                       <span className="model-name">{model.provider}</span>
-                      <span className="model-count">{model.count.toLocaleString()} requests</span>
+                      <span className="model-count">
+                        {model.count.toLocaleString()} requests
+                      </span>
                     </div>
                     <div className="model-bar-container">
                       <div
@@ -256,7 +281,9 @@ function PerformanceDashboard() {
                           width: `${parseFloat(model.percentage)}%`,
                         }}
                       >
-                        <span className="model-percentage">{model.percentage}%</span>
+                        <span className="model-percentage">
+                          {model.percentage}%
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -268,7 +295,9 @@ function PerformanceDashboard() {
           {/* Live Client Metrics */}
           {clientMetrics.length > 0 && (
             <div className="client-metrics-section">
-              <h2 className="section-title">📱 Live Client Metrics (Last 20 Requests)</h2>
+              <h2 className="section-title">
+                📱 Live Client Metrics (Last 20 Requests)
+              </h2>
               <div className="metrics-table">
                 <div className="table-header">
                   <span className="col-time">Timestamp</span>
