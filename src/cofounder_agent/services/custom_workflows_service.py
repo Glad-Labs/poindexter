@@ -33,9 +33,7 @@ class CustomWorkflowsService:
         self._available_phases_cache: Optional[List[AvailablePhase]] = None
         logger.info("CustomWorkflowsService initialized")
 
-    async def create_workflow(
-        self, workflow: CustomWorkflow, owner_id: str
-    ) -> CustomWorkflow:
+    async def create_workflow(self, workflow: CustomWorkflow, owner_id: str) -> CustomWorkflow:
         """
         Create and persist a new custom workflow.
 
@@ -94,7 +92,9 @@ class CustomWorkflowsService:
                 owner_id,
             )
             if not row:
-                logger.warning(f"Workflow {workflow_id} not found or access denied for user {owner_id}")
+                logger.warning(
+                    f"Workflow {workflow_id} not found or access denied for user {owner_id}"
+                )
                 return None
             return self._row_to_workflow(row)
         except Exception as e:
@@ -293,9 +293,13 @@ class CustomWorkflowsService:
             try:
                 # Validate component-level constraints
                 if phase.timeout_seconds < 10:
-                    warnings.append(f"Phase '{phase.name}' timeout {phase.timeout_seconds}s is very short")
+                    warnings.append(
+                        f"Phase '{phase.name}' timeout {phase.timeout_seconds}s is very short"
+                    )
                 if phase.timeout_seconds > 3600:
-                    warnings.append(f"Phase '{phase.name}' timeout {phase.timeout_seconds}s is very long")
+                    warnings.append(
+                        f"Phase '{phase.name}' timeout {phase.timeout_seconds}s is very long"
+                    )
 
                 # TODO: Validate agent exists in registry when available
                 # For now, just warn if agent looks invalid
@@ -518,7 +522,7 @@ class CustomWorkflowsService:
     ) -> bool:
         """
         Save workflow execution results to database.
-        
+
         Args:
             execution_id: Unique execution ID
             workflow_id: ID of the workflow executed
@@ -534,18 +538,18 @@ class CustomWorkflowsService:
             progress_percent: Completion percentage
             tags: Optional tags for execution
             metadata: Optional metadata
-            
+
         Returns:
             True if successful
         """
         try:
             from datetime import datetime, timezone
-            
+
             now = datetime.now(timezone.utc)
-            
+
             # Convert phase results to JSON
             phase_results_json = json.dumps(phase_results) if phase_results else "{}"
-            
+
             await self.database_service.pool.execute(
                 """
                 INSERT INTO workflow_executions (
@@ -580,13 +584,13 @@ class CustomWorkflowsService:
                 json.dumps(tags or []),
                 json.dumps(metadata or {}),
             )
-            
+
             logger.info(
                 f"Persisted workflow execution: {execution_id} for workflow {workflow_id}, "
                 f"status: {execution_status}, duration: {duration_ms}ms"
             )
             return True
-            
+
         except Exception as e:
             logger.error(f"Failed to persist workflow execution {execution_id}: {e}", exc_info=True)
             return False
@@ -596,11 +600,11 @@ class CustomWorkflowsService:
     ) -> Optional[Dict]:
         """
         Get a workflow execution by ID.
-        
+
         Args:
             execution_id: ID of execution to retrieve
             owner_id: Optional owner ID to verify ownership
-            
+
         Returns:
             Execution record or None if not found
         """
@@ -616,12 +620,12 @@ class CustomWorkflowsService:
                     "SELECT * FROM workflow_executions WHERE id = $1",
                     execution_id,
                 )
-            
+
             if not row:
                 return None
-            
+
             return self._row_to_execution(row)
-            
+
         except Exception as e:
             logger.error(f"Failed to get workflow execution {execution_id}: {e}")
             return None
@@ -636,14 +640,14 @@ class CustomWorkflowsService:
     ):
         """
         Get executions for a workflow.
-        
+
         Args:
             workflow_id: ID of workflow
             owner_id: Owner ID for authorization
             limit: Max results
             offset: Pagination offset
             status: Optional status filter (completed, failed, pending)
-            
+
         Returns:
             List of execution records and total count
         """
@@ -652,20 +656,20 @@ class CustomWorkflowsService:
             where_clauses = ["workflow_id = $1", "owner_id = $2"]
             params = [workflow_id, owner_id]
             param_index = 3
-            
+
             if status:
                 where_clauses.append(f"execution_status = ${param_index}")
                 params.append(status)
                 param_index += 1
-            
+
             where_sql = " AND ".join(where_clauses)
-            
+
             # Get total count
             total_count = await self.database_service.pool.fetchval(
                 f"SELECT COUNT(*) FROM workflow_executions WHERE {where_sql}",
                 *params,
             )
-            
+
             # Get paginated results
             rows = await self.database_service.pool.fetch(
                 f"""
@@ -678,16 +682,16 @@ class CustomWorkflowsService:
                 limit,
                 offset,
             )
-            
+
             executions = [self._row_to_execution(row) for row in rows]
-            
+
             return {
                 "total": total_count,
                 "executions": executions,
                 "limit": limit,
                 "offset": offset,
             }
-            
+
         except Exception as e:
             logger.error(f"Failed to get workflow executions for {workflow_id}: {e}")
             return {

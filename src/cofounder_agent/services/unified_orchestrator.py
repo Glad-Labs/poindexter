@@ -244,22 +244,30 @@ class UnifiedOrchestrator:
             from agents.registry import get_agent_registry
 
             registry = get_agent_registry()
-            
+
             # Try to get agent class from registry
             agent_class = registry.get_agent_class(agent_name)
-            
+
             if agent_class:
-                logger.debug(f"Instantiating agent '{agent_name}' from registry with kwargs: {kwargs.keys()}")
+                logger.debug(
+                    f"Instantiating agent '{agent_name}' from registry with kwargs: {kwargs.keys()}"
+                )
                 try:
                     return agent_class(**kwargs)
                 except TypeError as e:
                     # Agent doesn't accept kwargs, try without
-                    logger.debug(f"Agent '{agent_name}' doesn't accept kwargs, instantiating without: {e}")
+                    logger.debug(
+                        f"Agent '{agent_name}' doesn't accept kwargs, instantiating without: {e}"
+                    )
                     return agent_class()
-            
-            logger.debug(f"Agent '{agent_name}' not found in registry, falling back to direct import")
+
+            logger.debug(
+                f"Agent '{agent_name}' not found in registry, falling back to direct import"
+            )
         except Exception as e:
-            logger.debug(f"Registry lookup failed for '{agent_name}': {e}, falling back to direct import")
+            logger.debug(
+                f"Registry lookup failed for '{agent_name}': {e}, falling back to direct import"
+            )
 
         # Fallback: Direct import based on agent name
         # This maintains backward compatibility if registry is not populated
@@ -279,17 +287,23 @@ class UnifiedOrchestrator:
             try:
                 module = __import__(module_path, fromlist=[class_name])
                 agent_class = getattr(module, class_name)
-                logger.debug(f"Instantiating agent '{agent_name}' via direct import with kwargs: {kwargs.keys()}")
-                
+                logger.debug(
+                    f"Instantiating agent '{agent_name}' via direct import with kwargs: {kwargs.keys()}"
+                )
+
                 try:
                     return agent_class(**kwargs)
                 except TypeError:
                     # Agent doesn't accept kwargs, try without
-                    logger.debug(f"Agent '{agent_name}' doesn't accept kwargs, instantiating without")
+                    logger.debug(
+                        f"Agent '{agent_name}' doesn't accept kwargs, instantiating without"
+                    )
                     return agent_class()
             except (ImportError, AttributeError) as e:
                 logger.error(f"Failed to import agent '{agent_name}': {e}")
-                raise ValueError(f"Agent '{agent_name}' not found in registry or importable via fallback")
+                raise ValueError(
+                    f"Agent '{agent_name}' not found in registry or importable via fallback"
+                )
 
         raise ValueError(f"Unknown agent: '{agent_name}'. Not in registry or fallback mapping.")
 
@@ -638,7 +652,7 @@ class UnifiedOrchestrator:
             # STAGE 1: RESEARCH (10% → 25%)
             # ====================================================================
             logger.info("[%s] STAGE 1: Research", request.request_id)
-            
+
             # Instantiate research agent (with registry fallback support)
             research_agent = self._get_agent_instance("research_agent")
             research_data = await research_agent.run(topic, keywords[:5])
@@ -676,7 +690,7 @@ class UnifiedOrchestrator:
 
             # Create LLMClient with selected model
             llm_client = LLMClient(model_name=draft_model) if draft_model else LLMClient()
-            
+
             # Instantiate creative agent with custom parameter (registry fallback support)
             creative_agent = self._get_agent_instance("creative_agent", llm_client=llm_client)
 
@@ -789,7 +803,9 @@ class UnifiedOrchestrator:
 
                 approval_bool = quality_result.passing
                 feedback = quality_result.feedback
-                quality_score = int(quality_result.overall_score)  # Already 0-100 from quality_service
+                quality_score = int(
+                    quality_result.overall_score
+                )  # Already 0-100 from quality_service
 
                 # Check constraint compliance
                 if constraints:
@@ -828,7 +844,9 @@ class UnifiedOrchestrator:
                     if refine_model:
                         # Create new LLMClient with refine model for refinement
                         refine_llm_client = LLMClient(model_name=refine_model)
-                        creative_agent = self._get_agent_instance("creative_agent", llm_client=refine_llm_client)
+                        creative_agent = self._get_agent_instance(
+                            "creative_agent", llm_client=refine_llm_client
+                        )
                     content = await creative_agent.run(
                         content,
                         is_refinement=True,
@@ -866,7 +884,7 @@ class UnifiedOrchestrator:
             # STAGE 5: FORMATTING (75% → 90%)
             # ====================================================================
             logger.info("[%s] STAGE 5: Formatting", request.request_id)
-            
+
             # Instantiate publishing agent (with registry fallback support)
             publishing_agent = self._get_agent_instance("publishing_agent")
             result_post = await publishing_agent.run(content)

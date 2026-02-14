@@ -534,7 +534,7 @@ async def generate_featured_image(request: ImageGenerationRequest):
             # ═══════════════════════════════════════════════════════════
             # Unload SDXL models after generation to free memory
             # ═══════════════════════════════════════════════════════════
-            if hasattr(image_service, '_unload_sdxl'):
+            if hasattr(image_service, "_unload_sdxl"):
                 image_service._unload_sdxl()
 
             # ═══════════════════════════════════════════════════════════
@@ -561,13 +561,13 @@ async def generate_featured_image(request: ImageGenerationRequest):
                 message=f"✅ Image generated and saved locally (preview mode). Review and approve to publish.",
                 generation_time=elapsed,
             )
-        
+
         # ═══════════════════════════════════════════════════════════
         # Unload SDXL models if generation was requested but failed
         # ═══════════════════════════════════════════════════════════
-        if request.use_generation and hasattr(image_service, '_unload_sdxl'):
+        if request.use_generation and hasattr(image_service, "_unload_sdxl"):
             image_service._unload_sdxl()
-        
+
         elapsed = time.time() - start_time
         return ImageGenerationResponse(
             success=False,
@@ -575,8 +575,8 @@ async def generate_featured_image(request: ImageGenerationRequest):
             image=None,
             message="❌ No image found. Ensure PEXELS_API_KEY is set in environment or GPU available for SDXL.",
             generation_time=elapsed,
-                preview_mode=False,
-            )
+            preview_mode=False,
+        )
 
     except Exception as e:
         logger.error(f"❌ Image generation error: {e}", exc_info=True)

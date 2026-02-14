@@ -66,25 +66,25 @@ def generate_csrf_state() -> str:
 def validate_csrf_state(state: str) -> bool:
     """
     Validate CSRF state token.
-    
+
     Checks:
     - State exists in store
     - State has not expired
     - Removes state from store after validation (one-time use)
-    
+
     Returns:
         True if state is valid, False otherwise
     """
     if not state or state not in _CSRF_STATES:
         logger.warning("CSRF state validation failed: state not found in store")
         return False
-    
+
     expiry = _CSRF_STATES[state]
     if datetime.now(timezone.utc) > expiry:
         logger.warning("CSRF state validation failed: state expired")
         del _CSRF_STATES[state]
         return False
-    
+
     # Remove state after successful validation (one-time use only)
     del _CSRF_STATES[state]
     logger.debug("CSRF state validation successful")
@@ -120,17 +120,22 @@ async def exchange_code_for_token(code: str) -> Dict[str, Any]:
             )
 
             logger.debug(f"GitHub token exchange response status: {response.status_code}")
-            
+
             if response.status_code != 200:
                 response_text = response.text
-                logger.error(f"GitHub token exchange failed with status {response.status_code}: {response_text}")
-                raise HTTPException(status_code=401, detail="GitHub authentication failed - invalid code or credentials")
+                logger.error(
+                    f"GitHub token exchange failed with status {response.status_code}: {response_text}"
+                )
+                raise HTTPException(
+                    status_code=401,
+                    detail="GitHub authentication failed - invalid code or credentials",
+                )
 
             data = response.json()
             logger.debug(f"GitHub response keys: {data.keys()}")
 
             if "error" in data:
-                error_description = data.get('error_description', 'Unknown error')
+                error_description = data.get("error_description", "Unknown error")
                 logger.error(f"GitHub error: {data.get('error')} - {error_description}")
                 raise HTTPException(
                     status_code=401,
@@ -180,11 +185,13 @@ async def get_github_user(access_token: str) -> Dict[str, Any]:
         )
 
         logger.debug(f"GitHub user API response status: {response.status_code}")
-        
+
         if response.status_code != 200:
             response_text = response.text
             logger.error(f"GitHub API error: {response.status_code} - {response_text}")
-            raise HTTPException(status_code=401, detail=f"Failed to fetch GitHub user: {response.status_code}")
+            raise HTTPException(
+                status_code=401, detail=f"Failed to fetch GitHub user: {response.status_code}"
+            )
 
         user_data = response.json()
         logger.info(f"Successfully fetched GitHub user: {user_data.get('login')}")
@@ -393,14 +400,16 @@ async def github_callback(request_data: GitHubCallbackRequest) -> Dict[str, Any]
 async def github_callback_fallback(request_data: GitHubCallbackRequest) -> Dict[str, Any]:
     """
     Fallback endpoint for GitHub OAuth callback (old endpoint path).
-    
+
     This endpoint exists for backward compatibility with clients using
     the old /api/auth/github-callback path. All requests are forwarded
     to the new /api/auth/github/callback endpoint.
-    
+
     DEPRECATED: Use /api/auth/github/callback instead.
     """
-    logger.warning("Deprecated endpoint /api/auth/github-callback called. Use /api/auth/github/callback instead.")
+    logger.warning(
+        "Deprecated endpoint /api/auth/github-callback called. Use /api/auth/github/callback instead."
+    )
     # Forward to the main handler
     return await github_callback(request_data)
 

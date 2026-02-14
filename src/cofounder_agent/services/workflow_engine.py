@@ -331,9 +331,7 @@ class WorkflowEngine:
 
         return context
 
-    async def _execute_phase(
-        self, phase: WorkflowPhase, context: WorkflowContext
-    ) -> PhaseResult:
+    async def _execute_phase(self, phase: WorkflowPhase, context: WorkflowContext) -> PhaseResult:
         """
         Execute a single phase with retry logic and error handling.
 
@@ -553,7 +551,9 @@ class WorkflowEngine:
                 )
 
                 if quality_score >= quality_threshold:
-                    logger.info("[%s] Phase '%s' meets quality threshold", context.workflow_id, phase.name)
+                    logger.info(
+                        "[%s] Phase '%s' meets quality threshold", context.workflow_id, phase.name
+                    )
                     break
 
                 if refinement_attempt < max_quality_retries - 1:

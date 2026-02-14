@@ -94,9 +94,7 @@ class GeminiClient:
             response = await gemini_model.generate_content_async(
                 prompt,
                 generation_config=genai.types.GenerationConfig(
-                    max_output_tokens=max_tokens,
-                    temperature=temperature,
-                    **kwargs
+                    max_output_tokens=max_tokens, temperature=temperature, **kwargs
                 ),
             )
 

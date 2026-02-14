@@ -57,7 +57,15 @@ async def list_workflow_templates():
             {
                 "name": "blog_post",
                 "description": "Complete blog post generation with research, drafting, quality assessment, refinement, and publishing",
-                "phases": ["research", "draft", "assess", "refine", "finalize", "image_selection", "publish"],
+                "phases": [
+                    "research",
+                    "draft",
+                    "assess",
+                    "refine",
+                    "finalize",
+                    "image_selection",
+                    "publish",
+                ],
                 "estimated_duration_seconds": 900,
                 "metadata": {
                     "word_count_target": 1500,
@@ -90,7 +98,15 @@ async def list_workflow_templates():
             {
                 "name": "newsletter",
                 "description": "Newsletter generation with full pipeline including research and refinement",
-                "phases": ["research", "draft", "assess", "refine", "finalize", "image_selection", "publish"],
+                "phases": [
+                    "research",
+                    "draft",
+                    "assess",
+                    "refine",
+                    "finalize",
+                    "image_selection",
+                    "publish",
+                ],
                 "estimated_duration_seconds": 1200,
                 "metadata": {
                     "word_count_target": 2000,
@@ -275,7 +291,9 @@ async def execute_workflow_template(
     template_name: str,
     request_body: Dict[str, Any],
     skip_phases: Optional[List[str]] = Query(None, description="Phases to skip"),
-    quality_threshold: float = Query(0.7, ge=0.0, le=1.0, description="Quality threshold for assessment"),
+    quality_threshold: float = Query(
+        0.7, ge=0.0, le=1.0, description="Quality threshold for assessment"
+    ),
     tags: Optional[List[str]] = Query(None, description="Tags for workflow"),
 ):
     """

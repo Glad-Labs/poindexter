@@ -12,8 +12,8 @@ This service provides:
 """
 
 import logging
-from typing import Any, Dict, Optional
 from datetime import datetime
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +171,9 @@ class ComplianceService:
                 "compliance": 0.25,
             }
 
-            overall_risk = sum(risk_scores.get(cat, 0) for cat in risk_categories) / len(risk_categories)
+            overall_risk = sum(risk_scores.get(cat, 0) for cat in risk_categories) / len(
+                risk_categories
+            )
 
             logger.info(f"Risk assessment completed (overall risk: {overall_risk:.2f})")
 
@@ -180,7 +182,9 @@ class ComplianceService:
                 "risk_categories": risk_categories,
                 "risk_scores": {cat: risk_scores.get(cat, 0) for cat in risk_categories},
                 "overall_risk_score": overall_risk,
-                "risk_level": "low" if overall_risk < 0.3 else "medium" if overall_risk < 0.7 else "high",
+                "risk_level": (
+                    "low" if overall_risk < 0.3 else "medium" if overall_risk < 0.7 else "high"
+                ),
                 "timestamp": datetime.utcnow().isoformat(),
             }
 

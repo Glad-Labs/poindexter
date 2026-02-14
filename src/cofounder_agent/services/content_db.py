@@ -100,7 +100,7 @@ class ContentDatabase(DatabaseServiceMixin):
             try:
                 # Determine published_at timestamp based on status
                 is_published = post_data.get("status") == "published"
-                
+
                 row = await conn.fetchrow(
                     """
                     INSERT INTO posts (

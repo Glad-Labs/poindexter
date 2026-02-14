@@ -126,16 +126,18 @@ async def list_settings(
     """
     try:
         # Get all active settings from database (optionally filtered by category)
-        all_settings = await db_service.get_all_settings(category=category.value if category else None)
-        
+        all_settings = await db_service.get_all_settings(
+            category=category.value if category else None
+        )
+
         # Apply pagination
         total = len(all_settings)
         offset = (page - 1) * per_page
         pages = (total + per_page - 1) // per_page if per_page > 0 else 1
-        
+
         # Slice for pagination
-        paginated_items = all_settings[offset:offset + per_page]
-        
+        paginated_items = all_settings[offset : offset + per_page]
+
         # Convert to SettingResponse objects
         items = [
             SettingResponse(
@@ -201,10 +203,10 @@ async def get_setting(
     try:
         # Try to get setting from database by key
         setting = await db_service.get_setting(setting_id)
-        
+
         if not setting:
             raise HTTPException(status_code=404, detail=f"Setting '{setting_id}' not found")
-        
+
         # Convert database result to SettingResponse
         return SettingResponse(
             id=setting.get("id") or 1,
@@ -284,12 +286,14 @@ async def create_setting(
         # Validate key is provided
         if not setting_data.key:
             raise HTTPException(status_code=400, detail="Setting key is required")
-        
+
         # Check if setting already exists
         existing = await db_service.setting_exists(setting_data.key)
         if existing:
-            raise HTTPException(status_code=409, detail=f"Setting key '{setting_data.key}' already exists")
-        
+            raise HTTPException(
+                status_code=409, detail=f"Setting key '{setting_data.key}' already exists"
+            )
+
         # Create setting in database
         success = await db_service.set_setting(
             key=setting_data.key,
@@ -298,13 +302,13 @@ async def create_setting(
             display_name=setting_data.key,
             description=setting_data.description or f"Setting: {setting_data.key}",
         )
-        
+
         if not success:
             raise HTTPException(status_code=500, detail="Failed to create setting")
-        
+
         # Fetch created setting
         created_setting = await db_service.get_setting(setting_data.key)
-        
+
         return SettingResponse(
             id=created_setting.get("id") or 1,
             key=created_setting.get("key", setting_data.key),
@@ -516,13 +520,13 @@ async def delete_setting(
         existing = await db_service.get_setting(setting_id)
         if not existing:
             raise HTTPException(status_code=404, detail=f"Setting '{setting_id}' not found")
-        
+
         # Delete setting from database
         success = await db_service.delete_setting(setting_id)
-        
+
         if not success:
             raise HTTPException(status_code=500, detail="Failed to delete setting")
-        
+
         # Return 204 No Content (successful deletion)
         return None
     except HTTPException:

@@ -88,11 +88,19 @@ class CustomWorkflow(BaseModel):
 class WorkflowExecutionRequest(BaseModel):
     """Parameters for executing a workflow"""
 
-    workflow_id: Optional[str] = Field(None, description="ID of workflow to execute (for saved workflows)")
-    phases: Optional[List[PhaseConfig]] = Field(None, description="Inline phases (for ad-hoc execution)")
-    input_data: Dict[str, Any] = Field(default_factory=dict, description="Input parameters for workflow")
+    workflow_id: Optional[str] = Field(
+        None, description="ID of workflow to execute (for saved workflows)"
+    )
+    phases: Optional[List[PhaseConfig]] = Field(
+        None, description="Inline phases (for ad-hoc execution)"
+    )
+    input_data: Dict[str, Any] = Field(
+        default_factory=dict, description="Input parameters for workflow"
+    )
     skip_phases: Optional[List[str]] = Field(None, description="Phase names to skip")
-    quality_threshold: Optional[float] = Field(None, ge=0.0, le=1.0, description="Override quality threshold")
+    quality_threshold: Optional[float] = Field(
+        None, ge=0.0, le=1.0, description="Override quality threshold"
+    )
     tags: Optional[List[str]] = Field(None, description="Tags for this execution")
 
 

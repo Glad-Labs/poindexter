@@ -226,7 +226,9 @@ class LLMClient:
 
     async def _generate_text_local(self, prompt: str) -> str:
         try:
-            async with httpx.AsyncClient(timeout=120) as client:  # Increased timeout for longer generation
+            async with httpx.AsyncClient(
+                timeout=120
+            ) as client:  # Increased timeout for longer generation
                 response = await client.post(
                     f"{config.LOCAL_LLM_API_URL}/api/generate",
                     json={

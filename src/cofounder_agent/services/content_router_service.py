@@ -293,7 +293,9 @@ class ContentGenerationService:
 # ============================================================================
 
 
-async def _generate_canonical_title(topic: str, primary_keyword: str, content_excerpt: str) -> Optional[str]:
+async def _generate_canonical_title(
+    topic: str, primary_keyword: str, content_excerpt: str
+) -> Optional[str]:
     """
     Generate a canonical, SEO-optimized title for blog content using unified prompt manager.
     Consolidates all title generation logic into a single, testable function.
@@ -660,7 +662,9 @@ async def process_content_generation_task(
         seo_keywords = seo_assets.get("meta_keywords") or (tags or [])
         # Ensure seo_keywords is a list, filter out None/empty values
         if isinstance(seo_keywords, list):
-            seo_keywords = [kw for kw in seo_keywords if kw and isinstance(kw, str) and kw.strip()][:10]
+            seo_keywords = [kw for kw in seo_keywords if kw and isinstance(kw, str) and kw.strip()][
+                :10
+            ]
         elif seo_keywords and isinstance(seo_keywords, str):
             seo_keywords = [seo_keywords.strip()][:10] if seo_keywords.strip() else []
         else:

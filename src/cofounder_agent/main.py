@@ -19,13 +19,14 @@ from config import get_config
 # Load configuration
 config = get_config()
 
+from services.auth import AuthService
+from services.container import service_container
+
 # Import services
 from services.logger_config import get_logger
 from services.quality_service import UnifiedQualityService
 from services.sentry_integration import setup_sentry
 from services.telemetry import setup_telemetry
-from services.container import service_container
-from services.auth import AuthService
 
 # Local application imports (must come after path setup)
 from utils.exception_handlers import register_exception_handlers
@@ -36,6 +37,7 @@ from utils.startup_manager import StartupManager
 
 try:
     import sentry_sdk  # pylint: disable=unused-import
+
     SENTRY_AVAILABLE = True
 except ImportError:
     SENTRY_AVAILABLE = False
@@ -102,11 +104,11 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         logger.info("[LIFESPAN] Initializing capability system. ..")
         try:
             from services.capability_examples import register_example_capabilities
+
             register_example_capabilities()
             logger.info("[LIFESPAN] ✅ Capability system initialized with example capabilities")
         except Exception as e:
             logger.warning(f"[LIFESPAN] ⚠️ Failed to initialize capabilities: {e}")
-
 
         # Initialize quality service
         logger.info("[LIFESPAN] Initializing quality service. ..")
@@ -122,7 +124,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             orchestrator=services.get("orchestrator"),
             task_executor=services["task_executor"],
             intelligent_orchestrator=services.get("intelligent_orchestrator"),
-            workflow_history=services["workflow_history"]
+            workflow_history=services["workflow_history"],
         )
         logger.info("[LIFESPAN] ✅ Services registered in global DI container")
 
@@ -215,6 +217,7 @@ logger.info("[STARTUP] ✅ All routes registered")
 # ===== UNIFIED HEALTH CHECK ENDPOINT =====
 # Consolidated from: /api/health, /status, /metrics/health, and route-specific health endpoints
 
+
 @app.get("/api/health")
 async def api_health():
     """
@@ -285,6 +288,7 @@ async def health():
 
 # ===== METRICS ENDPOINT =====
 # Consolidated from: /api/metrics, /metrics, /tasks/metrics, etc.
+
 
 @app.get("/api/metrics")
 async def get_metrics_endpoint():
@@ -390,9 +394,7 @@ async def process_command(
             raise HTTPException(status_code=503, detail="Orchestrator not initialized")
 
         # Execute the command asynchronously
-        response = await orchestrator.process_command_async(
-            command.command, command.context
-        )
+        response = await orchestrator.process_command_async(command.command, command.context)
 
         return CommandResponse(
             response=response.get("response", "Command processed"),
@@ -400,12 +402,8 @@ async def process_command(
             metadata=response.get("metadata"),
         )
     except Exception as e:  # pylint: disable=broad-except
-        logger.error(
-            f"Error processing command: {str(e)} | command={command.command}"
-        )
-        raise HTTPException(
-            status_code=500, detail=f"An internal error occurred: {str(e)}"
-        ) from e
+        logger.error(f"Error processing command: {str(e)} | command={command.command}")
+        raise HTTPException(status_code=500, detail=f"An internal error occurred: {str(e)}") from e
 
 
 @app.get("/")

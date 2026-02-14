@@ -64,6 +64,7 @@ try:
     use_new_sdk = False
     try:
         import google.genai as genai
+
         use_new_sdk = True
     except ImportError:
         import google.generativeai as genai
@@ -405,11 +406,7 @@ class UnifiedMetadataService:
 
         # Use centralized prompt manager
         pm = get_prompt_manager()
-        prompt = pm.get_prompt(
-            "seo.generate_excerpt",
-            max_length=max_length,
-            content=content[:800]
-        )
+        prompt = pm.get_prompt("seo.generate_excerpt", max_length=max_length, content=content[:800])
 
         try:
             if ANTHROPIC_AVAILABLE:
@@ -494,7 +491,7 @@ class UnifiedMetadataService:
         # Convert list to comma-separated string for database storage
         result["seo_keywords"] = ", ".join(keywords_list) if keywords_list else ""
 
-        logger.debug("SEO metadata generated: %s", result['seo_title'][:40])
+        logger.debug("SEO metadata generated: %s", result["seo_title"][:40])
         return result
 
     async def _llm_generate_seo_description(self, title: str, content: str) -> Optional[str]:
@@ -605,7 +602,9 @@ class UnifiedMetadataService:
         # Strategy 1: Simple keyword matching
         best_category, score = self._keyword_match_category(content, available_categories, title)
         if score > 0:
-            logger.debug("Keyword matched category: %s (score=%s)", best_category.get('name'), score)
+            logger.debug(
+                "Keyword matched category: %s (score=%s)", best_category.get("name"), score
+            )
             return best_category
 
         # Strategy 2: Use LLM for intelligent matching
@@ -613,7 +612,7 @@ class UnifiedMetadataService:
             try:
                 best_category = await self._llm_match_category(content, available_categories, title)
                 if best_category:
-                    logger.info("LLM matched category: %s", best_category.get('name'))
+                    logger.info("LLM matched category: %s", best_category.get("name"))
                     return best_category
             except Exception as e:
                 logger.warning("LLM category matching failed: %s", e)
@@ -669,7 +668,7 @@ class UnifiedMetadataService:
             "seo.match_category",
             title=title or "N/A",
             content=content[:500],
-            categories_list=categories_text
+            categories_list=categories_text,
         )
 
         try:
@@ -783,7 +782,7 @@ class UnifiedMetadataService:
             max_tags=max_tags,
             title=title or "N/A",
             content=content[:500],
-            tags_list=tags_text
+            tags_list=tags_text,
         )
 
         try:
@@ -837,7 +836,7 @@ class UnifiedMetadataService:
             "image.featured_image",
             title=title,
             category=category or "General",
-            content_context=context
+            content_context=context,
         )
 
         return prompt

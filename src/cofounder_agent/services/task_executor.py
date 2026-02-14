@@ -25,11 +25,11 @@ from routes.task_routes import get_model_for_phase
 # Import AI content generator for fallback
 from .ai_content_generator import AIContentGenerator
 
-# Import unified quality service for content validation
-from .quality_service import UnifiedQualityService
-
 # Import prompt manager for centralized prompts
 from .prompt_manager import get_prompt_manager
+
+# Import unified quality service for content validation
+from .quality_service import UnifiedQualityService
 
 # Import usage tracking
 from .usage_tracker import get_usage_tracker
@@ -429,7 +429,7 @@ class TaskExecutor:
                     category=category or "",
                     style=style or "",
                     tone=tone or "",
-                    target_length=target_length
+                    target_length=target_length,
                 )
 
                 # Build execution context with model information
@@ -838,7 +838,9 @@ class TaskExecutor:
         )
 
         # End operation with correct signature
-        operation_metrics = self.usage_tracker.end_operation(f"task_execution_{task_id}", success=True, error=None)
+        operation_metrics = self.usage_tracker.end_operation(
+            f"task_execution_{task_id}", success=True, error=None
+        )
 
         # Persist cost metrics to database for historical reporting
         if operation_metrics and self.database_service:
@@ -851,7 +853,8 @@ class TaskExecutor:
                     "provider": operation_metrics.get("model_provider", "unknown"),
                     "input_tokens": operation_metrics.get("input_tokens", 0),
                     "output_tokens": operation_metrics.get("output_tokens", 0),
-                    "total_tokens": operation_metrics.get("input_tokens", 0) + operation_metrics.get("output_tokens", 0),
+                    "total_tokens": operation_metrics.get("input_tokens", 0)
+                    + operation_metrics.get("output_tokens", 0),
                     "cost_usd": operation_metrics.get("total_cost_usd", 0.0),
                     "quality_score": quality_score,
                     "duration_ms": int(operation_metrics.get("duration_ms", 0)),

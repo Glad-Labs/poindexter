@@ -14,8 +14,8 @@ Endpoints:
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
 import jwt
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from schemas.custom_workflow_schemas import (
     AvailablePhasesResponse,
@@ -48,15 +48,15 @@ def get_workflows_service(request: Request) -> CustomWorkflowsService:
 def get_user_id(request: Request) -> str:
     """
     Get user ID from JWT token in Authorization header or request context.
-    
+
     Flow:
     1. Try to extract from Authorization: Bearer {token} header
     2. Fall back to request.state.user_id if set by middleware
     3. Use test user ID in development mode
-    
+
     Returns:
         User ID string
-        
+
     Raises:
         HTTPException: 401 if token is invalid
     """
@@ -64,7 +64,7 @@ def get_user_id(request: Request) -> str:
     user_id = getattr(request.state, "user_id", None)
     if user_id:
         return str(user_id)
-    
+
     # Try to extract from Authorization header
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
@@ -82,12 +82,12 @@ def get_user_id(request: Request) -> str:
         except Exception as e:
             logger.warning(f"Error extracting user ID from JWT: {e}")
             raise HTTPException(status_code=401, detail="Authentication failed")
-    
+
     # Development fallback (no token provided)
     if not auth_header:
         logger.debug("No authorization header provided, using test user for development")
         return "test-user-123"
-    
+
     # Authorization header present but invalid format
     logger.warning(f"Invalid authorization header format: {auth_header[:20]}...")
     raise HTTPException(status_code=401, detail="Invalid authorization header format")
@@ -286,7 +286,11 @@ async def delete_custom_workflow(
         raise HTTPException(status_code=500, detail=f"Failed to delete workflow: {str(e)}")
 
 
-@router.post("/custom/{workflow_id}/execute", response_model=WorkflowExecutionResponse, name="Execute Custom Workflow")
+@router.post(
+    "/custom/{workflow_id}/execute",
+    response_model=WorkflowExecutionResponse,
+    name="Execute Custom Workflow",
+)
 async def execute_custom_workflow(
     workflow_id: str,
     request_body: Dict[str, Any],
@@ -325,25 +329,25 @@ async def execute_custom_workflow(
 
         # Execute workflow using the adapter
         from services.workflow_execution_adapter import execute_custom_workflow
-        
+
         # Get input data from request body
         input_data = request_body if request_body else {}
-        
+
         # Get database service from app state
         database_service = getattr(request.app.state, "database_service", None)
         if not database_service:
             raise HTTPException(status_code=503, detail="Database service not initialized")
-        
+
         # Execute workflow asynchronously (returns execution ID immediately)
         result = await execute_custom_workflow(
             custom_workflow=workflow,
             input_data=input_data,
             database_service=database_service,
-            queue_async=True  # Execute in background
+            queue_async=True,  # Execute in background
         )
-        
+
         logger.info(f"Workflow execution started: {result['execution_id']}")
-        
+
         return WorkflowExecutionResponse(
             workflow_id=result["workflow_id"],
             execution_id=result["execution_id"],
@@ -377,6 +381,4 @@ async def get_available_phases(
         return AvailablePhasesResponse(phases=phases, total_count=len(phases))
     except Exception as e:
         logger.error(f"Error getting available phases: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail=f"Failed to get available phases: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to get available phases: {str(e)}")

@@ -349,7 +349,7 @@ class ImageService:
             FeaturedImageMetadata or None if no image found
         """
         import random
-        
+
         if not self.pexels_api_key:
             logger.warning("Pexels API key not configured")
             return None

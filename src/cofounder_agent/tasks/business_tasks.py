@@ -82,7 +82,7 @@ Total Cost: ${total_cost:.2f}"""
             time_period=time_period,
             cost_details=cost_details,
             estimated_revenue=estimated_revenue,
-            estimated_roi=roi
+            estimated_roi=roi,
         )
 
         response = await model_router.query_with_fallback(
@@ -159,7 +159,7 @@ class MarketAnalysisTask(PureTask):
             topic=topic,
             target_audience=target_audience,
             period="12 months",
-            geography="Global"
+            geography="Global",
         )
 
         response = await model_router.query_with_fallback(
@@ -242,7 +242,7 @@ class PerformanceReviewTask(PureTask):
             content_count=metrics.get("content_count", 0),
             traffic=metrics.get("traffic", 0),
             conversions=metrics.get("conversions", 0),
-            revenue=metrics.get("revenue", 0.0)
+            revenue=metrics.get("revenue", 0.0),
         )
 
         response = await model_router.query_with_fallback(

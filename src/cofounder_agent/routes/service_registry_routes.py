@@ -81,9 +81,7 @@ async def get_registry_schema():
         return {"services": schema}
     except Exception as e:
         logger.error(f"Failed to get registry schema: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail={"message": str(e), "type": "registry_error"}
-        )
+        raise HTTPException(status_code=500, detail={"message": str(e), "type": "registry_error"})
 
 
 @router.get(
@@ -109,9 +107,7 @@ async def list_services():
         return services
     except Exception as e:
         logger.error(f"Failed to list services: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail={"message": str(e), "type": "registry_error"}
-        )
+        raise HTTPException(status_code=500, detail={"message": str(e), "type": "registry_error"})
 
 
 @router.get(
@@ -163,9 +159,7 @@ async def get_service_metadata(service_name: str):
         raise
     except Exception as e:
         logger.error(f"Failed to get service metadata for {service_name}: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail={"message": str(e), "type": "registry_error"}
-        )
+        raise HTTPException(status_code=500, detail={"message": str(e), "type": "registry_error"})
 
 
 @router.get(
@@ -198,9 +192,7 @@ async def get_service_actions(service_name: str):
         actions = registry.list_actions(service_name)
 
         if actions is None:
-            raise HTTPException(
-                status_code=404, detail=f"Service not found: {service_name}"
-            )
+            raise HTTPException(status_code=404, detail=f"Service not found: {service_name}")
 
         return actions
 
@@ -208,9 +200,7 @@ async def get_service_actions(service_name: str):
         raise
     except Exception as e:
         logger.error(f"Failed to get actions for {service_name}: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail={"message": str(e), "type": "registry_error"}
-        )
+        raise HTTPException(status_code=500, detail={"message": str(e), "type": "registry_error"})
 
 
 @router.get(
@@ -244,9 +234,7 @@ async def get_action_details(service_name: str, action_name: str):
         actions = registry.list_actions(service_name)
 
         if actions is None:
-            raise HTTPException(
-                status_code=404, detail=f"Service not found: {service_name}"
-            )
+            raise HTTPException(status_code=404, detail=f"Service not found: {service_name}")
 
         action = next((a for a in actions if a.get("name") == action_name), None)
 
@@ -268,9 +256,7 @@ async def get_action_details(service_name: str, action_name: str):
             f"Failed to get action details for {service_name}.{action_name}: {e}",
             exc_info=True,
         )
-        raise HTTPException(
-            status_code=500, detail={"message": str(e), "type": "registry_error"}
-        )
+        raise HTTPException(status_code=500, detail={"message": str(e), "type": "registry_error"})
 
 
 @router.post(
@@ -283,7 +269,7 @@ async def execute_service_action(
     service_name: str,
     action_name: str,
     params: Dict[str, Any],
-    db = Depends(get_database_dependency),
+    db=Depends(get_database_dependency),
 ):
     """
     Execute an action in a service.
@@ -317,9 +303,7 @@ async def execute_service_action(
 
         # Validate service exists
         if service_name not in registry.list_services():
-            raise HTTPException(
-                status_code=404, detail=f"Service not found: {service_name}"
-            )
+            raise HTTPException(status_code=404, detail=f"Service not found: {service_name}")
 
         # Validate action exists
         actions = registry.list_actions(service_name)
@@ -341,9 +325,7 @@ async def execute_service_action(
         logger.warning(f"Invalid parameters for {service_name}.{action_name}: {e}")
         raise HTTPException(status_code=400, detail={"message": str(e), "type": "validation_error"})
     except Exception as e:
-        logger.error(
-            f"Failed to execute {service_name}.{action_name}: {e}", exc_info=True
-        )
+        logger.error(f"Failed to execute {service_name}.{action_name}: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail={"message": str(e), "type": "execution_error"},

@@ -24,39 +24,43 @@ router = APIRouter(prefix="/api", tags=["cache"])
 
 class RevalidateCacheRequest(BaseModel):
     """Request to revalidate specific paths"""
+
     paths: Optional[list] = None
 
 
 async def trigger_nextjs_revalidation(paths: Optional[list] = None) -> bool:
     """
     Trigger Next.js ISR revalidation on the public site.
-    
+
     Calls the revalidation endpoint to clear cache and regenerate pages
     when content is published or updated in the FastAPI CMS.
-    
+
     Args:
         paths: List of paths to revalidate. Defaults to ["/", "/archive"]
-        
+
     Returns:
         True if revalidation succeeded, False otherwise
     """
     if paths is None:
         paths = ["/", "/archive"]
-    
+
     # Get Next.js public site URL from environment or use default
-    nextjs_url = os.getenv("NEXT_PUBLIC_PUBLIC_SITE_URL", os.getenv("NEXT_PUBLIC_API_BASE_URL", "http://localhost:3000"))
+    nextjs_url = os.getenv(
+        "NEXT_PUBLIC_PUBLIC_SITE_URL",
+        os.getenv("NEXT_PUBLIC_API_BASE_URL", "http://localhost:3000"),
+    )
     if nextjs_url.endswith("/api"):
         # Remove /api suffix if present
         nextjs_url = nextjs_url[:-4]
-    
+
     revalidate_url = f"{nextjs_url}/api/revalidate"
     revalidate_secret = os.getenv("REVALIDATE_SECRET", "dev-secret-key")
-    
+
     try:
         logger.info(f"🔄 Triggering Next.js ISR revalidation...")
         logger.info(f"   URL: {revalidate_url}")
         logger.info(f"   Paths: {paths}")
-        
+
         async with httpx.AsyncClient(timeout=10) as client:
             response = await client.post(
                 revalidate_url,
@@ -66,7 +70,7 @@ async def trigger_nextjs_revalidation(paths: Optional[list] = None) -> bool:
                     "Content-Type": "application/json",
                 },
             )
-            
+
             if response.status_code == 200:
                 logger.info(f"✅ ISR revalidation successful")
                 return True
@@ -74,7 +78,7 @@ async def trigger_nextjs_revalidation(paths: Optional[list] = None) -> bool:
                 logger.warning(f"⚠️ ISR revalidation returned {response.status_code}")
                 logger.warning(f"   Response: {response.text[:200]}")
                 return False
-                
+
     except httpx.TimeoutException:
         logger.warning(f"⚠️ ISR revalidation timed out (10s)")
         return False
@@ -90,15 +94,15 @@ async def revalidate_cache(
 ) -> Dict[str, Any]:
     """
     Securely revalidate public site cache after publishing content.
-    
+
     Called by Oversight Hub React app after a post is published via the FastAPI CMS.
     Only authenticated users (with valid JWT token) can trigger revalidation.
     The REVALIDATE_SECRET is kept server-side, never exposed to browser.
-    
+
     Args:
         request_data: {"paths": ["/"]} - Paths to revalidate
         authorization: Bearer token (required for auth verification)
-    
+
     Returns:
         {"success": bool, "message": str, "paths": list}
     """
@@ -110,12 +114,12 @@ async def revalidate_cache(
             "message": "Authentication required",
             "paths": request_data.paths or [],
         }
-    
+
     paths = request_data.paths or ["/", "/archive"]
-    
+
     # Trigger ISR revalidation on public site
     success = await trigger_nextjs_revalidation(paths)
-    
+
     return {
         "success": success,
         "message": "Cache revalidation " + ("successful" if success else "failed"),

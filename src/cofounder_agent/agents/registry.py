@@ -214,7 +214,7 @@ class AgentRegistry:
         agent = self.get(agent_name)
         if not agent:
             return None
-        
+
         return {
             "name": agent.get("name"),
             "category": agent.get("category"),
@@ -234,14 +234,16 @@ class AgentRegistry:
         result = []
         for agent_name, agent_data in self._agents.items():
             # Exclude the "class" field which is not JSON serializable
-            result.append({
-                "name": agent_data.get("name"),
-                "category": agent_data.get("category"),
-                "phases": agent_data.get("phases", []),
-                "capabilities": agent_data.get("capabilities", []),
-                "description": agent_data.get("description", ""),
-                "version": agent_data.get("version", "1.0"),
-            })
+            result.append(
+                {
+                    "name": agent_data.get("name"),
+                    "category": agent_data.get("category"),
+                    "phases": agent_data.get("phases", []),
+                    "capabilities": agent_data.get("capabilities", []),
+                    "description": agent_data.get("description", ""),
+                    "version": agent_data.get("version", "1.0"),
+                }
+            )
         return result
 
     def __len__(self) -> int:

@@ -162,7 +162,8 @@ class TasksDatabase(DatabaseServiceMixin):
             # Build insert columns dict
             insert_data = {
                 "task_id": task_id,
-                "content_type": task_data.get("content_type") or task_data.get("task_type", "blog_post"),
+                "content_type": task_data.get("content_type")
+                or task_data.get("task_type", "blog_post"),
                 "task_type": task_data.get("task_type", "blog_post"),
                 "request_type": task_data.get("request_type", "content_generation"),
                 "status": task_data.get("status", "pending"),

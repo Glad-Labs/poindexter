@@ -7,9 +7,9 @@ Endpoints for managing email campaign subscriptions and newsletter signups.
 import logging
 import re
 from datetime import datetime
-from typing import Optional, List
+from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, status, Request, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr
 
 from utils.route_utils import get_database_dependency
@@ -21,6 +21,7 @@ router = APIRouter(prefix="/api/newsletter", tags=["newsletter"])
 
 class NewsletterSubscribeRequest(BaseModel):
     """Newsletter subscription request"""
+
     email: EmailStr
     first_name: Optional[str] = None
     last_name: Optional[str] = None
@@ -31,72 +32,72 @@ class NewsletterSubscribeRequest(BaseModel):
 
 class NewsletterSubscribeResponse(BaseModel):
     """Newsletter subscription response"""
+
     success: bool
     message: str
     subscriber_id: Optional[int] = None
-    
+
     model_config = {"from_attributes": True}
 
 
 class NewsletterUnsubscribeRequest(BaseModel):
     """Newsletter unsubscribe request"""
+
     email: str
     reason: Optional[str] = None
 
 
 @router.post("/subscribe")
 async def subscribe_to_newsletter(
-    request: Request,
-    payload: NewsletterSubscribeRequest,
-    db = Depends(get_database_dependency)
+    request: Request, payload: NewsletterSubscribeRequest, db=Depends(get_database_dependency)
 ):
     """
     Subscribe email to newsletter campaign list.
-    
+
     Endpoint for "Get Updates" button on public site.
-    
+
     Args:
         request: HTTP request (for IP/user agent logging)
         payload: Subscription data
         db: Database service
-    
+
     Returns:
         Subscription confirmation with ID
     """
     try:
         # Basic email validation
-        if not payload.email or '@' not in payload.email:
+        if not payload.email or "@" not in payload.email:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid email address"
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid email address"
             )
-        
+
         # Check for existing subscription
         existing = await db.pool.fetchrow(
             """
             SELECT id, unsubscribed_at FROM newsletter_subscribers 
             WHERE email = $1
             """,
-            payload.email
+            payload.email,
         )
-        
-        if existing and not existing['unsubscribed_at']:
+
+        if existing and not existing["unsubscribed_at"]:
             return NewsletterSubscribeResponse(
                 success=False,
                 message=f"Email {payload.email} is already subscribed",
-                subscriber_id=existing['id']
+                subscriber_id=existing["id"],
             )
-        
+
         # Get client IP and user agent
         client_ip = request.client.host if request.client else None
-        user_agent = request.headers.get('user-agent', '')
-        
+        user_agent = request.headers.get("user-agent", "")
+
         # Prepare interest categories as JSON string
         interest_str = None
         if payload.interest_categories:
             import json
+
             interest_str = json.dumps(payload.interest_categories)
-        
+
         # Insert new subscriber
         subscriber_id = await db.pool.fetchval(
             """
@@ -118,37 +119,36 @@ async def subscribe_to_newsletter(
             client_ip,
             user_agent,
             payload.marketing_consent,
-            True  # Mark as verified immediately on public signup
+            True,  # Mark as verified immediately on public signup
         )
-        
+
         logger.info(f"✅ New newsletter subscriber: {payload.email} (ID: {subscriber_id})")
-        
+
         return NewsletterSubscribeResponse(
             success=True,
             message=f"Successfully subscribed to newsletter and campaign updates",
-            subscriber_id=subscriber_id
+            subscriber_id=subscriber_id,
         )
-        
+
     except Exception as e:
         logger.error(f"❌ Newsletter subscription error: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to process subscription"
+            detail="Failed to process subscription",
         )
 
 
 @router.post("/unsubscribe")
 async def unsubscribe_from_newsletter(
-    payload: NewsletterUnsubscribeRequest,
-    db = Depends(get_database_dependency)
+    payload: NewsletterUnsubscribeRequest, db=Depends(get_database_dependency)
 ):
     """
     Unsubscribe email from newsletter.
-    
+
     Args:
         payload: Email and optional unsubscribe reason
         db: Database service
-    
+
     Returns:
         Unsubscribe confirmation
     """
@@ -163,32 +163,30 @@ async def unsubscribe_from_newsletter(
             WHERE email = $1 AND unsubscribed_at IS NULL
             """,
             payload.email,
-            payload.reason
+            payload.reason,
         )
-        
+
         if result == "UPDATE 0":
             return NewsletterSubscribeResponse(
-                success=False,
-                message=f"Email {payload.email} not found or already unsubscribed"
+                success=False, message=f"Email {payload.email} not found or already unsubscribed"
             )
-        
+
         logger.info(f"✅ Unsubscribed from newsletter: {payload.email}")
-        
+
         return NewsletterSubscribeResponse(
-            success=True,
-            message="Successfully unsubscribed from newsletter"
+            success=True, message="Successfully unsubscribed from newsletter"
         )
-        
+
     except Exception as e:
         logger.error(f"❌ Unsubscribe error: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to process unsubscribe"
+            detail="Failed to process unsubscribe",
         )
 
 
 @router.get("/subscribers/count")
-async def get_subscriber_count(db = Depends(get_database_dependency)):
+async def get_subscriber_count(db=Depends(get_database_dependency)):
     """Get total active newsletter subscribers count"""
     try:
         count = await db.pool.fetchval(
@@ -197,14 +195,11 @@ async def get_subscriber_count(db = Depends(get_database_dependency)):
             WHERE unsubscribed_at IS NULL AND verified = TRUE
             """
         )
-        
-        return {
-            "success": True,
-            "subscriber_count": count or 0
-        }
+
+        return {"success": True, "subscriber_count": count or 0}
     except Exception as e:
         logger.error(f"❌ Error fetching subscriber count: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to fetch subscriber count"
+            detail="Failed to fetch subscriber count",
         )

@@ -111,7 +111,7 @@ class TransformTask(PureTask):
             prompt = pm.get_prompt(
                 "task.utility_json_conversion",
                 content=content,
-                target_structure="title, summary, body, metadata"
+                target_structure="title, summary, body, metadata",
             )
 
             response = await model_router.query_with_fallback(

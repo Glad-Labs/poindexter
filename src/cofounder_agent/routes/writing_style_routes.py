@@ -103,21 +103,21 @@ async def upload_writing_sample(
         sample_content = content
         if file:
             # Validate file type
-            allowed_types = {'text/plain', 'text/markdown', 'application/octet-stream'}
+            allowed_types = {"text/plain", "text/markdown", "application/octet-stream"}
             if file.content_type not in allowed_types:
                 logger.warning(f"File upload rejected: invalid content type {file.content_type}")
                 raise HTTPException(
-                    status_code=422, 
-                    detail=f"Invalid file type. Allowed: .txt, .md. Got: {file.content_type}"
+                    status_code=422,
+                    detail=f"Invalid file type. Allowed: .txt, .md. Got: {file.content_type}",
                 )
-            
+
             # Validate file size
             if file.size and file.size > 1_000_000:  # 1MB limit
                 logger.warning(f"File upload rejected: file too large ({file.size} bytes)")
                 raise HTTPException(status_code=413, detail="File too large (max 1MB)")
 
             file_content = await file.read()
-            
+
             # Validate file can be decoded as text
             try:
                 sample_content = file_content.decode("utf-8")

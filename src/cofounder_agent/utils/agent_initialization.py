@@ -28,13 +28,13 @@ def register_all_agents(registry: Optional[AgentRegistry] = None) -> AgentRegist
 
     try:
         # Import agent classes
-        from agents.content_agent.agents.research_agent import ResearchAgent
         from agents.content_agent.agents.creative_agent import CreativeAgent
-        from agents.content_agent.agents.qa_agent import QAAgent
         from agents.content_agent.agents.image_agent import ImageAgent
         from agents.content_agent.agents.postgres_publishing_agent import (
             PostgreSQLPublishingAgent,
         )
+        from agents.content_agent.agents.qa_agent import QAAgent
+        from agents.content_agent.agents.research_agent import ResearchAgent
 
         # Register content agents
         registry.register(
@@ -272,5 +272,7 @@ def register_all_agents(registry: Optional[AgentRegistry] = None) -> AgentRegist
     except Exception as e:
         logger.error(f"❌ Failed to register unified compliance_service: {e}", exc_info=True)
 
-    logger.info(f"✅ Agent/Service registration complete: {len(registry)} agents/services registered")
+    logger.info(
+        f"✅ Agent/Service registration complete: {len(registry)} agents/services registered"
+    )
     return registry
