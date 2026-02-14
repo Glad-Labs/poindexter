@@ -12,6 +12,7 @@ import json
 import logging
 import uuid
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from schemas.custom_workflow_schemas import (
@@ -585,11 +586,11 @@ class CustomWorkflowsService:
         ]
 
         return CustomWorkflow(
-            id=row["id"],
+            id=str(row["id"]) if row.get("id") is not None else None,
             name=row["name"],
             description=row["description"],
             phases=phases,
-            owner_id=row["owner_id"],
+            owner_id=(str(row["owner_id"]) if row.get("owner_id") is not None else None),
             created_at=row["created_at"],
             updated_at=row["updated_at"],
             tags=tags,
@@ -639,11 +640,38 @@ class CustomWorkflowsService:
         """
         try:
             from datetime import datetime, timezone
+
+            def _json_default_serializer(value: Any) -> Any:
+                if isinstance(value, datetime):
+                    return value.isoformat()
+                if isinstance(value, Enum):
+                    return value.value
+                if hasattr(value, "model_dump") and callable(getattr(value, "model_dump")):
+                    return value.model_dump()
+                if hasattr(value, "to_dict") and callable(getattr(value, "to_dict")):
+                    return value.to_dict()
+                return str(value)
             
             now = datetime.now(timezone.utc)
             
             # Convert phase results to JSON
-            phase_results_json = json.dumps(phase_results) if phase_results else "{}"
+            phase_results_json = json.dumps(
+                phase_results or {},
+                default=_json_default_serializer,
+            )
+
+            initial_input_json = (
+                json.dumps(initial_input, default=_json_default_serializer)
+                if initial_input is not None
+                else None
+            )
+            final_output_json = (
+                json.dumps(final_output, default=_json_default_serializer)
+                if final_output is not None
+                else None
+            )
+            tags_json = json.dumps(tags or [], default=_json_default_serializer)
+            metadata_json = json.dumps(metadata or {}, default=_json_default_serializer)
             
             await self.database_service.pool.execute(
                 """
@@ -669,15 +697,15 @@ class CustomWorkflowsService:
                 now,  # started_at
                 now if execution_status in ["completed", "failed"] else None,  # completed_at
                 duration_ms,
-                json.dumps(initial_input) if initial_input else None,
+                initial_input_json,
                 phase_results_json,
-                json.dumps(final_output) if final_output else None,
+                final_output_json,
                 error_message,
                 progress_percent,
                 completed_phases,
                 total_phases,
-                json.dumps(tags or []),
-                json.dumps(metadata or {}),
+                tags_json,
+                metadata_json,
             )
             
             logger.info(

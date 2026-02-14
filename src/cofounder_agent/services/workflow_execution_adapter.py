@@ -16,11 +16,91 @@ Architecture:
 import asyncio
 import json
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+
+PHASE_TO_AGENT_MAP = {
+    "research": "research_agent",
+    "draft": "creative_agent",
+    "refine": "creative_agent",
+    "assess": "qa_agent",
+    "image": "image_agent",
+    "image_selection": "image_agent",
+    "publish": "publishing_agent",
+    "finalize": "publishing_agent",
+}
+
+
+def _normalize_phase_alias(value: Any) -> str:
+    """Normalize phase/alias values for robust matching."""
+    if not isinstance(value, str):
+        return ""
+    normalized = value.strip().lower().replace("-", " ").replace("_", " ")
+    normalized = "_".join(normalized.split())
+    normalized = re.sub(r"_\d+$", "", normalized)
+    return normalized
+
+
+def _is_resolvable_agent_name(agent_name: str) -> bool:
+    """Check if a configured name already looks like a concrete agent id."""
+    return bool(agent_name) and agent_name.endswith("_agent")
+
+
+def resolve_phase_agent_name(
+    configured_agent: Optional[str],
+    phase_metadata: Optional[Dict[str, Any]] = None,
+    phase_name: Optional[str] = None,
+) -> str:
+    """Resolve a phase configuration to a concrete agent id."""
+    normalized_agent = _normalize_phase_alias(configured_agent)
+    if _is_resolvable_agent_name(normalized_agent):
+        return normalized_agent
+
+    if normalized_agent in PHASE_TO_AGENT_MAP:
+        return PHASE_TO_AGENT_MAP[normalized_agent]
+
+    metadata = phase_metadata or {}
+    metadata_phase_type = _normalize_phase_alias(metadata.get("phase_type"))
+    if metadata_phase_type in PHASE_TO_AGENT_MAP:
+        return PHASE_TO_AGENT_MAP[metadata_phase_type]
+
+    normalized_phase_name = _normalize_phase_alias(phase_name)
+    if normalized_phase_name in PHASE_TO_AGENT_MAP:
+        return PHASE_TO_AGENT_MAP[normalized_phase_name]
+
+    if normalized_agent:
+        return normalized_agent
+
+    return "creative_agent"
+
+
+def _json_default_serializer(value: Any) -> Any:
+    """Best-effort serializer for non-JSON-native types."""
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, Enum):
+        return value.value
+    if hasattr(value, "model_dump") and callable(getattr(value, "model_dump")):
+        return value.model_dump()
+    if hasattr(value, "to_dict") and callable(getattr(value, "to_dict")):
+        return value.to_dict()
+    return str(value)
+
+
+def _to_json_safe(value: Any) -> Any:
+    """Convert arbitrary value to a JSON-safe structure."""
+    if value is None:
+        return None
+    try:
+        return json.loads(json.dumps(value, default=_json_default_serializer))
+    except Exception:
+        return str(value)
 
 
 async def create_phase_handler(
@@ -44,6 +124,20 @@ async def create_phase_handler(
         Async callable handler function
     """
     
+    resolved_agent_name = resolve_phase_agent_name(
+        configured_agent=agent_name,
+        phase_metadata=phase_metadata,
+        phase_name=phase_name,
+    )
+
+    if resolved_agent_name != (agent_name or ""):
+        logger.debug(
+            "Resolved phase '%s' agent '%s' -> '%s'",
+            phase_name,
+            agent_name,
+            resolved_agent_name,
+        )
+
     async def phase_handler(context: Any, **kwargs) -> Any:
         """
         Execute a workflow phase by routing to appropriate agent.
@@ -59,10 +153,8 @@ async def create_phase_handler(
             **kwargs: Additional parameters
             
         Returns:
-            PhaseResult with execution status and output
+            Phase output payload (JSON-serializable dict)
         """
-        from services.workflow_engine import PhaseResult, PhaseStatus
-        import inspect
         import time
         
         start_time = time.time()
@@ -70,7 +162,7 @@ async def create_phase_handler(
         try:
             logger.info(
                 f"[{context.workflow_id}] Executing phase: {phase_name} "
-                f"(agent: {agent_name})"
+                f"(agent: {resolved_agent_name})"
             )
             
             # Merge workflow-level input with phase-specific configured inputs
@@ -84,19 +176,19 @@ async def create_phase_handler(
                 phase_input["selected_model"] = selected_model
             
             # Get and instantiate agent
-            agent_instance = await _get_agent_instance_async(agent_name)
+            agent_instance = await _get_agent_instance_async(resolved_agent_name)
             
             if not agent_instance:
-                raise ValueError(f"Could not instantiate agent: {agent_name}")
+                raise ValueError(f"Could not instantiate agent: {resolved_agent_name}")
             
             logger.debug(
-                f"[{context.workflow_id}] Instantiated agent {agent_name}: "
+                f"[{context.workflow_id}] Instantiated agent {resolved_agent_name}: "
                 f"{type(agent_instance).__name__}"
             )
             
             # Call agent with appropriate method
             result = await _execute_agent_method(
-                agent_instance, agent_name, phase_name, phase_input, context
+                agent_instance, resolved_agent_name, phase_name, phase_input, context
             )
             
             duration_ms = int((time.time() - start_time) * 1000)
@@ -106,37 +198,24 @@ async def create_phase_handler(
                 f"({duration_ms}ms)"
             )
             
-            return PhaseResult(
-                phase_name=phase_name,
-                status=PhaseStatus.COMPLETED,
-                output=result,
-                duration_ms=duration_ms,
-                retry_count=0,
-                metadata={
-                    "agent": agent_name,
-                    "agent_type": type(agent_instance).__name__,
-                    "selected_model": selected_model,
-                    "phase_inputs": phase_inputs,
-                }
-            )
+            phase_output = result if isinstance(result, dict) else {"output": result}
+            phase_output["_phase_metadata"] = {
+                "agent": resolved_agent_name,
+                "agent_type": type(agent_instance).__name__,
+                "selected_model": selected_model,
+                "phase_inputs": phase_inputs,
+                "duration_ms": duration_ms,
+            }
+            return phase_output
             
         except Exception as e:
             duration_ms = int((time.time() - start_time) * 1000)
             logger.error(
-                f"[{context.workflow_id}] Phase failed: {phase_name} - {str(e)}",
+                f"[{context.workflow_id}] Phase failed: {phase_name} "
+                f"(agent: {resolved_agent_name}) - {str(e)}",
                 exc_info=True
             )
-            
-            from services.workflow_engine import PhaseResult, PhaseStatus
-            
-            return PhaseResult(
-                phase_name=phase_name,
-                status=PhaseStatus.FAILED,
-                error=str(e),
-                duration_ms=duration_ms,
-                retry_count=0,
-                metadata={"agent": agent_name, "error_type": type(e).__name__}
-            )
+            raise
     
     return phase_handler
 
@@ -421,10 +500,10 @@ async def _execute_workflow_background(
             for phase_name, phase_result in final_context.results.items():
                 phase_results[phase_name] = {
                     "status": phase_result.status.value if hasattr(phase_result.status, 'value') else str(phase_result.status),
-                    "output": phase_result.output,
+                    "output": _to_json_safe(phase_result.output),
                     "error": phase_result.error,
                     "duration_ms": phase_result.duration_ms,
-                    "metadata": phase_result.metadata or {},
+                    "metadata": _to_json_safe(phase_result.metadata or {}),
                 }
         
         # Count completed phases
@@ -444,18 +523,18 @@ async def _execute_workflow_background(
             execution_status=final_context.status.value,
             phase_results=phase_results,
             duration_ms=duration_ms,
-            initial_input=context.initial_input,
-            final_output=context.accumulated_output,
+            initial_input=_to_json_safe(context.initial_input),
+            final_output=_to_json_safe(context.accumulated_output),
             error_message=None,
             completed_phases=completed_phases_count,
             total_phases=total_phases_count,
             progress_percent=progress,
-            tags=custom_workflow.tags or [],
-            metadata={
+            tags=_to_json_safe(custom_workflow.tags or []),
+            metadata=_to_json_safe({
                 "execution_id": context.request_id,
                 "workflow_name": custom_workflow.name,
                 "phase_count": total_phases_count,
-            }
+            })
         )
         
         if persist_success:
