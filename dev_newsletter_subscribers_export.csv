@@ -1,0 +1,4 @@
+id,email,first_name,last_name,company,interest_categories,subscribed_at,ip_address,user_agent,verified,verification_token,verified_at,unsubscribed_at,unsubscribe_reason,created_at,updated_at,marketing_consent
+1,direct-test@example.com,Test,User,,,2026-02-09 19:08:57.851875-05,,,t,,,,,2026-02-09 19:08:57.851875-05,2026-02-09 19:08:57.851875-05,t
+2,working-test@example.com,,,,,2026-02-09 19:13:35.540576-05,127.0.0.1,curl/8.16.0,t,,,,,2026-02-09 19:13:35.540576-05,2026-02-09 19:13:35.540576-05,t
+3,magl41@gmail.com,MATTHEW,GLADDING,"","[""AI"", ""Automation"", ""Innovation"", ""Technology"", ""Business""]",2026-02-09 21:57:45.55405-05,127.0.0.1,"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0",t,,,,,2026-02-09 21:57:45.55405-05,2026-02-09 21:57:45.55405-05,t

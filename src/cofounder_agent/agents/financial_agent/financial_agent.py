@@ -1,6 +1,6 @@
 import logging
 
-from src.agents.content_agent.utils.tools import CrewAIToolsFactory
+from ..content_agent.utils.tools import CrewAIToolsFactory
 
 
 class FinancialAgent:

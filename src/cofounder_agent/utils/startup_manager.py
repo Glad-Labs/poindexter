@@ -34,7 +34,7 @@ class StartupManager:
         self.workflow_history_service = None
         self.training_data_service = None
         self.fine_tuning_service = None
-        self.legacy_data_service = None
+        self.custom_workflows_service = None
         self.startup_error = None
 
     async def initialize_all_services(self) -> Dict[str, Any]:
@@ -49,8 +49,7 @@ class StartupManager:
             'intelligent_orchestrator': IntelligentOrchestrator,
             'workflow_history': WorkflowHistoryService,
             'training_data_service': TrainingDataService,
-            'fine_tuning_service': FineTuningService,
-            'legacy_data_service': LegacyDataIntegrationService
+            'fine_tuning_service': FineTuningService
         }
         """
         try:
@@ -90,7 +89,10 @@ class StartupManager:
             # Step 11: Initialize agent registry
             await self._initialize_agent_registry()
 
-            # Step 12: Warmup SDXL models (async, non-blocking)
+            # Step 12: Initialize custom workflows service
+            await self._initialize_custom_workflows_service()
+
+            # Step 13: Warmup SDXL models (async, non-blocking)
             # Only if GPU is available - this prevents timeout issues when users first request SDXL
             try:
                 await self._warmup_sdxl_models()
@@ -111,7 +113,7 @@ class StartupManager:
                 "workflow_history": self.workflow_history_service,
                 "training_data_service": self.training_data_service,
                 "fine_tuning_service": self.fine_tuning_service,
-                "legacy_data_service": self.legacy_data_service,
+                "custom_workflows_service": self.custom_workflows_service,
                 "startup_error": self.startup_error,
             }
 
@@ -241,26 +243,18 @@ class StartupManager:
             self.workflow_history_service = None
 
     async def _initialize_content_critique(self) -> None:
-        """Initialize content critique loop"""
-        logger.info("  🔍 Initializing content critique loop...")
-        try:
-            from services.content_critique_loop import ContentCritiqueLoop
-
-            critique_loop = ContentCritiqueLoop()
-            logger.info("   Content critique loop initialized")
-        except Exception as e:
-            logger.warning(f"   Content critique loop initialization failed: {e}")
+        """DEPRECATED: Content critique is now handled by UnifiedQualityService in TaskExecutor"""
+        logger.debug("⏭️  Skipping _initialize_content_critique (now handled by UnifiedQualityService)")
 
     async def _initialize_task_executor(self) -> None:
         """Initialize background task executor (WITHOUT starting it yet)
 
         IMPORTANT: We create the TaskExecutor but do NOT call .start() here.
         The executor will be started from main.py AFTER UnifiedOrchestrator is initialized.
-        This prevents the executor from processing tasks with the legacy Orchestrator.
+        This prevents the executor from processing tasks with legacy systems.
         """
         logger.info("  ⏳ Initializing background task executor (start deferred)...")
         try:
-            from services.content_critique_loop import ContentCritiqueLoop
             from services.task_executor import TaskExecutor
 
             logger.debug(f"  [DEBUG] TaskExecutor init: database_service={self.database_service}")
@@ -269,15 +263,11 @@ class StartupManager:
             )
             logger.debug(f"  [DEBUG] TaskExecutor init: orchestrator={self.orchestrator}")
 
-            critique_loop = ContentCritiqueLoop()
-            logger.debug(f"  [DEBUG] ContentCritiqueLoop created: {critique_loop}")
-
             logger.debug("  [DEBUG] Creating TaskExecutor instance...")
             # Pass None for orchestrator - it will be injected from main.py lifespan
             self.task_executor = TaskExecutor(
                 database_service=self.database_service,
                 orchestrator=None,  # Will be injected in main.py AFTER UnifiedOrchestrator is created
-                critique_loop=critique_loop,
                 poll_interval=5,  # Poll every 5 seconds
             )
             logger.debug(f"  [DEBUG] TaskExecutor created: {self.task_executor}")
@@ -304,7 +294,6 @@ class StartupManager:
 
         try:
             from services.fine_tuning_service import FineTuningService
-            from services.legacy_data_integration import LegacyDataIntegrationService
             from services.training_data_service import TrainingDataService
 
             if self.database_service:
@@ -318,22 +307,16 @@ class StartupManager:
                     "   Fine-tuning service initialized (Ollama, Gemini, Claude, GPT-4 support)"
                 )
 
-                # Initialize legacy data integration service
-                self.legacy_data_service = LegacyDataIntegrationService(self.database_service.pool)
-                logger.info("   Legacy data integration service initialized")
-
                 logger.info("   All training services initialized successfully")
             else:
                 logger.warning("   Training services not available - database service required")
                 self.training_data_service = None
                 self.fine_tuning_service = None
-                self.legacy_data_service = None
         except Exception as e:
             error_msg = f"Training services initialization failed: {str(e)}"
             logger.warning(f"   {error_msg}", exc_info=True)
             self.training_data_service = None
             self.fine_tuning_service = None
-            self.legacy_data_service = None
 
     async def _verify_connections(self) -> None:
         """Verify all connections are healthy"""
@@ -370,6 +353,22 @@ class StartupManager:
         except Exception as e:
             logger.warning(f"[WARNING] Agent registry initialization failed (non-critical): {type(e).__name__}: {e}")
             # Continue anyway - system can function without agent registry
+
+    async def _initialize_custom_workflows_service(self) -> None:
+        """Initialize custom workflows service for workflow builder"""
+        logger.info("  🔧 Initializing custom workflows service...")
+        try:
+            from services.custom_workflows_service import CustomWorkflowsService
+
+            if self.database_service:
+                self.custom_workflows_service = CustomWorkflowsService(self.database_service)
+                logger.info("   Custom workflows service initialized - users can create custom workflows")
+            else:
+                logger.warning("   Custom workflows service not available - database service required")
+                self.custom_workflows_service = None
+        except Exception as e:
+            logger.warning(f"   Custom workflows service initialization failed (non-critical): {type(e).__name__}: {e}")
+            self.custom_workflows_service = None
 
     async def _warmup_sdxl_models(self) -> None:
         """Warmup SDXL models to avoid timeout on first request"""
@@ -429,8 +428,8 @@ class StartupManager:
                 try:
                     if os.path.exists(output_path):
                         os.remove(output_path)
-                except (OSError, IOError):
-                    pass
+                except (OSError, IOError) as e:
+                    logger.debug(f"  [DEBUG] Temp file cleanup failed (non-critical): {str(e)}")
 
         except Exception as e:
             import traceback
@@ -452,7 +451,6 @@ class StartupManager:
         logger.info(f"  - Workflow History: {self.workflow_history_service is not None}")
         logger.info(f"  - Training Data Service: {self.training_data_service is not None}")
         logger.info(f"  - Fine-Tuning Service: {self.fine_tuning_service is not None}")
-        logger.info(f"  - Legacy Data Service: {self.legacy_data_service is not None}")
         logger.info(f"  - Startup Error: {self.startup_error}")
 
     async def shutdown(self) -> None:

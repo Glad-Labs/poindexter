@@ -25,8 +25,8 @@ from routes.task_routes import get_model_for_phase
 # Import AI content generator for fallback
 from .ai_content_generator import AIContentGenerator
 
-# Import the content critique loop
-from .content_critique_loop import ContentCritiqueLoop
+# Import unified quality service for content validation
+from .quality_service import UnifiedQualityService
 
 # Import prompt manager for centralized prompts
 from .prompt_manager import get_prompt_manager
@@ -44,7 +44,6 @@ class TaskExecutor:
         self,
         database_service,
         orchestrator=None,
-        critique_loop=None,
         poll_interval: int = 5,
         app_state=None,
     ):
@@ -54,14 +53,13 @@ class TaskExecutor:
         Args:
             database_service: DatabaseService instance
             orchestrator: Optional Orchestrator instance for processing
-            critique_loop: Optional ContentCritiqueLoop for validating content
             poll_interval: Seconds between polling for pending tasks (default: 5)
             app_state: Optional FastAPI app.state for getting updated orchestrator reference
         """
         self.database_service = database_service
         self.orchestrator_initial = orchestrator  # Initial orchestrator from startup
         self.app_state = app_state  # Reference to app.state for dynamic orchestrator updates
-        self.critique_loop = critique_loop or ContentCritiqueLoop()
+        self.quality_service = UnifiedQualityService()  # Quality validation service
         self.content_generator = AIContentGenerator()  # Fallback content generation
         self.poll_interval = poll_interval
         self.running = False
@@ -74,7 +72,7 @@ class TaskExecutor:
 
         logger.info(
             f"TaskExecutor initialized: orchestrator={'✅' if orchestrator else '❌'}, "
-            f"critique_loop={'✅' if critique_loop else '❌'}, "
+            f"quality_service={'✅'}, "
             f"content_generator={'✅'}"
         )
 
@@ -124,7 +122,7 @@ class TaskExecutor:
             try:
                 await self._processor_task
             except asyncio.CancelledError:
-                pass
+                logger.debug("Task processor task cancelled successfully")
 
         logger.info(
             f"✅ Task executor stopped (processed: {self.task_count}, success: {self.success_count}, errors: {self.error_count})"
@@ -610,15 +608,15 @@ class TaskExecutor:
                 f"✅ [TASK_EXECUTE] PHASE 1 Complete (fallback): Generated {len(generated_content)} chars"
             )
 
-        # ===== PHASE 2: Critique Loop (Validate Quality) =====
-        logger.info(f"🔍 [TASK_EXECUTE] PHASE 2: Validating content through critique loop...")
+        # ===== PHASE 2: Quality Validation =====
+        logger.info(f"🔍 [TASK_EXECUTE] PHASE 2: Validating content quality...")
         logger.info(
             f"   Input content length: {len(generated_content) if generated_content else 0} chars"
         )
 
-        # Only critique if we have content
+        # Only validate if we have content
         if generated_content:
-            critique_result = await self.critique_loop.critique(
+            quality_result = await self.quality_service.evaluate(
                 content=generated_content,
                 context={
                     "topic": topic,
@@ -631,21 +629,20 @@ class TaskExecutor:
                 },
             )
         else:
-            # No content to critique
-            critique_result = {
-                "quality_score": 0,
+            # No content to validate
+            quality_result = {
+                "score": 0,
                 "approved": False,
-                "feedback": "No content provided for critique",
+                "feedback": "No content provided for validation",
                 "suggestions": ["Content is empty or None"],
-                "needs_refinement": False,
             }
 
-        quality_score = critique_result.get("quality_score", 0)
-        approved = critique_result.get("approved", False)
+        quality_score = quality_result.get("score", 0)
+        approved = quality_result.get("approved", False)
 
         logger.info(f"   Quality Score: {quality_score}/100")
         logger.info(f"   Approved: {approved}")
-        logger.debug(f"   Critique result keys: {list(critique_result.keys())}")
+        logger.debug(f"   Quality result keys: {list(quality_result.keys())}")
 
         if approved:
             logger.info(f"✅ [TASK_EXECUTE] PHASE 2 Complete: Content approved")

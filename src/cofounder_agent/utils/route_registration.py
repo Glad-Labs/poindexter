@@ -133,11 +133,11 @@ def register_all_routes(
         status["media_router"] = False
 
     try:
-        # ===== CMS (Simple CMS - replaces Strapi) =====
+        # ===== CMS (FastAPI handles all CMS operations) =====
         from routes.cms_routes import router as cms_router
 
         app.include_router(cms_router)
-        logger.info(" cms_router registered")
+        logger.info(" cms_router registered (FastAPI CMS)")
         status["cms_router"] = True
     except Exception as e:
         logger.error(f" cms_router failed: {e}")
@@ -345,6 +345,28 @@ def register_all_routes(
         status["workflow_router"] = False
 
     try:
+        # ===== CUSTOM WORKFLOWS - User-defined workflow builder and executor =====
+        from routes.custom_workflows_routes import router as custom_workflows_router
+
+        app.include_router(custom_workflows_router)
+        logger.info(" custom_workflows_router registered (custom workflow builder)")
+        status["custom_workflows_router"] = True
+    except Exception as e:
+        logger.error(f" custom_workflows_router failed: {e}")
+        status["custom_workflows_router"] = False
+
+    try:
+        # ===== CAPABILITY TASKS - Composable capability-based task system =====
+        from routes.capability_tasks_routes import router as capability_tasks_router
+
+        app.include_router(capability_tasks_router)
+        logger.info(" capability_tasks_router registered (capability composition)")
+        status["capability_tasks_router"] = True
+    except Exception as e:
+        logger.error(f" capability_tasks_router failed: {e}")
+        status["capability_tasks_router"] = False
+
+    try:
         # ===== WEBSOCKET - Real-time progress tracking =====
         from routes.websocket_routes import websocket_router
 
@@ -354,6 +376,17 @@ def register_all_routes(
     except Exception as e:
         logger.error(f" websocket_router failed: {e}")
         status["websocket_router"] = False
+
+    try:
+        # ===== CACHE REVALIDATION - Secure public site cache invalidation =====
+        from routes.revalidate_routes import router as revalidate_router
+
+        app.include_router(revalidate_router)
+        logger.info(" revalidate_router registered (secure cache invalidation)")
+        status["revalidate_router"] = True
+    except Exception as e:
+        logger.error(f" revalidate_router failed: {e}")
+        status["revalidate_router"] = False
 
     # Log registration summary
     total_routes = len(status)
