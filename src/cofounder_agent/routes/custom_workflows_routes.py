@@ -391,3 +391,59 @@ async def get_available_phases(
         raise HTTPException(
             status_code=500, detail=f"Failed to get available phases: {str(e)}"
         )
+
+
+@router.get("/executions/{execution_id}", name="Get Workflow Execution")
+async def get_workflow_execution(
+    execution_id: str,
+    request: Request,
+    service: CustomWorkflowsService = Depends(get_workflows_service),
+) -> Dict[str, Any]:
+    """Get execution status and results for a workflow execution."""
+    try:
+        owner_id = get_user_id(request)
+        execution = await service.get_workflow_execution(execution_id, owner_id)
+        if not execution:
+            raise HTTPException(status_code=404, detail=f"Execution '{execution_id}' not found")
+        return execution
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting workflow execution {execution_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get workflow execution: {str(e)}")
+
+
+@router.get("/custom/{workflow_id}/executions", name="List Workflow Executions")
+async def list_workflow_executions(
+    workflow_id: str,
+    request: Request,
+    service: CustomWorkflowsService = Depends(get_workflows_service),
+    limit: int = Query(20, ge=1, le=100, description="Max executions to return"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+    status: Optional[str] = Query(None, description="Optional status filter"),
+) -> Dict[str, Any]:
+    """List execution history for a specific workflow."""
+    try:
+        owner_id = get_user_id(request)
+        execution_page = await service.get_workflow_executions(
+            workflow_id=workflow_id,
+            owner_id=owner_id,
+            limit=limit,
+            offset=offset,
+            status=status,
+        )
+        executions = execution_page.get("executions", [])
+        total_count = execution_page.get("total", 0)
+        return {
+            "workflow_id": workflow_id,
+            "executions": executions,
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset,
+            "has_next": (offset + limit) < total_count,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error listing workflow executions for {workflow_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to list workflow executions: {str(e)}")
