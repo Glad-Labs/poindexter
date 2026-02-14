@@ -36,6 +36,17 @@ PHASE_TO_AGENT_MAP = {
     "finalize": "publishing_agent",
 }
 
+CONTENT_PHASE_FALLBACK_TYPES = {
+    "research",
+    "draft",
+    "assess",
+    "refine",
+    "image",
+    "image_selection",
+    "publish",
+    "finalize",
+}
+
 
 def _normalize_phase_alias(value: Any) -> str:
     """Normalize phase/alias values for robust matching."""
@@ -101,6 +112,230 @@ def _to_json_safe(value: Any) -> Any:
         return json.loads(json.dumps(value, default=_json_default_serializer))
     except Exception:
         return str(value)
+
+
+def _is_content_phase_for_fallback(
+    phase_name: Optional[str],
+    phase_metadata: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """Determine if a phase should use content fallback execution."""
+    normalized_phase_name = _normalize_phase_alias(phase_name)
+    if normalized_phase_name in CONTENT_PHASE_FALLBACK_TYPES:
+        return True
+
+    metadata = phase_metadata or {}
+    normalized_phase_type = _normalize_phase_alias(metadata.get("phase_type"))
+    return normalized_phase_type in CONTENT_PHASE_FALLBACK_TYPES
+
+
+def _build_content_fallback_prompt(phase_name: str, phase_input: Dict[str, Any]) -> str:
+    """Build a deterministic fallback prompt for model-consolidation execution."""
+    phase_instructions = {
+        "research": "Gather concise factual research notes and key points.",
+        "draft": "Produce a clear first draft suitable for publishing workflows.",
+        "assess": "Evaluate quality, identify issues, and provide actionable improvement feedback.",
+        "refine": "Improve and rewrite content based on available feedback and constraints.",
+        "image": "Create image direction, prompt suggestions, and accessibility notes.",
+        "image_selection": "Recommend image choices and rationale for the current content.",
+        "publish": "Prepare final publish-ready package including title, summary, and metadata.",
+        "finalize": "Prepare final publish-ready package including title, summary, and metadata.",
+    }
+    normalized_phase = _normalize_phase_alias(phase_name)
+    phase_instruction = phase_instructions.get(
+        normalized_phase,
+        "Produce practical output for this workflow phase.",
+    )
+
+    safe_input = _to_json_safe(phase_input)
+    serialized_input = (
+        json.dumps(safe_input, sort_keys=True, ensure_ascii=False)
+        if isinstance(safe_input, (dict, list))
+        else str(safe_input)
+    )
+    return (
+        f"You are executing workflow phase '{phase_name}'. "
+        f"{phase_instruction} "
+        "Use only information in the input payload. "
+        "Return plain text without markdown code fences.\n\n"
+        f"Input:\n{serialized_input}"
+    )
+
+
+def _extract_text_from_output(value: Any) -> str:
+    """Extract representative text from prior phase output."""
+    safe_value = _to_json_safe(value)
+
+    if isinstance(safe_value, str):
+        return safe_value
+
+    if isinstance(safe_value, dict):
+        for key in (
+            "output",
+            "content",
+            "draft_content",
+            "research_findings",
+            "publish_ready_content",
+            "assessment",
+        ):
+            candidate = safe_value.get(key)
+            if isinstance(candidate, str) and candidate.strip():
+                return candidate
+            if isinstance(candidate, dict):
+                nested = candidate.get("summary") or candidate.get("feedback")
+                if isinstance(nested, str) and nested.strip():
+                    return nested
+
+        return json.dumps(safe_value, ensure_ascii=False)
+
+    if isinstance(safe_value, list):
+        return json.dumps(safe_value, ensure_ascii=False)
+
+    return str(safe_value)
+
+
+def _build_content_phase_fallback_result(
+    phase_name: str,
+    text: str,
+    source: str,
+    fallback_reason: str,
+) -> Dict[str, Any]:
+    """Build phase-appropriate fallback result payload."""
+    normalized_phase = _normalize_phase_alias(phase_name)
+    result: Dict[str, Any] = {
+        "phase": phase_name,
+        "output": text,
+        "fallback_reason": fallback_reason,
+        "fallback_source": source,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+    if normalized_phase == "research":
+        result["research_findings"] = text
+    elif normalized_phase in {"draft", "refine"}:
+        result["content"] = text
+        result["draft_content"] = text
+    elif normalized_phase == "assess":
+        result["assessment"] = {
+            "summary": text,
+            "quality_score": 0.7,
+            "feedback": text,
+        }
+        result["quality_score"] = 0.7
+    elif normalized_phase in {"image", "image_selection"}:
+        result["image_notes"] = text
+        result["image_prompt"] = text
+    elif normalized_phase in {"publish", "finalize"}:
+        result["publish_ready_content"] = text
+        result["title"] = "Workflow Generated Draft"
+        result["summary"] = text[:240]
+
+    return result
+
+
+async def _execute_content_phase_fallback(
+    phase_name: str,
+    phase_input: Dict[str, Any],
+    selected_model: Optional[str],
+    fallback_reason: str,
+) -> Dict[str, Any]:
+    """Execute content phase using model-consolidation service with safe placeholder fallback."""
+    prompt = _build_content_fallback_prompt(phase_name, phase_input)
+
+    try:
+        from services.model_consolidation_service import get_model_consolidation_service
+
+        service = get_model_consolidation_service()
+        response = await service.generate(
+            prompt=prompt,
+            model=selected_model,
+            max_tokens=1200,
+            temperature=0.4,
+        )
+
+        generated_text = getattr(response, "text", None) or str(response)
+        return _build_content_phase_fallback_result(
+            phase_name=phase_name,
+            text=generated_text,
+            source="model_consolidation_service",
+            fallback_reason=fallback_reason,
+        )
+    except Exception as model_error:
+        normalized_phase = _normalize_phase_alias(phase_name)
+        phase_defaults = {
+            "research": "Research notes generated from provided workflow inputs.",
+            "draft": "Draft content generated from available workflow context.",
+            "assess": "Assessment generated with baseline quality evaluation and recommendations.",
+            "refine": "Refined content generated from prior workflow output and constraints.",
+            "image": "Image guidance generated from content context and requested style.",
+            "image_selection": "Image selection recommendations generated from workflow context.",
+            "publish": "Publish-ready package generated from current workflow output.",
+            "finalize": "Final publish-ready package generated from current workflow output.",
+        }
+        placeholder_text = phase_defaults.get(
+            normalized_phase,
+            f"Generated fallback output for phase '{phase_name}'.",
+        )
+        combined_reason = f"{fallback_reason}; model_fallback_error: {str(model_error)}"
+        logger.warning(
+            "Content phase fallback used placeholder output",
+            extra={
+                "phase": phase_name,
+                "selected_model": selected_model,
+                "fallback_reason": combined_reason,
+            },
+        )
+        return _build_content_phase_fallback_result(
+            phase_name=phase_name,
+            text=placeholder_text,
+            source="deterministic_placeholder",
+            fallback_reason=combined_reason,
+        )
+
+
+async def _execute_generic_phase_fallback(
+    phase_name: str,
+    phase_input: Dict[str, Any],
+    selected_model: Optional[str],
+    fallback_reason: str,
+) -> Dict[str, Any]:
+    """Execute a generic phase fallback for non-content phases."""
+    prompt = _build_content_fallback_prompt(phase_name, phase_input)
+
+    try:
+        from services.model_consolidation_service import get_model_consolidation_service
+
+        service = get_model_consolidation_service()
+        response = await service.generate(
+            prompt=prompt,
+            model=selected_model,
+            max_tokens=900,
+            temperature=0.3,
+        )
+        generated_text = getattr(response, "text", None) or str(response)
+        return {
+            "phase": phase_name,
+            "output": generated_text,
+            "fallback_reason": fallback_reason,
+            "fallback_source": "model_consolidation_service",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as model_error:
+        combined_reason = f"{fallback_reason}; model_fallback_error: {str(model_error)}"
+        logger.warning(
+            "Generic phase fallback used placeholder output",
+            extra={
+                "phase": phase_name,
+                "selected_model": selected_model,
+                "fallback_reason": combined_reason,
+            },
+        )
+        return {
+            "phase": phase_name,
+            "output": f"Fallback output generated for phase '{phase_name}'.",
+            "fallback_reason": combined_reason,
+            "fallback_source": "deterministic_placeholder",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
 
 
 async def create_phase_handler(
@@ -172,24 +407,86 @@ async def create_phase_handler(
             selected_model = metadata.get("selected_model")
 
             phase_input = {**base_input, **phase_inputs}
+            if getattr(context, "accumulated_output", None) is not None:
+                previous_output = _to_json_safe(context.accumulated_output)
+                phase_input["previous_phase_output"] = previous_output
+                phase_input["previous_phase_text"] = _extract_text_from_output(previous_output)
             if selected_model:
                 phase_input["selected_model"] = selected_model
             
+            execution_mode = "agent"
+            agent_instance = None
+            result: Any = None
+
             # Get and instantiate agent
             agent_instance = await _get_agent_instance_async(resolved_agent_name)
-            
+
             if not agent_instance:
-                raise ValueError(f"Could not instantiate agent: {resolved_agent_name}")
-            
-            logger.debug(
-                f"[{context.workflow_id}] Instantiated agent {resolved_agent_name}: "
-                f"{type(agent_instance).__name__}"
-            )
-            
-            # Call agent with appropriate method
-            result = await _execute_agent_method(
-                agent_instance, resolved_agent_name, phase_name, phase_input, context
-            )
+                fallback_reason = f"Could not instantiate agent: {resolved_agent_name}"
+                if _is_content_phase_for_fallback(phase_name, metadata):
+                    logger.warning(
+                        f"[{context.workflow_id}] {fallback_reason}; using fallback execution"
+                    )
+                    execution_mode = "fallback"
+                    result = await _execute_content_phase_fallback(
+                        phase_name=phase_name,
+                        phase_input=phase_input,
+                        selected_model=selected_model,
+                        fallback_reason=fallback_reason,
+                    )
+                else:
+                    logger.warning(
+                        f"[{context.workflow_id}] {fallback_reason}; using generic fallback execution"
+                    )
+                    execution_mode = "fallback_generic"
+                    result = await _execute_generic_phase_fallback(
+                        phase_name=phase_name,
+                        phase_input=phase_input,
+                        selected_model=selected_model,
+                        fallback_reason=fallback_reason,
+                    )
+            else:
+                logger.debug(
+                    f"[{context.workflow_id}] Instantiated agent {resolved_agent_name}: "
+                    f"{type(agent_instance).__name__}"
+                )
+
+                # Call agent with appropriate method
+                try:
+                    result = await _execute_agent_method(
+                        agent_instance,
+                        resolved_agent_name,
+                        phase_name,
+                        phase_input,
+                        context,
+                    )
+                except Exception as agent_exec_error:
+                    fallback_reason = (
+                        f"Agent execution failed for {resolved_agent_name}: "
+                        f"{str(agent_exec_error)}"
+                    )
+                    if _is_content_phase_for_fallback(phase_name, metadata):
+                        logger.warning(
+                            f"[{context.workflow_id}] {fallback_reason}; using fallback execution"
+                        )
+                        execution_mode = "fallback"
+                        result = await _execute_content_phase_fallback(
+                            phase_name=phase_name,
+                            phase_input=phase_input,
+                            selected_model=selected_model,
+                            fallback_reason=fallback_reason,
+                        )
+                    else:
+                        logger.warning(
+                            f"[{context.workflow_id}] {fallback_reason}; using generic fallback execution"
+                        )
+                        execution_mode = "fallback_generic"
+                        result = await _execute_generic_phase_fallback(
+                            phase_name=phase_name,
+                            phase_input=phase_input,
+                            selected_model=selected_model,
+                            fallback_reason=fallback_reason,
+                        )
             
             duration_ms = int((time.time() - start_time) * 1000)
             
@@ -201,12 +498,16 @@ async def create_phase_handler(
             phase_output = result if isinstance(result, dict) else {"output": result}
             phase_output["_phase_metadata"] = {
                 "agent": resolved_agent_name,
-                "agent_type": type(agent_instance).__name__,
+                "agent_type": type(agent_instance).__name__ if agent_instance else None,
                 "selected_model": selected_model,
                 "phase_inputs": phase_inputs,
                 "duration_ms": duration_ms,
+                "execution_mode": execution_mode,
             }
-            return phase_output
+            safe_output = _to_json_safe(phase_output)
+            if isinstance(safe_output, dict):
+                return safe_output
+            return {"phase": phase_name, "output": str(safe_output), "_phase_metadata": phase_output["_phase_metadata"]}
             
         except Exception as e:
             duration_ms = int((time.time() - start_time) * 1000)
@@ -516,6 +817,14 @@ async def _execute_workflow_background(
         
         workflows_service = CustomWorkflowsService(database_service)
         
+        error_message = None
+        if getattr(final_context, "status", None) and str(final_context.status.value).lower() == "failed":
+            for phase_name in list(final_context.results.keys())[::-1]:
+                phase_result = final_context.results[phase_name]
+                if getattr(phase_result, "error", None):
+                    error_message = f"{phase_name}: {phase_result.error}"
+                    break
+
         persist_success = await workflows_service.persist_workflow_execution(
             execution_id=context.request_id,
             workflow_id=str(custom_workflow.id),
@@ -525,7 +834,7 @@ async def _execute_workflow_background(
             duration_ms=duration_ms,
             initial_input=_to_json_safe(context.initial_input),
             final_output=_to_json_safe(context.accumulated_output),
-            error_message=None,
+            error_message=error_message,
             completed_phases=completed_phases_count,
             total_phases=total_phases_count,
             progress_percent=progress,

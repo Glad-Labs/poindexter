@@ -243,12 +243,87 @@ export const getExecutionStatus = async (executionId) => {
     // This endpoint may need to be added to the backend
     const response = await makeRequest(
       `/api/workflows/executions/${executionId}`,
+      'GET',
+      null,
+      false,
+      null,
+      30000,
+      {
+        shouldSuppressErrorLog: (ctx) => {
+          const status =
+            ctx?.status ||
+            ctx?.error?.status ||
+            ctx?.error?.statusCode ||
+            ctx?.response?.status ||
+            null;
+          const errorMessage =
+            typeof ctx?.error?.message === 'string'
+              ? ctx.error.message.toLowerCase()
+              : '';
+          const responseText =
+            typeof ctx?.response === 'string'
+              ? ctx.response.toLowerCase()
+              : JSON.stringify(ctx?.response || '').toLowerCase();
+          const isNotFoundEquivalent =
+            status === 404 ||
+            errorMessage.includes('not found') ||
+            responseText.includes('not found');
+          const isExecutionStatusEndpoint =
+            typeof ctx?.endpoint === 'string' &&
+            ctx.endpoint.startsWith('/api/workflows/executions/');
+
+          return isExecutionStatusEndpoint && isNotFoundEquivalent;
+        },
+      }
+    );
+    return response;
+  } catch (error) {
+    const message =
+      typeof error?.message === 'string' ? error.message.toLowerCase() : '';
+    const status =
+      error?.status || error?.statusCode || error?.response?.status || null;
+
+    if (!(status === 404 || message.includes('not found'))) {
+      console.error('Error fetching execution status:', error);
+    }
+
+    throw new Error(`Failed to load execution status: ${error.message}`);
+  }
+};
+
+/**
+ * Get execution history for a workflow
+ * @param {string} workflowId - Workflow ID
+ * @param {Object} options - Query options
+ * @param {number} options.limit - Number of rows to return
+ * @param {number} options.offset - Pagination offset
+ * @param {string} options.status - Optional status filter
+ * @returns {Promise<Object>} Execution history payload
+ */
+export const getWorkflowExecutions = async (workflowId, options = {}) => {
+  try {
+    if (!workflowId) {
+      throw new Error('Workflow ID is required');
+    }
+
+    const { limit = 10, offset = 0, status } = options;
+    const queryParams = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    });
+
+    if (status) {
+      queryParams.set('status', status);
+    }
+
+    const response = await makeRequest(
+      `/api/workflows/custom/${workflowId}/executions?${queryParams.toString()}`,
       'GET'
     );
     return response;
   } catch (error) {
-    console.error('Error fetching execution status:', error);
-    throw new Error(`Failed to load execution status: ${error.message}`);
+    console.error('Error fetching workflow executions:', error);
+    throw new Error(`Failed to load workflow executions: ${error.message}`);
   }
 };
 
@@ -296,6 +371,7 @@ export default {
   deleteWorkflow,
   executeWorkflow,
   getExecutionStatus,
+  getWorkflowExecutions,
   exportWorkflowToJSON,
   importWorkflowFromJSON,
 };

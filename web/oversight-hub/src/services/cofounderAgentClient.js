@@ -44,8 +44,27 @@ export async function makeRequest(
   data = null,
   retry = false,
   onUnauthorized = null,
-  timeout = 30000 // 30 seconds - allows for long-running operations like Ollama generation
+  timeout = 30000, // 30 seconds - allows for long-running operations like Ollama generation
+  requestOptions = null
 ) {
+  const shouldSuppressErrorLog =
+    requestOptions &&
+    typeof requestOptions.shouldSuppressErrorLog === 'function'
+      ? requestOptions.shouldSuppressErrorLog
+      : null;
+
+  const isErrorLogSuppressed = (ctx) => {
+    if (!shouldSuppressErrorLog) {
+      return false;
+    }
+
+    try {
+      return Boolean(shouldSuppressErrorLog(ctx));
+    } catch (_) {
+      return false;
+    }
+  };
+
   try {
     const url = `${API_BASE_URL}${endpoint}`;
     const config = { method, headers: getAuthHeaders() };
@@ -80,7 +99,8 @@ export async function makeRequest(
               data,
               true,
               onUnauthorized,
-              timeout
+              timeout,
+              requestOptions
             );
           } catch (refreshError) {
             console.error('Failed to refresh token:', refreshError);
@@ -124,10 +144,19 @@ export async function makeRequest(
         const error = new Error(errorMessage);
         error.status = response.status;
         error.response = result; // Include full response for debugging
-        console.error('API error response:', {
+        const suppressErrorLog = isErrorLogSuppressed({
+          endpoint,
+          method,
           status: response.status,
-          message: errorMessage,
+          error,
+          response: result,
         });
+        if (!suppressErrorLog) {
+          console.error('API error response:', {
+            status: response.status,
+            message: errorMessage,
+          });
+        }
         throw error;
       }
       return result;
@@ -142,7 +171,19 @@ export async function makeRequest(
       throw fetchError;
     }
   } catch (error) {
-    console.error(`API request failed: ${endpoint}`, error);
+    const status =
+      error?.status || error?.statusCode || error?.response?.status;
+    const response = error?.response;
+    const suppressErrorLog = isErrorLogSuppressed({
+      endpoint,
+      method,
+      status,
+      error,
+      response,
+    });
+    if (!suppressErrorLog) {
+      console.error(`API request failed: ${endpoint}`, error);
+    }
     throw error;
   }
 }

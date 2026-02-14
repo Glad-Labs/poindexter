@@ -24,6 +24,8 @@ import {
   Typography,
   Alert,
   Divider,
+  LinearProgress,
+  CircularProgress,
 } from '@mui/material';
 import {
   Plus,
@@ -148,6 +150,76 @@ const buildPhaseMetadata = (phase = {}) => {
   };
 };
 
+const TERMINAL_EXECUTION_STATUSES = new Set([
+  'completed',
+  'failed',
+  'cancelled',
+]);
+
+const normalizeExecutionStatus = (status) =>
+  typeof status === 'string' ? status.toLowerCase() : 'pending';
+
+const getPhaseOutputPreview = (phaseResult = {}) => {
+  const output = phaseResult?.output;
+
+  if (typeof output === 'string') {
+    return output;
+  }
+
+  if (output && typeof output === 'object') {
+    if (typeof output.output === 'string') {
+      return output.output;
+    }
+    if (typeof output.content === 'string') {
+      return output.content;
+    }
+    if (typeof output.draft_content === 'string') {
+      return output.draft_content;
+    }
+    return JSON.stringify(output);
+  }
+
+  if (phaseResult?.error) {
+    return String(phaseResult.error);
+  }
+
+  return '';
+};
+
+const getPhaseExecutionMode = (phaseResult = {}) => {
+  const outputMeta = phaseResult?.output?._phase_metadata;
+  if (outputMeta && typeof outputMeta === 'object') {
+    return outputMeta.execution_mode || null;
+  }
+
+  const metadata = phaseResult?.metadata;
+  if (metadata && typeof metadata === 'object') {
+    return metadata.execution_mode || null;
+  }
+
+  return null;
+};
+
+const parseExecutionStatusCode = (error) => {
+  const statusCode =
+    error?.status ||
+    error?.statusCode ||
+    error?.response?.status ||
+    error?.response?.statusCode;
+
+  if (Number.isFinite(statusCode)) {
+    return Number(statusCode);
+  }
+
+  const message =
+    typeof error?.message === 'string' ? error.message.toLowerCase() : '';
+  if (message.includes('404') || message.includes('not found')) {
+    return 404;
+  }
+
+  return null;
+};
+
 const ensureUniqueWorkflowPhases = (phases = []) => {
   const usedNames = new Set();
 
@@ -186,9 +258,20 @@ const WorkflowCanvas = ({ onSave, availablePhases, workflow = null }) => {
   const [availableModels, setAvailableModels] = useState([]);
   const [draggedNodeId, setDraggedNodeId] = useState(null);
   const [dragOverNodeId, setDragOverNodeId] = useState(null);
+  const [executionId, setExecutionId] = useState(null);
+  const [executionStatus, setExecutionStatus] = useState(null);
+  const [executionProgress, setExecutionProgress] = useState(0);
+  const [executionResults, setExecutionResults] = useState({});
+  const [executionFinalOutput, setExecutionFinalOutput] = useState(null);
+  const [executionErrorMessage, setExecutionErrorMessage] = useState('');
+  const [executionPollingError, setExecutionPollingError] = useState('');
+  const [executionHistory, setExecutionHistory] = useState([]);
+  const [executionHistoryLoading, setExecutionHistoryLoading] = useState(false);
+  const [executionHistoryError, setExecutionHistoryError] = useState('');
 
   const isPersistedWorkflow = Boolean(workflow?.isPersisted && workflow?.id);
   const isTemplateWorkflow = Boolean(workflow?.is_template);
+  const effectiveWorkflowId = workflow?.id || null;
 
   const rebuildGraphFromPhases = useCallback(
     (phaseConfigs, selectedPhaseName = null) => {
@@ -263,6 +346,106 @@ const WorkflowCanvas = ({ onSave, availablePhases, workflow = null }) => {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!executionId) {
+      return undefined;
+    }
+
+    let active = true;
+    let intervalId;
+
+    const pollExecutionStatus = async () => {
+      try {
+        const execution =
+          await workflowBuilderService.getExecutionStatus(executionId);
+
+        if (!active) {
+          return;
+        }
+
+        const nextStatus = normalizeExecutionStatus(
+          execution?.execution_status || execution?.status
+        );
+        const nextProgress = Number.isFinite(execution?.progress_percent)
+          ? execution.progress_percent
+          : nextStatus === 'completed'
+            ? 100
+            : 0;
+
+        setExecutionStatus(nextStatus);
+        setExecutionProgress(nextProgress);
+        setExecutionResults(execution?.phase_results || {});
+        setExecutionFinalOutput(execution?.final_output ?? null);
+        setExecutionErrorMessage(execution?.error_message || '');
+        setExecutionPollingError('');
+
+        if (TERMINAL_EXECUTION_STATUSES.has(nextStatus) && intervalId) {
+          clearInterval(intervalId);
+        }
+      } catch (pollError) {
+        if (!active) {
+          return;
+        }
+
+        const statusCode = parseExecutionStatusCode(pollError);
+        if (statusCode === 404) {
+          setExecutionStatus((currentStatus) => currentStatus || 'pending');
+          setExecutionPollingError('');
+          return;
+        }
+
+        const message = pollError?.message || '';
+
+        setExecutionPollingError(
+          message || 'Failed to refresh execution status'
+        );
+      }
+    };
+
+    pollExecutionStatus();
+    intervalId = setInterval(pollExecutionStatus, 2000);
+
+    return () => {
+      active = false;
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [executionId]);
+
+  const loadExecutionHistory = useCallback(
+    async (workflowIdOverride = null) => {
+      const targetWorkflowId = workflowIdOverride || effectiveWorkflowId;
+
+      if (!targetWorkflowId) {
+        setExecutionHistory([]);
+        setExecutionHistoryError('');
+        return;
+      }
+
+      try {
+        setExecutionHistoryLoading(true);
+        const result = await workflowBuilderService.getWorkflowExecutions(
+          targetWorkflowId,
+          { limit: 10, offset: 0 }
+        );
+        setExecutionHistory(result?.executions || []);
+        setExecutionHistoryError('');
+      } catch (historyError) {
+        setExecutionHistoryError(
+          historyError?.message || 'Failed to load execution history'
+        );
+      } finally {
+        setExecutionHistoryLoading(false);
+      }
+    },
+    [effectiveWorkflowId]
+  );
+
+  useEffect(() => {
+    loadExecutionHistory();
+  }, [loadExecutionHistory, executionId]);
 
   const onConnect = useCallback(
     (connection) => {
@@ -371,7 +554,7 @@ const WorkflowCanvas = ({ onSave, availablePhases, workflow = null }) => {
     const sourceIndex = nodes.findIndex((node) => node.id === sourceNodeId);
     const targetIndex = nodes.findIndex((node) => node.id === targetNodeId);
 
-    if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) {
+    if (sourceIndex < 0 || targetIndex < 0) {
       clearDragState();
       return;
     }
@@ -527,7 +710,20 @@ const WorkflowCanvas = ({ onSave, availablePhases, workflow = null }) => {
       setSuccessMessage(
         `Workflow execution started (${execution.execution_id || 'queued'})`
       );
+      setExecutionId(execution.execution_id || null);
+      setExecutionStatus(normalizeExecutionStatus(execution.status));
+      setExecutionProgress(
+        Number.isFinite(execution?.progress_percent)
+          ? execution.progress_percent
+          : 0
+      );
+      setExecutionResults({});
+      setExecutionFinalOutput(null);
+      setExecutionErrorMessage('');
+      setExecutionPollingError('');
       setError(null);
+
+      await loadExecutionHistory(persistedWorkflow?.id || null);
     } catch (err) {
       setError(err.message || 'Failed to execute workflow');
     }
@@ -824,6 +1020,256 @@ const WorkflowCanvas = ({ onSave, availablePhases, workflow = null }) => {
                     Execute
                   </Button>
                 </Stack>
+
+                {executionId && (
+                  <>
+                    <Divider />
+                    <Box>
+                      <Typography variant="subtitle2" gutterBottom>
+                        Execution Status
+                      </Typography>
+
+                      <Stack spacing={1}>
+                        <Typography variant="caption" color="text.secondary">
+                          Execution ID: {executionId}
+                        </Typography>
+
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          <Chip
+                            size="small"
+                            label={executionStatus || 'pending'}
+                            color={
+                              executionStatus === 'completed'
+                                ? 'success'
+                                : executionStatus === 'failed'
+                                  ? 'error'
+                                  : executionStatus === 'cancelled'
+                                    ? 'warning'
+                                    : 'default'
+                            }
+                          />
+                          <Typography variant="caption" color="text.secondary">
+                            {executionProgress}%
+                          </Typography>
+                        </Stack>
+
+                        <LinearProgress
+                          variant="determinate"
+                          value={Math.max(
+                            0,
+                            Math.min(100, executionProgress || 0)
+                          )}
+                        />
+
+                        {executionPollingError && (
+                          <Alert severity="warning">
+                            {executionPollingError}
+                          </Alert>
+                        )}
+
+                        {executionErrorMessage && (
+                          <Alert severity="error">
+                            {executionErrorMessage}
+                          </Alert>
+                        )}
+
+                        {Object.entries(executionResults || {}).map(
+                          ([phaseName, phaseResult]) => {
+                            const phaseStatus = normalizeExecutionStatus(
+                              phaseResult?.status
+                            );
+                            const preview = getPhaseOutputPreview(phaseResult);
+                            const executionMode =
+                              getPhaseExecutionMode(phaseResult);
+
+                            return (
+                              <Box
+                                key={phaseName}
+                                sx={{
+                                  border: '1px solid',
+                                  borderColor: 'divider',
+                                  borderRadius: 1,
+                                  p: 1,
+                                }}
+                              >
+                                <Stack
+                                  direction="row"
+                                  alignItems="center"
+                                  justifyContent="space-between"
+                                  spacing={1}
+                                >
+                                  <Typography
+                                    variant="caption"
+                                    fontWeight={600}
+                                  >
+                                    {phaseName}
+                                  </Typography>
+                                  <Chip
+                                    size="small"
+                                    label={phaseStatus || 'unknown'}
+                                    color={
+                                      phaseStatus === 'completed'
+                                        ? 'success'
+                                        : phaseStatus === 'failed'
+                                          ? 'error'
+                                          : 'default'
+                                    }
+                                  />
+                                </Stack>
+                                <Typography
+                                  variant="caption"
+                                  color="text.secondary"
+                                  sx={{ display: 'block', mt: 0.5 }}
+                                >
+                                  Execution mode: {executionMode || 'pending'}
+                                </Typography>
+                                {preview && (
+                                  <Typography
+                                    variant="caption"
+                                    color="text.secondary"
+                                    sx={{
+                                      display: '-webkit-box',
+                                      WebkitLineClamp: 3,
+                                      WebkitBoxOrient: 'vertical',
+                                      overflow: 'hidden',
+                                      mt: 0.5,
+                                    }}
+                                  >
+                                    {preview}
+                                  </Typography>
+                                )}
+                              </Box>
+                            );
+                          }
+                        )}
+
+                        {executionFinalOutput && (
+                          <Alert severity="info">
+                            Final output is available for this execution.
+                          </Alert>
+                        )}
+
+                        <Divider />
+
+                        <Box>
+                          <Stack
+                            direction="row"
+                            alignItems="center"
+                            justifyContent="space-between"
+                            spacing={1}
+                          >
+                            <Typography variant="subtitle2">
+                              Recent Executions
+                            </Typography>
+                            <Button
+                              size="small"
+                              onClick={loadExecutionHistory}
+                              disabled={executionHistoryLoading}
+                            >
+                              Refresh
+                            </Button>
+                          </Stack>
+
+                          {executionHistoryLoading && (
+                            <Stack
+                              direction="row"
+                              spacing={1}
+                              alignItems="center"
+                              sx={{ mt: 1 }}
+                            >
+                              <CircularProgress size={14} />
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                              >
+                                Loading execution history...
+                              </Typography>
+                            </Stack>
+                          )}
+
+                          {executionHistoryError && (
+                            <Alert severity="warning" sx={{ mt: 1 }}>
+                              {executionHistoryError}
+                            </Alert>
+                          )}
+
+                          {!executionHistoryLoading &&
+                            !executionHistoryError &&
+                            executionHistory.length === 0 && (
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                sx={{ display: 'block', mt: 1 }}
+                              >
+                                No execution history yet.
+                              </Typography>
+                            )}
+
+                          <Stack spacing={0.5} sx={{ mt: 1 }}>
+                            {executionHistory.map((item) => {
+                              const itemStatus = normalizeExecutionStatus(
+                                item?.execution_status
+                              );
+                              const itemId = item?.id;
+                              return (
+                                <Box
+                                  key={itemId}
+                                  sx={{
+                                    border: '1px solid',
+                                    borderColor:
+                                      executionId === itemId
+                                        ? 'primary.main'
+                                        : 'divider',
+                                    borderRadius: 1,
+                                    px: 1,
+                                    py: 0.75,
+                                  }}
+                                >
+                                  <Stack
+                                    direction="row"
+                                    alignItems="center"
+                                    justifyContent="space-between"
+                                    spacing={1}
+                                  >
+                                    <Typography
+                                      variant="caption"
+                                      color="text.secondary"
+                                      sx={{ flex: 1 }}
+                                    >
+                                      {itemId}
+                                    </Typography>
+                                    <Chip
+                                      size="small"
+                                      label={itemStatus}
+                                      color={
+                                        itemStatus === 'completed'
+                                          ? 'success'
+                                          : itemStatus === 'failed'
+                                            ? 'error'
+                                            : 'default'
+                                      }
+                                    />
+                                  </Stack>
+                                  <Button
+                                    size="small"
+                                    sx={{
+                                      mt: 0.5,
+                                      textTransform: 'none',
+                                      p: 0,
+                                    }}
+                                    onClick={() => setExecutionId(itemId)}
+                                  >
+                                    View details
+                                  </Button>
+                                </Box>
+                              );
+                            })}
+                          </Stack>
+                        </Box>
+                      </Stack>
+                    </Box>
+                  </>
+                )}
               </Stack>
             </>
           )}

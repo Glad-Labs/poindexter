@@ -69,6 +69,7 @@
 
 ### 6. Archive (Updated) ✅ ORGANIZED
 
+- [ARCHIVE_NAVIGATION.md](ARCHIVE_NAVIGATION.md) - Archive organization guide (NEW)
 - [archive/](archive-active/historical-reports/) - Historical session logs and reports
 - [ARCHIVE_INDEX.md](archive-active/historical-reports/ARCHIVE_INDEX.md) - Archive index
 
