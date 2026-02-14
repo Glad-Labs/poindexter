@@ -6,6 +6,7 @@ Ensures users can't select models that don't exist or aren't properly configured
 """
 
 import logging
+import os
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Set
 
@@ -63,6 +64,42 @@ class ModelValidator:
     }
 
     PIPELINE_PHASES = {"research", "outline", "draft", "assess", "refine", "finalize"}
+
+    @staticmethod
+    def _get_default_model_for_phase(phase: str) -> str:
+        """
+        Get default model for a phase.
+        Checks environment variables first, falls back to sensible defaults.
+        
+        Environment variable format: DEFAULT_MODEL_{PHASE_NAME}
+        Example: DEFAULT_MODEL_RESEARCH=gemini-2.5-flash
+        """
+        env_var = f"DEFAULT_MODEL_{phase.upper()}"
+        if env_var in os.environ:
+            model = os.getenv(env_var)
+            logger.debug(f"Using environment-configured model for {phase}: {model}")
+            return model
+        
+        # Fallback defaults - start with Ollama for cost efficiency, but allow migration
+        defaults = {
+            "research": os.getenv("DEFAULT_RESEARCH_MODEL", "llama2"),
+            "outline": os.getenv("DEFAULT_OUTLINE_MODEL", "llama2"),
+            "draft": os.getenv("DEFAULT_DRAFT_MODEL", "mistral"),
+            "assess": os.getenv("DEFAULT_ASSESS_MODEL", "neural-chat"),  # Quality check phase
+            "refine": os.getenv("DEFAULT_REFINE_MODEL", "mistral"),
+            "finalize": os.getenv("DEFAULT_FINALIZE_MODEL", "llama2"),
+        }
+        return defaults.get(phase, "llama2")
+
+    # Pipeline phases and their default models (legacy - use _get_default_model_for_phase method)
+    DEFAULT_MODELS_BY_PHASE = {
+        "research": "llama2",
+        "outline": "llama2",
+        "draft": "mistral",
+        "assess": "neural-chat",
+        "refine": "mistral",
+        "finalize": "llama2",
+    }
 
     def __init__(self, available_models: Optional[Dict[str, ModelInfo]] = None):
         """
@@ -162,12 +199,13 @@ class ModelValidator:
         return all_valid, errors
 
     def get_default_models_for_phase(self, phase: str) -> Optional[str]:
-        """Get the default model for a pipeline phase"""
+        """Get the default model for a pipeline phase (checks environment first)"""
         if phase not in self.PIPELINE_PHASES:
             logger.warning(f"⚠️ Unknown phase: {phase}")
             return None
 
-        return self.DEFAULT_MODELS_BY_PHASE.get(phase)
+        # Check environment variables first, then fall back to static defaults
+        return self._get_default_model_for_phase(phase)
 
     def get_all_phases(self) -> Set[str]:
         """Get all pipeline phases"""

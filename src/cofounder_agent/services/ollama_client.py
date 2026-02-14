@@ -21,6 +21,7 @@ Pull models: ollama pull llama2
 """
 
 import json
+import os
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 import httpx
@@ -33,7 +34,8 @@ logger = structlog.get_logger(__name__)
 # CONSTANTS
 # ============================================================================
 
-DEFAULT_MODEL = "llama2"  # Good balance of speed/quality
+# Default Ollama model - can be overridden with DEFAULT_OLLAMA_MODEL env variable
+DEFAULT_MODEL = os.getenv("DEFAULT_OLLAMA_MODEL", "llama2")  # Good balance of speed/quality
 DEFAULT_BASE_URL = "http://localhost:11434"
 
 # Model capabilities and recommended use cases

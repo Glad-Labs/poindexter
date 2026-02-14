@@ -565,6 +565,18 @@ class CustomWorkflowsService:
                     $13, $14, $15,
                     $16, $17
                 )
+                ON CONFLICT (id) DO UPDATE SET
+                    execution_status = EXCLUDED.execution_status,
+                    completed_at = EXCLUDED.completed_at,
+                    duration_ms = EXCLUDED.duration_ms,
+                    phase_results = EXCLUDED.phase_results,
+                    final_output = EXCLUDED.final_output,
+                    error_message = EXCLUDED.error_message,
+                    progress_percent = EXCLUDED.progress_percent,
+                    completed_phases = EXCLUDED.completed_phases,
+                    total_phases = EXCLUDED.total_phases,
+                    tags = EXCLUDED.tags,
+                    metadata = EXCLUDED.metadata
                 """,
                 execution_id,
                 workflow_id,

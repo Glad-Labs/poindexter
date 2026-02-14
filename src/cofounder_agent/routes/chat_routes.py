@@ -9,6 +9,7 @@ Provides endpoints for:
 """
 
 import logging
+import os
 import time
 from datetime import datetime
 from typing import Any, Dict, Optional
@@ -23,12 +24,14 @@ from schemas.chat_schemas import (
 )
 from services.model_router import ModelRouter, TaskComplexity
 from services.ollama_client import OllamaClient
+from services.gemini_client import GeminiClient
 from services.usage_tracker import get_usage_tracker
 
 logger = logging.getLogger(__name__)
 
 # Initialize services
 ollama_client = OllamaClient()
+gemini_client = GeminiClient()  # Initialize with API key from env
 model_router = ModelRouter(use_ollama=True)  # Prefer free local inference
 usage_tracker = get_usage_tracker()
 
@@ -107,9 +110,8 @@ async def chat(request: ChatRequest) -> ChatResponse:
         if provider == "ollama":
             # Use local Ollama with specified model or default
             try:
-                # Use specified Ollama model or fall back to lightweight default
-                # Use llama2 instead of mistral - it's more stable with memory constraints
-                actual_ollama_model = model_name or "llama2"
+                # Use specified Ollama model or fall back to environment config or llama2
+                actual_ollama_model = model_name or os.getenv("DEFAULT_OLLAMA_CHAT_MODEL", "llama2")
                 logger.info(f"[Chat] Calling Ollama with model: {actual_ollama_model}")
 
                 # Check if model is available
@@ -189,10 +191,57 @@ async def chat(request: ChatRequest) -> ChatResponse:
                     f"3. Check http://localhost:11434 is accessible"
                 )
                 tokens_used = 0
+        elif provider == "gemini":
+            # Use Google Gemini with specified model or default
+            try:
+                if not gemini_client.is_configured():
+                    raise Exception(
+                        "Gemini API key not configured. Set GOOGLE_API_KEY or GEMINI_API_KEY environment variable."
+                    )
+
+                # Use specified Gemini model or fall back to latest
+                actual_gemini_model = model_name or "gemini-2.5-flash"
+                logger.info(f"[Chat] Calling Gemini with model: {actual_gemini_model}")
+
+                # Check if model is available
+                available_models = await gemini_client.list_models()
+                if available_models and actual_gemini_model not in available_models:
+                    logger.warning(
+                        f"[Chat] Model '{actual_gemini_model}' not found in available models: {available_models}"
+                    )
+                    actual_gemini_model = available_models[0] if available_models else "gemini-2.5-flash"
+                    logger.info(f"[Chat] Falling back to: {actual_gemini_model}")
+
+                # Call Gemini API
+                response_text = await gemini_client.chat(
+                    messages=conversations[request.conversationId],
+                    model=actual_gemini_model,
+                    temperature=request.temperature or 0.7,
+                    max_tokens=request.max_tokens or 500,
+                )
+
+                # Validate response
+                if not response_text or len(response_text.strip()) < 5:
+                    response_text = f"✓ Processed by {actual_gemini_model} (generated short response)"
+
+                tokens_used = len(response_text.split())
+            except Exception as e:
+                logger.error(
+                    f"[Chat] Gemini error with model {model_name or 'default'}: {str(e)}",
+                    exc_info=True,
+                )
+                response_text = (
+                    f"⚠️ Gemini Error: {str(e)[:100]}\n\n"
+                    f"Troubleshooting:\n"
+                    f"1. Is GOOGLE_API_KEY set? Check: echo $GOOGLE_API_KEY\n"
+                    f"2. Is the API key valid? Check Google Cloud Console\n"
+                    f"3. Does your account have proper quota?"
+                )
+                tokens_used = 0
         else:
-            # For other models, generate placeholder (would integrate with OpenAI/Claude/Gemini in production)
+            # For other models (openai, claude), generate placeholder
             logger.warning(
-                f"[Chat] Provider '{provider}' model '{model_name or 'default'}' not yet integrated, using demo response"
+                f"[Chat] Provider '{provider}' model '{model_name or 'default'}' not yet implemented, using demo response"
             )
             response_text = generate_demo_response(request.message, request.model)
             tokens_used = len(response_text.split())

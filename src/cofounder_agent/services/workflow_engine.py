@@ -260,7 +260,10 @@ class WorkflowEngine:
         logger.info("WorkflowEngine initialized")
 
     async def execute_workflow(
-        self, phases: List[WorkflowPhase], context: WorkflowContext
+        self,
+        phases: List[WorkflowPhase],
+        context: WorkflowContext,
+        progress_callback: Optional[Callable[[WorkflowContext, WorkflowPhase, PhaseResult], Any]] = None,
     ) -> WorkflowContext:
         """
         Execute a workflow with multiple phases.
@@ -288,6 +291,19 @@ class WorkflowEngine:
                 break
 
             phase_result = await self._execute_phase(phase, context)
+
+            if progress_callback:
+                try:
+                    callback_result = progress_callback(context, phase, phase_result)
+                    if asyncio.iscoroutine(callback_result):
+                        await callback_result
+                except Exception as callback_error:
+                    logger.warning(
+                        "[%s] Progress callback failed for phase '%s': %s",
+                        context.workflow_id,
+                        phase.name,
+                        callback_error,
+                    )
 
             # Check if we should continue
             if phase_result.status == PhaseStatus.FAILED:

@@ -59,7 +59,7 @@ class GeminiClient:
     async def generate(
         self,
         prompt: str,
-        model: str = "gemini-pro",
+        model: str = "gemini-2.5-flash",
         max_tokens: int = 1024,
         temperature: float = 0.7,
         **kwargs,
@@ -112,7 +112,7 @@ class GeminiClient:
     async def chat(
         self,
         messages: List[Dict[str, str]],
-        model: str = "gemini-pro",
+        model: str = "gemini-2.5-flash",
         max_tokens: int = 1024,
         temperature: float = 0.7,
         **kwargs,
@@ -203,7 +203,7 @@ class GeminiClient:
                 "timestamp": datetime.utcnow().isoformat(),
             }
 
-    def get_pricing(self, model: str = "gemini-pro") -> Dict[str, float]:
+    def get_pricing(self, model: str = "gemini-2.5-flash") -> Dict[str, float]:
         """
         Get pricing information for Gemini models.
 

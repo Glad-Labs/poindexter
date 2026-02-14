@@ -51,7 +51,7 @@ class FineTuningService:
     async def fine_tune_ollama(
         self,
         dataset_path: str,
-        base_model: str = "mistral",
+        base_model: Optional[str] = None,
         learning_rate: float = 0.001,
         epochs: int = 3,
     ) -> Dict[str, Any]:
@@ -60,14 +60,19 @@ class FineTuningService:
 
         Args:
             dataset_path: Path to JSONL training data
-            base_model: Base model to fine-tune (mistral, llama2, neural-chat)
+            base_model: Base model to fine-tune (mistral, llama2, neural-chat). If None, uses env config or defaults to 'mistral'
             learning_rate: Learning rate for training
             epochs: Number of training epochs
 
         Returns:
             Job metadata
         """
+        # Use provided model, environment config, or default to mistral
+        if not base_model:
+            base_model = os.getenv("OLLAMA_FINETUNE_BASE_MODEL", "mistral")
+        
         job_id = f"ollama_finetune_{datetime.now().timestamp()}"
+        logger.info(f"[Fine-tune] Starting Ollama fine-tune with base model '{base_model}': {job_id}")
 
         try:
             # Check if Ollama is running

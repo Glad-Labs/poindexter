@@ -8,6 +8,7 @@ Provides endpoints for:
 """
 
 import logging
+import os
 from datetime import datetime
 from typing import Any, Dict, Optional
 
@@ -144,20 +145,20 @@ async def get_ollama_models() -> dict:
                 logger.info(f"[Ollama] Found {len(models)} models")
                 return {"models": models, "connected": True}
             logger.warning(f"[Ollama] models endpoint returned {response.status_code}")
-            return {"models": ["llama2", "neural-chat", "mistral"], "connected": False}
+            return {"models": [], "connected": False}
 
     except (httpx.ConnectError, httpx.TimeoutException):
-        logger.debug("[Ollama] Could not reach Ollama - returning defaults")
-        # Return safe defaults if Ollama not available
-        return {"models": ["llama2", "neural-chat", "mistral"], "connected": False}
+        logger.debug("[Ollama] Could not reach Ollama - Ollama service not available")
+        # Return empty list if Ollama unavailable - honest response instead of misleading defaults
+        return {"models": [], "connected": False}
 
     except Exception as e:
         logger.debug(f"[Ollama] Error getting models: {str(e)}")
-        return {"models": ["llama2", "neural-chat", "mistral"], "connected": False}
+        return {"models": [], "connected": False}
 
 
 @router.post("/warmup", response_model=OllamaWarmupResponse)
-async def warmup_ollama(model: str = "mistral:latest") -> OllamaWarmupResponse:
+async def warmup_ollama(model: Optional[str] = None) -> OllamaWarmupResponse:
     """
     Warm up an Ollama model by running a simple prompt
 
@@ -165,7 +166,7 @@ async def warmup_ollama(model: str = "mistral:latest") -> OllamaWarmupResponse:
     making subsequent requests faster.
 
     **Parameters:**
-    - model: Model name to warm up (default: mistral)
+    - model: Model name to warm up (optional, defaults to OLLAMA_WARMUP_MODEL env or 'mistral')
 
     **Returns:**
     - status: Warm-up status (success, warning, error)
@@ -194,6 +195,10 @@ async def warmup_ollama(model: str = "mistral:latest") -> OllamaWarmupResponse:
     ```
     """
     try:
+        # Use provided model or default to environment config or mistral
+        if not model:
+            model = os.getenv("OLLAMA_WARMUP_MODEL", "mistral:latest")
+        
         # First check if Ollama is running
         async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT) as client:
             check_response = await client.get(f"{OLLAMA_HOST}/api/tags")

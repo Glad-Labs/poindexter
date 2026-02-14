@@ -59,8 +59,6 @@ async def create_phase_handler(phase_name: str, agent_name: str, database_servic
         import inspect
         import time
 
-        from services.workflow_engine import PhaseResult, PhaseStatus
-
         start_time = time.time()
 
         try:
@@ -93,31 +91,21 @@ async def create_phase_handler(phase_name: str, agent_name: str, database_servic
                 f"[{context.workflow_id}] Phase completed: {phase_name} " f"({duration_ms}ms)"
             )
 
-            return PhaseResult(
-                phase_name=phase_name,
-                status=PhaseStatus.COMPLETED,
-                output=result,
-                duration_ms=duration_ms,
-                retry_count=0,
-                metadata={"agent": agent_name, "agent_type": type(agent_instance).__name__},
-            )
+            return {
+                "phase": phase_name,
+                "output": result,
+                "duration_ms": duration_ms,
+                "metadata": {
+                    "agent": agent_name,
+                    "agent_type": type(agent_instance).__name__,
+                },
+            }
 
         except Exception as e:
-            duration_ms = int((time.time() - start_time) * 1000)
             logger.error(
                 f"[{context.workflow_id}] Phase failed: {phase_name} - {str(e)}", exc_info=True
             )
-
-            from services.workflow_engine import PhaseResult, PhaseStatus
-
-            return PhaseResult(
-                phase_name=phase_name,
-                status=PhaseStatus.FAILED,
-                error=str(e),
-                duration_ms=duration_ms,
-                retry_count=0,
-                metadata={"agent": agent_name, "error_type": type(e).__name__},
-            )
+            raise
 
     return phase_handler
 
@@ -234,6 +222,7 @@ async def execute_custom_workflow(
     custom_workflow: Any,
     input_data: Dict[str, Any],
     database_service: Any,
+    execution_owner_id: Optional[str] = None,
     queue_async: bool = True,
 ) -> Dict[str, Any]:
     """
@@ -253,37 +242,61 @@ async def execute_custom_workflow(
     from services.workflow_engine import WorkflowContext, WorkflowEngine, WorkflowPhase
 
     try:
+        def _workflow_get(key: str, default: Any = None) -> Any:
+            if isinstance(custom_workflow, dict):
+                return custom_workflow.get(key, default)
+            return getattr(custom_workflow, key, default)
+
         execution_id = str(uuid.uuid4())
+        workflow_id = str(_workflow_get("id", "unknown"))
+        workflow_tags = _workflow_get("tags", []) or []
+        workflow_phases = _workflow_get("phases", []) or []
 
         # Create workflow context
         context = WorkflowContext(
-            workflow_id=str(custom_workflow.id),
+            workflow_id=workflow_id,
             request_id=execution_id,
             initial_input=input_data,
-            tags=custom_workflow.tags or [],
+            tags=workflow_tags,
         )
 
         # Convert CustomWorkflow phases to WorkflowPhase objects
         phases: List[WorkflowPhase] = []
 
-        for phase_config in custom_workflow.phases:
+        for phase_config in workflow_phases:
+            if hasattr(phase_config, "model_dump"):
+                phase_data = phase_config.model_dump()
+            elif isinstance(phase_config, dict):
+                phase_data = phase_config
+            else:
+                phase_data = {
+                    "name": getattr(phase_config, "name", None),
+                    "agent": getattr(phase_config, "agent", None),
+                    "description": getattr(phase_config, "description", ""),
+                    "timeout_seconds": getattr(phase_config, "timeout_seconds", 300),
+                    "max_retries": getattr(phase_config, "max_retries", 2),
+                    "skip_on_error": getattr(phase_config, "skip_on_error", False),
+                    "required": getattr(phase_config, "required", True),
+                    "metadata": getattr(phase_config, "metadata", {}),
+                }
+
             # Get handler for this phase
             handler = await create_phase_handler(
-                phase_name=phase_config.get("name"),
-                agent_name=phase_config.get("agent"),
+                phase_name=phase_data.get("name"),
+                agent_name=phase_data.get("agent"),
                 database_service=database_service,
             )
 
             # Create WorkflowPhase with configuration from custom workflow
             phase = WorkflowPhase(
-                name=phase_config.get("name"),
+                name=phase_data.get("name"),
                 handler=handler,
-                description=phase_config.get("description", ""),
-                timeout_seconds=phase_config.get("timeout_seconds", 300),
-                max_retries=phase_config.get("max_retries", 2),
-                skip_on_error=phase_config.get("skip_on_error", False),
-                required=phase_config.get("required", True),
-                metadata=phase_config.get("metadata", {}),
+                description=phase_data.get("description", ""),
+                timeout_seconds=phase_data.get("timeout_seconds", 300),
+                max_retries=phase_data.get("max_retries", 2),
+                skip_on_error=phase_data.get("skip_on_error", False),
+                required=phase_data.get("required", True),
+                metadata=phase_data.get("metadata", {}),
             )
             phases.append(phase)
 
@@ -300,12 +313,18 @@ async def execute_custom_workflow(
             # TODO: Implement async task queue (Celery, RQ, or custom)
             # For now, start background task
             asyncio.create_task(
-                _execute_workflow_background(phases, context, custom_workflow, database_service)
+                _execute_workflow_background(
+                    phases,
+                    context,
+                    custom_workflow,
+                    database_service,
+                    execution_owner_id=execution_owner_id,
+                )
             )
 
             return {
                 "execution_id": execution_id,
-                "workflow_id": str(custom_workflow.id),
+                "workflow_id": workflow_id,
                 "status": "pending",
                 "started_at": context.started_at.isoformat(),
                 "phases": [p.name for p in phases],
@@ -318,7 +337,7 @@ async def execute_custom_workflow(
 
             return {
                 "execution_id": execution_id,
-                "workflow_id": str(custom_workflow.id),
+                "workflow_id": workflow_id,
                 "status": final_context.status.value,
                 "started_at": final_context.started_at.isoformat(),
                 "phases": [p.name for p in phases],
@@ -340,6 +359,7 @@ async def _execute_workflow_background(
     context: Any,
     custom_workflow: Any,
     database_service: Any,
+    execution_owner_id: Optional[str] = None,
 ) -> None:
     """
     Execute workflow in the background.
@@ -351,13 +371,131 @@ async def _execute_workflow_background(
         database_service: DatabaseService instance
     """
 
+    def _serialize_json_safe(value: Any) -> Any:
+        """Convert values to JSON-serializable representation."""
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, dict):
+            return {str(k): _serialize_json_safe(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple, set)):
+            return [_serialize_json_safe(v) for v in value]
+        if hasattr(value, "to_dict") and callable(getattr(value, "to_dict")):
+            return _serialize_json_safe(value.to_dict())
+        if hasattr(value, "model_dump") and callable(getattr(value, "model_dump")):
+            return _serialize_json_safe(value.model_dump())
+        if hasattr(value, "isoformat") and callable(getattr(value, "isoformat")):
+            return value.isoformat()
+        return str(value)
+
+    def _build_phase_results(context_obj: Any) -> Dict[str, Any]:
+        phase_results: Dict[str, Any] = {}
+        if not context_obj.results:
+            return phase_results
+
+        for phase_name, phase_result in context_obj.results.items():
+            phase_results[phase_name] = {
+                "status": (
+                    phase_result.status.value
+                    if hasattr(phase_result.status, "value")
+                    else str(phase_result.status)
+                ),
+                "output": _serialize_json_safe(phase_result.output),
+                "error": phase_result.error,
+                "duration_ms": phase_result.duration_ms,
+                "metadata": _serialize_json_safe(phase_result.metadata or {}),
+            }
+
+        return phase_results
+
     try:
+        def _workflow_get(key: str, default: Any = None) -> Any:
+            if isinstance(custom_workflow, dict):
+                return custom_workflow.get(key, default)
+            return getattr(custom_workflow, key, default)
+
+        workflow_id = str(_workflow_get("id", "unknown"))
+        workflow_owner_id = execution_owner_id or _workflow_get("owner_id")
+        workflow_tags = _workflow_get("tags", []) or []
+        workflow_name = _workflow_get("name", "custom_workflow")
+
+        from services.custom_workflows_service import CustomWorkflowsService
+
+        workflows_service = CustomWorkflowsService(database_service)
+        await workflows_service.persist_workflow_execution(
+            execution_id=context.request_id,
+            workflow_id=workflow_id,
+            owner_id=workflow_owner_id,
+            execution_status="running",
+            phase_results={},
+            duration_ms=0,
+            initial_input=context.initial_input,
+            final_output=None,
+            error_message=None,
+            completed_phases=0,
+            total_phases=len(phases or []),
+            progress_percent=0,
+            tags=workflow_tags,
+            metadata={
+                "execution_id": context.request_id,
+                "workflow_name": workflow_name,
+                "background_started": True,
+                "current_phase": None,
+                "last_updated_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+
         from services.workflow_engine import WorkflowEngine
 
         logger.info(f"[{context.workflow_id}] Starting background execution")
 
+        async def _persist_phase_checkpoint() -> None:
+            phase_results = _build_phase_results(context)
+            completed_phases_count = len(
+                [r for r in phase_results.values() if r.get("status") == "completed"]
+            )
+            total_phases_count = len(phases) if phases else 0
+            progress = (
+                int((completed_phases_count / total_phases_count * 100))
+                if total_phases_count > 0
+                else 0
+            )
+
+            await workflows_service.persist_workflow_execution(
+                execution_id=context.request_id,
+                workflow_id=workflow_id,
+                owner_id=workflow_owner_id,
+                execution_status="running",
+                phase_results=phase_results,
+                duration_ms=0,
+                initial_input=context.initial_input,
+                final_output=None,
+                error_message=None,
+                completed_phases=completed_phases_count,
+                total_phases=total_phases_count,
+                progress_percent=progress,
+                tags=workflow_tags,
+                metadata={
+                    "execution_id": context.request_id,
+                    "workflow_name": workflow_name,
+                    "phase_count": total_phases_count,
+                    "current_phase": context.current_phase,
+                    "last_updated_at": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+
+        async def _phase_progress_callback(
+            _context_obj: Any,
+            _phase_obj: Any,
+            _phase_result_obj: Any,
+        ) -> None:
+            await _persist_phase_checkpoint()
+
         engine = WorkflowEngine(database_service=database_service)
-        final_context = await engine.execute_workflow(phases, context)
+        final_context = await engine.execute_workflow(
+            phases,
+            context,
+            progress_callback=_phase_progress_callback,
+        )
 
         logger.info(
             f"[{context.workflow_id}] Background execution completed: "
@@ -365,8 +503,6 @@ async def _execute_workflow_background(
         )
 
         # Calculate duration and prepare results
-        from datetime import datetime, timezone
-
         # Calculate duration from phase results
         duration_ms = 0
         if final_context.results:
@@ -379,24 +515,20 @@ async def _execute_workflow_background(
             )
 
         # Convert phase results to JSON-serializable dict
-        phase_results = {}
-        if final_context.results:
-            for phase_name, phase_result in final_context.results.items():
-                phase_results[phase_name] = {
-                    "status": (
-                        phase_result.status.value
-                        if hasattr(phase_result.status, "value")
-                        else str(phase_result.status)
-                    ),
-                    "output": phase_result.output,
-                    "error": phase_result.error,
-                    "duration_ms": phase_result.duration_ms,
-                    "metadata": phase_result.metadata or {},
-                }
+        phase_results = _build_phase_results(final_context)
 
         # Count completed phases
         completed_phases_count = len(
             [r for r in phase_results.values() if r.get("status") == "completed"]
+        )
+        failed_phase_error = next(
+            (
+                phase_data.get("error")
+                for phase_data in phase_results.values()
+                if str(phase_data.get("status", "")).lower() == "failed"
+                and phase_data.get("error")
+            ),
+            None,
         )
         total_phases_count = len(phases) if phases else 0
         progress = (
@@ -406,28 +538,26 @@ async def _execute_workflow_background(
         )
 
         # Persist execution results
-        from services.custom_workflows_service import CustomWorkflowsService
-
-        workflows_service = CustomWorkflowsService(database_service)
-
         persist_success = await workflows_service.persist_workflow_execution(
             execution_id=context.request_id,
-            workflow_id=str(custom_workflow.id),
-            owner_id=custom_workflow.owner_id,
+            workflow_id=workflow_id,
+            owner_id=workflow_owner_id,
             execution_status=final_context.status.value,
             phase_results=phase_results,
             duration_ms=duration_ms,
             initial_input=context.initial_input,
             final_output=context.accumulated_output,
-            error_message=None,
+            error_message=failed_phase_error,
             completed_phases=completed_phases_count,
             total_phases=total_phases_count,
             progress_percent=progress,
-            tags=custom_workflow.tags or [],
+            tags=workflow_tags,
             metadata={
                 "execution_id": context.request_id,
-                "workflow_name": custom_workflow.name,
+                "workflow_name": workflow_name,
                 "phase_count": total_phases_count,
+                "current_phase": final_context.current_phase,
+                "last_updated_at": datetime.now(timezone.utc).isoformat(),
             },
         )
 
@@ -440,6 +570,43 @@ async def _execute_workflow_background(
         logger.error(
             f"[{context.workflow_id}] Background execution failed: {str(e)}", exc_info=True
         )
+
+        try:
+            def _workflow_get(key: str, default: Any = None) -> Any:
+                if isinstance(custom_workflow, dict):
+                    return custom_workflow.get(key, default)
+                return getattr(custom_workflow, key, default)
+
+            from services.custom_workflows_service import CustomWorkflowsService
+
+            workflows_service = CustomWorkflowsService(database_service)
+            await workflows_service.persist_workflow_execution(
+                execution_id=context.request_id,
+                workflow_id=str(_workflow_get("id", "unknown")),
+                owner_id=_workflow_get("owner_id"),
+                execution_status="failed",
+                phase_results={},
+                duration_ms=0,
+                initial_input=context.initial_input,
+                final_output=None,
+                error_message=str(e),
+                completed_phases=0,
+                total_phases=len(phases or []),
+                progress_percent=0,
+                tags=_workflow_get("tags", []) or [],
+                metadata={
+                    "execution_id": context.request_id,
+                    "workflow_name": _workflow_get("name", "custom_workflow"),
+                    "failed_in_background": True,
+                    "current_phase": context.current_phase,
+                    "last_updated_at": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+        except Exception:
+            logger.error(
+                f"[{context.workflow_id}] Failed to persist failed execution state",
+                exc_info=True,
+            )
 
 
 def convert_phases_to_schemas(phases: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

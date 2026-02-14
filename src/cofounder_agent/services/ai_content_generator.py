@@ -922,7 +922,6 @@ class AIContentGenerator:
                         raise ImportError(
                             "Neither google.generativeai nor google.genai found"
                         ) from e
-
                 logger.debug(f"Configuring Gemini with API key...")
                 if use_new_sdk:
                     genai.api_key = ProviderChecker.get_gemini_api_key()
@@ -930,8 +929,10 @@ class AIContentGenerator:
                     logger.debug(f"✓ Gemini client initialized (new SDK)")
                 else:
                     genai.configure(api_key=ProviderChecker.get_gemini_api_key())
-                    model = genai.GenerativeModel("gemini-2.5-flash")
-                    logger.debug(f"✓ Gemini model initialized (legacy SDK)")
+                    # Use model from environment or default to latest flash
+                    gemini_model_name = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash")
+                    model = genai.GenerativeModel(gemini_model_name)
+                    logger.debug(f"✓ Gemini model initialized (legacy SDK): {gemini_model_name}")
 
                 metrics["generation_attempts"] += 1
                 logger.info(f"   Generating content...")
@@ -940,8 +941,10 @@ class AIContentGenerator:
 
                 if use_new_sdk:
                     # New google.genai SDK
+                    # Use model from environment or default to latest flash
+                    gemini_model_name = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash")
                     response = client.models.generate_content(
-                        model="models/gemini-2.5-flash",
+                        model=f"models/{gemini_model_name}",
                         contents=f"{system_prompt}\n\n{generation_prompt}",
                         config={
                             "max_output_tokens": max_tokens_fallback,

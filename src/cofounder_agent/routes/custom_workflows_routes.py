@@ -151,7 +151,7 @@ async def list_custom_workflows(
 
         workflows = [
             WorkflowListResponse(
-                id=w.id,
+                id=str(w.id),
                 name=w.name,
                 description=w.description,
                 phase_count=len(w.phases),
@@ -330,11 +330,20 @@ async def execute_custom_workflow(
         # Execute workflow using the adapter
         from services.workflow_execution_adapter import execute_custom_workflow
 
-        # Get input data from request body
-        input_data = request_body if request_body else {}
+        # Accept both payload styles:
+        # - {"input_data": {...}} (current frontend client)
+        # - {...} (raw execution input)
+        if isinstance(request_body, dict):
+            input_data = request_body.get("input_data", request_body)
+            if input_data is None:
+                input_data = {}
+        else:
+            input_data = {}
 
         # Get database service from app state
-        database_service = getattr(request.app.state, "database_service", None)
+        database_service = getattr(request.app.state, "database", None) or getattr(
+            request.app.state, "database_service", None
+        )
         if not database_service:
             raise HTTPException(status_code=503, detail="Database service not initialized")
 
@@ -343,13 +352,42 @@ async def execute_custom_workflow(
             custom_workflow=workflow,
             input_data=input_data,
             database_service=database_service,
+            execution_owner_id=owner_id,
             queue_async=True,  # Execute in background
         )
+
+        existing_execution = await service.get_workflow_execution(result["execution_id"], owner_id)
+        if not existing_execution:
+            persisted = await service.persist_workflow_execution(
+                execution_id=result["execution_id"],
+                workflow_id=str(workflow.id),
+                owner_id=owner_id,
+                execution_status=result.get("status", "pending"),
+                phase_results={},
+                duration_ms=0,
+                initial_input=input_data,
+                final_output=None,
+                error_message=None,
+                completed_phases=0,
+                total_phases=len(workflow.phases or []),
+                progress_percent=result.get("progress_percent", 0),
+                tags=workflow.tags,
+                metadata={
+                    "execution_id": result["execution_id"],
+                    "workflow_name": workflow.name,
+                    "queued_from": "custom_workflows_routes",
+                },
+            )
+            if not persisted:
+                logger.warning(
+                    "Failed to persist initial pending execution record for %s",
+                    result["execution_id"],
+                )
 
         logger.info(f"Workflow execution started: {result['execution_id']}")
 
         return WorkflowExecutionResponse(
-            workflow_id=result["workflow_id"],
+            workflow_id=str(result["workflow_id"]),
             execution_id=result["execution_id"],
             status=result["status"],
             started_at=result["started_at"],
@@ -361,6 +399,115 @@ async def execute_custom_workflow(
     except Exception as e:
         logger.error(f"Error executing workflow: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to execute workflow: {str(e)}")
+
+
+@router.get("/executions/{execution_id}", name="Get Workflow Execution Status")
+async def get_workflow_execution_status(
+    execution_id: str,
+    request: Request,
+    service: CustomWorkflowsService = Depends(get_workflows_service),
+) -> Dict[str, Any]:
+    """
+    Get status/details for a workflow execution.
+
+    Used by frontend polling after execution starts.
+
+    Args:
+        execution_id: Execution UUID
+
+    Returns:
+        Execution status payload with progress and results when available
+
+    Raises:
+        404: Execution not found
+    """
+    try:
+        owner_id = get_user_id(request)
+        execution = await service.get_workflow_execution(execution_id, owner_id)
+
+        if not execution:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Workflow execution '{execution_id}' not found",
+            )
+
+        phase_results = execution.get("phase_results") or {}
+        metadata = execution.get("metadata") or {}
+        phase_order = list(phase_results.keys())
+        fallback_error = next(
+            (
+                phase_result.get("error")
+                for phase_result in phase_results.values()
+                if str(phase_result.get("status", "")).lower() == "failed"
+                and phase_result.get("error")
+            ),
+            None,
+        )
+
+        return {
+            "execution_id": execution.get("id"),
+            "workflow_id": execution.get("workflow_id"),
+            "status": execution.get("execution_status", "pending"),
+            "started_at": execution.get("started_at"),
+            "completed_at": execution.get("completed_at"),
+            "duration_ms": execution.get("duration_ms") or 0,
+            "progress_percent": execution.get("progress_percent") or 0,
+            "completed_phases": execution.get("completed_phases") or 0,
+            "total_phases": execution.get("total_phases") or 0,
+            "current_phase": metadata.get("current_phase"),
+            "phase_order": phase_order,
+            "last_updated_at": metadata.get("last_updated_at"),
+            "phase_results": phase_results,
+            "final_output": execution.get("final_output"),
+            "error_message": execution.get("error_message") or fallback_error,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Error fetching workflow execution status for {execution_id}: {str(e)}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get execution status: {str(e)}",
+        )
+
+
+@router.get("/executions", name="List Workflow Executions")
+async def list_workflow_executions(
+    workflow_id: str,
+    request: Request,
+    service: CustomWorkflowsService = Depends(get_workflows_service),
+    limit: int = Query(50, ge=1, le=200, description="Maximum executions to return"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+    status: Optional[str] = Query(None, description="Optional execution status filter"),
+) -> Dict[str, Any]:
+    """
+    List executions for a workflow owned by current user.
+
+    Useful for recovering in-progress executions after UI refresh.
+    """
+    try:
+        owner_id = get_user_id(request)
+        result = await service.get_workflow_executions(
+            workflow_id=workflow_id,
+            owner_id=owner_id,
+            limit=limit,
+            offset=offset,
+            status=status,
+        )
+
+        return {
+            "workflow_id": workflow_id,
+            "total": result.get("total", 0),
+            "limit": result.get("limit", limit),
+            "offset": result.get("offset", offset),
+            "executions": result.get("executions", []),
+        }
+    except Exception as e:
+        logger.error(f"Error listing workflow executions for {workflow_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to list workflow executions: {str(e)}")
 
 
 @router.get(
