@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from routes.auth_unified import get_current_user
 from schemas.auth_schemas import UserProfile
 from services.database_service import DatabaseService
+from services.websocket_event_broadcaster import emit_analytics_update
 from utils.error_handler import handle_route_error
 from utils.route_utils import get_database_dependency
 
@@ -355,6 +356,20 @@ async def get_kpi_metrics(
         logger.debug(f"  📈 Generated {len(tasks_per_day)} days of task data")
 
         logger.info(f"✅ KPI metrics calculated for range {range}")
+
+        # ===== EMIT WEBSOCKET EVENT =====
+        try:
+            await emit_analytics_update(
+                total_tasks=total_tasks,
+                completed_today=completed_tasks,
+                average_completion_time=avg_execution_time,
+                cost_today=total_cost,
+                success_rate=success_rate,
+                failed_today=failed_tasks,
+                running_now=pending_tasks,
+            )
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to emit analytics update: {e}")
 
         # ===== BUILD RESPONSE =====
         return KPIMetrics(

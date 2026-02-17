@@ -34,6 +34,12 @@ from .prompt_manager import get_prompt_manager
 # Import usage tracking
 from .usage_tracker import get_usage_tracker
 
+# Import WebSocket event broadcaster (Phase 4 - Real-time updates)
+from .websocket_event_broadcaster import (
+    emit_task_progress,
+    emit_notification,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -243,6 +249,20 @@ class TaskExecutor:
                 },
             )
             logger.info(f"✅ [TASK_SINGLE] Task marked as in_progress")
+            
+            # Emit WebSocket event for real-time progress tracking (Phase 4)
+            try:
+                await emit_task_progress(
+                    task_id=task_id,
+                    status="RUNNING",
+                    progress=0,
+                    current_step="Processing task",
+                    total_steps=1,
+                    completed_steps=0,
+                    message=f"Starting task: {task_name}",
+                )
+            except Exception as e:
+                logger.warning(f"⚠️  Failed to emit task progress event: {e}")
 
             # 2. Process through orchestrator/agent pipeline with timeout
             logger.info(
@@ -354,8 +374,49 @@ class TaskExecutor:
                     else "Unknown error"
                 )
                 logger.error(f"   Error: {error_msg}")
+                
+                # Emit WebSocket event for failure (Phase 4)
+                try:
+                    await emit_task_progress(
+                        task_id=task_id,
+                        status="FAILED",
+                        progress=0,
+                        current_step="Failed",
+                        total_steps=1,
+                        completed_steps=0,
+                        message=error_msg,
+                        error=error_msg,
+                    )
+                    await emit_notification(
+                        type="error",
+                        title="Task Failed",
+                        message=f"Task '{task_name}' failed: {error_msg}",
+                        duration=8000,
+                    )
+                except Exception as e:
+                    logger.warning(f"⚠️  Failed to emit task failure event: {e}")
             else:
                 logger.info(f"✅ [TASK_SINGLE] Task awaiting approval: {task_id}")
+                
+                # Emit WebSocket event for success (Phase 4)
+                try:
+                    await emit_task_progress(
+                        task_id=task_id,
+                        status="COMPLETED",
+                        progress=100,
+                        current_step="Complete",
+                        total_steps=1,
+                        completed_steps=1,
+                        message="Task completed successfully",
+                    )
+                    await emit_notification(
+                        type="success",
+                        title="Task Completed",
+                        message=f"Task '{task_name}' completed successfully and awaiting approval",
+                        duration=5000,
+                    )
+                except Exception as e:
+                    logger.warning(f"⚠️  Failed to emit task success event: {e}")
 
         except Exception as e:
             logger.error(f"❌ [TASK_SINGLE] Task failed: {task_id} - {str(e)}", exc_info=True)

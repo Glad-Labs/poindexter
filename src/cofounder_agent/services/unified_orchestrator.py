@@ -38,6 +38,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, Optional
 
+from services.websocket_event_broadcaster import emit_task_progress
+
 logger = logging.getLogger(__name__)
 
 
@@ -657,6 +659,20 @@ class UnifiedOrchestrator:
                 count_words_in_content(research_text),
             )
 
+            # Emit progress: Research stage complete
+            try:
+                await emit_task_progress(
+                    task_id=task_id,
+                    status="RUNNING",
+                    progress=25,
+                    current_step="Research Complete",
+                    total_steps=5,
+                    completed_steps=1,
+                    message="Research phase completed - gathered background information",
+                )
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to emit research progress: {e}")
+
             # ====================================================================
             # STAGE 2: CREATIVE DRAFT (25% → 45%)
             # ====================================================================
@@ -758,6 +774,20 @@ class UnifiedOrchestrator:
                 count_words_in_content(draft_text),
             )
 
+            # Emit progress: Creative draft stage complete
+            try:
+                await emit_task_progress(
+                    task_id=task_id,
+                    status="RUNNING",
+                    progress=45,
+                    current_step="Creative Draft Complete",
+                    total_steps=5,
+                    completed_steps=2,
+                    message="Creative draft generated - ready for quality review",
+                )
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to emit creative progress: {e}")
+
             # ====================================================================
             # STAGE 3: QA REVIEW LOOP (45% → 60%)
             # ====================================================================
@@ -844,6 +874,20 @@ class UnifiedOrchestrator:
             )
             compliance_reports.append(qa_compliance)
 
+            # Emit progress: QA review stage complete
+            try:
+                await emit_task_progress(
+                    task_id=task_id,
+                    status="RUNNING",
+                    progress=60,
+                    current_step="QA Review Complete",
+                    total_steps=5,
+                    completed_steps=3,
+                    message="Quality assurance review complete - content approved",
+                )
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to emit QA progress: {e}")
+
             # ====================================================================
             # STAGE 4: IMAGE SELECTION (60% → 75%)
             # ====================================================================
@@ -862,6 +906,20 @@ class UnifiedOrchestrator:
             except Exception as e:
                 logger.warning("[%s] Image selection failed: %s", request.request_id, e)
 
+            # Emit progress: Image selection stage complete
+            try:
+                await emit_task_progress(
+                    task_id=task_id,
+                    status="RUNNING",
+                    progress=75,
+                    current_step="Image Selection Complete",
+                    total_steps=5,
+                    completed_steps=4,
+                    message="Featured image selected - ready for final formatting",
+                )
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to emit image progress: {e}")
+
             # ====================================================================
             # STAGE 5: FORMATTING (75% → 90%)
             # ====================================================================
@@ -873,6 +931,20 @@ class UnifiedOrchestrator:
 
             formatted_content = getattr(result_post, "raw_content", str(content))
             excerpt = getattr(result_post, "meta_description", "Article about %s" % topic)
+
+            # Emit progress: Formatting stage complete
+            try:
+                await emit_task_progress(
+                    task_id=task_id,
+                    status="RUNNING",
+                    progress=90,
+                    current_step="Formatting Complete",
+                    total_steps=5,
+                    completed_steps=5,
+                    message="Content formatted and ready for publication",
+                )
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to emit formatting progress: {e}")
 
             # ====================================================================
             # STAGE 6: AWAITING HUMAN APPROVAL (90% → 100%)

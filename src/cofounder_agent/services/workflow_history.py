@@ -16,6 +16,9 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
+# Import WebSocket event broadcaster (Phase 4 - Real-time updates)
+from .websocket_event_broadcaster import emit_workflow_status
+
 logger = logging.getLogger(__name__)
 
 
@@ -126,6 +129,18 @@ class WorkflowHistoryService:
                     f"✅ Workflow execution saved: {workflow_id} "
                     f"(user: {user_id}, status: {status}, duration: {duration_seconds}s)"
                 )
+
+                # Emit WebSocket event for real-time workflow tracking (Phase 4)
+                try:
+                    await emit_workflow_status(
+                        workflow_id=workflow_id,
+                        status=status,
+                        duration=duration_seconds or 0,
+                        task_count=len(task_results) if task_results else 0,
+                        task_results=task_results or {},
+                    )
+                except Exception as e:
+                    logger.warning(f"⚠️  Failed to emit workflow status event: {e}")
 
                 return self._row_to_dict(row)
 
