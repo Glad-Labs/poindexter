@@ -22,13 +22,27 @@ import { makeRequest } from './cofounderAgentClient';
  */
 export const getAvailablePhases = async () => {
   try {
+    console.log('[workflowBuilderService] Calling getAvailablePhases()');
     const response = await makeRequest(
       '/api/workflows/available-phases',
       'GET'
     );
+    console.log(
+      '[workflowBuilderService] getAvailablePhases response:',
+      response
+    );
+    if (!response || !response.phases) {
+      console.warn(
+        '[workflowBuilderService] getAvailablePhases: response.phases is missing',
+        response
+      );
+    }
     return response;
   } catch (error) {
-    console.error('Error fetching available phases:', error);
+    console.error(
+      '[workflowBuilderService] Error fetching available phases:',
+      error
+    );
     throw new Error(`Failed to load available phases: ${error.message}`);
   }
 };

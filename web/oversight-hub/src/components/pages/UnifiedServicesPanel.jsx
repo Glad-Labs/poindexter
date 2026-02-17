@@ -321,18 +321,39 @@ const UnifiedServicesPanel = () => {
   const loadWorkflowData = async () => {
     setLoadingWorkflows(true);
     try {
+      console.log('[UnifiedServicesPanel] Loading workflow data...');
+
       // Load available phases
+      console.log('[UnifiedServicesPanel] Fetching available phases...');
       const phasesRes = await workflowBuilderService.getAvailablePhases();
-      setAvailablePhases(phasesRes.phases || []);
+      console.log(
+        '[UnifiedServicesPanel] Available phases response:',
+        phasesRes
+      );
+      const phases = phasesRes.phases || [];
+      console.log(
+        `[UnifiedServicesPanel] Loaded ${phases.length} phases:`,
+        phases.map((p) => p.name)
+      );
+      setAvailablePhases(phases);
 
       // Load user workflows
+      console.log('[UnifiedServicesPanel] Fetching user workflows...');
       const workflowsRes = await workflowBuilderService.listWorkflows({
         limit: 100,
       });
-      setWorkflows(workflowsRes.workflows || []);
+      console.log(
+        '[UnifiedServicesPanel] User workflows response:',
+        workflowsRes
+      );
+      const userWorkflows = workflowsRes.workflows || [];
+      console.log(
+        `[UnifiedServicesPanel] Loaded ${userWorkflows.length} user workflows`
+      );
+      setWorkflows(userWorkflows);
 
       // Load templates
-      setTemplates([
+      const templatesList = [
         {
           id: 'blog_post',
           name: 'Blog Post',
@@ -355,11 +376,17 @@ const UnifiedServicesPanel = () => {
           phase_count: 4,
           is_template: true,
         },
-      ]);
+      ];
+      setTemplates(templatesList);
+      console.log('[UnifiedServicesPanel] Workflow data loading completed successfully');
 
       setError(null);
     } catch (err) {
-      setError(err.message);
+      const errorMsg = err?.message || String(err) || 'Unknown error loading workflow data';
+      console.error('[UnifiedServicesPanel] Error loading workflow data:', err);
+      console.error('[UnifiedServicesPanel] Error message:', errorMsg);
+      console.error('[UnifiedServicesPanel] Error stack:', err?.stack);
+      setError(`Workflow Error: ${errorMsg}`);
     } finally {
       setLoadingWorkflows(false);
     }

@@ -197,6 +197,7 @@ const LayoutWrapper = ({ children }) => {
       content: '/content',
       services: '/services',
       ai: '/ai',
+      marketplace: '/marketplace',
       costs: '/costs',
       performance: '/performance',
       settings: '/settings',

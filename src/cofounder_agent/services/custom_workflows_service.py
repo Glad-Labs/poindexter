@@ -437,27 +437,42 @@ class CustomWorkflowsService:
             errors.append("Workflow must have at least one phase")
             return WorkflowValidationResult(valid=False, errors=errors, warnings=warnings)
 
-        # Check for duplicate phase names
-        phase_names = [p.name for p in workflow.phases]
+        # Check for duplicate phase names (support both dict and object phases)
+        phase_names = []
+        for p in workflow.phases:
+            # Handle both dict and object phase definitions
+            phase_name = p.get("name") if isinstance(p, dict) else getattr(p, "name", None)
+            if phase_name:
+                phase_names.append(phase_name)
+        
         if len(phase_names) != len(set(phase_names)):
             errors.append("Duplicate phase names in workflow")
 
-        # Validate each phase
+        # Validate each phase (support both dict and object formats)
         for i, phase in enumerate(workflow.phases):
             try:
-                # Validate component-level constraints
-                if phase.timeout_seconds < 10:
-                    warnings.append(f"Phase '{phase.name}' timeout {phase.timeout_seconds}s is very short")
-                if phase.timeout_seconds > 3600:
-                    warnings.append(f"Phase '{phase.name}' timeout {phase.timeout_seconds}s is very long")
+                # Extract values from either dict or object
+                if isinstance(phase, dict):
+                    phase_name = phase.get("name", f"Phase {i}")
+                    timeout_seconds = phase.get("timeout_seconds", 300)
+                    agent = phase.get("agent")
+                else:
+                    phase_name = getattr(phase, "name", f"Phase {i}")
+                    timeout_seconds = getattr(phase, "timeout_seconds", 300)
+                    agent = getattr(phase, "agent", None)
 
-                # TODO: Validate agent exists in registry when available
-                # For now, just warn if agent looks invalid
-                if not phase.agent or not phase.agent.strip():
-                    errors.append(f"Phase '{phase.name}' must specify an agent")
+                # Validate component-level constraints
+                if timeout_seconds < 10:
+                    warnings.append(f"Phase '{phase_name}' timeout {timeout_seconds}s is very short")
+                if timeout_seconds > 3600:
+                    warnings.append(f"Phase '{phase_name}' timeout {timeout_seconds}s is very long")
+
+                # Validate agent exists
+                if not agent or (isinstance(agent, str) and not agent.strip()):
+                    errors.append(f"Phase '{phase_name}' must specify an agent")
 
             except Exception as e:
-                errors.append(f"Error validating phase '{phase.name}': {str(e)}")
+                errors.append(f"Error validating phase {i}: {str(e)}")
 
         # Workflow is valid if no errors (warnings don't block)
         valid = len(errors) == 0
@@ -476,9 +491,9 @@ class CustomWorkflowsService:
         all_phases = self.phase_registry.list_phases()
         
         available_phases = []
-        for phase_name, phase_def in all_phases.items():
+        for phase_def in all_phases:
             phase_dict = {
-                "name": phase_name,
+                "name": phase_def.name,
                 "agent_type": phase_def.agent_type,
                 "description": phase_def.description,
                 "timeout_seconds": phase_def.timeout_seconds,
@@ -489,7 +504,6 @@ class CustomWorkflowsService:
                 "input_fields": {
                     field_name: {
                         "type": field.input_type.value,
-                        "content_type": field.content_type.value,
                         "required": field.required,
                         "default": field.default_value,
                         "description": field.description,
@@ -544,37 +558,17 @@ class CustomWorkflowsService:
                     })
 
         phases_json = json.dumps(phases_list)
-        
-        # Capture phase definitions snapshot from registry
-        phase_definitions = {}
-        for phase_name in set(
-            p.get("name") or p.get("name") 
-            for p in phases_list 
-            if isinstance(p, dict) and "name" in p
-        ):
-            phase_def = self.phase_registry.get_phase(phase_name)
-            if phase_def:
-                phase_definitions[phase_name] = {
-                    "agent_type": phase_def.agent_type,
-                    "timeout_seconds": phase_def.timeout_seconds,
-                    "max_retries": phase_def.max_retries,
-                    "required": phase_def.required,
-                    "quality_threshold": phase_def.quality_threshold,
-                }
-        
-        phase_definitions_json = json.dumps(phase_definitions) if phase_definitions else None
 
         await self.database_service.pool.execute(
             """
             INSERT INTO custom_workflows
-            (id, name, description, phases, phase_definitions, owner_id, created_at, updated_at, tags, is_template)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            (id, name, description, phases, owner_id, created_at, updated_at, tags, is_template)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             """,
             workflow.id,
             workflow.name,
             workflow.description,
             phases_json,
-            phase_definitions_json,
             workflow.owner_id,
             workflow.created_at,
             workflow.updated_at,
@@ -612,36 +606,16 @@ class CustomWorkflowsService:
                     })
 
         phases_json = json.dumps(phases_list)
-        
-        # Capture phase definitions snapshot from registry
-        phase_definitions = {}
-        for phase_name in set(
-            p.get("name") or p.get("name") 
-            for p in phases_list 
-            if isinstance(p, dict) and "name" in p
-        ):
-            phase_def = self.phase_registry.get_phase(phase_name)
-            if phase_def:
-                phase_definitions[phase_name] = {
-                    "agent_type": phase_def.agent_type,
-                    "timeout_seconds": phase_def.timeout_seconds,
-                    "max_retries": phase_def.max_retries,
-                    "required": phase_def.required,
-                    "quality_threshold": phase_def.quality_threshold,
-                }
-        
-        phase_definitions_json = json.dumps(phase_definitions) if phase_definitions else None
 
         await self.database_service.pool.execute(
             """
             UPDATE custom_workflows
-            SET name = $1, description = $2, phases = $3, phase_definitions = $4, updated_at = $5, tags = $6, is_template = $7
-            WHERE id = $8
+            SET name = $1, description = $2, phases = $3, updated_at = $4, tags = $5, is_template = $6
+            WHERE id = $7
             """,
             workflow.name,
             workflow.description,
             phases_json,
-            phase_definitions_json,
             workflow.updated_at,
             json.dumps(workflow.tags),
             workflow.is_template,
@@ -652,15 +626,6 @@ class CustomWorkflowsService:
         """Convert database row to CustomWorkflow object"""
         phases_data = json.loads(row["phases"]) if isinstance(row["phases"], str) else row["phases"]
         tags = json.loads(row["tags"]) if isinstance(row["tags"], str) else row.get("tags", [])
-        
-        # Try to load phase_definitions snapshot
-        phase_definitions_json = row.get("phase_definitions")
-        phase_definitions = None
-        if phase_definitions_json:
-            try:
-                phase_definitions = json.loads(phase_definitions_json) if isinstance(phase_definitions_json, str) else phase_definitions_json
-            except Exception as e:
-                logger.warning(f"Failed to parse phase_definitions: {e}")
 
         # Convert phase data to WorkflowPhase objects (new format) if possible
         phases = []
@@ -697,7 +662,6 @@ class CustomWorkflowsService:
             updated_at=row["updated_at"],
             tags=tags,
             is_template=row.get("is_template", False),
-            phase_definitions=phase_definitions,
         )
 
     # ========== Workflow Execution Persistence ==========
@@ -948,3 +912,134 @@ class CustomWorkflowsService:
             "tags": json.loads(row["tags"]) if row["tags"] else [],
             "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
         }
+
+    async def get_all_executions(self, owner_id: str, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
+        """Get all workflow executions for a user."""
+        try:
+            query = """
+                SELECT * FROM workflow_executions 
+                WHERE owner_id = %s 
+                ORDER BY created_at DESC 
+                LIMIT %s OFFSET %s
+            """
+            rows = await self.db.execute_query(query, (owner_id, limit, offset))
+            return [self._row_to_execution_dict(row) for row in rows] if rows else []
+        except Exception as e:
+            logger.error(f"Error fetching executions for owner {owner_id}: {str(e)}")
+            return []
+
+    async def get_workflow_statistics(self, owner_id: str) -> Dict[str, Any]:
+        """Get aggregate statistics for user's workflows."""
+        try:
+            # Query for statistics
+            query = """
+                SELECT 
+                    COUNT(DISTINCT workflow_id) as total_workflows,
+                    COUNT(*) as total_executions,
+                    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+                    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
+                    SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) as running,
+                    AVG(CAST(progress_percent AS FLOAT)) as avg_completion,
+                    AVG(EXTRACT(EPOCH FROM (completed_at - created_at))) as avg_duration_seconds
+                FROM workflow_executions
+                WHERE owner_id = %s
+                    AND created_at >= NOW() - INTERVAL '30 days'
+            """
+            rows = await self.db.execute_query(query, (owner_id,))
+            if rows:
+                row = rows[0]
+                return {
+                    "total_workflows": row.get("total_workflows", 0),
+                    "total_executions": row.get("total_executions", 0),
+                    "completed_count": row.get("completed", 0),
+                    "failed_count": row.get("failed", 0),
+                    "running_count": row.get("running", 0),
+                    "average_completion_percent": float(row.get("avg_completion", 0) or 0),
+                    "average_duration_seconds": float(row.get("avg_duration_seconds", 0) or 0),
+                }
+            return {
+                "total_workflows": 0,
+                "total_executions": 0,
+                "completed_count": 0,
+                "failed_count": 0,
+                "running_count": 0,
+                "average_completion_percent": 0,
+                "average_duration_seconds": 0,
+            }
+        except Exception as e:
+            logger.error(f"Error fetching workflow statistics: {str(e)}")
+            return {}
+
+    async def get_performance_metrics(self, owner_id: str, time_range: str = "30d") -> Dict[str, Any]:
+        """Get workflow performance metrics over time."""
+        try:
+            interval_map = {
+                "7d": "7 days",
+                "30d": "30 days",
+                "90d": "90 days",
+                "all": "1 year",
+            }
+            interval = interval_map.get(time_range, "30 days")
+            
+            query = """
+                SELECT 
+                    DATE_TRUNC('day', created_at)::DATE as date,
+                    COUNT(*) as executions,
+                    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successful,
+                    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
+                    AVG(EXTRACT(EPOCH FROM (completed_at - created_at))) as avg_duration_seconds,
+                    MAX(progress_percent) as max_completion
+                FROM workflow_executions
+                WHERE owner_id = %s
+                    AND created_at >= NOW() - INTERVAL %s
+                GROUP BY DATE_TRUNC('day', created_at)
+                ORDER BY date DESC
+            """
+            rows = await self.db.execute_query(query, (owner_id, interval))
+            
+            metrics = []
+            if rows:
+                for row in rows:
+                    metrics.append({
+                        "date": str(row.get("date", "")),
+                        "total_executions": row.get("executions", 0),
+                        "successful_executions": row.get("successful", 0),
+                        "failed_executions": row.get("failed", 0),
+                        "success_rate": (row.get("successful", 0) / row.get("executions", 1)) * 100 if row.get("executions", 0) > 0 else 0,
+                        "average_duration_seconds": float(row.get("avg_duration_seconds", 0) or 0),
+                        "max_completion_percent": float(row.get("max_completion", 0) or 0),
+                    })
+            
+            return {
+                "time_range": time_range,
+                "metrics": metrics,
+                "total_data_points": len(metrics),
+            }
+        except Exception as e:
+            logger.error(f"Error fetching performance metrics: {str(e)}")
+            return {"time_range": time_range, "metrics": [], "total_data_points": 0}
+
+    async def get_execution_details(self, execution_id: str, owner_id: str) -> Dict[str, Any]:
+        """Get detailed information about a specific workflow execution."""
+        try:
+            query = """
+                SELECT * FROM workflow_executions 
+                WHERE id = %s AND owner_id = %s
+            """
+            rows = await self.db.execute_query(query, (execution_id, owner_id))
+            if rows:
+                execution = self._row_to_execution_dict(rows[0])
+                # Add detailed results
+                return {
+                    **execution,
+                    "details": {
+                        "input_fields": list(execution.get("initial_input", {}).keys()) if execution.get("initial_input") else [],
+                        "output_fields": list(execution.get("final_output", {}).keys()) if execution.get("final_output") else [],
+                        "phase_count": execution.get("total_phases", 0),
+                        "completed_phase_count": execution.get("completed_phases", 0),
+                    }
+                }
+            raise ValueError(f"Execution {execution_id} not found or not owned by user")
+        except Exception as e:
+            logger.error(f"Error fetching execution details for {execution_id}: {str(e)}")
+            raise

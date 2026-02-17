@@ -103,6 +103,9 @@ export async function makeRequest(
 
   try {
     const url = `${API_BASE_URL}${endpoint}`;
+    console.debug(
+      `[cofounderAgentClient] ${method} ${endpoint} (timeout: ${timeout}ms)`
+    );
     const config = { method, headers: getAuthHeaders() };
 
     // Handle FormData (file uploads) - must NOT set Content-Type header
@@ -122,6 +125,9 @@ export async function makeRequest(
       const response = await fetch(url, config);
       clearTimeout(timeoutId);
       const duration_ms = Math.round(performance.now() - startTime);
+      console.debug(
+        `[cofounderAgentClient] ${method} ${endpoint} completed in ${duration_ms}ms, status: ${response.status}`
+      );
 
       if (response.status === 401 && !retry) {
         // Try to refresh token in development
@@ -192,10 +198,10 @@ export async function makeRequest(
           error,
           response: result,
         });
-        
+
         // Collect metric for error response
         collectMetric(endpoint, method, response.status, duration_ms, false);
-        
+
         if (!suppressErrorLog) {
           console.error('API error response:', {
             status: response.status,
@@ -204,21 +210,28 @@ export async function makeRequest(
         }
         throw error;
       }
-      
+
       // Collect metric for successful response
       collectMetric(endpoint, method, response.status, duration_ms, false);
       return result;
     } catch (fetchError) {
       clearTimeout(timeoutId);
       const duration_ms = Math.round(performance.now() - startTime);
-      
+
       // Check if it's an abort error (timeout)
       if (fetchError.name === 'AbortError') {
         collectMetric(endpoint, method, 0, duration_ms, false); // 0 for timeout
+        console.error(
+          `[cofounderAgentClient] TIMEOUT: ${method} ${endpoint} - exceeded ${timeout}ms limit after ${duration_ms}ms`
+        );
         throw new Error(
           `Request timeout after ${timeout}ms - operation took too long`
         );
       }
+      console.error(
+        `[cofounderAgentClient] FETCH ERROR: ${method} ${endpoint}`,
+        fetchError
+      );
       throw fetchError;
     }
   } catch (error) {

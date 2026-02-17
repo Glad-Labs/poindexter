@@ -94,7 +94,7 @@ class WorkflowValidator:
                     if input_field.required:
                         if input_key not in phase.user_inputs:
                             errors.append(
-                                f"First phase '{phase.name}' required input "
+                                f"Phase 0 ({phase.name}) required input "
                                 f"'{input_key}' not provided"
                             )
             
@@ -106,14 +106,40 @@ class WorkflowValidator:
                 if prev_phase_def:
                     try:
                         mapping = self.mapper.map_phases(prev_phase.name, phase.name)
-                        is_valid, mapping_issues = self.mapper.validate_mapping(
-                            prev_phase_def,
-                            phase_def,
-                            mapping
-                        )
                         
-                        if not is_valid:
-                            for issue in mapping_issues:
+                        # When validating, account for user-provided inputs
+                        # User inputs satisfy required input requirements without auto-mapping
+                        adjusted_is_valid = True
+                        adjusted_issues = []
+                        
+                        # Check mapped fields are valid
+                        for target_key, source_key in mapping.items():
+                            if target_key not in phase_def.input_schema:
+                                adjusted_issues.append(
+                                    f"Target input '{target_key}' not found in {phase_def.name}"
+                                )
+                            if source_key not in prev_phase_def.output_schema:
+                                adjusted_issues.append(
+                                    f"Source output '{source_key}' not found in {prev_phase_def.name}"
+                                )
+                        
+                        # Check required inputs - can be satisfied by user input OR auto-mapping
+                        for target_key, target_input in phase_def.input_schema.items():
+                            if target_input.required:
+                                # User provided? OK
+                                if target_key in phase.user_inputs:
+                                    continue
+                                # Can auto-map? OK
+                                if target_key in mapping:
+                                    continue
+                                # Otherwise: error
+                                adjusted_issues.append(
+                                    f"Required input '{target_key}' in {phase_def.name} "
+                                    f"not provided and cannot be auto-mapped"
+                                )
+                        
+                        if adjusted_issues:
+                            for issue in adjusted_issues:
                                 errors.append(f"Phase {i} ({phase.name}): {issue}")
                     
                     except PhaseMappingError as e:
