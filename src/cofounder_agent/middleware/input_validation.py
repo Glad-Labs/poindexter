@@ -51,6 +51,11 @@ class InputValidationMiddleware(BaseHTTPMiddleware):
         """Process incoming request with validation"""
 
         try:
+            # Skip validation for WebSocket connections (upgrade requests)
+            # WebSocket handshakes use the HTTP Upgrade mechanism
+            if request.headers.get("upgrade", "").lower() == "websocket":
+                return await call_next(request)
+
             # Skip validation for certain paths
             if request.url.path in self.SKIP_VALIDATION_PATHS:
                 return await call_next(request)
@@ -205,7 +210,12 @@ class PayloadInspectionMiddleware(BaseHTTPMiddleware):
 
         NOTE: InputValidationMiddleware already validates requests.
         This middleware is kept for future logging needs but currently disabled.
+        Also skips WebSocket upgrade requests.
         """
+        # Skip WebSocket connections
+        if request.headers.get("upgrade", "").lower() == "websocket":
+            return await call_next(request)
+
         # Skip all inspection - InputValidationMiddleware handles validation
         response = await call_next(request)
         return response
