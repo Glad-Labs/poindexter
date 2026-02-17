@@ -1,0 +1,14 @@
+- generic [ref=e2]:
+  - generic [ref=e261]:
+    - generic [ref=e262]:
+      - heading "Glad Labs" [level=1] [ref=e263]
+      - heading "Oversight Hub" [level=2] [ref=e264]
+    - generic [ref=e265]:
+      - button "Sign in (Mock - Dev Only)" [ref=e266] [cursor=pointer]
+      - generic [ref=e268]: "{ \"environment\": \"development\", \"clientId\": \"Set\", \"mockAuth\": \"ENABLED (DEV ONLY)\" }"
+  - generic [ref=e269]:
+    - generic [ref=e271]: 🟢 Connected
+    - button "0" [ref=e272] [cursor=pointer]:
+      - generic [ref=e273]:
+        - img [ref=e274]
+        - generic: "0"

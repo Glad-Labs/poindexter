@@ -21,7 +21,13 @@ from schemas.custom_workflow_schemas import (
     PhaseConfig,
     PhaseInputField,
     WorkflowValidationResult,
+    WorkflowPhase,
+    PhaseResult,
 )
+from services.phase_registry import PhaseRegistry
+from services.phase_mapper import build_full_phase_pipeline
+from services.workflow_validator import WorkflowValidator
+from services.workflow_executor import WorkflowExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +39,9 @@ class CustomWorkflowsService:
         """Initialize with database service"""
         self.database_service = database_service
         self._available_phases_cache: Optional[List[AvailablePhase]] = None
+        self.phase_registry = PhaseRegistry.get_instance()
+        self.workflow_validator = WorkflowValidator(self.phase_registry)
+        self.workflow_executor = WorkflowExecutor(self.phase_registry)
         logger.info("CustomWorkflowsService initialized")
 
     async def create_workflow(
@@ -254,6 +263,149 @@ class CustomWorkflowsService:
             logger.error(f"Failed to delete workflow: {str(e)}", exc_info=True)
             raise
 
+    async def execute_workflow(
+        self,
+        workflow: CustomWorkflow,
+        initial_inputs: Optional[Dict[str, Any]] = None,
+        execution_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Execute a workflow and return results.
+
+        Args:
+            workflow: The workflow to execute
+            initial_inputs: Initial input values for the first phase
+            execution_id: Optional ID for tracking this execution
+
+        Returns:
+            Dict with execution results:
+            {
+                "execution_id": str,
+                "workflow_id": str,
+                "status": "completed" | "failed",
+                "phase_results": {
+                    "phase_name": {
+                        "status": "completed",
+                        "output": {...},
+                        "error": null,
+                        "execution_time_ms": 100.0,
+                        ...
+                    }
+                },
+                "final_output": {...},
+                "error_message": null,
+                "duration_ms": 1000.0
+            }
+        """
+        import time
+        
+        start_time = time.time()
+        
+        if execution_id is None:
+            execution_id = str(uuid.uuid4())
+        
+        logger.info(f"Starting workflow execution: {execution_id}")
+        logger.info(f"Workflow: {workflow.name} ({len(workflow.phases)} phases)")
+        
+        # Validate workflow before executing
+        is_valid, errors = self.workflow_validator.validate_for_execution(workflow)
+        if not is_valid:
+            error_msg = f"Workflow validation failed: {', '.join(errors)}"
+            logger.error(error_msg)
+            return {
+                "execution_id": execution_id,
+                "workflow_id": workflow.id,
+                "status": "failed",
+                "phase_results": {},
+                "final_output": None,
+                "error_message": error_msg,
+                "duration_ms": (time.time() - start_time) * 1000,
+            }
+        
+        try:
+            # Execute workflow using executor
+            phase_results = self.workflow_executor.execute_workflow(
+                workflow,
+                initial_inputs=initial_inputs,
+                execution_id=execution_id
+            )
+            
+            # Determine overall status
+            failed_phases = [
+                name for name, result in phase_results.items()
+                if result.status == "failed"
+            ]
+            
+            overall_status = "failed" if failed_phases else "completed"
+            
+            # Get final output from last phase
+            final_output = None
+            if phase_results:
+                last_phase_result = list(phase_results.values())[-1]
+                final_output = last_phase_result.output
+            
+            duration_ms = (time.time() - start_time) * 1000
+            
+            # Persist execution if we have database
+            try:
+                await self.persist_workflow_execution(
+                    execution_id=execution_id,
+                    workflow_id=workflow.id or "",
+                    owner_id=workflow.owner_id or "",
+                    execution_status=overall_status,
+                    phase_results=phase_results,
+                    duration_ms=duration_ms,
+                    initial_input=initial_inputs,
+                    final_output=final_output,
+                    error_message=None if overall_status == "completed" else ", ".join(failed_phases),
+                    completed_phases=len([r for r in phase_results.values() if r.status == "completed"]),
+                    total_phases=len(phase_results),
+                    progress_percent=100 if overall_status == "completed" else 50,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to persist workflow execution: {e}")
+            
+            return {
+                "execution_id": execution_id,
+                "workflow_id": workflow.id,
+                "status": overall_status,
+                "phase_results": {
+                    name: {
+                        "status": result.status,
+                        "output": result.output,
+                        "error": result.error,
+                        "execution_time_ms": result.execution_time_ms,
+                        "model_used": result.model_used,
+                        "tokens_used": result.tokens_used,
+                        "input_trace": {
+                            k: {
+                                "source_phase": v.source_phase,
+                                "source_field": v.source_field,
+                                "user_provided": v.user_provided,
+                                "auto_mapped": v.auto_mapped,
+                            }
+                            for k, v in result.input_trace.items()
+                        } if result.input_trace else {},
+                    }
+                    for name, result in phase_results.items()
+                },
+                "final_output": final_output,
+                "error_message": None if overall_status == "completed" else f"Phases failed: {', '.join(failed_phases)}",
+                "duration_ms": duration_ms,
+            }
+        
+        except Exception as e:
+            logger.error(f"Workflow execution failed: {str(e)}", exc_info=True)
+            return {
+                "execution_id": execution_id,
+                "workflow_id": workflow.id,
+                "status": "failed",
+                "phase_results": {},
+                "final_output": None,
+                "error_message": str(e),
+                "duration_ms": (time.time() - start_time) * 1000,
+            }
+
     def validate_workflow(self, workflow: CustomWorkflow) -> WorkflowValidationResult:
         """
         Validate a workflow definition.
@@ -311,184 +463,51 @@ class CustomWorkflowsService:
         valid = len(errors) == 0
         return WorkflowValidationResult(valid=valid, errors=errors, warnings=warnings)
 
-    async def get_available_phases(self) -> List[AvailablePhase]:
+    async def get_available_phases(self) -> List[Dict[str, Any]]:
         """
         Get list of available phases that can be used in workflows.
 
-        This will be populated from agents/phases discovered at startup.
-        For MVP, returns hardcoded list of known phases.
+        Returns phase metadata from the PhaseRegistry.
 
         Returns:
-            List of available phases
+            List of available phase definitions
         """
-        # Use cached version if available
-        if self._available_phases_cache:
-            return self._available_phases_cache
-
-        # Hardcoded known phases (TODO: Derive from agent registry)
-        available_phases = [
-            AvailablePhase(
-                name="research",
-                description="Web search and research phase - gathers information on topic",
-                category="content",
-                default_timeout_seconds=300,
-                compatible_agents=["research_agent"],
-                capabilities=["web_search", "data_analysis"],
-                default_retries=3,
-                input_fields=[
-                    PhaseInputField(
-                        key="topic",
-                        label="Research Topic",
-                        input_type="text",
-                        required=True,
-                        placeholder="What should this phase research?",
-                    ),
-                    PhaseInputField(
-                        key="focus",
-                        label="Focus Areas",
-                        input_type="textarea",
-                        required=False,
-                        placeholder="Optional: specific angles, questions, constraints",
-                    ),
-                ],
-                version="1.0",
-            ),
-            AvailablePhase(
-                name="draft",
-                description="Creative draft generation - produces initial content",
-                category="content",
-                default_timeout_seconds=300,
-                compatible_agents=["creative_agent"],
-                capabilities=["content_generation", "style_matching"],
-                default_retries=2,
-                input_fields=[
-                    PhaseInputField(
-                        key="prompt",
-                        label="Draft Prompt",
-                        input_type="textarea",
-                        required=True,
-                        placeholder="Provide the drafting prompt or instructions",
-                    ),
-                    PhaseInputField(
-                        key="target_audience",
-                        label="Target Audience",
-                        input_type="text",
-                        required=False,
-                        placeholder="Optional: who this draft is for",
-                    ),
-                    PhaseInputField(
-                        key="tone",
-                        label="Tone",
-                        input_type="select",
-                        required=False,
-                        default_value="professional",
-                        options=["professional", "casual", "technical", "persuasive"],
-                    ),
-                ],
-                version="1.0",
-            ),
-            AvailablePhase(
-                name="assess",
-                description="Quality assessment - evaluates content quality",
-                category="quality",
-                default_timeout_seconds=240,
-                compatible_agents=["qa_agent"],
-                capabilities=["quality_scoring", "feedback"],
-                default_retries=1,
-                input_fields=[
-                    PhaseInputField(
-                        key="assessment_criteria",
-                        label="Assessment Criteria",
-                        input_type="textarea",
-                        required=False,
-                        placeholder="Optional: criteria to evaluate quality",
-                    ),
-                    PhaseInputField(
-                        key="quality_threshold",
-                        label="Quality Threshold",
-                        input_type="number",
-                        required=False,
-                        default_value=0.7,
-                    ),
-                ],
-                version="1.0",
-            ),
-            AvailablePhase(
-                name="refine",
-                description="Content refinement - improves based on feedback",
-                category="content",
-                default_timeout_seconds=300,
-                compatible_agents=["creative_agent"],
-                capabilities=["content_refinement", "iteration"],
-                default_retries=2,
-                input_fields=[
-                    PhaseInputField(
-                        key="revision_instructions",
-                        label="Revision Instructions",
-                        input_type="textarea",
-                        required=True,
-                        placeholder="How should this phase improve previous output?",
-                    ),
-                ],
-                version="1.0",
-            ),
-            AvailablePhase(
-                name="image",
-                description="Image selection and generation - adds visual elements",
-                category="media",
-                default_timeout_seconds=600,
-                compatible_agents=["image_agent"],
-                capabilities=["image_generation", "image_selection"],
-                default_retries=2,
-                input_fields=[
-                    PhaseInputField(
-                        key="image_prompt",
-                        label="Image Prompt",
-                        input_type="textarea",
-                        required=False,
-                        placeholder="Optional prompt for image generation/selection",
-                    ),
-                    PhaseInputField(
-                        key="image_style",
-                        label="Image Style",
-                        input_type="select",
-                        required=False,
-                        options=["photo", "illustration", "minimal", "cinematic"],
-                    ),
-                ],
-                version="1.0",
-            ),
-            AvailablePhase(
-                name="publish",
-                description="Publishing - publishes to configured CMS",
-                category="distribution",
-                default_timeout_seconds=180,
-                compatible_agents=["publishing_agent"],
-                capabilities=["publishing", "seo_optimization"],
-                default_retries=1,
-                input_fields=[
-                    PhaseInputField(
-                        key="publish_target",
-                        label="Publish Target",
-                        input_type="select",
-                        required=False,
-                        default_value="blog",
-                        options=["blog", "newsletter", "social", "draft_only"],
-                    ),
-                    PhaseInputField(
-                        key="slug",
-                        label="Slug Override",
-                        input_type="text",
-                        required=False,
-                        placeholder="Optional URL slug",
-                    ),
-                ],
-                version="1.0",
-            ),
-        ]
-
-        self._available_phases_cache = available_phases
-        logger.info(f"Loaded {len(available_phases)} available phases")
+        # Use registry to get all available phases
+        all_phases = self.phase_registry.list_phases()
+        
+        available_phases = []
+        for phase_name, phase_def in all_phases.items():
+            phase_dict = {
+                "name": phase_name,
+                "agent_type": phase_def.agent_type,
+                "description": phase_def.description,
+                "timeout_seconds": phase_def.timeout_seconds,
+                "max_retries": phase_def.max_retries,
+                "required": phase_def.required,
+                "quality_threshold": phase_def.quality_threshold,
+                "tags": phase_def.tags,
+                "input_fields": {
+                    field_name: {
+                        "type": field.input_type.value,
+                        "content_type": field.content_type.value,
+                        "required": field.required,
+                        "default": field.default_value,
+                        "description": field.description,
+                    }
+                    for field_name, field in phase_def.input_schema.items()
+                },
+                "output_fields": {
+                    field_name: {
+                        "type": field.content_type.value,
+                        "description": field.description,
+                    }
+                    for field_name, field in phase_def.output_schema.items()
+                },
+            }
+            available_phases.append(phase_dict)
+        
+        logger.info(f"Loaded {len(available_phases)} available phases from registry")
+        return available_phases
         return available_phases
 
     # ========================================================================
@@ -497,33 +516,65 @@ class CustomWorkflowsService:
 
     async def _insert_workflow(self, workflow: CustomWorkflow) -> None:
         """Insert workflow into database"""
-        phases_json = json.dumps(
-            [
-                {
+        # Serialize phases - support both old PhaseConfig and new WorkflowPhase formats
+        phases_list = []
+        for p in workflow.phases:
+            if isinstance(p, WorkflowPhase):
+                # New format: WorkflowPhase
+                phases_list.append({
+                    "index": p.index,
                     "name": p.name,
-                    "agent": p.agent,
-                    "description": p.description,
-                    "timeout_seconds": p.timeout_seconds,
-                    "max_retries": p.max_retries,
-                    "skip_on_error": p.skip_on_error,
-                    "required": p.required,
-                    "quality_threshold": p.quality_threshold,
-                    "metadata": p.metadata,
+                    "user_inputs": p.user_inputs,
+                    "model_overrides": p.model_overrides,
+                    "input_mapping": p.input_mapping,
+                    "skip": p.skip,
+                })
+            elif isinstance(p, dict):
+                # Dictionary representation
+                phases_list.append(p)
+            else:
+                # Try to extract from PhaseConfig (old format)
+                if hasattr(p, 'name'):
+                    phases_list.append({
+                        "name": p.name,
+                        "agent": getattr(p, 'agent', None),
+                        "description": getattr(p, 'description', None),
+                        "timeout_seconds": getattr(p, 'timeout_seconds', 300),
+                        "max_retries": getattr(p, 'max_retries', 3),
+                    })
+
+        phases_json = json.dumps(phases_list)
+        
+        # Capture phase definitions snapshot from registry
+        phase_definitions = {}
+        for phase_name in set(
+            p.get("name") or p.get("name") 
+            for p in phases_list 
+            if isinstance(p, dict) and "name" in p
+        ):
+            phase_def = self.phase_registry.get_phase(phase_name)
+            if phase_def:
+                phase_definitions[phase_name] = {
+                    "agent_type": phase_def.agent_type,
+                    "timeout_seconds": phase_def.timeout_seconds,
+                    "max_retries": phase_def.max_retries,
+                    "required": phase_def.required,
+                    "quality_threshold": phase_def.quality_threshold,
                 }
-                for p in workflow.phases
-            ]
-        )
+        
+        phase_definitions_json = json.dumps(phase_definitions) if phase_definitions else None
 
         await self.database_service.pool.execute(
             """
             INSERT INTO custom_workflows
-            (id, name, description, phases, owner_id, created_at, updated_at, tags, is_template)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            (id, name, description, phases, phase_definitions, owner_id, created_at, updated_at, tags, is_template)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             """,
             workflow.id,
             workflow.name,
             workflow.description,
             phases_json,
+            phase_definitions_json,
             workflow.owner_id,
             workflow.created_at,
             workflow.updated_at,
@@ -533,32 +584,64 @@ class CustomWorkflowsService:
 
     async def _update_workflow_in_db(self, workflow: CustomWorkflow) -> None:
         """Update workflow in database"""
-        phases_json = json.dumps(
-            [
-                {
+        # Serialize phases - support both old PhaseConfig and new WorkflowPhase formats
+        phases_list = []
+        for p in workflow.phases:
+            if isinstance(p, WorkflowPhase):
+                # New format: WorkflowPhase
+                phases_list.append({
+                    "index": p.index,
                     "name": p.name,
-                    "agent": p.agent,
-                    "description": p.description,
-                    "timeout_seconds": p.timeout_seconds,
-                    "max_retries": p.max_retries,
-                    "skip_on_error": p.skip_on_error,
-                    "required": p.required,
-                    "quality_threshold": p.quality_threshold,
-                    "metadata": p.metadata,
+                    "user_inputs": p.user_inputs,
+                    "model_overrides": p.model_overrides,
+                    "input_mapping": p.input_mapping,
+                    "skip": p.skip,
+                })
+            elif isinstance(p, dict):
+                # Dictionary representation
+                phases_list.append(p)
+            else:
+                # Try to extract from PhaseConfig (old format)
+                if hasattr(p, 'name'):
+                    phases_list.append({
+                        "name": p.name,
+                        "agent": getattr(p, 'agent', None),
+                        "description": getattr(p, 'description', None),
+                        "timeout_seconds": getattr(p, 'timeout_seconds', 300),
+                        "max_retries": getattr(p, 'max_retries', 3),
+                    })
+
+        phases_json = json.dumps(phases_list)
+        
+        # Capture phase definitions snapshot from registry
+        phase_definitions = {}
+        for phase_name in set(
+            p.get("name") or p.get("name") 
+            for p in phases_list 
+            if isinstance(p, dict) and "name" in p
+        ):
+            phase_def = self.phase_registry.get_phase(phase_name)
+            if phase_def:
+                phase_definitions[phase_name] = {
+                    "agent_type": phase_def.agent_type,
+                    "timeout_seconds": phase_def.timeout_seconds,
+                    "max_retries": phase_def.max_retries,
+                    "required": phase_def.required,
+                    "quality_threshold": phase_def.quality_threshold,
                 }
-                for p in workflow.phases
-            ]
-        )
+        
+        phase_definitions_json = json.dumps(phase_definitions) if phase_definitions else None
 
         await self.database_service.pool.execute(
             """
             UPDATE custom_workflows
-            SET name = $1, description = $2, phases = $3, updated_at = $4, tags = $5, is_template = $6
-            WHERE id = $7
+            SET name = $1, description = $2, phases = $3, phase_definitions = $4, updated_at = $5, tags = $6, is_template = $7
+            WHERE id = $8
             """,
             workflow.name,
             workflow.description,
             phases_json,
+            phase_definitions_json,
             workflow.updated_at,
             json.dumps(workflow.tags),
             workflow.is_template,
@@ -569,21 +652,40 @@ class CustomWorkflowsService:
         """Convert database row to CustomWorkflow object"""
         phases_data = json.loads(row["phases"]) if isinstance(row["phases"], str) else row["phases"]
         tags = json.loads(row["tags"]) if isinstance(row["tags"], str) else row.get("tags", [])
+        
+        # Try to load phase_definitions snapshot
+        phase_definitions_json = row.get("phase_definitions")
+        phase_definitions = None
+        if phase_definitions_json:
+            try:
+                phase_definitions = json.loads(phase_definitions_json) if isinstance(phase_definitions_json, str) else phase_definitions_json
+            except Exception as e:
+                logger.warning(f"Failed to parse phase_definitions: {e}")
 
-        phases = [
-            PhaseConfig(
-                name=p["name"],
-                agent=p["agent"],
-                description=p.get("description"),
-                timeout_seconds=p.get("timeout_seconds", 300),
-                max_retries=p.get("max_retries", 3),
-                skip_on_error=p.get("skip_on_error", False),
-                required=p.get("required", True),
-                quality_threshold=p.get("quality_threshold"),
-                metadata=p.get("metadata", {}),
-            )
-            for p in phases_data
-        ]
+        # Convert phase data to WorkflowPhase objects (new format) if possible
+        phases = []
+        for i, p in enumerate(phases_data):
+            if isinstance(p, dict):
+                # Check if it's a WorkflowPhase format (has "index" field)
+                if "index" in p:
+                    phases.append(WorkflowPhase(
+                        index=p.get("index", i),
+                        name=p["name"],
+                        user_inputs=p.get("user_inputs", {}),
+                        model_overrides=p.get("model_overrides"),
+                        input_mapping=p.get("input_mapping", {}),
+                        skip=p.get("skip", False),
+                    ))
+                else:
+                    # Old PhaseConfig format - convert to WorkflowPhase for consistency
+                    phases.append(WorkflowPhase(
+                        index=i,
+                        name=p["name"],
+                        user_inputs={},  # Old format didn't have per-phase user inputs
+                        model_overrides=None,
+                        input_mapping={},
+                        skip=False,
+                    ))
 
         return CustomWorkflow(
             id=str(row["id"]) if row.get("id") is not None else None,
@@ -595,6 +697,7 @@ class CustomWorkflowsService:
             updated_at=row["updated_at"],
             tags=tags,
             is_template=row.get("is_template", False),
+            phase_definitions=phase_definitions,
         )
 
     # ========== Workflow Execution Persistence ==========

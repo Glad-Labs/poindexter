@@ -286,30 +286,24 @@ async def delete_custom_workflow(
         raise HTTPException(status_code=500, detail=f"Failed to delete workflow: {str(e)}")
 
 
-@router.post("/custom/{workflow_id}/execute", response_model=WorkflowExecutionResponse, name="Execute Custom Workflow")
+@router.post("/custom/{workflow_id}/execute", name="Execute Custom Workflow")
 async def execute_custom_workflow(
     workflow_id: str,
     request_body: Dict[str, Any],
     request: Request,
     service: CustomWorkflowsService = Depends(get_workflows_service),
-    skip_phases: Optional[List[str]] = Query(None, description="Phases to skip"),
-    quality_threshold: Optional[float] = Query(
-        None, ge=0.0, le=1.0, description="Override quality threshold"
-    ),
-) -> WorkflowExecutionResponse:
+) -> Dict[str, Any]:
     """
     Execute a saved custom workflow.
 
-    Loads the workflow definition and starts background execution.
+    Loads the workflow definition and begins execution.
 
     Args:
         workflow_id: Workflow UUID to execute
         request_body: Input data for workflow execution
-        skip_phases: Optional phases to skip
-        quality_threshold: Optional quality threshold override
 
     Returns:
-        Execution response with workflow_id and tracking info
+        Execution response with execution_id and phase results
 
     Raises:
         404: Workflow not found
@@ -323,9 +317,7 @@ async def execute_custom_workflow(
         if not workflow:
             raise HTTPException(status_code=404, detail=f"Workflow '{workflow_id}' not found")
 
-        # Execute workflow using the adapter
-        from services.workflow_execution_adapter import execute_custom_workflow
-        
+        # Extract input data from request
         # Accept both payload styles:
         # - {"input_data": {...}} (frontend client)
         # - {...} (raw workflow input)
@@ -336,33 +328,15 @@ async def execute_custom_workflow(
         else:
             input_data = {}
 
-        # Get database service from app state, with fallback to injected workflows service
-        database_service = (
-            getattr(request.app.state, "database_service", None)
-            or getattr(request.app.state, "database", None)
-            or getattr(service, "database_service", None)
-        )
-        if not database_service:
-            raise HTTPException(status_code=503, detail="Database service not initialized")
-        
-        # Execute workflow asynchronously (returns execution ID immediately)
-        result = await execute_custom_workflow(
-            custom_workflow=workflow,
-            input_data=input_data,
-            database_service=database_service,
-            queue_async=True  # Execute in background
+        # Execute workflow using the new service method
+        result = await service.execute_workflow(
+            workflow=workflow,
+            initial_inputs=input_data
         )
         
-        logger.info(f"Workflow execution started: {result['execution_id']}")
+        logger.info(f"Workflow execution completed: {result['execution_id']}")
         
-        return WorkflowExecutionResponse(
-            workflow_id=result["workflow_id"],
-            execution_id=result["execution_id"],
-            status=result["status"],
-            started_at=result["started_at"],
-            phases=result["phases"],
-            progress_percent=result.get("progress_percent", 0),
-        )
+        return result
     except HTTPException:
         raise
     except Exception as e:
@@ -370,22 +344,23 @@ async def execute_custom_workflow(
         raise HTTPException(status_code=500, detail=f"Failed to execute workflow: {str(e)}")
 
 
-@router.get(
-    "/available-phases", response_model=AvailablePhasesResponse, name="Get Available Phases"
-)
+@router.get("/available-phases", name="Get Available Phases")
 async def get_available_phases(
     service: CustomWorkflowsService = Depends(get_workflows_service),
-) -> AvailablePhasesResponse:
+) -> Dict[str, Any]:
     """
     Get list of available phases that can be used when building workflows.
 
     Returns:
-        List of phase metadata (name, description, compatible agents, etc)
+        List of phase metadata (name, description, input/output fields, etc)
     """
     try:
         phases = await service.get_available_phases()
 
-        return AvailablePhasesResponse(phases=phases, total_count=len(phases))
+        return {
+            "phases": phases,
+            "total_count": len(phases)
+        }
     except Exception as e:
         logger.error(f"Error getting available phases: {str(e)}", exc_info=True)
         raise HTTPException(
