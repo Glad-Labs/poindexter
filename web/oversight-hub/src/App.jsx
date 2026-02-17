@@ -1,8 +1,10 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter as Router, useLocation } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { WebSocketProvider } from './context/WebSocketContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import AppRoutes from './routes/AppRoutes';
+import NotificationCenter from './components/notifications/NotificationCenter';
 import useStore from './store/useStore';
 import useAuth from './hooks/useAuth';
 import './OversightHub.css';
@@ -56,14 +58,17 @@ const App = () => {
   return (
     <ErrorBoundary>
       <AuthProvider>
-        <Router
-          future={{
-            v7_startTransition: true,
-            v7_relativeSplatPath: true,
-          }}
-        >
-          <AppContent />
-        </Router>
+        <WebSocketProvider>
+          <Router
+            future={{
+              v7_startTransition: true,
+              v7_relativeSplatPath: true,
+            }}
+          >
+            <AppContent />
+            <NotificationCenter />
+          </Router>
+        </WebSocketProvider>
       </AuthProvider>
     </ErrorBoundary>
   );

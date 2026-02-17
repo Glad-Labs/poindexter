@@ -13,6 +13,7 @@ from typing import Dict, Set
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 
 from services.progress_service import get_progress_service
+from services.websocket_manager import websocket_manager
 
 logger = logging.getLogger(__name__)
 websocket_router = APIRouter(prefix="/api/ws", tags=["WebSocket"])
@@ -145,3 +146,102 @@ async def broadcast_progress(task_id: str, progress) -> None:
 def get_connection_manager() -> ConnectionManager:
     """Get the global connection manager"""
     return connection_manager
+
+
+# ============================================================================
+# GLOBAL WEBSOCKET ENDPOINT FOR REAL-TIME UPDATES
+# ============================================================================
+
+
+@websocket_router.websocket("/")
+async def websocket_endpoint(websocket: WebSocket):
+    """
+    Global WebSocket endpoint for real-time updates (Phase 4)
+
+    Connect to: ws://localhost:8000/ws
+
+    Clients can subscribe to:
+    - Task progress: `task.progress.{task_id}`
+    - Workflow status: `workflow.status.{workflow_id}`
+    - Analytics updates: `analytics.update`
+    - System notifications: `notification.received`
+
+    Message Format:
+    {
+        "type": "message_type",
+        "event": "namespaced.event.name",
+        "data": { /* event-specific data */ },
+        "timestamp": "2026-02-15T..."
+    }
+
+    Example Usage (JavaScript):
+    ```javascript
+    const ws = new WebSocket('ws://localhost:8000/ws');
+    ws.addEventListener('message', (event) => {
+        const msg = JSON.parse(event.data);
+        if (msg.event === 'task.progress.task-123') {
+            console.log('Progress:', msg.data);
+        }
+    });
+    ```
+    """
+    await websocket.accept()
+    namespace = "global"
+    
+    try:
+        # Register connection
+        await websocket_manager.connect(websocket, namespace)
+        
+        logger.info(f"Global WebSocket client connected. Total connections: {websocket_manager.get_connection_count()}")
+        
+        # Keep connection alive and handle incoming messages
+        while True:
+            # Receive message from client (for future client->server communication)
+            data = await websocket.receive_text()
+            logger.debug(f"WebSocket received: {data}")
+            
+            # Parse the message
+            try:
+                message = json.loads(data)
+                
+                # Handle different message types
+                if message.get("type") == "subscribe":
+                    namespace = message.get("namespace", "global")
+                    logger.info(f"Client subscribed to namespace: {namespace}")
+                    
+                elif message.get("type") == "unsubscribe":
+                    namespace = message.get("namespace", "global")
+                    logger.info(f"Client unsubscribed from namespace: {namespace}")
+                
+            except json.JSONDecodeError:
+                logger.warning(f"Invalid JSON received: {data}")
+    
+    except WebSocketDisconnect:
+        await websocket_manager.disconnect(websocket, namespace)
+        logger.info(f"Global WebSocket client disconnected. Total connections: {websocket_manager.get_connection_count()}")
+    
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}", exc_info=True)
+        try:
+            await websocket.close(code=1011, reason=str(e))
+        except Exception as close_error:
+            logger.error(f"Error closing WebSocket: {close_error}")
+
+
+# Statistics endpoint
+@websocket_router.get("/stats")
+async def websocket_stats():
+    """
+    Get WebSocket connection statistics
+
+    Returns:
+    {
+        "total_connections": 42,
+        "namespaces": {
+            "global": 10,
+            "task.task-123": 5,
+            "workflow.workflow-456": 8
+        }
+    }
+    """
+    return await websocket_manager.get_stats()

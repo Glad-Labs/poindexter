@@ -54,6 +54,7 @@ const LayoutWrapper = ({ children }) => {
     { label: 'Content', icon: '📄', path: 'content' },
     { label: 'Services', icon: '⚡', path: 'services' },
     { label: 'AI Studio', icon: '🤖', path: 'ai' },
+    { label: 'Marketplace', icon: '🏪', path: 'marketplace' },
     { label: 'Costs', icon: '💰', path: 'costs' },
     { label: 'Performance', icon: '⚡', path: 'performance' },
     { label: 'Settings', icon: '⚙️', path: 'settings' },
