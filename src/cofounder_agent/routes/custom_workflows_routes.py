@@ -422,3 +422,95 @@ async def list_workflow_executions(
     except Exception as e:
         logger.error(f"Error listing workflow executions for {workflow_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to list workflow executions: {str(e)}")
+
+
+@router.get("/history", name="Get Workflow Execution History")
+async def get_workflow_history(
+    request: Request,
+    service: CustomWorkflowsService = Depends(get_workflows_service),
+    limit: int = Query(50, ge=1, le=500, description="Max results"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+    status: Optional[str] = Query(None, description="Filter by status"),
+) -> Dict[str, Any]:
+    """Get workflow execution history for the user."""
+    try:
+        owner_id = get_user_id(request)
+        # Get all executions for user's workflows
+        all_executions = await service.get_all_executions(owner_id=owner_id)
+        
+        # Filter by status if provided
+        if status:
+            all_executions = [e for e in all_executions if e.get("status", "").lower() == status.lower()]
+        
+        # Sort by creation time (newest first)
+        all_executions.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        
+        # Apply pagination
+        total = len(all_executions)
+        paginated = all_executions[offset : offset + limit]
+        
+        return {
+            "executions": paginated,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "has_next": (offset + limit) < total,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching workflow history: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch workflow history: {str(e)}")
+
+
+@router.get("/statistics", name="Get Workflow Statistics")
+async def get_workflow_statistics(
+    request: Request,
+    service: CustomWorkflowsService = Depends(get_workflows_service),
+) -> Dict[str, Any]:
+    """Get aggregate statistics for user's workflows."""
+    try:
+        owner_id = get_user_id(request)
+        stats = await service.get_workflow_statistics(owner_id=owner_id)
+        return stats
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching workflow statistics: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch workflow statistics: {str(e)}")
+
+
+@router.get("/performance-metrics", name="Get Performance Metrics")
+async def get_performance_metrics(
+    request: Request,
+    service: CustomWorkflowsService = Depends(get_workflows_service),
+    range: str = Query("30d", description="Time range: 7d, 30d, 90d, all"),
+) -> Dict[str, Any]:
+    """Get workflow performance metrics."""
+    try:
+        owner_id = get_user_id(request)
+        metrics = await service.get_performance_metrics(owner_id=owner_id, time_range=range)
+        return metrics
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching performance metrics: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch performance metrics: {str(e)}")
+
+
+@router.get("/workflow/{execution_id}/details", name="Get Execution Details")
+async def get_execution_details(
+    execution_id: str,
+    request: Request,
+    service: CustomWorkflowsService = Depends(get_workflows_service),
+) -> Dict[str, Any]:
+    """Get detailed information about a workflow execution."""
+    try:
+        owner_id = get_user_id(request)
+        details = await service.get_execution_details(execution_id=execution_id, owner_id=owner_id)
+        return details
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching execution details for {execution_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch execution details: {str(e)}")
