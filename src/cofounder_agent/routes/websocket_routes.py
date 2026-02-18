@@ -143,6 +143,94 @@ async def broadcast_progress(task_id: str, progress) -> None:
     await connection_manager.broadcast(task_id, {"type": "progress", **progress.to_dict()})
 
 
+@websocket_router.websocket("/workflow/{execution_id}")
+async def websocket_workflow_progress(websocket: WebSocket, execution_id: str):
+    """
+    WebSocket endpoint for real-time workflow execution progress.
+
+    Connect to: ws://localhost:8000/api/ws/workflow/{execution_id}
+
+    Receives messages like:
+    {
+        "type": "progress",
+        "execution_id": "550e8400-e29b-41d4-a716-446655440000",
+        "status": "executing",
+        "current_phase": 1,
+        "total_phases": 5,
+        "phase_name": "draft",
+        "phase_status": "executing",
+        "progress_percent": 40.0,
+        "completed_phases": 2,
+        "elapsed_time": 15.5,
+        "estimated_remaining": 23.2,
+        "message": "Executing phase 2/5: draft",
+        "timestamp": "2026-02-18T10:30:00Z"
+    }
+
+    Example Usage (JavaScript):
+    ```javascript
+    const ws = new WebSocket('ws://localhost:8000/api/ws/workflow/550e8400-e29b-41d4-a716-446655440000');
+    ws.addEventListener('message', (event) => {
+        const progress = JSON.parse(event.data);
+        console.log(`Progress: ${progress.progress_percent}% - ${progress.message}`);
+        console.log(`Phase ${progress.current_phase + 1} of ${progress.total_phases}`);
+    });
+    ```
+    """
+    await connection_manager.connect(execution_id, websocket)
+
+    try:
+        from services.workflow_progress_service import get_workflow_progress_service
+
+        progress_service = get_workflow_progress_service()
+
+        # Send initial status
+        progress = progress_service.get_progress(execution_id)
+        if progress:
+            await websocket.send_json({"type": "progress", **progress.to_dict()})
+        else:
+            await websocket.send_json(
+                {
+                    "type": "status",
+                    "message": "Waiting for workflow execution to start...",
+                    "execution_id": execution_id,
+                }
+            )
+
+        # Keep connection open and receive any client messages
+        while True:
+            # Wait for client messages (or keep alive)
+            try:
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=30)
+                message = json.loads(data)
+
+                # Handle client commands
+                if message.get("type") == "ping":
+                    await websocket.send_json({"type": "pong"})
+                elif message.get("type") == "get_progress":
+                    progress = progress_service.get_progress(execution_id)
+                    if progress:
+                        await websocket.send_json({"type": "progress", **progress.to_dict()})
+
+            except asyncio.TimeoutError:
+                # Send keep-alive every 30 seconds
+                await websocket.send_json({"type": "keep-alive"})
+            except json.JSONDecodeError:
+                logger.warning(f"Invalid JSON received on WebSocket: {data}")
+
+    except WebSocketDisconnect:
+        await connection_manager.disconnect(execution_id, websocket)
+        logger.info(f"WebSocket disconnected for execution {execution_id}")
+    except Exception as e:
+        logger.error(f"WebSocket error for execution {execution_id}: {e}")
+        await connection_manager.disconnect(execution_id, websocket)
+
+
+async def broadcast_workflow_progress(execution_id: str, progress) -> None:
+    """Broadcast workflow progress update to all connected clients"""
+    await connection_manager.broadcast(execution_id, {"type": "progress", **progress.to_dict()})
+
+
 def get_connection_manager() -> ConnectionManager:
     """Get the global connection manager"""
     return connection_manager

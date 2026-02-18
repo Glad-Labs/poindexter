@@ -355,6 +355,17 @@ def register_all_routes(
         status["custom_workflows_router"] = False
 
     try:
+        # ===== WORKFLOW PROGRESS - Real-time progress tracking and monitoring =====
+        from routes.workflow_progress_routes import router as workflow_progress_router
+
+        app.include_router(workflow_progress_router)
+        logger.info(" workflow_progress_router registered (progress tracking & WebSocket broadcasting)")
+        status["workflow_progress_router"] = True
+    except Exception as e:
+        logger.error(f" workflow_progress_router failed: {e}")
+        status["workflow_progress_router"] = False
+
+    try:
         # ===== CAPABILITY TASKS - Composable capability-based task system =====
         from routes.capability_tasks_routes import router as capability_tasks_router
 

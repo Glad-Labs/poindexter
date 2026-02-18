@@ -298,6 +298,7 @@ class CustomWorkflowsService:
             }
         """
         import time
+        from services.workflow_progress_service import get_workflow_progress_service
         
         start_time = time.time()
         
@@ -307,11 +308,35 @@ class CustomWorkflowsService:
         logger.info(f"Starting workflow execution: {execution_id}")
         logger.info(f"Workflow: {workflow.name} ({len(workflow.phases)} phases)")
         
+        # Initialize progress tracking
+        progress_service = get_workflow_progress_service()
+        try:
+            progress_service.create_progress(
+                execution_id=execution_id,
+                workflow_id=workflow.id,
+                template="",
+                total_phases=len(workflow.phases) if workflow.phases else 0,
+            )
+            progress_service.start_execution(
+                execution_id=execution_id,
+                message=f"Starting workflow: {workflow.name}"
+            )
+            logger.debug(f"Initialized progress tracking for execution {execution_id}")
+        except Exception as e:
+            logger.warning(f"Failed to initialize progress tracking: {e}")
+        
         # Validate workflow before executing
         is_valid, errors = self.workflow_validator.validate_for_execution(workflow)
         if not is_valid:
             error_msg = f"Workflow validation failed: {', '.join(errors)}"
             logger.error(error_msg)
+            try:
+                progress_service.mark_failed(
+                    execution_id=execution_id,
+                    error=error_msg,
+                )
+            except Exception as e:
+                logger.debug(f"Failed to update progress on validation failure: {e}")
             return {
                 "execution_id": execution_id,
                 "workflow_id": workflow.id,
@@ -327,7 +352,8 @@ class CustomWorkflowsService:
             phase_results = self.workflow_executor.execute_workflow(
                 workflow,
                 initial_inputs=initial_inputs,
-                execution_id=execution_id
+                execution_id=execution_id,
+                progress_service=progress_service,  # Pass progress service to executor
             )
             
             # Determine overall status
@@ -345,6 +371,23 @@ class CustomWorkflowsService:
                 final_output = last_phase_result.output
             
             duration_ms = (time.time() - start_time) * 1000
+            
+            # Update progress to completed
+            try:
+                if overall_status == "completed":
+                    progress_service.mark_complete(
+                        execution_id=execution_id,
+                        final_output=final_output,
+                        duration_ms=duration_ms,
+                        message=f"Completed workflow: {workflow.name}",
+                    )
+                else:
+                    progress_service.mark_failed(
+                        execution_id=execution_id,
+                        error=f"Phases failed: {', '.join(failed_phases)}",
+                    )
+            except Exception as e:
+                logger.debug(f"Failed to update final progress: {e}")
             
             # Persist execution if we have database
             try:
@@ -396,6 +439,13 @@ class CustomWorkflowsService:
         
         except Exception as e:
             logger.error(f"Workflow execution failed: {str(e)}", exc_info=True)
+            try:
+                progress_service.mark_failed(
+                    execution_id=execution_id,
+                    error=str(e),
+                )
+            except Exception as e2:
+                logger.debug(f"Failed to update progress on exception: {e2}")
             return {
                 "execution_id": execution_id,
                 "workflow_id": workflow.id,

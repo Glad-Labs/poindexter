@@ -57,7 +57,8 @@ class WorkflowExecutor:
         self,
         workflow: CustomWorkflow,
         initial_inputs: Optional[Dict[str, Any]] = None,
-        execution_id: Optional[str] = None
+        execution_id: Optional[str] = None,
+        progress_service: Optional[Any] = None,
     ) -> Dict[str, PhaseResult]:
         """
         Execute a workflow and return results from all phases.
@@ -66,6 +67,7 @@ class WorkflowExecutor:
             workflow: The workflow to execute
             initial_inputs: Initial input values for the first phase
             execution_id: Optional ID for tracking this execution
+            progress_service: Optional progress service for real-time tracking
         
         Returns:
             Dictionary mapping phase names to their results:
@@ -109,10 +111,32 @@ class WorkflowExecutor:
             for i, phase in enumerate(phases):
                 if phase.skip:
                     logger.info(f"Skipping phase {i}: {phase.name}")
+                    # Update progress for skipped phase
+                    if progress_service:
+                        try:
+                            progress_service.complete_phase(
+                                execution_id=execution_id,
+                                phase_name=phase.name,
+                                phase_output=None,
+                                duration_ms=0,
+                            )
+                        except Exception as e:
+                            logger.debug(f"Failed to update progress for skipped phase: {e}")
                     continue
                 
                 logger.info(f"Executing phase {i}: {phase.name}")
                 start_time = time.time()
+                
+                # Update progress: start phase
+                if progress_service:
+                    try:
+                        progress_service.start_phase(
+                            execution_id=execution_id,
+                            phase_index=i,
+                            phase_name=phase.name,
+                        )
+                    except Exception as e:
+                        logger.debug(f"Failed to update progress for phase start: {e}")
                 
                 # Prepare inputs for this phase
                 phase_inputs, input_traces = self._prepare_phase_inputs(
@@ -142,6 +166,25 @@ class WorkflowExecutor:
                 
                 result.execution_time_ms = (time.time() - start_time) * 1000
                 result.input_trace = input_traces
+                
+                # Update progress: phase complete or failed
+                if progress_service:
+                    try:
+                        if result.status == "completed":
+                            progress_service.complete_phase(
+                                execution_id=execution_id,
+                                phase_name=phase.name,
+                                phase_output=result.output,
+                                duration_ms=result.execution_time_ms,
+                            )
+                        else:
+                            progress_service.fail_phase(
+                                execution_id=execution_id,
+                                phase_name=phase.name,
+                                error=result.error or "Unknown error",
+                            )
+                    except Exception as e:
+                        logger.debug(f"Failed to update progress for phase completion: {e}")
                 
                 # Store result
                 phase_results[phase.name] = result

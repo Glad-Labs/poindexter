@@ -87,6 +87,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         app.state.training_data_service = services.get("training_data_service")
         app.state.fine_tuning_service = services.get("fine_tuning_service")
         app.state.custom_workflows_service = services.get("custom_workflows_service")
+        app.state.template_execution_service = services.get("template_execution_service")
         app.state.legacy_data_service = services.get("legacy_data_service")
         app.state.startup_error = services["startup_error"]
         app.state.startup_complete = True
