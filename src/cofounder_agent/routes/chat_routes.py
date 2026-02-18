@@ -24,6 +24,9 @@ from schemas.chat_schemas import (
 from services.model_router import ModelRouter, TaskComplexity
 from services.ollama_client import OllamaClient
 from services.usage_tracker import get_usage_tracker
+from services.system_knowledge_rag import get_system_knowledge_rag
+from services.prompt_templates import PromptTemplates
+from services.ai_cache import AICache
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +34,8 @@ logger = logging.getLogger(__name__)
 ollama_client = OllamaClient()
 model_router = ModelRouter(use_ollama=True)  # Prefer free local inference
 usage_tracker = get_usage_tracker()
+system_knowledge_rag = get_system_knowledge_rag()  # System knowledge base
+ai_cache = AICache()  # Response caching
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -97,6 +102,49 @@ async def chat(request: ChatRequest) -> ChatResponse:
             {"role": "user", "content": request.message, "timestamp": datetime.utcnow().isoformat()}
         )
 
+        # Check cache first (before doing any heavy processing)
+        cache_key = f"{provider}_{request.message}_{request.temperature or 0.7}"
+        cached_response = ai_cache.get(cache_key)
+        if cached_response:
+            logger.info(f"[Chat] Cache hit for query (saved ~{request.max_tokens or 500} tokens)")
+            # Still add to conversation history
+            conversations[request.conversationId].append(
+                {
+                    "role": "assistant",
+                    "content": cached_response,
+                    "model": request.model,
+                    "provider": provider,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "cached": True,
+                }
+            )
+            return ChatResponse(
+                response=cached_response,
+                model=request.model,
+                conversationId=request.conversationId,
+                timestamp=datetime.utcnow().isoformat(),
+                tokens_used=len(cached_response.split()),
+                cached=True,
+            )
+
+        # Check if this is a system knowledge question
+        is_system_question = PromptTemplates.detect_system_question(request.message)
+        system_context = None
+        system_knowledge_used = False
+
+        if is_system_question:
+            logger.info("[Chat] System question detected, retrieving from knowledge base")
+            knowledge_result = system_knowledge_rag.retrieve(request.message)
+            if knowledge_result and knowledge_result.confidence > 0.5:
+                system_context = knowledge_result.content
+                system_knowledge_used = True
+                logger.info(
+                    f"[Chat] Using system knowledge (confidence: {knowledge_result.confidence:.2f}, "
+                    f"source: {knowledge_result.source_section})"
+                )
+            else:
+                logger.warning("[Chat] System question detected but no high-confidence knowledge found")
+
         # Log the chat request
         logger.info(
             f"[Chat] Processing message with: provider={provider}, model={model_name or 'default'}"
@@ -158,8 +206,24 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 except Exception as e:
                     logger.debug(f"[Chat] Could not check available models: {str(e)}")
 
+                # Prepare messages for Ollama chat
+                messages_to_send = conversations[request.conversationId].copy()
+
+                # If we have system knowledge, create a system-aware prompt and prepend it
+                if system_knowledge_used:
+                    system_prompt = PromptTemplates.system_aware_chat_prompt(
+                        system_context=system_context,
+                        user_query=request.message,
+                    )
+                    # Insert system message at the beginning (before user messages)
+                    messages_to_send.insert(
+                        0,
+                        {"role": "system", "content": system_prompt}
+                    )
+                    logger.debug("[Chat] System-aware prompt added to conversation")
+
                 chat_result = await ollama_client.chat(
-                    messages=conversations[request.conversationId],
+                    messages=messages_to_send,
                     model=actual_ollama_model,
                     temperature=request.temperature or 0.7,
                     max_tokens=request.max_tokens or 500,
@@ -176,6 +240,11 @@ async def chat(request: ChatRequest) -> ChatResponse:
                     )
 
                 tokens_used = chat_result.get("tokens", len(response_text.split()))
+                
+                # Cache the response for future similar queries
+                ai_cache.set(cache_key, response_text, ttl=86400)  # 24 hour TTL for system questions
+                logger.debug(f"[Chat] Response cached with key (TTL: 24h)")
+                
             except Exception as e:
                 logger.error(
                     f"[Chat] Ollama error with model {model_name or 'default'}: {str(e)}",
@@ -196,6 +265,9 @@ async def chat(request: ChatRequest) -> ChatResponse:
             )
             response_text = generate_demo_response(request.message, request.model)
             tokens_used = len(response_text.split())
+            
+            # Cache demo response too
+            ai_cache.set(cache_key, response_text, ttl=3600)  # 1 hour TTL for other responses
 
         # Add AI response to conversation history
         conversations[request.conversationId].append(

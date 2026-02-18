@@ -94,3 +94,99 @@ Evaluate the content based on the following criteria:
 
 Do not include any markdown formatting or explanations outside the JSON.
 """
+
+    @staticmethod
+    def system_aware_chat_prompt(
+        system_context: Optional[str] = None,
+        user_query: Optional[str] = None,
+        conversation_history: Optional[str] = None,
+    ) -> str:
+        """
+        Generate a prompt for system-aware chat responses.
+        
+        When system_context is provided (from knowledge base), use it to ground responses.
+        This prevents hallucination about system capabilities and features.
+        """
+        system_instruction = """You are an assistant for Glad Labs, a production-ready AI orchestration platform.
+
+IMPORTANT: You are an expert on the Glad Labs system. Use ONLY the provided system knowledge below to answer questions about the system.
+
+If asked about system features, architecture, capabilities, or technologies:
+1. Use ONLY the system knowledge base provided
+2. Be specific and accurate
+3. If information is not in the knowledge base, clearly state: "I don't have information about that feature yet"
+4. Do NOT make up features or technologies
+5. Do NOT confuse Glad Labs with other products or industries
+"""
+
+        context_section = ""
+        if system_context:
+            context_section = f"""
+SYSTEM KNOWLEDGE BASE:
+{system_context}
+
+"""
+
+        history_section = ""
+        if conversation_history:
+            history_section = f"""
+CONVERSATION HISTORY:
+{conversation_history}
+
+"""
+
+        return f"""{system_instruction}{context_section}{history_section}
+Now respond to the user's message. Be helpful, accurate, and concise."""
+
+    @staticmethod
+    def detect_system_question(query: str) -> bool:
+        """
+        Detect if a query is asking about the system itself.
+        
+        Returns True if the question seems to be about system architecture,
+        capabilities, features, or technologies.
+        """
+        system_keywords = {
+            # Architecture
+            "architecture",
+            "tech stack",
+            "technology",
+            "language",
+            "framework",
+            "built",
+            "platform",
+            # Capabilities
+            "capability",
+            "feature",
+            "agent",
+            "service",
+            "api",
+            "route",
+            "endpoint",
+            "provider",
+            "model",
+            "llm",
+            # Implementation
+            "port",
+            "database",
+            "postgres",
+            "postgresql",
+            "deploy",
+            "deployment",
+            "backend",
+            "frontend",
+            "authentication",
+            "auth",
+            # Structured questions
+            "how many",
+            "what are",
+            "which",
+            "where is",
+            "does glad labs",
+            "glad labs support",
+            "glad labs use",
+            "glad labs have",
+        }
+
+        query_lower = query.lower()
+        return any(keyword in query_lower for keyword in system_keywords)
