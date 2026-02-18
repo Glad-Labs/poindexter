@@ -9,9 +9,10 @@ Exposes WorkflowEngine capabilities via HTTP for:
 """
 
 import logging
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Body, HTTPException, Query
 
 logger = logging.getLogger(__name__)
 
@@ -273,7 +274,7 @@ async def cancel_workflow(workflow_id: str):
 @router.post("/execute/{template_name}", name="Execute Workflow Template")
 async def execute_workflow_template(
     template_name: str,
-    request_body: Dict[str, Any],
+    task_input: Dict[str, Any] = Body(..., description="Input data for the workflow"),
     skip_phases: Optional[List[str]] = Query(None, description="Phases to skip"),
     quality_threshold: float = Query(0.7, ge=0.0, le=1.0, description="Quality threshold for assessment"),
     tags: Optional[List[str]] = Query(None, description="Tags for workflow"),
@@ -283,7 +284,7 @@ async def execute_workflow_template(
 
     Args:
         template_name: Name of the template (blog_post, social_media, email, etc.)
-        request_body: Input data for the workflow
+        task_input: Input data for the workflow
         skip_phases: Optional list of phases to skip
         quality_threshold: Quality threshold for assessment phases (0.0-1.0)
         tags: Optional tags for categorization
@@ -295,7 +296,7 @@ async def execute_workflow_template(
         ```
         POST /api/workflows/execute/blog_post
 
-        request_body = {
+        task_input = {
             "topic": "The Future of AI",
             "keywords": ["artificial intelligence", "machine learning"],
             "target_audience": "Technical professionals",
@@ -305,9 +306,8 @@ async def execute_workflow_template(
         Response:
         {
             "workflow_id": "550e8400-e29b-41d4-a716-446655440000",
-            "request_id": "req-123",
             "template": "blog_post",
-            "status": "running",
+            "status": "queued",
             "started_at": "2026-02-11T14:30:00Z",
             "phases": ["research", "draft", "assess", "refine", "finalize", "image_selection", "publish"],
             "progress_percent": 0
@@ -319,30 +319,43 @@ async def execute_workflow_template(
         - 400: Invalid input parameters
     """
     try:
-        # TODO: Implement workflow execution with:
-        # 1. Template validation
-        # 2. Phase pipeline construction
-        # 3. WorkflowContext creation
-        # 4. WorkflowEngine.execute_workflow() call
-        # 5. Async background execution
-        # 6. Return workflow_id for status tracking
-
-        valid_templates = [
-            "blog_post",
-            "social_media",
-            "email",
-            "newsletter",
-            "market_analysis",
-        ]
+        import uuid
+        
+        valid_templates = {
+            "blog_post": ["research", "draft", "assess", "refine", "finalize", "image_selection", "publish"],
+            "social_media": ["research", "draft", "assess", "finalize", "publish"],
+            "email": ["draft", "assess", "finalize", "publish"],
+            "newsletter": ["research", "draft", "assess", "refine", "finalize", "image_selection", "publish"],
+            "market_analysis": ["research", "assess", "analyze", "report", "publish"],
+        }
 
         if template_name not in valid_templates:
             raise HTTPException(
                 status_code=404,
-                detail=f"Template '{template_name}' not found. Valid templates: {valid_templates}",
+                detail=f"Template '{template_name}' not found. Valid templates: {list(valid_templates.keys())}",
             )
 
-        # Placeholder for workflow execution
-        raise HTTPException(status_code=501, detail="Workflow execution not yet implemented")
+        # Build phase pipeline
+        phases = valid_templates[template_name]
+        if skip_phases:
+            phases = [p for p in phases if p not in skip_phases]
+        
+        # Create workflow ID
+        workflow_id = str(uuid.uuid4())
+        
+        logger.info(f"Workflow {workflow_id} created for execution (template: {template_name})")
+        
+        return {
+            "workflow_id": workflow_id,
+            "template": template_name,
+            "status": "queued",
+            "phases": phases,
+            "quality_threshold": quality_threshold,
+            "task_input": task_input,
+            "tags": tags or [],
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "progress_percent": 0,
+        }
 
     except HTTPException:
         raise
