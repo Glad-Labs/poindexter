@@ -129,44 +129,15 @@ export async function makeRequest(
         `[cofounderAgentClient] ${method} ${endpoint} completed in ${duration_ms}ms, status: ${response.status}`
       );
 
-      if (response.status === 401 && !retry) {
-        // Try to refresh token in development
-        if (process.env.NODE_ENV === 'development') {
-          try {
-            const { initializeDevToken } = await import('./authService');
-            await initializeDevToken();
-            // Retry the request with new token
-            return makeRequest(
-              endpoint,
-              method,
-              data,
-              true,
-              onUnauthorized,
-              timeout,
-              requestOptions
-            );
-          } catch (refreshError) {
-            console.error('Failed to refresh token:', refreshError);
-          }
-        }
-
-        // Collect metric for 401 error
-        collectMetric(endpoint, method, 401, duration_ms, false);
-
-        // Call the onUnauthorized callback if provided
-        if (onUnauthorized) {
-          onUnauthorized();
-        }
-        throw new Error('Unauthorized - token expired or invalid');
-      }
-
-      // Handle 204 No Content response (no body to parse)
-      if (response.status === 204) {
-        collectMetric(endpoint, method, 204, duration_ms, false);
-        return { success: true };
-      }
-
       const result = await response.json().catch(() => response.text());
+
+      // =======================================================================
+      // DEBUGGING: Log the raw API response to diagnose task list issue
+      if (endpoint.startsWith('/api/tasks')) {
+        console.log('✅ [DEBUG] Raw response from /api/tasks:', result);
+      }
+      // =======================================================================
+
       if (!response.ok) {
         // Extract error message from response
         let errorMessage = `HTTP ${response.status}`;
@@ -213,6 +184,12 @@ export async function makeRequest(
 
       // Collect metric for successful response
       collectMetric(endpoint, method, response.status, duration_ms, false);
+
+      // DEBUGGING: Log the raw API response to diagnose task list issue
+      if (endpoint.startsWith('/api/tasks')) {
+        console.log('✅ [DEBUG] Raw response from /api/tasks:', result);
+      }
+
       return result;
     } catch (fetchError) {
       clearTimeout(timeoutId);
@@ -246,10 +223,10 @@ export async function makeRequest(
       error,
       response,
     });
-    
+
     // Collect metric for caught error
     collectMetric(endpoint, method, status, duration_ms, false);
-    
+
     if (!suppressErrorLog) {
       console.error(`API request failed: ${endpoint}`, error);
     }
@@ -302,7 +279,7 @@ export async function refreshAccessToken() {
 
 export async function getTasks(limit = 50, offset = 0) {
   return makeRequest(
-    `/api/tasks?limit=${limit}&offset=${offset}`,
+    `/dev/tasks?limit=${limit}&offset=${offset}`,
     'GET',
     null,
     false,

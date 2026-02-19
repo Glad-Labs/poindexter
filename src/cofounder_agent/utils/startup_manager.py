@@ -98,14 +98,19 @@ class StartupManager:
 
             # Step 14: Warmup SDXL models (async, non-blocking)
             # Only if GPU is available - this prevents timeout issues when users first request SDXL
-            try:
-                await self._warmup_sdxl_models()
-            except Exception as e:
-                import traceback
+            # Skip in development mode for faster startup
+            is_dev_mode = os.getenv("DEVELOPMENT_MODE", "").lower() == "true"
+            if is_dev_mode:
+                logger.info("  ⏭️  Skipping SDXL warmup (DEVELOPMENT_MODE enabled)")
+            else:
+                try:
+                    await self._warmup_sdxl_models()
+                except Exception as e:
+                    import traceback
 
-                logger.warning(f"[WARNING] SDXL warmup failed (non-critical): {type(e).__name__}: {e}")
-                logger.debug(f"    Traceback: {traceback.format_exc()}")
-                # Continue anyway - SDXL will load lazily when first used
+                    logger.warning(f"[WARNING] SDXL warmup failed (non-critical): {type(e).__name__}: {e}")
+                    logger.debug(f"    Traceback: {traceback.format_exc()}")
+                    # Continue anyway - SDXL will load lazily when first used
 
             logger.info(" Application started successfully!")
             self._log_startup_summary()
@@ -347,6 +352,12 @@ class StartupManager:
 
     async def _initialize_agent_registry(self) -> None:
         """Initialize agent registry with all available agents"""
+        # Skip heavy ML model loading in development mode
+        is_dev_mode = os.getenv("DEVELOPMENT_MODE", "").lower() == "true"
+        if is_dev_mode:
+            logger.info("  ⏭️  Skipping agent registry initialization (DEVELOPMENT_MODE enabled)")
+            return
+            
         try:
             from agents.registry import get_agent_registry
             from utils.agent_initialization import register_all_agents

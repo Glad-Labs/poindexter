@@ -326,7 +326,7 @@ class CustomWorkflowsService:
             logger.warning(f"Failed to initialize progress tracking: {e}")
         
         # Validate workflow before executing
-        is_valid, errors = self.workflow_validator.validate_for_execution(workflow)
+        is_valid, errors = self.workflow_validator.validate_for_execution(workflow, initial_inputs=initial_inputs)
         if not is_valid:
             error_msg = f"Workflow validation failed: {', '.join(errors)}"
             logger.error(error_msg)
@@ -465,7 +465,7 @@ class CustomWorkflowsService:
         - At least one phase defined
         - No duplicate phase names
         - Phases are sequential (no cycles)
-        - All referenced agents exist
+        - All referenced phases exist in registry
 
         Args:
             workflow: Workflow to validate
@@ -473,60 +473,10 @@ class CustomWorkflowsService:
         Returns:
             ValidationResult with errors and warnings
         """
-        errors: List[str] = []
-        warnings: List[str] = []
-
-        # Basic validation
-        if not workflow.name or not workflow.name.strip():
-            errors.append("Workflow name cannot be empty")
-
-        if not workflow.description or not workflow.description.strip():
-            errors.append("Workflow description cannot be empty")
-
-        if not workflow.phases or len(workflow.phases) == 0:
-            errors.append("Workflow must have at least one phase")
-            return WorkflowValidationResult(valid=False, errors=errors, warnings=warnings)
-
-        # Check for duplicate phase names (support both dict and object phases)
-        phase_names = []
-        for p in workflow.phases:
-            # Handle both dict and object phase definitions
-            phase_name = p.get("name") if isinstance(p, dict) else getattr(p, "name", None)
-            if phase_name:
-                phase_names.append(phase_name)
+        # Use centralized WorkflowValidator
+        is_valid, errors, warnings = self.workflow_validator.validate_workflow(workflow)
         
-        if len(phase_names) != len(set(phase_names)):
-            errors.append("Duplicate phase names in workflow")
-
-        # Validate each phase (support both dict and object formats)
-        for i, phase in enumerate(workflow.phases):
-            try:
-                # Extract values from either dict or object
-                if isinstance(phase, dict):
-                    phase_name = phase.get("name", f"Phase {i}")
-                    timeout_seconds = phase.get("timeout_seconds", 300)
-                    agent = phase.get("agent")
-                else:
-                    phase_name = getattr(phase, "name", f"Phase {i}")
-                    timeout_seconds = getattr(phase, "timeout_seconds", 300)
-                    agent = getattr(phase, "agent", None)
-
-                # Validate component-level constraints
-                if timeout_seconds < 10:
-                    warnings.append(f"Phase '{phase_name}' timeout {timeout_seconds}s is very short")
-                if timeout_seconds > 3600:
-                    warnings.append(f"Phase '{phase_name}' timeout {timeout_seconds}s is very long")
-
-                # Validate agent exists
-                if not agent or (isinstance(agent, str) and not agent.strip()):
-                    errors.append(f"Phase '{phase_name}' must specify an agent")
-
-            except Exception as e:
-                errors.append(f"Error validating phase {i}: {str(e)}")
-
-        # Workflow is valid if no errors (warnings don't block)
-        valid = len(errors) == 0
-        return WorkflowValidationResult(valid=valid, errors=errors, warnings=warnings)
+        return WorkflowValidationResult(valid=is_valid, errors=errors, warnings=warnings)
 
     async def get_available_phases(self) -> List[Dict[str, Any]]:
         """

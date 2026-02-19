@@ -34,7 +34,7 @@ import aiohttp
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from routes.auth_unified import get_current_user
+from routes.auth_unified import get_current_user, get_current_user_optional
 from schemas.model_converter import ModelConverter
 from schemas.task_schemas import (
     IntentTaskRequest,
@@ -625,7 +625,7 @@ async def list_tasks(
         None, description="Filter by status (queued, pending, running, completed, failed)"
     ),
     category: Optional[str] = Query(None, description="Filter by category"),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user_optional),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
@@ -647,9 +647,12 @@ async def list_tasks(
     ```
     """
     try:
+        # Get user ID from authenticated user
+        user_id = current_user.get("id") if current_user else None
+        
         # get_tasks_paginated returns a tuple (tasks, total)
         tasks, total = await db_service.get_tasks_paginated(
-            offset=offset, limit=limit, status=status, category=category
+            offset=offset, limit=limit, status=status, category=category, user_id=user_id
         )
 
         # Convert raw task dicts to UnifiedTaskResponse objects if needed

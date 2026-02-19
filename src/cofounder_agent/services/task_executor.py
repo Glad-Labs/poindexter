@@ -136,7 +136,9 @@ class TaskExecutor:
 
     async def _process_loop(self):
         """Main processing loop - runs continuously in background"""
-        logger.info("📋 Task executor processor loop started")
+        logger.info("=" * 80)
+        logger.info("📋 TASK EXECUTOR: Main processing loop has started.")
+        logger.info("=" * 80)
 
         while self.running:
             try:
@@ -222,7 +224,11 @@ class TaskExecutor:
 
     async def _process_single_task(self, task: Dict[str, Any]):
         """Process a single task through the pipeline"""
-        task_id = task.get("id")
+        task_id = task.get("task_id") or task.get("id")
+        if not task_id:
+            logger.error("🕵️ [DEBUG] Task is missing both 'task_id' and 'id', cannot process.")
+            return
+
         task_name = task.get("task_name", "Untitled")
         topic = task.get("topic", "")
         category = task.get("category", "general")
@@ -231,6 +237,15 @@ class TaskExecutor:
         logger.info(f"   Name: {task_name}")
         logger.info(f"   Topic: {topic}")
         logger.info(f"   Category: {category}")
+
+        # ======================================================================
+        # DEBUGGING: Dump entire task object to inspect its structure
+        try:
+            logger.info("🕵️  [DEBUG] RAW TASK DATA FROM DB:")
+            logger.info(json.dumps(task, indent=2, default=str))
+        except Exception as e:
+            logger.error(f"  [DEBUG] FAILED TO DUMP TASK: {e}")
+        # ======================================================================
 
         # Set per-task timeout (15 minutes max for content generation)
         TASK_TIMEOUT_SECONDS = 900  # 15 minutes
@@ -1082,13 +1097,13 @@ The key to success with {topic} is staying informed, adapting to changes, and co
             return f"# {topic}\n\nContent generation service temporarily unavailable. Please try again later.\n\nError: {str(e)[:100]}"
 
     def get_stats(self) -> Dict[str, Any]:
-        """Get executor statistics"""
+        """Get performance statistics for the executor"""
         return {
             "running": self.running,
-            "total_processed": self.task_count,
-            "successful": self.success_count,
-            "failed": self.error_count,
-            "published": self.published_count,
-            "poll_interval": self.poll_interval,
-            "critique_stats": self.critique_loop.get_stats() if self.critique_loop else {},
+            "task_count": self.task_count,
+            "success_count": self.success_count,
+            "error_count": self.error_count,
+            "published_count": self.published_count,
+            "orchestrator_available": self.orchestrator is not None,
+            "quality_service_available": self.quality_service is not None,
         }
