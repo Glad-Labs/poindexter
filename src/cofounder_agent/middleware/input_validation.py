@@ -40,6 +40,8 @@ class InputValidationMiddleware(BaseHTTPMiddleware):
     # Routes that skip validation (health checks, etc.)
     SKIP_VALIDATION_PATHS = {
         "/api/health",
+        "/dev/tasks",
+        "/api/public/tasks",
         "/api/tasks/metrics",
         "/api/tasks/metrics/summary",
         "/docs",

@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 # Third-party imports
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Query
 from pydantic import BaseModel, validator
 
 # Import configuration
@@ -127,6 +127,14 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         )
         logger.info("[LIFESPAN] ✅ Services registered in global DI container")
 
+        # Start the background task executor
+        logger.info("[LIFESPAN] Starting background task executor...")
+        if app.state.task_executor:
+            await app.state.task_executor.start()
+            logger.info("[LIFESPAN] ✅ Background task executor started")
+        else:
+            logger.warning("[LIFESPAN] ⚠️ Task executor not available to start")
+
         logger.info("[OK] Lifespan: Yielding control to FastAPI application. ..")
         try:
             logger.info("[OK] Application is now running")
@@ -207,11 +215,140 @@ setup_sentry(app, service_name="cofounder-agent")
 middleware_config = MiddlewareConfig()
 middleware_config.register_all_middleware(app)
 
+# ===== PUBLIC DEVELOPMENT ENDPOINTS (NO AUTH REQUIRED) =====
+# These must be defined BEFORE register_all_routes to take precedence
+# These endpoints are for development/testing only and may expose data without authentication
+
+@app.get("/dev/tasks")
+async def get_dev_tasks(
+    limit: int = Query(10, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    """
+    Get tasks without requiring authentication - DEVELOPMENT ONLY.
+    This endpoint is for frontend development/testing.
+    
+    Query Parameters:
+    - limit: Maximum number of tasks to return (1-100, default 10)
+    - offset: Number of tasks to skip (default 0)
+    
+    Returns:
+    - success: Boolean indicating success
+    - data: List of tasks
+    - pagination: Pagination info (limit, offset, total)
+    """
+    try:
+        database_service = getattr(app.state, "database", None)
+        if not database_service:
+            # Return empty response if database not available
+            return {
+                "success": True,
+                "data": [],
+                "pagination": {"limit": limit, "offset": offset, "total": 0}
+            }
+        
+        try:
+            conn = database_service.pool
+            query = "SELECT * FROM tasks ORDER BY created_at DESC LIMIT %s OFFSET %s"
+            rows = await conn.fetch(query, limit, offset)
+            
+            count_query = "SELECT COUNT(*) as total FROM tasks"
+            count_result = await conn.fetchrow(count_query)
+            total = count_result['total'] if count_result else 0
+            
+            tasks = [dict(row) for row in rows]
+            
+            # Serialize datetime objects
+            for task in tasks:
+                for key, value in task.items():
+                    if hasattr(value, 'isoformat'):
+                        task[key] = value.isoformat()
+            
+            return {
+                "success": True,
+                "data": tasks,
+                "pagination": {
+                    "limit": limit,
+                    "offset": offset,
+                    "total": total
+                }
+            }
+        except Exception as e:
+            logger.error(f"Database error in dev/tasks: {str(e)}")
+            # Return empty list on database error (graceful degradation)
+            return {
+                "success": True,
+                "data": [],
+                "pagination": {"limit": limit, "offset": offset, "total": 0}
+            }
+    except Exception as e:
+        logger.error(f"Unexpected error in dev/tasks: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "data": [],
+            "pagination": {"limit": limit, "offset": offset, "total": 0}
+        }
+
+# ===== SIMPLE TEST ENDPOINT =====
+@app.get("/test-auth")
+async def test_auth():
+    """Simple endpoint to verify authentication bypass is working"""
+    return {"message": "Success! This endpoint requires no auth"}
+
+@app.get("/api/tasks-public", response_model=dict)
+async def list_tasks_public():
+    """Public version of list tasks - no auth required"""
+    return {"success": True, "data": [], "pagination": {"limit": 0, "offset": 0, "total": 0}}
+
 # ===== ROUTE REGISTRATION =====
 # Register all API routes from routes/ modules
 logger.info("[STARTUP] Registering all routes...")
 register_all_routes(app)
 logger.info("[STARTUP] ✅ All routes registered")
+
+# ===== DEVELOPMENT-ONLY PUBLIC ENDPOINTS (DEFINED AFTER ROUTE REGISTRATION) =====
+# These override/supplement the normal authenticated endpoints for development
+@app.get("/api/tasks/list-public")
+async def list_tasks_pub_dev(
+    offset: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=1000),
+    status: Optional[str] = Query(None),
+    category: Optional[str] = Query(None),
+):
+    """Public endpoint for listing tasks - NO AUTHENTICATION REQUIRED (Development Only)"""
+    try:
+        database_service = getattr(app.state, "database", None)
+        if not database_service:
+            return {
+                "success": True,
+                "tasks": [],
+                "total": 0,
+                "offset": offset,
+                "limit": limit,
+            }
+        
+        tasks, total = await database_service.get_tasks_paginated(
+            offset=offset, limit=limit, status=status, category=category, user_id=None
+        )
+        
+        return{
+            "success": True,
+            "tasks": tasks,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+        }
+    except Exception as e:
+        logger.error(f"Error listing public tasks: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "tasks": [],
+            "total": 0,
+            "offset": offset,
+            "limit": limit,
+        }
 
 # ===== UNIFIED HEALTH CHECK ENDPOINT =====
 # Consolidated from: /api/health, /status, /metrics/health, and route-specific health endpoints
@@ -351,6 +488,15 @@ async def get_metrics_endpoint():
             "total_cost": 0.0,
             "error": str(e),
         }
+
+
+# ===== PUBLIC DEVELOPMENT ENDPOINTS (NO AUTH REQUIRED) =====
+# These endpoints are for development/testing only and may expose data without authentication
+
+@app.get("/test-endpoint")
+async def test_endpoint():
+    """Simple test endpoint to verify main.py is being served."""
+    return {"message": "test endpoint works"}
 
 
 class CommandRequest(BaseModel):

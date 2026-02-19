@@ -470,6 +470,7 @@ class TasksDatabase(DatabaseServiceMixin):
         limit: int = 20,
         status: Optional[str] = None,
         category: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> tuple[List[Dict[str, Any]], int]:
         """
         Get paginated tasks from content_tasks with optional filtering.
@@ -487,6 +488,8 @@ class TasksDatabase(DatabaseServiceMixin):
 
         # Build WHERE clauses
         where_clauses = []
+        if user_id:
+            where_clauses.append(("owner_id", SQLOperator.EQ, user_id))
         if status:
             where_clauses.append(("status", SQLOperator.EQ, status))
         if category:

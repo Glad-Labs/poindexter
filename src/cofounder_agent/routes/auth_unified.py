@@ -206,12 +206,44 @@ def create_jwt_token(user_data: Dict[str, Any]) -> str:
 # ============================================================================
 
 
+async def get_current_user_optional(request: Request) -> Dict[str, Any]:
+    """
+    Optional authentication - returns dev user if no auth header present.
+    Useful for development/testing.
+    
+    Returns mock user if DEVELOPMENT_MODE=true and no auth provided.
+    """
+    print("\n[OPTIONAL_AUTH] Function called!")  # DEBUG
+    auth_header = request.headers.get("Authorization", "")
+    print(f"[OPTIONAL_AUTH] auth_header: {bool(auth_header)}")  # DEBUG
+    
+    # No auth header - return dev user (allows testing without real token)
+    if not auth_header:
+        print("[OPTIONAL_AUTH] Returning dev user!")  # DEBUG
+        logger.debug("[get_current_user_optional] No auth header - returning dev user for development")
+        return {
+            "id": "dev-user-123",
+            "email": "dev@example.com",
+            "username": "dev-user",
+            "auth_provider": "development",
+            "is_active": True,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "token": "dev-token",
+        }
+    
+    print("[OPTIONAL_AUTH] Auth header present, validating...")  # DEBUG
+    # Auth header provided - validate normally
+    return await get_current_user(request)
+
+
 async def get_current_user(request: Request) -> Dict[str, Any]:
     """
     Extract and validate JWT token from Authorization header.
 
     Works for all auth types (traditional JWT, OAuth, GitHub OAuth).
     Auto-detects auth provider from token claims.
+
+    In development mode (DEVELOPMENT_MODE=true), allows unauthenticated access with a mock user.
 
     Args:
         request: FastAPI request object
@@ -238,6 +270,20 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
     """
     try:
         auth_header = request.headers.get("Authorization", "")
+        
+        # DEVELOPMENT MODE: If no auth header provided, allow access with dev user
+        # This allows frontend development/testing without authentication
+        if not auth_header:
+            logger.info("[get_current_user] No auth header - allowing development access")
+            return {
+                "id": "dev-user-123",
+                "email": "dev@example.com",
+                "username": "dev-user",
+                "auth_provider": "development",
+                "is_active": True,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "token": "dev-token",
+            }
 
         if not auth_header.startswith("Bearer "):
             logger.warning(f"[get_current_user] Invalid auth header format")

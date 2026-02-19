@@ -90,12 +90,15 @@ class WorkflowValidator:
             
             # Check required inputs for first phase
             if i == 0:
+                # Phase 0 inputs are checked at execution time in validate_for_execution
+                # Or they must be present in user_inputs if this is a strict validation context
+                # For now, we only warn if missing
                 for input_key, input_field in phase_def.input_schema.items():
                     if input_field.required:
                         if input_key not in phase.user_inputs:
-                            errors.append(
+                            warnings.append(
                                 f"Phase 0 ({phase.name}) required input "
-                                f"'{input_key}' not provided"
+                                f"'{input_key}' not provided in definition (must be provided at runtime)"
                             )
             
             # Check phase compatibility with previous phase output
@@ -104,8 +107,16 @@ class WorkflowValidator:
                 prev_phase_def = self.registry.get_phase(prev_phase.name)
                 
                 if prev_phase_def:
+                    logger.info(f"DEBUG: Validating phase {phase.name} (prev: {prev_phase.name})")
+                    logger.info(f"DEBUG: Input mapping: {phase.input_mapping}")
+                    
                     try:
-                        mapping = self.mapper.map_phases(prev_phase.name, phase.name)
+                        mapping = self.mapper.map_phases(
+                            prev_phase.name, 
+                            phase.name, 
+                            user_overrides=phase.input_mapping
+                        )
+                        logger.info(f"DEBUG: Generated mapping: {mapping}")
                         
                         # When validating, account for user-provided inputs
                         # User inputs satisfy required input requirements without auto-mapping
