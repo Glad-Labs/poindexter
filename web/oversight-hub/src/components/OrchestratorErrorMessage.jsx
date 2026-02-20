@@ -17,9 +17,7 @@ import useStore from '../store/useStore';
  * Refactored to use base component: 401 → 145 lines (-64% boilerplate).
  */
 const OrchestratorErrorMessage = ({ message, onRetry, onCancel }) => {
-  const { failExecution } = useStore((state) => ({
-    failExecution: state.failExecution,
-  }));
+  const failExecution = useStore((state) => state.failExecution);
 
   const errorMessage = message.error || 'An unknown error occurred';
   const errorType = message.errorType || 'error';

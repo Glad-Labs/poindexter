@@ -6,7 +6,7 @@ Implements PostgreSQL database with REST API command queue integration
 
 import sys
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 # Third-party imports
@@ -214,81 +214,6 @@ setup_sentry(app, service_name="cofounder-agent")
 # Register all middleware (centralized in utils.middleware_config)
 middleware_config = MiddlewareConfig()
 middleware_config.register_all_middleware(app)
-
-# ===== PUBLIC DEVELOPMENT ENDPOINTS (NO AUTH REQUIRED) =====
-# These must be defined BEFORE register_all_routes to take precedence
-# These endpoints are for development/testing only and may expose data without authentication
-
-@app.get("/dev/tasks")
-async def get_dev_tasks(
-    limit: int = Query(10, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-):
-    """
-    Get tasks without requiring authentication - DEVELOPMENT ONLY.
-    This endpoint is for frontend development/testing.
-    
-    Query Parameters:
-    - limit: Maximum number of tasks to return (1-100, default 10)
-    - offset: Number of tasks to skip (default 0)
-    
-    Returns:
-    - success: Boolean indicating success
-    - data: List of tasks
-    - pagination: Pagination info (limit, offset, total)
-    """
-    try:
-        database_service = getattr(app.state, "database", None)
-        if not database_service:
-            # Return empty response if database not available
-            return {
-                "success": True,
-                "data": [],
-                "pagination": {"limit": limit, "offset": offset, "total": 0}
-            }
-        
-        try:
-            conn = database_service.pool
-            query = "SELECT * FROM tasks ORDER BY created_at DESC LIMIT %s OFFSET %s"
-            rows = await conn.fetch(query, limit, offset)
-            
-            count_query = "SELECT COUNT(*) as total FROM tasks"
-            count_result = await conn.fetchrow(count_query)
-            total = count_result['total'] if count_result else 0
-            
-            tasks = [dict(row) for row in rows]
-            
-            # Serialize datetime objects
-            for task in tasks:
-                for key, value in task.items():
-                    if hasattr(value, 'isoformat'):
-                        task[key] = value.isoformat()
-            
-            return {
-                "success": True,
-                "data": tasks,
-                "pagination": {
-                    "limit": limit,
-                    "offset": offset,
-                    "total": total
-                }
-            }
-        except Exception as e:
-            logger.error(f"Database error in dev/tasks: {str(e)}")
-            # Return empty list on database error (graceful degradation)
-            return {
-                "success": True,
-                "data": [],
-                "pagination": {"limit": limit, "offset": offset, "total": 0}
-            }
-    except Exception as e:
-        logger.error(f"Unexpected error in dev/tasks: {str(e)}")
-        return {
-            "success": False,
-            "error": str(e),
-            "data": [],
-            "pagination": {"limit": limit, "offset": offset, "total": 0}
-        }
 
 # ===== SIMPLE TEST ENDPOINT =====
 @app.get("/test-auth")

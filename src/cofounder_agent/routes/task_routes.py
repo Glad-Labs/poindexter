@@ -138,7 +138,7 @@ router = APIRouter(prefix="/api/tasks", tags=["tasks"])
     "",
     response_model=Dict[str, Any],
     summary="Create task - unified endpoint for all task types",
-    status_code=201,
+    status_code=202,
 )
 async def create_task(
     request: UnifiedTaskRequest,
@@ -652,7 +652,7 @@ async def list_tasks(
         
         # get_tasks_paginated returns a tuple (tasks, total)
         tasks, total = await db_service.get_tasks_paginated(
-            offset=offset, limit=limit, status=status, category=category, user_id=user_id
+            offset=offset, limit=limit, status=status, category=category
         )
 
         # Convert raw task dicts to UnifiedTaskResponse objects if needed
@@ -820,6 +820,101 @@ async def get_task(
     except Exception as e:
         logger.error(f"Failed to fetch task {task_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch task: {str(e)}")
+
+
+@router.get("/{task_id}/status", response_model=Dict[str, Any], summary="Get task execution status")
+async def get_task_status(
+    task_id: str,
+    current_user: dict = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
+):
+    """
+    Get current status of a task including progress information.
+    
+    Returns minimal status info for polling async results.
+    
+    **Parameters:**
+    - task_id: Task UUID
+    
+    **Returns:**
+    - status: Current status (pending, in_progress, awaiting_approval, completed, failed, etc)
+    - progress: Progress percentage (0-100) if available
+    - error_message: Error details if failed
+    
+    **Example cURL:**
+    ```bash
+    curl -X GET "http://localhost:8000/api/tasks/{task_id}/status" \\
+      -H "Authorization: Bearer TOKEN"
+    ```
+    """
+    try:
+        task = await db_service.get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+        return {
+            "task_id": task_id,
+            "status": task.get("status", "unknown"),
+            "progress": task.get("progress", 0),
+            "error_message": task.get("error_message"),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to fetch task status {task_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch task status: {str(e)}")
+
+
+@router.get("/{task_id}/result", response_model=Dict[str, Any], summary="Get task result when complete")
+async def get_task_result(
+    task_id: str,
+    current_user: dict = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
+):
+    """
+    Get final result of a task once execution completes.
+    
+    Returns 202 Accepted if task still in progress, final result when completed.
+    
+    **Parameters:**
+    - task_id: Task UUID
+    
+    **Returns:**
+    - status: Final status (completed, failed, etc)
+    - result: Task output/result dict if completed
+    - error_message: Error details if failed
+    
+    **Example cURL:**
+    ```bash
+    curl -X GET "http://localhost:8000/api/tasks/{task_id}/result" \\
+      -H "Authorization: Bearer TOKEN"
+    ```
+    """
+    try:
+        task = await db_service.get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+        status = task.get("status", "unknown")
+        
+        # Return 202 if still processing
+        if status in ["pending", "in_progress"]:
+            raise HTTPException(
+                status_code=202,
+                detail={"message": "Execution in progress", "status": status}
+            )
+        
+        return {
+            "task_id": task_id,
+            "status": status,
+            "result": task.get("result"),
+            "error_message": task.get("error_message"),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to fetch task result {task_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch task result: {str(e)}")
 
 
 @router.put(

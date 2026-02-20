@@ -39,9 +39,7 @@ const OrchestratorResultMessage = ({
     feedback: '',
   });
   const [copied, setCopied] = useState(false);
-  const { completeExecution } = useStore((state) => ({
-    completeExecution: state.completeExecution,
-  }));
+  const completeExecution = useStore((state) => state.completeExecution);
 
   const result = message.result || '';
   const metadata = message.metadata || {};

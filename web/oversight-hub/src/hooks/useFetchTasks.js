@@ -60,19 +60,16 @@ export const useFetchTasks = (
           return;
         }
       } catch (apiError) {
-        console.warn(
-          '⚠️ useFetchTasks: API error, trying fallback...',
+        console.error(
+          '🔴 useFetchTasks: API error - displaying error to user',
           apiError.message
         );
+        setError(`Failed to fetch tasks: ${apiError.message}`);
+        setTasks([]);
+        setTotal(0);
+        setStoreTasks([]);
+        return;
       }
-
-      // FALLBACK: In development, if API fails, return empty list instead of error
-      // This allows UI testing without authentication
-      console.log('ℹ️ useFetchTasks: Using empty dataset (API unavailable)');
-      setTasks([]);
-      setTotal(0);
-      setStoreTasks([]);
-      setError(null); // Clear error so UI doesn't show error state
     } catch (err) {
       console.error('🔴 useFetchTasks: Unexpected error:', err);
       setError(err.message || 'Failed to fetch tasks');

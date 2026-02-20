@@ -279,7 +279,7 @@ export async function refreshAccessToken() {
 
 export async function getTasks(limit = 50, offset = 0) {
   return makeRequest(
-    `/dev/tasks?limit=${limit}&offset=${offset}`,
+    `/api/tasks?limit=${limit}&offset=${offset}`,
     'GET',
     null,
     false,

@@ -20,9 +20,7 @@ import useStore from '../store/useStore';
 const OrchestratorCommandMessage = ({ message, onExecute, onCancel }) => {
   const [editMode, setEditMode] = useState(false);
   const [editedParams, setEditedParams] = useState(message.parameters || {});
-  const { startExecution } = useStore((state) => ({
-    startExecution: state.startExecution,
-  }));
+  const startExecution = useStore((state) => state.startExecution);
 
   // Command type configuration
   const commandTypes = {

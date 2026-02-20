@@ -232,7 +232,7 @@ async def cancel_workflow(workflow_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to cancel workflow: {str(e)}")
 
 
-@router.post("/execute/{template_name}", name="Execute Workflow Template")
+@router.post("/execute/{template_name}", name="Execute Workflow Template", status_code=202)
 async def execute_workflow_template(
     request: Request,
     template_name: str,

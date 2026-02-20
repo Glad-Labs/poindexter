@@ -46,20 +46,13 @@ export const TaskControlPanel = ({ task, onTaskUpdated }) => {
     description: '',
   });
 
-  // Get loading/error state from Zustand
-  const {
-    taskActionLoading,
-    taskActionError,
-    setTaskActionLoading,
-    setTaskActionError,
-    clearTaskAction,
-  } = useStore((state) => ({
-    taskActionLoading: state.taskActionLoading,
-    taskActionError: state.taskActionError,
-    setTaskActionLoading: state.setTaskActionLoading,
-    setTaskActionError: state.setTaskActionError,
-    clearTaskAction: state.clearTaskAction,
-  }));
+  // Get loading/error state from Zustand using separate selectors
+  // Using separate hooks instead of object destructuring prevents infinite re-render loops
+  const taskActionLoading = useStore((state) => state.taskActionLoading);
+  const taskActionError = useStore((state) => state.taskActionError);
+  const setTaskActionLoading = useStore((state) => state.setTaskActionLoading);
+  const setTaskActionError = useStore((state) => state.setTaskActionError);
+  const clearTaskAction = useStore((state) => state.clearTaskAction);
 
   const isLoading = taskActionLoading[task.id] || false;
   const error = taskActionError[task.id] || null;
@@ -299,6 +292,6 @@ export const TaskControlPanel = ({ task, onTaskUpdated }) => {
       </Dialog>
     </Box>
   );
-};
+};;
 
 export default TaskControlPanel;
