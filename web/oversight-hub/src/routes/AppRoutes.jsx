@@ -10,6 +10,7 @@ import Login from '../pages/Login';
 import AuthCallback from '../pages/AuthCallback';
 import ProtectedRoute from '../components/ProtectedRoute';
 import LayoutWrapper from '../components/LayoutWrapper';
+import ApprovalQueue from '../components/tasks/ApprovalQueue';
 
 function AppRoutes() {
   return (
@@ -45,6 +46,16 @@ function AppRoutes() {
           <ProtectedRoute>
             <LayoutWrapper>
               <Content />
+            </LayoutWrapper>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/approvals"
+        element={
+          <ProtectedRoute>
+            <LayoutWrapper>
+              <ApprovalQueue />
             </LayoutWrapper>
           </ProtectedRoute>
         }

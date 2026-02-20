@@ -1,12 +1,14 @@
 import React, { useState, useCallback } from 'react';
 import { createTask, makeRequest } from '../../services/cofounderAgentClient';
 import ModelSelectionPanel from '../ModelSelectionPanel';
+import { WritingStyleSelector } from '../WritingStyleSelector';
 
 const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
   const [taskType, setTaskType] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [formData, setFormData] = useState({});
+  const [selectedWritingStyleId, setSelectedWritingStyleId] = useState(null);
   const [modelSelection, setModelSelection] = useState({
     modelSelections: {
       research: 'auto',
@@ -232,6 +234,7 @@ const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
       }
     });
     setFormData(defaultData);
+    setSelectedWritingStyleId(null); // Reset writing style when changing task type
     setError(null);
   };
 
@@ -240,6 +243,10 @@ const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
       ...formData,
       [fieldName]: value,
     });
+  };
+
+  const handleWritingStyleChange = (styleId) => {
+    setSelectedWritingStyleId(styleId);
   };
 
   const validateForm = () => {
@@ -348,6 +355,10 @@ const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
         };
       } else if (taskType === 'blog_post') {
         // Create blog post task using unified endpoint
+        const context = selectedWritingStyleId
+          ? { writing_style_id: selectedWritingStyleId }
+          : undefined;
+
         taskPayload = {
           task_type: 'blog_post',
           task_name: `Blog: ${formData.topic}`,
@@ -365,6 +376,7 @@ const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
             : [],
           models_by_phase: modelSelection.modelSelections || {},
           quality_preference: modelSelection.qualityPreference || 'balanced',
+          context,
           metadata: {
             task_type: 'blog_post',
             task_name: `Blog: ${formData.topic}`,
@@ -373,6 +385,7 @@ const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
             word_count: parseInt(formData.word_count) || 1500,
             generate_featured_image: formData.generate_featured_image !== false,
             publish_mode: 'draft',
+            writing_style_id: selectedWritingStyleId,
           },
         };
       } else {
@@ -634,6 +647,24 @@ const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
                   </div>
                 ))}
               </div>
+
+              {/* Writing Style Selection (Optional) */}
+              {taskType === 'blog_post' && (
+                <div className="mt-6 p-4 bg-gray-700 rounded-lg">
+                  <h3 className="text-lg font-bold text-cyan-400 mb-4">
+                    ✍️ Writing Style (Optional)
+                  </h3>
+                  <WritingStyleSelector
+                    value={selectedWritingStyleId}
+                    onChange={handleWritingStyleChange}
+                    includeNone={true}
+                  />
+                  <p className="text-xs text-gray-400 mt-2">
+                    Select a writing sample to match your voice and style
+                    preferences.
+                  </p>
+                </div>
+              )}
 
               {/* Model Selection Panel */}
               <div className="mt-6 p-4 bg-gray-700 rounded-lg">

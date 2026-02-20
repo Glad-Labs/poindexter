@@ -1,5 +1,20 @@
 import { useState, useEffect } from 'react';
 import './PerformanceDashboard.css';
+import {
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+} from 'recharts';
 
 function PerformanceDashboard() {
   const [performanceData, setPerformanceData] = useState(null);
@@ -207,87 +222,107 @@ function PerformanceDashboard() {
             </div>
           </div>
 
-          {/* Route Latencies */}
+          {/* Route Latencies Chart */}
           {latencyChartData.length > 0 && (
             <div className="latency-section">
               <h2 className="section-title">
                 ⏱️ Route Latencies (P50/P95/P99)
               </h2>
-              <div className="latency-chart">
-                {latencyChartData.map((route, idx) => (
-                  <div key={idx} className="latency-row">
-                    <div className="route-info">
-                      <span className="route-name">{route.endpoint}</span>
-                      <span className="cache-hit-badge">{route.hitRate}</span>
-                    </div>
-                    <div className="latency-bars">
-                      <div className="latency-bar-group">
-                        <div className="latency-label">p50</div>
-                        <div
-                          className="latency-bar p50"
-                          style={{
-                            width: `${Math.min((route.p50 / 200) * 100, 100)}%`,
-                          }}
-                        >
-                          {route.p50 > 10 ? `${route.p50.toFixed(0)}ms` : ''}
-                        </div>
-                      </div>
-                      <div className="latency-bar-group">
-                        <div className="latency-label">p95</div>
-                        <div
-                          className="latency-bar p95"
-                          style={{
-                            width: `${Math.min((route.p95 / 500) * 100, 100)}%`,
-                          }}
-                        >
-                          {route.p95 > 20 ? `${route.p95.toFixed(0)}ms` : ''}
-                        </div>
-                      </div>
-                      <div className="latency-bar-group">
-                        <div className="latency-label">p99</div>
-                        <div
-                          className="latency-bar p99"
-                          style={{
-                            width: `${Math.min((route.p99 / 1000) * 100, 100)}%`,
-                          }}
-                        >
-                          {route.p99 > 30 ? `${route.p99.toFixed(0)}ms` : ''}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <ResponsiveContainer width="100%" height={350}>
+                <BarChart data={latencyChartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="endpoint" />
+                  <YAxis
+                    label={{
+                      value: 'Latency (ms)',
+                      angle: -90,
+                      position: 'insideLeft',
+                    }}
+                  />
+                  <Tooltip />
+                  <Legend />
+                  <Bar
+                    dataKey="p50"
+                    fill="#82ca9d"
+                    name="P50 (50th percentile)"
+                  />
+                  <Bar
+                    dataKey="p95"
+                    fill="#ffc658"
+                    name="P95 (95th percentile)"
+                  />
+                  <Bar
+                    dataKey="p99"
+                    fill="#ff7c7c"
+                    name="P99 (99th percentile)"
+                  />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           )}
 
-          {/* Model Router Decisions */}
+          {/* Model Router Decisions Pie Chart */}
           {modelChartData.length > 0 && (
             <div className="model-section">
               <h2 className="section-title">🤖 Model Router Decisions</h2>
-              <div className="model-chart">
-                {modelChartData.map((model, idx) => (
-                  <div key={idx} className="model-row">
-                    <div className="model-info">
-                      <span className="model-name">{model.provider}</span>
-                      <span className="model-count">
-                        {model.count.toLocaleString()} requests
-                      </span>
-                    </div>
-                    <div className="model-bar-container">
-                      <div
-                        className="model-bar"
-                        style={{
-                          width: `${parseFloat(model.percentage)}%`,
-                        }}
-                      >
-                        <span className="model-percentage">
-                          {model.percentage}%
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'center',
+                  marginBottom: '40px',
+                }}
+              >
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie
+                      data={modelChartData}
+                      dataKey="count"
+                      nameKey="provider"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={80}
+                      label={({ provider, percentage }) =>
+                        `${provider} (${percentage}%)`
+                      }
+                    >
+                      {modelChartData.map((entry, index) => (
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={
+                            [
+                              '#8884d8',
+                              '#82ca9d',
+                              '#ffc658',
+                              '#ff7c7c',
+                              '#8dd1e1',
+                            ][index % 5]
+                          }
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value) => value.toLocaleString()} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="model-table">
+                <table style={{ width: '100%', textAlign: 'left' }}>
+                  <thead>
+                    <tr>
+                      <th>Provider</th>
+                      <th>Requests</th>
+                      <th>Percentage</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {modelChartData.map((model, idx) => (
+                      <tr key={idx}>
+                        <td>{model.provider}</td>
+                        <td>{model.count.toLocaleString()}</td>
+                        <td>{model.percentage}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
