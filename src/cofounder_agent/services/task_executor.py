@@ -247,8 +247,8 @@ class TaskExecutor:
             logger.error(f"  [DEBUG] FAILED TO DUMP TASK: {e}")
         # ======================================================================
 
-        # Set per-task timeout (15 minutes max for content generation)
-        TASK_TIMEOUT_SECONDS = 900  # 15 minutes
+        # Set per-task timeout (20 minutes max for content generation, including newsletter templates)
+        TASK_TIMEOUT_SECONDS = 1200  # 20 minutes
 
         try:
             # 1. Update task status to 'in_progress'

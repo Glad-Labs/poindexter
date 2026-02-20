@@ -322,6 +322,18 @@ class CustomWorkflowsService:
                 message=f"Starting workflow: {workflow.name}"
             )
             logger.debug(f"Initialized progress tracking for execution {execution_id}")
+            
+            # Register callback to broadcast progress to WebSocket clients
+            def broadcast_progress(progress):
+                try:
+                    import asyncio
+                    from routes.websocket_routes import broadcast_workflow_progress
+                    asyncio.create_task(broadcast_workflow_progress(execution_id, progress.to_dict()))
+                except Exception as e:
+                    logger.debug(f"Could not broadcast progress: {e}")
+            
+            progress_service.register_callback(execution_id, broadcast_progress)
+            
         except Exception as e:
             logger.warning(f"Failed to initialize progress tracking: {e}")
         

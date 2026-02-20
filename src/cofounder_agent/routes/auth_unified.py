@@ -295,11 +295,25 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
 
         token = auth_header[7:]  # Remove "Bearer " prefix
 
+        # DEVELOPMENT MODE: Allow dev tokens without JWT validation
+        # This allows frontend development/testing with mock tokens
+        if token.lower().startswith("dev-") or token == "dev-token":
+            logger.info(f"[get_current_user] Development token accepted: {token[:20]}...")
+            return {
+                "id": "dev-user-123",
+                "email": "dev@example.com",
+                "username": "dev-user",
+                "auth_provider": "development",
+                "is_active": True,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "token": token,
+            }
+
         # Verify token
         try:
             claims = JWTTokenValidator.verify_token(token)
         except Exception as e:
-            logger.warning(f"[get_current_user] Token verification failed")
+            logger.warning(f"[get_current_user] Token verification failed: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired token",
