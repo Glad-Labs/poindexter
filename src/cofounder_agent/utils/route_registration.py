@@ -93,6 +93,17 @@ def register_all_routes(
         status["task_router"] = False
 
     try:
+        # ===== APPROVAL WORKFLOW =====
+        from routes.approval_routes import router as approval_router
+
+        app.include_router(approval_router)
+        logger.info(" approval_router registered (task approval workflow)")
+        status["approval_router"] = True
+    except Exception as e:
+        logger.error(f" approval_router failed: {e}")
+        status["approval_router"] = False
+
+    try:
         # ===== BULK TASK OPERATIONS =====
         from routes.bulk_task_routes import router as bulk_task_router
 
@@ -242,6 +253,17 @@ def register_all_routes(
     except Exception as e:
         logger.error(f" analytics_router failed: {e}")
         status["analytics_router"] = False
+
+    try:
+        # ===== PROFILING - Performance metrics =====
+        from routes.profiling_routes import router as profiling_router
+        
+        app.include_router(profiling_router)
+        logger.info(" profiling_router registered (performance profiling)")
+        status["profiling_router"] = True
+    except Exception as e:
+        logger.error(f" profiling_router failed: {e}")
+        status["profiling_router"] = False
 
     try:
         # ===== AI AGENT MANAGEMENT =====

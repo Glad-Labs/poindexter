@@ -26,7 +26,7 @@ from routes.task_routes import get_model_for_phase
 from .ai_content_generator import AIContentGenerator
 
 # Import unified quality service for content validation
-from .quality_service import UnifiedQualityService
+from .quality_service import UnifiedQualityService, QualityAssessment
 
 # Import prompt manager for centralized prompts
 from .prompt_manager import get_prompt_manager
@@ -39,6 +39,9 @@ from .websocket_event_broadcaster import (
     emit_task_progress,
     emit_notification,
 )
+
+# Import metrics service (Sprint 5)
+from .metrics_service import TaskMetrics, get_metrics_service
 
 logger = logging.getLogger(__name__)
 
@@ -476,6 +479,11 @@ class TaskExecutor:
         model_used = get_model_for_phase("draft", model_selections, quality_preference)
         logger.info(f"   Determined model for execution: {model_used}")
 
+        # ===== SPRINT 5: Initialize metrics collection =====
+        task_metrics = TaskMetrics(str(task_id))
+        metrics_service = get_metrics_service(self.database_service)
+        logger.info(f"📊 [METRICS] Initialized metrics collection for task {task_id}")
+
         # Start usage tracking for entire task execution
         task_start_time = time.time()
         self.usage_tracker.start_operation(
@@ -485,8 +493,8 @@ class TaskExecutor:
         # ===== PHASE 1: Generate Content via Orchestrator =====
         generated_content = None
         orchestrator_error = None
-        generation_start_time = time.time()
-
+        phase_1_start = task_metrics.record_phase_start("content_generation")
+        
         logger.info(f"📝 [TASK_EXECUTE] PHASE 1: Generating content via orchestrator...")
         if self.orchestrator:
             try:
@@ -668,6 +676,7 @@ class TaskExecutor:
                 logger.info(
                     f"✅ [TASK_EXECUTE] PHASE 1 Complete: Generated {len(generated_content) if generated_content else 0} chars"
                 )
+                task_metrics.record_phase_end("content_generation", phase_1_start, status="success")
 
             except Exception as e:
                 orchestrator_error = str(e)
@@ -676,6 +685,7 @@ class TaskExecutor:
                     exc_info=True,
                 )
                 generated_content = f"Error in content generation: {orchestrator_error}"
+                task_metrics.record_phase_end("content_generation", phase_1_start, status="error", error=orchestrator_error)
         else:
             logger.warning(f"⚠️ [TASK_EXECUTE] Orchestrator available: NO - Using fallback")
             # Fallback: Simple template-based generation
@@ -683,8 +693,10 @@ class TaskExecutor:
             logger.info(
                 f"✅ [TASK_EXECUTE] PHASE 1 Complete (fallback): Generated {len(generated_content)} chars"
             )
+            task_metrics.record_phase_end("content_generation", phase_1_start, status="success")
 
         # ===== PHASE 2: Quality Validation =====
+        phase_2_start = task_metrics.record_phase_start("quality_assessment")
         logger.info(f"🔍 [TASK_EXECUTE] PHASE 2: Validating content quality...")
         logger.info(
             f"   Input content length: {len(generated_content) if generated_content else 0} chars"
@@ -713,21 +725,35 @@ class TaskExecutor:
                 "suggestions": ["Content is empty or None"],
             }
 
-        quality_score = quality_result.get("score", 0)
-        approved = quality_result.get("approved", False)
+        # Handle both QualityAssessment objects and fallback dicts
+        if isinstance(quality_result, QualityAssessment):
+            quality_score = quality_result.overall_score  # 0-100
+            approved = quality_result.passing  # boolean
+            feedback_text = quality_result.feedback
+            suggestions_list = quality_result.suggestions
+            needs_refine = quality_result.needs_refinement
+        else:
+            # Fallback for dict (line 721)
+            quality_score = quality_result.get("score", 0)
+            approved = quality_result.get("approved", False)
+            feedback_text = quality_result.get("feedback", "")
+            suggestions_list = quality_result.get("suggestions", [])
+            needs_refine = quality_result.get("needs_refinement", False)
 
         logger.info(f"   Quality Score: {quality_score}/100")
         logger.info(f"   Approved: {approved}")
-        logger.debug(f"   Quality result keys: {list(quality_result.keys())}")
+        if isinstance(quality_result, QualityAssessment):
+            logger.debug(f"   Quality dimensions: clarity={quality_result.dimensions.clarity:.0f}, "
+                         f"readability={quality_result.dimensions.readability:.0f}")
 
         if approved:
             logger.info(f"✅ [TASK_EXECUTE] PHASE 2 Complete: Content approved")
         else:
             logger.warning(f"⚠️ [TASK_EXECUTE] PHASE 2 Complete: Content needs improvement")
-            logger.debug(f"   Feedback: {critique_result.get('feedback')}")
+            logger.debug(f"   Feedback: {feedback_text}")
 
             # If not approved but can refine, attempt refinement
-            if critique_result.get("needs_refinement") and self.orchestrator:
+            if needs_refine and self.orchestrator:
                 logger.info(
                     f"🔄 [TASK_EXECUTE] Attempting refinement based on critique feedback..."
                 )
@@ -735,40 +761,37 @@ class TaskExecutor:
                     f"   Original content length: {len(generated_content) if generated_content else 0} chars"
                 )
                 try:
-                    # Check if orchestrator supports modern process_request
+                    # Use orchestrator to refine
                     if hasattr(self.orchestrator, "process_request") and not hasattr(
                         self.orchestrator, "process_command_async"
                     ):
-                        # UnifiedOrchestrator
                         refinement_result = await self.orchestrator.process_request(
-                            user_input=f"Refine content about '{topic}' based on feedback: {critique_result.get('feedback')}",
+                            user_input=f"Refine content about '{topic}' based on feedback: {feedback_text}",
                             context={
                                 "original_content": generated_content,
-                                "feedback": critique_result.get("feedback"),
+                                "feedback": feedback_text,
+                                "suggestions": suggestions_list,
                                 "task_id": str(task_id),
                                 "model_selections": model_selections,
-                            },
+                            }
                         )
                     else:
-                        # Legacy Orchestrator or basic Orchestrator
-                        # Try legacy signature first if it has process_request
                         if hasattr(self.orchestrator, "process_request"):
                             refinement_result = await self.orchestrator.process_request(
                                 user_request=f"Refine content based on feedback: {topic}",
                                 user_id="system_task_executor",
                                 business_metrics={
                                     "original_content": generated_content,
-                                    "feedback": critique_result.get("feedback"),
-                                    "suggestions": critique_result.get("suggestions"),
+                                    "feedback": feedback_text,
+                                    "suggestions": suggestions_list,
                                     "topic": topic,
                                     "model_selections": model_selections,
-                                },
+                                }
                             )
                         else:
-                            # Fallback to process_command_async
                             refinement_result = await self.orchestrator.process_command_async(
-                                command=f"Refine content about '{topic}' based on feedback: {critique_result.get('feedback')}",
-                                context={"original_content": generated_content},
+                                command=f"Refine content about '{topic}' based on feedback: {feedback_text}",
+                                context={"original_content": generated_content}
                             )
 
                     logger.info(
@@ -818,22 +841,37 @@ class TaskExecutor:
                         )
                         logger.info(f"   ✅ Using refined content ({len(generated_content)} chars)")
 
-                        # Re-critique refined content
-                        critique_result = await self.critique_loop.critique(
+                        # RE-EVALUATE REFINED CONTENT USING QUALITY SERVICE
+                        quality_result = await self.quality_service.evaluate(
                             content=generated_content,
                             context={
                                 "topic": topic,
                                 "keywords": primary_keyword,
-                            },
+                                "target_audience": target_audience,
+                                "category": category,
+                                "style": style,
+                                "tone": tone,
+                                "target_length": target_length,
+                            }
                         )
 
-                        quality_score = critique_result.get("quality_score", 0)
-                        approved = critique_result.get("approved", False)
+                        # Extract new quality scores
+                        if isinstance(quality_result, QualityAssessment):
+                            quality_score = quality_result.overall_score
+                            approved = quality_result.passing
+                            feedback_text = quality_result.feedback
+                            suggestions_list = quality_result.suggestions
+                            needs_refine = quality_result.needs_refinement
+                        else:
+                            quality_score = quality_result.get("score", 0)
+                            approved = quality_result.get("approved", False)
+                            feedback_text = quality_result.get("feedback", "")
+                            suggestions_list = quality_result.get("suggestions", [])
+                            needs_refine = quality_result.get("needs_refinement", False)
+
                         logger.info(f"   Refined Quality Score: {quality_score}/100")
                     else:
-                        logger.warning(
-                            f"   ⚠️  Refined content too short ({len(str(refined_content).strip()) if refined_content else 0} chars), keeping original"
-                        )
+                        logger.warning(f"   ⚠️  Refined content too short, keeping original")
 
                 except Exception as refine_err:
                     logger.error(
@@ -846,6 +884,16 @@ class TaskExecutor:
                 logger.info(
                     f"🔄 Refinement complete: approved={approved}, score={quality_score}/100, content_len={len(generated_content) if generated_content else 0}"
                 )
+
+        # Record Phase 2 completion
+        logger.debug(f"📊 [METRICS] Recording Phase 2 completion...")
+        task_metrics.record_phase_end(
+            "quality_assessment", 
+            phase_2_start, 
+            status="success",
+            error=None
+        )
+        logger.info(f"✅ [TASK_EXECUTE] PHASE 2 Complete: Quality assessment recorded")
 
         # ===== Validate Content Generation =====
         # Ensure meaningful content was actually generated
@@ -889,8 +937,8 @@ class TaskExecutor:
             # Critique phase
             "quality_score": quality_score,
             "content_approved": approved,
-            "critique_feedback": critique_result.get("feedback", ""),
-            "critique_suggestions": critique_result.get("suggestions", []),
+            "critique_feedback": feedback_text,
+            "critique_suggestions": suggestions_list,
             # Metadata
             "word_count": len(generated_content.split()) if generated_content else 0,
             "completed_at": datetime.now(timezone.utc).isoformat(),

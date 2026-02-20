@@ -26,6 +26,7 @@ class MiddlewareConfig:
 
     def __init__(self):
         self.limiter = None
+        self.profiling_middleware = None
 
     def register_all_middleware(self, app: FastAPI) -> None:
         """
@@ -35,10 +36,11 @@ class MiddlewareConfig:
         (middleware added last is executed first).
 
         Order of execution (first to last):
-        1. CORS middleware (handles cross-origin requests)
-        2. Rate limiting (protects against abuse)
-        3. Input validation (sanitizes requests)
-        4. Payload inspection (logs payloads for debugging)
+        1. Profiling middleware (tracks request latency)
+        2. CORS middleware (handles cross-origin requests)
+        3. Rate limiting (protects against abuse)
+        4. Input validation (sanitizes requests)
+        5. Payload inspection (logs payloads for debugging)
 
         Args:
             app: FastAPI application instance
@@ -51,12 +53,33 @@ class MiddlewareConfig:
             middleware_config.register_all_middleware(app)
         """
         # Register in reverse order (last added = first executed)
-        # CORS should execute FIRST, so it's added LAST
+        # Profiling should execute FIRST, so it's added LAST
         self._setup_input_validation(app)
         self._setup_rate_limiting(app)
         self._setup_cors(app)
+        self._setup_profiling(app)
 
         logger.info("✅ All middleware registered successfully")
+
+    def _setup_profiling(self, app: FastAPI) -> None:
+        """
+        Setup performance profiling middleware.
+
+        Tracks request latency and identifies slow endpoints.
+        Data is accessible via /api/profiling endpoints.
+        """
+        try:
+            from middleware.profiling_middleware import ProfilingMiddleware
+
+            self.profiling_middleware = ProfilingMiddleware(app)
+            app.add_middleware(ProfilingMiddleware)
+
+            # Store middleware reference in app state for route access
+            app.state.profiling_middleware = self.profiling_middleware
+
+            logger.info("✅ Profiling middleware initialized")
+        except ImportError as e:
+            logger.warning(f"⚠️  Profiling middleware not available: {e}")
 
     def _setup_input_validation(self, app: FastAPI) -> None:
         """

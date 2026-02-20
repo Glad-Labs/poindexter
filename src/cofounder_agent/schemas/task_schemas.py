@@ -100,6 +100,9 @@ class UnifiedTaskRequest(BaseModel):
     quality_preference: Optional[Literal["fast", "balanced", "quality"]] = Field(
         "balanced", description="Quality vs speed preference"
     )
+    context: Optional[Dict[str, Any]] = Field(
+        None, description="Request context (writing_style_id, user_id, etc.)"
+    )
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata for task")
 
     class Config:
