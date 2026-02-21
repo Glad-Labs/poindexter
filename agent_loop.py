@@ -2,8 +2,19 @@ import os
 import json
 import subprocess
 import requests
+import logging
+import time
 from pathlib import Path
 from textwrap import dedent
+from datetime import datetime
+
+# Configure verbose logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).parent.resolve()
 MAX_ITERATIONS = 5
@@ -13,15 +24,42 @@ REASONER_MODEL = "deepseek-r1-qwen-70b-q4km"
 CODER_MODEL = "qwen3-coder-32b-q4km"
 OLLAMA_API_URL = "http://localhost:11434/api/generate"
 
+# Project-specific configuration for Glad Labs
+EXCLUDED_DIRS = {
+    "node_modules", ".git", "__pycache__", ".pytest_cache", 
+    "dist", "build", ".next", "coverage", ".venv", "venv",
+    ".vscode", ".idea", "*.egg-info"
+}
+
+EXCLUDED_EXTENSIONS = {
+    ".pyc", ".log", ".lock", ".map", ".min.js", ".min.css",
+    ".svg", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".woff", ".woff2"
+}
+
+# Test commands for different parts of the codebase
+TEST_COMMANDS = {
+    "python": ["pytest", "src/cofounder_agent/tests/", "-v", "--tb=short"],
+    "frontend": ["npm", "run", "test", "--prefix", "web/oversight-hub"],
+}
+
+# Focus areas for improvement
+FOCUS_AREAS = [
+    "src/cofounder_agent/",  # Backend Python code
+    "web/oversight-hub/src/", # React admin UI
+    "web/public-site/",       # Next.js public site
+]
+
 
 def check_ollama_available():
     """Check if Ollama is running and models are available."""
+    logger.info("🔍 Checking Ollama availability...")
     try:
         response = requests.get("http://localhost:11434/api/tags", timeout=5)
         if response.status_code == 200:
             models = response.json().get("models", [])
             model_names = [m["name"] for m in models]
-            print(f"📦 Available models: {model_names[:10]}...")  # Show first 10
+            logger.info(f"📦 Found {len(model_names)} Ollama models")
+            logger.debug(f"   First 10: {model_names[:10]}")
             
             # Check if required models are available (handle :latest suffix)
             required_models = [REASONER_MODEL, CODER_MODEL]
@@ -34,32 +72,32 @@ def check_ollama_available():
                     missing_models.append(model)
             
             if missing_models:
-                print(f"\n⚠️  Missing required models: {missing_models}")
-                print(f"\nTo install them, run:")
+                logger.error(f"⚠️  Missing required models: {missing_models}")
+                logger.info("\nTo install them, run:")
                 for model in missing_models:
-                    print(f"   ollama pull {model}")
-                print(f"\nOr run the setup script:")
-                print(f"   Windows: setup_agent_loop.bat")
-                print(f"   Linux/Mac: bash setup_agent_loop.sh")
+                    logger.info(f"   ollama pull {model}")
+                logger.info("\nOr run the setup script:")
+                logger.info("   Windows: setup_agent_loop.bat")
+                logger.info("   Linux/Mac: bash setup_agent_loop.sh")
                 return False
             
-            print(f"✅ Required models available:")
-            print(f"   Reasoner: {REASONER_MODEL}")
-            print(f"   Coder: {CODER_MODEL}")
+            logger.info(f"✅ Required models available:")
+            logger.info(f"   Reasoner: {REASONER_MODEL} (70B parameters)")
+            logger.info(f"   Coder: {CODER_MODEL} (32B parameters)")
             return True
         return False
     except requests.exceptions.RequestException as e:
-        print(f"❌ Ollama not available: {e}")
-        print("Make sure Ollama is running: ollama serve")
+        logger.error(f"❌ Ollama not available: {e}")
+        logger.info("Make sure Ollama is running: ollama serve")
         return False
 
 
 def run_ollama(model: str, prompt: str, system: str = "") -> str:
     """Call Ollama via HTTP API."""
-    messages = []
-    if system:
-        messages.append({"role": "system", "content": system})
-    messages.append({"role": "user", "content": prompt})
+    logger.info(f"🤖 Calling {model}...")
+    logger.debug(f"   Prompt length: {len(prompt)} chars")
+    
+    start_time = time.time()
     
     # Format prompt with system message if provided
     full_prompt = prompt
@@ -81,53 +119,133 @@ def run_ollama(model: str, prompt: str, system: str = "") -> str:
             timeout=300,  # 5 minute timeout for reasoning
         )
         
+        elapsed = time.time() - start_time
+        
         if response.status_code != 200:
-            print(f"❌ Ollama API error: {response.status_code}")
-            print(f"Response: {response.text[:500]}")
+            logger.error(f"❌ Ollama API error: {response.status_code}")
+            logger.error(f"Response: {response.text[:500]}")
             return ""
         
         result = response.json()
-        return result.get("response", "")
+        response_text = result.get("response", "")
+        
+        logger.info(f"✅ Response received in {elapsed:.1f}s ({len(response_text)} chars)")
+        
+        return response_text
         
     except requests.exceptions.RequestException as e:
-        print(f"❌ Failed to call Ollama: {e}")
+        logger.error(f"❌ Failed to call Ollama: {e}")
         return ""
     except json.JSONDecodeError as e:
-        print(f"❌ Failed to parse Ollama response: {e}")
+        logger.error(f"❌ Failed to parse Ollama response: {e}")
         return ""
 
 
 def list_repo_files():
+    """List all relevant files in the repository, excluding build artifacts."""
+    logger.debug("📂 Scanning repository files...")
     files = []
+    
     for p in REPO_ROOT.rglob("*"):
         if not p.is_file():
             continue
-        if ".git" in p.parts:
+        
+        # Skip excluded directories
+        if any(excluded in p.parts for excluded in EXCLUDED_DIRS):
             continue
-        if p.suffix in {".pyc", ".log"}:
+        
+        # Skip excluded extensions
+        if p.suffix in EXCLUDED_EXTENSIONS:
             continue
-        files.append(str(p.relative_to(REPO_ROOT)))
+        
+        # Focus on relevant file types
+        rel_path = str(p.relative_to(REPO_ROOT))
+        
+        # Prioritize focus areas
+        is_focus_area = any(rel_path.startswith(area) for area in FOCUS_AREAS)
+        
+        files.append(rel_path)
+    
+    logger.info(f"📂 Found {len(files)} relevant files")
     return files
 
 
 def run_tests():
-    # Adjust to your stack: pytest, npm test, etc.
+    """Run all test suites (Python backend + Frontend)."""
+    logger.info("🧪 Running test suites...")
+    
+    all_output = []
+    all_passed = True
+    
+    # Run Python tests
+    logger.info("   → Running Python backend tests...")
     try:
         proc = subprocess.run(
-            ["pytest"],
+            TEST_COMMANDS["python"],
             cwd=REPO_ROOT,
             text=True,
             capture_output=True,
+            timeout=120,  # 2 minute timeout
         )
-        return proc.returncode == 0, proc.stdout + "\n" + proc.stderr
+        python_passed = proc.returncode == 0
+        python_output = proc.stdout + "\n" + proc.stderr
+        
+        if python_passed:
+            logger.info("   ✅ Python tests passed")
+        else:
+            logger.warning("   ⚠️  Python tests failed")
+            all_passed = False
+        
+        all_output.append(f"=== PYTHON TESTS ===\n{python_output}")
+        
+    except subprocess.TimeoutExpired:
+        logger.error("   ❌ Python tests timed out")
+        all_passed = False
+        all_output.append("=== PYTHON TESTS ===\nTimeout after 120s")
     except FileNotFoundError:
-        return False, "pytest not found; no tests run."
+        logger.warning("   ⚠️  pytest not found, skipping Python tests")
+        all_output.append("=== PYTHON TESTS ===\npytest not found")
+    
+    # Run Frontend tests (optional - can be slow)
+    # Uncomment if you want to include frontend tests
+    # logger.info("   → Running frontend tests...")
+    # try:
+    #     proc = subprocess.run(
+    #         TEST_COMMANDS["frontend"],
+    #         cwd=REPO_ROOT,
+    #         text=True,
+    #         capture_output=True,
+    #         timeout=180,
+    #     )
+    #     frontend_passed = proc.returncode == 0
+    #     frontend_output = proc.stdout + "\n" + proc.stderr
+    #     
+    #     if frontend_passed:
+    #         logger.info("   ✅ Frontend tests passed")
+    #     else:
+    #         logger.warning("   ⚠️  Frontend tests failed")
+    #         all_passed = False
+    #     
+    #     all_output.append(f"=== FRONTEND TESTS ===\n{frontend_output}")
+    # except Exception as e:
+    #     logger.warning(f"   ⚠️  Frontend tests skipped: {e}")
+    #     all_output.append(f"=== FRONTEND TESTS ===\nSkipped: {e}")
+    
+    combined_output = "\n\n".join(all_output)
+    logger.info(f"🧪 Test suite complete: {'✅ PASS' if all_passed else '❌ FAIL'}")
+    
+    return all_passed, combined_output
 
 
 def apply_patch(patch_text: str) -> bool:
     """Apply a unified diff patch using `git apply`."""
     if not patch_text.strip():
+        logger.warning("⚠️  Empty patch, nothing to apply")
         return False
+    
+    logger.info("📝 Applying patch...")
+    logger.debug(f"   Patch size: {len(patch_text)} chars")
+    
     proc = subprocess.run(
         ["git", "apply", "-"],
         input=patch_text,
@@ -135,52 +253,119 @@ def apply_patch(patch_text: str) -> bool:
         cwd=REPO_ROOT,
         capture_output=True,
     )
+    
     if proc.returncode != 0:
-        print("Patch failed:\n", proc.stderr)
+        logger.error("❌ Patch failed to apply:")
+        logger.error(f"   {proc.stderr}")
+        logger.debug(f"   Patch preview:\n{patch_text[:500]}")
         return False
+    
+    logger.info("✅ Patch applied successfully")
     return True
 
 
 def get_repo_summary():
+    """Generate a comprehensive repository summary."""
     files = list_repo_files()
-    return dedent(f"""
-    Repository root: {REPO_ROOT}
-    Number of files: {len(files)}
-    Sample files:
-    {os.linesep.join(files[:50])}
+    
+    # Categorize files by type
+    python_files = [f for f in files if f.endswith('.py')]
+    js_files = [f for f in files if f.endswith(('.js', '.jsx', '.ts', '.tsx'))]
+    config_files = [f for f in files if f.endswith(('.json', '.yaml', '.yml', '.toml', '.ini'))]
+    
+    summary = dedent(f"""
+    Repository: Glad Labs AI Co-Founder System
+    Root: {REPO_ROOT}
+    
+    File Statistics:
+    - Total relevant files: {len(files)}
+    - Python files: {len(python_files)}
+    - JavaScript/TypeScript: {len(js_files)}
+    - Config files: {len(config_files)}
+    
+    Key Directories:
+    - Backend (Python/FastAPI): src/cofounder_agent/
+    - Admin UI (React): web/oversight-hub/
+    - Public Site (Next.js): web/public-site/
+    
+    Sample Python files:
+    {os.linesep.join(python_files[:20])}
+    
+    Sample JS/TS files:
+    {os.linesep.join(js_files[:20])}
     """)
+    
+    return summary
 
 
 def get_file_contents(path: str) -> str:
+    """Read file contents safely."""
     full = REPO_ROOT / path
     if not full.exists():
+        logger.warning(f"⚠️  File not found: {path}")
         return ""
-    return full.read_text(encoding="utf-8", errors="ignore")
+    
+    try:
+        content = full.read_text(encoding="utf-8", errors="ignore")
+        logger.debug(f"   Read {path} ({len(content)} chars)")
+        return content
+    except Exception as e:
+        logger.error(f"❌ Failed to read {path}: {e}")
+        return ""
 
 
 def main():
+    """Main agent loop - autonomous code improvement."""
+    logger.info("=" * 80)
+    logger.info("🤖 GLAD LABS AUTONOMOUS AGENT LOOP")
+    logger.info("=" * 80)
+    logger.info(f"Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"Max iterations: {MAX_ITERATIONS}")
+    logger.info("")
+    
     # Check if Ollama is available
     if not check_ollama_available():
-        print("\n❌ Cannot proceed without Ollama. Please start it with: ollama serve")
+        logger.error("\n❌ Cannot proceed without Ollama. Please start it with: ollama serve")
         return
     
+    logger.info("")
+    logger.info("📊 Analyzing repository...")
     repo_summary = get_repo_summary()
+    logger.info(repo_summary)
 
     system_reasoner = dedent("""
-    You are a senior engineer and planner.
-    You will be given:
-    - A repository summary
-    - Test results
-    - Previous actions
-
+    You are a senior engineering AI analyzing the Glad Labs AI Co-Founder system.
+    
+    This is a production multi-agent system with:
+    - FastAPI backend (Python) with specialized AI agents
+    - React admin dashboard (Oversight Hub)
+    - Next.js public website
+    - PostgreSQL database
+    - Ollama/OpenAI/Anthropic LLM integration
+    
+    Focus on:
+    1) Backend API bugs and error handling
+    2) Frontend-backend integration issues
+    3) Database query optimization
+    4) Test coverage gaps
+    5) Code quality and maintainability
+    
     Your job:
-    1) Identify concrete improvements (bugs, structure, tests, DX).
-    2) Propose a JSON plan with steps. Each step must include:
-       - "id": integer
-       - "description": string
-       - "files": list of file paths to edit
-    3) Stop when there is nothing meaningful left to improve.
-
+    1) Identify concrete, high-impact improvements
+    2) Propose a JSON plan with steps:
+       {
+         "done": bool,
+         "reason": string,
+         "steps": [
+           {
+             "id": int,
+             "description": string,
+             "files": ["path1", "path2"]
+           }
+         ]
+       }
+    3) Stop when there is nothing meaningful left to improve
+    
     Always respond with ONLY valid JSON.
     """)
 
@@ -197,25 +382,40 @@ def main():
     """)
 
     previous_context = ""
+    iteration_times = []
+    iteration = 0  # Initialize iteration counter
+    
     for iteration in range(1, MAX_ITERATIONS + 1):
-        print(f"\n=== ITERATION {iteration} ===")
+        iteration_start = time.time()
+        
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info(f"🔄 ITERATION {iteration}/{MAX_ITERATIONS}")
+        logger.info("=" * 80)
 
+        # Run tests
+        test_start = time.time()
         tests_ok, test_output = run_tests()
-        print("Tests OK:", tests_ok)
+        test_duration = time.time() - test_start
+        logger.info(f"📊 Tests completed in {test_duration:.1f}s - {'✅ PASS' if tests_ok else '❌ FAIL'}")
 
+        # Prepare reasoning prompt
+        logger.info("🧠 Reasoning phase starting...")
+        
         reasoner_prompt = dedent(f"""
-        Repository summary:
-        {repo_summary}
+        Repository: Glad Labs AI Co-Founder System
+        
+        {repo_summary[:2000]}
 
-        Last test run:
-        success: {tests_ok}
-        output:
-        {test_output[:4000]}
+        Last test run (iteration {iteration}):
+        - Success: {tests_ok}
+        - Output (truncated):
+        {test_output[:3000]}
 
-        Previous context:
-        {previous_context}
+        Previous context from earlier iterations:
+        {previous_context[-2000:] if previous_context else "None"}
 
-        Produce a JSON object:
+        Analyze the codebase and test results. Produce a JSON object with your plan:
         {{
           "done": bool,
           "reason": string,
@@ -223,21 +423,24 @@ def main():
             {{
               "id": int,
               "description": string,
-              "files": [ "path1", "path2", ... ]
+              "files": [ "path1", "path2" ]
             }}
           ]
         }}
         """)
 
         plan_raw = run_ollama(REASONER_MODEL, reasoner_prompt, system_reasoner)
-        print("\n[Reasoner raw output]\n", plan_raw[:4000])
+        logger.info(f"📋 Reasoner response preview:")
+        logger.info(f"   {plan_raw[:500]}...")
+        logger.debug(f"\n[Full reasoner output]\n{plan_raw}")
 
+        # Parse reasoning output
         try:
             plan = json.loads(plan_raw)
+            logger.info("✅ Successfully parsed JSON plan")
         except json.JSONDecodeError as e:
-            print(f"❌ Reasoner did not return valid JSON: {e}")
-            print("Raw output:", plan_raw[:1000])
-            print("\n⚠️  Trying to extract JSON from response...")
+            logger.warning(f"⚠️  Invalid JSON from reasoner: {e}")
+            logger.info("🔍 Attempting JSON extraction...")
             
             # Try to find JSON in the response
             import re
@@ -245,69 +448,141 @@ def main():
             if json_match:
                 try:
                     plan = json.loads(json_match.group())
-                    print("✅ Extracted JSON successfully")
-                except:
-                    print("❌ Could not extract valid JSON, stopping.")
+                    logger.info("✅ Extracted JSON successfully")
+                except Exception as extract_error:
+                    logger.error(f"❌ Could not extract valid JSON: {extract_error}")
+                    logger.error(f"   Raw output: {plan_raw[:1000]}")
                     break
             else:
-                print("❌ No JSON found in response, stopping.")
+                logger.error("❌ No JSON found in response, stopping.")
+                logger.error(f"   Raw output: {plan_raw[:1000]}")
                 break
 
+        # Check if we're done
         if plan.get("done"):
-            print("Reasoner says we're done:", plan.get("reason"))
+            reason = plan.get("reason", "No reason provided")
+            logger.info(f"🏁 Reasoner marked iteration as complete: {reason}")
             break
 
+        # Get steps to execute
         steps = plan.get("steps") or []
         if not steps:
-            print("No steps returned, stopping.")
+            logger.warning("⚠️  No steps returned in plan, stopping.")
             break
+        
+        logger.info(f"📝 Plan contains {len(steps)} step(s)")
 
-        for step in steps:
-            step_id = step.get("id")
-            desc = step.get("description", "")
+        # Execute each step
+        for step_num, step in enumerate(steps, 1):
+            step_id = step.get("id", step_num)
+            desc = step.get("description", "No description")
             files = step.get("files", [])
 
-            print(f"\n--- Executing step {step_id}: {desc} ---")
+            logger.info("")
+            logger.info(f"⚙️  STEP {step_num}/{len(steps)} (ID: {step_id})")
+            logger.info(f"   Description: {desc}")
+            logger.info(f"   Files to modify: {len(files)}")
+            
+            if not files:
+                logger.warning("   ⚠️  No files specified, skipping step")
+                previous_context += f"\nStep {step_id}: Skipped (no files specified)"
+                continue
+            
+            # Load file contents
+            logger.info("   📂 Loading files...")
             file_blobs = []
             for f in files:
+                logger.debug(f"      - {f}")
                 content = get_file_contents(f)
-                file_blobs.append(
-                    f"\n--- FILE: {f} ---\n{content}\n"
-                )
+                if content:
+                    file_blobs.append(f"\n--- FILE: {f} ---\n{content}\n")
+                else:
+                    logger.warning(f"      ⚠️  Could not read {f}")
 
+            if not file_blobs:
+                logger.warning("   ⚠️  No files loaded successfully, skipping step")
+                previous_context += f"\nStep {step_id}: Skipped (files not found)"
+                continue
+
+            # Generate code changes
+            logger.info("   💻 Generating code changes...")
             coder_prompt = dedent(f"""
-            Plan step:
-            {json.dumps(step, indent=2)}
+            Implement this improvement for the Glad Labs AI Co-Founder system:
+            
+            Step: {json.dumps(step, indent=2)}
 
-            Files:
-            {''.join(file_blobs)}
+            Current file contents:
+            {''.join(file_blobs[:50000])}  # Limit to ~50KB to avoid token limits
 
-            Produce ONLY a unified diff that applies this step.
+            Generate a unified diff (git apply compatible) that implements this step.
+            - Use proper diff format with --- and +++ headers
+            - Include enough context lines (3-5 before/after changes)
+            - Make minimal, focused changes
+            - Ensure Python/JavaScript syntax is correct
+            
+            Output ONLY the unified diff, no explanations.
             """)
 
             patch = run_ollama(CODER_MODEL, coder_prompt, system_coder)
             
             if not patch or not patch.strip():
-                print(f"⚠️  No patch generated for step {step_id}")
-                previous_context += f"\nStep {step_id} generated no patch."
+                logger.warning(f"   ⚠️  No patch generated")
+                previous_context += f"\nStep {step_id} ({desc}): No patch generated"
                 continue
             
-            print("\n[Patch preview]\n", patch[:2000])
+            logger.info(f"   📄 Generated patch ({len(patch)} chars)")
+            logger.debug(f"\n--- PATCH PREVIEW ---\n{patch[:1000]}\n--- END PREVIEW ---")
 
+            # Apply the patch
             if not apply_patch(patch):
-                previous_context += f"\nStep {step_id} failed to apply patch."
+                logger.error(f"   ❌ Patch failed to apply")
+                previous_context += f"\nStep {step_id} ({desc}): Patch failed to apply"
                 continue
 
+            # Re-run tests to verify the change
+            logger.info("   🧪 Verifying changes with tests...")
+            test_start = time.time()
             tests_ok, test_output = run_tests()
+            test_duration = time.time() - test_start
+            
+            result_emoji = "✅" if tests_ok else "❌"
+            logger.info(f"   {result_emoji} Tests completed in {test_duration:.1f}s")
+            
+            # Update context
             previous_context += dedent(f"""
-            After step {step_id} ("{desc}"):
-            - Patch applied: yes
-            - Tests OK: {tests_ok}
+            
+            Step {step_id} ("{desc}"):
+            - Files modified: {', '.join(files)}
+            - Patch applied: ✅ yes
+            - Tests passing: {result_emoji} {tests_ok}
             - Test output (truncated):
-            {test_output[:2000]}
+            {test_output[:1500]}
             """)
 
-    print("\n=== LOOP COMPLETE ===")
+        # Track iteration time
+        iteration_duration = time.time() - iteration_start
+        iteration_times.append(iteration_duration)
+        avg_time = sum(iteration_times) / len(iteration_times)
+        
+        logger.info("")
+        logger.info(f"⏱️  Iteration {iteration} completed in {iteration_duration:.1f}s")
+        logger.info(f"   Average iteration time: {avg_time:.1f}s")
+        if iteration < MAX_ITERATIONS:
+            estimated_remaining = avg_time * (MAX_ITERATIONS - iteration)
+            logger.info(f"   Estimated time remaining: {estimated_remaining/60:.1f} minutes")
+
+    # Final summary
+    logger.info("")
+    logger.info("=" * 80)
+    logger.info("🏁 AGENT LOOP COMPLETE")
+    logger.info("=" * 80)
+    logger.info(f"Total iterations: {iteration}")
+    logger.info(f"Total time: {sum(iteration_times)/60:.1f} minutes")
+    logger.info(f"End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info("")
+    logger.info("💡 Review changes with: git diff")
+    logger.info("💡 Revert changes with: git reset --hard HEAD")
+    logger.info("=" * 80)
 
 
 if __name__ == "__main__":
