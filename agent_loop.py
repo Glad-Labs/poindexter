@@ -1,39 +1,100 @@
 import os
 import json
 import subprocess
+import requests
 from pathlib import Path
 from textwrap import dedent
 
 REPO_ROOT = Path(__file__).parent.resolve()
 MAX_ITERATIONS = 5
 
+# Optimized models for your system
 REASONER_MODEL = "deepseek-r1-qwen-70b-q4km"
-CODER_MODEL = "qwen3-32b-q4km"
+CODER_MODEL = "qwen3-coder-32b-q4km"
+OLLAMA_API_URL = "http://localhost:11434/api/generate"
+
+
+def check_ollama_available():
+    """Check if Ollama is running and models are available."""
+    try:
+        response = requests.get("http://localhost:11434/api/tags", timeout=5)
+        if response.status_code == 200:
+            models = response.json().get("models", [])
+            model_names = [m["name"] for m in models]
+            print(f"📦 Available models: {model_names[:10]}...")  # Show first 10
+            
+            # Check if required models are available (handle :latest suffix)
+            required_models = [REASONER_MODEL, CODER_MODEL]
+            missing_models = []
+            
+            for model in required_models:
+                # Check both with and without :latest suffix
+                model_variants = [model, f"{model}:latest"]
+                if not any(variant in model_names for variant in model_variants):
+                    missing_models.append(model)
+            
+            if missing_models:
+                print(f"\n⚠️  Missing required models: {missing_models}")
+                print(f"\nTo install them, run:")
+                for model in missing_models:
+                    print(f"   ollama pull {model}")
+                print(f"\nOr run the setup script:")
+                print(f"   Windows: setup_agent_loop.bat")
+                print(f"   Linux/Mac: bash setup_agent_loop.sh")
+                return False
+            
+            print(f"✅ Required models available:")
+            print(f"   Reasoner: {REASONER_MODEL}")
+            print(f"   Coder: {CODER_MODEL}")
+            return True
+        return False
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Ollama not available: {e}")
+        print("Make sure Ollama is running: ollama serve")
+        return False
 
 
 def run_ollama(model: str, prompt: str, system: str = "") -> str:
+    """Call Ollama via HTTP API."""
     messages = []
     if system:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
-
-    proc = subprocess.run(
-        ["ollama", "chat", model, "--json"],
-        input=json.dumps({"messages": messages}),
-        text=True,
-        capture_output=True,
-        check=True,
-    )
-
-    # Streamed JSON lines; take last "message"
-    last = None
-    for line in proc.stdout.splitlines():
-        if not line.strip():
-            continue
-        obj = json.loads(line)
-        if "message" in obj:
-            last = obj["message"]["content"]
-    return last or ""
+    
+    # Format prompt with system message if provided
+    full_prompt = prompt
+    if system:
+        full_prompt = f"{system}\n\n{prompt}"
+    
+    try:
+        response = requests.post(
+            OLLAMA_API_URL,
+            json={
+                "model": model,
+                "prompt": full_prompt,
+                "stream": False,
+                "options": {
+                    "temperature": 0.7,
+                    "num_predict": 4096,
+                }
+            },
+            timeout=300,  # 5 minute timeout for reasoning
+        )
+        
+        if response.status_code != 200:
+            print(f"❌ Ollama API error: {response.status_code}")
+            print(f"Response: {response.text[:500]}")
+            return ""
+        
+        result = response.json()
+        return result.get("response", "")
+        
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Failed to call Ollama: {e}")
+        return ""
+    except json.JSONDecodeError as e:
+        print(f"❌ Failed to parse Ollama response: {e}")
+        return ""
 
 
 def list_repo_files():
@@ -98,6 +159,11 @@ def get_file_contents(path: str) -> str:
 
 
 def main():
+    # Check if Ollama is available
+    if not check_ollama_available():
+        print("\n❌ Cannot proceed without Ollama. Please start it with: ollama serve")
+        return
+    
     repo_summary = get_repo_summary()
 
     system_reasoner = dedent("""
@@ -168,9 +234,24 @@ def main():
 
         try:
             plan = json.loads(plan_raw)
-        except json.JSONDecodeError:
-            print("Reasoner did not return valid JSON, stopping.")
-            break
+        except json.JSONDecodeError as e:
+            print(f"❌ Reasoner did not return valid JSON: {e}")
+            print("Raw output:", plan_raw[:1000])
+            print("\n⚠️  Trying to extract JSON from response...")
+            
+            # Try to find JSON in the response
+            import re
+            json_match = re.search(r'\{.*\}', plan_raw, re.DOTALL)
+            if json_match:
+                try:
+                    plan = json.loads(json_match.group())
+                    print("✅ Extracted JSON successfully")
+                except:
+                    print("❌ Could not extract valid JSON, stopping.")
+                    break
+            else:
+                print("❌ No JSON found in response, stopping.")
+                break
 
         if plan.get("done"):
             print("Reasoner says we're done:", plan.get("reason"))
@@ -205,6 +286,12 @@ def main():
             """)
 
             patch = run_ollama(CODER_MODEL, coder_prompt, system_coder)
+            
+            if not patch or not patch.strip():
+                print(f"⚠️  No patch generated for step {step_id}")
+                previous_context += f"\nStep {step_id} generated no patch."
+                continue
+            
             print("\n[Patch preview]\n", patch[:2000])
 
             if not apply_patch(patch):
