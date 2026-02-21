@@ -720,7 +720,7 @@ def main():
     - React admin dashboard (Oversight Hub)
     - Next.js public website
     - PostgreSQL database
-    - Ollama/OpenAI/Anthropic LLM integration
+    - Ollama/OpenAI/Anthropic/Gemini LLM integration
     
     Focus on:
     1) Backend API bugs and error handling

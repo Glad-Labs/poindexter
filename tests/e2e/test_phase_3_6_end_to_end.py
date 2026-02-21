@@ -142,8 +142,8 @@ class MockRAGService:
                 jaccard = intersection / union if union > 0 else 0.0
             
             # Apply style/tone filters
-            style_match = 1.0 if style is None or sample.style == style else 0.5
-            tone_match = 1.0 if tone is None or sample.tone == tone else 0.5
+            style_match = 1.0 if style is None or sample.style == style else 0.0
+            tone_match = 1.0 if tone is None or sample.tone == tone else 0.0
             
             # Multi-factor score: 50% similarity, 25% style, 25% tone
             relevance = (jaccard * 0.5) + (style_match * 0.25) + (tone_match * 0.25)
