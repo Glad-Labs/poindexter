@@ -237,18 +237,81 @@ def run_tests():
     return all_passed, combined_output
 
 
+def validate_and_clean_patch(patch: str) -> str:
+    """Validate and clean a patch to ensure it can be applied."""
+    if not patch or not patch.strip():
+        return ""
+    
+    lines = patch.split('\n')
+    cleaned_lines = []
+    in_diff = False
+    
+    for line in lines:
+        # Look for diff headers
+        if line.startswith('---') or line.startswith('+++'):
+            in_diff = True
+            cleaned_lines.append(line)
+        elif line.startswith('@@'):
+            cleaned_lines.append(line)
+        elif in_diff:
+            # Only include lines that are part of the diff
+            if line and line[0] in [' ', '+', '-', '\\']:
+                cleaned_lines.append(line)
+            elif line.startswith('diff --git'):
+                cleaned_lines.append(line)
+            # Skip explanatory text
+    
+    # If no diff headers found, try to extract from code blocks
+    if not any(line.startswith('---') for line in cleaned_lines):
+        logger.debug("   No diff headers found, attempting to extract from code blocks")
+        # Look for content between ```diff or ``` markers
+        import re
+        code_block_match = re.search(r'```(?:diff)?\n(.*?)\n```', patch, re.DOTALL)
+        if code_block_match:
+            return code_block_match.group(1)
+        
+        # Return empty if no valid diff found
+        return ""
+    
+    return '\n'.join(cleaned_lines)
+
+
 def apply_patch(patch_text: str) -> bool:
     """Apply a unified diff patch using `git apply`."""
     if not patch_text.strip():
         logger.warning("⚠️  Empty patch, nothing to apply")
         return False
     
-    logger.info("📝 Applying patch...")
-    logger.debug(f"   Patch size: {len(patch_text)} chars")
+    # Clean and validate the patch first
+    cleaned_patch = validate_and_clean_patch(patch_text)
     
+    if not cleaned_patch:
+        logger.warning("⚠️  No valid diff found in patch")
+        logger.debug(f"   Original patch preview:\n{patch_text[:500]}")
+        return False
+    
+    logger.info("📝 Applying patch...")
+    logger.debug(f"   Patch size: {len(cleaned_patch)} chars")
+    
+    # Try with --reject flag first to see detailed errors
+    proc = subprocess.run(
+        ["git", "apply", "--check", "-"],
+        input=cleaned_patch,
+        text=True,
+        cwd=REPO_ROOT,
+        capture_output=True,
+    )
+    
+    if proc.returncode != 0:
+        logger.error("❌ Patch validation failed:")
+        logger.error(f"   {proc.stderr}")
+        logger.debug(f"   Cleaned patch preview:\n{cleaned_patch[:1000]}")
+        return False
+    
+    # Apply the patch
     proc = subprocess.run(
         ["git", "apply", "-"],
-        input=patch_text,
+        input=cleaned_patch,
         text=True,
         cwd=REPO_ROOT,
         capture_output=True,
@@ -257,7 +320,7 @@ def apply_patch(patch_text: str) -> bool:
     if proc.returncode != 0:
         logger.error("❌ Patch failed to apply:")
         logger.error(f"   {proc.stderr}")
-        logger.debug(f"   Patch preview:\n{patch_text[:500]}")
+        logger.debug(f"   Cleaned patch preview:\n{cleaned_patch[:1000]}")
         return False
     
     logger.info("✅ Patch applied successfully")
@@ -299,8 +362,56 @@ def get_repo_summary():
 
 
 def get_file_contents(path: str) -> str:
-    """Read file contents safely."""
+    """Read file contents safely, handling directories and wildcards."""
+    # Handle wildcard patterns
+    if '*' in path or '?' in path:
+        logger.debug(f"   Expanding glob pattern: {path}")
+        matching_files = list(REPO_ROOT.glob(path))
+        if not matching_files:
+            logger.warning(f"⚠️  No files match pattern: {path}")
+            return ""
+        
+        # Return contents of all matching files
+        combined = []
+        for file_path in matching_files[:10]:  # Limit to 10 files to avoid overload
+            if file_path.is_file():
+                try:
+                    content = file_path.read_text(encoding="utf-8", errors="ignore")
+                    rel_path = file_path.relative_to(REPO_ROOT)
+                    combined.append(f"\n--- FILE: {rel_path} ---\n{content}")
+                    logger.debug(f"   Read {rel_path} ({len(content)} chars)")
+                except Exception as e:
+                    logger.error(f"❌ Failed to read {file_path}: {e}")
+        
+        return "\n".join(combined)
+    
     full = REPO_ROOT / path
+    
+    # Handle directories - list Python/JS files inside
+    if full.is_dir():
+        logger.debug(f"   Path is directory, listing contents: {path}")
+        files = []
+        for ext in ['.py', '.js', '.jsx', '.ts', '.tsx']:
+            files.extend(list(full.glob(f'*{ext}')))
+        
+        if not files:
+            logger.warning(f"⚠️  No source files found in directory: {path}")
+            return f"# Directory: {path}\n# No source files found"
+        
+        # Return combined contents of files in directory (limit to 5 to avoid overload)
+        combined = []
+        for file_path in files[:5]:
+            try:
+                content = file_path.read_text(encoding="utf-8", errors="ignore")
+                rel_path = file_path.relative_to(REPO_ROOT)
+                combined.append(f"\n--- FILE: {rel_path} ---\n{content}")
+                logger.debug(f"   Read {rel_path} ({len(content)} chars)")
+            except Exception as e:
+                logger.error(f"❌ Failed to read {file_path}: {e}")
+        
+        return "\n".join(combined)
+    
+    # Handle regular files
     if not full.exists():
         logger.warning(f"⚠️  File not found: {path}")
         return ""
@@ -491,11 +602,20 @@ def main():
             # Load file contents
             logger.info("   📂 Loading files...")
             file_blobs = []
+            files_loaded = 0
+            
             for f in files:
                 logger.debug(f"      - {f}")
                 content = get_file_contents(f)
                 if content:
+                    # Limit individual file size to prevent token overflow
+                    max_file_size = 10000  # ~10KB per file
+                    if len(content) > max_file_size:
+                        logger.debug(f"      ⚠️  Truncating {f} from {len(content)} to {max_file_size} chars")
+                        content = content[:max_file_size] + "\n... (truncated)"
+                    
                     file_blobs.append(f"\n--- FILE: {f} ---\n{content}\n")
+                    files_loaded += 1
                 else:
                     logger.warning(f"      ⚠️  Could not read {f}")
 
@@ -503,24 +623,48 @@ def main():
                 logger.warning("   ⚠️  No files loaded successfully, skipping step")
                 previous_context += f"\nStep {step_id}: Skipped (files not found)"
                 continue
+            
+            logger.info(f"   ✅ Loaded {files_loaded}/{len(files)} files successfully")
 
             # Generate code changes
             logger.info("   💻 Generating code changes...")
+            
+            # Limit total context size
+            combined_context = ''.join(file_blobs)
+            max_context_size = 40000  # ~40KB total context
+            if len(combined_context) > max_context_size:
+                logger.warning(f"   ⚠️  Context too large ({len(combined_context)} chars), truncating to {max_context_size}")
+                combined_context = combined_context[:max_context_size] + "\n... (truncated for token limits)"
+            
             coder_prompt = dedent(f"""
             Implement this improvement for the Glad Labs AI Co-Founder system:
             
-            Step: {json.dumps(step, indent=2)}
+            Step ID: {step_id}
+            Description: {desc}
+            Files to modify: {', '.join(files)}
 
             Current file contents:
-            {''.join(file_blobs[:50000])}  # Limit to ~50KB to avoid token limits
+            {combined_context}
 
-            Generate a unified diff (git apply compatible) that implements this step.
-            - Use proper diff format with --- and +++ headers
-            - Include enough context lines (3-5 before/after changes)
-            - Make minimal, focused changes
-            - Ensure Python/JavaScript syntax is correct
+            IMPORTANT INSTRUCTIONS:
+            1. Generate ONLY a unified diff in proper git format
+            2. Start with "--- a/filepath" and "+++ b/filepath"
+            3. Include @@ hunk headers with line numbers
+            4. Use proper diff syntax: lines starting with ' ', '+', or '-'
+            5. Do NOT include any explanations, markdown, or code blocks
+            6. Make minimal, focused changes only
             
-            Output ONLY the unified diff, no explanations.
+            Example format:
+            --- a/file.py
+            +++ b/file.py
+            @@ -10,5 +10,5 @@
+             context line
+             context line
+            -old line
+            +new line
+             context line
+            
+            Generate unified diff now:
             """)
 
             patch = run_ollama(CODER_MODEL, coder_prompt, system_coder)
