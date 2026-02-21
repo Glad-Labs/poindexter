@@ -1,14 +1,16 @@
 # Glad Labs - AI Co-Founder System
 
 **Status:** Enterprise-Ready ✅  
-**Last Updated:** January 23, 2026  
-**Documentation:** Consolidated & Streamlined
+**Last Updated:** February 21, 2026  
+**Documentation:** Cleaned Up & Organized
 
 Production-ready AI orchestration system with autonomous agents, multi-provider LLM routing, and full-stack web applications.
 
+> **Documentation Cleanup (Feb 2026):** Root directory cleaned of 57 archived documents. All historical Phase/Sprint reports moved to `docs/archive-active/root-cleanup-feb2026/` for improved organization. See [archive index](docs/archive-active/root-cleanup-feb2026/INDEX.md) for details.
+
 ## 📁 Project Structure
 
-```
+```bash
 .
 ├── src/cofounder_agent/        # Main orchestrator (FastAPI, port 8000)
 ├── web/public-site/           # Content distribution (Next.js, port 3000)
