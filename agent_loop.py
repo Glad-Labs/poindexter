@@ -104,6 +104,23 @@ LINTER_COMMANDS = {
     # Documentation
     "pydocstyle": ["poetry", "run", "pydocstyle", "src/", "--match=.*\\.py"],
     "darglint": ["poetry", "run", "darglint", "-r", "src/"],
+    
+    # ===== JavaScript/TypeScript Tools =====
+    # React (Oversight Hub)
+    "eslint_oversight_check": ["npm", "run", "lint", "--prefix", "web/oversight-hub"],
+    "eslint_oversight_fix": ["npm", "run", "lint:fix", "--prefix", "web/oversight-hub"],
+    "prettier_oversight_check": ["npx", "prettier", "--check", "web/oversight-hub/src"],
+    "prettier_oversight_fix": ["npx", "prettier", "--write", "web/oversight-hub/src"],
+    "typescript_oversight_check": ["npx", "tsc", "--noEmit", "--project", "web/oversight-hub/tsconfig.json"],
+    
+    # Next.js (Public Site)
+    "nextjs_lint_check": ["npm", "run", "lint", "--prefix", "web/public-site"],
+    "nextjs_lint_fix": ["npm", "run", "lint:fix", "--prefix", "web/public-site"],
+    "prettier_nextjs_check": ["npx", "prettier", "--check", "web/public-site/src"],
+    "prettier_nextjs_fix": ["npx", "prettier", "--write", "web/public-site/src"],
+    "typescript_nextjs_check": ["npx", "tsc", "--noEmit", "--project", "web/public-site/tsconfig.json"],
+    "stylelint_check": ["npx", "stylelint", "web/public-site/src/**/*.{css,scss}", "web/oversight-hub/src/**/*.{css,scss}"],
+    "stylelint_fix": ["npx", "stylelint", "--fix", "web/public-site/src/**/*.{css,scss}", "web/oversight-hub/src/**/*.{css,scss}"],
 }
 
 
@@ -926,6 +943,109 @@ def detect_linter_issues() -> tuple[Dict[str, Any], int]:
     except Exception as e:
         logger.debug(f"      Darglint check failed: {e}")
     
+    # ===== JavaScript/TypeScript Tools =====
+    
+    # Check ESLint (React - Oversight Hub)
+    logger.debug("   🔍 Checking ESLint (React/TypeScript)...")
+    try:
+        proc = subprocess.run(
+            LINTER_COMMANDS["eslint_oversight_check"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
+        if proc.returncode != 0:
+            eslint_issues = len([l for l in proc.stdout.split('\n') if 'error' in l.lower() or 'warning' in l.lower()])
+            issues["eslint"] = eslint_issues if eslint_issues > 0 else 1
+            total_count += issues["eslint"]
+            logger.debug(f"      Found {issues['eslint']} ESLint issues")
+    except Exception as e:
+        logger.debug(f"      ESLint check failed: {e}")
+    
+    # Check Next.js Lint (built-in ESLint config)
+    logger.debug("   🔍 Checking Next.js lint...")
+    try:
+        proc = subprocess.run(
+            LINTER_COMMANDS["nextjs_lint_check"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
+        if proc.returncode != 0:
+            nextjs_issues = len([l for l in proc.stdout.split('\n') if 'error' in l.lower() or 'warning' in l.lower()])
+            issues["nextjs_lint"] = nextjs_issues if nextjs_issues > 0 else 1
+            total_count += issues["nextjs_lint"]
+            logger.debug(f"      Found {issues['nextjs_lint']} Next.js lint issues")
+    except Exception as e:
+        logger.debug(f"      Next.js lint check failed: {e}")
+    
+    # Check Prettier (formatting - React and Next.js)
+    logger.debug("   🔍 Checking Prettier (formatting)...")
+    try:
+        # Check both React and Next.js Prettier issues
+        prettier_issues = 0
+        for prefix, app in [("web/oversight-hub", "React"), ("web/public-site", "Next.js")]:
+            proc = subprocess.run(
+                ["npx", "prettier", "--check", f"{prefix}/src"],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if proc.returncode != 0:
+                files_to_format = len([l for l in proc.stdout.split('\n') if l.strip() and '.tsx' in l or '.jsx' in l or '.ts' in l or '.js' in l])
+                prettier_issues += files_to_format if files_to_format > 0 else 1
+        
+        if prettier_issues > 0:
+            issues["prettier"] = prettier_issues
+            total_count += prettier_issues
+            logger.debug(f"      Found Prettier formatting issues")
+    except Exception as e:
+        logger.debug(f"      Prettier check failed: {e}")
+    
+    # Check TypeScript (type checking - both apps)
+    logger.debug("   🔍 Checking TypeScript (type checking)...")
+    try:
+        typescript_issues = 0
+        for prefix, app in [("web/oversight-hub", "React"), ("web/public-site", "Next.js")]:
+            proc = subprocess.run(
+                ["npx", "tsc", "--noEmit", "--project", f"{prefix}/tsconfig.json"],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=45,
+            )
+            if proc.returncode != 0:
+                errors = len([l for l in proc.stdout.split('\n') if 'error TS' in l])
+                typescript_issues += errors if errors > 0 else 1
+        
+        if typescript_issues > 0:
+            issues["typescript"] = typescript_issues
+            total_count += typescript_issues
+            logger.debug(f"      Found {typescript_issues} TypeScript type errors")
+    except Exception as e:
+        logger.debug(f"      TypeScript check failed: {e}")
+    
+    # Check Stylelint (CSS/SCSS)
+    logger.debug("   🔍 Checking Stylelint (CSS/SCSS)...")
+    try:
+        proc = subprocess.run(
+            LINTER_COMMANDS["stylelint_check"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.returncode != 0:
+            stylelint_issues = len([l for l in proc.stdout.split('\n') if l.strip() and '.css' in l or '.scss' in l])
+            issues["stylelint"] = stylelint_issues if stylelint_issues > 0 else 1
+            total_count += issues["stylelint"]
+            logger.debug(f"      Found stylelint issues")
+    except Exception as e:
+        logger.debug(f"      Stylelint check failed: {e}")
+    
     return issues, total_count
 
 
@@ -988,6 +1108,75 @@ def auto_fix_linter_issues() -> tuple[bool, List[str]]:
         logger.debug(f"      Autoflake fix failed: {e}")
     
     logger.info(f"   🔧 Applied {len(fixes)} auto-fixes: {', '.join(fixes) if fixes else 'none'}")
+    
+    # ===== JavaScript/TypeScript Auto-Fixes =====
+    
+    # Apply Prettier (formatting)
+    logger.debug("   ✏️  Applying Prettier (formatting)...")
+    try:
+        for prefix in ["web/oversight-hub", "web/public-site"]:
+            proc = subprocess.run(
+                ["npx", "prettier", "--write", f"{prefix}/src"],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if proc.returncode == 0:
+                fixes.append("prettier")
+                logger.debug(f"      ✅ Prettier applied for {prefix}")
+    except Exception as e:
+        logger.debug(f"      Prettier fix failed: {e}")
+    
+    # Apply ESLint fixes (React)
+    logger.debug("   ✏️  Applying ESLint fixes (React)...")
+    try:
+        proc = subprocess.run(
+            LINTER_COMMANDS["eslint_oversight_fix"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
+        if proc.returncode == 0:
+            fixes.append("eslint")
+            logger.debug("      ✅ ESLint fixes applied")
+    except Exception as e:
+        logger.debug(f"      ESLint fix failed: {e}")
+    
+    # Apply Next.js lint fixes
+    logger.debug("   ✏️  Applying Next.js lint fixes...")
+    try:
+        proc = subprocess.run(
+            LINTER_COMMANDS["nextjs_lint_fix"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
+        if proc.returncode == 0:
+            fixes.append("nextjs_lint")
+            logger.debug("      ✅ Next.js lint fixes applied")
+    except Exception as e:
+        logger.debug(f"      Next.js lint fix failed: {e}")
+    
+    # Apply Stylelint fixes (CSS/SCSS)
+    logger.debug("   ✏️  Applying Stylelint fixes (CSS/SCSS)...")
+    try:
+        proc = subprocess.run(
+            LINTER_COMMANDS["stylelint_fix"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.returncode == 0:
+            fixes.append("stylelint")
+            logger.debug("      ✅ Stylelint fixes applied")
+    except Exception as e:
+        logger.debug(f"      Stylelint fix failed: {e}")
+    
+    logger.info(f"   🔧 Total auto-fixes applied: {len(fixes)} tools")
     
     return len(fixes) > 0, fixes
 
@@ -1176,8 +1365,9 @@ def main():
         logger.info(f"Max iterations: {PHASE1_MAX_ITERATIONS}")
         logger.info(f"Exit when clean {PHASE1_CONSECUTIVE_CLEAN} times in a row")
         logger.info("")
-        logger.info("📋 Tools: pylint, black, isort, flake8, mypy, pyright, bandit")
-        logger.info("         vulture, autoflake, radon, pydocstyle, darglint")
+        logger.info("📋 Python Tools (12): pylint, black, isort, flake8, mypy, pyright, bandit")
+        logger.info("                      vulture, autoflake, radon, pydocstyle, darglint")
+        logger.info("📋 JS/TS Tools (5): eslint, next.js-lint, prettier, typescript, stylelint")
         logger.info("")
         
         consecutive_clean = 0
@@ -1602,7 +1792,7 @@ def main():
     logger.info("=" * 80)
     
     if PHASE1_ENABLED:
-        logger.info(f"Phase 1 (Linter): {phase1_iteration} iterations")
+        logger.info(f"Phase 1 (Linter): {phase1_iteration} iterations - 17 tools total")
     
     if PHASE2_ENABLED:
         logger.info(f"Phase 2 (Reasoning): {iteration} iterations")
