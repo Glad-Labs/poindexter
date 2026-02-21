@@ -30,11 +30,11 @@ OLLAMA_API_URL = "http://localhost:11434/api/generate"
 SKIP_TESTS = os.environ.get("SKIP_TESTS", "false").lower() == "true"
 CONTINUE_ON_TEST_FAILURE = True  # Don't stop if tests fail
 USE_MCP_TOOLS = os.environ.get("USE_MCP_TOOLS", "true").lower() == "true"
-ITERATION_DELAY = int(os.environ.get("ITERATION_DELAY", "0"))  # Seconds between iterations
+ITERATION_DELAY = int(os.environ.get("ITERATION_DELAY", "2"))  # Seconds between iterations
 OLLAMA_TIMEOUT = int(os.environ.get("OLLAMA_TIMEOUT", "600"))  # 10 minutes default for reasoning models
 VERBOSE_MODELS = os.environ.get("VERBOSE_MODELS", "false").lower() == "true"
 LOG_OLLAMA_SERVER = os.environ.get("LOG_OLLAMA_SERVER", "false").lower() == "true"
-OLLAMA_LOG_TAIL = int(os.environ.get("OLLAMA_LOG_TAIL", "200"))
+OLLAMA_LOG_TAIL = int(os.environ.get("OLLAMA_LOG_TAIL", "2000"))  # Number of lines to tail from Ollama logs for diagnostics
 FULL_PROMPT_LOG = os.environ.get("FULL_PROMPT_LOG", "false").lower() == "true"
 FULL_RESPONSE_LOG = os.environ.get("FULL_RESPONSE_LOG", "false").lower() == "true"
 FULL_OLLAMA_JSON_LOG = os.environ.get("FULL_OLLAMA_JSON_LOG", "false").lower() == "true"
@@ -78,13 +78,32 @@ PHASE1_CONSECUTIVE_CLEAN = 2  # Exit Phase 1 after N consecutive clean runs
 PHASE2_ENABLED = os.environ.get("SKIP_PHASE_2", "false").lower() == "false"
 PHASE2_MAX_ITERATIONS = int(os.environ.get("PHASE2_MAX_ITERATIONS", "500"))
 
-# Linter commands (Phase 1)
+# Linter commands (Phase 1) - 12 tools for comprehensive code quality
 LINTER_COMMANDS = {
+    # Code quality & style
     "pylint": ["poetry", "run", "pylint", "src/", "--output-format=json"],
     "black_check": ["poetry", "run", "black", "src/", "--check"],
     "black_fix": ["poetry", "run", "black", "src/"],
     "isort_check": ["poetry", "run", "isort", "src/", "--check-only"],
     "isort_fix": ["poetry", "run", "isort", "src/"],
+    "flake8": ["poetry", "run", "flake8", "src/", "--format=json"],
+    
+    # Type checking & safety
+    "mypy": ["poetry", "run", "mypy", "src/", "--json"],
+    "pyright": ["poetry", "run", "pyright", "src/", "--outputjson"],
+    "bandit": ["poetry", "run", "bandit", "-r", "src/", "-f", "json"],
+    
+    # Dead code & cleanup
+    "vulture": ["poetry", "run", "vulture", "src/", "--json"],
+    "autoflake_check": ["poetry", "run", "autoflake", "--check", "-r", "src/"],
+    "autoflake_fix": ["poetry", "run", "autoflake", "--in-place", "-r", "src/"],
+    
+    # Complexity & maintainability
+    "radon": ["poetry", "run", "radon", "cc", "src/", "-j"],
+    
+    # Documentation
+    "pydocstyle": ["poetry", "run", "pydocstyle", "src/", "--match=.*\\.py"],
+    "darglint": ["poetry", "run", "darglint", "-r", "src/"],
 }
 
 
@@ -648,13 +667,15 @@ def get_repo_summary():
 
 
 def detect_linter_issues() -> tuple[Dict[str, Any], int]:
-    """Detect linter issues using pylint, black, isort.
+    """Detect linter issues using 12 code quality tools.
     
     Returns:
         tuple: (issues_dict, total_count)
     """
     issues = {}
     total_count = 0
+    
+    # ===== Code quality & style =====
     
     # Check pylint
     logger.debug("   🔍 Checking pylint...")
@@ -688,9 +709,8 @@ def detect_linter_issues() -> tuple[Dict[str, Any], int]:
             timeout=30,
         )
         if proc.returncode != 0:
-            # Count lines that would be reformatted
             reformatted = len([l for l in proc.stdout.split('\n') if 'would reformat' in l or 'reformatted' in l])
-            issues["black"] = reformatted if reformatted > 0 else 1  # At least 1 if failed
+            issues["black"] = reformatted if reformatted > 0 else 1
             total_count += issues["black"]
             logger.debug(f"      Black formatting issues found")
     except Exception as e:
@@ -707,7 +727,6 @@ def detect_linter_issues() -> tuple[Dict[str, Any], int]:
             timeout=30,
         )
         if proc.returncode != 0:
-            # Count files that need sorting
             files_to_sort = len([l for l in proc.stdout.split('\n') if l.strip() and '.py' in l])
             issues["isort"] = files_to_sort if files_to_sort > 0 else 1
             total_count += issues["isort"]
@@ -715,16 +734,210 @@ def detect_linter_issues() -> tuple[Dict[str, Any], int]:
     except Exception as e:
         logger.debug(f"      Isort check failed: {e}")
     
+    # Check flake8
+    logger.debug("   🔍 Checking flake8 (PEP8)...")
+    try:
+        proc = subprocess.run(
+            LINTER_COMMANDS["flake8"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.stdout.strip():
+            try:
+                flake8_results = json.loads(proc.stdout)
+                issues["flake8"] = len(flake8_results)
+                total_count += len(flake8_results)
+                logger.debug(f"      Found {len(flake8_results)} flake8 issues")
+            except json.JSONDecodeError:
+                logger.debug("      Could not parse flake8 output")
+    except Exception as e:
+        logger.debug(f"      Flake8 check failed: {e}")
+    
+    # ===== Type checking & safety =====
+    
+    # Check mypy
+    logger.debug("   🔍 Checking mypy (type checking)...")
+    try:
+        proc = subprocess.run(
+            LINTER_COMMANDS["mypy"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
+        if proc.stdout.strip():
+            try:
+                mypy_results = json.loads(proc.stdout)
+                issues["mypy"] = len(mypy_results.get("errors", []))
+                total_count += issues["mypy"]
+                logger.debug(f"      Found {issues['mypy']} mypy type errors")
+            except json.JSONDecodeError:
+                logger.debug("      Could not parse mypy output")
+    except Exception as e:
+        logger.debug(f"      Mypy check failed: {e}")
+    
+    # Check pyright
+    logger.debug("   🔍 Checking pyright (type checking)...")
+    try:
+        proc = subprocess.run(
+            LINTER_COMMANDS["pyright"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
+        if proc.stdout.strip():
+            try:
+                pyright_results = json.loads(proc.stdout)
+                issues["pyright"] = pyright_results.get("summary", {}).get("errorCount", 0)
+                total_count += issues["pyright"]
+                logger.debug(f"      Found {issues['pyright']} pyright type errors")
+            except json.JSONDecodeError:
+                logger.debug("      Could not parse pyright output")
+    except Exception as e:
+        logger.debug(f"      Pyright check failed: {e}")
+    
+    # Check bandit (security)
+    logger.debug("   🔍 Checking bandit (security)...")
+    try:
+        proc = subprocess.run(
+            LINTER_COMMANDS["bandit"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.stdout.strip():
+            try:
+                bandit_results = json.loads(proc.stdout)
+                issues["bandit"] = len(bandit_results.get("results", []))
+                total_count += issues["bandit"]
+                logger.debug(f"      Found {issues['bandit']} security issues")
+            except json.JSONDecodeError:
+                logger.debug("      Could not parse bandit output")
+    except Exception as e:
+        logger.debug(f"      Bandit check failed: {e}")
+    
+    # ===== Dead code & cleanup =====
+    
+    # Check vulture (dead code)
+    logger.debug("   🔍 Checking vulture (dead code)...")
+    try:
+        proc = subprocess.run(
+            LINTER_COMMANDS["vulture"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.stdout.strip():
+            try:
+                vulture_results = json.loads(proc.stdout)
+                issues["vulture"] = len(vulture_results)
+                total_count += issues["vulture"]
+                logger.debug(f"      Found {len(vulture_results)} dead code items")
+            except json.JSONDecodeError:
+                logger.debug("      Could not parse vulture output")
+    except Exception as e:
+        logger.debug(f"      Vulture check failed: {e}")
+    
+    # Check autoflake (unused imports)
+    logger.debug("   🔍 Checking autoflake (unused imports)...")
+    try:
+        proc = subprocess.run(
+            LINTER_COMMANDS["autoflake_check"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.returncode != 0:
+            files_with_unused = len([l for l in proc.stdout.split('\n') if l.strip() and '.py' in l])
+            issues["autoflake"] = files_with_unused if files_with_unused > 0 else 1
+            total_count += issues["autoflake"]
+            logger.debug(f"      Found autoflake issues")
+    except Exception as e:
+        logger.debug(f"      Autoflake check failed: {e}")
+    
+    # ===== Complexity & maintainability =====
+    
+    # Check radon (cyclomatic complexity)
+    logger.debug("   🔍 Checking radon (complexity)...")
+    try:
+        proc = subprocess.run(
+            LINTER_COMMANDS["radon"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.stdout.strip():
+            try:
+                radon_results = json.loads(proc.stdout)
+                # Count functions with high complexity (C or higher)
+                complex_count = sum(1 for file_data in radon_results.values() 
+                                  for func_data in file_data.values() 
+                                  if isinstance(func_data, dict) and func_data.get("complexity", 0) >= 5)
+                issues["radon"] = complex_count
+                total_count += complex_count
+                logger.debug(f"      Found {complex_count} complex functions")
+            except (json.JSONDecodeError, TypeError):
+                logger.debug("      Could not parse radon output")
+    except Exception as e:
+        logger.debug(f"      Radon check failed: {e}")
+    
+    # ===== Documentation =====
+    
+    # Check pydocstyle
+    logger.debug("   🔍 Checking pydocstyle (docstrings)...")
+    try:
+        proc = subprocess.run(
+            LINTER_COMMANDS["pydocstyle"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.stdout.strip():
+            docstring_issues = len([l for l in proc.stdout.split('\n') if l.strip()])
+            issues["pydocstyle"] = docstring_issues
+            total_count += docstring_issues
+            logger.debug(f"      Found {docstring_issues} docstring issues")
+    except Exception as e:
+        logger.debug(f"      Pydocstyle check failed: {e}")
+    
+    # Check darglint (docstring-code sync)
+    logger.debug("   🔍 Checking darglint (docstring sync)...")
+    try:
+        proc = subprocess.run(
+            LINTER_COMMANDS["darglint"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.stdout.strip():
+            darglint_issues = len([l for l in proc.stdout.split('\n') if l.strip() and 'error' in l.lower()])
+            issues["darglint"] = darglint_issues if darglint_issues > 0 else (1 if proc.returncode != 0 else 0)
+            total_count += issues["darglint"]
+            logger.debug(f"      Found {issues['darglint']} docstring sync issues")
+    except Exception as e:
+        logger.debug(f"      Darglint check failed: {e}")
+    
     return issues, total_count
 
 
 def auto_fix_linter_issues() -> tuple[bool, List[str]]:
-    """Auto-fix linter issues with black and isort.
+    """Auto-fix linter issues with black, isort, and autoflake.
     
     Returns:
         tuple: (success, list_of_fixes_applied)
     """
     fixes = []
+    
+    # ===== Auto-fixable tools =====
     
     # Apply black formatting
     logger.debug("   ✏️  Applying black formatting...")
@@ -757,6 +970,24 @@ def auto_fix_linter_issues() -> tuple[bool, List[str]]:
             logger.debug("      ✅ Isort applied")
     except Exception as e:
         logger.debug(f"      Isort fix failed: {e}")
+    
+    # Apply autoflake (remove unused imports)
+    logger.debug("   ✏️  Applying autoflake (unused imports)...")
+    try:
+        proc = subprocess.run(
+            LINTER_COMMANDS["autoflake_fix"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.returncode == 0:
+            fixes.append("autoflake")
+            logger.debug("      ✅ Autoflake applied")
+    except Exception as e:
+        logger.debug(f"      Autoflake fix failed: {e}")
+    
+    logger.info(f"   🔧 Applied {len(fixes)} auto-fixes: {', '.join(fixes) if fixes else 'none'}")
     
     return len(fixes) > 0, fixes
 
@@ -929,7 +1160,13 @@ def main():
     Always prefer "edit" type when possible - it's more reliable than diffs.
     """)
 
-# Initialize phase tracking variables (must be before conditionals)\n    phase1_iteration = 0\n    iteration = 0\n    \n    # ========================================================================\n    # PHASE 1: LINTER FIXES (Fast auto-fixes)\n    # ========================================================================
+    # Initialize phase tracking variables (must be before conditionals)
+    phase1_iteration = 0
+    iteration = 0
+    
+    # ========================================================================
+    # PHASE 1: LINTER FIXES (Fast auto-fixes)
+    # ========================================================================
     
     if PHASE1_ENABLED:
         logger.info("")
@@ -939,8 +1176,10 @@ def main():
         logger.info(f"Max iterations: {PHASE1_MAX_ITERATIONS}")
         logger.info(f"Exit when clean {PHASE1_CONSECUTIVE_CLEAN} times in a row")
         logger.info("")
+        logger.info("📋 Tools: pylint, black, isort, flake8, mypy, pyright, bandit")
+        logger.info("         vulture, autoflake, radon, pydocstyle, darglint")
+        logger.info("")
         
-        phase1_iteration = 0
         consecutive_clean = 0
         
         while phase1_iteration < PHASE1_MAX_ITERATIONS:
@@ -1010,8 +1249,6 @@ def main():
     
     previous_context = ""
     iteration_times = []
-    # iteration already initialized above, reset for Phase 2
-    iteration = 0
     
     # Track failures to detect stuck loops
     failed_test_history: Dict[str, int] = {}  # Maps test name -> count of consecutive failures
