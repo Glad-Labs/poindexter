@@ -49,6 +49,7 @@
     "env:select": "node scripts/select-env.js"
   },
   "devDependencies": {
+    "@types/node": "^25.3.0",
     "@typescript-eslint/eslint-plugin": "^8.51.0",
     "@typescript-eslint/parser": "^8.51.0",
     "baseline-browser-mapping": "^2.9.11",
@@ -57,8 +58,14 @@
     "eslint": "^9.39.2",
     "markdownlint-cli": "^0.42.0",
     "npm-run-all": "^4.1.5",
+    "playwright": "^1.58.2",
+    "playwright-chromium": "^1.58.2",
+    "playwright-firefox": "^1.58.2",
+    "playwright-webkit": "^1.58.2",
     "prettier": "^3.7.4",
     "rimraf": "^6.1.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3",
     "wait-on": "^7.2.0"
   },
   "engines": {

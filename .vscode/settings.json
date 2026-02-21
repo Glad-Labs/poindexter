@@ -42,5 +42,17 @@
   },
   "[css]": {
     "editor.defaultFormatter": "vscode.css-language-features"
+  },
+  "yaml.schemas": {
+    "file:///c%3A/Users/mattm/.vscode/extensions/continue.continue-1.2.11-win32-x64/config-yaml-schema.json": [
+      ".continue/**/*.yaml"
+    ],
+    "file:///c%3A/Users/mattm/.vscode/extensions/continue.continue-1.2.14-win32-x64/config-yaml-schema.json": [
+      ".continue/**/*.yaml"
+    ],
+    "file:///c%3A/Users/mattm/.vscode/extensions/continue.continue-1.2.16-win32-x64/config-yaml-schema.json": [
+      ".continue/**/*.yaml"
+    ],
+    "file:///c:/Users/mattm/.vscode/extensions/continue.continue-1.2.16-win32-x64/config-yaml-schema.json": "file:///c%3A/Users/mattm/.continue/config.yaml"
   }
 }

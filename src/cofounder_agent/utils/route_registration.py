@@ -81,6 +81,18 @@ def register_all_routes(
         status["auth_router"] = False
 
     try:
+        # ===== APPROVAL WORKFLOW (MUST BE BEFORE TASK_ROUTER) =====
+        # Register approval routes first so /api/tasks/pending-approval matches before /{task_id}
+        from routes.approval_routes import router as approval_router
+
+        app.include_router(approval_router)
+        logger.info(" approval_router registered (task approval workflow)")
+        status["approval_router"] = True
+    except Exception as e:
+        logger.error(f" approval_router failed: {e}")
+        status["approval_router"] = False
+
+    try:
         # ===== TASK MANAGEMENT (CORE) =====
         from routes.task_routes import router as task_router
 
@@ -91,17 +103,6 @@ def register_all_routes(
     except Exception as e:
         logger.error(f" task_router failed: {e}")
         status["task_router"] = False
-
-    try:
-        # ===== APPROVAL WORKFLOW =====
-        from routes.approval_routes import router as approval_router
-
-        app.include_router(approval_router)
-        logger.info(" approval_router registered (task approval workflow)")
-        status["approval_router"] = True
-    except Exception as e:
-        logger.error(f" approval_router failed: {e}")
-        status["approval_router"] = False
 
     try:
         # ===== BULK TASK OPERATIONS =====

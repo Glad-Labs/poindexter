@@ -143,6 +143,19 @@ async def broadcast_progress(task_id: str, progress) -> None:
     await connection_manager.broadcast(task_id, {"type": "progress", **progress.to_dict()})
 
 
+async def broadcast_approval_status(task_id: str, status: str, details: Dict = None) -> None:
+    """Broadcast approval status change to all connected clients"""
+    message = {
+        "type": "approval_status",
+        "task_id": task_id,
+        "status": status,  # approved, rejected, pending_revision
+        "timestamp": asyncio.get_event_loop().time(),
+    }
+    if details:
+        message.update(details)
+    await connection_manager.broadcast(task_id, message)
+
+
 @websocket_router.websocket("/workflow/{execution_id}")
 async def websocket_workflow_progress(websocket: WebSocket, execution_id: str):
     """
@@ -317,6 +330,58 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 # Statistics endpoint
+
+@websocket_router.websocket("/approval/{task_id}")
+async def websocket_approval_updates(websocket: WebSocket, task_id: str):
+    """
+    WebSocket endpoint for real-time approval status updates.
+
+    Connect to: ws://localhost:8000/api/ws/approval/{task_id}
+
+    Receives messages like:
+    {
+        "type": "approval_status",
+        "task_id": "task-123",
+        "status": "approved|rejected|pending_revision",
+        "feedback": "Additional feedback from reviewer",
+        "timestamp": 1645234567.89
+    }
+
+    Usage in ApprovalQueue component:
+    - Connect when component mounts
+    - Listen for status changes
+    - Update UI when approval/rejection happens
+    - Disconnect when component unmounts
+    """
+    await connection_manager.connect(task_id, websocket)
+
+    try:
+        while True:
+            try:
+                # Keep connection alive and wait for updates
+                # Timeout after 60 seconds and send keep-alive
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=60)
+                logger.debug(f"Approval WebSocket received from {task_id}: {data}")
+                
+                # Handle any client messages if needed in future
+                try:
+                    message = json.loads(data)
+                    # Could handle client requests here (e.g., refresh status)
+                except json.JSONDecodeError:
+                    logger.warning(f"Invalid JSON on approval WebSocket for {task_id}: {data}")
+                    
+            except asyncio.TimeoutError:
+                # Send keep-alive every 60 seconds
+                await websocket.send_json({"type": "keep-alive", "task_id": task_id})
+
+    except WebSocketDisconnect:
+        await connection_manager.disconnect(task_id, websocket)
+        logger.info(f"Approval WebSocket disconnected for task {task_id}")
+    except Exception as e:
+        logger.error(f"Approval WebSocket error for task {task_id}: {e}")
+        await connection_manager.disconnect(task_id, websocket)
+
+
 @websocket_router.get("/stats")
 async def websocket_stats():
     """

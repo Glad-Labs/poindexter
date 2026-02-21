@@ -166,9 +166,9 @@ class DatabaseService:
         """Delegate to tasks module."""
         return await self.tasks.update_task(task_id, updates)
 
-    async def get_tasks_paginated(self, offset: int = 0, limit: int = 20, status: Optional[str] = None, category: Optional[str] = None) -> Dict:
+    async def get_tasks_paginated(self, offset: int = 0, limit: int = 20, status: Optional[str] = None, category: Optional[str] = None, user_id: Optional[str] = None) -> Dict:
         """Delegate to tasks module."""
-        return await self.tasks.get_tasks_paginated(offset, limit, status, category)
+        return await self.tasks.get_tasks_paginated(offset, limit, status, category, user_id)
 
     async def get_task_counts(self) -> Dict:
         """Delegate to tasks module."""
