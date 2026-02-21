@@ -71,12 +71,12 @@ FOCUS_AREAS = [
 
 # Phase 1 (Linter) Configuration
 PHASE1_ENABLED = os.environ.get("SKIP_PHASE_1", "false").lower() == "false"
-PHASE1_MAX_ITERATIONS = int(os.environ.get("PHASE1_MAX_ITERATIONS", "20"))
+PHASE1_MAX_ITERATIONS = int(os.environ.get("PHASE1_MAX_ITERATIONS", "2000"))
 PHASE1_CONSECUTIVE_CLEAN = 2  # Exit Phase 1 after N consecutive clean runs
 
 # Phase 2 (Reasoning) Configuration  
 PHASE2_ENABLED = os.environ.get("SKIP_PHASE_2", "false").lower() == "false"
-PHASE2_MAX_ITERATIONS = int(os.environ.get("PHASE2_MAX_ITERATIONS", "5"))
+PHASE2_MAX_ITERATIONS = int(os.environ.get("PHASE2_MAX_ITERATIONS", "500"))
 
 # Linter commands (Phase 1)
 LINTER_COMMANDS = {
