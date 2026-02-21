@@ -69,6 +69,24 @@ FOCUS_AREAS = [
     "web/public-site/",       # Next.js public site
 ]
 
+# Phase 1 (Linter) Configuration
+PHASE1_ENABLED = os.environ.get("SKIP_PHASE_1", "false").lower() == "false"
+PHASE1_MAX_ITERATIONS = int(os.environ.get("PHASE1_MAX_ITERATIONS", "20"))
+PHASE1_CONSECUTIVE_CLEAN = 2  # Exit Phase 1 after N consecutive clean runs
+
+# Phase 2 (Reasoning) Configuration  
+PHASE2_ENABLED = os.environ.get("SKIP_PHASE_2", "false").lower() == "false"
+PHASE2_MAX_ITERATIONS = int(os.environ.get("PHASE2_MAX_ITERATIONS", "5"))
+
+# Linter commands (Phase 1)
+LINTER_COMMANDS = {
+    "pylint": ["poetry", "run", "pylint", "src/", "--output-format=json"],
+    "black_check": ["poetry", "run", "black", "src/", "--check"],
+    "black_fix": ["poetry", "run", "black", "src/"],
+    "isort_check": ["poetry", "run", "isort", "src/", "--check-only"],
+    "isort_fix": ["poetry", "run", "isort", "src/"],
+}
+
 
 def check_mcp_tools_available() -> bool:
     """Check if MCP Pylance tools are available."""
@@ -372,22 +390,56 @@ def extract_failed_tests(pytest_output: str) -> List[str]:
     return failed
 
 
-def run_tests():
-    """Run all test suites (Python backend + Frontend)."""
+def extract_test_error_details(pytest_output: str) -> str:
+    """Extract detailed error information from pytest output."""
+    lines = pytest_output.splitlines()
+    error_section = []
+    in_error = False
+    
+    for i, line in enumerate(lines):
+        # Look for FAILED/ERROR lines
+        if "FAILED" in line or "ERROR" in line or "AssertionError" in line:
+            in_error = True
+        
+        # Capture error details (assert failures, tracebacks)
+        if in_error:
+            error_section.append(line)
+            # Stop at next test header or marker
+            if line.startswith("=====") and i > 0:
+                break
+    
+    # Return last 50 lines of output to get error details
+    return "\n".join(lines[-50:]) if lines else "No error details found"
+
+
+def run_tests(verbose_output: bool = False) -> tuple[bool, str, List[str], str]:
+    """Run all test suites (Python backend + Frontend).
+    
+    Args:
+        verbose_output: If True, capture full pytest output including error details
+    
+    Returns:
+        tuple: (tests_passed, output_text, failed_test_list, error_details)
+    """
     if SKIP_TESTS:
         logger.info("⏭️  Tests skipped (SKIP_TESTS=true)")
-        return True, "Tests skipped"
+        return True, "Tests skipped", [], ""
     
     logger.info("🧪 Running test suites...")
     
     all_output = []
     all_passed = True
+    failed_tests_list = []
+    error_details = ""
     
     # Run Python tests
     logger.info("   → Running Python backend tests...")
     try:
+        # Run with verbose output to capture better error details
+        test_cmd = TEST_COMMANDS["python"] + (["--tb=long"] if verbose_output else ["--tb=short"])
+        
         proc = subprocess.run(
-            TEST_COMMANDS["python"],
+            test_cmd,
             cwd=REPO_ROOT,
             text=True,
             capture_output=True,
@@ -396,67 +448,49 @@ def run_tests():
         python_passed = proc.returncode == 0
         python_output = proc.stdout + "\n" + proc.stderr
         
+        # Extract failed tests and error details
+        failed_tests_list = extract_failed_tests(python_output)
+        if not python_passed:
+            error_details = extract_test_error_details(python_output)
+        
         # Log summary of test results
         if python_passed:
             logger.info("   ✅ Python tests passed")
         else:
             logger.warning("   ⚠️  Python tests failed")
-            # Show first few lines of error for quick diagnosis
-            error_lines = python_output.strip().split('\n')
-            logger.warning("   Error preview:")
-            for line in error_lines[:10]:
+            logger.warning("   Failed tests:")
+            for test in failed_tests_list:
+                logger.warning(f"      • {test}")
+            logger.warning("   Error details (last 30 lines):")
+            for line in error_details.split('\n')[-30:]:
                 if line.strip():
                     logger.warning(f"      {line}")
-            failed_items = extract_failed_tests(python_output)
-            if failed_items:
-                logger.warning("   Failed tests/errors:")
-                for item in failed_items:
-                    logger.warning(f"      {item}")
             all_passed = False
 
-        failed_items = extract_failed_tests(python_output)
+        # Build comprehensive output for reasoner
         failed_summary = ""
-        if failed_items:
-            failed_summary = "FAILED TESTS/ERRORS:\n" + "\n".join(failed_items) + "\n\n"
-        all_output.append(f"=== PYTHON TESTS ===\n{failed_summary}{python_output}")
+        if failed_tests_list:
+            failed_summary = "FAILED TESTS:\n" + "\n".join(f"  - {t}" for t in failed_tests_list) + "\n\n"
+        
+        error_summary = ""
+        if error_details:
+            error_summary = "ERROR DETAILS:\n" + error_details + "\n\n"
+        
+        # Include full output for debugging
+        all_output.append(f"=== PYTHON TESTS ===\n{failed_summary}{error_summary}{python_output}")
         
     except subprocess.TimeoutExpired:
-        logger.error("   ❌ Python tests timed out")
+        logger.error("   ❌ Python tests timed out (120s)")
         all_passed = False
-        all_output.append("=== PYTHON TESTS ===\nTimeout after 120s")
+        all_output.append("=== PYTHON TESTS ===\nTimeout after 120s - tests may be hanging")
     except FileNotFoundError:
         logger.warning("   ⚠️  pytest not found, skipping Python tests")
         all_output.append("=== PYTHON TESTS ===\npytest not found")
     
-    # Run Frontend tests (optional - can be slow)
-    # Uncomment if you want to include frontend tests
-    # logger.info("   → Running frontend tests...")
-    # try:
-    #     proc = subprocess.run(
-    #         TEST_COMMANDS["frontend"],
-    #         cwd=REPO_ROOT,
-    #         text=True,
-    #         capture_output=True,
-    #         timeout=180,
-    #     )
-    #     frontend_passed = proc.returncode == 0
-    #     frontend_output = proc.stdout + "\n" + proc.stderr
-    #     
-    #     if frontend_passed:
-    #         logger.info("   ✅ Frontend tests passed")
-    #     else:
-    #         logger.warning("   ⚠️  Frontend tests failed")
-    #         all_passed = False
-    #     
-    #     all_output.append(f"=== FRONTEND TESTS ===\n{frontend_output}")
-    # except Exception as e:
-    #     logger.warning(f"   ⚠️  Frontend tests skipped: {e}")
-    #     all_output.append(f"=== FRONTEND TESTS ===\nSkipped: {e}")
-    
     combined_output = "\n\n".join(all_output)
     logger.info(f"🧪 Test suite complete: {'✅ PASS' if all_passed else '❌ FAIL'}")
     
-    return all_passed, combined_output
+    return all_passed, combined_output, failed_tests_list, error_details
 
 
 def validate_and_clean_patch(patch: str) -> str:
@@ -613,6 +647,120 @@ def get_repo_summary():
     return summary
 
 
+def detect_linter_issues() -> tuple[Dict[str, Any], int]:
+    """Detect linter issues using pylint, black, isort.
+    
+    Returns:
+        tuple: (issues_dict, total_count)
+    """
+    issues = {}
+    total_count = 0
+    
+    # Check pylint
+    logger.debug("   🔍 Checking pylint...")
+    try:
+        proc = subprocess.run(
+            LINTER_COMMANDS["pylint"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.stdout.strip():
+            try:
+                pylint_results = json.loads(proc.stdout)
+                issues["pylint"] = len(pylint_results)
+                total_count += len(pylint_results)
+                logger.debug(f"      Found {len(pylint_results)} pylint issues")
+            except json.JSONDecodeError:
+                logger.debug("      Could not parse pylint output")
+    except Exception as e:
+        logger.debug(f"      Pylint check failed: {e}")
+    
+    # Check black formatting
+    logger.debug("   🔍 Checking black (formatting)...")
+    try:
+        proc = subprocess.run(
+            LINTER_COMMANDS["black_check"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.returncode != 0:
+            # Count lines that would be reformatted
+            reformatted = len([l for l in proc.stdout.split('\n') if 'would reformat' in l or 'reformatted' in l])
+            issues["black"] = reformatted if reformatted > 0 else 1  # At least 1 if failed
+            total_count += issues["black"]
+            logger.debug(f"      Black formatting issues found")
+    except Exception as e:
+        logger.debug(f"      Black check failed: {e}")
+    
+    # Check isort imports
+    logger.debug("   🔍 Checking isort (imports)...")
+    try:
+        proc = subprocess.run(
+            LINTER_COMMANDS["isort_check"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.returncode != 0:
+            # Count files that need sorting
+            files_to_sort = len([l for l in proc.stdout.split('\n') if l.strip() and '.py' in l])
+            issues["isort"] = files_to_sort if files_to_sort > 0 else 1
+            total_count += issues["isort"]
+            logger.debug(f"      Isort import issues found")
+    except Exception as e:
+        logger.debug(f"      Isort check failed: {e}")
+    
+    return issues, total_count
+
+
+def auto_fix_linter_issues() -> tuple[bool, List[str]]:
+    """Auto-fix linter issues with black and isort.
+    
+    Returns:
+        tuple: (success, list_of_fixes_applied)
+    """
+    fixes = []
+    
+    # Apply black formatting
+    logger.debug("   ✏️  Applying black formatting...")
+    try:
+        proc = subprocess.run(
+            LINTER_COMMANDS["black_fix"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.returncode == 0:
+            fixes.append("black")
+            logger.debug("      ✅ Black formatting applied")
+    except Exception as e:
+        logger.debug(f"      Black fix failed: {e}")
+    
+    # Apply isort
+    logger.debug("   ✏️  Applying isort...")
+    try:
+        proc = subprocess.run(
+            LINTER_COMMANDS["isort_fix"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.returncode == 0:
+            fixes.append("isort")
+            logger.debug("      ✅ Isort applied")
+    except Exception as e:
+        logger.debug(f"      Isort fix failed: {e}")
+    
+    return len(fixes) > 0, fixes
+
+
 def get_file_contents(path: str) -> str:
     """Read file contents safely, handling directories and wildcards."""
     # Handle wildcard patterns
@@ -710,6 +858,23 @@ def main():
     logger.info("")
     logger.info("📊 Analyzing repository...")
     repo_summary = get_repo_summary()
+    
+    # Determine which phases to run
+    phases_to_run = []
+    if PHASE1_ENABLED:
+        phases_to_run.append("Phase 1 (Linter Fixes)")
+    if PHASE2_ENABLED:
+        phases_to_run.append("Phase 2 (Reasoning Fixes)")
+    
+    if not phases_to_run:
+        logger.error("❌ Both phases disabled (SKIP_PHASE_1=true AND SKIP_PHASE_2=true)")
+        return
+    
+    logger.info(f"📋 Phases to run: {', '.join(phases_to_run)}")
+    
+    # Initialize phase tracking
+    phase1_iteration = 0
+    iteration = 0
     logger.info(repo_summary)
 
     system_reasoner = dedent("""
@@ -768,34 +933,132 @@ def main():
     Always prefer "edit" type when possible - it's more reliable than diffs.
     """)
 
+    # ========================================================================
+    # PHASE 1: LINTER FIXES (Fast auto-fixes)
+    # ========================================================================
+    
+    if PHASE1_ENABLED:
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info("⚡ PHASE 1: LINTER FIXES (Fast Auto-Fixes)")
+        logger.info("=" * 80)
+        logger.info(f"Max iterations: {PHASE1_MAX_ITERATIONS}")
+        logger.info(f"Exit when clean {PHASE1_CONSECUTIVE_CLEAN} times in a row")
+        logger.info("")
+        
+        phase1_iteration = 0
+        consecutive_clean = 0
+        
+        while phase1_iteration < PHASE1_MAX_ITERATIONS:
+            phase1_iteration += 1
+            logger.info(f"🔄 Phase 1 Iteration {phase1_iteration}")
+            
+            # Detect issues
+            issues, issue_count = detect_linter_issues()
+            
+            if issue_count == 0:
+                consecutive_clean += 1
+                logger.info(f"✅ No linter issues found ({consecutive_clean}/{PHASE1_CONSECUTIVE_CLEAN})")
+                
+                if consecutive_clean >= PHASE1_CONSECUTIVE_CLEAN:
+                    logger.info(f"\n✅ Phase 1 Complete: Repository is clean")
+                    break
+            else:
+                consecutive_clean = 0
+                logger.info(f"⚠️  Found {issue_count} linter issues: {issues}")
+                
+                # Auto-fix
+                success, fixes_applied = auto_fix_linter_issues()
+                if success and fixes_applied:
+                    logger.info(f"✏️  Applied fixes: {', '.join(fixes_applied)}")
+                    
+                    # Show git diff
+                    try:
+                        proc = subprocess.run(
+                            ["git", "diff", "--stat"],
+                            cwd=REPO_ROOT,
+                            capture_output=True,
+                            text=True,
+                            timeout=10,
+                        )
+                        if proc.stdout.strip():
+                            logger.info("📊 Changes:")
+                            for line in proc.stdout.strip().split('\n'):
+                                logger.info(f"   {line}")
+                    except:
+                        pass
+                else:
+                    logger.warning("⚠️  Auto-fix failed or found no issues")
+                    break
+            
+            if ITERATION_DELAY > 0:
+                logger.info(f"⏸️  Waiting {ITERATION_DELAY}s...")
+                time.sleep(ITERATION_DELAY)
+        
+        logger.info("")
+    
+    # ========================================================================
+    # PHASE 2: REASONING FIXES (Complex test-based fixes)
+    # ========================================================================
+    
+    if not PHASE2_ENABLED:
+        logger.info("⏭️  Phase 2 skipped (SKIP_PHASE_2=true)")
+        logger.info("\n✅ Agent loop complete")
+        return
+    
+    logger.info("")
+    logger.info("=" * 80)
+    logger.info("🧠 PHASE 2: REASONING FIXES (Complex Test-Based Fixes)")
+    logger.info("=" * 80)
+    logger.info(f"Max iterations: {PHASE2_MAX_ITERATIONS}")
+    logger.info("Using: DeepSeek R1 70B (reasoning) + Qwen3 Coder 32B (coding)")
+    logger.info("")
+    
     previous_context = ""
     iteration_times = []
     iteration = 0  # Initialize iteration counter
+    
+    # Track failures to detect stuck loops
+    failed_test_history: Dict[str, int] = {}  # Maps test name -> count of consecutive failures
+    MAX_STUCK_ITERATIONS = 5  # Stop if same test fails this many times in a row
     
     # Infinite loop or limited iterations
     try:
         while True:
             iteration += 1
             
-            # Check if we've hit max iterations (if set)
-            if MAX_ITERATIONS > 0 and iteration > MAX_ITERATIONS:
-                logger.info(f"\n✅ Reached max iterations ({MAX_ITERATIONS})")
+            # Check if we've hit max iterations for Phase 2
+            if iteration > PHASE2_MAX_ITERATIONS:
+                logger.info(f"\n⏱️  Reached max Phase 2 iterations ({PHASE2_MAX_ITERATIONS})")
                 break
                 
             iteration_start = time.time()
             
             logger.info("")
             logger.info("=" * 80)
-            if MAX_ITERATIONS > 0:
-                logger.info(f"🔄 ITERATION {iteration}/{MAX_ITERATIONS}")
-            else:
-                logger.info(f"🔄 ITERATION {iteration} (infinite mode)")
+            logger.info(f"🔄 PHASE 2 ITERATION {iteration}/{PHASE2_MAX_ITERATIONS}")
             logger.info("=" * 80)
 
             # Run tests
             test_start = time.time()
-            tests_ok, test_output = run_tests()
+            tests_ok, test_output, failed_tests, error_details = run_tests(verbose_output=True)
             test_duration = time.time() - test_start
+            
+            # Check for stuck test failures
+            if failed_tests:
+                current_failing = failed_tests[0]  # Track the first failing test
+                failed_test_history[current_failing] = failed_test_history.get(current_failing, 0) + 1
+                
+                if failed_test_history[current_failing] >= MAX_STUCK_ITERATIONS:
+                    logger.error(f"\n❌ STUCK: Same test failing for {MAX_STUCK_ITERATIONS}+ iterations")
+                    logger.error(f"   Test: {current_failing}")
+                    logger.error(f"   Error: {error_details.split(chr(10))[0] if error_details else 'Unknown'}")
+                    logger.error(f"\n💡 Recommendation: Investigate this test manually or skip it")
+                    logger.error(f"   Run: pytest tests/ -k 'not {current_failing.split('::')[-1]}' to skip")
+                    break
+            else:
+                # Clear failed test history when tests pass
+                failed_test_history.clear()
             
             if SKIP_TESTS:
                 logger.info(f"⏭️  Tests skipped - continuing with code analysis")
@@ -809,8 +1072,26 @@ def main():
                     logger.error("   → Stopping (CONTINUE_ON_TEST_FAILURE=False)")
                     break
 
-            # Prepare reasoning prompt
+            # Prepare reasoning prompt with better context
             logger.info("🧠 Reasoning phase starting...")
+            
+            # Build comprehensive failure context if tests failed
+            failure_context = ""
+            if not tests_ok and failed_tests and error_details:
+                failure_context = dedent(f"""
+                
+                ⚠️  CRITICAL: Test Failures Detected
+                
+                Failed Tests: {', '.join(failed_tests[:3])}
+                
+                Error Details:
+                {error_details[:2000]}
+                
+                Investigation needed:
+                1. Check if this is a real bug or test setup issue
+                2. Look for assertions, exceptions, or missing dependencies
+                3. Consider if test environment (fixtures, mocks) is properly configured
+                """)
             
             reasoner_prompt = dedent(f"""
             Repository: Glad Labs AI Co-Founder System
@@ -819,16 +1100,24 @@ def main():
 
             Last test run (iteration {iteration}):
             - Success: {tests_ok}
-            - Output (truncated):
-            {test_output[:3000]}
+            {failure_context}
+            
+            Test Output (recent/important lines):
+            {test_output[-4000:] if len(test_output) > 4000 else test_output}
 
             Previous context from earlier iterations:
             {previous_context[-2000:] if previous_context else "None"}
 
-            Focus on improvements that:
-            1. Fix actual bugs or errors
+            IMPORTANT: If tests are failing:
+            1. Analyze the actual error message and stack trace
+            2. Identify the root cause (missing fixture, wrong assertion, etc)
+            3. Propose SPECIFIC fixes with exact file paths and line numbers
+            4. If error is unclear, suggest adding debug logging first
+
+            Focus on high-impact improvements:
+            1. Fix actual bugs causing test failures
             2. Improve code quality and maintainability  
-            3. Add better error handling
+            3. Add better error handling and logging
             4. Optimize performance
             5. Improve documentation
             
@@ -845,7 +1134,7 @@ def main():
               ]
             }}
             
-            If tests are failing, focus on fixing configuration and test setup issues first.
+            Always respond with ONLY valid JSON - no explanations before or after.
             """)
 
             plan_raw = run_ollama(REASONER_MODEL, reasoner_prompt, system_reasoner)
@@ -1034,7 +1323,7 @@ def main():
                 # Re-run tests to verify the change
                 logger.info("   🧪 Verifying changes with tests...")
                 test_start = time.time()
-                tests_ok, test_output = run_tests()
+                tests_ok, test_output, _, _ = run_tests()
                 test_duration = time.time() - test_start
                 
                 result_emoji = "✅" if tests_ok else "❌"
@@ -1077,12 +1366,18 @@ def main():
     # Final summary
     logger.info("")
     logger.info("=" * 80)
-    logger.info("🏁 AGENT LOOP COMPLETE")
+    logger.info("🏁 COMPREHENSIVE AGENT LOOP COMPLETE")
     logger.info("=" * 80)
-    logger.info(f"Total iterations: {iteration}")
+    
+    if PHASE1_ENABLED:
+        logger.info(f"Phase 1 (Linter): {phase1_iteration} iterations")
+    
+    logger.info(f"Phase 2 (Reasoning): {iteration} iterations")
+    
     if iteration_times:
-        logger.info(f"Total time: {sum(iteration_times)/60:.1f} minutes")
-        logger.info(f"Average time per iteration: {sum(iteration_times)/len(iteration_times):.1f}s")
+        logger.info(f"Phase 2 time: {sum(iteration_times)/60:.1f} minutes")
+        logger.info(f"Phase 2 avg: {sum(iteration_times)/len(iteration_times):.1f}s per iteration")
+    
     logger.info(f"End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info("")
     logger.info("💡 Review changes with: git diff")
