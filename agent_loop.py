@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import subprocess
 import requests
 import logging
@@ -31,6 +32,14 @@ CONTINUE_ON_TEST_FAILURE = True  # Don't stop if tests fail
 USE_MCP_TOOLS = os.environ.get("USE_MCP_TOOLS", "true").lower() == "true"
 ITERATION_DELAY = int(os.environ.get("ITERATION_DELAY", "0"))  # Seconds between iterations
 OLLAMA_TIMEOUT = int(os.environ.get("OLLAMA_TIMEOUT", "600"))  # 10 minutes default for reasoning models
+VERBOSE_MODELS = os.environ.get("VERBOSE_MODELS", "false").lower() == "true"
+LOG_OLLAMA_SERVER = os.environ.get("LOG_OLLAMA_SERVER", "false").lower() == "true"
+OLLAMA_LOG_TAIL = int(os.environ.get("OLLAMA_LOG_TAIL", "200"))
+FULL_PROMPT_LOG = os.environ.get("FULL_PROMPT_LOG", "false").lower() == "true"
+FULL_RESPONSE_LOG = os.environ.get("FULL_RESPONSE_LOG", "false").lower() == "true"
+FULL_OLLAMA_JSON_LOG = os.environ.get("FULL_OLLAMA_JSON_LOG", "false").lower() == "true"
+STREAM_TOKENS = os.environ.get("STREAM_TOKENS", "false").lower() == "true"
+REDACT_SECRETS = os.environ.get("REDACT_SECRETS", "true").lower() == "true"
 
 # MCP tool availability (will be set at runtime)
 MCP_AVAILABLE = False
@@ -137,19 +146,42 @@ def run_ollama(model: str, prompt: str, system: str = "") -> str:
     full_prompt = prompt
     if system:
         full_prompt = f"{system}\n\n{prompt}"
+
+    if FULL_PROMPT_LOG:
+        logger.info("   🧾 System message (verbatim):")
+        logger.info(redact_secrets(system))
+        logger.info("   🧾 Prompt (verbatim):")
+        logger.info(redact_secrets(prompt))
+
+    request_payload = {
+        "model": model,
+        "prompt": full_prompt,
+        "stream": STREAM_TOKENS,
+        "options": {
+            "temperature": 0.7,
+            "num_predict": 4096,
+        },
+    }
+
+    if FULL_OLLAMA_JSON_LOG:
+        logger.info("   🧾 Ollama request JSON (verbatim):")
+        logger.info(redact_secrets(json.dumps(request_payload, ensure_ascii=False)))
+
+    if VERBOSE_MODELS:
+        logger.info("   🔎 Ollama request details:")
+        logger.info(f"      System length: {len(system)} chars")
+        logger.info(f"      Prompt length: {len(prompt)} chars")
+        logger.info(f"      Full prompt length: {len(full_prompt)} chars")
+        logger.info("      Options: temperature=0.7, num_predict=4096")
+
+    if LOG_OLLAMA_SERVER:
+        tail_ollama_logs("pre-request")
     
     try:
         response = requests.post(
             OLLAMA_API_URL,
-            json={
-                "model": model,
-                "prompt": full_prompt,
-                "stream": False,
-                "options": {
-                    "temperature": 0.7,
-                    "num_predict": 4096,
-                }
-            },
+            json=request_payload,
+            stream=STREAM_TOKENS,
             timeout=OLLAMA_TIMEOUT,  # Configurable timeout (default 10 min for reasoning models)
         )
         
@@ -158,21 +190,129 @@ def run_ollama(model: str, prompt: str, system: str = "") -> str:
         if response.status_code != 200:
             logger.error(f"❌ Ollama API error: {response.status_code}")
             logger.error(f"Response: {response.text[:500]}")
+            if LOG_OLLAMA_SERVER:
+                tail_ollama_logs("non-200 response")
             return ""
         
-        result = response.json()
-        response_text = result.get("response", "")
+        response_text = ""
+        result = {}
+
+        if STREAM_TOKENS:
+            logger.info("   🧵 Streaming tokens:")
+            for line in response.iter_lines(decode_unicode=True):
+                if not line:
+                    continue
+                try:
+                    chunk = json.loads(line)
+                except json.JSONDecodeError:
+                    logger.warning("   ⚠️  Skipping non-JSON stream chunk")
+                    continue
+
+                if "response" in chunk:
+                    chunk_text = str(chunk.get("response", ""))
+                    response_text += chunk_text
+                    logger.info(redact_secrets(chunk_text))
+
+                result = chunk
+
+            if FULL_OLLAMA_JSON_LOG:
+                logger.info("   🧾 Ollama response JSON (verbatim):")
+                logger.info(redact_secrets(json.dumps(result, ensure_ascii=False)))
+        else:
+            result = response.json()
+            response_text = str(result.get("response", ""))
+
+            if FULL_OLLAMA_JSON_LOG:
+                logger.info("   🧾 Ollama response JSON (verbatim):")
+                logger.info(redact_secrets(json.dumps(result, ensure_ascii=False)))
+
+        if VERBOSE_MODELS:
+            logger.info("   📊 Ollama response metrics:")
+            for key in [
+                "total_duration",
+                "load_duration",
+                "prompt_eval_count",
+                "prompt_eval_duration",
+                "eval_count",
+                "eval_duration",
+            ]:
+                if key in result:
+                    logger.info(f"      {key}: {result.get(key)}")
         
         logger.info(f"✅ Response received in {elapsed:.1f}s ({len(response_text)} chars)")
+
+        if FULL_RESPONSE_LOG:
+            logger.info("   🧾 Model response (verbatim):")
+            logger.info(redact_secrets(response_text))
+
+        if LOG_OLLAMA_SERVER:
+            tail_ollama_logs("post-response")
         
-        return response_text
+        return str(response_text)
         
     except requests.exceptions.RequestException as e:
         logger.error(f"❌ Failed to call Ollama: {e}")
+        if LOG_OLLAMA_SERVER:
+            tail_ollama_logs("request exception")
         return ""
     except json.JSONDecodeError as e:
         logger.error(f"❌ Failed to parse Ollama response: {e}")
+        if LOG_OLLAMA_SERVER:
+            tail_ollama_logs("invalid JSON response")
         return ""
+
+
+def tail_ollama_logs(reason: str) -> None:
+    """Best-effort tail of Ollama server logs for diagnostics."""
+    logger.info(f"   🧾 Ollama logs ({reason}) - last {OLLAMA_LOG_TAIL} lines")
+    commands = [
+        ["ollama", "logs", "--tail", str(OLLAMA_LOG_TAIL)],
+        ["ollama", "logs"],
+    ]
+    for command in commands:
+        try:
+            proc = subprocess.run(
+                command,
+                cwd=REPO_ROOT,
+                text=True,
+                encoding="utf-8",
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+            output = (proc.stdout or proc.stderr or "").strip()
+            if output:
+                logger.info(output)
+                return
+        except FileNotFoundError:
+            logger.warning("   ⚠️  ollama CLI not found for log capture")
+            return
+        except subprocess.TimeoutExpired:
+            logger.warning("   ⚠️  ollama logs timed out")
+            return
+
+
+def redact_secrets(text: str) -> str:
+    """Redact obvious secrets from logs when enabled."""
+    if not REDACT_SECRETS:
+        return text
+    if not text:
+        return text
+
+    redacted = text
+    patterns = [
+        r"sk-[A-Za-z0-9]{20,}",
+        r"sk-ant-[A-Za-z0-9]{20,}",
+        r"AIza[0-9A-Za-z\-_]{20,}",
+        r"ghp_[A-Za-z0-9]{20,}",
+        r"ghs_[A-Za-z0-9]{20,}",
+        r"Bearer\s+[A-Za-z0-9\-\._~\+\/]+=*",
+    ]
+
+    for pattern in patterns:
+        redacted = re.sub(pattern, "[REDACTED]", redacted)
+
+    return redacted
 
 
 def list_repo_files():
@@ -202,6 +342,34 @@ def list_repo_files():
     
     logger.info(f"📂 Found {len(files)} relevant files")
     return files
+
+
+def extract_failed_tests(pytest_output: str) -> List[str]:
+    """Extract failed test identifiers from pytest output."""
+    failed = []
+    seen = set()
+
+    for raw_line in pytest_output.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        if line.startswith("FAILED ") or line.startswith("ERROR "):
+            parts = line.split()
+            if len(parts) >= 2:
+                item = parts[1]
+                if item not in seen:
+                    failed.append(item)
+                    seen.add(item)
+            continue
+
+        if line.startswith("ERROR collecting "):
+            item = line.replace("ERROR collecting ", "", 1).strip()
+            if item and item not in seen:
+                failed.append(item)
+                seen.add(item)
+
+    return failed
 
 
 def run_tests():
@@ -239,9 +407,18 @@ def run_tests():
             for line in error_lines[:10]:
                 if line.strip():
                     logger.warning(f"      {line}")
+            failed_items = extract_failed_tests(python_output)
+            if failed_items:
+                logger.warning("   Failed tests/errors:")
+                for item in failed_items:
+                    logger.warning(f"      {item}")
             all_passed = False
-        
-        all_output.append(f"=== PYTHON TESTS ===\n{python_output}")
+
+        failed_items = extract_failed_tests(python_output)
+        failed_summary = ""
+        if failed_items:
+            failed_summary = "FAILED TESTS/ERRORS:\n" + "\n".join(failed_items) + "\n\n"
+        all_output.append(f"=== PYTHON TESTS ===\n{failed_summary}{python_output}")
         
     except subprocess.TimeoutExpired:
         logger.error("   ❌ Python tests timed out")
