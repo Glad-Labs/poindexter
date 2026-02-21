@@ -271,3 +271,27 @@ $env:SKIP_TESTS="true"; $env:USE_MCP_TOOLS="true"; python agent_loop.py
 ---
 
 **Ready to use!** The agent loop is now significantly more robust and reliable. 🚀
+
+---
+
+## Troubleshooting
+
+### UnicodeEncodeError on Windows
+
+**Symptom:**
+
+```
+UnicodeEncodeError: 'charmap' codec can't encode character '\U0001f4e6' in position 60
+```
+
+**Cause:** Windows subprocess defaults to cp1252 encoding which can't handle emoji characters (📦, ✅, etc.) in patches.
+
+**Fix:** Already applied in v2.0! The `apply_patch()` function now explicitly uses `encoding='utf-8'` for all subprocess calls.
+
+**If you see this error:**
+
+1. Update to latest agent_loop.py (Feb 21, 2026 or later)
+2. Verify both subprocess.run calls in apply_patch() include `encoding='utf-8'`
+3. Restart the agent loop
+
+This fix ensures emoji in log messages, comments, or patch descriptions won't crash the patch application process.

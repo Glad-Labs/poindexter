@@ -370,6 +370,7 @@ def apply_patch(patch_text: str) -> bool:
         ["git", "apply", "--check", "-"],
         input=cleaned_patch,
         text=True,
+        encoding='utf-8',
         cwd=REPO_ROOT,
         capture_output=True,
     )
@@ -385,6 +386,7 @@ def apply_patch(patch_text: str) -> bool:
         ["git", "apply", "-"],
         input=cleaned_patch,
         text=True,
+        encoding='utf-8',
         cwd=REPO_ROOT,
         capture_output=True,
     )
