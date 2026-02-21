@@ -2,6 +2,8 @@
 
 Central orchestrator for the Glad Labs AI system, coordinating specialized agents through a multi-provider model router with comprehensive task management and real-time monitoring.
 
+> **Documentation Update (Feb 21, 2026):** Legacy documentation indexes have been moved to `archive/cleanup-feb2026/` for better organization. See [archive index](archive/cleanup-feb2026/INDEX.md) for access.
+
 **Status:** ✅ Production Ready v3.0  
 **Technology:** Python 3.12+ with FastAPI  
 **Port:** 8000  
