@@ -6,12 +6,11 @@ This module provides centralized health check functionality.
 
 import asyncio
 from datetime import datetime
-from typing import Dict, Any, Optional
-
-from fastapi import FastAPI
+from typing import Any, Dict, Optional
 
 # Import configuration
 from config import get_config
+from fastapi import FastAPI
 
 # Get configuration
 config = get_config()
@@ -19,17 +18,17 @@ config = get_config()
 
 class HealthService:
     """Centralized health check service."""
-    
+
     def __init__(self, app: FastAPI):
         self.app = app
         self._startup_error: Optional[str] = None
         self._startup_complete: bool = False
-    
+
     def set_startup_status(self, error: Optional[str] = None, complete: bool = False) -> None:
         """Set startup status."""
         self._startup_error = error
         self._startup_complete = complete
-    
+
     async def check_health(self) -> Dict[str, Any]:
         """Perform comprehensive health check."""
         health_data = {
@@ -39,7 +38,7 @@ class HealthService:
             "timestamp": datetime.utcnow().isoformat(),
             "components": {},
         }
-        
+
         # Check startup status
         if self._startup_error:
             health_data["status"] = "degraded"
@@ -48,7 +47,7 @@ class HealthService:
         elif not self._startup_complete:
             health_data["status"] = "starting"
             health_data["startup_complete"] = False
-        
+
         # Include database status if available
         database_service = getattr(self.app.state, "database", None)
         if database_service:
@@ -61,7 +60,7 @@ class HealthService:
                 health_data["components"]["database"] = "degraded"
         else:
             health_data["components"]["database"] = "unavailable"
-        
+
         return health_data
 
 

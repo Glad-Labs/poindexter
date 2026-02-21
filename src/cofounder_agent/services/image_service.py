@@ -145,14 +145,12 @@ class ImageService:
         """Initialize image service"""
         self.pexels_api_key = os.getenv("PEXELS_API_KEY")
         self.pexels_available = bool(self.pexels_api_key)
-        
+
         if not self.pexels_api_key:
             logger.warning(
                 "⚠️  PEXELS_API_KEY not found in environment - featured image search disabled"
             )
-            logger.warning(
-                "   Set PEXELS_API_KEY in .env.local to enable Pexels image search"
-            )
+            logger.warning("   Set PEXELS_API_KEY in .env.local to enable Pexels image search")
         else:
             logger.info("✅ Pexels API key configured - image search enabled")
 
@@ -356,7 +354,7 @@ class ImageService:
             FeaturedImageMetadata or None if no image found
         """
         import random
-        
+
         if not self.pexels_available:
             logger.debug("Pexels API key not configured - skipping image search")
             return None

@@ -14,7 +14,6 @@ from typing import Any, Dict, Optional
 import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-
 from schemas.ollama_schemas import (
     OllamaHealthResponse,
     OllamaModelSelection,

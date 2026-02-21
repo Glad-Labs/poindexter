@@ -13,7 +13,6 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Request
-
 from schemas.models_schemas import (
     ModelInfo,
     ModelsListResponse,
@@ -33,39 +32,40 @@ models_router = APIRouter(prefix="/api/models", tags=["models"])
 # HELPER FUNCTIONS
 # ============================================================================
 
+
 async def _get_provider_health_cached(redis_cache):
     """
     Get provider health status with caching.
-    
+
     Shared logic for all provider health endpoints to avoid duplication.
-    
+
     Args:
         redis_cache: Redis cache instance (can be None)
-    
+
     Returns:
         Dict with timestamp and provider status
     """
     cache_key = "provider_health_status"
-    
+
     # Try to get from cache first
     if redis_cache:
         cached_result = await redis_cache.get(cache_key)
         if cached_result is not None:
             logger.debug(f"Provider health status cache hit")
             return cached_result
-    
+
     # Cache miss - fetch fresh data
     try:
         service = get_model_consolidation_service()
         status = service.get_status()
-        
+
         result = {"timestamp": datetime.now().isoformat(), "providers": status}
-        
+
         # Cache the result with 60s TTL
         if redis_cache:
             await redis_cache.set(cache_key, result, ttl=60)
             logger.debug(f"Provider health status cached with TTL 60s")
-        
+
         return result
     except Exception as e:
         logger.error(f"Error fetching provider health: {e}")
@@ -75,7 +75,6 @@ async def _get_provider_health_cached(redis_cache):
 # ============================================================================
 # API ENDPOINTS
 # ============================================================================
-
 
 
 @models_router.get(
@@ -146,22 +145,22 @@ async def get_provider_status(request: Request):
 async def refresh_provider_health(request: Request):
     """
     Refresh the provider health check cache.
-    
+
     Use this endpoint to immediately update provider status cache instead of waiting for TTL expiration.
     Useful for testing or when you want to force a fresh health check.
-    
+
     Returns:
         Current provider status immediately after cache invalidation and fresh check
     """
     try:
         redis_cache = getattr(request.app.state, "redis_cache", None)
         cache_key = "provider_health_status"
-        
+
         # Invalidate cache
         if redis_cache:
             await redis_cache.delete(cache_key)
             logger.debug(f"Provider health status cache invalidated")
-        
+
         # Fetch fresh data and cache it
         result = await _get_provider_health_cached(redis_cache)
         result["cache_refreshed"] = True
@@ -279,6 +278,3 @@ async def get_rtx5070_models():
 
 
 # ========== ADDITIONAL ENDPOINTS FOR /api/models (legacy support) ==========
-
-
-

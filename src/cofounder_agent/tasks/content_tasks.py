@@ -67,7 +67,7 @@ class ResearchTask(PureTask):
             "research.analyze_search_results",
             topic=topic,
             depth=depth,
-            search_context=search_context
+            search_context=search_context,
         )
 
         # Query LLM with fallback chain
@@ -167,7 +167,7 @@ Research Context:
             style=style,
             topic=topic,
             length=length,
-            research_context=research_context
+            research_context=research_context,
         )
 
         # Query LLM
@@ -241,10 +241,7 @@ class QATask(PureTask):
         # Use centralized prompt manager
         pm = get_prompt_manager()
         prompt = pm.get_prompt(
-            "task.qa_content_evaluation",
-            topic=topic,
-            content=content,
-            criteria_list=criteria_str
+            "task.qa_content_evaluation", topic=topic, content=content, criteria_list=criteria_str
         )
 
         # Query LLM
@@ -321,10 +318,7 @@ class ImageSelectionTask(PureTask):
         # Use centralized prompt manager
         pm = get_prompt_manager()
         prompt = pm.get_prompt(
-            "image.search_queries",
-            num_images=count,
-            title=topic,
-            content=content[:500]
+            "image.search_queries", num_images=count, title=topic, content=content[:500]
         )
 
         response_obj = await model_service.generate(

@@ -55,10 +55,10 @@ async def list_workflow_templates(request: Request):
     """
     try:
         from services.template_execution_service import TemplateExecutionService
-        
+
         # Get template definitions from TemplateExecutionService
         template_defs = TemplateExecutionService.get_template_definitions()
-        
+
         # Convert to response format
         templates = [
             {
@@ -70,7 +70,7 @@ async def list_workflow_templates(request: Request):
             }
             for name, config in template_defs.items()
         ]
-        
+
         return templates
     except Exception as e:
         logger.error(f"Error listing workflow templates: {e}", exc_info=True)
@@ -238,7 +238,9 @@ async def execute_workflow_template(
     template_name: str,
     task_input: Dict[str, Any] = Body(..., description="Input data for the workflow"),
     skip_phases: Optional[List[str]] = Query(None, description="Phases to skip"),
-    quality_threshold: float = Query(0.7, ge=0.0, le=1.0, description="Quality threshold for assessment"),
+    quality_threshold: float = Query(
+        0.7, ge=0.0, le=1.0, description="Quality threshold for assessment"
+    ),
     tags: Optional[List[str]] = Query(None, description="Tags for workflow"),
 ):
     """
@@ -306,9 +308,7 @@ async def execute_workflow_template(
             raise HTTPException(status_code=404, detail=str(e))
 
         # Execute template
-        logger.info(
-            f"Executing template '{template_name}' with {len(task_input)} input parameters"
-        )
+        logger.info(f"Executing template '{template_name}' with {len(task_input)} input parameters")
 
         result = await template_service.execute_template(
             template_name=template_name,

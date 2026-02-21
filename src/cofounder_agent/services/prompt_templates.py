@@ -103,7 +103,7 @@ Do not include any markdown formatting or explanations outside the JSON.
     ) -> str:
         """
         Generate a prompt for system-aware chat responses.
-        
+
         When system_context is provided (from knowledge base), use it to ground responses.
         This prevents hallucination about system capabilities and features.
         """
@@ -142,7 +142,7 @@ Now respond to the user's message. Be helpful, accurate, and concise."""
     def detect_system_question(query: str) -> bool:
         """
         Detect if a query is asking about the system itself.
-        
+
         Returns True if the question seems to be about system architecture,
         capabilities, features, or technologies.
         """

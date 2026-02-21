@@ -1,9 +1,8 @@
 import logging
 
+import config
 import torch
 from diffusers import StableDiffusionXLPipeline
-
-import config
 
 
 class ImageGenClient:

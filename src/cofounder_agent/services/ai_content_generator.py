@@ -24,8 +24,8 @@ from typing import Any, Dict, Optional, Tuple
 
 import httpx
 
-from .provider_checker import ProviderChecker
 from .prompt_manager import get_prompt_manager
+from .provider_checker import ProviderChecker
 
 logger = logging.getLogger(__name__)
 
@@ -261,7 +261,7 @@ class AIContentGenerator:
         except Exception as e:
             logger.error(f"Failed to load prompt manager: {e}")
             raise
-        
+
         # Fetch prompts from centralized manager instead of hardcoding
         # This ensures all prompts are versioned, documented, and easy to maintain
         try:
@@ -271,19 +271,21 @@ class AIContentGenerator:
                 style=style,
                 tone=tone,
                 target_length=target_length,
-                tags=', '.join(tags) if tags else 'general'
+                tags=", ".join(tags) if tags else "general",
             )
             logger.info(f"✓ System prompt loaded ({len(system_prompt)} chars)")
         except Exception as e:
             logger.error(f"Failed to load system prompt: {e}")
             raise
-        
+
         try:
             logger.info("📝 Loading generation prompt...")
             # Format internal_link_titles as a string for template
-            internal_link_titles = []  # Initialize empty list for internal links (future: fetch from existing posts)
+            internal_link_titles = (
+                []
+            )  # Initialize empty list for internal links (future: fetch from existing posts)
             internal_links_str = "\n".join(internal_link_titles) if internal_link_titles else ""
-            
+
             generation_prompt = pm.get_prompt(
                 "blog_generation.initial_draft",
                 topic=topic,
@@ -293,13 +295,13 @@ class AIContentGenerator:
                 internal_link_titles=internal_links_str,
                 word_count=target_length,
                 style=style,
-                tone=tone
+                tone=tone,
             )
             logger.info(f"✓ Generation prompt loaded ({len(generation_prompt)} chars)")
         except Exception as e:
             logger.error(f"Failed to load generation prompt: {type(e).__name__}: {e}")
             raise
-        
+
         # Create a callable refinement prompt getter
         def get_refinement_prompt(feedback: str, issues: list, content: str) -> str:
             try:
@@ -308,7 +310,7 @@ class AIContentGenerator:
                     draft=content,
                     critique=f"FEEDBACK: {feedback}\nISSUES: {chr(10).join(issues)}",
                     word_count_constraint=f"Target: {target_length} words",
-                    target_audience=style
+                    target_audience=style,
                 )
             except Exception as e:
                 logger.error(f"Failed to load refinement prompt: {e}")
@@ -354,9 +356,15 @@ class AIContentGenerator:
         logger.info(f"   Effective provider: {effective_provider}")
         logger.info(f"")
         logger.info(f"   Provider Status:")
-        logger.info(f"   ├─ Ollama (local):     {'✓ available' if use_ollama else '✗ not available/skipped'}")
-        logger.info(f"   ├─ Gemini (cloud):     {'✓ key set' if ProviderChecker.is_gemini_available() else '✗ no key'}")
-        logger.info(f"   ├─ HuggingFace (cloud): {'✓ token set' if ProviderChecker.is_huggingface_available() else '✗ no token'}")
+        logger.info(
+            f"   ├─ Ollama (local):     {'✓ available' if use_ollama else '✗ not available/skipped'}"
+        )
+        logger.info(
+            f"   ├─ Gemini (cloud):     {'✓ key set' if ProviderChecker.is_gemini_available() else '✗ no key'}"
+        )
+        logger.info(
+            f"   ├─ HuggingFace (cloud): {'✓ token set' if ProviderChecker.is_huggingface_available() else '✗ no token'}"
+        )
         logger.info(f"   └─ Fallback:           Available (generic template)")
         logger.info(f"{'='*80}\n")
 
@@ -368,9 +376,7 @@ class AIContentGenerator:
             and effective_provider.lower() == "gemini"
             and ProviderChecker.is_gemini_available()
         ):
-            logger.info(
-                f"🎯 PLAN: Will attempt Gemini (user selection)\n"
-            )
+            logger.info(f"🎯 PLAN: Will attempt Gemini (user selection)\n")
             logger.info(
                 f"🎯 Attempting Gemini (provider: {effective_provider}, model: {preferred_model or 'auto'})..."
             )
@@ -380,11 +386,13 @@ class AIContentGenerator:
                 use_new_sdk = False
                 try:
                     import google.genai as genai
+
                     use_new_sdk = True
                     logger.info("✅ Using google.genai (new SDK) for Gemini API calls")
                 except ImportError:
                     # Fallback to older google.generativeai if new one not available
                     import google.generativeai as genai
+
                     logger.warning(
                         "⚠️  Using google.generativeai (legacy/deprecated SDK) - upgrade to google-genai for better support"
                     )
@@ -436,11 +444,13 @@ class AIContentGenerator:
                 def _gemini_generate():
                     # Calculate max tokens: For Gemini, use higher multiplier for better word count coverage
                     # Gemini uses different tokenization: ~3.5-4 tokens per word for markdown with formatting
-                    max_tokens = int(target_length * 4.5)  # Increased from 3.0 to 4.5 for better completion
+                    max_tokens = int(
+                        target_length * 4.5
+                    )  # Increased from 3.0 to 4.5 for better completion
                     logger.debug(
                         f"   Gemini max_output_tokens: {max_tokens} (target_length: {target_length}, multiplier: 4.5x)"
                     )
-                    
+
                     if use_new_sdk:
                         # New google.genai SDK: Use client.models.generate_content()
                         client = genai.Client(api_key=ProviderChecker.get_gemini_api_key())
@@ -462,7 +472,7 @@ class AIContentGenerator:
                                 temperature=0.7,
                             ),
                         )
-                    
+
                     return response
 
                 response = await asyncio.to_thread(_gemini_generate)
@@ -472,24 +482,28 @@ class AIContentGenerator:
                 try:
                     if use_new_sdk:
                         # New google.genai SDK: response.text
-                        if hasattr(response, 'text'):
+                        if hasattr(response, "text"):
                             generated_content = response.text or ""
-                        elif hasattr(response, 'content'):
+                        elif hasattr(response, "content"):
                             generated_content = response.content or ""
                         else:
-                            logger.error(f"Gemini response missing text/content attribute. Keys: {dir(response)}")
+                            logger.error(
+                                f"Gemini response missing text/content attribute. Keys: {dir(response)}"
+                            )
                             generated_content = ""
                     else:
                         # Old google.generativeai SDK: response.text
-                        if hasattr(response, 'text'):
+                        if hasattr(response, "text"):
                             generated_content = response.text or ""
                         else:
-                            logger.error(f"Gemini response missing text attribute. Type: {type(response)}")
+                            logger.error(
+                                f"Gemini response missing text attribute. Type: {type(response)}"
+                            )
                             generated_content = ""
                 except AttributeError as e:
                     logger.error(f"Failed to extract text from Gemini response: {e}")
                     generated_content = ""
-                
+
                 if generated_content and len(generated_content) > 100:
                     validation = self._validate_content(generated_content, topic, target_length)
                     metrics["validation_results"].append(
@@ -525,7 +539,9 @@ class AIContentGenerator:
 
         # 1. Try Ollama (local, free, no internet, RTX 5070 optimized)
         if not use_ollama:
-            logger.info(f"⏭️ SKIPPING Ollama (skip_ollama={skip_ollama}, effective_provider={effective_provider})\n")
+            logger.info(
+                f"⏭️ SKIPPING Ollama (skip_ollama={skip_ollama}, effective_provider={effective_provider})\n"
+            )
         else:
             logger.info(f"🔄 [ATTEMPT 1/3] Trying Ollama (Local, GPU-accelerated)...")
             logger.info(f"   ├─ Endpoint: http://localhost:11434")
@@ -872,6 +888,7 @@ class AIContentGenerator:
                     # Fallback to newer google.genai if available
                     try:
                         import google.genai as genai
+
                         use_new_sdk = True
                         logger.debug("Using google.genai (new SDK)")
                     except ImportError as e:
@@ -893,7 +910,7 @@ class AIContentGenerator:
                 logger.info(f"   Generating content...")
                 # Calculate max tokens for Claude/fallback generation - 2.5x multiplier for full content
                 max_tokens_fallback = int(target_length * 3.0)
-                
+
                 if use_new_sdk:
                     # New google.genai SDK
                     response = client.models.generate_content(
@@ -964,9 +981,11 @@ class AIContentGenerator:
         logger.error(f"Provider summary:")
         logger.error(f"   - Ollama:     {use_ollama} (tried/available)")
         logger.error(f"   - Gemini:     {ProviderChecker.is_gemini_available()} (key available)")
-        logger.error(f"   - HuggingFace: {ProviderChecker.is_huggingface_available()} (token available)")
+        logger.error(
+            f"   - HuggingFace: {ProviderChecker.is_huggingface_available()} (token available)"
+        )
         logger.error(f"{'='*80}\n")
-        
+
         fallback_content = self._generate_fallback_content(topic, style, tone, tags)
         metrics["model_used"] = "Fallback (no AI models available)"
         metrics["models_used_by_phase"]["draft"] = metrics["model_used"]  # Track phase
@@ -1058,6 +1077,7 @@ def get_content_generator() -> AIContentGenerator:
 async def test_generation():
     """Test content generation"""
     from services.logger_config import get_logger
+
     logger = get_logger(__name__)
     generator = get_content_generator()
 

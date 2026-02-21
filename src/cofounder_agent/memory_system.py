@@ -10,7 +10,6 @@ Uses PostgreSQL for persistent storage (no SQLite).
 import hashlib
 import json
 import logging
-from services.logger_config import get_logger
 import pickle
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
@@ -20,6 +19,7 @@ from uuid import uuid4
 
 import asyncpg
 import numpy as np
+from services.logger_config import get_logger
 
 try:
     from sentence_transformers import SentenceTransformer

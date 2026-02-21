@@ -275,40 +275,41 @@ class TemplateExecutionService:
     ) -> None:
         """
         Initialize progress tracking for workflow execution.
-        
+
         Sets up progress service and optional WebSocket broadcasting.
         """
         try:
-            from services.workflow_progress_service import get_workflow_progress_service
             from routes.websocket_routes import broadcast_workflow_progress
+            from services.workflow_progress_service import get_workflow_progress_service
 
             progress_service = get_workflow_progress_service()
-            
+
             # Create progress tracking entry
             actual_execution_id = execution_id or workflow.id or "unknown"
             total_phases = len(workflow.phases) if workflow.phases else 0
-            
+
             progress_service.create_progress(
                 execution_id=actual_execution_id,
                 workflow_id=str(workflow.id) if workflow.id else None,
                 template=template_name,
                 total_phases=total_phases,
             )
-            
+
             # Register callback for WebSocket broadcasting
             def broadcast_callback(progress):
                 """Callback to broadcast progress via WebSocket"""
                 try:
                     import asyncio
+
                     # Schedule the broadcast in a non-blocking way
                     asyncio.create_task(broadcast_workflow_progress(actual_execution_id, progress))
                 except Exception as e:
                     logger.debug(f"Could not broadcast progress: {e}")
-            
+
             progress_service.register_callback(actual_execution_id, broadcast_callback)
-            
+
             logger.debug(f"Initialized progress tracking for execution {actual_execution_id}")
-            
+
         except Exception as e:
             logger.warning(f"Could not initialize progress tracking: {e}")
             # Continue execution even if progress tracking fails

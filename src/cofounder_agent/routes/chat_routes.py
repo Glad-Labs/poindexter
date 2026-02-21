@@ -15,18 +15,17 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-
 from schemas.chat_schemas import (
     ChatMessage,
     ChatRequest,
     ChatResponse,
 )
+from services.ai_cache import AICache
 from services.model_router import ModelRouter, TaskComplexity
 from services.ollama_client import OllamaClient
-from services.usage_tracker import get_usage_tracker
-from services.system_knowledge_rag import get_system_knowledge_rag
 from services.prompt_templates import PromptTemplates
-from services.ai_cache import AICache
+from services.system_knowledge_rag import get_system_knowledge_rag
+from services.usage_tracker import get_usage_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +142,9 @@ async def chat(request: ChatRequest) -> ChatResponse:
                     f"source: {knowledge_result.source_section})"
                 )
             else:
-                logger.warning("[Chat] System question detected but no high-confidence knowledge found")
+                logger.warning(
+                    "[Chat] System question detected but no high-confidence knowledge found"
+                )
 
         # Log the chat request
         logger.info(
@@ -216,10 +217,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
                         user_query=request.message,
                     )
                     # Insert system message at the beginning (before user messages)
-                    messages_to_send.insert(
-                        0,
-                        {"role": "system", "content": system_prompt}
-                    )
+                    messages_to_send.insert(0, {"role": "system", "content": system_prompt})
                     logger.debug("[Chat] System-aware prompt added to conversation")
 
                 chat_result = await ollama_client.chat(
@@ -240,11 +238,13 @@ async def chat(request: ChatRequest) -> ChatResponse:
                     )
 
                 tokens_used = chat_result.get("tokens", len(response_text.split()))
-                
+
                 # Cache the response for future similar queries
-                ai_cache.set(cache_key, response_text, ttl=86400)  # 24 hour TTL for system questions
+                ai_cache.set(
+                    cache_key, response_text, ttl=86400
+                )  # 24 hour TTL for system questions
                 logger.debug(f"[Chat] Response cached with key (TTL: 24h)")
-                
+
             except Exception as e:
                 logger.error(
                     f"[Chat] Ollama error with model {model_name or 'default'}: {str(e)}",
@@ -265,7 +265,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
             )
             response_text = generate_demo_response(request.message, request.model)
             tokens_used = len(response_text.split())
-            
+
             # Cache demo response too
             ai_cache.set(cache_key, response_text, ttl=3600)  # 1 hour TTL for other responses
 

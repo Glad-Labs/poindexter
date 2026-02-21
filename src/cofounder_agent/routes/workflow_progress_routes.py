@@ -8,12 +8,12 @@ Provides REST endpoints and WebSocket integration for:
 - Setting progress alerts/thresholds
 """
 
-from fastapi import APIRouter, WebSocket, Query, HTTPException, Depends
-from typing import Optional
 import json
 import logging
 from datetime import datetime
+from typing import Optional
 
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket
 from services.workflow_progress_service import (
     WorkflowProgressService,
     get_workflow_progress_service,
@@ -381,4 +381,3 @@ async def cleanup_progress(
     except Exception as e:
         logger.error(f"Failed to clean up progress: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-

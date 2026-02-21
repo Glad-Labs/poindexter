@@ -3,9 +3,10 @@ WebSocket Event Broadcaster
 Provides convenient functions for other services to emit WebSocket events
 """
 
-import logging
 import asyncio
-from typing import Dict, Any, Optional
+import logging
+from typing import Any, Dict, Optional
+
 from services.websocket_manager import websocket_manager
 
 logger = logging.getLogger(__name__)
@@ -113,7 +114,7 @@ class WebSocketEventBroadcaster:
             running_now: Tasks currently running
         """
         analytics_data = {}
-        
+
         if total_tasks is not None:
             analytics_data["totalTasks"] = total_tasks
         if completed_today is not None:
@@ -128,7 +129,7 @@ class WebSocketEventBroadcaster:
             analytics_data["failedToday"] = failed_today
         if running_now is not None:
             analytics_data["runningNow"] = running_now
-        
+
         await websocket_manager.send_analytics_update(analytics_data)
         logger.debug(f"Broadcast analytics update with keys: {list(analytics_data.keys())}")
 
@@ -148,12 +149,14 @@ class WebSocketEventBroadcaster:
             message: Notification message
             duration: Display duration in milliseconds
         """
-        await websocket_manager.send_notification({
-            "type": type,
-            "title": title,
-            "message": message,
-            "duration": duration,
-        })
+        await websocket_manager.send_notification(
+            {
+                "type": type,
+                "title": title,
+                "message": message,
+                "duration": duration,
+            }
+        )
         logger.debug(f"Broadcast notification: {type} - {title}")
 
 

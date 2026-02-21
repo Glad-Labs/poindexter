@@ -26,23 +26,23 @@ from routes.task_routes import get_model_for_phase
 # Import AI content generator for fallback
 from .ai_content_generator import AIContentGenerator
 
-# Import unified quality service for content validation
-from .quality_service import UnifiedQualityService, QualityAssessment
+# Import metrics service (Sprint 5)
+from .metrics_service import TaskMetrics, get_metrics_service
 
 # Import prompt manager for centralized prompts
 from .prompt_manager import get_prompt_manager
+
+# Import unified quality service for content validation
+from .quality_service import QualityAssessment, UnifiedQualityService
 
 # Import usage tracking
 from .usage_tracker import get_usage_tracker
 
 # Import WebSocket event broadcaster (Phase 4 - Real-time updates)
 from .websocket_event_broadcaster import (
-    emit_task_progress,
     emit_notification,
+    emit_task_progress,
 )
-
-# Import metrics service (Sprint 5)
-from .metrics_service import TaskMetrics, get_metrics_service
 
 logger = logging.getLogger(__name__)
 
@@ -268,7 +268,7 @@ class TaskExecutor:
                 },
             )
             logger.info(f"✅ [TASK_SINGLE] Task marked as in_progress")
-            
+
             # Emit WebSocket event for real-time progress tracking (Phase 4)
             try:
                 await emit_task_progress(
@@ -393,7 +393,7 @@ class TaskExecutor:
                     else "Unknown error"
                 )
                 logger.error(f"   Error: {error_msg}")
-                
+
                 # Emit WebSocket event for failure (Phase 4)
                 try:
                     await emit_task_progress(
@@ -416,7 +416,7 @@ class TaskExecutor:
                     logger.warning(f"⚠️  Failed to emit task failure event: {e}")
             else:
                 logger.info(f"✅ [TASK_SINGLE] Task awaiting approval: {task_id}")
-                
+
                 # Emit WebSocket event for success (Phase 4)
                 try:
                     await emit_task_progress(
@@ -495,7 +495,7 @@ class TaskExecutor:
         generated_content = None
         orchestrator_error = None
         phase_1_start = task_metrics.record_phase_start("content_generation")
-        
+
         logger.info(f"📝 [TASK_EXECUTE] PHASE 1: Generating content via orchestrator...")
         if self.orchestrator:
             try:
@@ -514,7 +514,7 @@ class TaskExecutor:
                     category=category or "",
                     style=style or "",
                     tone=tone or "",
-                    target_length=target_length
+                    target_length=target_length,
                 )
 
                 # Build execution context with model information
@@ -686,12 +686,16 @@ class TaskExecutor:
                     exc_info=True,
                 )
                 generated_content = f"Error in content generation: {orchestrator_error}"
-                task_metrics.record_phase_end("content_generation", phase_1_start, status="error", error=orchestrator_error)
+                task_metrics.record_phase_end(
+                    "content_generation", phase_1_start, status="error", error=orchestrator_error
+                )
         else:
             logger.warning(f"⚠️ [TASK_EXECUTE] Orchestrator available: NO - Using fallback")
             logger.warning(f"   Orchestrator is None or not initialized during startup")
             logger.warning(f"   Check startup logs for orchestrator initialization failures")
-            logger.warning(f"   Falling back to simple template-based generation (limited features)")
+            logger.warning(
+                f"   Falling back to simple template-based generation (limited features)"
+            )
             # Fallback: Simple template-based generation
             generated_content = await self._fallback_generate_content(task)
             logger.info(
@@ -725,11 +729,12 @@ class TaskExecutor:
             except Exception as e:
                 logger.error(f"❌ Quality evaluation failed: {e}", exc_info=True)
                 quality_result = None
-        
+
         # Handle None result (evaluation failed or no content)
         if quality_result is None:
             # Create default QualityAssessment for failed evaluation
-            from .quality_service import QualityDimensions, EvaluationMethod
+            from .quality_service import EvaluationMethod, QualityDimensions
+
             quality_result = QualityAssessment(
                 overall_score=0.0,
                 passing=False,
@@ -766,8 +771,10 @@ class TaskExecutor:
         logger.info(f"   Quality Score: {quality_score}/100")
         logger.info(f"   Approved: {approved}")
         if isinstance(quality_result, QualityAssessment):
-            logger.debug(f"   Quality dimensions: clarity={quality_result.dimensions.clarity:.0f}, "
-                         f"readability={quality_result.dimensions.readability:.0f}")
+            logger.debug(
+                f"   Quality dimensions: clarity={quality_result.dimensions.clarity:.0f}, "
+                f"readability={quality_result.dimensions.readability:.0f}"
+            )
 
         if approved:
             logger.info(f"✅ [TASK_EXECUTE] PHASE 2 Complete: Content approved")
@@ -796,7 +803,7 @@ class TaskExecutor:
                                 "suggestions": suggestions_list,
                                 "task_id": str(task_id),
                                 "model_selections": model_selections,
-                            }
+                            },
                         )
                     else:
                         if hasattr(self.orchestrator, "process_request"):
@@ -809,12 +816,12 @@ class TaskExecutor:
                                     "suggestions": suggestions_list,
                                     "topic": topic,
                                     "model_selections": model_selections,
-                                }
+                                },
                             )
                         else:
                             refinement_result = await self.orchestrator.process_command_async(
                                 command=f"Refine content about '{topic}' based on feedback: {feedback_text}",
-                                context={"original_content": generated_content}
+                                context={"original_content": generated_content},
                             )
 
                     logger.info(
@@ -875,7 +882,7 @@ class TaskExecutor:
                                 "style": style,
                                 "tone": tone,
                                 "target_length": target_length,
-                            }
+                            },
                         )
 
                         # Extract new quality scores
@@ -911,10 +918,7 @@ class TaskExecutor:
         # Record Phase 2 completion
         logger.debug(f"📊 [METRICS] Recording Phase 2 completion...")
         task_metrics.record_phase_end(
-            "quality_assessment", 
-            phase_2_start, 
-            status="success",
-            error=None
+            "quality_assessment", phase_2_start, status="success", error=None
         )
         logger.info(f"✅ [TASK_EXECUTE] PHASE 2 Complete: Quality assessment recorded")
 
@@ -985,14 +989,16 @@ class TaskExecutor:
         )
 
         # End operation with correct signature
-        operation_metrics = self.usage_tracker.end_operation(f"task_execution_{task_id}", success=True, error=None)
+        operation_metrics = self.usage_tracker.end_operation(
+            f"task_execution_{task_id}", success=True, error=None
+        )
 
         # Persist cost metrics to database for historical reporting
         if operation_metrics and self.database_service:
             try:
                 # Convert UsageMetrics dataclass to dict for .get() access
                 operation_metrics_dict = asdict(operation_metrics)
-                
+
                 cost_log = {
                     "task_id": str(task_id),
                     "user_id": task.get("user_id"),
@@ -1001,7 +1007,8 @@ class TaskExecutor:
                     "provider": operation_metrics_dict.get("model_provider", "unknown"),
                     "input_tokens": operation_metrics_dict.get("input_tokens", 0),
                     "output_tokens": operation_metrics_dict.get("output_tokens", 0),
-                    "total_tokens": operation_metrics_dict.get("input_tokens", 0) + operation_metrics_dict.get("output_tokens", 0),
+                    "total_tokens": operation_metrics_dict.get("input_tokens", 0)
+                    + operation_metrics_dict.get("output_tokens", 0),
                     "cost_usd": operation_metrics_dict.get("total_cost_usd", 0.0),
                     "quality_score": quality_score,
                     "duration_ms": int(operation_metrics_dict.get("duration_ms", 0)),

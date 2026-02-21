@@ -11,7 +11,6 @@ import logging
 from typing import Dict, Set
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
-
 from services.progress_service import get_progress_service
 from services.websocket_manager import websocket_manager
 
@@ -288,39 +287,43 @@ async def websocket_endpoint(websocket: WebSocket):
     """
     await websocket.accept()
     namespace = "global"
-    
+
     try:
         # Register connection
         await websocket_manager.connect(websocket, namespace)
-        
-        logger.info(f"Global WebSocket client connected. Total connections: {websocket_manager.get_connection_count()}")
-        
+
+        logger.info(
+            f"Global WebSocket client connected. Total connections: {websocket_manager.get_connection_count()}"
+        )
+
         # Keep connection alive and handle incoming messages
         while True:
             # Receive message from client (for future client->server communication)
             data = await websocket.receive_text()
             logger.debug(f"WebSocket received: {data}")
-            
+
             # Parse the message
             try:
                 message = json.loads(data)
-                
+
                 # Handle different message types
                 if message.get("type") == "subscribe":
                     namespace = message.get("namespace", "global")
                     logger.info(f"Client subscribed to namespace: {namespace}")
-                    
+
                 elif message.get("type") == "unsubscribe":
                     namespace = message.get("namespace", "global")
                     logger.info(f"Client unsubscribed from namespace: {namespace}")
-                
+
             except json.JSONDecodeError:
                 logger.warning(f"Invalid JSON received: {data}")
-    
+
     except WebSocketDisconnect:
         await websocket_manager.disconnect(websocket, namespace)
-        logger.info(f"Global WebSocket client disconnected. Total connections: {websocket_manager.get_connection_count()}")
-    
+        logger.info(
+            f"Global WebSocket client disconnected. Total connections: {websocket_manager.get_connection_count()}"
+        )
+
     except Exception as e:
         logger.error(f"WebSocket error: {e}", exc_info=True)
         try:
@@ -330,6 +333,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 # Statistics endpoint
+
 
 @websocket_router.websocket("/approval/{task_id}")
 async def websocket_approval_updates(websocket: WebSocket, task_id: str):
@@ -362,14 +366,14 @@ async def websocket_approval_updates(websocket: WebSocket, task_id: str):
                 # Timeout after 60 seconds and send keep-alive
                 data = await asyncio.wait_for(websocket.receive_text(), timeout=60)
                 logger.debug(f"Approval WebSocket received from {task_id}: {data}")
-                
+
                 # Handle any client messages if needed in future
                 try:
                     message = json.loads(data)
                     # Could handle client requests here (e.g., refresh status)
                 except json.JSONDecodeError:
                     logger.warning(f"Invalid JSON on approval WebSocket for {task_id}: {data}")
-                    
+
             except asyncio.TimeoutError:
                 # Send keep-alive every 60 seconds
                 await websocket.send_json({"type": "keep-alive", "task_id": task_id})

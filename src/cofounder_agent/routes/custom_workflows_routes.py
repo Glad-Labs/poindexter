@@ -14,9 +14,8 @@ Endpoints:
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
 import jwt
-
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from schemas.custom_workflow_schemas import (
     AvailablePhasesResponse,
     CustomWorkflow,
@@ -48,15 +47,15 @@ def get_workflows_service(request: Request) -> CustomWorkflowsService:
 def get_user_id(request: Request) -> str:
     """
     Get user ID from JWT token in Authorization header or request context.
-    
+
     Flow:
     1. Try to extract from Authorization: Bearer {token} header
     2. Fall back to request.state.user_id if set by middleware
     3. Use test user ID in development mode
-    
+
     Returns:
         User ID string
-        
+
     Raises:
         HTTPException: 401 if token is invalid
     """
@@ -64,18 +63,18 @@ def get_user_id(request: Request) -> str:
     user_id = getattr(request.state, "user_id", None)
     if user_id:
         return str(user_id)
-    
+
     # Try to extract from Authorization header
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         try:
             token = auth_header[7:]  # Remove "Bearer " prefix
-            
+
             # DEVELOPMENT MODE: Allow dev tokens without JWT validation
             if token.lower().startswith("dev-") or token == "dev-token":
                 logger.info(f"[get_user_id] Development token accepted: {token[:20]}...")
                 return "dev-user-123"
-            
+
             claims = JWTTokenValidator.verify_token(token)
             if claims and "user_id" in claims:
                 return str(claims["user_id"])
@@ -88,12 +87,12 @@ def get_user_id(request: Request) -> str:
         except Exception as e:
             logger.warning(f"Error extracting user ID from JWT: {e}")
             raise HTTPException(status_code=401, detail="Authentication failed")
-    
+
     # Development fallback (no token provided)
     if not auth_header:
         logger.debug("No authorization header provided, using test user for development")
         return "test-user-123"
-    
+
     # Authorization header present but invalid format
     logger.warning(f"Invalid authorization header format: {auth_header[:20]}...")
     raise HTTPException(status_code=401, detail="Invalid authorization header format")
@@ -335,13 +334,10 @@ async def execute_custom_workflow(
             input_data = {}
 
         # Execute workflow using the new service method
-        result = await service.execute_workflow(
-            workflow=workflow,
-            initial_inputs=input_data
-        )
-        
+        result = await service.execute_workflow(workflow=workflow, initial_inputs=input_data)
+
         logger.info(f"Workflow execution completed: {result['execution_id']}")
-        
+
         return result
     except HTTPException:
         raise
@@ -363,15 +359,10 @@ async def get_available_phases(
     try:
         phases = await service.get_available_phases()
 
-        return {
-            "phases": phases,
-            "total_count": len(phases)
-        }
+        return {"phases": phases, "total_count": len(phases)}
     except Exception as e:
         logger.error(f"Error getting available phases: {str(e)}", exc_info=True)
-        raise HTTPException(
-            status_code=500, detail=f"Failed to get available phases: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to get available phases: {str(e)}")
 
 
 @router.get("/executions/{execution_id}", name="Get Workflow Execution")
@@ -426,7 +417,9 @@ async def list_workflow_executions(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error listing workflow executions for {workflow_id}: {str(e)}", exc_info=True)
+        logger.error(
+            f"Error listing workflow executions for {workflow_id}: {str(e)}", exc_info=True
+        )
         raise HTTPException(status_code=500, detail=f"Failed to list workflow executions: {str(e)}")
 
 
@@ -443,18 +436,20 @@ async def get_workflow_history(
         owner_id = get_user_id(request)
         # Get all executions for user's workflows
         all_executions = await service.get_all_executions(owner_id=owner_id)
-        
+
         # Filter by status if provided
         if status:
-            all_executions = [e for e in all_executions if e.get("status", "").lower() == status.lower()]
-        
+            all_executions = [
+                e for e in all_executions if e.get("status", "").lower() == status.lower()
+            ]
+
         # Sort by creation time (newest first)
         all_executions.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-        
+
         # Apply pagination
         total = len(all_executions)
         paginated = all_executions[offset : offset + limit]
-        
+
         return {
             "executions": paginated,
             "total": total,
@@ -483,7 +478,9 @@ async def get_workflow_statistics(
         raise
     except Exception as e:
         logger.error(f"Error fetching workflow statistics: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch workflow statistics: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch workflow statistics: {str(e)}"
+        )
 
 
 @router.get("/performance-metrics", name="Get Performance Metrics")
@@ -501,7 +498,9 @@ async def get_performance_metrics(
         raise
     except Exception as e:
         logger.error(f"Error fetching performance metrics: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch performance metrics: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch performance metrics: {str(e)}"
+        )
 
 
 @router.get("/workflow/{execution_id}/details", name="Get Execution Details")
@@ -518,5 +517,7 @@ async def get_execution_details(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching execution details for {execution_id}: {str(e)}", exc_info=True)
+        logger.error(
+            f"Error fetching execution details for {execution_id}: {str(e)}", exc_info=True
+        )
         raise HTTPException(status_code=500, detail=f"Failed to fetch execution details: {str(e)}")

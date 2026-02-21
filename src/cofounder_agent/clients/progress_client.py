@@ -6,17 +6,17 @@ Simplifies progress update operations and WebSocket subscription management.
 
 Usage:
     client = WorkflowProgressClient("http://localhost:8000")
-    
+
     # Initialize progress
     await client.initialize_progress(
         execution_id="exec_123",
         total_phases=4,
         template="content_generation"
     )
-    
+
     # Start execution
     await client.start_execution("exec_123", "Beginning workflow...")
-    
+
     # Complete phases
     await client.complete_phase(
         "exec_123",
@@ -24,7 +24,7 @@ Usage:
         phase_output={"keywords": ["ai", "ml"]},
         duration_ms=5000
     )
-    
+
     # Mark completion
     await client.mark_complete(
         "exec_123",
@@ -36,8 +36,8 @@ Usage:
 import asyncio
 import json
 import logging
-from typing import Any, Callable, Dict, Optional
 from datetime import datetime
+from typing import Any, Callable, Dict, Optional
 
 import aiohttp
 import websockets

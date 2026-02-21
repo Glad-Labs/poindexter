@@ -258,7 +258,7 @@ def register_all_routes(
     try:
         # ===== PROFILING - Performance metrics =====
         from routes.profiling_routes import router as profiling_router
-        
+
         app.include_router(profiling_router)
         logger.info(" profiling_router registered (performance profiling)")
         status["profiling_router"] = True
@@ -382,7 +382,9 @@ def register_all_routes(
         from routes.workflow_progress_routes import router as workflow_progress_router
 
         app.include_router(workflow_progress_router)
-        logger.info(" workflow_progress_router registered (progress tracking & WebSocket broadcasting)")
+        logger.info(
+            " workflow_progress_router registered (progress tracking & WebSocket broadcasting)"
+        )
         status["workflow_progress_router"] = True
     except Exception as e:
         logger.error(f" workflow_progress_router failed: {e}")

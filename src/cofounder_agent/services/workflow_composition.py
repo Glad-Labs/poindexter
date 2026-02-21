@@ -11,7 +11,7 @@ import logging
 from typing import Any, Callable, Dict, List, Optional
 
 from agents.registry import get_agent_registry
-from services.workflow_engine import WorkflowEngine, WorkflowPhase, WorkflowContext
+from services.workflow_engine import WorkflowContext, WorkflowEngine, WorkflowPhase
 
 logger = logging.getLogger(__name__)
 
@@ -194,7 +194,9 @@ class WorkflowBuilder:
         """Build and return the phase list"""
         if not self.phases:
             raise ValueError("Workflow must have at least one phase")
-        logger.info(f"Built workflow with {len(self.phases)} phases: {[p.name for p in self.phases]}")
+        logger.info(
+            f"Built workflow with {len(self.phases)} phases: {[p.name for p in self.phases]}"
+        )
         return self.phases
 
     def clear(self) -> "WorkflowBuilder":

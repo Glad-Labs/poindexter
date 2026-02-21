@@ -10,9 +10,8 @@ This follows the same pattern as service_registry_routes.py but for agents inste
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query, Request
-
 from agents.registry import get_agent_registry
+from fastapi import APIRouter, HTTPException, Query, Request
 
 logger = logging.getLogger(__name__)
 
@@ -71,13 +70,13 @@ async def get_agent_registry_endpoint(request: Request):
     # Try to get from cache first
     redis_cache = getattr(request.app.state, "redis_cache", None)
     cache_key = "agent_registry_full"
-    
+
     if redis_cache:
         cached_result = await redis_cache.get(cache_key)
         if cached_result is not None:
             logger.debug(f"Agent registry cache hit for key: {cache_key}")
             return cached_result
-    
+
     try:
         registry = get_agent_registry()
 
@@ -107,12 +106,12 @@ async def get_agent_registry_endpoint(request: Request):
             "categories": categories,
             "phases": phases,
         }
-        
+
         # Cache the result with 300s TTL (5 minutes)
         if redis_cache:
             await redis_cache.set(cache_key, result, ttl=300)
             logger.debug(f"Agent registry cached with TTL 300s")
-        
+
         return result
     except Exception as e:
         logger.error(f"Error retrieving agent registry: {e}", exc_info=True)
@@ -270,7 +269,9 @@ async def get_agent_capabilities(agent_name: str):
         raise
     except Exception as e:
         logger.error(f"Error retrieving capabilities for agent '{agent_name}': {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve agent capabilities: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to retrieve agent capabilities: {str(e)}"
+        )
 
 
 @router.get("/by-phase/{phase}", name="Get Agents by Phase")
@@ -306,18 +307,20 @@ async def get_agents_by_phase(phase: str):
     try:
         registry = get_agent_registry()
         agent_names = registry.list_by_phase(phase)
-        
+
         # Get full metadata for each agent
         agents = []
         for name in agent_names:
             metadata = registry.get_serializable_metadata(name)
             if metadata:
                 agents.append(metadata)
-        
+
         return agents
     except Exception as e:
         logger.error(f"Error retrieving agents for phase '{phase}': {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve agents for phase: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to retrieve agents for phase: {str(e)}"
+        )
 
 
 @router.get("/by-capability/{capability}", name="Get Agents by Capability")
@@ -352,14 +355,14 @@ async def get_agents_by_capability(capability: str):
     try:
         registry = get_agent_registry()
         agent_names = registry.list_by_capability(capability)
-        
+
         # Convert agent names to serializable metadata
         agents = []
         for name in agent_names:
             metadata = registry.get_serializable_metadata(name)
             if metadata:
                 agents.append(metadata)
-        
+
         return agents
     except Exception as e:
         logger.error(f"Error retrieving agents for capability '{capability}': {e}", exc_info=True)
@@ -368,7 +371,9 @@ async def get_agents_by_capability(capability: str):
         )
 
 
-@router.get("/by-category/{category}", response_model=List[Dict[str, Any]], name="Get Agents by Category")
+@router.get(
+    "/by-category/{category}", response_model=List[Dict[str, Any]], name="Get Agents by Category"
+)
 async def get_agents_by_category(category: str):
     """
     Get all agents in a specific category.
@@ -399,18 +404,20 @@ async def get_agents_by_category(category: str):
     try:
         registry = get_agent_registry()
         agent_names = registry.list_categories().get(category, [])
-        
+
         # Convert agent names to serializable metadata
         agents = []
         for name in agent_names:
             metadata = registry.get_serializable_metadata(name)
             if metadata:
                 agents.append(metadata)
-        
+
         return agents
     except Exception as e:
         logger.error(f"Error retrieving agents in category '{category}': {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve agents for category: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to retrieve agents for category: {str(e)}"
+        )
 
 
 @router.get("/search", response_model=List[Dict[str, Any]], name="Search Agents")
@@ -454,9 +461,7 @@ async def search_agents(
 
         # Filter by capability if specified
         if capability:
-            all_agents = [
-                a for a in all_agents if capability in a.get("capabilities", [])
-            ]
+            all_agents = [a for a in all_agents if capability in a.get("capabilities", [])]
 
         # Filter by phase if specified
         if phase:

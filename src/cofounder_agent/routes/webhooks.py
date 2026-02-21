@@ -22,4 +22,3 @@ logger = logging.getLogger(__name__)
 webhook_router = APIRouter(prefix="/api/webhooks", tags=["webhooks"])
 
 logger.info("⚠️  Webhooks router loaded (deprecated - Strapi CMS no longer used)")
-

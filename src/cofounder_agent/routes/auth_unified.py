@@ -26,7 +26,6 @@ import httpx
 import jwt
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
-
 from schemas.auth_schemas import (
     GitHubCallbackRequest,
     LogoutResponse,
@@ -66,25 +65,25 @@ def generate_csrf_state() -> str:
 def validate_csrf_state(state: str) -> bool:
     """
     Validate CSRF state token.
-    
+
     Checks:
     - State exists in store
     - State has not expired
     - Removes state from store after validation (one-time use)
-    
+
     Returns:
         True if state is valid, False otherwise
     """
     if not state or state not in _CSRF_STATES:
         logger.warning("CSRF state validation failed: state not found in store")
         return False
-    
+
     expiry = _CSRF_STATES[state]
     if datetime.now(timezone.utc) > expiry:
         logger.warning("CSRF state validation failed: state expired")
         del _CSRF_STATES[state]
         return False
-    
+
     # Remove state after successful validation (one-time use only)
     del _CSRF_STATES[state]
     logger.debug("CSRF state validation successful")
@@ -210,17 +209,19 @@ async def get_current_user_optional(request: Request) -> Dict[str, Any]:
     """
     Optional authentication - returns dev user if no auth header present.
     Useful for development/testing.
-    
+
     Returns mock user if DEVELOPMENT_MODE=true and no auth provided.
     """
     print("\n[OPTIONAL_AUTH] Function called!")  # DEBUG
     auth_header = request.headers.get("Authorization", "")
     print(f"[OPTIONAL_AUTH] auth_header: {bool(auth_header)}")  # DEBUG
-    
+
     # No auth header - return dev user (allows testing without real token)
     if not auth_header:
         print("[OPTIONAL_AUTH] Returning dev user!")  # DEBUG
-        logger.debug("[get_current_user_optional] No auth header - returning dev user for development")
+        logger.debug(
+            "[get_current_user_optional] No auth header - returning dev user for development"
+        )
         return {
             "id": "dev-user-123",
             "email": "dev@example.com",
@@ -230,7 +231,7 @@ async def get_current_user_optional(request: Request) -> Dict[str, Any]:
             "created_at": datetime.now(timezone.utc).isoformat(),
             "token": "dev-token",
         }
-    
+
     print("[OPTIONAL_AUTH] Auth header present, validating...")  # DEBUG
     # Auth header provided - validate normally
     return await get_current_user(request)
@@ -270,7 +271,7 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
     """
     try:
         auth_header = request.headers.get("Authorization", "")
-        
+
         # DEVELOPMENT MODE: If no auth header provided, allow access with dev user
         # This allows frontend development/testing without authentication
         if not auth_header:
@@ -446,14 +447,16 @@ async def github_callback(request_data: GitHubCallbackRequest) -> Dict[str, Any]
 async def github_callback_fallback(request_data: GitHubCallbackRequest) -> Dict[str, Any]:
     """
     Fallback endpoint for GitHub OAuth callback (old endpoint path).
-    
+
     This endpoint exists for backward compatibility with clients using
     the old /api/auth/github-callback path. All requests are forwarded
     to the new /api/auth/github/callback endpoint.
-    
+
     DEPRECATED: Use /api/auth/github/callback instead.
     """
-    logger.warning("Deprecated endpoint /api/auth/github-callback called. Use /api/auth/github/callback instead.")
+    logger.warning(
+        "Deprecated endpoint /api/auth/github-callback called. Use /api/auth/github/callback instead."
+    )
     # Forward to the main handler
     return await github_callback(request_data)
 

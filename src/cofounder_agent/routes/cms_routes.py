@@ -11,7 +11,6 @@ from datetime import datetime
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-
 from routes.auth_unified import UserProfile, get_current_user
 from services.database_service import DatabaseService
 from utils.error_handler import handle_route_error

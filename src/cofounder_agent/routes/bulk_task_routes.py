@@ -14,7 +14,6 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-
 from routes.auth_unified import get_current_user
 from schemas.bulk_task_schemas import (
     BulkCreateTasksRequest,

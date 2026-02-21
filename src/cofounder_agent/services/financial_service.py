@@ -12,8 +12,8 @@ This service provides:
 """
 
 import logging
-from typing import Any, Dict, Optional
 from datetime import datetime
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +134,11 @@ class FinancialService:
                 "expected_revenue": expected_revenue,
                 "net_profit": net_profit,
                 "roi_percentage": roi,
-                "payback_period_days": (generation_cost / (expected_revenue / 365)) if expected_revenue > 0 else float("inf"),
+                "payback_period_days": (
+                    (generation_cost / (expected_revenue / 365))
+                    if expected_revenue > 0
+                    else float("inf")
+                ),
             }
 
         except Exception as e:

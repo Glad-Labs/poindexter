@@ -5,7 +5,7 @@ Handles human approval of generated content before publishing.
 
 Endpoints:
 - POST /api/tasks/{task_id}/approve - Approve a task for publishing
-- POST /api/tasks/{task_id}/reject - Reject a task with feedback  
+- POST /api/tasks/{task_id}/reject - Reject a task with feedback
 - GET /api/tasks/pending-approval - List all tasks awaiting approval
 
 Workflow:
@@ -19,17 +19,15 @@ Workflow:
 
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, List, Optional
 from uuid import uuid4 as uuid_lib_uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-
 from routes.auth_unified import get_current_user
-from utils.route_utils import get_database_dependency
-from services.database_service import DatabaseService
 from routes.websocket_routes import broadcast_approval_status
-
+from services.database_service import DatabaseService
+from utils.route_utils import get_database_dependency
 
 logger = logging.getLogger(__name__)
 
@@ -137,9 +135,7 @@ async def approve_task(
     - Task eligible for publishing
     """
     try:
-        logger.info(
-            f"👤 [APPROVAL] User {current_user.get('id')} approving task {task_id}"
-        )
+        logger.info(f"👤 [APPROVAL] User {current_user.get('id')} approving task {task_id}")
 
         # Fetch task from database
         task = await db_service.get_task(task_id)
@@ -164,7 +160,7 @@ async def approve_task(
 
         # Update task status and approval fields
         approval_date = datetime.now(timezone.utc)
-        
+
         # Store approval data in dedicated database columns
         await db_service.update_task(
             task_id,
@@ -210,9 +206,7 @@ async def approve_task(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            f"❌ [APPROVAL] Failed to approve task {task_id}: {str(e)}", exc_info=True
-        )
+        logger.error(f"❌ [APPROVAL] Failed to approve task {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail={"message": f"Failed to approve task: {str(e)}", "type": "internal_error"},
@@ -232,50 +226,48 @@ async def reject_task(
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
-    Reject a task and send it back for revisions.
+       Reject a task and send it back for revisions.
 
-    **Parameters:**
-    - task_id: UUID of the task to reject
-    - reason: Short reason (e.g., "Content quality", "Factual errors",
- "Tone mismatch")
-    - feedback: Detailed feedback for the content team
-    - allow_revisions: true/false - allow re-submission with revisions
+       **Parameters:**
+       - task_id: UUID of the task to reject
+       - reason: Short reason (e.g., "Content quality", "Factual errors",
+    "Tone mismatch")
+       - feedback: Detailed feedback for the content team
+       - allow_revisions: true/false - allow re-submission with revisions
 
-    **Returns:**
-    ```json
-    {
-      "task_id": "uuid",
-      "status": "failed",
-      "rejection_date": "2026-01-21T...",
-      "rejected_by": "user_id",
-      "reason": "Content quality",
-      "message": "Task rejected - feedback provided"
-    }
-    ```
+       **Returns:**
+       ```json
+       {
+         "task_id": "uuid",
+         "status": "failed",
+         "rejection_date": "2026-01-21T...",
+         "rejected_by": "user_id",
+         "reason": "Content quality",
+         "message": "Task rejected - feedback provided"
+       }
+       ```
 
-    **Status Transitions:**
-    - awaiting_approval → failed ❌
-    - Other statuses → 400 Bad Request
+       **Status Transitions:**
+       - awaiting_approval → failed ❌
+       - Other statuses → 400 Bad Request
 
-    **Side Effects:**
-    - Task marked as failed/rejected
-    - Rejection reason stored in metadata
-    - Rejection feedback stored
-    - Rejection timestamp recorded
-    - Task removed from publishing queue
-    - Task appears in failed/archived section
+       **Side Effects:**
+       - Task marked as failed/rejected
+       - Rejection reason stored in metadata
+       - Rejection feedback stored
+       - Rejection timestamp recorded
+       - Task removed from publishing queue
+       - Task appears in failed/archived section
 
-    **Revision Workflow (Optional):**
-    If allow_revisions=true:
-    - Task status: "failed_revisions_requested"
-    - Content team receives email: "Task rejected, revisions requested"
-    - User can edit + resubmit
-    - Returns to awaiting_approval on resubmission
+       **Revision Workflow (Optional):**
+       If allow_revisions=true:
+       - Task status: "failed_revisions_requested"
+       - Content team receives email: "Task rejected, revisions requested"
+       - User can edit + resubmit
+       - Returns to awaiting_approval on resubmission
     """
     try:
-        logger.info(
-            f"👤 [REJECTION] User {current_user.get('id')} rejecting task {task_id}"
-        )
+        logger.info(f"👤 [REJECTION] User {current_user.get('id')} rejecting task {task_id}")
 
         # Fetch task
         task = await db_service.get_task(task_id)
@@ -359,9 +351,7 @@ async def reject_task(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            f"❌ [REJECTION] Failed to reject task {task_id}: {str(e)}", exc_info=True
-        )
+        logger.error(f"❌ [REJECTION] Failed to reject task {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail={"message": f"Failed to reject task: {str(e)}", "type": "internal_error"},
@@ -471,9 +461,7 @@ async def bulk_approve_tasks(
                 failed_ids.append(task_id)
                 failed_count += 1
 
-        logger.info(
-            f"✅ [BULK_APPROVAL] Approved {approved_count} tasks, {failed_count} failed"
-        )
+        logger.info(f"✅ [BULK_APPROVAL] Approved {approved_count} tasks, {failed_count} failed")
 
         return {
             "approved_count": approved_count,
@@ -594,9 +582,7 @@ async def bulk_reject_tasks(
                 failed_ids.append(task_id)
                 failed_count += 1
 
-        logger.info(
-            f"✅ [BULK_REJECTION] Rejected {rejected_count} tasks, {failed_count} failed"
-        )
+        logger.info(f"✅ [BULK_REJECTION] Rejected {rejected_count} tasks, {failed_count} failed")
 
         return {
             "rejected_count": rejected_count,
@@ -624,7 +610,13 @@ async def bulk_reject_tasks(
 async def get_pending_approvals(
     limit: int = Query(20, ge=1, le=100, description="Results per page (1-100)"),
     offset: int = Query(0, ge=0, description="Pagination offset (page * limit)"),
-    task_type: Optional[str] = Query(None, description="Filter by task type (blog_post, email, etc.)"),        sort_by: str = Query("created_at", description="Sort field: created_at|quality_score|topic",),
+    task_type: Optional[str] = Query(
+        None, description="Filter by task type (blog_post, email, etc.)"
+    ),
+    sort_by: str = Query(
+        "created_at",
+        description="Sort field: created_at|quality_score|topic",
+    ),
     sort_order: str = Query("desc", description="Sort order: asc|desc"),
     current_user: dict = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
@@ -687,7 +679,7 @@ async def get_pending_approvals(
         # Fetch pending tasks from database with pagination
         # Use get_tasks_paginated which handles status filtering and pagination
         user_id = current_user.get("id") if current_user else None
-        
+
         try:
             result = await db_service.get_tasks_paginated(
                 offset=offset,
@@ -711,16 +703,14 @@ async def get_pending_approvals(
         # Build response
         # Note: Database pagination is already applied by get_tasks_paginated
         # Don't recalculate total - use the database value
-        
+
         if pending_tasks:
             # Ensure task_name is set from title column for API consistency
             for task in pending_tasks:
                 if not task.get("task_name") and task.get("title"):
                     task["task_name"] = task["title"]
-        
-        logger.info(
-            f"📋 [PENDING_APPROVAL] Found {total} tasks, returning {len(pending_tasks)}"
-        )
+
+        logger.info(f"📋 [PENDING_APPROVAL] Found {total} tasks, returning {len(pending_tasks)}")
 
         return {
             "total": total,
@@ -730,7 +720,8 @@ async def get_pending_approvals(
             "tasks": [
                 {
                     "task_id": task.get("task_id") or task.get("id"),  # Try task_id first, then id
-                    "task_name": task.get("title") or task.get("task_name"),  # Title is the main column
+                    "task_name": task.get("title")
+                    or task.get("task_name"),  # Title is the main column
                     "topic": task.get("topic"),
                     "task_type": task.get("task_type"),
                     "status": task.get("status"),
@@ -742,7 +733,9 @@ async def get_pending_approvals(
                         else "No content available"
                     ),
                     "featured_image_url": task.get("featured_image_url"),
-                    "metadata": task.get("task_metadata", {}),  # task_metadata is the main JSON column
+                    "metadata": task.get(
+                        "task_metadata", {}
+                    ),  # task_metadata is the main JSON column
                 }
                 for task in pending_tasks
             ],
@@ -755,7 +748,10 @@ async def get_pending_approvals(
         )
         raise HTTPException(
             status_code=500,
-            detail={"message": f"Failed to fetch pending approvals: {str(e)}", "type": "internal_error"},
+            detail={
+                "message": f"Failed to fetch pending approvals: {str(e)}",
+                "type": "internal_error",
+            },
         )
 
 

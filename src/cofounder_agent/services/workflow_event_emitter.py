@@ -79,8 +79,7 @@ class WorkflowEventEmitter:
             )
             await self._broadcast_progress(execution_id, progress)
             logger.info(
-                f"[{execution_id}] Phase completed: {phase_name} "
-                f"(duration: {duration_ms}ms)"
+                f"[{execution_id}] Phase completed: {phase_name} " f"(duration: {duration_ms}ms)"
             )
 
     async def emit_phase_failed(
@@ -114,9 +113,7 @@ class WorkflowEventEmitter:
                 message="Workflow execution completed successfully",
             )
             await self._broadcast_progress(execution_id, progress)
-            logger.info(
-                f"[{execution_id}] Workflow completed (duration: {duration_ms}ms)"
-            )
+            logger.info(f"[{execution_id}] Workflow completed (duration: {duration_ms}ms)")
 
     async def emit_execution_failed(
         self,
@@ -133,8 +130,7 @@ class WorkflowEventEmitter:
             )
             await self._broadcast_progress(execution_id, progress)
             logger.error(
-                f"[{execution_id}] Workflow failed "
-                f"(phase: {failed_phase}, error: {error})"
+                f"[{execution_id}] Workflow failed " f"(phase: {failed_phase}, error: {error})"
             )
 
     async def _broadcast_progress(self, execution_id: str, progress) -> None:

@@ -5,9 +5,10 @@ These tables store task definitions and execution results for capability-based
 task composition system (different from workflow_executions).
 """
 
+
 async def up(pool):
     """Create capability_tasks and capability_executions tables."""
-    
+
     # Create capability_tasks table
     await pool.execute(
         """
@@ -41,7 +42,7 @@ async def up(pool):
         );
         """
     )
-    
+
     # Create capability_executions table
     await pool.execute(
         """
@@ -84,28 +85,43 @@ async def up(pool):
         );
         """
     )
-    
+
     # Create indexes for performance
-    
+
     # capability_tasks indexes
-    await pool.execute("CREATE INDEX IF NOT EXISTS ix_capability_tasks_owner_id ON capability_tasks(owner_id);")
-    await pool.execute("CREATE INDEX IF NOT EXISTS ix_capability_tasks_created_at ON capability_tasks(created_at);")
-    await pool.execute("CREATE INDEX IF NOT EXISTS ix_capability_tasks_is_active ON capability_tasks(is_active);")
-    
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS ix_capability_tasks_owner_id ON capability_tasks(owner_id);"
+    )
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS ix_capability_tasks_created_at ON capability_tasks(created_at);"
+    )
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS ix_capability_tasks_is_active ON capability_tasks(is_active);"
+    )
+
     # capability_executions indexes
-    await pool.execute("CREATE INDEX IF NOT EXISTS ix_capability_executions_task_id ON capability_executions(task_id);")
-    await pool.execute("CREATE INDEX IF NOT EXISTS ix_capability_executions_owner_id ON capability_executions(owner_id);")
-    await pool.execute("CREATE INDEX IF NOT EXISTS ix_capability_executions_status ON capability_executions(status);")
-    await pool.execute("CREATE INDEX IF NOT EXISTS ix_capability_executions_started_at ON capability_executions(started_at);")
-    
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS ix_capability_executions_task_id ON capability_executions(task_id);"
+    )
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS ix_capability_executions_owner_id ON capability_executions(owner_id);"
+    )
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS ix_capability_executions_status ON capability_executions(status);"
+    )
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS ix_capability_executions_started_at ON capability_executions(started_at);"
+    )
+
     # Composite index for common query pattern
-    await pool.execute("CREATE INDEX IF NOT EXISTS ix_capability_executions_owner_task ON capability_executions(owner_id, task_id);")
+    await pool.execute(
+        "CREATE INDEX IF NOT EXISTS ix_capability_executions_owner_task ON capability_executions(owner_id, task_id);"
+    )
 
 
 async def down(pool):
     """Drop capability_tasks and capability_executions tables."""
-    
+
     # Drop tables ( CASCADE handles indexes and constraints)
     await pool.execute("DROP TABLE IF EXISTS capability_executions CASCADE;")
     await pool.execute("DROP TABLE IF EXISTS capability_tasks CASCADE;")
-

@@ -60,13 +60,9 @@ class TaskMetrics:
 
         if error:
             self.phases[phase_name]["error"] = error
-            self.record_error(
-                phase=phase_name, error_type="PhaseError", error_message=error
-            )
+            self.record_error(phase=phase_name, error_type="PhaseError", error_message=error)
 
-        logger.debug(
-            f"📊 [METRICS] Phase '{phase_name}' completed in {duration_ms:.0f}ms"
-        )
+        logger.debug(f"📊 [METRICS] Phase '{phase_name}' completed in {duration_ms:.0f}ms")
 
     def record_llm_call(
         self,
@@ -81,19 +77,21 @@ class TaskMetrics:
         error: Optional[str] = None,
     ):
         """Record an LLM API call with token usage and cost."""
-        self.llm_calls.append({
-            "llm_call_id": str(uuid4()),
-            "phase": phase,
-            "model": model,
-            "provider": provider,
-            "tokens_in": tokens_in,
-            "tokens_out": tokens_out,
-            "total_tokens": tokens_in + tokens_out,
-            "cost_usd": round(cost_usd, 6),
-            "duration_ms": round(duration_ms, 2),
-            "status": status,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        self.llm_calls.append(
+            {
+                "llm_call_id": str(uuid4()),
+                "phase": phase,
+                "model": model,
+                "provider": provider,
+                "tokens_in": tokens_in,
+                "tokens_out": tokens_out,
+                "total_tokens": tokens_in + tokens_out,
+                "cost_usd": round(cost_usd, 6),
+                "duration_ms": round(duration_ms, 2),
+                "status": status,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
 
         if error:
             self.llm_calls[-1]["error"] = error
@@ -107,18 +105,18 @@ class TaskMetrics:
             f"${cost_usd:.4f}, {duration_ms:.0f}ms"
         )
 
-    def record_error(
-        self, phase: str, error_type: str, error_message: str, retry_count: int = 0
-    ):
+    def record_error(self, phase: str, error_type: str, error_message: str, retry_count: int = 0):
         """Record an error that occurred during task execution."""
-        self.errors.append({
-            "error_id": str(uuid4()),
-            "phase": phase,
-            "error_type": error_type,
-            "error_message": error_message,
-            "retry_count": retry_count,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        self.errors.append(
+            {
+                "error_id": str(uuid4()),
+                "phase": phase,
+                "error_type": error_type,
+                "error_message": error_message,
+                "retry_count": retry_count,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
 
         logger.warning(
             f"⚠️ [METRICS] Error {error_type} in '{phase}': {error_message} (retries: {retry_count})"
@@ -131,16 +129,13 @@ class TaskMetrics:
 
     def get_total_duration_ms(self) -> float:
         """Calculate total execution time including queue wait."""
-        phase_duration = sum(
-            phase.get("duration_ms", 0) for phase in self.phases.values()
-        )
+        phase_duration = sum(phase.get("duration_ms", 0) for phase in self.phases.values())
         return self.queue_wait_ms + phase_duration
 
     def get_phase_breakdown(self) -> Dict[str, float]:
         """Get duration for each phase."""
         return {
-            phase: phase_data.get("duration_ms", 0)
-            for phase, phase_data in self.phases.items()
+            phase: phase_data.get("duration_ms", 0) for phase, phase_data in self.phases.items()
         }
 
     def get_error_count(self) -> int:
@@ -171,17 +166,13 @@ class TaskMetrics:
                 "successful_calls": sum(
                     1 for call in self.llm_calls if call.get("status") == "success"
                 ),
-                "failed_calls": sum(
-                    1 for call in self.llm_calls if call.get("status") == "error"
-                ),
+                "failed_calls": sum(1 for call in self.llm_calls if call.get("status") == "error"),
                 "total_tokens_in": self.total_tokens_in,
                 "total_tokens_out": self.total_tokens_out,
                 "total_tokens": self.total_tokens_in + self.total_tokens_out,
                 "total_cost_usd": round(self.total_cost_usd, 6),
                 "avg_cost_per_call": (
-                    round(self.total_cost_usd / len(self.llm_calls), 6)
-                    if self.llm_calls
-                    else 0.0
+                    round(self.total_cost_usd / len(self.llm_calls), 6) if self.llm_calls else 0.0
                 ),
                 "error_rate": round(self.get_error_rate(), 4),
             },
@@ -196,7 +187,7 @@ class MetricsService:
     def __init__(self, database_service=None):
         self.database_service = database_service
         self._metrics: Dict[str, Any] = {}
-    
+
     async def get_metrics(self) -> Dict[str, Any]:
         """Get aggregated task and system metrics."""
         return {

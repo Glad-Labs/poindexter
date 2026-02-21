@@ -332,10 +332,16 @@ class QualityEvaluationResponse(BaseModel):
     overall_score: float = Field(..., ge=0.0, le=100.0, description="Overall quality score (0-100)")
     clarity: float = Field(default=0.0, ge=0.0, le=100.0, description="Clarity score (0-100)")
     accuracy: float = Field(default=0.0, ge=0.0, le=100.0, description="Accuracy score (0-100)")
-    completeness: float = Field(default=0.0, ge=0.0, le=100.0, description="Completeness score (0-100)")
+    completeness: float = Field(
+        default=0.0, ge=0.0, le=100.0, description="Completeness score (0-100)"
+    )
     relevance: float = Field(default=0.0, ge=0.0, le=100.0, description="Relevance score (0-100)")
-    seo_quality: float = Field(default=0.0, ge=0.0, le=100.0, description="SEO quality score (0-100)")
-    readability: float = Field(default=0.0, ge=0.0, le=100.0, description="Readability score (0-100)")
+    seo_quality: float = Field(
+        default=0.0, ge=0.0, le=100.0, description="SEO quality score (0-100)"
+    )
+    readability: float = Field(
+        default=0.0, ge=0.0, le=100.0, description="Readability score (0-100)"
+    )
     engagement: float = Field(default=0.0, ge=0.0, le=100.0, description="Engagement score (0-100)")
     passing: bool = Field(default=False, description="Whether content passed quality threshold")
     feedback: Optional[str] = Field(None, description="Evaluator feedback")

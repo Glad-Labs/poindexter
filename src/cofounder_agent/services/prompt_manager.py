@@ -32,12 +32,14 @@ logger = logging.getLogger(__name__)
 
 class PromptVersion(str, Enum):
     """Prompt versions for A/B testing and rollouts"""
+
     V1_0 = "v1.0"  # Initial consolidated version
     V1_1 = "v1.1"  # Current production
 
 
 class PromptCategory(str, Enum):
     """Prompt categories for organization"""
+
     BLOG_GENERATION = "blog_generation"
     CONTENT_QA = "content_qa"
     SEO_METADATA = "seo_metadata"
@@ -52,6 +54,7 @@ class PromptCategory(str, Enum):
 @dataclass
 class PromptMetadata:
     """Metadata about a prompt for versioning and tracking"""
+
     category: PromptCategory
     version: PromptVersion
     created_date: str  # ISO format: YYYY-MM-DD
@@ -67,7 +70,7 @@ class PromptMetadata:
 class UnifiedPromptManager:
     """
     Central manager for all LLM prompts.
-    
+
     Usage:
         pm = UnifiedPromptManager()
         prompt = pm.get_prompt("blog_generation.initial_draft", topic="AI Trends")
@@ -81,11 +84,11 @@ class UnifiedPromptManager:
 
     def _initialize_prompts(self):
         """Populate all prompts from consolidated sources"""
-        
+
         # ======================================================================
         # BLOG GENERATION PROMPTS
         # ======================================================================
-        
+
         self._register_prompt(
             key="blog_generation.initial_draft",
             category=PromptCategory.BLOG_GENERATION,
@@ -133,7 +136,7 @@ Modern AI systems are now beating human radiologists...
 Real-world implementations showing tangible results...
 
 **Related: [[Internal Link 1]], [[Internal Link 2]]**""",
-            notes="v2.0: Added explicit guidance on creative section titles with examples, avoiding generic titles"
+            notes="v2.0: Added explicit guidance on creative section titles with examples, avoiding generic titles",
         )
 
         self._register_prompt(
@@ -168,7 +171,7 @@ Example output:
             description="Generate SEO-optimized title, description, and keywords",
             output_format="json",
             example_output='{"title":"AI in Healthcare: 2025 Trends","meta_description":"Discover how AI transforms healthcare in 2025","keywords":["AI healthcare","medical AI","health tech","diagnostic AI","patient care"]}',
-            notes="v1.0: Enforces character limits, provides JSON example"
+            notes="v1.0: Enforces character limits, provides JSON example",
         )
 
         self._register_prompt(
@@ -203,13 +206,13 @@ Incorporate all feedback to improve quality while maintaining professional tone 
 Improved version:""",
             description="Refine blog post based on QA feedback with focus on creative titles",
             output_format="markdown",
-            notes="v2.0: Added creative section title guidance and examples, avoiding generic titles"
+            notes="v2.0: Added creative section title guidance and examples, avoiding generic titles",
         )
 
         # ======================================================================
         # CONTENT QA / CRITIQUE PROMPTS
         # ======================================================================
-        
+
         self._register_prompt(
             key="qa.content_review",
             category=PromptCategory.CONTENT_QA,
@@ -256,7 +259,7 @@ Example:
             description="QA review with pragmatic publication criteria",
             output_format="json",
             example_output='{"approved":true,"quality_score":82,"feedback":"Well-structured. Add more examples to section 2."}',
-            notes="v1.0: Emphasizes pragmatism, includes scoring scale in prompt, provides JSON example"
+            notes="v1.0: Emphasizes pragmatism, includes scoring scale in prompt, provides JSON example",
         )
 
         self._register_prompt(
@@ -300,13 +303,13 @@ Return ONLY valid JSON:
 }}""",
             description="Self-critique with section title quality check",
             output_format="json",
-            notes="v2.0: Added check for generic section titles in Structure evaluation"
+            notes="v2.0: Added check for generic section titles in Structure evaluation",
         )
 
         # ======================================================================
         # SEO & METADATA PROMPTS
         # ======================================================================
-        
+
         self._register_prompt(
             key="seo.generate_title",
             category=PromptCategory.SEO_METADATA,
@@ -327,7 +330,7 @@ Generate ONLY the title, nothing else. No quotes, no explanation.""",
             description="Generate SEO-optimized title (60 char max)",
             output_format="text",
             example_output="AI in Healthcare: 2025 Trends & Opportunities",
-            notes="v1.0: Strict output constraint reduces hallucination"
+            notes="v1.0: Strict output constraint reduces hallucination",
         )
 
         self._register_prompt(
@@ -349,7 +352,7 @@ Generate ONLY the description, nothing else. No quotes, no explanation.""",
             description="Generate SEO meta description (155 char max)",
             output_format="text",
             example_output="Discover how AI is transforming healthcare in 2025. Expert insights on diagnostics, treatment, and patient outcomes.",
-            notes="v1.0: Enforces Google's 155-char standard, emphasizes CTA"
+            notes="v1.0: Enforces Google's 155-char standard, emphasizes CTA",
         )
 
         self._register_prompt(
@@ -374,13 +377,13 @@ Generate ONLY the comma-separated list, nothing else.""",
             description="Extract SEO keywords from content",
             output_format="text",
             example_output="AI healthcare, healthcare AI trends, medical diagnostics, AI patient care, 2025 health tech",
-            notes="v1.0: Specifies keyword composition (short vs long-tail)"
+            notes="v1.0: Specifies keyword composition (short vs long-tail)",
         )
 
         # ======================================================================
         # RESEARCH PROMPTS
         # ======================================================================
-        
+
         self._register_prompt(
             key="research.analyze_search_results",
             category=PromptCategory.RESEARCH,
@@ -421,13 +424,13 @@ Example:
             description="Analyze search results for content research",
             output_format="json",
             example_output='{"key_points":["AI adoption increased 45% YoY","ML diagnostic accuracy improved"],"trends":["Explainable AI","EHR integration"],"statistics":["$15.2B market by 2025"],"sources":["https://example.com"]}',
-            notes="v1.0: Emphasizes source-based analysis, explicit DATA NOT FOUND guidance"
+            notes="v1.0: Emphasizes source-based analysis, explicit DATA NOT FOUND guidance",
         )
 
         # ======================================================================
         # SOCIAL MEDIA PROMPTS
         # ======================================================================
-        
+
         self._register_prompt(
             key="social.research_trends",
             category=PromptCategory.SOCIAL_MEDIA,
@@ -452,7 +455,7 @@ Provide platform-specific insights:
 }}""",
             description="Research platform-specific social media trends",
             output_format="json",
-            notes="v1.0: Platform-aware hashtag and format guidance"
+            notes="v1.0: Platform-aware hashtag and format guidance",
         )
 
         self._register_prompt(
@@ -487,13 +490,13 @@ Example for Twitter:
 }}""",
             description="Generate platform-optimized social media post",
             output_format="json",
-            notes="v1.0: Emphasizes hook/CTA, provides platform-specific example"
+            notes="v1.0: Emphasizes hook/CTA, provides platform-specific example",
         )
 
         # ======================================================================
         # IMAGE GENERATION PROMPTS
         # ======================================================================
-        
+
         self._register_prompt(
             key="image.featured_image",
             category=PromptCategory.IMAGE_GENERATION,
@@ -519,7 +522,7 @@ Generate ONLY the image description prompt (2-3 sentences), nothing else.""",
             description="Generate featured image prompt (no people)",
             output_format="text",
             example_output="A modern, minimalist medical technology visualization showing interconnected healthcare nodes and AI algorithms. Abstract blue and green data streams flowing through digital healthcare infrastructure. 1200x630px, professional medical tech aesthetic.",
-            notes="v1.0: Strong safety guardrail against people/faces, aspect ratio specified"
+            notes="v1.0: Strong safety guardrail against people/faces, aspect ratio specified",
         )
 
         self._register_prompt(
@@ -554,13 +557,13 @@ Content: {content}
             description="Generate image search queries with alt-text",
             output_format="json",
             example_output='[{"query":"hospital diagnostic AI technology healthcare center","alt_text":"A healthcare professional using AI diagnostic system in a modern hospital"}]',
-            notes="v1.0: Accessibility-first, word count guardrails, provides structure example"
+            notes="v1.0: Accessibility-first, word count guardrails, provides structure example",
         )
 
         # ======================================================================
         # CONTENT GENERATION (SYSTEM PROMPT)
         # ======================================================================
-        
+
         self._register_prompt(
             key="system.content_writer",
             category=PromptCategory.UTILITY,
@@ -596,13 +599,13 @@ Tags/Topics: {tags}
 Begin writing now:""",
             description="System prompt for blog content generation",
             output_format="markdown",
-            notes="v1.0: Includes role, style, quality standards, and formatting guidance"
+            notes="v1.0: Includes role, style, quality standards, and formatting guidance",
         )
 
         # ======================================================================
         # METADATA GENERATION PROMPTS
         # ======================================================================
-        
+
         self._register_prompt(
             key="seo.generate_excerpt",
             category=PromptCategory.SEO_METADATA,
@@ -621,7 +624,7 @@ Generate ONLY the excerpt, nothing else. No quotes, no explanation.""",
             description="Generate social media excerpt (character-limited)",
             output_format="text",
             example_output="Discover how AI is transforming healthcare diagnostics. New research shows 45% improvement in accuracy rates. Learn what this means for patient outcomes.",
-            notes="v1.0: Character limit enforced, CTA encouraged"
+            notes="v1.0: Character limit enforced, CTA encouraged",
         )
 
         self._register_prompt(
@@ -645,7 +648,7 @@ Examples: If list includes "Technology", "Business", "Health", respond with only
             description="Match content to best category",
             output_format="text",
             example_output="Healthcare Technology",
-            notes="v1.0: Single-select only, exact name required, no explanation"
+            notes="v1.0: Single-select only, exact name required, no explanation",
         )
 
         self._register_prompt(
@@ -669,7 +672,7 @@ Example Response Format: tag1, tag2, tag3, tag4, tag5""",
             description="Extract content tags from available pool",
             output_format="text",
             example_output="AI, Healthcare, Technology, Diagnostics, Innovation",
-            notes="v1.0: Strict selection from available list, comma-separated format"
+            notes="v1.0: Strict selection from available list, comma-separated format",
         )
 
         self._register_prompt(
@@ -700,7 +703,7 @@ Include:
 Tags: {tags}""",
             description="System prompt for blog generation with creative title guidance",
             output_format="markdown",
-            notes="v2.0: Added explicit guidance on creative section titles with examples"
+            notes="v2.0: Added explicit guidance on creative section titles with examples",
         )
 
         self._register_prompt(
@@ -719,13 +722,13 @@ Target Length: {target_length} words
 Create a comprehensive request that can guide content generation.""",
             description="Format blog generation request parameters",
             output_format="text",
-            notes="v1.0: Structured request format for orchestration"
+            notes="v1.0: Structured request format for orchestration",
         )
 
         # ======================================================================
         # TASK-SPECIFIC PROMPTS (Content, Business, Social, Automation)
         # ======================================================================
-        
+
         self._register_prompt(
             key="task.creative_blog_generation",
             category=PromptCategory.BLOG_GENERATION,
@@ -750,7 +753,7 @@ Style: {style}
 Format: Markdown with proper headings and formatting""",
             description="Generate blog post with creative section titles",
             output_format="markdown",
-            notes="v2.0: Added explicit creative title requirements with examples"
+            notes="v2.0: Added explicit creative title requirements with examples",
         )
 
         self._register_prompt(
@@ -775,7 +778,7 @@ Format as JSON with keys: scores (dict), feedback (str), suggestions (list), ove
             description="QA evaluation for content tasks",
             output_format="json",
             example_output='{"scores":{"clarity":8,"accuracy":9},"feedback":"Well-written","suggestions":["Add more examples"],"overall_score":8.5}',
-            notes="v1.0: Structured QA with per-criterion ratings"
+            notes="v1.0: Structured QA with per-criterion ratings",
         )
 
         self._register_prompt(
@@ -804,7 +807,7 @@ Format as JSON with keys: recommendations, opportunities, breakeven_units, proje
             description="Financial impact analysis for content workflows",
             output_format="json",
             example_output='{"recommendations":["Reduce API calls","Automate distribution"],"opportunities":["Expand platforms"],"breakeven_units":50,"projection":{}}',
-            notes="v1.0: ROI and cost-benefit analysis"
+            notes="v1.0: ROI and cost-benefit analysis",
         )
 
         self._register_prompt(
@@ -828,7 +831,7 @@ Analyze:
 Format as JSON with keys: market_size, competitors, demographics, pricing, opportunities, barriers, success_factors""",
             description="Market analysis for business intelligence",
             output_format="json",
-            notes="v1.0: Comprehensive competitive and market research"
+            notes="v1.0: Comprehensive competitive and market research",
         )
 
         self._register_prompt(
@@ -851,7 +854,7 @@ Provide:
 Format as JSON with keys: summary, trends, top_performers, underperforming, recommendations""",
             description="Content performance and metrics analysis",
             output_format="json",
-            notes="v1.0: Performance metrics and trend analysis"
+            notes="v1.0: Performance metrics and trend analysis",
         )
 
         self._register_prompt(
@@ -875,7 +878,7 @@ Format as JSON with keys: subject, preview, body, cta_text, footer""",
             description="Email campaign generation",
             output_format="json",
             example_output='{"subject":"Limited Time Offer","preview":"Exclusive deal inside","body":"<html>...","cta_text":"Claim Now","footer":"Unsubscribe"}',
-            notes="v1.0: Multi-part email template generation"
+            notes="v1.0: Multi-part email template generation",
         )
 
         self._register_prompt(
@@ -897,7 +900,7 @@ Generate ONLY the summary, nothing else.""",
             description="Content summarization at various lengths",
             output_format="text",
             example_output="This article discusses AI trends in 2025, focusing on adoption rates, costs, and ethical considerations across industries.",
-            notes="v1.0: Flexible length summarization"
+            notes="v1.0: Flexible length summarization",
         )
 
         self._register_prompt(
@@ -920,7 +923,7 @@ Target Structure: {target_structure}
 Return ONLY valid JSON, nothing else.""",
             description="Convert content to JSON format",
             output_format="json",
-            notes="v1.0: Flexible JSON structure conversion"
+            notes="v1.0: Flexible JSON structure conversion",
         )
 
     def _register_prompt(
@@ -956,21 +959,21 @@ Return ONLY valid JSON, nothing else.""",
     def get_prompt(self, key: str, **kwargs) -> str:
         """
         Get a prompt by key and format with provided kwargs.
-        
+
         Args:
             key: Prompt key (e.g., "blog_generation.initial_draft")
             **kwargs: Values to format into prompt template
-            
+
         Returns:
             Formatted prompt ready for LLM
-            
+
         Raises:
             KeyError: If prompt key not found
         """
         if key not in self.prompts:
             available = ", ".join(self.prompts.keys())
             raise KeyError(f"Prompt '{key}' not found. Available: {available}")
-        
+
         template = self.prompts[key]["template"]
         try:
             return template.format(**kwargs)

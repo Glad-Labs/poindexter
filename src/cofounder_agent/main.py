@@ -9,23 +9,24 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-# Third-party imports
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Query
-from pydantic import BaseModel, validator
-
 # Import configuration
 from config import get_config
 
+# Third-party imports
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
+from pydantic import BaseModel, validator
+
 # Load configuration
 config = get_config()
+
+from services.auth import AuthService
+from services.container import service_container
 
 # Import services
 from services.logger_config import get_logger
 from services.quality_service import UnifiedQualityService
 from services.sentry_integration import setup_sentry
 from services.telemetry import setup_telemetry
-from services.container import service_container
-from services.auth import AuthService
 
 # Local application imports (must come after path setup)
 from utils.exception_handlers import register_exception_handlers
@@ -36,6 +37,7 @@ from utils.startup_manager import StartupManager
 
 try:
     import sentry_sdk  # pylint: disable=unused-import
+
     SENTRY_AVAILABLE = True
 except ImportError:
     SENTRY_AVAILABLE = False
@@ -103,11 +105,11 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         logger.info("[LIFESPAN] Initializing capability system. ..")
         try:
             from services.capability_examples import register_example_capabilities
+
             register_example_capabilities()
             logger.info("[LIFESPAN] ✅ Capability system initialized with example capabilities")
         except Exception as e:
             logger.warning(f"[LIFESPAN] ⚠️ Failed to initialize capabilities: {e}")
-
 
         # Initialize quality service
         logger.info("[LIFESPAN] Initializing quality service. ..")
@@ -123,7 +125,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             orchestrator=services.get("orchestrator"),
             task_executor=services["task_executor"],
             intelligent_orchestrator=services.get("intelligent_orchestrator"),
-            workflow_history=services["workflow_history"]
+            workflow_history=services["workflow_history"],
         )
         logger.info("[LIFESPAN] ✅ Services registered in global DI container")
 
@@ -215,22 +217,26 @@ setup_sentry(app, service_name="cofounder-agent")
 middleware_config = MiddlewareConfig()
 middleware_config.register_all_middleware(app)
 
+
 # ===== SIMPLE TEST ENDPOINT =====
 @app.get("/test-auth")
 async def test_auth():
     """Simple endpoint to verify authentication bypass is working"""
     return {"message": "Success! This endpoint requires no auth"}
 
+
 @app.get("/api/tasks-public", response_model=dict)
 async def list_tasks_public():
     """Public version of list tasks - no auth required"""
     return {"success": True, "data": [], "pagination": {"limit": 0, "offset": 0, "total": 0}}
+
 
 # ===== ROUTE REGISTRATION =====
 # Register all API routes from routes/ modules
 logger.info("[STARTUP] Registering all routes...")
 register_all_routes(app)
 logger.info("[STARTUP] ✅ All routes registered")
+
 
 # ===== DEVELOPMENT-ONLY PUBLIC ENDPOINTS (DEFINED AFTER ROUTE REGISTRATION) =====
 # These override/supplement the normal authenticated endpoints for development
@@ -252,12 +258,12 @@ async def list_tasks_pub_dev(
                 "offset": offset,
                 "limit": limit,
             }
-        
+
         tasks, total = await database_service.get_tasks_paginated(
             offset=offset, limit=limit, status=status, category=category, user_id=None
         )
-        
-        return{
+
+        return {
             "success": True,
             "tasks": tasks,
             "total": total,
@@ -275,8 +281,10 @@ async def list_tasks_pub_dev(
             "limit": limit,
         }
 
+
 # ===== UNIFIED HEALTH CHECK ENDPOINT =====
 # Consolidated from: /api/health, /status, /metrics/health, and route-specific health endpoints
+
 
 @app.get("/api/health")
 async def api_health():
@@ -294,7 +302,7 @@ async def api_health():
     Authentication: Not required (critical for load balancers)
     """
     # Try to get from cache first (note: health checks may be called very frequently)
-    if hasattr(app.state, 'redis_cache'):
+    if hasattr(app.state, "redis_cache"):
         redis_cache = app.state.redis_cache
         cache_key = "database_health_check"
         cached_result = await redis_cache.get(cache_key)
@@ -303,7 +311,7 @@ async def api_health():
             return cached_result
     else:
         redis_cache = None
-    
+
     try:
         # Build comprehensive health response
         health_data = {
@@ -365,6 +373,7 @@ async def health():
 # ===== METRICS ENDPOINT =====
 # Consolidated from: /api/metrics, /metrics, /tasks/metrics, etc.
 
+
 @app.get("/api/metrics")
 async def get_metrics_endpoint():
     """
@@ -417,6 +426,7 @@ async def get_metrics_endpoint():
 
 # ===== PUBLIC DEVELOPMENT ENDPOINTS (NO AUTH REQUIRED) =====
 # These endpoints are for development/testing only and may expose data without authentication
+
 
 @app.get("/test-endpoint")
 async def test_endpoint():
@@ -478,9 +488,7 @@ async def process_command(
             raise HTTPException(status_code=503, detail="Orchestrator not initialized")
 
         # Execute the command asynchronously
-        response = await orchestrator.process_command_async(
-            command.command, command.context
-        )
+        response = await orchestrator.process_command_async(command.command, command.context)
 
         return CommandResponse(
             response=response.get("response", "Command processed"),
@@ -488,12 +496,8 @@ async def process_command(
             metadata=response.get("metadata"),
         )
     except Exception as e:  # pylint: disable=broad-except
-        logger.error(
-            f"Error processing command: {str(e)} | command={command.command}"
-        )
-        raise HTTPException(
-            status_code=500, detail=f"An internal error occurred: {str(e)}"
-        ) from e
+        logger.error(f"Error processing command: {str(e)} | command={command.command}")
+        raise HTTPException(status_code=500, detail=f"An internal error occurred: {str(e)}") from e
 
 
 @app.get("/")

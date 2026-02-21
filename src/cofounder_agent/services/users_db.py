@@ -14,7 +14,6 @@ from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from asyncpg import Pool
-
 from schemas.database_response_models import OAuthAccountResponse, UserResponse
 from schemas.model_converter import ModelConverter
 from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator

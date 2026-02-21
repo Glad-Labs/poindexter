@@ -6,16 +6,17 @@ chained together into tasks. Each capability has a standardized interface with
 input/output schemas for data flow validation.
 """
 
-from typing import Any, Callable, Dict, List, Optional, TypeVar, Generic
-from dataclasses import dataclass, field, asdict
-from enum import Enum
 import inspect
-from abc import ABC, abstractmethod
 import json
+from abc import ABC, abstractmethod
+from dataclasses import asdict, dataclass, field
+from enum import Enum
+from typing import Any, Callable, Dict, Generic, List, Optional, TypeVar
 
 
 class ParameterType(str, Enum):
     """Supported parameter types for capability I/O."""
+
     STRING = "string"
     INTEGER = "integer"
     FLOAT = "float"
@@ -28,6 +29,7 @@ class ParameterType(str, Enum):
 @dataclass
 class ParameterSchema:
     """Schema for a single input/output parameter."""
+
     name: str
     type: ParameterType
     description: str = ""
@@ -35,7 +37,7 @@ class ParameterSchema:
     default: Optional[Any] = None
     example: Optional[Any] = None
     enum_values: Optional[List[Any]] = None
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary (for JSON serialization)."""
         return {
@@ -52,14 +54,13 @@ class ParameterSchema:
 @dataclass
 class InputSchema:
     """Input schema for a capability."""
+
     parameters: List[ParameterSchema] = field(default_factory=list)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
-        return {
-            "parameters": [p.to_dict() for p in self.parameters]
-        }
-    
+        return {"parameters": [p.to_dict() for p in self.parameters]}
+
     def validate(self, inputs: Dict[str, Any]) -> tuple[bool, Optional[str]]:
         """Validate inputs against schema."""
         for param in self.parameters:
@@ -71,10 +72,11 @@ class InputSchema:
 @dataclass
 class OutputSchema:
     """Output schema for a capability."""
+
     return_type: ParameterType = ParameterType.ANY
     description: str = ""
     output_format: str = "json"  # json, text, binary, etc.
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -87,6 +89,7 @@ class OutputSchema:
 @dataclass
 class CapabilityMetadata:
     """Metadata for a capability."""
+
     name: str
     description: str
     tags: List[str] = field(default_factory=list)
@@ -94,7 +97,7 @@ class CapabilityMetadata:
     author: str = ""
     cost_tier: str = "balanced"  # ultra_cheap, cheap, balanced, premium
     timeout_ms: int = 60000  # 60 seconds default
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return asdict(self)
@@ -103,36 +106,36 @@ class CapabilityMetadata:
 class Capability(ABC):
     """
     Base class for all capabilities.
-    
+
     A capability is a composable unit of functionality with standardized I/O.
     """
-    
+
     @property
     @abstractmethod
     def metadata(self) -> CapabilityMetadata:
         """Return capability metadata."""
         pass
-    
+
     @property
     @abstractmethod
     def input_schema(self) -> InputSchema:
         """Return input schema."""
         pass
-    
+
     @property
     @abstractmethod
     def output_schema(self) -> OutputSchema:
         """Return output schema."""
         pass
-    
+
     @abstractmethod
     async def execute(self, **inputs) -> Any:
         """
         Execute the capability.
-        
+
         Args:
             **inputs: inputs matching input_schema
-            
+
         Returns:
             Output matching output_schema
         """
@@ -142,30 +145,30 @@ class Capability(ABC):
 class CapabilityRegistry:
     """
     Central registry for all capabilities.
-    
+
     Manages capability discovery, registration, and lookup.
     """
-    
+
     def __init__(self):
         """Initialize the registry."""
         self._capabilities: Dict[str, Capability] = {}
         self._callable_capabilities: Dict[str, Callable] = {}  # Functions wrapped as capabilities
         self._metadata: Dict[str, CapabilityMetadata] = {}
-    
+
     def register(self, capability: Capability) -> None:
         """
         Register a capability.
-        
+
         Args:
             capability: Capability instance with metadata and schemas
         """
         name = capability.metadata.name
         if name in self._capabilities:
             raise ValueError(f"Capability '{name}' already registered")
-        
+
         self._capabilities[name] = capability
         self._metadata[name] = capability.metadata
-    
+
     def register_function(
         self,
         func: Callable,
@@ -178,7 +181,7 @@ class CapabilityRegistry:
     ) -> None:
         """
         Register a function as a capability.
-        
+
         Args:
             func: Async or sync function
             name: Capability name
@@ -190,7 +193,7 @@ class CapabilityRegistry:
         """
         if name in self._capabilities or name in self._callable_capabilities:
             raise ValueError(f"Capability '{name}' already registered")
-        
+
         self._callable_capabilities[name] = func
         self._metadata[name] = CapabilityMetadata(
             name=name,
@@ -198,48 +201,42 @@ class CapabilityRegistry:
             tags=tags or [],
             cost_tier=cost_tier,
         )
-    
+
     def get(self, name: str) -> Optional[Capability]:
         """Get a capability by name."""
         return self._capabilities.get(name)
-    
+
     def get_function(self, name: str) -> Optional[Callable]:
         """Get a registered function by name."""
         return self._callable_capabilities.get(name)
-    
+
     def get_metadata(self, name: str) -> Optional[CapabilityMetadata]:
         """Get capability metadata by name."""
         return self._metadata.get(name)
-    
+
     def list_capabilities(self) -> Dict[str, CapabilityMetadata]:
         """List all registered capabilities with metadata."""
         return self._metadata.copy()
-    
+
     def list_by_tag(self, tag: str) -> List[str]:
         """List capability names by tag."""
-        return [
-            name for name, metadata in self._metadata.items()
-            if tag in metadata.tags
-        ]
-    
+        return [name for name, metadata in self._metadata.items() if tag in metadata.tags]
+
     def list_by_cost_tier(self, tier: str) -> List[str]:
         """List capability names by cost tier."""
-        return [
-            name for name, metadata in self._metadata.items()
-            if metadata.cost_tier == tier
-        ]
-    
+        return [name for name, metadata in self._metadata.items() if metadata.cost_tier == tier]
+
     async def execute(self, name: str, **inputs) -> Any:
         """
         Execute a capability by name.
-        
+
         Args:
             name: Capability name
             **inputs: Input parameters
-            
+
         Returns:
             Capability output
-            
+
         Raises:
             ValueError: If capability not found
         """
@@ -247,7 +244,7 @@ class CapabilityRegistry:
         cap = self.get(name)
         if cap:
             return await cap.execute(**inputs)
-        
+
         # Try callable capability
         func = self.get_function(name)
         if func:
@@ -256,9 +253,9 @@ class CapabilityRegistry:
                 return await func(**inputs)
             else:
                 return func(**inputs)
-        
+
         raise ValueError(f"Capability '{name}' not found in registry")
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert registry to dict (for API serialization)."""
         return {
@@ -269,7 +266,7 @@ class CapabilityRegistry:
             }
             for name, metadata in self._metadata.items()
         }
-    
+
     def _get_input_schema_dict(self, name: str) -> Dict[str, Any]:
         """Get input schema dict for a capability."""
         cap = self.get(name)
@@ -278,7 +275,7 @@ class CapabilityRegistry:
         # For function-based capabilities, we don't have schema yet
         # (would need decorator or manual registration)
         return {"parameters": []}
-    
+
     def _get_output_schema_dict(self, name: str) -> Dict[str, Any]:
         """Get output schema dict for a capability."""
         cap = self.get(name)

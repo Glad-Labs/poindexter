@@ -17,7 +17,7 @@ Connection pool is shared across all modules.
 
 import logging
 import os
-from typing import Optional, Dict, List
+from typing import Dict, List, Optional
 
 import asyncpg
 
@@ -137,7 +137,9 @@ class DatabaseService:
         """Delegate to users module."""
         return await self.users.create_user(user_data)
 
-    async def get_or_create_oauth_user(self, provider: str, provider_user_id: str, provider_data: dict) -> Dict:
+    async def get_or_create_oauth_user(
+        self, provider: str, provider_user_id: str, provider_data: dict
+    ) -> Dict:
         """Delegate to users module."""
         return await self.users.get_or_create_oauth_user(provider, provider_user_id, provider_data)
 
@@ -158,7 +160,9 @@ class DatabaseService:
         """Delegate to tasks module."""
         return await self.tasks.get_task(task_id)
 
-    async def update_task_status(self, task_id: str, status: str, result: Optional[str] = None) -> bool:
+    async def update_task_status(
+        self, task_id: str, status: str, result: Optional[str] = None
+    ) -> bool:
         """Delegate to tasks module."""
         return await self.tasks.update_task_status(task_id, status, result)
 
@@ -166,7 +170,14 @@ class DatabaseService:
         """Delegate to tasks module."""
         return await self.tasks.update_task(task_id, updates)
 
-    async def get_tasks_paginated(self, offset: int = 0, limit: int = 20, status: Optional[str] = None, category: Optional[str] = None, user_id: Optional[str] = None) -> Dict:
+    async def get_tasks_paginated(
+        self,
+        offset: int = 0,
+        limit: int = 20,
+        status: Optional[str] = None,
+        category: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> Dict:
         """Delegate to tasks module."""
         return await self.tasks.get_tasks_paginated(offset, limit, status, category, user_id)
 
@@ -186,7 +197,9 @@ class DatabaseService:
         """Delegate to tasks module."""
         return await self.tasks.get_queued_tasks(limit)
 
-    async def get_tasks_by_date_range(self, start_date=None, end_date=None, status: Optional[str] = None, limit: int = 10000) -> List[Dict]:
+    async def get_tasks_by_date_range(
+        self, start_date=None, end_date=None, status: Optional[str] = None, limit: int = 10000
+    ) -> List[Dict]:
         """Delegate to tasks module."""
         return await self.tasks.get_tasks_by_date_range(start_date, end_date, status, limit)
 
@@ -240,11 +253,15 @@ class DatabaseService:
         return await self.content.create_orchestrator_training_data(train_data)
 
     # ADMIN OPERATIONS
-    async def add_log_entry(self, agent_name: str, level: str, message: str, context: Optional[dict] = None) -> Dict:
+    async def add_log_entry(
+        self, agent_name: str, level: str, message: str, context: Optional[dict] = None
+    ) -> Dict:
         """Delegate to admin module."""
         return await self.admin.add_log_entry(agent_name, level, message, context)
 
-    async def get_logs(self, agent_name: Optional[str] = None, level: Optional[str] = None, limit: int = 100) -> List[Dict]:
+    async def get_logs(
+        self, agent_name: Optional[str] = None, level: Optional[str] = None, limit: int = 100
+    ) -> List[Dict]:
         """Delegate to admin module."""
         return await self.admin.get_logs(agent_name, level, limit)
 
@@ -264,7 +281,9 @@ class DatabaseService:
         """Delegate to admin module."""
         return await self.admin.get_task_costs(task_id)
 
-    async def update_agent_status(self, agent_name: str, status: str, last_run=None, metadata: Optional[dict] = None) -> bool:
+    async def update_agent_status(
+        self, agent_name: str, status: str, last_run=None, metadata: Optional[dict] = None
+    ) -> bool:
         """Delegate to admin module."""
         return await self.admin.update_agent_status(agent_name, status, last_run, metadata)
 
@@ -284,7 +303,14 @@ class DatabaseService:
         """Delegate to admin module."""
         return await self.admin.get_all_settings(category)
 
-    async def set_setting(self, key: str, value, category: Optional[str] = None, display_name: Optional[str] = None, description: Optional[str] = None) -> Dict:
+    async def set_setting(
+        self,
+        key: str,
+        value,
+        category: Optional[str] = None,
+        display_name: Optional[str] = None,
+        description: Optional[str] = None,
+    ) -> Dict:
         """Delegate to admin module."""
         return await self.admin.set_setting(key, value, category, display_name, description)
 

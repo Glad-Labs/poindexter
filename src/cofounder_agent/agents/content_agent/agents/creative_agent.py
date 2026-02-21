@@ -2,9 +2,9 @@ import json
 import logging
 import re
 
+from ....services.prompt_manager import get_prompt_manager
 from ..config import config
 from ..services.llm_client import LLMClient
-from ....services.prompt_manager import get_prompt_manager
 from ..utils.data_models import BlogPost
 from ..utils.helpers import extract_json_from_string, slugify
 from ..utils.tools import CrewAIToolsFactory
@@ -88,7 +88,9 @@ class CreativeAgent:
                 target_audience=post.target_audience or "General",
                 primary_keyword=post.primary_keyword or "topic",
                 research_context=post.research_data or "No research data provided",
-                internal_link_titles=list(post.published_posts_map.keys()) if post.published_posts_map else [],
+                internal_link_titles=(
+                    list(post.published_posts_map.keys()) if post.published_posts_map else []
+                ),
             )
 
             # Inject word count constraint at the beginning of the prompt

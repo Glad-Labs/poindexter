@@ -7,14 +7,15 @@ Uses similarity scoring to find relevant knowledge base sections.
 
 import os
 import re
-from pathlib import Path
-from typing import Optional, Tuple, List
 from dataclasses import dataclass
+from pathlib import Path
+from typing import List, Optional, Tuple
 
 
 @dataclass
 class KnowledgeResult:
     """Result from knowledge base retrieval"""
+
     content: str
     confidence: float  # 0-1 score
     source_section: str
@@ -119,8 +120,7 @@ class SystemKnowledgeRAG:
 
         # Agent types
         if any(
-            kw in query_lower
-            for kw in ["agent type", "agent", "agents available", "which agent"]
+            kw in query_lower for kw in ["agent type", "agent", "agents available", "which agent"]
         ):
             return KnowledgeResult(
                 content="Glad Labs has 5 specialized agents: (1) Content Agent for blog/article generation, (2) Financial Agent for cost tracking and ROI analysis, (3) Market Insight Agent for trend analysis and competitive intelligence, (4) Compliance Agent for legal/risk review, and (5) Orchestrator Agent (Co-Founder) for master workflow coordination.",
@@ -151,10 +151,7 @@ class SystemKnowledgeRAG:
             )
 
         # Ports/architecture
-        if any(
-            kw in query_lower
-            for kw in ["port", "what port", "run on", "listen", "localhost"]
-        ):
+        if any(kw in query_lower for kw in ["port", "what port", "run on", "listen", "localhost"]):
             return KnowledgeResult(
                 content="Glad Labs runs on three ports: Backend (FastAPI) runs on port 8000, Public Site (Next.js) runs on port 3000, and Oversight Hub (React Admin) runs on port 3001. All services are started together with 'npm run dev'.",
                 confidence=0.90,
@@ -163,10 +160,7 @@ class SystemKnowledgeRAG:
             )
 
         # Workflow
-        if any(
-            kw in query_lower
-            for kw in ["workflow", "phase", "task execution", "pipeline"]
-        ):
+        if any(kw in query_lower for kw in ["workflow", "phase", "task execution", "pipeline"]):
             return KnowledgeResult(
                 content="Glad Labs workflows use a phase-based system with automatic input/output mapping. Phases execute sequentially, with data flowing from one phase to the next. The system tracks data provenance and includes graceful error handling. Tasks are executed in the background with status updates via WebSocket.",
                 confidence=0.90,
@@ -175,10 +169,7 @@ class SystemKnowledgeRAG:
             )
 
         # Quality assessment
-        if any(
-            kw in query_lower
-            for kw in ["quality", "assessment", "score", "evaluation"]
-        ):
+        if any(kw in query_lower for kw in ["quality", "assessment", "score", "evaluation"]):
             return KnowledgeResult(
                 content="Glad Labs uses a 6-point quality assessment framework: (1) Tone and Voice, (2) Structure, (3) SEO, (4) Engagement, (5) Accuracy, and (6) Writing Style Consistency. Content scores range 0-100, with 75+ being excellent, 40-75 being good, and below 40 being draft quality.",
                 confidence=0.90,
@@ -211,7 +202,9 @@ class SystemKnowledgeRAG:
             jaccard = len(intersection) / len(union) if union else 0
 
             # Title bonus (section title match is strong signal)
-            title_score = len(query_tokens & section_title_tokens) / len(query_tokens) if query_tokens else 0
+            title_score = (
+                len(query_tokens & section_title_tokens) / len(query_tokens) if query_tokens else 0
+            )
 
             total_score = (jaccard * 0.7) + (title_score * 0.3)
 
@@ -305,7 +298,9 @@ class SystemKnowledgeRAG:
             intersection = query_tokens & section_tokens
             union = query_tokens | section_tokens
             jaccard = len(intersection) / len(union) if union else 0
-            title_score = len(query_tokens & section_title_tokens) / len(query_tokens) if query_tokens else 0
+            title_score = (
+                len(query_tokens & section_title_tokens) / len(query_tokens) if query_tokens else 0
+            )
 
             total_score = (jaccard * 0.7) + (title_score * 0.3)
 

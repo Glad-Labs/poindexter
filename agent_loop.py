@@ -871,10 +871,6 @@ def main():
         return
     
     logger.info(f"📋 Phases to run: {', '.join(phases_to_run)}")
-    
-    # Initialize phase tracking
-    phase1_iteration = 0
-    iteration = 0
     logger.info(repo_summary)
 
     system_reasoner = dedent("""
@@ -933,9 +929,7 @@ def main():
     Always prefer "edit" type when possible - it's more reliable than diffs.
     """)
 
-    # ========================================================================
-    # PHASE 1: LINTER FIXES (Fast auto-fixes)
-    # ========================================================================
+# Initialize phase tracking variables (must be before conditionals)\n    phase1_iteration = 0\n    iteration = 0\n    \n    # ========================================================================\n    # PHASE 1: LINTER FIXES (Fast auto-fixes)\n    # ========================================================================
     
     if PHASE1_ENABLED:
         logger.info("")
@@ -1016,7 +1010,8 @@ def main():
     
     previous_context = ""
     iteration_times = []
-    iteration = 0  # Initialize iteration counter
+    # iteration already initialized above, reset for Phase 2
+    iteration = 0
     
     # Track failures to detect stuck loops
     failed_test_history: Dict[str, int] = {}  # Maps test name -> count of consecutive failures
@@ -1349,8 +1344,8 @@ def main():
             logger.info(f"⏱️  Iteration {iteration} completed in {iteration_duration:.1f}s")
             logger.info(f"   Average iteration time: {avg_time:.1f}s")
             logger.info(f"   Total iterations completed: {iteration}")
-            if MAX_ITERATIONS > 0 and iteration < MAX_ITERATIONS:
-                estimated_remaining = avg_time * (MAX_ITERATIONS - iteration)
+            if iteration < PHASE2_MAX_ITERATIONS:
+                estimated_remaining = avg_time * (PHASE2_MAX_ITERATIONS - iteration)
                 logger.info(f"   Estimated time remaining: {estimated_remaining/60:.1f} minutes")
             
             # Delay between iterations if configured
@@ -1372,7 +1367,8 @@ def main():
     if PHASE1_ENABLED:
         logger.info(f"Phase 1 (Linter): {phase1_iteration} iterations")
     
-    logger.info(f"Phase 2 (Reasoning): {iteration} iterations")
+    if PHASE2_ENABLED:
+        logger.info(f"Phase 2 (Reasoning): {iteration} iterations")
     
     if iteration_times:
         logger.info(f"Phase 2 time: {sum(iteration_times)/60:.1f} minutes")

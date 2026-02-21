@@ -16,7 +16,6 @@ from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from asyncpg import Pool
-
 from schemas.database_response_models import (
     AgentStatusResponse,
     CostLogResponse,

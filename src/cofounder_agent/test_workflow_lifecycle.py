@@ -3,16 +3,16 @@
 Complete Workflow Lifecycle Test
 Tests: Discovery → Creation → Validation → Serialization → Deserialization → Execution
 """
+import json
 import sys
 import time
-import json
 from datetime import datetime
 
-from services.phase_registry import PhaseRegistry
-from services.workflow_validator import WorkflowValidator
-from services.phase_mapper import PhaseMapper, build_full_phase_pipeline
-from services.workflow_executor import WorkflowExecutor
 from schemas.custom_workflow_schemas import CustomWorkflow, WorkflowPhase
+from services.phase_mapper import PhaseMapper, build_full_phase_pipeline
+from services.phase_registry import PhaseRegistry
+from services.workflow_executor import WorkflowExecutor
+from services.workflow_validator import WorkflowValidator
 
 
 def print_header(text):
@@ -59,13 +59,60 @@ def main():
         name="Blog Post Generation Pipeline",
         description="Complete workflow for AI-powered blog post generation",
         phases=[
-            WorkflowPhase(index=0, name="research", user_inputs={"topic": "AI trends 2026", "focus": "Industry analysis"}),
-            WorkflowPhase(index=1, name="draft", user_inputs={"prompt": "Create engaging blog post", "content": "Research findings", "target_audience": "Tech professionals", "tone": "informative"}),
-            WorkflowPhase(index=2, name="assess", user_inputs={"content": "Draft content", "criteria": "Clarity and engagement", "quality_threshold": 0.8}),
-            WorkflowPhase(index=3, name="refine", user_inputs={"content": "Draft content", "feedback": "Needs improvement", "revision_instructions": "Clarify technical concepts"}),
-            WorkflowPhase(index=4, name="image", user_inputs={"topic": "AI trends", "prompt": "Modern AI visualization", "style": "professional"}),
-            WorkflowPhase(index=5, name="publish", user_inputs={"content": "Final content", "title": "AI Trends 2026", "target": "blog.example.com", "slug": "ai-trends-2026", "tags": "AI, trends, technology"}),
-        ]
+            WorkflowPhase(
+                index=0,
+                name="research",
+                user_inputs={"topic": "AI trends 2026", "focus": "Industry analysis"},
+            ),
+            WorkflowPhase(
+                index=1,
+                name="draft",
+                user_inputs={
+                    "prompt": "Create engaging blog post",
+                    "content": "Research findings",
+                    "target_audience": "Tech professionals",
+                    "tone": "informative",
+                },
+            ),
+            WorkflowPhase(
+                index=2,
+                name="assess",
+                user_inputs={
+                    "content": "Draft content",
+                    "criteria": "Clarity and engagement",
+                    "quality_threshold": 0.8,
+                },
+            ),
+            WorkflowPhase(
+                index=3,
+                name="refine",
+                user_inputs={
+                    "content": "Draft content",
+                    "feedback": "Needs improvement",
+                    "revision_instructions": "Clarify technical concepts",
+                },
+            ),
+            WorkflowPhase(
+                index=4,
+                name="image",
+                user_inputs={
+                    "topic": "AI trends",
+                    "prompt": "Modern AI visualization",
+                    "style": "professional",
+                },
+            ),
+            WorkflowPhase(
+                index=5,
+                name="publish",
+                user_inputs={
+                    "content": "Final content",
+                    "title": "AI Trends 2026",
+                    "target": "blog.example.com",
+                    "slug": "ai-trends-2026",
+                    "tags": "AI, trends, technology",
+                },
+            ),
+        ],
     )
     print_success(f"Created workflow: {workflow.name}")
     print(f"    Phase sequence: {' → '.join([p.name for p in workflow.phases])}")
@@ -134,7 +181,7 @@ def main():
     results = executor.execute_workflow(
         loaded_workflow,
         initial_inputs={"user_request": "Create engaging blog post about AI trends"},
-        execution_id=f"lifecycle-exec-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        execution_id=f"lifecycle-exec-{datetime.now().strftime('%Y%m%d%H%M%S')}",
     )
     elapsed = time.time() - start_time
     print_success(f"Workflow executed in {elapsed:.4f}s")
@@ -147,8 +194,10 @@ def main():
     failed_count = 0
     for phase_name, result in results.items():
         icon = "[OK]" if result.status == "completed" else "[ERROR]"
-        print(f"  {icon} {phase_name:12} | Status: {result.status:10} | Time: {result.execution_time_ms:6.0f}ms | "
-              f"Inputs: {len(result.input_trace)}")
+        print(
+            f"  {icon} {phase_name:12} | Status: {result.status:10} | Time: {result.execution_time_ms:6.0f}ms | "
+            f"Inputs: {len(result.input_trace)}"
+        )
         if result.status == "completed":
             completed_count += 1
         else:
@@ -187,10 +236,10 @@ def main():
                 "status": result.status,
                 "output_keys": list(result.output.keys()),
                 "execution_time_ms": result.execution_time_ms,
-                "error": result.error
+                "error": result.error,
             }
             for phase_name, result in results.items()
-        }
+        },
     }
     results_json = json.dumps(final_output, indent=2)
     print_success(f"Results serialized ({len(results_json)} bytes)")

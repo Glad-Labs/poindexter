@@ -20,14 +20,14 @@ from schemas.custom_workflow_schemas import (
     CustomWorkflow,
     PhaseConfig,
     PhaseInputField,
-    WorkflowValidationResult,
-    WorkflowPhase,
     PhaseResult,
+    WorkflowPhase,
+    WorkflowValidationResult,
 )
-from services.phase_registry import PhaseRegistry
 from services.phase_mapper import build_full_phase_pipeline
-from services.workflow_validator import WorkflowValidator
+from services.phase_registry import PhaseRegistry
 from services.workflow_executor import WorkflowExecutor
+from services.workflow_validator import WorkflowValidator
 
 logger = logging.getLogger(__name__)
 
@@ -44,9 +44,7 @@ class CustomWorkflowsService:
         self.workflow_executor = WorkflowExecutor(self.phase_registry)
         logger.info("CustomWorkflowsService initialized")
 
-    async def create_workflow(
-        self, workflow: CustomWorkflow, owner_id: str
-    ) -> CustomWorkflow:
+    async def create_workflow(self, workflow: CustomWorkflow, owner_id: str) -> CustomWorkflow:
         """
         Create and persist a new custom workflow.
 
@@ -105,7 +103,9 @@ class CustomWorkflowsService:
                 owner_id,
             )
             if not row:
-                logger.warning(f"Workflow {workflow_id} not found or access denied for user {owner_id}")
+                logger.warning(
+                    f"Workflow {workflow_id} not found or access denied for user {owner_id}"
+                )
                 return None
             return self._row_to_workflow(row)
         except Exception as e:
@@ -267,7 +267,7 @@ class CustomWorkflowsService:
         self,
         workflow: CustomWorkflow,
         initial_inputs: Optional[Dict[str, Any]] = None,
-        execution_id: Optional[str] = None
+        execution_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Execute a workflow and return results.
@@ -298,16 +298,17 @@ class CustomWorkflowsService:
             }
         """
         import time
+
         from services.workflow_progress_service import get_workflow_progress_service
-        
+
         start_time = time.time()
-        
+
         if execution_id is None:
             execution_id = str(uuid.uuid4())
-        
+
         logger.info(f"Starting workflow execution: {execution_id}")
         logger.info(f"Workflow: {workflow.name} ({len(workflow.phases)} phases)")
-        
+
         # Initialize progress tracking
         progress_service = get_workflow_progress_service()
         try:
@@ -318,27 +319,32 @@ class CustomWorkflowsService:
                 total_phases=len(workflow.phases) if workflow.phases else 0,
             )
             progress_service.start_execution(
-                execution_id=execution_id,
-                message=f"Starting workflow: {workflow.name}"
+                execution_id=execution_id, message=f"Starting workflow: {workflow.name}"
             )
             logger.debug(f"Initialized progress tracking for execution {execution_id}")
-            
+
             # Register callback to broadcast progress to WebSocket clients
             def broadcast_progress(progress):
                 try:
                     import asyncio
+
                     from routes.websocket_routes import broadcast_workflow_progress
-                    asyncio.create_task(broadcast_workflow_progress(execution_id, progress.to_dict()))
+
+                    asyncio.create_task(
+                        broadcast_workflow_progress(execution_id, progress.to_dict())
+                    )
                 except Exception as e:
                     logger.debug(f"Could not broadcast progress: {e}")
-            
+
             progress_service.register_callback(execution_id, broadcast_progress)
-            
+
         except Exception as e:
             logger.warning(f"Failed to initialize progress tracking: {e}")
-        
+
         # Validate workflow before executing
-        is_valid, errors = self.workflow_validator.validate_for_execution(workflow, initial_inputs=initial_inputs)
+        is_valid, errors = self.workflow_validator.validate_for_execution(
+            workflow, initial_inputs=initial_inputs
+        )
         if not is_valid:
             error_msg = f"Workflow validation failed: {', '.join(errors)}"
             logger.error(error_msg)
@@ -358,7 +364,7 @@ class CustomWorkflowsService:
                 "error_message": error_msg,
                 "duration_ms": (time.time() - start_time) * 1000,
             }
-        
+
         try:
             # Execute workflow using executor
             phase_results = self.workflow_executor.execute_workflow(
@@ -367,23 +373,22 @@ class CustomWorkflowsService:
                 execution_id=execution_id,
                 progress_service=progress_service,  # Pass progress service to executor
             )
-            
+
             # Determine overall status
             failed_phases = [
-                name for name, result in phase_results.items()
-                if result.status == "failed"
+                name for name, result in phase_results.items() if result.status == "failed"
             ]
-            
+
             overall_status = "failed" if failed_phases else "completed"
-            
+
             # Get final output from last phase
             final_output = None
             if phase_results:
                 last_phase_result = list(phase_results.values())[-1]
                 final_output = last_phase_result.output
-            
+
             duration_ms = (time.time() - start_time) * 1000
-            
+
             # Update progress to completed
             try:
                 if overall_status == "completed":
@@ -400,7 +405,7 @@ class CustomWorkflowsService:
                     )
             except Exception as e:
                 logger.debug(f"Failed to update final progress: {e}")
-            
+
             # Persist execution if we have database
             try:
                 await self.persist_workflow_execution(
@@ -412,14 +417,18 @@ class CustomWorkflowsService:
                     duration_ms=duration_ms,
                     initial_input=initial_inputs,
                     final_output=final_output,
-                    error_message=None if overall_status == "completed" else ", ".join(failed_phases),
-                    completed_phases=len([r for r in phase_results.values() if r.status == "completed"]),
+                    error_message=(
+                        None if overall_status == "completed" else ", ".join(failed_phases)
+                    ),
+                    completed_phases=len(
+                        [r for r in phase_results.values() if r.status == "completed"]
+                    ),
                     total_phases=len(phase_results),
                     progress_percent=100 if overall_status == "completed" else 50,
                 )
             except Exception as e:
                 logger.warning(f"Failed to persist workflow execution: {e}")
-            
+
             return {
                 "execution_id": execution_id,
                 "workflow_id": workflow.id,
@@ -432,23 +441,31 @@ class CustomWorkflowsService:
                         "execution_time_ms": result.execution_time_ms,
                         "model_used": result.model_used,
                         "tokens_used": result.tokens_used,
-                        "input_trace": {
-                            k: {
-                                "source_phase": v.source_phase,
-                                "source_field": v.source_field,
-                                "user_provided": v.user_provided,
-                                "auto_mapped": v.auto_mapped,
+                        "input_trace": (
+                            {
+                                k: {
+                                    "source_phase": v.source_phase,
+                                    "source_field": v.source_field,
+                                    "user_provided": v.user_provided,
+                                    "auto_mapped": v.auto_mapped,
+                                }
+                                for k, v in result.input_trace.items()
                             }
-                            for k, v in result.input_trace.items()
-                        } if result.input_trace else {},
+                            if result.input_trace
+                            else {}
+                        ),
                     }
                     for name, result in phase_results.items()
                 },
                 "final_output": final_output,
-                "error_message": None if overall_status == "completed" else f"Phases failed: {', '.join(failed_phases)}",
+                "error_message": (
+                    None
+                    if overall_status == "completed"
+                    else f"Phases failed: {', '.join(failed_phases)}"
+                ),
                 "duration_ms": duration_ms,
             }
-        
+
         except Exception as e:
             logger.error(f"Workflow execution failed: {str(e)}", exc_info=True)
             try:
@@ -487,7 +504,7 @@ class CustomWorkflowsService:
         """
         # Use centralized WorkflowValidator
         is_valid, errors, warnings = self.workflow_validator.validate_workflow(workflow)
-        
+
         return WorkflowValidationResult(valid=is_valid, errors=errors, warnings=warnings)
 
     async def get_available_phases(self) -> List[Dict[str, Any]]:
@@ -501,7 +518,7 @@ class CustomWorkflowsService:
         """
         # Use registry to get all available phases
         all_phases = self.phase_registry.list_phases()
-        
+
         available_phases = []
         for phase_def in all_phases:
             phase_dict = {
@@ -531,7 +548,7 @@ class CustomWorkflowsService:
                 },
             }
             available_phases.append(phase_dict)
-        
+
         logger.info(f"Loaded {len(available_phases)} available phases from registry")
         return available_phases
         return available_phases
@@ -547,27 +564,31 @@ class CustomWorkflowsService:
         for p in workflow.phases:
             if isinstance(p, WorkflowPhase):
                 # New format: WorkflowPhase
-                phases_list.append({
-                    "index": p.index,
-                    "name": p.name,
-                    "user_inputs": p.user_inputs,
-                    "model_overrides": p.model_overrides,
-                    "input_mapping": p.input_mapping,
-                    "skip": p.skip,
-                })
+                phases_list.append(
+                    {
+                        "index": p.index,
+                        "name": p.name,
+                        "user_inputs": p.user_inputs,
+                        "model_overrides": p.model_overrides,
+                        "input_mapping": p.input_mapping,
+                        "skip": p.skip,
+                    }
+                )
             elif isinstance(p, dict):
                 # Dictionary representation
                 phases_list.append(p)
             else:
                 # Try to extract from PhaseConfig (old format)
-                if hasattr(p, 'name'):
-                    phases_list.append({
-                        "name": p.name,
-                        "agent": getattr(p, 'agent', None),
-                        "description": getattr(p, 'description', None),
-                        "timeout_seconds": getattr(p, 'timeout_seconds', 300),
-                        "max_retries": getattr(p, 'max_retries', 3),
-                    })
+                if hasattr(p, "name"):
+                    phases_list.append(
+                        {
+                            "name": p.name,
+                            "agent": getattr(p, "agent", None),
+                            "description": getattr(p, "description", None),
+                            "timeout_seconds": getattr(p, "timeout_seconds", 300),
+                            "max_retries": getattr(p, "max_retries", 3),
+                        }
+                    )
 
         phases_json = json.dumps(phases_list)
 
@@ -595,27 +616,31 @@ class CustomWorkflowsService:
         for p in workflow.phases:
             if isinstance(p, WorkflowPhase):
                 # New format: WorkflowPhase
-                phases_list.append({
-                    "index": p.index,
-                    "name": p.name,
-                    "user_inputs": p.user_inputs,
-                    "model_overrides": p.model_overrides,
-                    "input_mapping": p.input_mapping,
-                    "skip": p.skip,
-                })
+                phases_list.append(
+                    {
+                        "index": p.index,
+                        "name": p.name,
+                        "user_inputs": p.user_inputs,
+                        "model_overrides": p.model_overrides,
+                        "input_mapping": p.input_mapping,
+                        "skip": p.skip,
+                    }
+                )
             elif isinstance(p, dict):
                 # Dictionary representation
                 phases_list.append(p)
             else:
                 # Try to extract from PhaseConfig (old format)
-                if hasattr(p, 'name'):
-                    phases_list.append({
-                        "name": p.name,
-                        "agent": getattr(p, 'agent', None),
-                        "description": getattr(p, 'description', None),
-                        "timeout_seconds": getattr(p, 'timeout_seconds', 300),
-                        "max_retries": getattr(p, 'max_retries', 3),
-                    })
+                if hasattr(p, "name"):
+                    phases_list.append(
+                        {
+                            "name": p.name,
+                            "agent": getattr(p, "agent", None),
+                            "description": getattr(p, "description", None),
+                            "timeout_seconds": getattr(p, "timeout_seconds", 300),
+                            "max_retries": getattr(p, "max_retries", 3),
+                        }
+                    )
 
         phases_json = json.dumps(phases_list)
 
@@ -645,24 +670,28 @@ class CustomWorkflowsService:
             if isinstance(p, dict):
                 # Check if it's a WorkflowPhase format (has "index" field)
                 if "index" in p:
-                    phases.append(WorkflowPhase(
-                        index=p.get("index", i),
-                        name=p["name"],
-                        user_inputs=p.get("user_inputs", {}),
-                        model_overrides=p.get("model_overrides"),
-                        input_mapping=p.get("input_mapping", {}),
-                        skip=p.get("skip", False),
-                    ))
+                    phases.append(
+                        WorkflowPhase(
+                            index=p.get("index", i),
+                            name=p["name"],
+                            user_inputs=p.get("user_inputs", {}),
+                            model_overrides=p.get("model_overrides"),
+                            input_mapping=p.get("input_mapping", {}),
+                            skip=p.get("skip", False),
+                        )
+                    )
                 else:
                     # Old PhaseConfig format - convert to WorkflowPhase for consistency
-                    phases.append(WorkflowPhase(
-                        index=i,
-                        name=p["name"],
-                        user_inputs={},  # Old format didn't have per-phase user inputs
-                        model_overrides=None,
-                        input_mapping={},
-                        skip=False,
-                    ))
+                    phases.append(
+                        WorkflowPhase(
+                            index=i,
+                            name=p["name"],
+                            user_inputs={},  # Old format didn't have per-phase user inputs
+                            model_overrides=None,
+                            input_mapping={},
+                            skip=False,
+                        )
+                    )
 
         return CustomWorkflow(
             id=str(row["id"]) if row.get("id") is not None else None,
@@ -697,7 +726,7 @@ class CustomWorkflowsService:
     ) -> bool:
         """
         Save workflow execution results to database.
-        
+
         Args:
             execution_id: Unique execution ID
             workflow_id: ID of the workflow executed
@@ -713,7 +742,7 @@ class CustomWorkflowsService:
             progress_percent: Completion percentage
             tags: Optional tags for execution
             metadata: Optional metadata
-            
+
         Returns:
             True if successful
         """
@@ -730,9 +759,9 @@ class CustomWorkflowsService:
                 if hasattr(value, "to_dict") and callable(getattr(value, "to_dict")):
                     return value.to_dict()
                 return str(value)
-            
+
             now = datetime.now(timezone.utc)
-            
+
             # Convert phase results to JSON
             phase_results_json = json.dumps(
                 phase_results or {},
@@ -751,7 +780,7 @@ class CustomWorkflowsService:
             )
             tags_json = json.dumps(tags or [], default=_json_default_serializer)
             metadata_json = json.dumps(metadata or {}, default=_json_default_serializer)
-            
+
             await self.database_service.pool.execute(
                 """
                 INSERT INTO workflow_executions (
@@ -786,13 +815,13 @@ class CustomWorkflowsService:
                 tags_json,
                 metadata_json,
             )
-            
+
             logger.info(
                 f"Persisted workflow execution: {execution_id} for workflow {workflow_id}, "
                 f"status: {execution_status}, duration: {duration_ms}ms"
             )
             return True
-            
+
         except Exception as e:
             logger.error(f"Failed to persist workflow execution {execution_id}: {e}", exc_info=True)
             return False
@@ -802,11 +831,11 @@ class CustomWorkflowsService:
     ) -> Optional[Dict]:
         """
         Get a workflow execution by ID.
-        
+
         Args:
             execution_id: ID of execution to retrieve
             owner_id: Optional owner ID to verify ownership
-            
+
         Returns:
             Execution record or None if not found
         """
@@ -822,12 +851,12 @@ class CustomWorkflowsService:
                     "SELECT * FROM workflow_executions WHERE id = $1",
                     execution_id,
                 )
-            
+
             if not row:
                 return None
-            
+
             return self._row_to_execution(row)
-            
+
         except Exception as e:
             logger.error(f"Failed to get workflow execution {execution_id}: {e}")
             return None
@@ -842,14 +871,14 @@ class CustomWorkflowsService:
     ):
         """
         Get executions for a workflow.
-        
+
         Args:
             workflow_id: ID of workflow
             owner_id: Owner ID for authorization
             limit: Max results
             offset: Pagination offset
             status: Optional status filter (completed, failed, pending)
-            
+
         Returns:
             List of execution records and total count
         """
@@ -858,20 +887,20 @@ class CustomWorkflowsService:
             where_clauses = ["workflow_id = $1", "owner_id = $2"]
             params = [workflow_id, owner_id]
             param_index = 3
-            
+
             if status:
                 where_clauses.append(f"execution_status = ${param_index}")
                 params.append(status)
                 param_index += 1
-            
+
             where_sql = " AND ".join(where_clauses)
-            
+
             # Get total count
             total_count = await self.database_service.pool.fetchval(
                 f"SELECT COUNT(*) FROM workflow_executions WHERE {where_sql}",
                 *params,
             )
-            
+
             # Get paginated results
             rows = await self.database_service.pool.fetch(
                 f"""
@@ -884,16 +913,16 @@ class CustomWorkflowsService:
                 limit,
                 offset,
             )
-            
+
             executions = [self._row_to_execution(row) for row in rows]
-            
+
             return {
                 "total": total_count,
                 "executions": executions,
                 "limit": limit,
                 "offset": offset,
             }
-            
+
         except Exception as e:
             logger.error(f"Failed to get workflow executions for {workflow_id}: {e}")
             return {
@@ -925,7 +954,9 @@ class CustomWorkflowsService:
             "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
         }
 
-    async def get_all_executions(self, owner_id: str, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
+    async def get_all_executions(
+        self, owner_id: str, limit: int = 100, offset: int = 0
+    ) -> List[Dict[str, Any]]:
         """Get all workflow executions for a user."""
         try:
             query = """
@@ -982,7 +1013,9 @@ class CustomWorkflowsService:
             logger.error(f"Error fetching workflow statistics: {str(e)}")
             return {}
 
-    async def get_performance_metrics(self, owner_id: str, time_range: str = "30d") -> Dict[str, Any]:
+    async def get_performance_metrics(
+        self, owner_id: str, time_range: str = "30d"
+    ) -> Dict[str, Any]:
         """Get workflow performance metrics over time."""
         try:
             interval_map = {
@@ -992,7 +1025,7 @@ class CustomWorkflowsService:
                 "all": "1 year",
             }
             interval = interval_map.get(time_range, "30 days")
-            
+
             query = """
                 SELECT 
                     DATE_TRUNC('day', created_at)::DATE as date,
@@ -1008,20 +1041,28 @@ class CustomWorkflowsService:
                 ORDER BY date DESC
             """
             rows = await self.db.execute_query(query, (owner_id, interval))
-            
+
             metrics = []
             if rows:
                 for row in rows:
-                    metrics.append({
-                        "date": str(row.get("date", "")),
-                        "total_executions": row.get("executions", 0),
-                        "successful_executions": row.get("successful", 0),
-                        "failed_executions": row.get("failed", 0),
-                        "success_rate": (row.get("successful", 0) / row.get("executions", 1)) * 100 if row.get("executions", 0) > 0 else 0,
-                        "average_duration_seconds": float(row.get("avg_duration_seconds", 0) or 0),
-                        "max_completion_percent": float(row.get("max_completion", 0) or 0),
-                    })
-            
+                    metrics.append(
+                        {
+                            "date": str(row.get("date", "")),
+                            "total_executions": row.get("executions", 0),
+                            "successful_executions": row.get("successful", 0),
+                            "failed_executions": row.get("failed", 0),
+                            "success_rate": (
+                                (row.get("successful", 0) / row.get("executions", 1)) * 100
+                                if row.get("executions", 0) > 0
+                                else 0
+                            ),
+                            "average_duration_seconds": float(
+                                row.get("avg_duration_seconds", 0) or 0
+                            ),
+                            "max_completion_percent": float(row.get("max_completion", 0) or 0),
+                        }
+                    )
+
             return {
                 "time_range": time_range,
                 "metrics": metrics,
@@ -1045,11 +1086,19 @@ class CustomWorkflowsService:
                 return {
                     **execution,
                     "details": {
-                        "input_fields": list(execution.get("initial_input", {}).keys()) if execution.get("initial_input") else [],
-                        "output_fields": list(execution.get("final_output", {}).keys()) if execution.get("final_output") else [],
+                        "input_fields": (
+                            list(execution.get("initial_input", {}).keys())
+                            if execution.get("initial_input")
+                            else []
+                        ),
+                        "output_fields": (
+                            list(execution.get("final_output", {}).keys())
+                            if execution.get("final_output")
+                            else []
+                        ),
                         "phase_count": execution.get("total_phases", 0),
                         "completed_phase_count": execution.get("completed_phases", 0),
-                    }
+                    },
                 }
             raise ValueError(f"Execution {execution_id} not found or not owned by user")
         except Exception as e:

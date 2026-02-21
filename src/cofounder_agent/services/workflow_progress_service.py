@@ -70,8 +70,7 @@ class WorkflowProgressService:
         )
         self._progress[execution_id] = progress
         logger.info(
-            f"📊 Created progress tracker for execution {execution_id} "
-            f"({total_phases} phases)"
+            f"📊 Created progress tracker for execution {execution_id} " f"({total_phases} phases)"
         )
         return progress
 
@@ -114,7 +113,9 @@ class WorkflowProgressService:
         if message:
             progress.message = message
         else:
-            progress.message = f"Executing phase {phase_index + 1}/{progress.total_phases}: {phase_name}"
+            progress.message = (
+                f"Executing phase {phase_index + 1}/{progress.total_phases}: {phase_name}"
+            )
 
         progress.timestamp = datetime.now().isoformat()
 
@@ -148,7 +149,9 @@ class WorkflowProgressService:
         if progress.total_phases > 0:
             progress.progress_percent = (progress.completed_phases / progress.total_phases) * 100
 
-        progress.message = f"Completed phase {progress.completed_phases}/{progress.total_phases}: {phase_name}"
+        progress.message = (
+            f"Completed phase {progress.completed_phases}/{progress.total_phases}: {phase_name}"
+        )
         progress.timestamp = datetime.now().isoformat()
 
         self._notify_callbacks(execution_id, progress)

@@ -17,7 +17,6 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-
 from routes.auth_unified import get_current_user
 from schemas.auth_schemas import UserProfile
 from services.database_service import DatabaseService

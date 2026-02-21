@@ -20,10 +20,10 @@ logger = logging.getLogger(__name__)
 async def run_migrations(database_service) -> bool:
     """
     Run all pending migrations in the migrations/ directory.
-    
+
     Args:
         database_service: The DatabaseService instance with pool access
-        
+
     Returns:
         bool: True if all migrations completed successfully, False otherwise
     """
@@ -33,7 +33,9 @@ async def run_migrations(database_service) -> bool:
             return False
 
         migrations_dir = Path(__file__).parent
-        migration_files = sorted([f for f in migrations_dir.glob("*.py") if f.name != "__init__.py"])
+        migration_files = sorted(
+            [f for f in migrations_dir.glob("*.py") if f.name != "__init__.py"]
+        )
 
         if not migration_files:
             logger.info("No migrations found")

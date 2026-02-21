@@ -18,7 +18,6 @@ from uuid import uuid4
 
 import asyncpg
 from asyncpg import Pool
-
 from schemas.database_response_models import (
     AuthorResponse,
     CategoryResponse,
@@ -100,7 +99,7 @@ class ContentDatabase(DatabaseServiceMixin):
             try:
                 # Determine published_at timestamp based on status
                 is_published = post_data.get("status") == "published"
-                
+
                 row = await conn.fetchrow(
                     """
                     INSERT INTO posts (

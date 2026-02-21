@@ -45,23 +45,21 @@ class PhaseConfig(BaseModel):
 
 class WorkflowPhase(BaseModel):
     """Flexible phase definition supporting any order and input mapping"""
-    
+
     index: int = Field(..., description="Phase execution order (0-based)")
     name: str = Field(..., description="Phase name from registry (research, draft, assess, etc)")
     user_inputs: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="User-provided input values that override defaults"
+        default_factory=dict, description="User-provided input values that override defaults"
     )
     model_overrides: Optional[str] = Field(
-        None,
-        description="Optional override of model/agent for this phase"
+        None, description="Optional override of model/agent for this phase"
     )
     input_mapping: Dict[str, str] = Field(
         default_factory=dict,
-        description="Map previous phase output field to this phase input field: {target_key: source_phase.source_field}"
+        description="Map previous phase output field to this phase input field: {target_key: source_phase.source_field}",
     )
     skip: bool = Field(False, description="Skip this phase in execution")
-    
+
     @field_validator("name")
     @classmethod
     def validate_name(cls, v: str) -> str:
@@ -75,8 +73,10 @@ class WorkflowPhase(BaseModel):
 
 class InputTrace(BaseModel):
     """Trace of where an input value came from"""
-    
-    source_phase: Optional[str] = Field(None, description="Previous phase name that produced this input")
+
+    source_phase: Optional[str] = Field(
+        None, description="Previous phase name that produced this input"
+    )
     source_field: Optional[str] = Field(None, description="Output field from source phase")
     user_provided: bool = Field(False, description="Whether user explicitly provided this value")
     auto_mapped: bool = Field(False, description="Whether this was auto-mapped by the system")
@@ -84,7 +84,7 @@ class InputTrace(BaseModel):
 
 class PhaseResult(BaseModel):
     """Result from executing a single phase"""
-    
+
     status: str = Field(..., description="Phase status: completed, failed, skipped")
     output: Dict[str, Any] = Field(default_factory=dict, description="Output data from phase")
     error: Optional[str] = Field(None, description="Error message if phase failed")
@@ -93,7 +93,7 @@ class PhaseResult(BaseModel):
     tokens_used: Optional[int] = Field(None, description="Number of tokens used (if applicable)")
     input_trace: Dict[str, InputTrace] = Field(
         default_factory=dict,
-        description="Trace of where each input came from: {input_key: InputTrace}"
+        description="Trace of where each input came from: {input_key: InputTrace}",
     )
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional phase metadata")
 
@@ -104,20 +104,19 @@ class CustomWorkflow(BaseModel):
     id: Optional[str] = Field(None, description="Workflow UUID (auto-generated)")
     name: str = Field(..., description="Workflow name (e.g., 'My Blog Pipeline')")
     description: str = Field(..., description="Workflow description and purpose")
-    
+
     # Support both old (phases: List[PhaseConfig]) and new (phases: List[WorkflowPhase]) formats
     phases: List[Any] = Field(..., description="Ordered list of phases (flexible format)")
-    
+
     owner_id: Optional[str] = Field(None, description="User ID of workflow owner")
     created_at: Optional[datetime] = Field(None, description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
     tags: List[str] = Field(default_factory=list, description="Tags for categorization")
     is_template: bool = Field(False, description="Whether this is a saved template")
-    
+
     # Store phase definitions at save time for self-documenting workflows
     phase_definitions: Optional[Dict[str, Dict[str, Any]]] = Field(
-        None,
-        description="Snapshot of phase definitions at save time (from PhaseRegistry)"
+        None, description="Snapshot of phase definitions at save time (from PhaseRegistry)"
     )
 
     @field_validator("name")
@@ -144,15 +143,15 @@ class CustomWorkflow(BaseModel):
         """Validate that at least one phase is defined"""
         if not v or len(v) == 0:
             raise ValueError("Workflow must have at least one phase")
-        
+
         # Check phase names are unique (if they have 'name' field)
         phase_names = []
         for p in v:
-            if hasattr(p, 'name'):
+            if hasattr(p, "name"):
                 phase_names.append(p.name)
-            elif isinstance(p, dict) and 'name' in p:
-                phase_names.append(p['name'])
-        
+            elif isinstance(p, dict) and "name" in p:
+                phase_names.append(p["name"])
+
         if phase_names and len(phase_names) != len(set(phase_names)):
             raise ValueError("Duplicate phase names in workflow")
         return v
@@ -161,11 +160,19 @@ class CustomWorkflow(BaseModel):
 class WorkflowExecutionRequest(BaseModel):
     """Parameters for executing a workflow"""
 
-    workflow_id: Optional[str] = Field(None, description="ID of workflow to execute (for saved workflows)")
-    phases: Optional[List[PhaseConfig]] = Field(None, description="Inline phases (for ad-hoc execution)")
-    input_data: Dict[str, Any] = Field(default_factory=dict, description="Input parameters for workflow")
+    workflow_id: Optional[str] = Field(
+        None, description="ID of workflow to execute (for saved workflows)"
+    )
+    phases: Optional[List[PhaseConfig]] = Field(
+        None, description="Inline phases (for ad-hoc execution)"
+    )
+    input_data: Dict[str, Any] = Field(
+        default_factory=dict, description="Input parameters for workflow"
+    )
     skip_phases: Optional[List[str]] = Field(None, description="Phase names to skip")
-    quality_threshold: Optional[float] = Field(None, ge=0.0, le=1.0, description="Override quality threshold")
+    quality_threshold: Optional[float] = Field(
+        None, ge=0.0, le=1.0, description="Override quality threshold"
+    )
     tags: Optional[List[str]] = Field(None, description="Tags for this execution")
 
 
@@ -179,8 +186,7 @@ class WorkflowExecutionResponse(BaseModel):
     phases: List[str] = Field(..., description="Phases in this workflow")
     progress_percent: int = Field(0, ge=0, le=100, description="Execution progress percentage")
     phase_results: Dict[str, PhaseResult] = Field(
-        default_factory=dict,
-        description="Results from each phase execution with input tracing"
+        default_factory=dict, description="Results from each phase execution with input tracing"
     )
     final_output: Optional[Any] = Field(None, description="Final output from last phase")
     error_message: Optional[str] = Field(None, description="Error message if execution failed")
@@ -228,7 +234,9 @@ class PhaseInputField(BaseModel):
     required: bool = Field(False, description="Whether this input is required")
     placeholder: Optional[str] = Field(None, description="Optional placeholder text")
     default_value: Optional[Any] = Field(None, description="Optional default value")
-    options: List[str] = Field(default_factory=list, description="Select options when input_type=select")
+    options: List[str] = Field(
+        default_factory=list, description="Select options when input_type=select"
+    )
 
 
 class AvailablePhase(BaseModel):

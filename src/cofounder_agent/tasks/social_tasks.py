@@ -45,9 +45,7 @@ class SocialResearchTask(PureTask):
         # Use centralized prompt manager
         pm = get_prompt_manager()
         prompt = pm.get_prompt(
-            "social.research_trends",
-            topic=topic,
-            platforms=", ".join(platforms)
+            "social.research_trends", topic=topic, platforms=", ".join(platforms)
         )
 
         response = await model_router.query_with_fallback(
@@ -134,9 +132,9 @@ class SocialCreativeTask(PureTask):
             content_type=content_type,
             platform=platform,
             topic=topic,
-            char_limit=config['char_limit'],
-            format_guide=config['format'],
-            hashtag_count="3-5"
+            char_limit=config["char_limit"],
+            format_guide=config["format"],
+            hashtag_count="3-5",
         )
 
         response = await model_router.query_with_fallback(

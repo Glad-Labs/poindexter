@@ -2,4 +2,4 @@
 
 from .market_insight_agent import MarketInsightAgent
 
-__all__ = ['MarketInsightAgent']
+__all__ = ["MarketInsightAgent"]

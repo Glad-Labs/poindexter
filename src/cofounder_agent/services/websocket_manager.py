@@ -6,9 +6,9 @@ Handles WebSocket connections, message broadcasting, and event streaming
 import asyncio
 import json
 import logging
-from typing import Dict, Set, Optional
+from dataclasses import asdict, dataclass
 from datetime import datetime
-from dataclasses import dataclass, asdict
+from typing import Dict, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class WebSocketMessage:
     """Standard WebSocket message format"""
+
     type: str
     event: str
     data: dict
@@ -46,10 +47,10 @@ class WebSocketManager:
         async with self.lock:
             if namespace not in self.active_connections:
                 self.active_connections[namespace] = set()
-            
+
             self.active_connections[namespace].add(websocket)
             self.connection_count += 1
-            
+
             logger.info(
                 f"WebSocket connected to namespace '{namespace}' "
                 f"(total: {self.connection_count})"
@@ -61,7 +62,7 @@ class WebSocketManager:
             if namespace in self.active_connections:
                 self.active_connections[namespace].discard(websocket)
                 self.connection_count -= 1
-                
+
                 logger.info(
                     f"WebSocket disconnected from namespace '{namespace}' "
                     f"(total: {self.connection_count})"
@@ -80,20 +81,20 @@ class WebSocketManager:
             event=event,
             data=data,
         )
-        
+
         message_json = message.to_json()
         disconnected = set()
-        
+
         async with self.lock:
             connections = self.active_connections.get(namespace, set()).copy()
-        
+
         for connection in connections:
             try:
                 await connection.send_text(message_json)
             except Exception as e:
                 logger.warning(f"Failed to send message to connection: {e}")
                 disconnected.add(connection)
-        
+
         # Clean up disconnected connections
         if disconnected:
             async with self.lock:

@@ -164,7 +164,9 @@ class ContentService:
             from services.writing_style_integration import WritingStyleIntegrationService
 
             # Select LLM for draft phase
-            draft_model = model or (self.model_router.select_model("draft") if self.model_router else None)
+            draft_model = model or (
+                self.model_router.select_model("draft") if self.model_router else None
+            )
 
             # Create LLMClient with selected model
             llm_client = LLMClient(model_name=draft_model) if draft_model else LLMClient()
@@ -176,8 +178,12 @@ class ContentService:
             writing_style_guidance = ""
             if self.writing_style_service:
                 try:
-                    style_data = await self.writing_style_service.get_sample_for_content_generation()
-                    writing_style_guidance = style_data.get("writing_style_guidance", "") if style_data else ""
+                    style_data = (
+                        await self.writing_style_service.get_sample_for_content_generation()
+                    )
+                    writing_style_guidance = (
+                        style_data.get("writing_style_guidance", "") if style_data else ""
+                    )
                 except Exception as e:
                     logger.warning(f"Could not retrieve writing style: {e}")
 
@@ -284,7 +290,9 @@ class ContentService:
             from agents.content_agent.services.llm_client import LLMClient
 
             # Select LLM for refine phase
-            refine_model = model or (self.model_router.select_model("refine") if self.model_router else None)
+            refine_model = model or (
+                self.model_router.select_model("refine") if self.model_router else None
+            )
 
             llm_client = LLMClient(model_name=refine_model) if refine_model else LLMClient()
             creative_agent = CreativeAgent(llm_client=llm_client)
@@ -384,7 +392,9 @@ class ContentService:
             Dictionary with formatted_content, metadata, seo_data, etc.
         """
         try:
-            from agents.content_agent.agents.postgres_publishing_agent import PostgreSQLPublishingAgent
+            from agents.content_agent.agents.postgres_publishing_agent import (
+                PostgreSQLPublishingAgent,
+            )
 
             publishing_agent = PostgreSQLPublishingAgent()
             result = await publishing_agent.run(content)

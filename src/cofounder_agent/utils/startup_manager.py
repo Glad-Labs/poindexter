@@ -108,7 +108,9 @@ class StartupManager:
                 except Exception as e:
                     import traceback
 
-                    logger.warning(f"[WARNING] SDXL warmup failed (non-critical): {type(e).__name__}: {e}")
+                    logger.warning(
+                        f"[WARNING] SDXL warmup failed (non-critical): {type(e).__name__}: {e}"
+                    )
                     logger.debug(f"    Traceback: {traceback.format_exc()}")
                     # Continue anyway - SDXL will load lazily when first used
 
@@ -254,7 +256,9 @@ class StartupManager:
 
     async def _initialize_content_critique(self) -> None:
         """DEPRECATED: Content critique is now handled by UnifiedQualityService in TaskExecutor"""
-        logger.debug("⏭️  Skipping _initialize_content_critique (now handled by UnifiedQualityService)")
+        logger.debug(
+            "⏭️  Skipping _initialize_content_critique (now handled by UnifiedQualityService)"
+        )
 
     async def _initialize_task_executor(self) -> None:
         """Initialize background task executor (WITHOUT starting it yet)
@@ -357,7 +361,7 @@ class StartupManager:
         if is_dev_mode:
             logger.info("  ⏭️  Skipping agent registry initialization (DEVELOPMENT_MODE enabled)")
             return
-            
+
         try:
             from agents.registry import get_agent_registry
             from utils.agent_initialization import register_all_agents
@@ -367,7 +371,9 @@ class StartupManager:
             agent_count = len(initialized_registry)
             logger.info(f"  Agent registry initialized with {agent_count} agents")
         except Exception as e:
-            logger.warning(f"[WARNING] Agent registry initialization failed (non-critical): {type(e).__name__}: {e}")
+            logger.warning(
+                f"[WARNING] Agent registry initialization failed (non-critical): {type(e).__name__}: {e}"
+            )
             # Continue anyway - system can function without agent registry
 
     async def _initialize_custom_workflows_service(self) -> None:
@@ -378,12 +384,18 @@ class StartupManager:
 
             if self.database_service:
                 self.custom_workflows_service = CustomWorkflowsService(self.database_service)
-                logger.info("   Custom workflows service initialized - users can create custom workflows")
+                logger.info(
+                    "   Custom workflows service initialized - users can create custom workflows"
+                )
             else:
-                logger.warning("   Custom workflows service not available - database service required")
+                logger.warning(
+                    "   Custom workflows service not available - database service required"
+                )
                 self.custom_workflows_service = None
         except Exception as e:
-            logger.warning(f"   Custom workflows service initialization failed (non-critical): {type(e).__name__}: {e}")
+            logger.warning(
+                f"   Custom workflows service initialization failed (non-critical): {type(e).__name__}: {e}"
+            )
             self.custom_workflows_service = None
 
     async def _initialize_template_execution_service(self) -> None:
@@ -393,13 +405,21 @@ class StartupManager:
             from services.template_execution_service import TemplateExecutionService
 
             if self.custom_workflows_service:
-                self.template_execution_service = TemplateExecutionService(self.custom_workflows_service)
-                logger.info("   Template execution service initialized - users can execute workflow templates")
+                self.template_execution_service = TemplateExecutionService(
+                    self.custom_workflows_service
+                )
+                logger.info(
+                    "   Template execution service initialized - users can execute workflow templates"
+                )
             else:
-                logger.warning("   Template execution service not available - custom workflows service required")
+                logger.warning(
+                    "   Template execution service not available - custom workflows service required"
+                )
                 self.template_execution_service = None
         except Exception as e:
-            logger.warning(f"   Template execution service initialization failed (non-critical): {type(e).__name__}: {e}")
+            logger.warning(
+                f"   Template execution service initialization failed (non-critical): {type(e).__name__}: {e}"
+            )
             self.template_execution_service = None
 
     async def _warmup_sdxl_models(self) -> None:
@@ -421,7 +441,9 @@ class StartupManager:
 
         # Skip warmup if GPU is not available (SDXL only works on GPU)
         if not torch.cuda.is_available():
-            logger.debug("  SDXL warmup: GPU not available, skipping model warmup (lazy loading enabled)")
+            logger.debug(
+                "  SDXL warmup: GPU not available, skipping model warmup (lazy loading enabled)"
+            )
             return
 
         try:
@@ -453,7 +475,9 @@ class StartupManager:
                         "  [OK] SDXL models loaded successfully! First requests will be fast."
                     )
                 else:
-                    logger.warning("  [WARNING] SDXL warmup generation failed (will initialize lazily)")
+                    logger.warning(
+                        "  [WARNING] SDXL warmup generation failed (will initialize lazily)"
+                    )
 
             finally:
                 # Clean up temp file

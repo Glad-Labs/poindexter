@@ -169,6 +169,7 @@ PARAMETER learning_rate {learning_rate}
             use_new_sdk = False
             try:
                 import google.genai as genai
+
                 use_new_sdk = True
             except ImportError:
                 import google.generativeai as genai

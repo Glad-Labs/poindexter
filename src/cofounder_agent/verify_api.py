@@ -1,8 +1,9 @@
 #!/usr/bin/env python
 """Quick API endpoint verification"""
-import requests
 import json
 import sys
+
+import requests
 
 BASE_URL = "http://localhost:8000"
 

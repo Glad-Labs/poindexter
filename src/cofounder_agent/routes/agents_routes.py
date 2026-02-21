@@ -20,7 +20,6 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
-
 from schemas.agent_schemas import (
     AgentCommand,
     AgentCommandResult,
@@ -156,7 +155,9 @@ async def get_all_agents_status(orchestrator=Depends(get_orchestrator)):
         )
     except Exception as e:
         logger.error(f"Error fetching all agents status: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch agents status: {str(e)}") from e
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch agents status: {str(e)}"
+        ) from e
 
 
 @router.get("/{agent_name}/status", response_model=AgentStatus)
@@ -195,7 +196,9 @@ async def get_agent_status(agent_name: str, orchestrator=Depends(get_orchestrato
         return agent_status
     except Exception as e:
         logger.error(f"Error fetching status for agent {agent_name}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch agent status: {str(e)}") from e
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch agent status: {str(e)}"
+        ) from e
 
 
 @router.post("/{agent_name}/command", response_model=AgentCommandResult)

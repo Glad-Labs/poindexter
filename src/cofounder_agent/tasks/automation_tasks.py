@@ -55,7 +55,7 @@ class EmailGenerateTask(PureTask):
             campaign_name=topic,
             target_audience=audience,
             goal="Engagement" if style == "promotional" else "Inform",
-            tone=style
+            tone=style,
         )
 
         response = await model_router.query_with_fallback(
@@ -196,11 +196,7 @@ class SummarizeTask(PureTask):
 
         # Use centralized prompt manager
         pm = get_prompt_manager()
-        prompt = pm.get_prompt(
-            "task.content_summarization",
-            length=length,
-            content=content
-        )
+        prompt = pm.get_prompt("task.content_summarization", length=length, content=content)
 
         response = await model_router.query_with_fallback(
             prompt=prompt,

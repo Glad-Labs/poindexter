@@ -13,7 +13,6 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-
 from routes.auth_unified import get_current_user
 from schemas.auth_schemas import UserProfile
 from schemas.metrics_schemas import (
@@ -625,9 +624,8 @@ async def get_kpi_analytics(
         total_cost = cost_summary.get("month_cost", 0.0) if cost_summary else 0.0
 
         # Query task counts from database
-        from sqlalchemy import and_, func, select
-
         from schemas.common_schemas import ContentTask
+        from sqlalchemy import and_, func, select
 
         async with db_service.get_session() as session:
             # Count completed tasks
@@ -744,11 +742,11 @@ async def get_kpi_analytics(
 async def get_performance_metrics() -> Dict[str, Any]:
     """
     Get API performance metrics aggregated from all routes.
-    
+
     This endpoint is designed to work with frontend client-side metrics collection.
     The frontend collects metrics via window.apiMetrics and this endpoint returns
     aggregated server-side perspective on performance including cache hit rates.
-    
+
     **Returns:**
     - route_latencies: Per-endpoint latency percentiles (p50, p95, p99)
     - model_router_decisions: Distribution of model provider selections
@@ -757,12 +755,17 @@ async def get_performance_metrics() -> Dict[str, Any]:
     - timestamp: When metrics were computed
     """
     try:
-        from services.redis_cache import RedisCache
         from collections import defaultdict
-        
+
+        from services.redis_cache import RedisCache
+
         # Get Redis cache for hit rate statistics
-        redis_cache = getattr(db_service.app.state, "redis_cache", None) if hasattr(db_service, 'app') else None
-        
+        redis_cache = (
+            getattr(db_service.app.state, "redis_cache", None)
+            if hasattr(db_service, "app")
+            else None
+        )
+
         # Calculate cache statistics from Redis if available
         cache_stats = {
             "agent_registry": {
@@ -776,9 +779,9 @@ async def get_performance_metrics() -> Dict[str, Any]:
             "database_health": {
                 "ttl": 30,
                 "estimated_hit_rate": 88,  # Health checks called frequently
-            }
+            },
         }
-        
+
         # Common route patterns that benefit from caching
         route_latencies = {
             "/api/agents/registry": {
@@ -787,7 +790,7 @@ async def get_performance_metrics() -> Dict[str, Any]:
                 "p99_ms": 200,
                 "count": 1200,
                 "cached_count": 960,  # Estimated from TTL and typical access
-                "cache_hit_rate": 80
+                "cache_hit_rate": 80,
             },
             "/api/models/status": {
                 "p50_ms": 35,
@@ -795,7 +798,7 @@ async def get_performance_metrics() -> Dict[str, Any]:
                 "p99_ms": 150,
                 "count": 2400,
                 "cached_count": 2208,
-                "cache_hit_rate": 92
+                "cache_hit_rate": 92,
             },
             "/api/health": {
                 "p50_ms": 25,
@@ -803,7 +806,7 @@ async def get_performance_metrics() -> Dict[str, Any]:
                 "p99_ms": 100,
                 "count": 8000,
                 "cached_count": 7040,
-                "cache_hit_rate": 88
+                "cache_hit_rate": 88,
             },
             "/api/models/available": {
                 "p50_ms": 150,
@@ -811,10 +814,10 @@ async def get_performance_metrics() -> Dict[str, Any]:
                 "p99_ms": 500,
                 "count": 200,
                 "cached_count": 40,
-                "cache_hit_rate": 20
-            }
+                "cache_hit_rate": 20,
+            },
         }
-        
+
         # Model router decision distribution
         model_router_decisions = {
             "ollama": 4500,
@@ -822,17 +825,17 @@ async def get_performance_metrics() -> Dict[str, Any]:
             "openai": 300,
             "google": 200,
             "huggingface": 100,
-            "fallback": 100
+            "fallback": 100,
         }
-        
+
         # Calculate aggregate statistics
         total_requests = sum(r["count"] for r in route_latencies.values())
         total_cached = sum(r["cached_count"] for r in route_latencies.values())
         overall_cache_hit_rate = (total_cached / total_requests * 100) if total_requests > 0 else 0
-        
+
         total_latency = sum(r["p50_ms"] for r in route_latencies.values())
         avg_latency = total_latency / len(route_latencies) if route_latencies else 0
-        
+
         return {
             "route_latencies": route_latencies,
             "model_router_decisions": model_router_decisions,
@@ -843,9 +846,9 @@ async def get_performance_metrics() -> Dict[str, Any]:
                 "overall_cache_hit_rate": round(overall_cache_hit_rate, 2),
                 "avg_latency_ms": round(avg_latency, 2),
                 "top_endpoint": "/api/health",
-                "model_usage_leader": "ollama"
+                "model_usage_leader": "ollama",
             },
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
     except Exception as e:
         logger.error(f"Error getting performance metrics: {str(e)}")
@@ -860,8 +863,8 @@ async def get_performance_metrics() -> Dict[str, Any]:
                 "overall_cache_hit_rate": 0,
                 "avg_latency_ms": 0,
                 "top_endpoint": "N/A",
-                "model_usage_leader": "N/A"
+                "model_usage_leader": "N/A",
             },
             "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
