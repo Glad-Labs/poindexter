@@ -24,6 +24,10 @@ REASONER_MODEL = "deepseek-r1-qwen-70b-q4km"
 CODER_MODEL = "qwen3-coder-32b-q4km"
 OLLAMA_API_URL = "http://localhost:11434/api/generate"
 
+# Configuration flags
+SKIP_TESTS = os.environ.get("SKIP_TESTS", "false").lower() == "true"
+CONTINUE_ON_TEST_FAILURE = True  # Don't stop if tests fail
+
 # Project-specific configuration for Glad Labs
 EXCLUDED_DIRS = {
     "node_modules", ".git", "__pycache__", ".pytest_cache", 
@@ -38,7 +42,7 @@ EXCLUDED_EXTENSIONS = {
 
 # Test commands for different parts of the codebase
 TEST_COMMANDS = {
-    "python": ["pytest", "src/cofounder_agent/tests/", "-v", "--tb=short"],
+    "python": ["pytest", "tests/", "-v", "--tb=short", "-x"],  # -x stops at first failure
     "frontend": ["npm", "run", "test", "--prefix", "web/oversight-hub"],
 }
 
@@ -172,6 +176,10 @@ def list_repo_files():
 
 def run_tests():
     """Run all test suites (Python backend + Frontend)."""
+    if SKIP_TESTS:
+        logger.info("⏭️  Tests skipped (SKIP_TESTS=true)")
+        return True, "Tests skipped"
+    
     logger.info("🧪 Running test suites...")
     
     all_output = []
@@ -190,10 +198,17 @@ def run_tests():
         python_passed = proc.returncode == 0
         python_output = proc.stdout + "\n" + proc.stderr
         
+        # Log summary of test results
         if python_passed:
             logger.info("   ✅ Python tests passed")
         else:
             logger.warning("   ⚠️  Python tests failed")
+            # Show first few lines of error for quick diagnosis
+            error_lines = python_output.strip().split('\n')
+            logger.warning("   Error preview:")
+            for line in error_lines[:10]:
+                if line.strip():
+                    logger.warning(f"      {line}")
             all_passed = False
         
         all_output.append(f"=== PYTHON TESTS ===\n{python_output}")
@@ -432,6 +447,11 @@ def main():
     logger.info("=" * 80)
     logger.info(f"Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info(f"Max iterations: {MAX_ITERATIONS}")
+    logger.info(f"Skip tests: {SKIP_TESTS}")
+    logger.info(f"Continue on test failure: {CONTINUE_ON_TEST_FAILURE}")
+    logger.info("")
+    logger.info("💡 Tip: Set SKIP_TESTS=true to skip test execution")
+    logger.info("💡 Example: SKIP_TESTS=true python agent_loop.py")
     logger.info("")
     
     # Check if Ollama is available
@@ -508,7 +528,18 @@ def main():
         test_start = time.time()
         tests_ok, test_output = run_tests()
         test_duration = time.time() - test_start
-        logger.info(f"📊 Tests completed in {test_duration:.1f}s - {'✅ PASS' if tests_ok else '❌ FAIL'}")
+        
+        if SKIP_TESTS:
+            logger.info(f"⏭️  Tests skipped - continuing with code analysis")
+        elif tests_ok:
+            logger.info(f"📊 Tests completed in {test_duration:.1f}s - ✅ PASS")
+        else:
+            logger.info(f"📊 Tests completed in {test_duration:.1f}s - ❌ FAIL")
+            if CONTINUE_ON_TEST_FAILURE:
+                logger.info("   → Continuing anyway (CONTINUE_ON_TEST_FAILURE=True)")
+            else:
+                logger.error("   → Stopping (CONTINUE_ON_TEST_FAILURE=False)")
+                break
 
         # Prepare reasoning prompt
         logger.info("🧠 Reasoning phase starting...")
@@ -526,7 +557,14 @@ def main():
         Previous context from earlier iterations:
         {previous_context[-2000:] if previous_context else "None"}
 
-        Analyze the codebase and test results. Produce a JSON object with your plan:
+        Focus on improvements that:
+        1. Fix actual bugs or errors
+        2. Improve code quality and maintainability  
+        3. Add better error handling
+        4. Optimize performance
+        5. Improve documentation
+        
+        Produce a JSON object with your plan:
         {{
           "done": bool,
           "reason": string,
@@ -538,6 +576,8 @@ def main():
             }}
           ]
         }}
+        
+        If tests are failing, focus on fixing configuration and test setup issues first.
         """)
 
         plan_raw = run_ollama(REASONER_MODEL, reasoner_prompt, system_reasoner)
