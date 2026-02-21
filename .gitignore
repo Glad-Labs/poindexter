@@ -40,3 +40,6 @@ token.json
 *.log
 .env.old
 nul
+
+.agents/
+.continue/skills
