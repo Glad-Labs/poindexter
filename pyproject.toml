@@ -9,7 +9,8 @@ package-mode = false
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.14"
-crewai-tools = "^1.7.2"
+crewai = "^1.7.2"
+python-dotenv = "^0.21.1"
 
 # Use headless opencv (doesn't require X11/GUI libraries in production)
 opencv-python-headless = "^4.8.0"
@@ -21,7 +22,6 @@ transformers = { version = ">=4.40.0", optional = true }
 accelerate = { version = ">=0.24.0", optional = true }
 asyncpg = "^0.31.0"
 markdown = "^3.10"
-google-generativeai = "^0.8.6"
 google-genai = ">=0.3.0"  # New Google Generative AI SDK (replaces deprecated google-generativeai)
 email-validator = ">=2.0.0"
 sentry-sdk = { version = ">=1.40.0", extras = ["fastapi"] }
@@ -65,6 +65,7 @@ addopts = [
     "-v",
     "--tb=short",
     "--strict-markers",
+    "--load-dotenv",
 ]
 asyncio_mode = "auto"
 markers = [
