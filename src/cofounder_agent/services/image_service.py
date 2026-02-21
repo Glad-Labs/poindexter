@@ -144,10 +144,17 @@ class ImageService:
     def __init__(self):
         """Initialize image service"""
         self.pexels_api_key = os.getenv("PEXELS_API_KEY")
+        self.pexels_available = bool(self.pexels_api_key)
+        
         if not self.pexels_api_key:
             logger.warning(
-                "Pexels API key not configured - featured image search will be unavailable"
+                "⚠️  PEXELS_API_KEY not found in environment - featured image search disabled"
             )
+            logger.warning(
+                "   Set PEXELS_API_KEY in .env.local to enable Pexels image search"
+            )
+        else:
+            logger.info("✅ Pexels API key configured - image search enabled")
 
         self.pexels_base_url = "https://api.pexels.com/v1"
         self.pexels_headers = {"Authorization": self.pexels_api_key} if self.pexels_api_key else {}
@@ -350,8 +357,8 @@ class ImageService:
         """
         import random
         
-        if not self.pexels_api_key:
-            logger.warning("Pexels API key not configured")
+        if not self.pexels_available:
+            logger.debug("Pexels API key not configured - skipping image search")
             return None
 
         # Build search queries prioritizing concept/topic over people

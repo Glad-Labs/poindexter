@@ -16,6 +16,7 @@ import asyncio
 import json
 import logging
 import time
+from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any, Dict
 
@@ -688,6 +689,9 @@ class TaskExecutor:
                 task_metrics.record_phase_end("content_generation", phase_1_start, status="error", error=orchestrator_error)
         else:
             logger.warning(f"⚠️ [TASK_EXECUTE] Orchestrator available: NO - Using fallback")
+            logger.warning(f"   Orchestrator is None or not initialized during startup")
+            logger.warning(f"   Check startup logs for orchestrator initialization failures")
+            logger.warning(f"   Falling back to simple template-based generation (limited features)")
             # Fallback: Simple template-based generation
             generated_content = await self._fallback_generate_content(task)
             logger.info(
@@ -703,27 +707,46 @@ class TaskExecutor:
         )
 
         # Only validate if we have content
+        quality_result = None
         if generated_content:
-            quality_result = await self.quality_service.evaluate(
-                content=generated_content,
-                context={
-                    "topic": topic,
-                    "keywords": primary_keyword,
-                    "target_audience": target_audience,
-                    "category": category,
-                    "style": style,
-                    "tone": tone,
-                    "target_length": target_length,
-                },
+            try:
+                quality_result = await self.quality_service.evaluate(
+                    content=generated_content,
+                    context={
+                        "topic": topic,
+                        "keywords": primary_keyword,
+                        "target_audience": target_audience,
+                        "category": category,
+                        "style": style,
+                        "tone": tone,
+                        "target_length": target_length,
+                    },
+                )
+            except Exception as e:
+                logger.error(f"❌ Quality evaluation failed: {e}", exc_info=True)
+                quality_result = None
+        
+        # Handle None result (evaluation failed or no content)
+        if quality_result is None:
+            # Create default QualityAssessment for failed evaluation
+            from .quality_service import QualityDimensions, EvaluationMethod
+            quality_result = QualityAssessment(
+                overall_score=0.0,
+                passing=False,
+                feedback="No content provided or evaluation failed",
+                suggestions=["Content is empty or evaluation error occurred"],
+                needs_refinement=True,
+                evaluation_method=EvaluationMethod.PATTERN_BASED,
+                dimensions=QualityDimensions(
+                    clarity=0.0,
+                    accuracy=0.0,
+                    completeness=0.0,
+                    relevance=0.0,
+                    seo_quality=0.0,
+                    readability=0.0,
+                    engagement=0.0,
+                ),
             )
-        else:
-            # No content to validate
-            quality_result = {
-                "score": 0,
-                "approved": False,
-                "feedback": "No content provided for validation",
-                "suggestions": ["Content is empty or None"],
-            }
 
         # Handle both QualityAssessment objects and fallback dicts
         if isinstance(quality_result, QualityAssessment):
@@ -967,18 +990,21 @@ class TaskExecutor:
         # Persist cost metrics to database for historical reporting
         if operation_metrics and self.database_service:
             try:
+                # Convert UsageMetrics dataclass to dict for .get() access
+                operation_metrics_dict = asdict(operation_metrics)
+                
                 cost_log = {
                     "task_id": str(task_id),
                     "user_id": task.get("user_id"),
                     "phase": "content_generation",  # Single phase for overall task
-                    "model": operation_metrics.get("model_name", "unknown"),
-                    "provider": operation_metrics.get("model_provider", "unknown"),
-                    "input_tokens": operation_metrics.get("input_tokens", 0),
-                    "output_tokens": operation_metrics.get("output_tokens", 0),
-                    "total_tokens": operation_metrics.get("input_tokens", 0) + operation_metrics.get("output_tokens", 0),
-                    "cost_usd": operation_metrics.get("total_cost_usd", 0.0),
+                    "model": operation_metrics_dict.get("model_name", "unknown"),
+                    "provider": operation_metrics_dict.get("model_provider", "unknown"),
+                    "input_tokens": operation_metrics_dict.get("input_tokens", 0),
+                    "output_tokens": operation_metrics_dict.get("output_tokens", 0),
+                    "total_tokens": operation_metrics_dict.get("input_tokens", 0) + operation_metrics_dict.get("output_tokens", 0),
+                    "cost_usd": operation_metrics_dict.get("total_cost_usd", 0.0),
                     "quality_score": quality_score,
-                    "duration_ms": int(operation_metrics.get("duration_ms", 0)),
+                    "duration_ms": int(operation_metrics_dict.get("duration_ms", 0)),
                     "success": True,
                 }
                 await self.database_service.log_cost(cost_log)

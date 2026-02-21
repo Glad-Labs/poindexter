@@ -622,15 +622,20 @@ async def process_content_generation_task(
                     topic=topic, keywords=search_keywords
                 )
 
-                if featured_image:
-                    image_metadata = featured_image.to_dict()
-                    result["featured_image_url"] = featured_image.url
-                    result["featured_image_photographer"] = featured_image.photographer
-                    result["featured_image_source"] = featured_image.source
-                    result["stages"]["3_featured_image_found"] = True
-                    logger.info(
-                        f"✅ Featured image found: {featured_image.photographer} (Pexels)\n"
-                    )
+                if featured_image and featured_image is not None:
+                    # Validate featured_image has required attributes before accessing
+                    if hasattr(featured_image, 'to_dict') and hasattr(featured_image, 'url'):
+                        image_metadata = featured_image.to_dict()
+                        result["featured_image_url"] = featured_image.url
+                        result["featured_image_photographer"] = getattr(featured_image, 'photographer', 'Unknown')
+                        result["featured_image_source"] = getattr(featured_image, 'source', 'Pexels')
+                        result["stages"]["3_featured_image_found"] = True
+                        logger.info(
+                            f"✅ Featured image found: {result['featured_image_photographer']} (Pexels)\n"
+                        )
+                    else:
+                        logger.warning(f"⚠️  Image search returned invalid object (missing attributes)")
+                        result["stages"]["3_featured_image_found"] = False
                 else:
                     result["stages"]["3_featured_image_found"] = False
                     logger.warning(f"⚠️  No featured image found for '{topic}'\n")
