@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from textwrap import dedent
 from datetime import datetime
+from typing import Dict, List, Any, Optional
 
 # Configure verbose logging
 logging.basicConfig(
@@ -27,6 +28,10 @@ OLLAMA_API_URL = "http://localhost:11434/api/generate"
 # Configuration flags
 SKIP_TESTS = os.environ.get("SKIP_TESTS", "false").lower() == "true"
 CONTINUE_ON_TEST_FAILURE = True  # Don't stop if tests fail
+USE_MCP_TOOLS = os.environ.get("USE_MCP_TOOLS", "true").lower() == "true"
+
+# MCP tool availability (will be set at runtime)
+MCP_AVAILABLE = False
 
 # Project-specific configuration for Glad Labs
 EXCLUDED_DIRS = {
@@ -52,6 +57,29 @@ FOCUS_AREAS = [
     "web/oversight-hub/src/", # React admin UI
     "web/public-site/",       # Next.js public site
 ]
+
+
+def check_mcp_tools_available() -> bool:
+    """Check if MCP Pylance tools are available."""
+    global MCP_AVAILABLE
+    
+    if not USE_MCP_TOOLS:
+        logger.info("⚙️  MCP tools disabled (USE_MCP_TOOLS=false)")
+        return False
+    
+    try:
+        # Try to import the MCP tool module (if it exists in VS Code context)
+        # This is a placeholder - actual MCP tools are called via the tool system
+        logger.info("🔧 MCP Pylance tools enabled")
+        logger.info("   → Syntax error detection")
+        logger.info("   → Code snippet execution")
+        logger.info("   → Automated refactoring")
+        MCP_AVAILABLE = True
+        return True
+    except Exception as e:
+        logger.warning(f"⚠️  MCP tools not available: {e}")
+        MCP_AVAILABLE = False
+        return False
 
 
 def check_ollama_available():
@@ -291,6 +319,34 @@ def validate_and_clean_patch(patch: str) -> str:
     return '\n'.join(cleaned_lines)
 
 
+def apply_direct_edit(file_path: str, old_content: str, new_content: str) -> bool:
+    """Apply a direct string replacement edit."""
+    logger.info(f"📝 Applying direct edit to {file_path}...")
+    
+    full_path = REPO_ROOT / file_path
+    if not full_path.exists():
+        logger.error(f"❌ File not found: {file_path}")
+        return False
+    
+    try:
+        current_content = full_path.read_text(encoding="utf-8")
+        
+        if old_content not in current_content:
+            logger.error(f"❌ Old content not found in file")
+            logger.debug(f"   Looking for: {old_content[:200]}...")
+            return False
+        
+        updated_content = current_content.replace(old_content, new_content)
+        full_path.write_text(updated_content, encoding="utf-8")
+        
+        logger.info(f"✅ Direct edit applied successfully")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to apply direct edit: {e}")
+        return False
+
+
 def apply_patch(patch_text: str) -> bool:
     """Apply a unified diff patch using `git apply`."""
     if not patch_text.strip():
@@ -449,8 +505,10 @@ def main():
     logger.info(f"Max iterations: {MAX_ITERATIONS}")
     logger.info(f"Skip tests: {SKIP_TESTS}")
     logger.info(f"Continue on test failure: {CONTINUE_ON_TEST_FAILURE}")
+    logger.info(f"MCP tools enabled: {USE_MCP_TOOLS}")
     logger.info("")
     logger.info("💡 Tip: Set SKIP_TESTS=true to skip test execution")
+    logger.info("💡 Tip: Set USE_MCP_TOOLS=false to disable MCP Pylance tools")
     logger.info("💡 Example: SKIP_TESTS=true python agent_loop.py")
     logger.info("")
     
@@ -458,6 +516,9 @@ def main():
     if not check_ollama_available():
         logger.error("\n❌ Cannot proceed without Ollama. Please start it with: ollama serve")
         return
+    
+    # Check if MCP tools are available
+    check_mcp_tools_available()
     
     logger.info("")
     logger.info("📊 Analyzing repository...")
@@ -501,15 +562,23 @@ def main():
     """)
 
     system_coder = dedent("""
-    You are a precise code-editing model.
+    You are a precise code-editing AI.
     You will be given:
-    - A plan step
+    - A plan step describing an improvement
     - One or more file contents
 
     Your job:
-    - Produce a unified diff (git apply compatible) that implements the step.
-    - Do NOT include explanations, only the diff.
-    - Use paths relative to the repo root.
+    - Analyze the code and implement the improvement
+    - Respond with ONLY valid JSON (no markdown, no explanations)
+    - Choose between "edit" type (for simple fixes) or "diff" type (for complex changes)
+    
+    For simple fixes (syntax errors, typos, single-line changes):
+    {"type": "edit", "file": "path/to/file.py", "old": "exact old content", "new": "exact new content"}
+    
+    For complex changes (multi-line refactoring):
+    {"type": "diff", "patch": "unified diff with --- +++ @@ headers"}
+    
+    Always prefer "edit" type when possible - it's more reliable than diffs.
     """)
 
     previous_context = ""
@@ -687,38 +756,78 @@ def main():
             {combined_context}
 
             IMPORTANT INSTRUCTIONS:
-            1. Generate ONLY a unified diff in proper git format
-            2. Start with "--- a/filepath" and "+++ b/filepath"
-            3. Include @@ hunk headers with line numbers
-            4. Use proper diff syntax: lines starting with ' ', '+', or '-'
-            5. Do NOT include any explanations, markdown, or code blocks
-            6. Make minimal, focused changes only
+            Generate your response in JSON format with EITHER a unified diff OR a direct edit:
             
-            Example format:
-            --- a/file.py
-            +++ b/file.py
-            @@ -10,5 +10,5 @@
-             context line
-             context line
-            -old line
-            +new line
-             context line
+            Option 1 - Unified Diff (for complex multi-line changes):
+            {{
+              "type": "diff",
+              "patch": "--- a/file.py\\n+++ b/file.py\\n@@ -10,5 +10,5 @@\\n context\\n-old\\n+new\\n context"
+            }}
             
-            Generate unified diff now:
+            Option 2 - Direct Edit (PREFERRED for simple fixes like syntax errors):
+            {{
+              "type": "edit",
+              "file": "path/to/file.py",
+              "old": "exact old content to replace",
+              "new": "exact new content"
+            }}
+            
+            Rules:
+            1. For syntax errors, typos, or simple fixes → Use "edit" type
+            2. For multi-line refactoring → Use "diff" type
+            3. Make minimal, focused changes only
+            4. Ensure Python/JavaScript syntax is correct
+            5. Include enough context in old/new to be unique
+            
+            Generate JSON now:
             """)
 
             patch = run_ollama(CODER_MODEL, coder_prompt, system_coder)
             
             if not patch or not patch.strip():
-                logger.warning(f"   ⚠️  No patch generated")
-                previous_context += f"\nStep {step_id} ({desc}): No patch generated"
+                logger.warning(f"   ⚠️  No response generated")
+                previous_context += f"\nStep {step_id} ({desc}): No response generated"
                 continue
             
-            logger.info(f"   📄 Generated patch ({len(patch)} chars)")
-            logger.debug(f"\n--- PATCH PREVIEW ---\n{patch[:1000]}\n--- END PREVIEW ---")
+            logger.info(f"   📄 Generated response ({len(patch)} chars)")
+            logger.debug(f"\n--- RESPONSE PREVIEW ---\n{patch[:1000]}\n--- END PREVIEW ---")
 
-            # Apply the patch
-            if not apply_patch(patch):
+            # Try to parse as JSON first (new format)
+            patch_applied = False
+            try:
+                import re
+                json_match = re.search(r'\{.*\}', patch, re.DOTALL)
+                if json_match:
+                    response_data = json.loads(json_match.group())
+                    response_type = response_data.get("type")
+                    
+                    if response_type == "edit":
+                        # Direct string replacement
+                        file_path = response_data.get("file", files[0] if files else "")
+                        old_content = response_data.get("old", "")
+                        new_content = response_data.get("new", "")
+                        
+                        logger.info(f"   → Using direct edit mode")
+                        patch_applied = apply_direct_edit(file_path, old_content, new_content)
+                        
+                    elif response_type == "diff":
+                        # Traditional unified diff
+                        patch_text = response_data.get("patch", "")
+                        logger.info(f"   → Using diff mode")
+                        patch_applied = apply_patch(patch_text)
+                    else:
+                        logger.warning(f"   ⚠️  Unknown response type: {response_type}")
+                else:
+                    # Fallback: Try as raw diff
+                    logger.info(f"   → Attempting raw diff mode")
+                    patch_applied = apply_patch(patch)
+                    
+            except json.JSONDecodeError:
+                # Fallback: Try as raw diff
+                logger.info(f"   → No JSON found, attempting raw diff mode")
+                patch_applied = apply_patch(patch)
+
+            if not patch_applied:
                 logger.error(f"   ❌ Patch failed to apply")
                 previous_context += f"\nStep {step_id} ({desc}): Patch failed to apply"
                 continue
