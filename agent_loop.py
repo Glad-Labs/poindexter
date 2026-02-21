@@ -49,7 +49,7 @@ EXCLUDED_EXTENSIONS = {
 
 # Test commands for different parts of the codebase
 TEST_COMMANDS = {
-    "python": ["pytest", "tests/", "-v", "--tb=short", "-x"],  # -x stops at first failure
+    "python": ["poetry", "run", "pytest", "tests/", "-v", "--tb=short", "-x"],  # -x stops at first failure
     "frontend": ["npm", "run", "test", "--prefix", "web/oversight-hub"],
 }
 

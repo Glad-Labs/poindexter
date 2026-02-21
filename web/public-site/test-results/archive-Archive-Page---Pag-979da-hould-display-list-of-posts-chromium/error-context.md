@@ -1,0 +1,86 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - navigation [ref=e3]:
+      - link "GL" [ref=e4] [cursor=pointer]:
+        - /url: /
+      - generic [ref=e5]:
+        - link "Articles" [ref=e6] [cursor=pointer]:
+          - /url: /archive/1
+        - link "About" [ref=e7] [cursor=pointer]:
+          - /url: /about
+      - link "Explore" [ref=e8] [cursor=pointer]:
+        - /url: /archive/1
+  - main [ref=e9]:
+    - main [ref=e10]:
+      - generic [ref=e12]:
+        - heading "Article Archive" [level=1] [ref=e13]
+        - paragraph [ref=e14]: Explore our collection of in-depth articles and insights
+      - paragraph [ref=e20]: Loading articles...
+  - contentinfo [ref=e21]:
+    - generic [ref=e22]:
+      - generic [ref=e23]:
+        - generic [ref=e24]:
+          - link "GL" [ref=e25] [cursor=pointer]:
+            - /url: /
+            - generic [ref=e26]: GL
+          - paragraph [ref=e27]: Transforming digital innovation with AI-powered insights and autonomous intelligence.
+          - paragraph [ref=e28]: Building the future, one algorithm at a time.
+        - generic [ref=e29]:
+          - heading "Explore" [level=3] [ref=e30]: Explore
+          - navigation "Explore navigation" [ref=e32]:
+            - link "Home" [ref=e33] [cursor=pointer]:
+              - /url: /
+              - text: Home
+            - link "Articles" [ref=e35] [cursor=pointer]:
+              - /url: /archive/1
+              - text: Articles
+            - link "About Us" [ref=e37] [cursor=pointer]:
+              - /url: /about
+              - text: About Us
+        - generic [ref=e39]:
+          - heading "Legal" [level=3] [ref=e40]: Legal
+          - navigation [ref=e42]:
+            - link "Privacy Policy" [ref=e43] [cursor=pointer]:
+              - /url: /legal/privacy
+              - text: Privacy Policy
+            - link "Terms of Service" [ref=e45] [cursor=pointer]:
+              - /url: /legal/terms
+              - text: Terms of Service
+            - link "Cookie Policy" [ref=e47] [cursor=pointer]:
+              - /url: /legal/cookie-policy
+              - text: Cookie Policy
+        - generic [ref=e49]:
+          - heading "Connect" [level=3] [ref=e50]: Connect
+          - paragraph [ref=e52]: Stay updated with the latest AI insights and innovations.
+          - button "Get Updates →" [ref=e53] [cursor=pointer]:
+            - text: Get Updates
+            - generic [ref=e54]: →
+      - generic [ref=e56]:
+        - paragraph [ref=e58]: © 2026 Glad Labs. All rights reserved.
+        - paragraph [ref=e60]: Built for innovation, powered by AI.
+  - generic [ref=e63]:
+    - generic [ref=e64]:
+      - paragraph [ref=e65]:
+        - text: We use cookies to enhance your experience and analyze website traffic. This includes
+        - strong [ref=e66]: essential cookies
+        - text: (required),
+        - strong [ref=e67]: analytics
+        - text: ", and"
+        - strong [ref=e68]: advertising
+        - text: cookies.
+      - generic [ref=e69]:
+        - link "Privacy Policy" [ref=e70] [cursor=pointer]:
+          - /url: /legal/privacy
+        - link "Cookie Policy" [ref=e71] [cursor=pointer]:
+          - /url: /legal/cookie-policy
+    - generic [ref=e72]:
+      - button "Reject All" [ref=e73] [cursor=pointer]
+      - button "Customize" [ref=e74] [cursor=pointer]
+      - button "Accept All" [ref=e75] [cursor=pointer]
+  - button "Open Next.js Dev Tools" [ref=e81] [cursor=pointer]:
+    - img [ref=e82]
+  - alert [ref=e85]
+```
