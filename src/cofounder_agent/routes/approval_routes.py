@@ -162,23 +162,20 @@ async def approve_task(
                 },
             )
 
-        # Update task status
-        approval_date = datetime.now(timezone.utc).isoformat()
-        metadata_updates = {
-            **(task.get("metadata") or {}),
-            "approval_date": approval_date,
-            "approved_by": current_user.get("id"),
-            "approval_status": "approved",
-            "approval_feedback": request.feedback,
-            "approval_notes": request.reviewer_notes,
-        }
-
+        # Update task status and approval fields
+        approval_date = datetime.now(timezone.utc)
+        
+        # Store approval data in dedicated database columns
         await db_service.update_task(
             task_id,
             {
                 "status": "approved",
-                "metadata": metadata_updates,
-                "updated_at": approval_date,
+                "approval_status": "approved",
+                "approved_by": current_user.get("id"),
+                "approval_timestamp": approval_date,
+                "approval_notes": request.reviewer_notes or request.feedback,
+                "human_feedback": request.feedback,
+                "updated_at": approval_date.isoformat(),
             },
         )
 
@@ -192,7 +189,7 @@ async def approve_task(
                 {
                     "approved_by": current_user.get("id"),
                     "feedback": request.feedback,
-                    "approval_date": approval_date,
+                    "approval_date": approval_date.isoformat(),
                 },
             )
         except Exception as e:
@@ -201,7 +198,9 @@ async def approve_task(
         return {
             "task_id": task_id,
             "status": "approved",
-            "approval_date": approval_date,
+            "approval_status": "approved",
+            "approval_date": approval_date.isoformat(),
+            "approval_timestamp": approval_date.isoformat(),
             "approved_by": current_user.get("id"),
             "feedback": request.feedback,
             "message": "Task approved for publishing",
@@ -301,12 +300,12 @@ async def reject_task(
 
         # Determine final status based on revision allowance
         final_status = "failed_revisions_requested" if request.allow_revisions else "failed"
-        rejection_date = datetime.now(timezone.utc).isoformat()
+        rejection_date = datetime.now(timezone.utc)
 
         # Update task with rejection metadata
         metadata_updates = {
             **(task.get("metadata") or {}),
-            "rejection_date": rejection_date,
+            "rejection_date": rejection_date.isoformat(),
             "rejected_by": current_user.get("id"),
             "rejection_reason": request.reason,
             "rejection_feedback": request.feedback,
@@ -317,8 +316,10 @@ async def reject_task(
             task_id,
             {
                 "status": final_status,
+                "approval_status": "rejected",
+                "human_feedback": request.feedback,
                 "metadata": metadata_updates,
-                "updated_at": rejection_date,
+                "updated_at": rejection_date.isoformat(),
             },
         )
 
@@ -336,7 +337,7 @@ async def reject_task(
                     "reason": request.reason,
                     "feedback": request.feedback,
                     "allow_revisions": request.allow_revisions,
-                    "rejection_date": rejection_date,
+                    "rejection_date": rejection_date.isoformat(),
                 },
             )
         except Exception as e:
@@ -345,7 +346,8 @@ async def reject_task(
         return {
             "task_id": task_id,
             "status": final_status,
-            "rejection_date": rejection_date,
+            "approval_status": "rejected",
+            "rejection_date": rejection_date.isoformat(),
             "rejected_by": current_user.get("id"),
             "reason": request.reason,
             "feedback": request.feedback,

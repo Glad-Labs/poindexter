@@ -51,9 +51,13 @@ export const useFetchTasks = (
 
         // Handle success
         if (response && response.success !== false) {
-          const tasksData = response.data || [];
-          const totalCount = response.pagination?.total || 0;
+          // API returns { tasks: [...], total: 74, offset: 0, limit: 10 }
+          const tasksData = response.tasks || response.data || [];
+          const totalCount = response.total || response.pagination?.total || 0;
 
+          console.log(
+            `✅ useFetchTasks: Parsed ${tasksData.length} tasks out of ${totalCount} total`
+          );
           setTasks(tasksData);
           setTotal(totalCount);
           setStoreTasks(tasksData);

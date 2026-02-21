@@ -242,15 +242,29 @@ export const publishTask = async (taskId) => {
  * Reject a task
  *
  * @param {string} taskId - Task ID to reject
- * @param {string} reason - Rejection reason
+ * @param {string} reason - Rejection reason (short)
+ * @param {string} feedback - Detailed feedback (optional, defaults to reason)
+ * @param {boolean} allowRevisions - Allow revisions (default: true)
  * @returns {Promise<object>} Updated task object
  * @throws {Error} If rejection fails
  */
-export const rejectTask = async (taskId, reason = '') => {
+export const rejectTask = async (
+  taskId,
+  reason = '',
+  feedback = null,
+  allowRevisions = true
+) => {
+  // Backend requires both reason and feedback fields
+  const requestBody = {
+    reason: reason || 'Rejected',
+    feedback: feedback || reason || 'No feedback provided',
+    allow_revisions: allowRevisions,
+  };
+
   const result = await makeRequest(
     `/api/tasks/${taskId}/reject`,
     'POST',
-    { reason },
+    requestBody,
     false,
     null,
     API_TIMEOUT
