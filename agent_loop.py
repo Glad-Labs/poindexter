@@ -72,7 +72,7 @@ FOCUS_AREAS = [
 # Phase 1 (Linter) Configuration
 PHASE1_ENABLED = os.environ.get("SKIP_PHASE_1", "false").lower() == "false"
 PHASE1_MAX_ITERATIONS = int(os.environ.get("PHASE1_MAX_ITERATIONS", "2000"))
-PHASE1_CONSECUTIVE_CLEAN = 2  # Exit Phase 1 after N consecutive clean runs
+PHASE1_CONSECUTIVE_CLEAN = 20  # Exit Phase 1 after N consecutive clean runs
 
 # Phase 2 (Reasoning) Configuration  
 PHASE2_ENABLED = os.environ.get("SKIP_PHASE_2", "false").lower() == "false"
@@ -1181,6 +1181,144 @@ def auto_fix_linter_issues() -> tuple[bool, List[str]]:
     return len(fixes) > 0, fixes
 
 
+def detect_autofixable_issues() -> tuple[Dict[str, Any], int]:
+    """Detect ONLY auto-fixable linter issues (Phase 1 should only handle these).
+    
+    Returns:
+        tuple: (issues_dict, total_count)
+    """
+    issues = {}
+    total_count = 0
+    
+    logger.debug("   [AUTO-FIXABLE ISSUES ONLY]")
+    
+    # Check black formatting
+    logger.debug("   Looking for black formatting issues...")
+    try:
+        proc = subprocess.run(
+            LINTER_COMMANDS["black_check"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.returncode != 0:
+            reformatted = len([l for l in proc.stdout.split('\n') if 'would reformat' in l])
+            issues["black"] = reformatted if reformatted > 0 else 1
+            total_count += issues["black"]
+    except Exception as e:
+        logger.debug(f"      Black check failed: {e}")
+    
+    # Check isort imports
+    logger.debug("   Looking for isort import issues...")
+    try:
+        proc = subprocess.run(
+            LINTER_COMMANDS["isort_check"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.returncode != 0:
+            files_to_sort = len([l for l in proc.stdout.split('\n') if l.strip() and '.py' in l])
+            issues["isort"] = files_to_sort if files_to_sort > 0 else 1
+            total_count += issues["isort"]
+    except Exception as e:
+        logger.debug(f"      Isort check failed: {e}")
+    
+    # Check autoflake (unused imports)
+    logger.debug("   Looking for autoflake unused imports...")
+    try:
+        proc = subprocess.run(
+            LINTER_COMMANDS["autoflake_check"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.returncode != 0:
+            files_with_unused = len([l for l in proc.stdout.split('\n') if l.strip() and '.py' in l])
+            issues["autoflake"] = files_with_unused if files_with_unused > 0 else 1
+            total_count += issues["autoflake"]
+    except Exception as e:
+        logger.debug(f"      Autoflake check failed: {e}")
+    
+    # Check Prettier (formatting)
+    logger.debug("   Looking for prettier formatting issues...")
+    try:
+        prettier_issues = 0
+        for prefix in ["web/oversight-hub", "web/public-site"]:
+            proc = subprocess.run(
+                ["npx", "prettier", "--check", f"{prefix}/src"],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if proc.returncode != 0:
+                files_to_format = len([l for l in proc.stdout.split('\n') if l.strip()])
+                prettier_issues += files_to_format if files_to_format > 0 else 1
+        
+        if prettier_issues > 0:
+            issues["prettier"] = prettier_issues
+            total_count += prettier_issues
+    except Exception as e:
+        logger.debug(f"      Prettier check failed: {e}")
+    
+    # Check ESLint (React)
+    logger.debug("   Looking for ESLint issues...")
+    try:
+        proc = subprocess.run(
+            LINTER_COMMANDS["eslint_oversight_check"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
+        if proc.returncode != 0:
+            eslint_issues = len([l for l in proc.stdout.split('\n') if 'error' in l.lower()])
+            issues["eslint"] = eslint_issues if eslint_issues > 0 else 1
+            total_count += issues["eslint"]
+    except Exception as e:
+        logger.debug(f"      ESLint check failed: {e}")
+    
+    # Check Next.js Lint
+    logger.debug("   Looking for Next.js lint issues...")
+    try:
+        proc = subprocess.run(
+            LINTER_COMMANDS["nextjs_lint_check"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
+        if proc.returncode != 0:
+            nextjs_issues = len([l for l in proc.stdout.split('\n') if 'error' in l.lower()])
+            issues["nextjs_lint"] = nextjs_issues if nextjs_issues > 0 else 1
+            total_count += issues["nextjs_lint"]
+    except Exception as e:
+        logger.debug(f"      Next.js lint check failed: {e}")
+    
+    # Check Stylelint (CSS/SCSS)
+    logger.debug("   Looking for stylelint issues...")
+    try:
+        proc = subprocess.run(
+            LINTER_COMMANDS["stylelint_check"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.returncode != 0:
+            stylelint_issues = len([l for l in proc.stdout.split('\n') if l.strip()])
+            issues["stylelint"] = stylelint_issues if stylelint_issues > 0 else 1
+            total_count += issues["stylelint"]
+    except Exception as e:
+        logger.debug(f"      Stylelint check failed: {e}")
+    
+    return issues, total_count
+
+
 def get_file_contents(path: str) -> str:
     """Read file contents safely, handling directories and wildcards."""
     # Handle wildcard patterns
@@ -1371,24 +1509,40 @@ def main():
         logger.info("")
         
         consecutive_clean = 0
+        previous_issue_count = None
+        stuck_iterations = 0
+        MAX_STUCK_ITERATIONS = 3  # Exit if same issue count for 3 iterations
         
         while phase1_iteration < PHASE1_MAX_ITERATIONS:
             phase1_iteration += 1
             logger.info(f"🔄 Phase 1 Iteration {phase1_iteration}")
             
-            # Detect issues
-            issues, issue_count = detect_linter_issues()
+            # Detect ONLY auto-fixable issues (not type errors, linting, security, etc.)
+            issues, issue_count = detect_autofixable_issues()
+            
+            # Check for stuck loop (same issues persist)
+            if previous_issue_count is not None and issue_count == previous_issue_count:
+                stuck_iterations += 1
+                logger.debug(f"      Stuck counter: {stuck_iterations}/{MAX_STUCK_ITERATIONS}")
+                if stuck_iterations >= MAX_STUCK_ITERATIONS:
+                    logger.warning(f"⚠️  Stuck loop detected (same {issue_count} issues)")
+                    logger.info("   Exiting Phase 1 - issues require Phase 2 reasoning")
+                    break
+            else:
+                stuck_iterations = 0
+            
+            previous_issue_count = issue_count
             
             if issue_count == 0:
                 consecutive_clean += 1
-                logger.info(f"✅ No linter issues found ({consecutive_clean}/{PHASE1_CONSECUTIVE_CLEAN})")
+                logger.info(f"✅ No auto-fixable issues found ({consecutive_clean}/{PHASE1_CONSECUTIVE_CLEAN})")
                 
                 if consecutive_clean >= PHASE1_CONSECUTIVE_CLEAN:
-                    logger.info(f"\n✅ Phase 1 Complete: Repository is clean")
+                    logger.info(f"Phase 1 Complete: All auto-fixable issues resolved")
                     break
             else:
                 consecutive_clean = 0
-                logger.info(f"⚠️  Found {issue_count} linter issues: {issues}")
+                logger.info(f"⚠️  Found {issue_count} auto-fixable issues: {issues}")
                 
                 # Auto-fix
                 success, fixes_applied = auto_fix_linter_issues()
@@ -1411,7 +1565,7 @@ def main():
                     except:
                         pass
                 else:
-                    logger.warning("⚠️  Auto-fix failed or found no issues")
+                    logger.warning("⚠️  Auto-fix failed - cannot fix these issues automatically")
                     break
             
             if ITERATION_DELAY > 0:
@@ -1784,6 +1938,20 @@ def main():
         logger.info("")
         logger.info("\n⚠️  Keyboard interrupt received (Ctrl+C)")
         logger.info("🛑 Stopping agent loop gracefully...")
+
+    # After Phase 1, show summary of ALL issues (including non-fixable ones)
+    if PHASE1_ENABLED:
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info("📋 PHASE 1 FINAL DIAGNOSTIC SCAN")
+        logger.info("=" * 80)
+        all_issues, all_count = detect_linter_issues()
+        logger.info(f"Total issues detected: {all_count}")
+        if all_issues:
+            logger.info("Issues by tool:")
+            for tool, count in sorted(all_issues.items(), key=lambda x: x[1], reverse=True):
+                logger.info(f"   {tool}: {count} issues")
+        logger.info("")
 
     # Final summary
     logger.info("")
