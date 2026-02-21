@@ -255,7 +255,7 @@ def style_validator():
 
 
 @pytest.fixture
-async def populated_samples(samples_service):
+def populated_samples(samples_service):
     """Pre-populate samples for testing"""
     samples = [
         WritingSample(
