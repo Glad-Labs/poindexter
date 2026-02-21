@@ -30,6 +30,7 @@ SKIP_TESTS = os.environ.get("SKIP_TESTS", "false").lower() == "true"
 CONTINUE_ON_TEST_FAILURE = True  # Don't stop if tests fail
 USE_MCP_TOOLS = os.environ.get("USE_MCP_TOOLS", "true").lower() == "true"
 ITERATION_DELAY = int(os.environ.get("ITERATION_DELAY", "0"))  # Seconds between iterations
+OLLAMA_TIMEOUT = int(os.environ.get("OLLAMA_TIMEOUT", "600"))  # 10 minutes default for reasoning models
 
 # MCP tool availability (will be set at runtime)
 MCP_AVAILABLE = False
@@ -149,7 +150,7 @@ def run_ollama(model: str, prompt: str, system: str = "") -> str:
                     "num_predict": 4096,
                 }
             },
-            timeout=300,  # 5 minute timeout for reasoning
+            timeout=OLLAMA_TIMEOUT,  # Configurable timeout (default 10 min for reasoning models)
         )
         
         elapsed = time.time() - start_time

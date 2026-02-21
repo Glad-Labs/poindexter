@@ -18,9 +18,10 @@ sys.path.insert(0, backend_path)      # Main backend imports: agents, services, 
 sys.path.insert(0, project_root)       # Project root: src.mcp, src.mcp_server, etc.
 
 # Load environment variables
-env_local_path = os.path.join(project_root, ".env.local")
+env_local_path = os.path.join(project_root, ".env")
 if os.path.exists(env_local_path):
     load_dotenv(env_local_path, override=True)
+    os.environ['TESTING'] = '1'
 
 # Try to import shared test utilities, but don't fail if not available
 try:
