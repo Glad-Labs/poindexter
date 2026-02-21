@@ -96,7 +96,7 @@ class TestApprovalWorkflowE2E:
         assert True
 
 
-class TestApprovalGUI E2E:
+class TestApprovalGUIE2E:
     """End-to-end tests for GUI interactions"""
 
     @pytest.mark.e2e

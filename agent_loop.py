@@ -18,7 +18,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).parent.resolve()
-MAX_ITERATIONS = 5
+MAX_ITERATIONS = int(os.environ.get("MAX_ITERATIONS", "0"))  # 0 = infinite
 
 # Optimized models for your system
 REASONER_MODEL = "deepseek-r1-qwen-70b-q4km"
@@ -29,6 +29,7 @@ OLLAMA_API_URL = "http://localhost:11434/api/generate"
 SKIP_TESTS = os.environ.get("SKIP_TESTS", "false").lower() == "true"
 CONTINUE_ON_TEST_FAILURE = True  # Don't stop if tests fail
 USE_MCP_TOOLS = os.environ.get("USE_MCP_TOOLS", "true").lower() == "true"
+ITERATION_DELAY = int(os.environ.get("ITERATION_DELAY", "0"))  # Seconds between iterations
 
 # MCP tool availability (will be set at runtime)
 MCP_AVAILABLE = False
@@ -502,14 +503,20 @@ def main():
     logger.info("🤖 GLAD LABS AUTONOMOUS AGENT LOOP")
     logger.info("=" * 80)
     logger.info(f"Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    logger.info(f"Max iterations: {MAX_ITERATIONS}")
+    if MAX_ITERATIONS > 0:
+        logger.info(f"Max iterations: {MAX_ITERATIONS}")
+    else:
+        logger.info("Max iterations: ♾️  INFINITE (Ctrl+C to stop)")
     logger.info(f"Skip tests: {SKIP_TESTS}")
     logger.info(f"Continue on test failure: {CONTINUE_ON_TEST_FAILURE}")
     logger.info(f"MCP tools enabled: {USE_MCP_TOOLS}")
+    if ITERATION_DELAY > 0:
+        logger.info(f"Delay between iterations: {ITERATION_DELAY}s")
     logger.info("")
+    logger.info("💡 Tip: Press Ctrl+C to stop the loop gracefully")
+    logger.info("💡 Tip: Set MAX_ITERATIONS=5 to limit iterations")
     logger.info("💡 Tip: Set SKIP_TESTS=true to skip test execution")
-    logger.info("💡 Tip: Set USE_MCP_TOOLS=false to disable MCP Pylance tools")
-    logger.info("💡 Example: SKIP_TESTS=true python agent_loop.py")
+    logger.info("💡 Tip: Set ITERATION_DELAY=10 for 10s pause between iterations")
     logger.info("")
     
     # Check if Ollama is available
@@ -585,284 +592,307 @@ def main():
     iteration_times = []
     iteration = 0  # Initialize iteration counter
     
-    for iteration in range(1, MAX_ITERATIONS + 1):
-        iteration_start = time.time()
-        
-        logger.info("")
-        logger.info("=" * 80)
-        logger.info(f"🔄 ITERATION {iteration}/{MAX_ITERATIONS}")
-        logger.info("=" * 80)
-
-        # Run tests
-        test_start = time.time()
-        tests_ok, test_output = run_tests()
-        test_duration = time.time() - test_start
-        
-        if SKIP_TESTS:
-            logger.info(f"⏭️  Tests skipped - continuing with code analysis")
-        elif tests_ok:
-            logger.info(f"📊 Tests completed in {test_duration:.1f}s - ✅ PASS")
-        else:
-            logger.info(f"📊 Tests completed in {test_duration:.1f}s - ❌ FAIL")
-            if CONTINUE_ON_TEST_FAILURE:
-                logger.info("   → Continuing anyway (CONTINUE_ON_TEST_FAILURE=True)")
-            else:
-                logger.error("   → Stopping (CONTINUE_ON_TEST_FAILURE=False)")
-                break
-
-        # Prepare reasoning prompt
-        logger.info("🧠 Reasoning phase starting...")
-        
-        reasoner_prompt = dedent(f"""
-        Repository: Glad Labs AI Co-Founder System
-        
-        {repo_summary[:2000]}
-
-        Last test run (iteration {iteration}):
-        - Success: {tests_ok}
-        - Output (truncated):
-        {test_output[:3000]}
-
-        Previous context from earlier iterations:
-        {previous_context[-2000:] if previous_context else "None"}
-
-        Focus on improvements that:
-        1. Fix actual bugs or errors
-        2. Improve code quality and maintainability  
-        3. Add better error handling
-        4. Optimize performance
-        5. Improve documentation
-        
-        Produce a JSON object with your plan:
-        {{
-          "done": bool,
-          "reason": string,
-          "steps": [
-            {{
-              "id": int,
-              "description": string,
-              "files": [ "path1", "path2" ]
-            }}
-          ]
-        }}
-        
-        If tests are failing, focus on fixing configuration and test setup issues first.
-        """)
-
-        plan_raw = run_ollama(REASONER_MODEL, reasoner_prompt, system_reasoner)
-        logger.info(f"📋 Reasoner response preview:")
-        logger.info(f"   {plan_raw[:500]}...")
-        logger.debug(f"\n[Full reasoner output]\n{plan_raw}")
-
-        # Parse reasoning output
-        try:
-            plan = json.loads(plan_raw)
-            logger.info("✅ Successfully parsed JSON plan")
-        except json.JSONDecodeError as e:
-            logger.warning(f"⚠️  Invalid JSON from reasoner: {e}")
-            logger.info("🔍 Attempting JSON extraction...")
+    # Infinite loop or limited iterations
+    try:
+        while True:
+            iteration += 1
             
-            # Try to find JSON in the response
-            import re
-            json_match = re.search(r'\{.*\}', plan_raw, re.DOTALL)
-            if json_match:
-                try:
-                    plan = json.loads(json_match.group())
-                    logger.info("✅ Extracted JSON successfully")
-                except Exception as extract_error:
-                    logger.error(f"❌ Could not extract valid JSON: {extract_error}")
-                    logger.error(f"   Raw output: {plan_raw[:1000]}")
-                    break
-            else:
-                logger.error("❌ No JSON found in response, stopping.")
-                logger.error(f"   Raw output: {plan_raw[:1000]}")
+            # Check if we've hit max iterations (if set)
+            if MAX_ITERATIONS > 0 and iteration > MAX_ITERATIONS:
+                logger.info(f"\n✅ Reached max iterations ({MAX_ITERATIONS})")
                 break
-
-        # Check if we're done
-        if plan.get("done"):
-            reason = plan.get("reason", "No reason provided")
-            logger.info(f"🏁 Reasoner marked iteration as complete: {reason}")
-            break
-
-        # Get steps to execute
-        steps = plan.get("steps") or []
-        if not steps:
-            logger.warning("⚠️  No steps returned in plan, stopping.")
-            break
-        
-        logger.info(f"📝 Plan contains {len(steps)} step(s)")
-
-        # Execute each step
-        for step_num, step in enumerate(steps, 1):
-            step_id = step.get("id", step_num)
-            desc = step.get("description", "No description")
-            files = step.get("files", [])
-
+                
+            iteration_start = time.time()
+            
             logger.info("")
-            logger.info(f"⚙️  STEP {step_num}/{len(steps)} (ID: {step_id})")
-            logger.info(f"   Description: {desc}")
-            logger.info(f"   Files to modify: {len(files)}")
-            
-            if not files:
-                logger.warning("   ⚠️  No files specified, skipping step")
-                previous_context += f"\nStep {step_id}: Skipped (no files specified)"
-                continue
-            
-            # Load file contents
-            logger.info("   📂 Loading files...")
-            file_blobs = []
-            files_loaded = 0
-            
-            for f in files:
-                logger.debug(f"      - {f}")
-                content = get_file_contents(f)
-                if content:
-                    # Limit individual file size to prevent token overflow
-                    max_file_size = 10000  # ~10KB per file
-                    if len(content) > max_file_size:
-                        logger.debug(f"      ⚠️  Truncating {f} from {len(content)} to {max_file_size} chars")
-                        content = content[:max_file_size] + "\n... (truncated)"
-                    
-                    file_blobs.append(f"\n--- FILE: {f} ---\n{content}\n")
-                    files_loaded += 1
-                else:
-                    logger.warning(f"      ⚠️  Could not read {f}")
+            logger.info("=" * 80)
+            if MAX_ITERATIONS > 0:
+                logger.info(f"🔄 ITERATION {iteration}/{MAX_ITERATIONS}")
+            else:
+                logger.info(f"🔄 ITERATION {iteration} (infinite mode)")
+            logger.info("=" * 80)
 
-            if not file_blobs:
-                logger.warning("   ⚠️  No files loaded successfully, skipping step")
-                previous_context += f"\nStep {step_id}: Skipped (files not found)"
-                continue
-            
-            logger.info(f"   ✅ Loaded {files_loaded}/{len(files)} files successfully")
-
-            # Generate code changes
-            logger.info("   💻 Generating code changes...")
-            
-            # Limit total context size
-            combined_context = ''.join(file_blobs)
-            max_context_size = 40000  # ~40KB total context
-            if len(combined_context) > max_context_size:
-                logger.warning(f"   ⚠️  Context too large ({len(combined_context)} chars), truncating to {max_context_size}")
-                combined_context = combined_context[:max_context_size] + "\n... (truncated for token limits)"
-            
-            coder_prompt = dedent(f"""
-            Implement this improvement for the Glad Labs AI Co-Founder system:
-            
-            Step ID: {step_id}
-            Description: {desc}
-            Files to modify: {', '.join(files)}
-
-            Current file contents:
-            {combined_context}
-
-            IMPORTANT INSTRUCTIONS:
-            Generate your response in JSON format with EITHER a unified diff OR a direct edit:
-            
-            Option 1 - Unified Diff (for complex multi-line changes):
-            {{
-              "type": "diff",
-              "patch": "--- a/file.py\\n+++ b/file.py\\n@@ -10,5 +10,5 @@\\n context\\n-old\\n+new\\n context"
-            }}
-            
-            Option 2 - Direct Edit (PREFERRED for simple fixes like syntax errors):
-            {{
-              "type": "edit",
-              "file": "path/to/file.py",
-              "old": "exact old content to replace",
-              "new": "exact new content"
-            }}
-            
-            Rules:
-            1. For syntax errors, typos, or simple fixes → Use "edit" type
-            2. For multi-line refactoring → Use "diff" type
-            3. Make minimal, focused changes only
-            4. Ensure Python/JavaScript syntax is correct
-            5. Include enough context in old/new to be unique
-            
-            Generate JSON now:
-            """)
-
-            patch = run_ollama(CODER_MODEL, coder_prompt, system_coder)
-            
-            if not patch or not patch.strip():
-                logger.warning(f"   ⚠️  No response generated")
-                previous_context += f"\nStep {step_id} ({desc}): No response generated"
-                continue
-            
-            logger.info(f"   📄 Generated response ({len(patch)} chars)")
-            logger.debug(f"\n--- RESPONSE PREVIEW ---\n{patch[:1000]}\n--- END PREVIEW ---")
-
-            # Try to parse as JSON first (new format)
-            patch_applied = False
-            try:
-                import re
-                json_match = re.search(r'\{.*\}', patch, re.DOTALL)
-                if json_match:
-                    response_data = json.loads(json_match.group())
-                    response_type = response_data.get("type")
-                    
-                    if response_type == "edit":
-                        # Direct string replacement
-                        file_path = response_data.get("file", files[0] if files else "")
-                        old_content = response_data.get("old", "")
-                        new_content = response_data.get("new", "")
-                        
-                        logger.info(f"   → Using direct edit mode")
-                        patch_applied = apply_direct_edit(file_path, old_content, new_content)
-                        
-                    elif response_type == "diff":
-                        # Traditional unified diff
-                        patch_text = response_data.get("patch", "")
-                        logger.info(f"   → Using diff mode")
-                        patch_applied = apply_patch(patch_text)
-                    else:
-                        logger.warning(f"   ⚠️  Unknown response type: {response_type}")
-                else:
-                    # Fallback: Try as raw diff
-                    logger.info(f"   → Attempting raw diff mode")
-                    patch_applied = apply_patch(patch)
-                    
-            except json.JSONDecodeError:
-                # Fallback: Try as raw diff
-                logger.info(f"   → No JSON found, attempting raw diff mode")
-                patch_applied = apply_patch(patch)
-
-            if not patch_applied:
-                logger.error(f"   ❌ Patch failed to apply")
-                previous_context += f"\nStep {step_id} ({desc}): Patch failed to apply"
-                continue
-
-            # Re-run tests to verify the change
-            logger.info("   🧪 Verifying changes with tests...")
+            # Run tests
             test_start = time.time()
             tests_ok, test_output = run_tests()
             test_duration = time.time() - test_start
             
-            result_emoji = "✅" if tests_ok else "❌"
-            logger.info(f"   {result_emoji} Tests completed in {test_duration:.1f}s")
+            if SKIP_TESTS:
+                logger.info(f"⏭️  Tests skipped - continuing with code analysis")
+            elif tests_ok:
+                logger.info(f"📊 Tests completed in {test_duration:.1f}s - ✅ PASS")
+            else:
+                logger.info(f"📊 Tests completed in {test_duration:.1f}s - ❌ FAIL")
+                if CONTINUE_ON_TEST_FAILURE:
+                    logger.info("   → Continuing anyway (CONTINUE_ON_TEST_FAILURE=True)")
+                else:
+                    logger.error("   → Stopping (CONTINUE_ON_TEST_FAILURE=False)")
+                    break
+
+            # Prepare reasoning prompt
+            logger.info("🧠 Reasoning phase starting...")
             
-            # Update context
-            previous_context += dedent(f"""
+            reasoner_prompt = dedent(f"""
+            Repository: Glad Labs AI Co-Founder System
             
-            Step {step_id} ("{desc}"):
-            - Files modified: {', '.join(files)}
-            - Patch applied: ✅ yes
-            - Tests passing: {result_emoji} {tests_ok}
-            - Test output (truncated):
-            {test_output[:1500]}
+            {repo_summary[:2000]}
+
+            Last test run (iteration {iteration}):
+            - Success: {tests_ok}
+            - Output (truncated):
+            {test_output[:3000]}
+
+            Previous context from earlier iterations:
+            {previous_context[-2000:] if previous_context else "None"}
+
+            Focus on improvements that:
+            1. Fix actual bugs or errors
+            2. Improve code quality and maintainability  
+            3. Add better error handling
+            4. Optimize performance
+            5. Improve documentation
+            
+            Produce a JSON object with your plan:
+            {{
+              "done": bool,
+              "reason": string,
+              "steps": [
+                {{
+                  "id": int,
+                  "description": string,
+                  "files": [ "path1", "path2" ]
+                }}
+              ]
+            }}
+            
+            If tests are failing, focus on fixing configuration and test setup issues first.
             """)
 
-        # Track iteration time
-        iteration_duration = time.time() - iteration_start
-        iteration_times.append(iteration_duration)
-        avg_time = sum(iteration_times) / len(iteration_times)
-        
+            plan_raw = run_ollama(REASONER_MODEL, reasoner_prompt, system_reasoner)
+            logger.info(f"📋 Reasoner response preview:")
+            logger.info(f"   {plan_raw[:500]}...")
+            logger.debug(f"\n[Full reasoner output]\n{plan_raw}")
+
+            # Parse reasoning output
+            try:
+                plan = json.loads(plan_raw)
+                logger.info("✅ Successfully parsed JSON plan")
+            except json.JSONDecodeError as e:
+                logger.warning(f"⚠️  Invalid JSON from reasoner: {e}")
+                logger.info("🔍 Attempting JSON extraction...")
+                
+                # Try to find JSON in the response
+                import re
+                json_match = re.search(r'\{.*\}', plan_raw, re.DOTALL)
+                if json_match:
+                    try:
+                        plan = json.loads(json_match.group())
+                        logger.info("✅ Extracted JSON successfully")
+                    except Exception as extract_error:
+                        logger.error(f"❌ Could not extract valid JSON: {extract_error}")
+                        logger.error(f"   Raw output: {plan_raw[:1000]}")
+                        break
+                else:
+                    logger.error("❌ No JSON found in response, stopping.")
+                    logger.error(f"   Raw output: {plan_raw[:1000]}")
+                    break
+
+            # Check if we're done
+            if plan.get("done"):
+                reason = plan.get("reason", "No reason provided")
+                logger.info(f"🏁 Reasoner marked iteration as complete: {reason}")
+                break
+
+            # Get steps to execute
+            steps = plan.get("steps") or []
+            if not steps:
+                logger.warning("⚠️  No steps returned in plan, stopping.")
+                break
+            
+            logger.info(f"📝 Plan contains {len(steps)} step(s)")
+
+            # Execute each step
+            for step_num, step in enumerate(steps, 1):
+                step_id = step.get("id", step_num)
+                desc = step.get("description", "No description")
+                files = step.get("files", [])
+
+                logger.info("")
+                logger.info(f"⚙️  STEP {step_num}/{len(steps)} (ID: {step_id})")
+                logger.info(f"   Description: {desc}")
+                logger.info(f"   Files to modify: {len(files)}")
+                
+                if not files:
+                    logger.warning("   ⚠️  No files specified, skipping step")
+                    previous_context += f"\nStep {step_id}: Skipped (no files specified)"
+                    continue
+                
+                # Load file contents
+                logger.info("   📂 Loading files...")
+                file_blobs = []
+                files_loaded = 0
+                
+                for f in files:
+                    logger.debug(f"      - {f}")
+                    content = get_file_contents(f)
+                    if content:
+                        # Limit individual file size to prevent token overflow
+                        max_file_size = 10000  # ~10KB per file
+                        if len(content) > max_file_size:
+                            logger.debug(f"      ⚠️  Truncating {f} from {len(content)} to {max_file_size} chars")
+                            content = content[:max_file_size] + "\n... (truncated)"
+                        
+                        file_blobs.append(f"\n--- FILE: {f} ---\n{content}\n")
+                        files_loaded += 1
+                    else:
+                        logger.warning(f"      ⚠️  Could not read {f}")
+
+                if not file_blobs:
+                    logger.warning("   ⚠️  No files loaded successfully, skipping step")
+                    previous_context += f"\nStep {step_id}: Skipped (files not found)"
+                    continue
+                
+                logger.info(f"   ✅ Loaded {files_loaded}/{len(files)} files successfully")
+
+                # Generate code changes
+                logger.info("   💻 Generating code changes...")
+                
+                # Limit total context size
+                combined_context = ''.join(file_blobs)
+                max_context_size = 40000  # ~40KB total context
+                if len(combined_context) > max_context_size:
+                    logger.warning(f"   ⚠️  Context too large ({len(combined_context)} chars), truncating to {max_context_size}")
+                    combined_context = combined_context[:max_context_size] + "\n... (truncated for token limits)"
+                
+                coder_prompt = dedent(f"""
+                Implement this improvement for the Glad Labs AI Co-Founder system:
+                
+                Step ID: {step_id}
+                Description: {desc}
+                Files to modify: {', '.join(files)}
+
+                Current file contents:
+                {combined_context}
+
+                IMPORTANT INSTRUCTIONS:
+                Generate your response in JSON format with EITHER a unified diff OR a direct edit:
+                
+                Option 1 - Unified Diff (for complex multi-line changes):
+                {{
+                  "type": "diff",
+                  "patch": "--- a/file.py\\n+++ b/file.py\\n@@ -10,5 +10,5 @@\\n context\\n-old\\n+new\\n context"
+                }}
+                
+                Option 2 - Direct Edit (PREFERRED for simple fixes like syntax errors):
+                {{
+                  "type": "edit",
+                  "file": "path/to/file.py",
+                  "old": "exact old content to replace",
+                  "new": "exact new content"
+                }}
+                
+                Rules:
+                1. For syntax errors, typos, or simple fixes → Use "edit" type
+                2. For multi-line refactoring → Use "diff" type
+                3. Make minimal, focused changes only
+                4. Ensure Python/JavaScript syntax is correct
+                5. Include enough context in old/new to be unique
+                
+                Generate JSON now:
+                """)
+
+                patch = run_ollama(CODER_MODEL, coder_prompt, system_coder)
+                
+                if not patch or not patch.strip():
+                    logger.warning(f"   ⚠️  No response generated")
+                    previous_context += f"\nStep {step_id} ({desc}): No response generated"
+                    continue
+                
+                logger.info(f"   📄 Generated response ({len(patch)} chars)")
+                logger.debug(f"\n--- RESPONSE PREVIEW ---\n{patch[:1000]}\n--- END PREVIEW ---")
+
+                # Try to parse as JSON first (new format)
+                patch_applied = False
+                try:
+                    import re
+                    json_match = re.search(r'\{.*\}', patch, re.DOTALL)
+                    if json_match:
+                        response_data = json.loads(json_match.group())
+                        response_type = response_data.get("type")
+                        
+                        if response_type == "edit":
+                            # Direct string replacement
+                            file_path = response_data.get("file", files[0] if files else "")
+                            old_content = response_data.get("old", "")
+                            new_content = response_data.get("new", "")
+                            
+                            logger.info(f"   → Using direct edit mode")
+                            patch_applied = apply_direct_edit(file_path, old_content, new_content)
+                            
+                        elif response_type == "diff":
+                            # Traditional unified diff
+                            patch_text = response_data.get("patch", "")
+                            logger.info(f"   → Using diff mode")
+                            patch_applied = apply_patch(patch_text)
+                        else:
+                            logger.warning(f"   ⚠️  Unknown response type: {response_type}")
+                    else:
+                        # Fallback: Try as raw diff
+                        logger.info(f"   → Attempting raw diff mode")
+                        patch_applied = apply_patch(patch)
+                        
+                except json.JSONDecodeError:
+                    # Fallback: Try as raw diff
+                    logger.info(f"   → No JSON found, attempting raw diff mode")
+                    patch_applied = apply_patch(patch)
+
+                if not patch_applied:
+                    logger.error(f"   ❌ Patch failed to apply")
+                    previous_context += f"\nStep {step_id} ({desc}): Patch failed to apply"
+                    continue
+
+                # Re-run tests to verify the change
+                logger.info("   🧪 Verifying changes with tests...")
+                test_start = time.time()
+                tests_ok, test_output = run_tests()
+                test_duration = time.time() - test_start
+                
+                result_emoji = "✅" if tests_ok else "❌"
+                logger.info(f"   {result_emoji} Tests completed in {test_duration:.1f}s")
+                
+                # Update context
+                previous_context += dedent(f"""
+                
+                Step {step_id} ("{desc}"):
+                - Files modified: {', '.join(files)}
+                - Patch applied: ✅ yes
+                - Tests passing: {result_emoji} {tests_ok}
+                - Test output (truncated):
+                {test_output[:1500]}
+                """)
+
+            # Track iteration time
+            iteration_duration = time.time() - iteration_start
+            iteration_times.append(iteration_duration)
+            avg_time = sum(iteration_times) / len(iteration_times)
+            
+            logger.info("")
+            logger.info(f"⏱️  Iteration {iteration} completed in {iteration_duration:.1f}s")
+            logger.info(f"   Average iteration time: {avg_time:.1f}s")
+            logger.info(f"   Total iterations completed: {iteration}")
+            if MAX_ITERATIONS > 0 and iteration < MAX_ITERATIONS:
+                estimated_remaining = avg_time * (MAX_ITERATIONS - iteration)
+                logger.info(f"   Estimated time remaining: {estimated_remaining/60:.1f} minutes")
+            
+            # Delay between iterations if configured
+            if ITERATION_DELAY > 0:
+                logger.info(f"\n⏸️  Waiting {ITERATION_DELAY}s before next iteration...")
+                time.sleep(ITERATION_DELAY)
+                
+    except KeyboardInterrupt:
         logger.info("")
-        logger.info(f"⏱️  Iteration {iteration} completed in {iteration_duration:.1f}s")
-        logger.info(f"   Average iteration time: {avg_time:.1f}s")
-        if iteration < MAX_ITERATIONS:
-            estimated_remaining = avg_time * (MAX_ITERATIONS - iteration)
-            logger.info(f"   Estimated time remaining: {estimated_remaining/60:.1f} minutes")
+        logger.info("\n⚠️  Keyboard interrupt received (Ctrl+C)")
+        logger.info("🛑 Stopping agent loop gracefully...")
 
     # Final summary
     logger.info("")
@@ -870,10 +900,13 @@ def main():
     logger.info("🏁 AGENT LOOP COMPLETE")
     logger.info("=" * 80)
     logger.info(f"Total iterations: {iteration}")
-    logger.info(f"Total time: {sum(iteration_times)/60:.1f} minutes")
+    if iteration_times:
+        logger.info(f"Total time: {sum(iteration_times)/60:.1f} minutes")
+        logger.info(f"Average time per iteration: {sum(iteration_times)/len(iteration_times):.1f}s")
     logger.info(f"End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info("")
     logger.info("💡 Review changes with: git diff")
+    logger.info("💡 Commit changes with: git add . && git commit -m 'Agent improvements'")
     logger.info("💡 Revert changes with: git reset --hard HEAD")
     logger.info("=" * 80)
 
