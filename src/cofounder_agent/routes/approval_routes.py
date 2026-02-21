@@ -25,8 +25,10 @@ from uuid import uuid4 as uuid_lib_uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from middleware.auth import get_current_user
-from services.database_service import DatabaseService, get_database_dependency
+from routes.auth_unified import get_current_user
+from utils.route_utils import get_database_dependency
+from services.database_service import DatabaseService
+from routes.websocket_routes import broadcast_approval_status
 
 
 logger = logging.getLogger(__name__)
@@ -50,6 +52,23 @@ class ApprovalRequest(BaseModel):
 class RejectionRequest(BaseModel):
     """Request body for rejecting a task"""
 
+    reason: str
+    feedback: str
+    allow_revisions: bool = True
+
+
+class BulkApprovalRequest(BaseModel):
+    """Request body for bulk approving tasks"""
+
+    task_ids: List[str]
+    feedback: Optional[str] = None
+    reviewer_notes: Optional[str] = None
+
+
+class BulkRejectionRequest(BaseModel):
+    """Request body for bulk rejecting tasks"""
+
+    task_ids: List[str]
     reason: str
     feedback: str
     allow_revisions: bool = True
@@ -164,6 +183,20 @@ async def approve_task(
         )
 
         logger.info(f"✅ [APPROVAL] Task {task_id} approved by {current_user.get('id')}")
+
+        # Broadcast approval status to connected WebSocket clients
+        try:
+            await broadcast_approval_status(
+                task_id,
+                "approved",
+                {
+                    "approved_by": current_user.get("id"),
+                    "feedback": request.feedback,
+                    "approval_date": approval_date,
+                },
+            )
+        except Exception as e:
+            logger.warning(f"Failed to broadcast approval status: {e}")
 
         return {
             "task_id": task_id,
@@ -293,6 +326,22 @@ async def reject_task(
             f"❌ [REJECTION] Task {task_id} rejected by {current_user.get('id')} (reason: {request.reason})"
         )
 
+        # Broadcast rejection status to connected WebSocket clients
+        try:
+            await broadcast_approval_status(
+                task_id,
+                "rejected",
+                {
+                    "rejected_by": current_user.get("id"),
+                    "reason": request.reason,
+                    "feedback": request.feedback,
+                    "allow_revisions": request.allow_revisions,
+                    "rejection_date": rejection_date,
+                },
+            )
+        except Exception as e:
+            logger.warning(f"Failed to broadcast rejection status: {e}")
+
         return {
             "task_id": task_id,
             "status": final_status,
@@ -314,6 +363,253 @@ async def reject_task(
         raise HTTPException(
             status_code=500,
             detail={"message": f"Failed to reject task: {str(e)}", "type": "internal_error"},
+        )
+
+
+@router.post(
+    "/bulk-approve",
+    summary="Bulk approve multiple tasks",
+    response_model=Dict[str, Any],
+    status_code=200,
+)
+async def bulk_approve_tasks(
+    request: BulkApprovalRequest,
+    current_user: dict = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
+):
+    """
+    Approve multiple tasks in a single request.
+
+    **Parameters:**
+    - task_ids: List of task UUIDs to approve
+    - feedback: Optional approval feedback (applies to all tasks)
+    - reviewer_notes: Optional internal notes
+
+    **Returns:**
+    ```json
+    {
+      "approved_count": 5,
+      "failed_count": 0,
+      "total": 5,
+      "successful_task_ids": ["uuid1", "uuid2", ...],
+      "failed_task_ids": [],
+      "message": "5 tasks approved"
+    }
+    ```
+
+    **Limitations:**
+    - Only approves tasks with status = "awaiting_approval"
+    - Skips tasks that are already approved/rejected
+    - Returns summary of successful and failed approvals
+    """
+    try:
+        logger.info(
+            f"👤 [BULK_APPROVAL] User {current_user.get('id')} bulk approving {len(request.task_ids)} tasks"
+        )
+
+        approved_count = 0
+        failed_count = 0
+        successful_ids = []
+        failed_ids = []
+        approval_date = datetime.now(timezone.utc).isoformat()
+
+        for task_id in request.task_ids:
+            try:
+                # Fetch task
+                task = await db_service.get_task(task_id)
+                if not task:
+                    failed_ids.append(task_id)
+                    failed_count += 1
+                    continue
+
+                # Only approve awaiting_approval tasks
+                if task.get("status") != "awaiting_approval":
+                    failed_ids.append(task_id)
+                    failed_count += 1
+                    continue
+
+                # Update task
+                metadata_updates = {
+                    **(task.get("metadata") or {}),
+                    "approval_date": approval_date,
+                    "approved_by": current_user.get("id"),
+                    "approval_status": "approved",
+                    "approval_feedback": request.feedback,
+                    "approval_notes": request.reviewer_notes,
+                }
+
+                await db_service.update_task(
+                    task_id,
+                    {
+                        "status": "approved",
+                        "metadata": metadata_updates,
+                        "updated_at": approval_date,
+                    },
+                )
+
+                # Broadcast approval status
+                try:
+                    await broadcast_approval_status(
+                        task_id,
+                        "approved",
+                        {
+                            "approved_by": current_user.get("id"),
+                            "feedback": request.feedback,
+                            "approval_date": approval_date,
+                        },
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to broadcast approval for {task_id}: {e}")
+
+                successful_ids.append(task_id)
+                approved_count += 1
+
+            except Exception as e:
+                logger.error(f"Failed to approve task {task_id}: {e}")
+                failed_ids.append(task_id)
+                failed_count += 1
+
+        logger.info(
+            f"✅ [BULK_APPROVAL] Approved {approved_count} tasks, {failed_count} failed"
+        )
+
+        return {
+            "approved_count": approved_count,
+            "failed_count": failed_count,
+            "total": len(request.task_ids),
+            "successful_task_ids": successful_ids,
+            "failed_task_ids": failed_ids,
+            "message": f"{approved_count} tasks approved, {failed_count} failed",
+        }
+
+    except Exception as e:
+        logger.error(f"❌ [BULK_APPROVAL] Failed: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"message": f"Bulk approval failed: {str(e)}", "type": "internal_error"},
+        )
+
+
+@router.post(
+    "/bulk-reject",
+    summary="Bulk reject multiple tasks",
+    response_model=Dict[str, Any],
+    status_code=200,
+)
+async def bulk_reject_tasks(
+    request: BulkRejectionRequest,
+    current_user: dict = Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
+):
+    """
+    Reject multiple tasks in a single request.
+
+    **Parameters:**
+    - task_ids: List of task UUIDs to reject
+    - reason: Rejection reason (applies to all tasks)
+    - feedback: Rejection feedback (applies to all tasks)
+    - allow_revisions: Whether to allow revisions (applies to all tasks)
+
+    **Returns:**
+    ```json
+    {
+      "rejected_count": 3,
+      "failed_count": 0,
+      "total": 3,
+      "successful_task_ids": ["uuid1", "uuid2", "uuid3"],
+      "failed_task_ids": [],
+      "message": "3 tasks rejected"
+    }
+    ```
+    """
+    try:
+        logger.info(
+            f"👤 [BULK_REJECTION] User {current_user.get('id')} bulk rejecting {len(request.task_ids)} tasks"
+        )
+
+        rejected_count = 0
+        failed_count = 0
+        successful_ids = []
+        failed_ids = []
+        rejection_date = datetime.now(timezone.utc).isoformat()
+        final_status = "failed_revisions_requested" if request.allow_revisions else "failed"
+
+        for task_id in request.task_ids:
+            try:
+                # Fetch task
+                task = await db_service.get_task(task_id)
+                if not task:
+                    failed_ids.append(task_id)
+                    failed_count += 1
+                    continue
+
+                # Only reject awaiting_approval tasks
+                if task.get("status") != "awaiting_approval":
+                    failed_ids.append(task_id)
+                    failed_count += 1
+                    continue
+
+                # Update task
+                metadata_updates = {
+                    **(task.get("metadata") or {}),
+                    "rejection_date": rejection_date,
+                    "rejected_by": current_user.get("id"),
+                    "rejection_reason": request.reason,
+                    "rejection_feedback": request.feedback,
+                    "allow_revisions": request.allow_revisions,
+                }
+
+                await db_service.update_task(
+                    task_id,
+                    {
+                        "status": final_status,
+                        "metadata": metadata_updates,
+                        "updated_at": rejection_date,
+                    },
+                )
+
+                # Broadcast rejection status
+                try:
+                    await broadcast_approval_status(
+                        task_id,
+                        "rejected",
+                        {
+                            "rejected_by": current_user.get("id"),
+                            "reason": request.reason,
+                            "feedback": request.feedback,
+                            "allow_revisions": request.allow_revisions,
+                            "rejection_date": rejection_date,
+                        },
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to broadcast rejection for {task_id}: {e}")
+
+                successful_ids.append(task_id)
+                rejected_count += 1
+
+            except Exception as e:
+                logger.error(f"Failed to reject task {task_id}: {e}")
+                failed_ids.append(task_id)
+                failed_count += 1
+
+        logger.info(
+            f"✅ [BULK_REJECTION] Rejected {rejected_count} tasks, {failed_count} failed"
+        )
+
+        return {
+            "rejected_count": rejected_count,
+            "failed_count": failed_count,
+            "total": len(request.task_ids),
+            "successful_task_ids": successful_ids,
+            "failed_task_ids": failed_ids,
+            "message": f"{rejected_count} tasks rejected, {failed_count} failed",
+        }
+
+    except Exception as e:
+        logger.error(f"❌ [BULK_REJECTION] Failed: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={"message": f"Bulk rejection failed: {str(e)}", "type": "internal_error"},
         )
 
 
@@ -386,47 +682,40 @@ async def get_pending_approvals(
             f"📋 [PENDING_APPROVAL] User {current_user.get('id')} fetching pending approvals"
         )
 
-        # Fetch pending tasks from database
-        # This is a placeholder - actual implementation uses database_service
-        # For now, we'll calculate from all tasks with "awaiting_approval" status
+        # Fetch pending tasks from database with pagination
+        # Use get_tasks_paginated which handles status filtering and pagination
+        user_id = current_user.get("id") if current_user else None
         
-        # Build query filter
-        filters = {
-            "status": "awaiting_approval",
-            "user_id": current_user.get("id"),  # Only user's own tasks (or admin sees all)
-        }
-        if task_type:
-            filters["task_type"] = task_type
-
-        # Fetch all matching tasks (simplified - real impl uses DB query)
-        # For now, returning empty list - will implement when database methods ready
-        pending_tasks = []  # TODO: Use db_service.query_tasks(filters) when available
+        try:
+            result = await db_service.get_tasks_paginated(
+                offset=offset,
+                limit=limit,
+                status="awaiting_approval",
+                category=task_type,  # task_type is stored as category in database
+                user_id=user_id,
+            )
+            # get_tasks_paginated returns tuple of (tasks, total)
+            if isinstance(result, tuple):
+                pending_tasks, total = result
+            else:
+                # Fallback for dict response format
+                pending_tasks = result.get("tasks", []) if isinstance(result, dict) else []
+                total = result.get("total", 0) if isinstance(result, dict) else 0
+        except Exception as e:
+            logger.error(f"❌ [PENDING_APPROVAL] Database query failed: {e}")
+            pending_tasks = []
+            total = 0
 
         # Build response
-        total = len(pending_tasks) if pending_tasks else 0
+        # Note: Database pagination is already applied by get_tasks_paginated
+        # Don't recalculate total - use the database value
         
-        # Simple in-memory pagination and sorting
         if pending_tasks:
-            # Sort
-            if sort_by == "quality_score":
-                pending_tasks.sort(
-                    key=lambda t: t.get("metadata", {}).get("quality_score", 0),
-                    reverse=(sort_order == "desc"),
-                )
-            elif sort_by == "topic":
-                pending_tasks.sort(
-                    key=lambda t: t.get("topic", ""),
-                    reverse=(sort_order == "desc"),
-                )
-            else:  # created_at (default)
-                pending_tasks.sort(
-                    key=lambda t: t.get("created_at", ""),
-                    reverse=(sort_order == "desc"),
-                )
-
-            # Paginate
-            pending_tasks = pending_tasks[offset : offset + limit]
-
+            # Ensure task_name is set from title column for API consistency
+            for task in pending_tasks:
+                if not task.get("task_name") and task.get("title"):
+                    task["task_name"] = task["title"]
+        
         logger.info(
             f"📋 [PENDING_APPROVAL] Found {total} tasks, returning {len(pending_tasks)}"
         )
@@ -438,20 +727,20 @@ async def get_pending_approvals(
             "count": len(pending_tasks),
             "tasks": [
                 {
-                    "task_id": task.get("id"),
-                    "task_name": task.get("task_name"),
+                    "task_id": task.get("task_id") or task.get("id"),  # Try task_id first, then id
+                    "task_name": task.get("title") or task.get("task_name"),  # Title is the main column
                     "topic": task.get("topic"),
                     "task_type": task.get("task_type"),
                     "status": task.get("status"),
                     "created_at": task.get("created_at"),
-                    "quality_score": task.get("metadata", {}).get("quality_score"),
+                    "quality_score": task.get("quality_score"),  # Now in root level, not nested
                     "content_preview": (
-                        task.get("metadata", {})
-                        .get("content", "")[:200]
-                        .replace("\n", " ")
+                        task.get("content", "")[:200].replace("\n", " ")
+                        if task.get("content")
+                        else "No content available"
                     ),
-                    "featured_image_url": task.get("metadata", {}).get("featured_image_url"),
-                    "metadata": task.get("metadata", {}),
+                    "featured_image_url": task.get("featured_image_url"),
+                    "metadata": task.get("task_metadata", {}),  # task_metadata is the main JSON column
                 }
                 for task in pending_tasks
             ],

@@ -1,6 +1,23 @@
 import type { MetadataRoute } from 'next';
 
 /**
+ * Type definitions for sitemap content
+ */
+interface Post {
+  slug: string;
+  updatedAt?: string;
+  publishedAt?: string;
+}
+
+interface Category {
+  slug: string;
+}
+
+interface Tag {
+  slug: string;
+}
+
+/**
  * Dynamic Sitemap Generation for Next.js 15
  *
  * This generates yourdomain.com/sitemap.xml from Postgres data.
@@ -39,7 +56,7 @@ async function fetchPublishedContent() {
 
   try {
     // Fetch all published posts with pagination (API max limit is 100)
-    let allPosts: any[] = [];
+    let allPosts: Post[] = [];
     let skip = 0;
     const limit = 100;
     let hasMore = true;
@@ -126,7 +143,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Blog posts
   const postPages: MetadataRoute.Sitemap = (allPosts || []).map(
-    (post: any) => ({
+    (post: Post) => ({
       url: `${baseUrl}/posts/${post.slug}`,
       lastModified: post.updatedAt
         ? new Date(post.updatedAt)
@@ -138,7 +155,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Category pages
   const categoryPages: MetadataRoute.Sitemap = (allCategories || []).map(
-    (category: any) => ({
+    (category: Category) => ({
       url: `${baseUrl}/category/${category.slug}`,
       lastModified: new Date(),
       changeFrequency: 'weekly' as const,
@@ -147,7 +164,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   );
 
   // Tag pages
-  const tagPages: MetadataRoute.Sitemap = (allTags || []).map((tag: any) => ({
+  const tagPages: MetadataRoute.Sitemap = (allTags || []).map((tag: Tag) => ({
     url: `${baseUrl}/tag/${tag.slug}`,
     lastModified: new Date(),
     changeFrequency: 'weekly' as const,

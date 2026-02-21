@@ -283,9 +283,9 @@ function loadGoogleAnalytics() {
 
   window.dataLayer = window.dataLayer || [];
   function gtag(...args: any[]) {
-    (window.dataLayer as any).push(arguments);
+    window.dataLayer.push(arguments);
   }
-  (window as any).gtag = gtag;
+  window.gtag = gtag;
   gtag('js', new Date());
   gtag('config', gaId);
 }

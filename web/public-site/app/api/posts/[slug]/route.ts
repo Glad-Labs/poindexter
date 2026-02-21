@@ -5,6 +5,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
+interface Post {
+  slug: string;
+  [key: string]: any;
+}
+
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ||
   process.env.NEXT_PUBLIC_FASTAPI_URL ||
@@ -33,7 +38,7 @@ export async function GET(
 
     const data = await response.json();
     const posts = data.data || data || [];
-    const post = posts.find((p: any) => p.slug === slug);
+    const post = posts.find((p: Post) => p.slug === slug);
 
     if (!post) {
       return NextResponse.json({ error: 'Post not found' }, { status: 404 });

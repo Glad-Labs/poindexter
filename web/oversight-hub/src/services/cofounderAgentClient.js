@@ -77,8 +77,8 @@ export async function makeRequest(
   endpoint,
   method = 'GET',
   data = null,
-  retry = false,
-  onUnauthorized = null,
+  _retry = false,
+  _onUnauthorized = null,
   timeout = 30000, // 30 seconds - allows for long-running operations like Ollama generation
   requestOptions = null
 ) {
@@ -96,16 +96,18 @@ export async function makeRequest(
 
     try {
       return Boolean(shouldSuppressErrorLog(ctx));
-    } catch (_) {
+    } catch {
       return false;
     }
   };
 
   try {
     const url = `${API_BASE_URL}${endpoint}`;
-    console.debug(
-      `[cofounderAgentClient] ${method} ${endpoint} (timeout: ${timeout}ms)`
-    );
+    if (process.env.NODE_ENV === 'development') {
+      console.debug(
+        `[cofounderAgentClient] ${method} ${endpoint} (timeout: ${timeout}ms)`
+      );
+    }
     const config = { method, headers: getAuthHeaders() };
 
     // Handle FormData (file uploads) - must NOT set Content-Type header
@@ -125,15 +127,20 @@ export async function makeRequest(
       const response = await fetch(url, config);
       clearTimeout(timeoutId);
       const duration_ms = Math.round(performance.now() - startTime);
-      console.debug(
-        `[cofounderAgentClient] ${method} ${endpoint} completed in ${duration_ms}ms, status: ${response.status}`
-      );
+      if (process.env.NODE_ENV === 'development') {
+        console.debug(
+          `[cofounderAgentClient] ${method} ${endpoint} completed in ${duration_ms}ms, status: ${response.status}`
+        );
+      }
 
       const result = await response.json().catch(() => response.text());
 
       // =======================================================================
       // DEBUGGING: Log the raw API response to diagnose task list issue
-      if (endpoint.startsWith('/api/tasks')) {
+      if (
+        process.env.NODE_ENV === 'development' &&
+        endpoint.startsWith('/api/tasks')
+      ) {
         console.log('✅ [DEBUG] Raw response from /api/tasks:', result);
       }
       // =======================================================================
@@ -173,7 +180,7 @@ export async function makeRequest(
         // Collect metric for error response
         collectMetric(endpoint, method, response.status, duration_ms, false);
 
-        if (!suppressErrorLog) {
+        if (!suppressErrorLog && process.env.NODE_ENV === 'development') {
           console.error('API error response:', {
             status: response.status,
             message: errorMessage,
@@ -186,7 +193,10 @@ export async function makeRequest(
       collectMetric(endpoint, method, response.status, duration_ms, false);
 
       // DEBUGGING: Log the raw API response to diagnose task list issue
-      if (endpoint.startsWith('/api/tasks')) {
+      if (
+        process.env.NODE_ENV === 'development' &&
+        endpoint.startsWith('/api/tasks')
+      ) {
         console.log('✅ [DEBUG] Raw response from /api/tasks:', result);
       }
 
@@ -198,17 +208,21 @@ export async function makeRequest(
       // Check if it's an abort error (timeout)
       if (fetchError.name === 'AbortError') {
         collectMetric(endpoint, method, 0, duration_ms, false); // 0 for timeout
-        console.error(
-          `[cofounderAgentClient] TIMEOUT: ${method} ${endpoint} - exceeded ${timeout}ms limit after ${duration_ms}ms`
-        );
+        if (process.env.NODE_ENV === 'development') {
+          console.error(
+            `[cofounderAgentClient] TIMEOUT: ${method} ${endpoint} - exceeded ${timeout}ms limit after ${duration_ms}ms`
+          );
+        }
         throw new Error(
           `Request timeout after ${timeout}ms - operation took too long`
         );
       }
-      console.error(
-        `[cofounderAgentClient] FETCH ERROR: ${method} ${endpoint}`,
-        fetchError
-      );
+      if (process.env.NODE_ENV === 'development') {
+        console.error(
+          `[cofounderAgentClient] FETCH ERROR: ${method} ${endpoint}`,
+          fetchError
+        );
+      }
       throw fetchError;
     }
   } catch (error) {
@@ -227,7 +241,7 @@ export async function makeRequest(
     // Collect metric for caught error
     collectMetric(endpoint, method, status, duration_ms, false);
 
-    if (!suppressErrorLog) {
+    if (!suppressErrorLog && process.env.NODE_ENV === 'development') {
       console.error(`API request failed: ${endpoint}`, error);
     }
     throw error;
@@ -244,7 +258,7 @@ export async function logout() {
   try {
     // Attempt to notify backend of logout
     await makeRequest('/api/auth/logout', 'POST');
-  } catch (error) {
+  } catch {
     // Continue with local logout even if API call fails
   }
   // Note: Actual state clearing happens in AuthContext.logout()
@@ -272,7 +286,9 @@ export async function refreshAccessToken() {
 
     return false;
   } catch (error) {
-    console.error('Token refresh failed:', error);
+    if (process.env.NODE_ENV === 'development') {
+      console.error('Token refresh failed:', error);
+    }
     return false;
   }
 }

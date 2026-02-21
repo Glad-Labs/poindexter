@@ -330,44 +330,49 @@ export const initializeDevToken = async () => {
       '[authService] Mock token created successfully, storing in localStorage...'
     );
 
-    // Store token and user BEFORE anything else
-    localStorage.setItem('auth_token', mockToken);
-    localStorage.setItem('user', JSON.stringify(mockUser));
+    // Store token and user in localStorage
+    try {
+      localStorage.setItem('auth_token', mockToken);
+      localStorage.setItem('user', JSON.stringify(mockUser));
 
-    console.log(
-      '[authService] Items set in localStorage, waiting for persistence...'
-    );
-
-    // Small delay to ensure localStorage is actually persisted
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    console.log(
-      '[authService] Development token initialized/refreshed with proper JWT format'
-    );
-
-    // Verify token was actually stored
-    const storedToken = localStorage.getItem('auth_token');
-    if (!storedToken) {
-      console.error(
-        '[authService] ERROR: Token was not actually stored in localStorage! Zustand may be interfering.'
+      console.log(
+        '[authService] Items set in localStorage, waiting for persistence...'
       );
-      // Try to check if it's in Zustand store instead
-      try {
-        const zustandData = localStorage.getItem('oversight-hub-storage');
-        if (zustandData) {
-          const parsed = JSON.parse(zustandData);
-          console.log(
-            '[authService] Zustand state exists:',
-            Object.keys(parsed.state || {})
-          );
-        }
-      } catch {
-        console.log('[authService] Could not parse Zustand data');
-      }
-      throw new Error('Failed to store token in localStorage');
-    }
 
-    console.log('[authService] ✅ Token verified in localStorage');
+      // Small delay to ensure localStorage is actually persisted
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Verify token was actually stored (with retry logic)
+      let storedToken = localStorage.getItem('auth_token');
+      let retries = 0;
+      const maxRetries = 3;
+
+      while (!storedToken && retries < maxRetries) {
+        console.warn(
+          `[authService] Token not in localStorage yet, retrying (${retries + 1}/${maxRetries})...`
+        );
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        storedToken = localStorage.getItem('auth_token');
+        retries++;
+      }
+
+      if (storedToken) {
+        console.log('[authService] ✅ Token verified in localStorage');
+      } else {
+        console.warn(
+          '[authService] ⚠️ Token verification failed in localStorage after retries. Zustand may be interfering. Token will still be used from memory and synced to Zustand store.'
+        );
+        // FALLBACK: Even if localStorage verification failed, continue and rely on Zustand persistence
+        // The token is valid in memory, and AuthContext will sync it to Zustand store
+      }
+    } catch (storageError) {
+      console.warn(
+        '[authService] ⚠️ localStorage access issue:',
+        storageError.message
+      );
+      // FALLBACK: If localStorage fails entirely, continue anyway
+      // The token will be returned and AuthContext will manage it via Zustand store
+    }
 
     // Set up auto-refresh every 14 minutes (token expires in 15 minutes)
     // This prevents token expiry during long sessions
@@ -383,6 +388,7 @@ export const initializeDevToken = async () => {
       14 * 60 * 1000
     ); // 14 minutes in milliseconds
 
+    console.log('[authService] ✅ Development token initialized successfully');
     return mockToken;
   } catch (error) {
     console.error('[authService] ERROR in initializeDevToken:', error);

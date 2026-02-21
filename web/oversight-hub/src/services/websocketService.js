@@ -29,7 +29,9 @@ class WebSocketService {
         this.ws = new WebSocket(this.url);
 
         this.ws.onopen = () => {
-          console.log('WebSocket connected');
+          if (process.env.NODE_ENV === 'development') {
+            console.log('WebSocket connected');
+          }
           this.reconnectAttempts = 0;
 
           // Flush message queue
@@ -54,18 +56,24 @@ class WebSocketService {
               }
             }
           } catch (error) {
-            console.error('Failed to parse WebSocket message:', error);
+            if (process.env.NODE_ENV === 'development') {
+              console.error('Failed to parse WebSocket message:', error);
+            }
           }
         };
 
         this.ws.onerror = (error) => {
-          console.error('WebSocket error:', error);
+          if (process.env.NODE_ENV === 'development') {
+            console.error('WebSocket error:', error);
+          }
           this.emit('error', error);
           reject(error);
         };
 
         this.ws.onclose = () => {
-          console.log('WebSocket disconnected');
+          if (process.env.NODE_ENV === 'development') {
+            console.log('WebSocket disconnected');
+          }
           this.emit('disconnected');
 
           if (
@@ -76,7 +84,9 @@ class WebSocketService {
           }
         };
       } catch (error) {
-        console.error('Failed to create WebSocket:', error);
+        if (process.env.NODE_ENV === 'development') {
+          console.error('Failed to create WebSocket:', error);
+        }
         reject(error);
       }
     });
@@ -91,14 +101,18 @@ class WebSocketService {
     this.reconnectAttempts++;
     const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
 
-    console.log(
-      `Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts}) in ${delay}ms`
-    );
+    if (process.env.NODE_ENV === 'development') {
+      console.log(
+        `Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts}) in ${delay}ms`
+      );
+    }
 
     setTimeout(() => {
       if (!this.isIntentionallyClosed) {
         this.connect().catch((error) => {
-          console.error('Reconnection failed:', error);
+          if (process.env.NODE_ENV === 'development') {
+            console.error('Reconnection failed:', error);
+          }
         });
       }
     }, delay);
@@ -137,7 +151,9 @@ class WebSocketService {
         try {
           callback(data);
         } catch (error) {
-          console.error(`Error in listener for ${eventName}:`, error);
+          if (process.env.NODE_ENV === 'development') {
+            console.error(`Error in listener for ${eventName}:`, error);
+          }
         }
       });
     }
@@ -156,7 +172,9 @@ class WebSocketService {
     } else {
       // Queue message if not connected
       this.messageQueue.push(message);
-      console.warn('WebSocket not connected, queueing message:', message);
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('WebSocket not connected, queueing message:', message);
+      }
     }
   }
 
