@@ -245,7 +245,7 @@ async def list_tasks_pub_dev(
     offset: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=1000),
     status: Optional[str] = Query(None),
-    category: Optional[str] = Query(None),
+    category: Optional[str] = Query(None)ne),
 ):
     """Public endpoint for listing tasks - NO AUTHENTICATION REQUIRED (Development Only)"""
     try:
