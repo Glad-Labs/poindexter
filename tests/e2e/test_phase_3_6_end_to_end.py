@@ -132,6 +132,15 @@ class MockRAGService:
         query_tokens = set(query.lower().split())
         results = []
         
+        # Tone similarity mapping (semantic proximity)
+        tone_groups = {
+            "formal": ["formal", "authoritative"],
+            "casual": ["casual", "conversational"],
+            "authoritative": ["authoritative", "formal"],
+            "conversational": ["conversational", "casual"],
+            "neutral": ["neutral"]
+        }
+        
         for sample in samples:
             sample_tokens = set(sample.content.lower().split())
             if not query_tokens or not sample_tokens:
@@ -141,9 +150,25 @@ class MockRAGService:
                 union = len(query_tokens | sample_tokens)
                 jaccard = intersection / union if union > 0 else 0.0
             
-            # Apply style/tone filters
+            # Apply style filter (binary: match or not)
             style_match = 1.0 if style is None or sample.style == style else 0.0
-            tone_match = 1.0 if (tone is None) or (sample.tone == tone) else 0.0
+            
+            # Apply tone filter with semantic similarity (gradient)
+            if tone is None:
+                tone_match = 1.0
+            else:
+                query_tone = tone.lower()
+                sample_tone = sample.tone.lower()
+                
+                # Check exact match first
+                if sample_tone == query_tone:
+                    tone_match = 1.0
+                # Check semantic groups for related tones
+                elif query_tone in tone_groups and sample_tone in tone_groups[query_tone]:
+                    tone_match = 0.8  # High match for semantically related tones
+                else:
+                    # Don't include samples with mismatched tones when filtering by tone
+                    continue
             
             # Multi-factor score: 50% similarity, 25% style, 25% tone
             relevance = (jaccard * 0.5) + (style_match * 0.25) + (tone_match * 0.25)
