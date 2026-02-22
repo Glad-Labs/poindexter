@@ -649,6 +649,262 @@ def apply_patch(patch_text: str) -> bool:
     return True
 
 
+class UnfixableIssuesLog:
+    """Tracks and logs issues that cannot be automatically fixed."""
+    
+    def __init__(self) -> None:
+        self.log_file = REPO_ROOT / "unfixable_issues.json"
+        self.issues: Dict[str, Any] = {
+            "timestamp": datetime.now().isoformat(),
+            "stuck_auto_fixes": {},      # Auto-fixable issues that got stuck
+            "non_fixable_tools": {},      # Issues from non-auto-fixable tools
+            "phase2_failures": [],        # Test failures that couldn't be fixed
+            "summary": {}
+        }
+    
+    def add_stuck_autofixable(self, issue_counts: Dict[str, int]) -> None:
+        """Log auto-fixable issues that got stuck."""
+        self.issues["stuck_auto_fixes"] = issue_counts
+        logger.warning(f"⚠️  {sum(issue_counts.values())} auto-fixable issues stuck (could not be resolved)")
+        for tool, count in issue_counts.items():
+            logger.warning(f"   - {tool}: {count}")
+    
+    def add_nonfixable_issues(self, all_issues: Dict[str, int], autofixable_tools: set[str]) -> None:
+        """Log issues from non-auto-fixable tools."""
+        non_fixable = {k: v for k, v in all_issues.items() if k not in autofixable_tools}
+        
+        if non_fixable:
+            self.issues["non_fixable_tools"] = non_fixable
+            total = sum(non_fixable.values())
+            logger.warning(f"⚠️  {total} issues from non-auto-fixable tools:")
+            for tool, count in sorted(non_fixable.items(), key=lambda x: x[1], reverse=True):
+                logger.warning(f"   - {tool}: {count} issues (requires manual attention)")
+    
+    def add_phase2_failure(self, test_name: str, error_msg: str, iteration: int) -> None:
+        """Log a test that failed in Phase 2."""
+        failures: List[Dict[str, Any]] = self.issues["phase2_failures"]
+        failures.append({
+            "test": test_name,
+            "error": error_msg[:200],  # First 200 chars of error
+            "stuck_at_iteration": iteration
+        })
+        logger.error(f"⚠️  Phase 2 failure logged: {test_name}")
+    
+    def finalize(self) -> None:
+        """Generate final summary and write log file."""
+        # Count issues
+        stuck_count = sum(self.issues["stuck_auto_fixes"].values()) if self.issues["stuck_auto_fixes"] else 0
+        nonfixable_count = sum(self.issues["non_fixable_tools"].values()) if self.issues["non_fixable_tools"] else 0
+        phase2_count = len(self.issues["phase2_failures"])
+        
+        summary_dict: Dict[str, Any] = {
+            "stuck_autofixable_issues": stuck_count,
+            "nonfixable_tool_issues": nonfixable_count,
+            "phase2_test_failures": phase2_count,
+            "total_issues": stuck_count + nonfixable_count + phase2_count,
+            "actions_required": []
+        }
+        
+        # Add recommended actions
+        if stuck_count > 0:
+            summary_dict["actions_required"].append(
+                "Fix or suppress auto-fixable issues that got stuck (check logs)"
+            )
+        if nonfixable_count > 0:
+            summary_dict["actions_required"].append(
+                f"Address {nonfixable_count} issues from: " + 
+                ", ".join(self.issues["non_fixable_tools"].keys())
+            )
+        if phase2_count > 0:
+            summary_dict["actions_required"].append(
+                f"Debug/fix {phase2_count} test failures (see phase2_failures)"
+            )
+        
+        self.issues["summary"] = summary_dict
+        
+        # Write JSON log
+        try:
+            with open(self.log_file, 'w') as f:
+                json.dump(self.issues, f, indent=2)
+            logger.info(f"📝 Unfixable issues logged to: {self.log_file}")
+        except Exception as e:
+            logger.error(f"❌ Failed to write log file: {e}")
+    
+    def print_summary(self) -> None:
+        """Print a human-readable summary."""
+        if not self.issues["summary"]:
+            return
+        
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info("📋 UNFIXABLE ISSUES SUMMARY")
+        logger.info("=" * 80)
+        
+        summary = self.issues["summary"]
+        total = summary["total_issues"]
+        
+        if total == 0:
+            logger.info("✅ No unfixable issues! All problems resolved.")
+        else:
+            logger.warning(f"⚠️  {total} issues require manual attention:")
+            logger.warning(f"   • Auto-fixable issues stuck: {summary['stuck_autofixable_issues']}")
+            logger.warning(f"   • Non-fixable tool issues: {summary['nonfixable_tool_issues']}")
+            logger.warning(f"   • Phase 2 test failures: {summary['phase2_test_failures']}")
+            
+            logger.info("")
+            logger.info("📝 Detailed log: unfixable_issues.json")
+            logger.info("")
+            logger.info("💡 Recommended actions:")
+            actions: List[str] = summary["actions_required"]
+            for action in actions:
+                logger.info(f"   • {action}")
+        
+        logger.info("=" * 80)
+
+
+def get_detailed_issue_report() -> tuple[str, Dict[str, Any]]:
+    """Get a detailed report of ALL issues (test + linter) for reasoning phase.
+    
+    Returns:
+        tuple: (formatted_report_string, issues_dict)
+    """
+    report_lines: List[str] = []
+    all_issues: Dict[str, Any] = {}
+    
+    # ===== TEST FAILURES =====
+    logger.info("📋 Running comprehensive diagnostic scan...")
+    tests_ok, test_output, failed_tests, error_details = run_tests(verbose_output=False)
+    
+    if not tests_ok and failed_tests:
+        report_lines.append("FAILED TESTS:")
+        report_lines.append("=" * 60)
+        for test in failed_tests[:5]:  # First 5 failures
+            report_lines.append(f"  • {test}")
+        if error_details:
+            report_lines.append("\nError Details (first 1000 chars):")
+            report_lines.append(error_details[:1000])
+        all_issues["test_failures"] = {
+            "count": len(failed_tests),
+            "tests": failed_tests[:5],
+            "error": error_details[:500] if error_details else "Unknown"
+        }
+    else:
+        report_lines.append("✅ All tests passing")
+        all_issues["test_failures"] = {"count": 0}
+    
+    report_lines.append("")
+    
+    # ===== LINTER ISSUES (WITH DETAILS) =====
+    report_lines.append("CODE QUALITY ISSUES:")
+    report_lines.append("=" * 60)
+    
+    # Collect linter issues with more detail
+    linter_issues: Dict[str, Dict[str, Any]] = {}
+    
+    # High-priority: Type checking and security
+    try:
+        logger.debug("  🔍 Scanning pyright (type checking)...")
+        proc = subprocess.run(
+            LINTER_COMMANDS["pyright"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if proc.stdout.strip():
+            try:
+                pyright_data: Any = json.loads(proc.stdout)
+                count_list: List[Any] = pyright_data.get("generalDiagnostics", [])
+                if count_list:
+                    linter_issues["pyright"] = {
+                        "count": len(count_list),
+                        "issues": [
+                            f"{d.get('file', '?')}: {d.get('message', '?')}"
+                            for d in count_list[:3]  # First 3 issues
+                        ]
+                    }
+            except Exception:
+                pass
+    except Exception:
+        pass
+    
+    # Medium-priority: Linting
+    try:
+        logger.debug("  🔍 Scanning pylint (code quality)...")
+        proc = subprocess.run(
+            LINTER_COMMANDS["pylint"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if proc.stdout.strip():
+            try:
+                pylint_data: List[Any] = json.loads(proc.stdout)
+                if pylint_data:
+                    linter_issues["pylint"] = {
+                        "count": len(pylint_data),
+                        "issues": [
+                            f"{m.get('path', '?')}:{m.get('line', '?')}: {m.get('message', '?')}"
+                            for m in pylint_data[:3]
+                        ]
+                    }
+            except Exception:
+                pass
+    except Exception:
+        pass
+    
+    # Security scanning
+    try:
+        logger.debug("  🔍 Scanning bandit (security)...")
+        proc = subprocess.run(
+            LINTER_COMMANDS["bandit"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if proc.stdout.strip():
+            try:
+                bandit_data: Any = json.loads(proc.stdout)
+                results: List[Any] = bandit_data.get("results", [])
+                if results:
+                    linter_issues["bandit"] = {
+                        "count": len(results),
+                        "issues": [
+                            f"{r.get('filename', '?')}:{r.get('line_number', '?')}: {r.get('issue_text', '?')}"
+                            for r in results[:3]
+                        ]
+                    }
+            except Exception:
+                pass
+    except Exception:
+        pass
+    
+    # Build report
+    if linter_issues:
+        sorted_items: List[tuple[str, Dict[str, Any]]] = sorted(
+            linter_issues.items(),
+            key=lambda x: int(x[1].get("count", 0)),
+            reverse=True
+        )
+        for tool, data in sorted_items:
+            count: int = data.get("count", 0)
+            report_lines.append(f"\n{tool}: {count} issues")
+            issues_list: List[str] = data.get("issues", [])
+            for issue in issues_list[:2]:
+                report_lines.append(f"  - {issue[:100]}")
+        
+        all_issues["linter_issues"] = linter_issues
+    else:
+        report_lines.append("✅ No linter issues detected")
+        all_issues["linter_issues"] = {}
+    
+    report_lines.append("")
+    
+    return "\n".join(report_lines), all_issues
+
+
 def get_repo_summary():
     """Generate a comprehensive repository summary."""
     files = list_repo_files()
@@ -1385,6 +1641,9 @@ def get_file_contents(path: str) -> str:
 
 def main():
     """Main agent loop - autonomous code improvement."""
+    # Initialize unfixable issues logger
+    unfixable_log = UnfixableIssuesLog()
+    
     logger.info("=" * 80)
     logger.info("🤖 GLAD LABS AUTONOMOUS AGENT LOOP")
     logger.info("=" * 80)
@@ -1403,6 +1662,7 @@ def main():
     logger.info("💡 Tip: Set MAX_ITERATIONS=5 to limit iterations")
     logger.info("💡 Tip: Set SKIP_TESTS=true to skip test execution")
     logger.info("💡 Tip: Set ITERATION_DELAY=10 for 10s pause between iterations")
+    logger.info("💡 Tip: Check unfixable_issues.json for issues needing manual attention")
     logger.info("")
     
     # Check if Ollama is available
@@ -1526,7 +1786,7 @@ def main():
                 logger.debug(f"      Stuck counter: {stuck_iterations}/{MAX_STUCK_ITERATIONS}")
                 if stuck_iterations >= MAX_STUCK_ITERATIONS:
                     logger.warning(f"⚠️  Stuck loop detected (same {issue_count} issues)")
-                    logger.info("   Exiting Phase 1 - issues require Phase 2 reasoning")
+                    logger.info("   Exiting Phase 1 - issues require Phase 2 reasoning AND DEBUGGING")
                     break
             else:
                 stuck_iterations = 0
@@ -1566,6 +1826,8 @@ def main():
                         pass
                 else:
                     logger.warning("⚠️  Auto-fix failed - cannot fix these issues automatically")
+                    # Log the stuck issues
+                    unfixable_log.add_stuck_autofixable(issues)
                     break
             
             if ITERATION_DELAY > 0:
@@ -1615,89 +1877,78 @@ def main():
             logger.info(f"🔄 PHASE 2 ITERATION {iteration}/{PHASE2_MAX_ITERATIONS}")
             logger.info("=" * 80)
 
-            # Run tests
-            test_start = time.time()
-            tests_ok, test_output, failed_tests, error_details = run_tests(verbose_output=True)
-            test_duration = time.time() - test_start
+            # Get comprehensive diagnostic report (tests + linter issues + code quality)
+            logger.info("🔍 Running comprehensive diagnostic scan...")
+            diagnostic_report, issues_summary = get_detailed_issue_report()
+            logger.info(diagnostic_report)
             
-            # Check for stuck test failures
-            if failed_tests:
-                current_failing = failed_tests[0]  # Track the first failing test
-                failed_test_history[current_failing] = failed_test_history.get(current_failing, 0) + 1
-                
-                if failed_test_history[current_failing] >= MAX_STUCK_ITERATIONS:
-                    logger.error(f"\n❌ STUCK: Same test failing for {MAX_STUCK_ITERATIONS}+ iterations")
-                    logger.error(f"   Test: {current_failing}")
-                    logger.error(f"   Error: {error_details.split(chr(10))[0] if error_details else 'Unknown'}")
-                    logger.error(f"\n💡 Recommendation: Investigate this test manually or skip it")
-                    logger.error(f"   Run: pytest tests/ -k 'not {current_failing.split('::')[-1]}' to skip")
-                    break
+            # Check what issues we have
+            has_test_failures = issues_summary.get("test_failures", {}).get("count", 0) > 0
+            has_linter_issues = bool(issues_summary.get("linter_issues"))
+            
+            if not has_test_failures and not has_linter_issues:
+                logger.info("✅ All checks passed - No issues found!")
+                logger.info("Phase 2 complete - System is in excellent shape")
+                break
+            
+            # Track failures to detect stuck loops
+            if has_test_failures:
+                first_failing_test = issues_summary.get("test_failures", {}).get("tests", [None])[0]
+                if first_failing_test:
+                    failed_test_history[first_failing_test] = failed_test_history.get(first_failing_test, 0) + 1
+                    
+                    if failed_test_history[first_failing_test] >= MAX_STUCK_ITERATIONS:
+                        logger.error(f"\n❌ STUCK: Same test failing for {MAX_STUCK_ITERATIONS}+ iterations")
+                        logger.error(f"   Test: {first_failing_test}")
+                        error = issues_summary.get("test_failures", {}).get("error", "Unknown")
+                        logger.error(f"   Error: {error}")
+                        # Log the stuck test to unfixable issues
+                        unfixable_log.add_phase2_failure(first_failing_test, str(error), iteration)
+                        break
             else:
                 # Clear failed test history when tests pass
                 failed_test_history.clear()
             
-            if SKIP_TESTS:
-                logger.info(f"⏭️  Tests skipped - continuing with code analysis")
-            elif tests_ok:
-                logger.info(f"📊 Tests completed in {test_duration:.1f}s - ✅ PASS")
-            else:
-                logger.info(f"📊 Tests completed in {test_duration:.1f}s - ❌ FAIL")
-                if CONTINUE_ON_TEST_FAILURE:
-                    logger.info("   → Continuing anyway (CONTINUE_ON_TEST_FAILURE=True)")
-                else:
-                    logger.error("   → Stopping (CONTINUE_ON_TEST_FAILURE=False)")
-                    break
-
-            # Prepare reasoning prompt with better context
-            logger.info("🧠 Reasoning phase starting...")
-            
-            # Build comprehensive failure context if tests failed
-            failure_context = ""
-            if not tests_ok and failed_tests and error_details:
-                failure_context = dedent(f"""
-                
-                ⚠️  CRITICAL: Test Failures Detected
-                
-                Failed Tests: {', '.join(failed_tests[:3])}
-                
-                Error Details:
-                {error_details[:2000]}
-                
-                Investigation needed:
-                1. Check if this is a real bug or test setup issue
-                2. Look for assertions, exceptions, or missing dependencies
-                3. Consider if test environment (fixtures, mocks) is properly configured
-                """)
+            # Prepare reasoning prompt with comprehensive context
+            logger.info("🧠 PHASE 2: DEBUG EVERYTHING mode activated")
+            logger.info("   Analyzing: Tests, Type Errors, Code Quality, Security")
             
             reasoner_prompt = dedent(f"""
             Repository: Glad Labs AI Co-Founder System
             
             {repo_summary[:2000]}
 
-            Last test run (iteration {iteration}):
-            - Success: {tests_ok}
-            {failure_context}
+            PHASE 2 COMPREHENSIVE DIAGNOSTIC (iteration {iteration}):
             
-            Test Output (recent/important lines):
-            {test_output[-4000:] if len(test_output) > 4000 else test_output}
-
-            Previous context from earlier iterations:
+            {diagnostic_report}
+            
+            Previous reasoning context:
             {previous_context[-2000:] if previous_context else "None"}
 
-            IMPORTANT: If tests are failing:
-            1. Analyze the actual error message and stack trace
-            2. Identify the root cause (missing fixture, wrong assertion, etc)
-            3. Propose SPECIFIC fixes with exact file paths and line numbers
-            4. If error is unclear, suggest adding debug logging first
-
-            Focus on high-impact improvements:
-            1. Fix actual bugs causing test failures
-            2. Improve code quality and maintainability  
-            3. Add better error handling and logging
-            4. Optimize performance
-            5. Improve documentation
+            YOUR MISSION: Debug EVERYTHING - not just tests
             
-            Produce a JSON object with your plan:
+            This is a comprehensive code improvement phase. Analyze:
+            1. **Test Failures** - Understand root causes, don't just surface fixes
+            2. **Type Errors** - Fix pyright/mypy issues preventing correct execution
+            3. **Code Quality** - Address pylint/flake8 issues affecting maintainability
+            4. **Security Issues** - Fix any bandit warnings
+            5. **Logic Bugs** - Infer from failed tests what's actually broken
+            
+            Priority Order (IMPORTANT):
+            1.🔴 CRITICAL: Test failures and security issues (bandit)
+            2. 🟠 HIGH: Type errors (pyright/mypy) - these prevent correct behavior
+            3. 🟡 MEDIUM: Code quality (pylint/flake8) - maintainability
+            4. 🟢 LOW: Style issues (only if others are fixed)
+            
+            For each issue:
+            - Understand WHY it exists (root cause analysis)
+            - Propose SPECIFIC, concrete fixes
+            - Include exact file paths and line numbers
+            - Consider dependencies between issues
+            
+            If there are no issues at all, return {{"done": true, "reason": "All systems operational"}}.
+            
+            Produce a JSON plan with:
             {{
               "done": bool,
               "reason": string,
@@ -1705,7 +1956,9 @@ def main():
                 {{
                   "id": int,
                   "description": string,
-                  "files": [ "path1", "path2" ]
+                  "priority": "critical|high|medium|low",
+                  "files": ["path1", "path2"],
+                  "root_cause": "explanation of why this exists"
                 }}
               ]
             }}
@@ -1714,16 +1967,16 @@ def main():
             """)
 
             plan_raw = run_ollama(REASONER_MODEL, reasoner_prompt, system_reasoner)
-            logger.info(f"📋 Reasoner response preview:")
+            logger.info(f"📋 Debugger response preview:")
             logger.info(f"   {plan_raw[:500]}...")
             logger.debug(f"\n[Full reasoner output]\n{plan_raw}")
 
             # Parse reasoning output
             try:
                 plan = json.loads(plan_raw)
-                logger.info("✅ Successfully parsed JSON plan")
+                logger.info("✅ Successfully parsed comprehensive debug plan")
             except json.JSONDecodeError as e:
-                logger.warning(f"⚠️  Invalid JSON from reasoner: {e}")
+                logger.warning(f"⚠️  Invalid JSON from debugger: {e}")
                 logger.info("🔍 Attempting JSON extraction...")
                 
                 # Try to find JSON in the response
@@ -1745,7 +1998,7 @@ def main():
             # Check if we're done
             if plan.get("done"):
                 reason = plan.get("reason", "No reason provided")
-                logger.info(f"🏁 Reasoner marked iteration as complete: {reason}")
+                logger.info(f"✅ DEBUG PHASE COMPLETE: {reason}")
                 break
 
             # Get steps to execute
@@ -1754,9 +2007,9 @@ def main():
                 logger.warning("⚠️  No steps returned in plan, stopping.")
                 break
             
-            logger.info(f"📝 Plan contains {len(steps)} step(s)")
+            logger.info(f"📝 Plan contains {len(steps)} debugging steps")
 
-            # Execute each step
+            # Execute each step (same coder logic as before, but now for all issues)
             for step_num, step in enumerate(steps, 1):
                 step_id = step.get("id", step_num)
                 desc = step.get("description", "No description")
@@ -1952,6 +2205,14 @@ def main():
             for tool, count in sorted(all_issues.items(), key=lambda x: x[1], reverse=True):
                 logger.info(f"   {tool}: {count} issues")
         logger.info("")
+        
+        # Log non-fixable issues (from Phase 1 diagnostic)
+        # Auto-fixable tools are: black, isort, autoflake, prettier, eslint, stylelint
+        autofixable = {"black", "isort", "autoflake", "prettier", "eslint", "stylelint"}
+        unfixable_log.add_nonfixable_issues(all_issues, autofixable)
+
+    # Finalize and output the unfixable issues log
+    unfixable_log.finalize()
 
     # Final summary
     logger.info("")
@@ -1975,6 +2236,9 @@ def main():
     logger.info("💡 Commit changes with: git add . && git commit -m 'Agent improvements'")
     logger.info("💡 Revert changes with: git reset --hard HEAD")
     logger.info("=" * 80)
+    
+    # Print unfixable issues summary
+    unfixable_log.print_summary()
 
 
 if __name__ == "__main__":
