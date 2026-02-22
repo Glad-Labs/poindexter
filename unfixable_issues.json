@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-02-21T20:28:06.158079",
+  "timestamp": "2026-02-21T21:37:54.916174",
   "stuck_auto_fixes": {},
   "non_fixable_tools": {
     "pyright": 612
@@ -8,7 +8,7 @@
     {
       "test": "tests/integration/test_crewai_tools_integration.py",
       "error": "============================= test session starts =============================\nplatform win32 -- Python 3.13.12, pytest-9.0.2, pluggy-1.6.0 -- C:\\Users\\mattm\\AppData\\Local\\pypoetry\\Cache\\virtualenvs\\",
-      "stuck_at_iteration": 6
+      "stuck_at_iteration": 5
     }
   ],
   "summary": {

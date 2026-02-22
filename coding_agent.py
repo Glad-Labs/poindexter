@@ -78,6 +78,11 @@ PHASE1_CONSECUTIVE_CLEAN = 20  # Exit Phase 1 after N consecutive clean runs
 PHASE2_ENABLED = os.environ.get("SKIP_PHASE_2", "false").lower() == "false"
 PHASE2_MAX_ITERATIONS = int(os.environ.get("PHASE2_MAX_ITERATIONS", "500"))
 
+# Phase 2.5 (Type Annotation) Configuration
+PHASE25_ENABLED = os.environ.get("SKIP_PHASE_25", "false").lower() == "false"
+PHASE25_MAX_ITERATIONS = int(os.environ.get("PHASE25_MAX_ITERATIONS", "100"))
+PHASE25_ERROR_THRESHOLD = int(os.environ.get("PHASE25_ERROR_THRESHOLD", "50"))  # Target: reduce to this many errors
+
 # Linter commands (Phase 1) - 12 tools for comprehensive code quality
 LINTER_COMMANDS = {
     # Code quality & style
@@ -905,6 +910,277 @@ def get_detailed_issue_report() -> tuple[str, Dict[str, Any]]:
     return "\n".join(report_lines), all_issues
 
 
+def extract_pyright_type_errors() -> tuple[Dict[str, Any], int]:
+    """Extract and categorize pyright type errors.
+    
+    Returns:
+        tuple: (errors_dict, total_count)
+    """
+    logger.debug("🔍 Extracting pyright type errors...")
+    try:
+        # Get pyright output
+        result = subprocess.run(
+            ["poetry", "run", "pyright", "src/", "--outputjson"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            cwd=REPO_ROOT,
+        )
+        
+        if not result.stdout:
+            logger.debug("   No pyright output")
+            return {}, 0
+        
+        data = json.loads(result.stdout)
+        diagnostics = data.get("generalDiagnostics", [])
+        
+        # Categorize errors
+        error_categories: Dict[str, List[Dict[str, Any]]] = {
+            "missing_type_hint": [],
+            "incompatible_type": [],
+            "missing_return_type": [],
+            "unknown_type": [],
+            "union_type": [],
+            "other": [],
+        }
+        
+        for diag in diagnostics:
+            msg = diag.get("message", "").lower()
+            file_path = diag.get("file", "")
+            line = diag.get("range", {}).get("start", {}).get("line", 0)
+            
+            # Categorize by error message
+            if "is not a known member" in msg or "not defined" in msg:
+                cat = "unknown_type"
+            elif "return type" in msg or "missing return type" in msg:
+                cat = "missing_return_type"
+            elif "type annotation" in msg or "missing type" in msg:
+                cat = "missing_type_hint"
+            elif "incompatible" in msg or "cannot assign" in msg:
+                cat = "incompatible_type"
+            elif "union" in msg or "has no overlap" in msg:
+                cat = "union_type"
+            else:
+                cat = "other"
+            
+            error_categories[cat].append({
+                "file": file_path,
+                "line": line,
+                "message": diag.get("message", ""),
+            })
+        
+        # Count total errors
+        total = len(diagnostics)
+        
+        # Extract top files with most errors
+        file_error_counts: Dict[str, int] = {}
+        for cat_errors in error_categories.values():
+            for err in cat_errors:
+                filepath = err["file"]
+                file_error_counts[filepath] = file_error_counts.get(filepath, 0) + 1
+        
+        # Sort by error count
+        top_files = sorted(file_error_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+        
+        logger.debug(f"   Total pyright errors: {total}")
+        logger.debug(f"   Categories: {sorted([(k, len(v)) for k, v in error_categories.items()], key=lambda x: x[1], reverse=True)}")
+        
+        return {
+            "total": total,
+            "categories": {k: len(v) for k, v in error_categories.items()},
+            "top_files": top_files,
+            "sample_errors": {k: v[:3] for k, v in error_categories.items()},  # First 3 of each category
+        }, total
+    except subprocess.TimeoutExpired:
+        logger.warning("   ⚠️  pyright timed out")
+        return {}, 0
+    except json.JSONDecodeError as e:
+        logger.warning(f"   ⚠️  Invalid pyright JSON: {e}")
+        return {}, 0
+    except Exception as e:
+        logger.warning(f"   ⚠️  Error extracting pyright errors: {e}")
+        return {}, 0
+
+
+def generate_type_hints(files_with_errors: List[str], error_context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Use LLM to generate type hint fixes for files with pyright errors.
+    
+    Args:
+        files_with_errors: List of file paths with type errors
+        error_context: Context about the errors from extract_pyright_type_errors()
+        
+    Returns:
+        JSON plan with type hint fixes
+    """
+    if not files_with_errors:
+        return None
+    
+    # Get top 5 files with errors
+    files_to_fix = files_with_errors[:5]
+    
+    # Load file contents
+    file_contents = {}
+    for filepath in files_to_fix:
+        content = get_file_contents(filepath)
+        if content:
+            # Limit to 5KB per file to save tokens
+            if len(content) > 5000:
+                # Try to get just function/class definitions
+                lines = content.split('\n')
+                trimmed = '\n'.join(lines[:100])  # First 100 lines (usually covers imports and key defs)
+                file_contents[filepath] = trimmed + "\n... (file continues)"
+            else:
+                file_contents[filepath] = content
+    
+    if not file_contents:
+        logger.warning("   ⚠️  Could not load any files with errors")
+        return None
+    
+    # Build error summary
+    error_summary = []
+    for cat, count in error_context.get("categories", {}).items():
+        if count > 0:
+            error_summary.append(f"- {cat}: {count} issues")
+    
+    prompt = dedent(f"""
+    Repository: Glad Labs AI Co-Founder System
+    
+    You are analyzing Python files with pyright type checking errors.
+    
+    Error Summary:
+    {os.linesep.join(error_summary)}
+    
+    Top files with errors (showing first 100 lines of each):
+    
+    {os.linesep.join([f"=== {f} ==={os.linesep}{c}" for f, c in file_contents.items()])}
+    
+    YOUR TASK: Generate type hint fixes
+    
+    For each file, identify:
+    1. Missing function parameter type hints (->: type)
+    2. Missing function return type hints (def func() -> Type:)
+    3. Missing variable type hints (x: Type = value)  
+    4. Incompatible type assignments (should use different types)
+    5. Union type issues (combine types with |)
+    
+    Focus on:
+    - Functions that are called but lack return type hints
+    - Parameters used without type info
+    - Context from async/await patterns (coroutines)
+    - Dict/List type hints with proper generics: Dict[str, Any], List[str], etc.
+    
+    Respond with ONLY valid JSON:
+    {{
+      "fixes": [
+        {{
+          "file": "path/to/file.py",
+          "fixes": [
+            {{
+              "line": 42,
+              "description": "Add return type hint",
+              "old": "def process():",
+              "new": "def process() -> str:"
+            }},
+            {{
+              "line": 50,
+              "description": "Add parameter type hint",
+              "old": "def validate(value):",
+              "new": "def validate(value: Dict[str, Any]) -> bool:"
+            }}
+          ]
+        }}
+      ]
+    }}
+    
+    Include 3-5 specific fixes per file that will have the most impact on pyright errors.
+    """)
+    
+    logger.info(f"   🧠 Generating type hints for {len(file_contents)} files...")
+    logger.debug(f"   Prompt length: {len(prompt)} chars")
+    
+    response = run_ollama(REASONER_MODEL, prompt, system=dedent("""
+    You are a Python type annotation expert. Analyze code and suggest precise type hints.
+    Always respond with ONLY valid JSON - no markdown, no explanations.
+    """))
+    
+    try:
+        plan = json.loads(response)
+        logger.info(f"   ✅ Generated type hints for {len(plan.get('fixes', []))} files")
+        return plan
+    except json.JSONDecodeError as e:
+        logger.warning(f"   ⚠️  Invalid JSON from type generator: {e}")
+        # Try to extract JSON
+        import re
+        json_match = re.search(r'\{.*\}', response, re.DOTALL)
+        if json_match:
+            try:
+                plan = json.loads(json_match.group())
+                logger.info(f"   ✅ Extracted type hints for {len(plan.get('fixes', []))} files")
+                return plan
+            except json.JSONDecodeError:
+                logger.warning("   ⚠️  Could not extract valid JSON")
+                return None
+        return None
+
+
+def apply_type_hint_fixes(fixes_plan: Dict[str, Any]) -> int:
+    """Apply generated type hint fixes to files.
+    
+    Args:
+        fixes_plan: JSON plan from generate_type_hints()
+        
+    Returns:
+        Number of fixes applied
+    """
+    if not fixes_plan or "fixes" not in fixes_plan:
+        return 0
+    
+    total_applied = 0
+    
+    for file_fix in fixes_plan.get("fixes", []):
+        filepath = file_fix.get("file", "")
+        fixes = file_fix.get("fixes", [])
+        
+        if not filepath or not fixes:
+            continue
+        
+        logger.info(f"   📝 Applying {len(fixes)} type hints to {filepath}")
+        
+        full_path = REPO_ROOT / filepath
+        if not full_path.exists():
+            logger.warning(f"      ⚠️  File not found: {filepath}")
+            continue
+        
+        try:
+            # Read file
+            with open(full_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # Sort fixes by line number (descending) to apply from bottom to top
+            fixes_sorted = sorted(fixes, key=lambda x: x.get("line", 0), reverse=True)
+            
+            # Apply each fix
+            for fix in fixes_sorted:
+                old_text = fix.get("old", "")
+                new_text = fix.get("new", "")
+                
+                if old_text and new_text and old_text in content:
+                    content = content.replace(old_text, new_text, 1)
+                    logger.debug(f"      ✓ Applied: {fix.get('description', 'type hint')}")
+                    total_applied += 1
+                else:
+                    logger.debug(f"      ✗ Could not apply: {fix.get('description', 'type hint')} (text not found)")
+            
+            # Write file back
+            with open(full_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+                
+        except Exception as e:
+            logger.warning(f"      ⚠️  Error applying fixes to {filepath}: {e}")
+    
+    return total_applied
+
+
 def get_repo_summary():
     """Generate a comprehensive repository summary."""
     files = list_repo_files()
@@ -1683,9 +1959,11 @@ def main():
         phases_to_run.append("Phase 1 (Linter Fixes)")
     if PHASE2_ENABLED:
         phases_to_run.append("Phase 2 (Reasoning Fixes)")
+    if PHASE25_ENABLED:
+        phases_to_run.append("Phase 2.5 (Type Annotations)")
     
     if not phases_to_run:
-        logger.error("❌ Both phases disabled (SKIP_PHASE_1=true AND SKIP_PHASE_2=true)")
+        logger.error("❌ All phases disabled (SKIP_PHASE_1=true, SKIP_PHASE_2=true, SKIP_PHASE_25=true)")
         return
     
     logger.info(f"📋 Phases to run: {', '.join(phases_to_run)}")
@@ -2210,6 +2488,127 @@ def main():
         # Auto-fixable tools are: black, isort, autoflake, prettier, eslint, stylelint
         autofixable = {"black", "isort", "autoflake", "prettier", "eslint", "stylelint"}
         unfixable_log.add_nonfixable_issues(all_issues, autofixable)
+
+    # PHASE 2.5: TYPE ANNOTATION CLEANUP
+    # ========================================================================
+    
+    if PHASE25_ENABLED:
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info("📝 PHASE 2.5: TYPE ANNOTATION CLEANUP (Reduce pyright errors)")
+        logger.info("=" * 80)
+        logger.info(f"Target: Reduce pyright errors to {PHASE25_ERROR_THRESHOLD}")
+        logger.info("Using: DeepSeek R1 70B (analysis) + Ollama for type hint generation")
+        logger.info("")
+        
+        phase25_iteration = 0
+        consecutive_no_improvement = 0
+        MAX_NO_IMPROVEMENT = 3  # Stop if no improvement for 3 iterations
+        
+        try:
+            while True:
+                phase25_iteration += 1
+                
+                if phase25_iteration > PHASE25_MAX_ITERATIONS:
+                    logger.info(f"\n⏱️  Reached max Phase 2.5 iterations ({PHASE25_MAX_ITERATIONS})")
+                    break
+                
+                logger.info("")
+                logger.info("=" * 80)
+                logger.info(f"🔄 PHASE 2.5 ITERATION {phase25_iteration}/{PHASE25_MAX_ITERATIONS}")
+                logger.info("=" * 80)
+                
+                # Extract pyright type errors
+                logger.info("🔍 Analyzing type errors...")
+                error_analysis, total_errors = extract_pyright_type_errors()
+                
+                if total_errors == 0:
+                    logger.info("✅ No type errors found - Phase 2.5 complete!")
+                    break
+                
+                logger.info(f"📊 Type error summary:")
+                logger.info(f"   Total pyright errors: {total_errors}")
+                logger.info(f"   Target: {PHASE25_ERROR_THRESHOLD}")
+                
+                if total_errors <= PHASE25_ERROR_THRESHOLD:
+                    logger.info(f"✅ Reached target ({total_errors} ≤ {PHASE25_ERROR_THRESHOLD})")
+                    break
+                
+                # Show error breakdown
+                for cat, count in error_analysis.get("categories", {}).items():
+                    if count > 0:
+                        logger.info(f"   - {cat}: {count}")
+                
+                # Show top files with errors
+                top_files = error_analysis.get("top_files", [])
+                if top_files:
+                    logger.info(f"   Top files with errors:")
+                    for fname, count in top_files[:5]:
+                        logger.info(f"      • {fname} ({count} errors)")
+                
+                # Generate type hint fixes
+                files_with_errors = [f for f, _ in top_files[:3]]  # Focus on top 3 files
+                if not files_with_errors:
+                    logger.warning("⚠️  No files identified for type hint generation")
+                    break
+                
+                logger.info(f"🧠 Generating type hints for {len(files_with_errors)} files...")
+                type_hint_plan = generate_type_hints(files_with_errors, error_analysis)
+                
+                if not type_hint_plan:
+                    logger.warning("⚠️  Could not generate type hints")
+                    consecutive_no_improvement += 1
+                    if consecutive_no_improvement >= MAX_NO_IMPROVEMENT:
+                        logger.info(f"🛑 No improvement for {MAX_NO_IMPROVEMENT} iterations - stopping Phase 2.5")
+                        break
+                    continue
+                
+                # Apply type hint fixes
+                fixes_count = apply_type_hint_fixes(type_hint_plan)
+                
+                if fixes_count == 0:
+                    logger.warning("⚠️  No type hints could be applied")
+                    consecutive_no_improvement += 1
+                    if consecutive_no_improvement >= MAX_NO_IMPROVEMENT:
+                        logger.info(f"🛑 No improvement for {MAX_NO_IMPROVEMENT} iterations - stopping Phase 2.5")
+                        break
+                    continue
+                
+                consecutive_no_improvement = 0  # Reset counter on successful fix
+                logger.info(f"✅ Applied {fixes_count} type hint improvements")
+                
+                # Run syntax check on modified file
+                logger.info("✓ Type hints applied, verifying syntax...")
+                try:
+                    proc = subprocess.run(
+                        ["poetry", "run", "pytest", "--collect-only", "-q"],
+                        cwd=REPO_ROOT,
+                        capture_output=True,
+                        timeout=60,
+                    )
+                    if proc.returncode == 0:
+                        logger.info("✅ Syntax validation passed")
+                    else:
+                        logger.warning("⚠️  Syntax check reported errors (may be expected)")
+                except subprocess.TimeoutExpired:
+                    logger.warning("⚠️  Test collection timed out")
+                except Exception as e:
+                    logger.warning(f"⚠️  Could not verify syntax: {e}")
+                
+                # Delay between iterations
+                if ITERATION_DELAY > 0 and phase25_iteration < PHASE25_MAX_ITERATIONS:
+                    logger.info(f"\n⏸️  Waiting {ITERATION_DELAY}s before next iteration...")
+                    time.sleep(ITERATION_DELAY)
+        
+        except KeyboardInterrupt:
+            logger.info("")
+            logger.info("\n⚠️  Keyboard interrupt received (Ctrl+C)")
+            logger.info("🛑 Stopping Phase 2.5 gracefully...")
+        
+        logger.info("")
+        logger.info(f"📊 Phase 2.5 completed after {phase25_iteration} iterations")
+        if phase25_iteration > 0:
+            logger.info(f"   Focused on reducing pyright type errors")
 
     # Finalize and output the unfixable issues log
     unfixable_log.finalize()

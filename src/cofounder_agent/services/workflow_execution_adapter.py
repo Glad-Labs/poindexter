@@ -717,8 +717,26 @@ async def execute_custom_workflow(
             # Queue for async execution
             logger.info(f"[{execution_id}] Queueing async execution")
 
-            # TODO: Implement async task queue (Celery, RQ, or custom)
-            # For now, start background task
+            # INTERIM SOLUTION: Using asyncio.create_task for background execution
+            # This works for single-instance deployments but lacks:
+            # - Persistence across restarts
+            # - Distributed task queue support
+            # - Advanced monitoring and retries
+            #
+            # TODO: Phase 2 - Implement robust async task queue (Celery, RQ, or Arq)
+            # Migration path:
+            # 1. Install Celery: pip install celery redis
+            # 2. Create celery_app.py with Redis broker configuration
+            # 3. Create celery task wrapper for execute_custom_workflow_execution
+            # 4. Replace asyncio.create_task with celery task.delay()
+            # 5. Add monitoring via Celery Flower (celery -A celery_app flower)
+            # 
+            # Example Phase 2 code (pseudocode):
+            # from celery import Celery
+            # celery_app = Celery('workflows', broker='redis://localhost:6379')
+            # @celery_app.task def execute_workflow_task(...):
+            #     return await execute_custom_workflow_execution(...)
+            
             asyncio.create_task(
                 _execute_workflow_background(phases, context, custom_workflow, database_service)
             )

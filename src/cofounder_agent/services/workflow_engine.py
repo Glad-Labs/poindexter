@@ -504,8 +504,42 @@ class WorkflowEngine:
                 json.dumps(workflow_data, indent=2)[:500],
             )
 
-            # TODO: Implement persistent storage via database_service
-            # This would store results for training data collection and analysis
+            # Persist workflow execution to database
+            from .workflow_history import WorkflowHistoryService
+            
+            pool = await self.database_service.get_connection_pool()
+            history_service = WorkflowHistoryService(pool)
+            
+            await history_service.save_workflow_execution(
+                workflow_id=context.workflow_id,
+                workflow_type="standard",
+                user_id=context.request_id,  # Use request_id as proxy for user_id
+                status=context.status.value.upper(),
+                input_data=context.initial_input,
+                output_data={name: result.output for name, result in context.results.items()},
+                task_results=[
+                    {
+                        "phase": name,
+                        "status": result.status.value,
+                        "duration_ms": result.duration_ms,
+                        "error": result.error,
+                    }
+                    for name, result in context.results.items()
+                ],
+                error_message=next(
+                    (result.error for result in context.results.values() if result.error),
+                    None
+                ),
+                start_time=context.started_at,
+                duration_seconds=total_duration_ms / 1000.0,
+                execution_metadata={
+                    "phases_executed": context.phases_executed,
+                    "has_failures": context.has_failures(),
+                    "tags": context.tags,
+                },
+            )
+
+            logger.info("[%s] Workflow result stored successfully", context.workflow_id)
 
         except Exception as e:
             logger.warning("[%s] Failed to store workflow result: %s", context.workflow_id, e)

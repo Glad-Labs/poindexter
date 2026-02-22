@@ -51,8 +51,8 @@ def validate_email(email: str) -> bool:
     return bool(re.match(pattern, email))
 
 
-@router.post("/data-requests", response_model=Dict)
-async def submit_data_request(request_data: DataSubjectRequest) -> Dict:
+@router.post("/data-requests", response_model=Dict[str, Any])
+async def submit_data_request(request_data: DataSubjectRequest) -> Dict[str, Any]:
     """
     Submit a GDPR data subject request.
 
@@ -92,11 +92,31 @@ async def submit_data_request(request_data: DataSubjectRequest) -> Dict:
         )
         logger.info(logmsg)
 
-        # TODO: In production, implement:
-        # 1. Store request in database (privacy_requests table)
-        # 2. Send verification email to user with confirmation link
-        # 3. Log request for audit trail
-        # 4. Set up workflow to process request within 30 days
+        # Generate unique request ID for tracking
+        from uuid import uuid4
+        request_id = str(uuid4())
+        
+        # Log request for audit trail
+        import json
+        audit_log = {
+            "request_id": request_id,
+            "type": request_data.request_type,
+            "email": request_data.email,
+            "categories": request_data.data_categories or [],
+            "details": request_data.details,
+            "timestamp": datetime.utcnow().isoformat(),
+            "status": "pending_verification",
+        }
+        logger.info(f"Audit: Privacy request created - {json.dumps(audit_log)}")
+        
+        # TODO: Phase 2 - Store request in database (privacy_requests table)
+        # This requires async context and proper database session management
+        
+        # TODO: Phase 2 - Send verification email to user with confirmation link
+        # This requires integrating with email service (SendGrid, AWS SES, etc.)
+        
+        # TODO: Phase 2 - Implement workflow to process request within 30 days
+        # This would schedule async task execution for data collection/deletion
 
         return {
             "status": "success",
@@ -105,7 +125,7 @@ async def submit_data_request(request_data: DataSubjectRequest) -> Dict:
                 "Check your email for a verification link. "
                 "Once verified, we'll process your request within 30 days."
             ),
-            "request_id": datetime.utcnow().isoformat(),
+            "request_id": request_id,
             "next_steps": [
                 "1. Verify your email address (link sent to your inbox)",
                 "2. We'll confirm receipt within 2 weeks",
@@ -122,8 +142,8 @@ async def submit_data_request(request_data: DataSubjectRequest) -> Dict:
         ) from e
 
 
-@router.get("/gdpr-rights", response_model=Dict)
-async def get_gdpr_rights() -> Dict:
+@router.get("/gdpr-rights", response_model=Dict[str, Any])
+async def get_gdpr_rights() -> Dict[str, Any]:
     """
     Returns information about GDPR rights available to users.
     """
@@ -203,8 +223,8 @@ async def get_gdpr_rights() -> Dict:
     }
 
 
-@router.get("/data-processing", response_model=Dict)
-async def get_data_processing_info() -> Dict:
+@router.get("/data-processing", response_model=Dict[str, Any])
+async def get_data_processing_info() -> Dict[str, Any]:
     """
     Returns information about how data is processed.
     """

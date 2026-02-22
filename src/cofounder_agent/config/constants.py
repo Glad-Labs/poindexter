@@ -50,6 +50,16 @@ HUGGINGFACE_QUICK_TIMEOUT = 5.0  # For quick model checks
 HUGGINGFACE_STANDARD_TIMEOUT = 30.0  # Standard inference
 HUGGINGFACE_LONG_TIMEOUT = 300.0  # Long-running operations (5 minutes)
 
+# ===== WORKFLOW EXECUTION =====
+WORKFLOW_TIMEOUT_MINUTES = 60  # Max workflow execution time
+WORKFLOW_AUTO_RETRY = True  # Auto-retry failed phases
+WORKFLOW_PHASE_TIMEOUT_SECONDS = 1200  # 20 minutes per phase (used in task_executor)
+
+# ===== CONTENT GENERATION =====
+CONTENT_GENERATION_TIMEOUT_SECONDS = 1200  # 20 minutes for full content pipeline
+NEWSLETTER_GENERATION_TIMEOUT_SECONDS = 1200  # 20 minutes for newsletter templates
+CONTENT_PUBLISH_RETRY_ATTEMPTS = 3  # Retry failed publish attempts
+
 # ===== IMAGE PROCESSING =====
 IMAGE_MAX_SIZE_BYTES = 10485760  # 10 MB
 IMAGE_MAX_DIMENSION = 4096  # Max width or height in pixels

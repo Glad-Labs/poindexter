@@ -31,7 +31,10 @@ from schemas.auth_schemas import (
     LogoutResponse,
     UserProfile,
 )
+from services.database_service import DatabaseService
+from services.token_manager import TokenManager
 from services.token_validator import AuthConfig, JWTTokenValidator
+from utils.route_utils import get_database_dependency
 
 logger = logging.getLogger(__name__)
 
@@ -364,12 +367,15 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
 
 
 @router.post("/github/callback")
-async def github_callback(request_data: GitHubCallbackRequest) -> Dict[str, Any]:
+async def github_callback(
+    request_data: GitHubCallbackRequest,
+    db: DatabaseService = Depends(get_database_dependency),
+) -> Dict[str, Any]:
     """
     Handle GitHub OAuth callback.
 
     Receives authorization code from frontend, exchanges it for GitHub access token,
-    fetches user information, and returns JWT token.
+    fetches user information, stores the token securely, and returns JWT token.
 
     Security checks:
     - Validates code parameter is provided
@@ -378,6 +384,16 @@ async def github_callback(request_data: GitHubCallbackRequest) -> Dict[str, Any]
     - Validates state is used only once (one-time use)
     - Checks token expiration from GitHub response
     - Validates API response contains required fields
+    - Securely stores OAuth token in database via TokenManager
+
+    Flow:
+    1. Validate CSRF state
+    2. Exchange code for access token
+    3. Fetch user information from GitHub
+    4. Get/create user in database
+    5. Store OAuth token securely
+    6. Create JWT token
+    7. Return token and user info
     """
     code = request_data.code
     state = request_data.state
@@ -416,8 +432,55 @@ async def github_callback(request_data: GitHubCallbackRequest) -> Dict[str, Any]
             logger.error("Failed to fetch GitHub user information")
             raise HTTPException(status_code=401, detail="Failed to fetch user information")
 
+        # Prepare user data for database
+        provider_data = {
+            "login": github_user.get("login"),
+            "email": github_user.get("email"),
+            "avatar_url": github_user.get("avatar_url"),
+            "name": github_user.get("name"),
+            "bio": github_user.get("bio"),
+            "company": github_user.get("company"),
+            "location": github_user.get("location"),
+        }
+
+        # Get or create user in database
+        user_response = await db.users.get_or_create_oauth_user(
+            provider="github",
+            provider_user_id=str(github_user.get("id", "")),
+            provider_data=provider_data,
+        )
+
+        if not user_response:
+            logger.error("Failed to create/retrieve user from database")
+            raise HTTPException(status_code=500, detail="User database operation failed")
+
+        user_id = user_response.id
+        logger.info(f"User {user_id} retrieved/created for GitHub OAuth")
+
+        # Store OAuth token securely
+        token_manager = TokenManager(db)
+        try:
+            await token_manager.store_oauth_token(
+                user_id=user_id,
+                provider="github",
+                oauth_response=github_response,
+            )
+            logger.info(f"OAuth token stored for user {user_id}")
+        except Exception as e:
+            logger.error(f"Failed to store OAuth token: {str(e)}", exc_info=True)
+            # Non-blocking error - token storage failure doesn't prevent login
+            # but is logged for audit purposes
+
         # Create JWT token for user
-        jwt_token = create_jwt_token(github_user)
+        jwt_token = create_jwt_token(
+            {
+                "id": user_id,
+                "login": github_user.get("login", ""),
+                "email": github_user.get("email", ""),
+                "avatar_url": github_user.get("avatar_url", ""),
+                "name": github_user.get("name", ""),
+            }
+        )
 
         # Return token and user info
         user_info = {
@@ -425,7 +488,7 @@ async def github_callback(request_data: GitHubCallbackRequest) -> Dict[str, Any]
             "email": github_user.get("email", ""),
             "avatar_url": github_user.get("avatar_url", ""),
             "name": github_user.get("name", ""),
-            "user_id": str(github_user.get("id", "")),
+            "user_id": str(user_id),
             "auth_provider": "github",
         }
 
@@ -444,7 +507,10 @@ async def github_callback(request_data: GitHubCallbackRequest) -> Dict[str, Any]
 
 
 @router.post("/github-callback")
-async def github_callback_fallback(request_data: GitHubCallbackRequest) -> Dict[str, Any]:
+async def github_callback_fallback(
+    request_data: GitHubCallbackRequest,
+    db: DatabaseService = Depends(get_database_dependency),
+) -> Dict[str, Any]:
     """
     Fallback endpoint for GitHub OAuth callback (old endpoint path).
 
@@ -457,8 +523,8 @@ async def github_callback_fallback(request_data: GitHubCallbackRequest) -> Dict[
     logger.warning(
         "Deprecated endpoint /api/auth/github-callback called. Use /api/auth/github/callback instead."
     )
-    # Forward to the main handler
-    return await github_callback(request_data)
+    # Forward to the main handler with database service
+    return await github_callback(request_data, db)
 
 
 @router.post("/logout", response_model=LogoutResponse)
