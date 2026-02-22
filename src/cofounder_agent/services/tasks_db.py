@@ -11,7 +11,7 @@ Handles all task-related database operations including:
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
@@ -35,6 +35,12 @@ def serialize_value_for_postgres(value: Any) -> Any:
         return json.dumps(value)
     if isinstance(value, (int, float, bool)):
         return value
+    if isinstance(value, datetime):
+        # Ensure datetime is timezone-aware (UTC)
+        if value.tzinfo is None:
+            # Naive datetime, assume UTC
+            value = value.replace(tzinfo=timezone.utc)
+        return value
     if isinstance(value, str):
         # Try to parse ISO format datetime strings
         if "T" in value and len(value) > 18:  # Basic check for ISO datetime format
@@ -43,12 +49,20 @@ def serialize_value_for_postgres(value: Any) -> Any:
                 if value.endswith("Z"):
                     value = value[:-1] + "+00:00"
                 # Try parsing with fromisoformat
-                return datetime.fromisoformat(value)
+                dt = datetime.fromisoformat(value)
+                # Ensure timezone-aware
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt
             except (ValueError, AttributeError):
                 # Not a datetime string, return as-is
                 return value
         return value
     if hasattr(value, "isoformat"):
+        # Handle timezone-aware datetime objects
+        if isinstance(value, datetime):
+            if value.tzinfo is None:
+                return value.replace(tzinfo=timezone.utc)
         return value
     return str(value)
 
@@ -155,8 +169,8 @@ class TasksDatabase(DatabaseServiceMixin):
             metadata["task_name"] = task_data["task_name"]
 
         try:
-            # Use naive UTC datetime for PostgreSQL 'timestamp without time zone' columns
-            now = datetime.utcnow()
+            # Use timezone-aware UTC datetime
+            now = datetime.now(timezone.utc)
 
             # Build insert columns dict
             insert_data = {
@@ -300,7 +314,7 @@ class TasksDatabase(DatabaseServiceMixin):
         Returns:
             Updated task dict or None
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         try:
             # Determine which column to update (id for numeric, task_id for UUID)
@@ -613,9 +627,9 @@ class TasksDatabase(DatabaseServiceMixin):
         """
         # Default to all-time if not specified
         if end_date is None:
-            end_date = datetime.utcnow()
+            end_date = datetime.now(timezone.utc)
         if start_date is None:
-            start_date = datetime.utcnow() - timedelta(days=3650)  # ~10 years back
+            start_date = datetime.now(timezone.utc) - timedelta(days=3650)  # ~10 years back
 
         try:
             builder = ParameterizedQueryBuilder()
@@ -742,7 +756,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 VALUES ($1, $2, $3, $4, $5, $6)
             """
 
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             metadata_json = json.dumps(metadata or {})
 
             async with self.pool.acquire() as conn:

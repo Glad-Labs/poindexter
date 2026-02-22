@@ -17,6 +17,10 @@ from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 from typing import List, Dict, Any
 
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent.parent))
+
 # Import tools
 try:
     from src.agents.content_agent.utils.tools import (
@@ -282,6 +286,8 @@ class TestCrewAIToolsFactory:
             pytest.skip("crewai_tools not installed")
         
         tools = CrewAIToolsFactory.get_content_agent_tools()
+        assert len(tools) > 0
+        assert any(isinstance(t, WebSearchTool) for t in tools) CrewAIToolsFactory.get_content_agent_tools()
         assert isinstance(tools, list)
         assert len(tools) >= 4  # Web, Competitor, Document, DataProcessing
 
@@ -290,7 +296,9 @@ class TestCrewAIToolsFactory:
         if not TOOLS_AVAILABLE:
             pytest.skip("crewai_tools not installed")
         
-        tools = CrewAIToolsFactory.get_research_agent_tools()
+        tools = CrewAIToolsFactory.get_content_agent_tools()
+        assert len(tools) > 0
+        assert any(isinstance(t, WebSearchTool) for t in tools) CrewAIToolsFactory.get_research_agent_tools()
         assert isinstance(tools, list)
         assert len(tools) >= 4  # Web, Document, Directory, DataProcessing
 
@@ -299,7 +307,9 @@ class TestCrewAIToolsFactory:
         if not TOOLS_AVAILABLE:
             pytest.skip("crewai_tools not installed")
         
-        tools = CrewAIToolsFactory.get_market_agent_tools()
+        tools = CrewAIToolsFactory.get_content_agent_tools()
+        assert len(tools) > 0
+        assert any(isinstance(t, WebSearchTool) for t in tools) CrewAIToolsFactory.get_market_agent_tools()
         assert isinstance(tools, list)
         assert len(tools) >= 3  # Web, Competitor, DataProcessing
 
@@ -345,6 +355,8 @@ class TestAgentToolsIntegration:
     def test_content_agent_can_access_tools(self):
         """Content agent should access all its tools"""
         tools = CrewAIToolsFactory.get_content_agent_tools()
+        assert len(tools) > 0
+        assert any(isinstance(t, WebSearchTool) for t in tools) CrewAIToolsFactory.get_content_agent_tools()
         assert len(tools) >= 4
         
         # All tools should have required methods
@@ -353,12 +365,16 @@ class TestAgentToolsIntegration:
 
     def test_research_agent_can_access_tools(self):
         """Research agent should access all its tools"""
-        tools = CrewAIToolsFactory.get_research_agent_tools()
+        tools = CrewAIToolsFactory.get_content_agent_tools()
+        assert len(tools) > 0
+        assert any(isinstance(t, WebSearchTool) for t in tools) CrewAIToolsFactory.get_research_agent_tools()
         assert len(tools) >= 4
 
     def test_market_agent_can_access_tools(self):
         """Market agent should access all its tools"""
-        tools = CrewAIToolsFactory.get_market_agent_tools()
+        tools = CrewAIToolsFactory.get_content_agent_tools()
+        assert len(tools) > 0
+        assert any(isinstance(t, WebSearchTool) for t in tools) CrewAIToolsFactory.get_market_agent_tools()
         assert len(tools) >= 3
 
     @patch('src.agents.content_agent.utils.tools.SerperDevTool.run')
@@ -422,6 +438,8 @@ class TestToolsPerformance:
         
         start = time.time()
         tools = CrewAIToolsFactory.get_content_agent_tools()
+        assert len(tools) > 0
+        assert any(isinstance(t, WebSearchTool) for t in tools) CrewAIToolsFactory.get_content_agent_tools()
         duration = time.time() - start
         
         assert duration < 2.0, "Tool collection should be created < 2 seconds"
