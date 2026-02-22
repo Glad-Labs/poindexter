@@ -225,18 +225,6 @@ async def create_task(
     ```
     """
     try:
-        # Validate required fields
-        if not request.topic or not str(request.topic).strip():
-            logger.error("❌ Task creation failed: topic is empty")
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "field": "topic",
-                    "message": "topic is required and cannot be empty",
-                    "type": "validation_error",
-                },
-            )
-
         logger.info(
             f"📥 [UNIFIED_TASK_CREATE] Received: task_type={request.task_type}, topic={request.topic}"
         )

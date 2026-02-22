@@ -127,11 +127,7 @@ async def create_post(request: SocialPost, background_tasks: BackgroundTasks) ->
     Returns:
         Created post details
     """
-    if not request.content.strip():
-        raise HTTPException(status_code=400, detail="Post content cannot be empty")
-
-    if not request.platforms:
-        raise HTTPException(status_code=400, detail="At least one platform must be selected")
+    # Content and platforms validated by Pydantic schema (SocialPost)
 
     # Generate post ID
     post_id = f"post_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -230,8 +226,7 @@ async def generate_content(request: GenerateContentRequest) -> Dict[str, Any]:
     Returns:
         Generated content
     """
-    if not request.topic.strip():
-        raise HTTPException(status_code=400, detail="Topic cannot be empty")
+    # Topic validated by Pydantic schema (GenerateContentRequest)
 
     # In production, this would call the orchestrator to generate content
     # For now, return a template response
@@ -327,8 +322,7 @@ async def cross_post(
     Returns:
         Cross-posting status
     """
-    if not request.content.strip():
-        raise HTTPException(status_code=400, detail="Content cannot be empty")
+    # Content validated by Pydantic schema (CrossPostRequest)
 
     if not request.platforms or len(request.platforms) < 2:
         raise HTTPException(
