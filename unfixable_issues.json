@@ -1,0 +1,24 @@
+{
+  "timestamp": "2026-02-21T20:28:06.158079",
+  "stuck_auto_fixes": {},
+  "non_fixable_tools": {
+    "pyright": 612
+  },
+  "phase2_failures": [
+    {
+      "test": "tests/integration/test_crewai_tools_integration.py",
+      "error": "============================= test session starts =============================\nplatform win32 -- Python 3.13.12, pytest-9.0.2, pluggy-1.6.0 -- C:\\Users\\mattm\\AppData\\Local\\pypoetry\\Cache\\virtualenvs\\",
+      "stuck_at_iteration": 6
+    }
+  ],
+  "summary": {
+    "stuck_autofixable_issues": 0,
+    "nonfixable_tool_issues": 612,
+    "phase2_test_failures": 1,
+    "total_issues": 613,
+    "actions_required": [
+      "Address 612 issues from: pyright",
+      "Debug/fix 1 test failures (see phase2_failures)"
+    ]
+  }
+}
