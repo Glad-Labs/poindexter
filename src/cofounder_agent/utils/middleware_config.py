@@ -38,9 +38,10 @@ class MiddlewareConfig:
         Order of execution (first to last):
         1. Profiling middleware (tracks request latency)
         2. CORS middleware (handles cross-origin requests)
-        3. Rate limiting (protects against abuse)
-        4. Input validation (sanitizes requests)
-        5. Payload inspection (logs payloads for debugging)
+        3. Token validation (validates JWT tokens on protected endpoints)
+        4. Rate limiting (protects against abuse)
+        5. Input validation (sanitizes requests)
+        6. Payload inspection (logs payloads for debugging)
 
         Args:
             app: FastAPI application instance
@@ -56,6 +57,7 @@ class MiddlewareConfig:
         # Profiling should execute FIRST, so it's added LAST
         self._setup_input_validation(app)
         self._setup_rate_limiting(app)
+        self._setup_token_validation(app)
         self._setup_cors(app)
         self._setup_profiling(app)
 
@@ -188,6 +190,26 @@ class MiddlewareConfig:
                 "Install with: pip install slowapi"
             )
             self.limiter = None
+
+    def _setup_token_validation(self, app: FastAPI) -> None:
+        """
+        Setup token validation middleware.
+
+        Validates JWT tokens on protected endpoints:
+        - Checks Authorization header format
+        - Validates token presence on protected routes
+        - Full token expiration/signature validation happens at dependency level
+
+        Phase 1 OAuth Security: Ensures tokens are present and formatted correctly
+        before reaching route handlers.
+        """
+        try:
+            from middleware.token_validation import TokenValidationMiddleware
+
+            app.add_middleware(TokenValidationMiddleware)
+            logger.info("✅ Token validation middleware initialized")
+        except ImportError as e:
+            logger.warning(f"⚠️  Token validation middleware not available: {e}")
 
     def get_limiter(self):
         """

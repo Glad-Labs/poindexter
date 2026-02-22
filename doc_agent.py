@@ -66,7 +66,8 @@ def check_ollama_available() -> bool:
             timeout=5,
         )
         return resp.returncode == 0
-    except:
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+        # Ollama not available or curl not found - return False for graceful degradation
         return False
 
 

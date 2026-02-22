@@ -186,7 +186,8 @@ class CapabilityIntrospector:
             # Get type hints
             try:
                 type_hints = get_type_hints(func)
-            except:
+            except (TypeError, NameError, AttributeError) as e:
+                logger.warning(f"Failed to extract type hints for {name}: {e}")
                 type_hints = {}
 
             # Use provided description or extract from docstring
@@ -200,7 +201,8 @@ class CapabilityIntrospector:
                 # Enhance with signature info if docstring parsing didn't work
                 if not input_schema.parameters:
                     input_schema = self._extract_schema_from_signature(func, type_hints)
-            except:
+            except (ValueError, RuntimeError, KeyError) as e:
+                logger.warning(f"Failed to extract schema from docstring for {name}, using signature: {e}")
                 input_schema = self._extract_schema_from_signature(func, type_hints)
                 output_schema = OutputSchema()
 

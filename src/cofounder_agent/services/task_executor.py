@@ -100,7 +100,7 @@ class TaskExecutor:
                 return orch
         return self.orchestrator_initial
 
-    async def start(self):
+    async def start(self) -> None:
         """Start the background task processor"""
         if self.running:
             logger.warning("❌ Task executor already running")
@@ -119,7 +119,7 @@ class TaskExecutor:
         self._processor_task = asyncio.create_task(self._process_loop())
         logger.info("✅ Task executor background processor started")
 
-    async def stop(self):
+    async def stop(self) -> None:
         """Stop the background task processor"""
         if not self.running:
             return
@@ -226,7 +226,7 @@ class TaskExecutor:
 
         logger.info("📋 [TASK_EXEC_LOOP] Task executor processor loop stopped")
 
-    async def _process_single_task(self, task: Dict[str, Any]):
+    async def _process_single_task(self, task: Dict[str, Any]) -> None:
         """Process a single task through the pipeline"""
         task_id = task.get("task_id") or task.get("id")
         if not task_id:

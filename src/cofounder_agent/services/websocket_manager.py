@@ -112,7 +112,7 @@ class WebSocketManager:
         for namespace in self.active_connections:
             await self.broadcast_to_namespace(namespace, message_type, event, data)
 
-    async def send_task_progress(self, task_id: str, progress_data: dict):
+    async def send_task_progress(self, task_id: str, progress_data: dict) -> None:
         """Send task progress update"""
         await self.broadcast_to_namespace(
             namespace=f"task.{task_id}",
@@ -124,7 +124,7 @@ class WebSocketManager:
             },
         )
 
-    async def send_workflow_status(self, workflow_id: str, status_data: dict):
+    async def send_workflow_status(self, workflow_id: str, status_data: dict) -> None:
         """Send workflow status update"""
         await self.broadcast_to_namespace(
             namespace=f"workflow.{workflow_id}",

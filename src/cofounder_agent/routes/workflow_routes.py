@@ -12,7 +12,10 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Body, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
+from services.database_service import DatabaseService
+from services.workflow_history import WorkflowHistoryService
+from utils.route_utils import get_database_dependency
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +81,10 @@ async def list_workflow_templates(request: Request):
 
 
 @router.get("/status/{workflow_id}", response_model=Dict[str, Any], name="Get Workflow Status")
-async def get_workflow_status(workflow_id: str):
+async def get_workflow_status(
+    workflow_id: str,
+    db_service: DatabaseService = Depends(get_database_dependency),
+):
     """
     Get the current status of a workflow.
 
@@ -114,9 +120,27 @@ async def get_workflow_status(workflow_id: str):
         - 404: Workflow not found
     """
     try:
-        # TODO: Implement workflow status retrieval from storage/engine
-        # This is a placeholder that would integrate with WorkflowEngine
-        raise HTTPException(status_code=404, detail=f"Workflow '{workflow_id}' not found")
+        # Retrieve workflow execution status from database
+        pool = await db_service.get_connection_pool()
+        history_service = WorkflowHistoryService(pool)
+        
+        execution_data = await history_service.get_workflow_execution(workflow_id)
+        
+        if not execution_data:
+            raise HTTPException(status_code=404, detail=f"Workflow '{workflow_id}' not found")
+        
+        # Extract and format response
+        return {
+            "workflow_id": execution_data.get("id"),
+            "status": execution_data.get("status"),
+            "current_phase": execution_data.get("current_phase", ""),
+            "phases_executed": execution_data.get("task_results", []),
+            "progress_percent": execution_data.get("progress_percent", 0),
+            "results": execution_data.get("output_data", {}),
+            "started_at": execution_data.get("start_time", ""),
+            "completed_at": execution_data.get("end_time"),
+            "duration_seconds": execution_data.get("duration_seconds"),
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -125,7 +149,10 @@ async def get_workflow_status(workflow_id: str):
 
 
 @router.post("/pause/{workflow_id}", name="Pause Workflow")
-async def pause_workflow(workflow_id: str):
+async def pause_workflow(
+    workflow_id: str,
+    db_service: DatabaseService = Depends(get_database_dependency),
+):
     """
     Pause a currently executing workflow.
 
@@ -151,8 +178,31 @@ async def pause_workflow(workflow_id: str):
         - 400: Workflow not in running state
     """
     try:
-        # TODO: Implement pause functionality via WorkflowEngine
-        raise HTTPException(status_code=404, detail=f"Workflow '{workflow_id}' not found")
+        # Get current workflow status from database
+        pool = await db_service.get_connection_pool()
+        history_service = WorkflowHistoryService(pool)
+        
+        execution_data = await history_service.get_workflow_execution(workflow_id)
+        
+        if not execution_data:
+            raise HTTPException(status_code=404, detail=f"Workflow '{workflow_id}' not found")
+        
+        if execution_data.get("status") != "running":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Workflow must be in 'running' state to pause. Current state: {execution_data.get('status')}"
+            )
+        
+        # TODO: Phase 2 - Implement actual pause functionality via WorkflowEngine
+        # This would signal the executor to pause at the current phase boundary
+        # For now, update database status to 'paused'
+        await history_service.update_workflow_status(workflow_id, "paused")
+        
+        return {
+            "success": True,
+            "workflow_id": workflow_id,
+            "status": "paused"
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -161,7 +211,10 @@ async def pause_workflow(workflow_id: str):
 
 
 @router.post("/resume/{workflow_id}", name="Resume Workflow")
-async def resume_workflow(workflow_id: str):
+async def resume_workflow(
+    workflow_id: str,
+    db_service: DatabaseService = Depends(get_database_dependency),
+):
     """
     Resume a paused workflow.
 
@@ -187,8 +240,31 @@ async def resume_workflow(workflow_id: str):
         - 400: Workflow not in paused state
     """
     try:
-        # TODO: Implement resume functionality via WorkflowEngine
-        raise HTTPException(status_code=404, detail=f"Workflow '{workflow_id}' not found")
+        # Get current workflow status from database
+        pool = await db_service.get_connection_pool()
+        history_service = WorkflowHistoryService(pool)
+        
+        execution_data = await history_service.get_workflow_execution(workflow_id)
+        
+        if not execution_data:
+            raise HTTPException(status_code=404, detail=f"Workflow '{workflow_id}' not found")
+        
+        if execution_data.get("status") != "paused":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Workflow must be in 'paused' state to resume. Current state: {execution_data.get('status')}"
+            )
+        
+        # TODO: Phase 2 - Implement actual resume functionality via WorkflowEngine
+        # This would resume execution from where it was paused
+        # For now, update database status to 'running'
+        await history_service.update_workflow_status(workflow_id, "running")
+        
+        return {
+            "success": True,
+            "workflow_id": workflow_id,
+            "status": "running"
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -197,7 +273,10 @@ async def resume_workflow(workflow_id: str):
 
 
 @router.post("/cancel/{workflow_id}", name="Cancel Workflow")
-async def cancel_workflow(workflow_id: str):
+async def cancel_workflow(
+    workflow_id: str,
+    db_service: DatabaseService = Depends(get_database_dependency),
+):
     """
     Cancel a workflow (cannot be resumed).
 
@@ -223,8 +302,31 @@ async def cancel_workflow(workflow_id: str):
         - 400: Workflow not in running/paused state
     """
     try:
-        # TODO: Implement cancel functionality via WorkflowEngine
-        raise HTTPException(status_code=404, detail=f"Workflow '{workflow_id}' not found")
+        # Get current workflow status from database
+        pool = await db_service.get_connection_pool()
+        history_service = WorkflowHistoryService(pool)
+        
+        execution_data = await history_service.get_workflow_execution(workflow_id)
+        
+        if not execution_data:
+            raise HTTPException(status_code=404, detail=f"Workflow '{workflow_id}' not found")
+        
+        current_status = execution_data.get("status")
+        if current_status not in ["running", "paused"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Workflow must be in 'running' or 'paused' state to cancel. Current state: {current_status}"
+            )
+        
+        # TODO: Phase 2 - Implement actual cancel functionality via WorkflowEngine
+        # This would cleanly shut down the executor and mark workflow as cancelled
+        await history_service.update_workflow_status(workflow_id, "cancelled")
+        
+        return {
+            "success": True,
+            "workflow_id": workflow_id,
+            "status": "cancelled"
+        }
     except HTTPException:
         raise
     except Exception as e:
