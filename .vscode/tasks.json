@@ -26,10 +26,7 @@
         "reveal": "always",
         "clear": false
       },
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      }
+      "group": "build"
     },
     {
       "label": "Start Public Site",
@@ -69,7 +66,10 @@
         "Start Oversight Hub"
       ],
       "problemMatcher": [],
-      "group": "build",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
       "presentation": {
         "group": "services",
         "panel": "shared",
