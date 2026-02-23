@@ -113,7 +113,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
                     "content": cached_response,
                     "model": request.model,
                     "provider": provider,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                     "cached": True,
                 }
             )
@@ -121,7 +121,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 response=cached_response,
                 model=request.model,
                 conversationId=request.conversationId,
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.now(timezone.utc).isoformat(),
                 tokens_used=len(cached_response.split()),
                 cached=True,
             )
@@ -406,7 +406,7 @@ async def get_available_models() -> Dict[str, Any]:
     return {
         "models": models_list,
         "available_count": len(models_list),
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
