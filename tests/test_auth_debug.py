@@ -4,7 +4,7 @@ Test script to debug POST auth issues
 """
 import jwt
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import requests
 
 # Development JWT secret (must match backend)
@@ -19,8 +19,8 @@ if __name__ == "__main__":
         'username': 'dev-user',
         'auth_provider': 'mock',
         'type': 'access',
-        'iat': datetime.utcnow(),
-        'exp': datetime.utcnow() + timedelta(hours=24),
+        'iat': datetime.now(timezone.utc),
+        'exp': datetime.now(timezone.utc) + timedelta(hours=24),
     }
 
     token = jwt.encode(payload, DEV_SECRET, algorithm='HS256')

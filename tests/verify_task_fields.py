@@ -12,7 +12,7 @@ def generate_token():
     payload = {
         "user_id": "test-user-id",
         "sub": "test-user",
-        "exp": datetime.datetime.utcnow() + datetime.timedelta(minutes=15),
+        "exp": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=15),
         "type": "access"
     }
     token = jwt.encode(payload, JWT_SECRET, algorithm=ALGORITHM)

@@ -19,7 +19,7 @@ information about GDPR rights. In production, implement:
 
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -104,7 +104,7 @@ async def submit_data_request(request_data: DataSubjectRequest) -> Dict[str, Any
             "email": request_data.email,
             "categories": request_data.data_categories or [],
             "details": request_data.details,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "status": "pending_verification",
         }
         logger.info(f"Audit: Privacy request created - {json.dumps(audit_log)}")

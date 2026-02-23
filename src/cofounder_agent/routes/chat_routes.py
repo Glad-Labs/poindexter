@@ -10,7 +10,7 @@ Provides endpoints for:
 
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -98,7 +98,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
         # Add user message to conversation history
         conversations[request.conversationId].append(
-            {"role": "user", "content": request.message, "timestamp": datetime.utcnow().isoformat()}
+            {"role": "user", "content": request.message, "timestamp": datetime.now(timezone.utc).isoformat()}
         )
 
         # Check cache first (before doing any heavy processing)
@@ -193,7 +193,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
                                 "content": response_text,
                                 "model": request.model,
                                 "provider": provider,
-                                "timestamp": datetime.utcnow().isoformat(),
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
                             }
                         )
 

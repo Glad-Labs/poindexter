@@ -3,7 +3,7 @@
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from src.cofounder_agent.services.enhanced_status_change_service import (
@@ -111,7 +111,7 @@ class TestEnhancedStatusChangeService:
                 "new_status": "in_progress",
                 "reason": "Started",
                 "metadata": {},
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             },
             {
                 "id": 2,
@@ -120,7 +120,7 @@ class TestEnhancedStatusChangeService:
                 "new_status": "awaiting_approval",
                 "reason": "Complete",
                 "metadata": {},
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
         ]
 
@@ -157,13 +157,13 @@ class TestEnhancedStatusChangeService:
         # Setup mock failures
         mock_failures = [
             {
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "reason": "Content validation failed",
                 "errors": ["Content too short", "Missing keywords"],
                 "context": {"stage": "validation"}
             },
             {
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "reason": "SEO validation failed",
                 "errors": ["Meta description missing"],
                 "context": {"stage": "seo_check"}

@@ -2,7 +2,7 @@
 
 import pytest
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -84,7 +84,7 @@ class TestTaskDatabaseServiceStatusHistory:
                 new_status="in_progress",
                 reason="Started",
                 metadata='{"user": "user1"}',
-                timestamp=datetime.utcnow()
+                timestamp=datetime.now(timezone.utc)
             ),
             MagicMock(
                 id=2,
@@ -93,7 +93,7 @@ class TestTaskDatabaseServiceStatusHistory:
                 new_status="awaiting_approval",
                 reason="Complete",
                 metadata='{"user": "user1"}',
-                timestamp=datetime.utcnow()
+                timestamp=datetime.now(timezone.utc)
             )
         ]
 
@@ -154,7 +154,7 @@ class TestTaskDatabaseServiceStatusHistory:
                 metadata=json.dumps({
                     "validation_errors": ["Content too short", "Missing keywords"]
                 }),
-                timestamp=datetime.utcnow()
+                timestamp=datetime.now(timezone.utc)
             ),
             MagicMock(
                 id=2,
@@ -165,7 +165,7 @@ class TestTaskDatabaseServiceStatusHistory:
                 metadata=json.dumps({
                     "validation_errors": ["Meta description missing"]
                 }),
-                timestamp=datetime.utcnow()
+                timestamp=datetime.now(timezone.utc)
             )
         ]
 
