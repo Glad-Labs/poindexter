@@ -151,7 +151,9 @@ export function safeJsonParse(json, fallback = null) {
   try {
     return JSON.parse(json);
   } catch (error) {
-    console.warn('JSON parse error:', error);
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('JSON parse error:', error);
+    }
     return fallback;
   }
 }
@@ -163,7 +165,9 @@ export function safeJsonStringify(obj, fallback = '{}') {
   try {
     return JSON.stringify(obj);
   } catch (error) {
-    console.warn('JSON stringify error:', error);
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('JSON stringify error:', error);
+    }
     return fallback;
   }
 }

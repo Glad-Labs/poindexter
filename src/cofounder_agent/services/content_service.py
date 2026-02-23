@@ -128,7 +128,7 @@ class ContentService:
             }
 
         except Exception as e:
-            logger.error(f"Research phase failed: {e}", exc_info=True)
+            logger.error(f"[_execute_research] Research phase failed: {e}", exc_info=True)
             raise
 
     # ========================================================================
@@ -185,7 +185,7 @@ class ContentService:
                         style_data.get("writing_style_guidance", "") if style_data else ""
                     )
                 except Exception as e:
-                    logger.warning(f"Could not retrieve writing style: {e}")
+                    logger.warning(f"[_execute_draft] Could not retrieve writing style: {e}")
 
             # Execute draft
             research_text = research_context.get("research_text", "")
@@ -207,7 +207,7 @@ class ContentService:
             }
 
         except Exception as e:
-            logger.error(f"Draft phase failed: {e}", exc_info=True)
+            logger.error(f"[_execute_draft] Draft phase failed: {e}", exc_info=True)
             raise
 
     # ========================================================================
@@ -257,7 +257,7 @@ class ContentService:
             }
 
         except Exception as e:
-            logger.error(f"Assessment phase failed: {e}", exc_info=True)
+            logger.error(f"[_execute_assess] Assessment phase failed: {e}", exc_info=True)
             raise
 
     # ========================================================================
@@ -316,7 +316,7 @@ class ContentService:
             }
 
         except Exception as e:
-            logger.error(f"Refinement phase failed: {e}", exc_info=True)
+            logger.error(f"[_execute_refine] Refinement phase failed: {e}", exc_info=True)
             raise
 
     # ========================================================================
@@ -358,7 +358,7 @@ class ContentService:
             }
 
         except Exception as e:
-            logger.warning(f"Image selection phase failed (non-critical): {e}")
+            logger.warning(f"[_execute_image_selection] Image selection phase failed (non-critical): {e}")
             # Return empty result - image selection is optional
             return {
                 "phase": "image_selection",
@@ -413,7 +413,7 @@ class ContentService:
             }
 
         except Exception as e:
-            logger.error(f"Finalize phase failed: {e}", exc_info=True)
+            logger.error(f"[_execute_finalize] Finalize phase failed: {e}", exc_info=True)
             raise
 
     # ========================================================================
@@ -540,7 +540,7 @@ class ContentService:
             }
 
         except Exception as e:
-            logger.error(f"Content workflow failed: {e}", exc_info=True)
+            logger.error(f"[_execute_full_workflow] Content workflow failed: {e}", exc_info=True)
             return {
                 "status": "failed",
                 "topic": topic,

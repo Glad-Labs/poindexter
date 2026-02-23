@@ -214,7 +214,7 @@ class CommandQueue:
                 else:
                     handler(command)
             except Exception as e:
-                logger.error(f"Handler error for {command.agent_type}: {e}")
+                logger.error(f"[_notify_handlers] Handler error for {command.agent_type}: {e}", exc_info=True)
 
     async def clear_old_commands(self, max_age_hours: int = 24):
         """Clear old completed commands"""

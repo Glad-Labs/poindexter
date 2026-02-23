@@ -542,7 +542,7 @@ class WorkflowEngine:
             logger.info("[%s] Workflow result stored successfully", context.workflow_id)
 
         except Exception as e:
-            logger.warning("[%s] Failed to store workflow result: %s", context.workflow_id, e)
+            logger.warning(f"[_store_workflow_result]  Failed to store workflow result: %s", context.workflow_id, e)
 
     async def execute_phase_with_quality_feedback(
         self,

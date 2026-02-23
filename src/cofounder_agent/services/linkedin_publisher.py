@@ -147,7 +147,7 @@ class LinkedInPublisher:
             }
 
         except Exception as e:
-            logger.error(f"LinkedIn publishing error: {str(e)}")
+            logger.error(f"[_publish] LinkedIn publishing error: {str(e)}", exc_info=True)
             return {
                 "success": False,
                 "error": f"Publishing error: {str(e)}",
@@ -238,7 +238,7 @@ class LinkedInPublisher:
             }
 
         except Exception as e:
-            logger.error(f"LinkedIn scheduling error: {str(e)}")
+            logger.error(f"[_schedule] LinkedIn scheduling error: {str(e)}", exc_info=True)
             return {
                 "success": False,
                 "error": str(e),

@@ -153,7 +153,7 @@ class SentryIntegration:
             return True
 
         except Exception as e:
-            logger.error(f"[ERROR] Failed to initialize Sentry: {str(e)}")
+            logger.error(f"[_initialize] [ERROR] Failed to initialize Sentry: {str(e)}", exc_info=True)
             cls._initialized = True
             cls._sentry_enabled = False
             return False
@@ -215,7 +215,7 @@ class SentryIntegration:
                 scope.set_level(level)
                 sentry_sdk.capture_exception(error)
         except Exception as e:
-            logger.debug(f"Failed to capture exception in Sentry: {e}")
+            logger.debug(f"[_capture_exception] Failed to capture exception in Sentry: {e}")
 
     @classmethod
     def capture_message(cls, message: str, level: str = "info", context: Optional[dict] = None):
@@ -238,7 +238,7 @@ class SentryIntegration:
 
                 sentry_sdk.capture_message(message, level=level)
         except Exception as e:
-            logger.debug(f"Failed to capture message in Sentry: {e}")
+            logger.debug(f"[_capture_message] Failed to capture message in Sentry: {e}")
 
     @classmethod
     def set_user_context(cls, user_id: str, email: str = "", username: str = ""):
@@ -257,7 +257,7 @@ class SentryIntegration:
         try:
             sentry_sdk.set_user({"id": user_id, "email": email, "username": username})
         except Exception as e:
-            logger.debug(f"Failed to set user context in Sentry: {e}")
+            logger.debug(f"[_set_user_context] Failed to set user context in Sentry: {e}")
 
     @classmethod
     def clear_user_context(cls):
@@ -268,7 +268,7 @@ class SentryIntegration:
         try:
             sentry_sdk.set_user(None)
         except Exception as e:
-            logger.debug(f"Failed to clear user context in Sentry: {e}")
+            logger.debug(f"[_clear_user_context] Failed to clear user context in Sentry: {e}")
 
     @classmethod
     def add_breadcrumb(
@@ -292,7 +292,7 @@ class SentryIntegration:
                 category=category, message=message, level=level, data=data or {}
             )
         except Exception as e:
-            logger.debug(f"Failed to add breadcrumb in Sentry: {e}")
+            logger.debug(f"[_add_breadcrumb] Failed to add breadcrumb in Sentry: {e}")
 
     @classmethod
     def start_transaction(cls, name: str, op: str = "http.request", description: str = ""):
@@ -313,7 +313,7 @@ class SentryIntegration:
         try:
             return sentry_sdk.start_transaction(name=name, op=op, description=description)
         except Exception as e:
-            logger.debug(f"Failed to start Sentry transaction: {e}")
+            logger.debug(f"[_start_transaction] Failed to start Sentry transaction: {e}")
             return None
 
     @classmethod

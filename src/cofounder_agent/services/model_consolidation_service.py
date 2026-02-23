@@ -149,7 +149,7 @@ class OllamaAdapter(ProviderAdapter):
             logger.debug("Ollama health check timed out (3s)", host=self.host)
             return False
         except Exception as e:
-            logger.debug("Ollama unavailable", error=str(e), host=self.host)
+            logger.debug(f"[_is_available] Ollama unavailable", error=str(e), host=self.host)
             return False
 
     async def generate(
@@ -184,7 +184,7 @@ class OllamaAdapter(ProviderAdapter):
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.warning("Ollama generation failed", error=str(e), model=model)
+            logger.warning(f"[_generate] Ollama generation failed", error=str(e), model=model)
             raise
 
     def list_models(self) -> List[str]:
@@ -246,7 +246,7 @@ class HuggingFaceAdapter(ProviderAdapter):
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.warning("HuggingFace generation failed", error=str(e), model=model)
+            logger.warning(f"[_generate] HuggingFace generation failed", error=str(e), model=model)
             raise
 
     def list_models(self) -> List[str]:
@@ -280,7 +280,7 @@ class GoogleAdapter(ProviderAdapter):
                 logger.debug("Google Gemini available", model_count=len(models))
             return is_available
         except Exception as e:
-            logger.debug("Google Gemini unavailable", error=str(e))
+            logger.debug(f"[_is_available] Google Gemini unavailable", error=str(e))
             return False
 
     async def generate(
@@ -314,7 +314,7 @@ class GoogleAdapter(ProviderAdapter):
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.warning("Google Gemini generation failed", error=str(e), model=model)
+            logger.warning(f"[_generate] Google Gemini generation failed", error=str(e), model=model)
             raise
 
     def list_models(self) -> List[str]:
@@ -392,7 +392,7 @@ class AnthropicAdapter(ProviderAdapter):
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.warning("Anthropic generation failed", error=str(e), model=model)
+            logger.warning(f"[_generate] Anthropic generation failed", error=str(e), model=model)
             raise
 
     def list_models(self) -> List[str]:
@@ -465,7 +465,7 @@ class OpenAIAdapter(ProviderAdapter):
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.warning("OpenAI generation failed", error=str(e), model=model)
+            logger.warning(f"[_generate] OpenAI generation failed", error=str(e), model=model)
             raise
 
     def list_models(self) -> List[str]:
@@ -570,7 +570,7 @@ class ModelConsolidationService:
 
             return is_available
         except Exception as e:
-            logger.warning("Provider check failed", provider=provider_type.value, error=str(e))
+            logger.warning(f"[_check_provider_availability] Provider check failed", provider=provider_type.value, error=str(e))
 
             self.provider_status[provider_type] = ProviderStatus(
                 provider=provider_type,

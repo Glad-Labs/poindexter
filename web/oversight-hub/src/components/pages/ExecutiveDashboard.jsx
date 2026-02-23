@@ -753,7 +753,7 @@ const ExecutiveDashboard = () => {
             </button>
             <button
               className="action-button reports-button"
-              onClick={() => navigate('/analytics')}
+              onClick={() => navigate('/performance')}
             >
               <span className="action-icon">📊</span>
               <span className="action-label">View Reports</span>

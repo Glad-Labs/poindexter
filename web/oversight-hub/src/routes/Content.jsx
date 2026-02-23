@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getPosts, updatePost, deletePost } from '../lib/apiClient';
 import PostEditor from '../components/modals/PostEditor';
+import CreateTaskModal from '../components/tasks/CreateTaskModal';
 import './Content.css';
 
 function Content() {
@@ -10,6 +11,7 @@ function Content() {
   const [selectedTab, setSelectedTab] = useState('all');
   const [editingPost, setEditingPost] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [createTaskModalOpen, setCreateTaskModalOpen] = useState(false);
 
   // Fetch posts from API
   useEffect(() => {
@@ -119,9 +121,9 @@ function Content() {
 
       {/* Action Buttons */}
       <div className="content-actions">
-        <button className="btn btn-primary">➕ Create New Content</button>
-        <button className="btn btn-secondary">📤 Upload Files</button>
-        <button className="btn btn-secondary">⚙️ Content Settings</button>
+        <button className="btn btn-primary" onClick={() => setCreateTaskModalOpen(true)}>➕ Create New Content</button>
+        <button className="btn btn-secondary" disabled title="Coming soon">📤 Upload Files</button>
+        <button className="btn btn-secondary" disabled title="Coming soon">⚙️ Content Settings</button>
       </div>
 
       {/* Stats Cards */}
@@ -337,6 +339,16 @@ function Content() {
           onSave={handleSavePost}
         />
       )}
+
+      {/* Create Task Modal */}
+      <CreateTaskModal
+        isOpen={createTaskModalOpen}
+        onClose={() => setCreateTaskModalOpen(false)}
+        onTaskCreated={(task) => {
+          setCreateTaskModalOpen(false);
+          console.log('Task created from Content page:', task);
+        }}
+      />
     </div>
   );
 }

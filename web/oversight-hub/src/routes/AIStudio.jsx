@@ -170,7 +170,7 @@ function AIStudio() {
   useEffect(() => {
     if (hasInitializedRef.current) return;
 
-    const fetch = async () => {
+    const fetchOllamaModels = async () => {
       try {
         const response = await fetch('http://localhost:11434/api/tags');
         if (!response.ok) throw new Error('Failed to fetch Ollama models');
@@ -188,7 +188,7 @@ function AIStudio() {
       }
     };
     hasInitializedRef.current = true;
-    fetch();
+    fetchOllamaModels();
   }, [selectedModel]);
 
   // Load training data

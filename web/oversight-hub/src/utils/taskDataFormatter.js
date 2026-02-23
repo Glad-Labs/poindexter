@@ -212,7 +212,7 @@ export const formatDateTime = (date) => {
       day: 'numeric',
       hour: 'numeric',
       minute: '2-digit',
-      meridiem: 'short',
+      hour12: true,
     });
   } catch {
     console.warn('Invalid date:', date);
@@ -249,7 +249,9 @@ export const getDurationDisplay = (startDate, endDate) => {
 
     return `${hours}h ${mins}m`;
   } catch {
-    console.warn('Invalid dates:', startDate, endDate);
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn('Invalid dates:', startDate, endDate);
+    }
     return '';
   }
 };

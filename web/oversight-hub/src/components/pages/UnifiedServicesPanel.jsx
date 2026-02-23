@@ -52,6 +52,10 @@ import {
   AccordionSummary,
   AccordionDetails,
   TextField,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { Play, Trash, FileText } from 'lucide-react';
@@ -450,11 +454,14 @@ const UnifiedServicesPanel = () => {
 
   // Workflow builder state (for Workflow Studio section)
   const [studioTab, setStudioTab] = useState(0);
+  const [discoveryTab, setDiscoveryTab] = useState(0);
   const [availablePhases, setAvailablePhases] = useState([]);
   const [workflows, setWorkflows] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [loadingWorkflows, setLoadingWorkflows] = useState(false);
   const [selectedWorkflow, setSelectedWorkflow] = useState(null);
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [templateModalOpen, setTemplateModalOpen] = useState(false);
 
   // Workflow monitor state (for Workflow Monitor section)
   const [monitorLoading, setMonitorLoading] = useState(false);
@@ -559,7 +566,8 @@ const UnifiedServicesPanel = () => {
 
       setError(null);
     } catch (err) {
-      const errorMsg = err?.message || String(err) || 'Unknown error loading workflow data';
+      const errorMsg =
+        err?.message || String(err) || 'Unknown error loading workflow data';
       console.error('[UnifiedServicesPanel] Error loading workflow data:', err);
       setError(`Workflow Error: ${errorMsg}`);
     } finally {
@@ -583,12 +591,14 @@ const UnifiedServicesPanel = () => {
       setStatistics(statsRes.statistics || statsRes || {});
 
       // Load performance metrics
-      const metricsRes = await workflowManagementService.getPerformanceMetrics();
+      const metricsRes =
+        await workflowManagementService.getPerformanceMetrics();
       setPerformanceMetrics(metricsRes.metrics || metricsRes || {});
 
       setMonitorError(null);
     } catch (err) {
-      const errorMsg = err?.message || String(err) || 'Unknown error loading monitor data';
+      const errorMsg =
+        err?.message || String(err) || 'Unknown error loading monitor data';
       console.error('[UnifiedServicesPanel] Error loading monitor data:', err);
       setMonitorError(`Monitor Error: ${errorMsg}`);
     } finally {
@@ -653,9 +663,20 @@ const UnifiedServicesPanel = () => {
     setStudioTab(newValue);
   };
 
+  const handleDiscoveryTabChange = (event, newValue) => {
+    setDiscoveryTab(newValue);
+  };
+
   if (loadingServices && services.length === 0) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 600 }}>
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          minHeight: 600,
+        }}
+      >
         <CircularProgress />
       </Box>
     );
@@ -720,7 +741,9 @@ const UnifiedServicesPanel = () => {
                         workflow={selectedWorkflow}
                       />
                     ) : (
-                      <Alert severity="warning">Loading available phases...</Alert>
+                      <Alert severity="warning">
+                        Loading available phases...
+                      </Alert>
                     )}
                   </Box>
                 )}
@@ -729,8 +752,13 @@ const UnifiedServicesPanel = () => {
                 {studioTab === 1 && (
                   <Box>
                     {workflows.length === 0 ? (
-                      <Typography color="textSecondary" align="center" sx={{ py: 4 }}>
-                        No custom workflows yet. Create one in the "Create Workflow" tab.
+                      <Typography
+                        color="textSecondary"
+                        align="center"
+                        sx={{ py: 4 }}
+                      >
+                        No custom workflows yet. Create one in the "Create
+                        Workflow" tab.
                       </Typography>
                     ) : (
                       <TableContainer>
@@ -748,28 +776,47 @@ const UnifiedServicesPanel = () => {
                             {workflows.map((workflow) => (
                               <TableRow key={workflow.id}>
                                 <TableCell>
-                                  <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                                  <Typography
+                                    variant="subtitle2"
+                                    sx={{ fontWeight: 600 }}
+                                  >
                                     {workflow.name}
                                   </Typography>
                                 </TableCell>
                                 <TableCell>
-                                  <Typography variant="body2" color="textSecondary">
+                                  <Typography
+                                    variant="body2"
+                                    color="textSecondary"
+                                  >
                                     {workflow.description}
                                   </Typography>
                                 </TableCell>
                                 <TableCell align="center">
                                   <Chip
-                                    label={workflow.phase_count || workflow.phases?.length || 0}
+                                    label={
+                                      workflow.phase_count ||
+                                      workflow.phases?.length ||
+                                      0
+                                    }
                                     size="small"
                                   />
                                 </TableCell>
                                 <TableCell align="right">
-                                  <Typography variant="body2" color="textSecondary">
-                                    {new Date(workflow.created_at).toLocaleDateString()}
+                                  <Typography
+                                    variant="body2"
+                                    color="textSecondary"
+                                  >
+                                    {new Date(
+                                      workflow.created_at
+                                    ).toLocaleDateString()}
                                   </Typography>
                                 </TableCell>
                                 <TableCell align="center">
-                                  <Stack direction="row" spacing={0.5} justifyContent="center">
+                                  <Stack
+                                    direction="row"
+                                    spacing={0.5}
+                                    justifyContent="center"
+                                  >
                                     <IconButton
                                       size="small"
                                       title="Edit"
@@ -780,14 +827,28 @@ const UnifiedServicesPanel = () => {
                                     >
                                       <FileText size={18} />
                                     </IconButton>
-                                    <IconButton size="small" title="Execute">
+                                    <IconButton
+                                      size="small"
+                                      title="Execute"
+                                      onClick={async () => {
+                                        try {
+                                          await workflowManagementService.executeWorkflow(workflow.id);
+                                          console.log('Workflow execution started:', workflow.id);
+                                        } catch (err) {
+                                          console.error('Failed to execute workflow:', err);
+                                          setError(err.message);
+                                        }
+                                      }}
+                                    >
                                       <Play size={18} />
                                     </IconButton>
                                     <IconButton
                                       size="small"
                                       title="Delete"
                                       color="error"
-                                      onClick={() => handleDeleteWorkflow(workflow.id)}
+                                      onClick={() =>
+                                        handleDeleteWorkflow(workflow.id)
+                                      }
                                     >
                                       <Trash size={18} />
                                     </IconButton>
@@ -818,7 +879,9 @@ const UnifiedServicesPanel = () => {
                           }}
                         >
                           <Box sx={{ flex: 1 }}>
-                            <Typography variant="h6">{template.name}</Typography>
+                            <Typography variant="h6">
+                              {template.name}
+                            </Typography>
                             <Typography variant="body2" color="textSecondary">
                               {template.description}
                             </Typography>
@@ -834,7 +897,8 @@ const UnifiedServicesPanel = () => {
                               variant="contained"
                               size="small"
                               onClick={() => {
-                                // TODO: Load and view template
+                                setSelectedTemplate(template);
+                                setTemplateModalOpen(true);
                               }}
                             >
                               View
@@ -843,8 +907,14 @@ const UnifiedServicesPanel = () => {
                               variant="contained"
                               color="success"
                               size="small"
-                              onClick={() => {
-                                console.log('Execute template:', template);
+                              onClick={async () => {
+                                try {
+                                  await workflowManagementService.executeWorkflow(template.id);
+                                  console.log('Template execution started:', template.id);
+                                } catch (err) {
+                                  console.error('Failed to execute template:', err);
+                                  setError(err.message);
+                                }
                               }}
                             >
                               Execute
@@ -913,8 +983,8 @@ const UnifiedServicesPanel = () => {
           <Box sx={{ width: '100%' }}>
             {/* Discovery Nested Tabs */}
             <Tabs
-              value={studioTab}
-              onChange={handleStudioTabChange}
+              value={discoveryTab}
+              onChange={handleDiscoveryTabChange}
               aria-label="discovery tabs"
               sx={{ mb: 2, borderBottom: '1px solid #e0e0e0' }}
             >
@@ -924,15 +994,20 @@ const UnifiedServicesPanel = () => {
             </Tabs>
 
             {/* Phase 4 Services Tab */}
-            {studioTab === 0 && (
+            {discoveryTab === 0 && (
               <Box>
                 {/* Header */}
                 <Box sx={{ mb: 3 }}>
                   <Typography variant="h6" gutterBottom>
                     Unified Services
                   </Typography>
-                  <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-                    Phase 4 Architecture - Integrated service discovery and execution
+                  <Typography
+                    variant="body2"
+                    color="textSecondary"
+                    sx={{ mb: 2 }}
+                  >
+                    Phase 4 Architecture - Integrated service discovery and
+                    execution
                   </Typography>
 
                   {healthStatus && (
@@ -944,8 +1019,9 @@ const UnifiedServicesPanel = () => {
                         py: 1,
                         px: 2,
                         borderRadius: 1,
-                        backgroundColor:
-                          healthStatus.healthy ? '#e8f5e9' : '#ffebee',
+                        backgroundColor: healthStatus.healthy
+                          ? '#e8f5e9'
+                          : '#ffebee',
                       }}
                     >
                       <span style={{ fontSize: '12px' }}>
@@ -969,7 +1045,11 @@ const UnifiedServicesPanel = () => {
                     sx={{ mb: 2 }}
                   />
 
-                  <Stack direction="row" spacing={2} sx={{ mb: 2, overflowX: 'auto' }}>
+                  <Stack
+                    direction="row"
+                    spacing={2}
+                    sx={{ mb: 2, overflowX: 'auto' }}
+                  >
                     <CapabilityFilter
                       allCapabilities={allCapabilities}
                       selectedCapabilities={selectedCapabilities}
@@ -986,8 +1066,13 @@ const UnifiedServicesPanel = () => {
                 {/* Services Display */}
                 {filteredServices.length > 0 ? (
                   <>
-                    <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-                      Showing {filteredServices.length} of {services.length} services
+                    <Typography
+                      variant="body2"
+                      color="textSecondary"
+                      sx={{ mb: 2 }}
+                    >
+                      Showing {filteredServices.length} of {services.length}{' '}
+                      services
                     </Typography>
                     <Stack spacing={2}>
                       {filteredServices.map((service) => (
@@ -1000,7 +1085,11 @@ const UnifiedServicesPanel = () => {
                     </Stack>
                   </>
                 ) : (
-                  <Typography color="textSecondary" align="center" sx={{ py: 4 }}>
+                  <Typography
+                    color="textSecondary"
+                    align="center"
+                    sx={{ py: 4 }}
+                  >
                     No services found. Try adjusting your search or filters.
                   </Typography>
                 )}
@@ -1008,13 +1097,99 @@ const UnifiedServicesPanel = () => {
             )}
 
             {/* Capabilities Browser Tab */}
-            {studioTab === 1 && <CapabilitiesBrowser />}
+            {discoveryTab === 1 && <CapabilitiesBrowser />}
 
             {/* Service Explorer Tab */}
-            {studioTab === 2 && <ServiceExplorer />}
+            {discoveryTab === 2 && <ServiceExplorer />}
           </Box>
         </AccordionDetails>
       </Accordion>
+
+      {/* Template Viewer Modal */}
+      <Dialog
+        open={templateModalOpen}
+        onClose={() => setTemplateModalOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>{selectedTemplate?.name} Template Details</DialogTitle>
+        <DialogContent>
+          {selectedTemplate && (
+            <Stack spacing={2} sx={{ mt: 2 }}>
+              <Box>
+                <Typography variant="subtitle2" color="textSecondary">
+                  Description
+                </Typography>
+                <Typography variant="body2">
+                  {selectedTemplate.description}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography variant="subtitle2" color="textSecondary">
+                  Template ID
+                </Typography>
+                <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                  {selectedTemplate.id}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography variant="subtitle2" color="textSecondary">
+                  Phases
+                </Typography>
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  sx={{ flexWrap: 'wrap', gap: 1 }}
+                >
+                  {Array.from({ length: selectedTemplate.phase_count }).map(
+                    (_, i) => (
+                      <Chip
+                        key={i}
+                        label={`Phase ${i + 1}`}
+                        size="small"
+                        variant="outlined"
+                      />
+                    )
+                  )}
+                </Stack>
+              </Box>
+              <Box>
+                <Typography variant="subtitle2" color="textSecondary">
+                  Template Type
+                </Typography>
+                <Chip
+                  label={
+                    selectedTemplate.is_template
+                      ? 'Built-in Template'
+                      : 'Custom'
+                  }
+                  size="small"
+                  color={selectedTemplate.is_template ? 'default' : 'primary'}
+                />
+              </Box>
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setTemplateModalOpen(false)}>Close</Button>
+          <Button
+            variant="contained"
+            color="success"
+            onClick={async () => {
+              try {
+                await workflowManagementService.executeWorkflow(selectedTemplate.id);
+                console.log('Template execution started:', selectedTemplate.id);
+                setTemplateModalOpen(false);
+              } catch (err) {
+                console.error('Failed to execute template:', err);
+                setError(err.message);
+              }
+            }}
+          >
+            Execute Template
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

@@ -49,6 +49,7 @@ from .error_handler import (
     ServiceError,
     DatabaseError,
 )
+from utils.error_handler import handle_service_error
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +187,7 @@ class TaskExecutor:
                             )
                         except Exception as e:
                             logger.error(
-                                f"Unexpected error processing task {task_id}",
+                                f"[run] Unexpected error processing task {task_id}: {str(e)}",
                                 exc_info=True,
                             )
                             raise ServiceError(
@@ -238,7 +239,7 @@ class TaskExecutor:
                 break
             except Exception as e:
                 logger.error(
-                    f"Unexpected error in task executor loop",
+                    f"[run] Unexpected error in task executor loop: {str(e)}",
                     exc_info=True,
                 )
                 logger.info(
@@ -275,7 +276,7 @@ class TaskExecutor:
             logger.info("🕵️  [DEBUG] RAW TASK DATA FROM DB:")
             logger.info(json.dumps(task, indent=2, default=str))
         except Exception as e:
-            logger.error(f"  [DEBUG] FAILED TO DUMP TASK: {e}")
+            logger.error(f"[_process_single_task] [DEBUG] Failed to dump task: {e}", exc_info=True)
         # ======================================================================
 
         # Set per-task timeout (20 minutes max for content generation, including newsletter templates)
@@ -308,7 +309,7 @@ class TaskExecutor:
                     message=f"Starting task: {task_name}",
                 )
             except Exception as e:
-                logger.warning(f"⚠️  Failed to emit task progress event: {e}")
+                logger.warning(f"[_process_single_task] Failed to emit task progress event: {e}", exc_info=True)
 
             # 2. Process through orchestrator/agent pipeline with timeout
             logger.info(
@@ -440,7 +441,7 @@ class TaskExecutor:
                         duration=8000,
                     )
                 except Exception as e:
-                    logger.warning(f"⚠️  Failed to emit task failure event: {e}")
+                    logger.warning(f"[_process_single_task] Failed to emit task failure event: {e}", exc_info=True)
             else:
                 logger.info(f"✅ [TASK_SINGLE] Task awaiting approval: {task_id}")
 
@@ -462,13 +463,13 @@ class TaskExecutor:
                         duration=5000,
                     )
                 except Exception as e:
-                    logger.warning(f"Failed to emit task success event", exc_info=True)
+                    logger.warning(f"[_process_single_task] Failed to emit task success event", exc_info=True)
 
         except ServiceError as e:
             logger.error(f"Service error processing task {task_id}", exc_info=True)
             raise
         except Exception as e:
-            logger.error(f"Task failed: {task_id}", exc_info=True)
+            logger.error(f"[_process_single_task] Task processing failed for {task_id}: {str(e)}", exc_info=True)
             raise ServiceError(
                 message=f"Task {task_id} processing failed",
                 details={"task_id": str(task_id), "task_name": task_name},
@@ -724,10 +725,7 @@ class TaskExecutor:
                 )
             except Exception as e:
                 orchestrator_error = str(e)
-                logger.error(
-                    f"Orchestrator error in content generation",
-                    exc_info=True,
-                )
+                logger.error(f"Orchestrator error in content generation: {str(e)}", exc_info=True)
                 raise ServiceError(
                     message="Content generation through orchestrator failed",
                     details={"task_id": str(task_id), "phase": "content_generation"},
@@ -771,7 +769,7 @@ class TaskExecutor:
                     },
                 )
             except Exception as e:
-                logger.error(f"❌ Quality evaluation failed: {e}", exc_info=True)
+                logger.error(f"[_execute_task] Quality evaluation failed: {e}", exc_info=True)
                 quality_result = None
 
         # Handle None result (evaluation failed or no content)
@@ -1061,7 +1059,7 @@ class TaskExecutor:
                 await self.database_service.log_cost(cost_log)
                 logger.debug(f"✅ Logged task cost: ${cost_log['cost_usd']:.6f} to database")
             except Exception as e:
-                logger.warning(f"⚠️ Failed to persist cost metrics: {e}")
+                logger.warning(f"[_execute_task] Failed to persist cost metrics: {e}", exc_info=True)
 
         # Store metadata in result
         metadata = {
@@ -1217,7 +1215,7 @@ The key to success with {topic} is staying informed, adapting to changes, and co
             return content
 
         except Exception as e:
-            logger.error(f"❌ Fallback generation failed: {e}", exc_info=True)
+            logger.error(f"[_fallback_generate_content] Fallback generation failed: {e}", exc_info=True)
             # Emergency minimal content
             return f"# {topic}\n\nContent generation service temporarily unavailable. Please try again later.\n\nError: {str(e)[:100]}"
 

@@ -73,7 +73,9 @@ export async function getBySlug(endpoint, slug, fetchAPI, options = {}) {
 
     return item;
   } catch (error) {
-    console.error(`Error fetching ${endpoint} by slug "${slug}":`, error);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error(`Error fetching ${endpoint} by slug "${slug}":`, error);
+    }
     return null;
   }
 }

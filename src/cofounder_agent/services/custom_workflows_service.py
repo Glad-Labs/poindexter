@@ -28,6 +28,7 @@ from services.phase_mapper import build_full_phase_pipeline
 from services.phase_registry import PhaseRegistry
 from services.workflow_executor import WorkflowExecutor
 from services.workflow_validator import WorkflowValidator
+from utils.error_handler import handle_service_error
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,7 @@ class CustomWorkflowsService:
             )
             return workflow
         except Exception as e:
-            logger.error(f"Failed to create workflow: {str(e)}", exc_info=True)
+            logger.error(f"[create_workflow] Failed to create workflow: {str(e)}", exc_info=True)
             raise
 
     async def get_workflow(self, workflow_id: str, owner_id: str) -> Optional[CustomWorkflow]:
@@ -109,7 +110,7 @@ class CustomWorkflowsService:
                 return None
             return self._row_to_workflow(row)
         except Exception as e:
-            logger.error(f"Error retrieving workflow {workflow_id}: {str(e)}", exc_info=True)
+            logger.error(f"[get_workflow] Failed to retrieve workflow {workflow_id}: {str(e)}", exc_info=True)
             raise
 
     async def list_workflows(
@@ -183,8 +184,14 @@ class CustomWorkflowsService:
                 "has_next": (page * page_size) < total_count,
             }
         except Exception as e:
-            logger.error(f"Error listing workflows: {str(e)}", exc_info=True)
-            raise
+            logger.error(f"[list_workflows] Failed to list workflows for user {owner_id}: {str(e)}", exc_info=True)
+            return {
+                "workflows": [],
+                "total_count": 0,
+                "page": page,
+                "page_size": page_size,
+                "has_next": False,
+            }
 
     async def update_workflow(
         self, workflow_id: str, workflow: CustomWorkflow, owner_id: str
@@ -228,7 +235,7 @@ class CustomWorkflowsService:
             logger.info(f"Updated custom workflow: {workflow_id} for user {owner_id}")
             return workflow
         except Exception as e:
-            logger.error(f"Failed to update workflow: {str(e)}", exc_info=True)
+            logger.error(f"[update_workflow] Failed to update workflow {workflow_id}: {str(e)}", exc_info=True)
             raise
 
     async def delete_workflow(self, workflow_id: str, owner_id: str) -> bool:
@@ -260,7 +267,7 @@ class CustomWorkflowsService:
             logger.info(f"Deleted custom workflow: {workflow_id} for user {owner_id}")
             return True
         except Exception as e:
-            logger.error(f"Failed to delete workflow: {str(e)}", exc_info=True)
+            logger.error(f"[delete_workflow] Failed to delete workflow {workflow_id}: {str(e)}", exc_info=True)
             raise
 
     async def execute_workflow(
@@ -334,12 +341,12 @@ class CustomWorkflowsService:
                         broadcast_workflow_progress(execution_id, progress.to_dict())
                     )
                 except Exception as e:
-                    logger.debug(f"Could not broadcast progress: {e}")
+                    logger.debug(f"[execute_workflow] Could not broadcast progress: {e}")
 
             progress_service.register_callback(execution_id, broadcast_progress)
 
         except Exception as e:
-            logger.warning(f"Failed to initialize progress tracking: {e}")
+            logger.warning(f"[execute_workflow] Failed to initialize progress tracking: {e}")
 
         # Validate workflow before executing
         is_valid, errors = self.workflow_validator.validate_for_execution(
@@ -354,7 +361,7 @@ class CustomWorkflowsService:
                     error=error_msg,
                 )
             except Exception as e:
-                logger.debug(f"Failed to update progress on validation failure: {e}")
+                logger.debug(f"[execute_workflow] Failed to update progress on validation failure: {e}")
             return {
                 "execution_id": execution_id,
                 "workflow_id": workflow.id,
@@ -404,7 +411,7 @@ class CustomWorkflowsService:
                         error=f"Phases failed: {', '.join(failed_phases)}",
                     )
             except Exception as e:
-                logger.debug(f"Failed to update final progress: {e}")
+                logger.debug(f"[execute_workflow] Failed to update final progress: {e}")
 
             # Persist execution if we have database
             try:
@@ -427,7 +434,7 @@ class CustomWorkflowsService:
                     progress_percent=100 if overall_status == "completed" else 50,
                 )
             except Exception as e:
-                logger.warning(f"Failed to persist workflow execution: {e}")
+                logger.warning(f"[execute_workflow] Failed to persist workflow execution: {e}")
 
             return {
                 "execution_id": execution_id,
@@ -467,14 +474,14 @@ class CustomWorkflowsService:
             }
 
         except Exception as e:
-            logger.error(f"Workflow execution failed: {str(e)}", exc_info=True)
+            logger.error(f"[execute_workflow] Workflow execution failed: {str(e)}", exc_info=True)
             try:
                 progress_service.mark_failed(
                     execution_id=execution_id,
                     error=str(e),
                 )
             except Exception as e2:
-                logger.debug(f"Failed to update progress on exception: {e2}")
+                logger.debug(f"[execute_workflow] Failed to update progress on exception: {e2}")
             return {
                 "execution_id": execution_id,
                 "workflow_id": workflow.id,
@@ -823,7 +830,7 @@ class CustomWorkflowsService:
             return True
 
         except Exception as e:
-            logger.error(f"Failed to persist workflow execution {execution_id}: {e}", exc_info=True)
+            logger.error(f"[persist_workflow_execution] Failed to persist execution {execution_id}: {e}", exc_info=True)
             return False
 
     async def get_workflow_execution(
@@ -858,7 +865,7 @@ class CustomWorkflowsService:
             return self._row_to_execution(row)
 
         except Exception as e:
-            logger.error(f"Failed to get workflow execution {execution_id}: {e}")
+            logger.error(f"[get_workflow_execution] Failed to get execution {execution_id}: {e}", exc_info=True)
             return None
 
     async def get_workflow_executions(
@@ -924,7 +931,7 @@ class CustomWorkflowsService:
             }
 
         except Exception as e:
-            logger.error(f"Failed to get workflow executions for {workflow_id}: {e}")
+            logger.error(f"[get_workflow_executions] Failed to get executions for {workflow_id}: {e}", exc_info=True)
             return {
                 "total": 0,
                 "executions": [],
@@ -968,7 +975,7 @@ class CustomWorkflowsService:
             rows = await self.db.execute_query(query, (owner_id, limit, offset))
             return [self._row_to_execution_dict(row) for row in rows] if rows else []
         except Exception as e:
-            logger.error(f"Error fetching executions for owner {owner_id}: {str(e)}")
+            logger.error(f"[get_all_executions] Error fetching executions for owner {owner_id}: {str(e)}", exc_info=True)
             return []
 
     async def get_workflow_statistics(self, owner_id: str) -> Dict[str, Any]:
@@ -1010,7 +1017,7 @@ class CustomWorkflowsService:
                 "average_duration_seconds": 0,
             }
         except Exception as e:
-            logger.error(f"Error fetching workflow statistics: {str(e)}")
+            logger.error(f"[get_workflow_statistics] Error fetching workflow statistics: {str(e)}", exc_info=True)
             return {}
 
     async def get_performance_metrics(
@@ -1069,7 +1076,7 @@ class CustomWorkflowsService:
                 "total_data_points": len(metrics),
             }
         except Exception as e:
-            logger.error(f"Error fetching performance metrics: {str(e)}")
+            logger.error(f"[get_performance_metrics] Error fetching performance metrics: {str(e)}", exc_info=True)
             return {"time_range": time_range, "metrics": [], "total_data_points": 0}
 
     async def get_execution_details(self, execution_id: str, owner_id: str) -> Dict[str, Any]:
@@ -1102,5 +1109,5 @@ class CustomWorkflowsService:
                 }
             raise ValueError(f"Execution {execution_id} not found or not owned by user")
         except Exception as e:
-            logger.error(f"Error fetching execution details for {execution_id}: {str(e)}")
+            logger.error(f"[get_execution_details] Error fetching execution details for {execution_id}: {str(e)}", exc_info=True)
             raise

@@ -56,7 +56,9 @@ export async function getRelatedPosts(currentPost, limit = 3) {
 
     return relatedPosts;
   } catch (_error) {
-    console.error('Error getting related posts:', _error);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('Error getting related posts:', _error);
+    }
     return [];
   }
 }
@@ -98,7 +100,9 @@ export async function getPostsByMultipleCriteria(
       .sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt))
       .slice(0, _limit);
   } catch (error) {
-    console.error('Error getting posts by multiple criteria:', error);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('Error getting posts by multiple criteria:', error);
+    }
     return [];
   }
 }

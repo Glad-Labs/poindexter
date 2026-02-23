@@ -139,7 +139,7 @@ class RedisCache:
             return cls(redis_instance=redis_instance, enabled=True)
 
         except Exception as e:
-            logger.warning(f"⚠️  Failed to connect to Redis: {str(e)}")
+            logger.warning(f"[_create] ⚠️  Failed to connect to Redis: {str(e)}")
             logger.info("   System will continue without caching")
             logger.info(f"   To enable caching, ensure Redis is running at: {redis_url}")
             return cls(redis_instance=None, enabled=False)
@@ -173,7 +173,7 @@ class RedisCache:
                     return value
             return None
         except Exception as e:
-            logger.warning(f"Cache get error for {key}: {e}")
+            logger.warning(f"[_get] Cache get error for {key}: {e}")
             return None
 
     async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
@@ -205,7 +205,7 @@ class RedisCache:
             logger.debug(f"Cache set: {key} (TTL: {ttl_val}s)")
             return True
         except Exception as e:
-            logger.warning(f"Cache set error for {key}: {e}")
+            logger.warning(f"[_set] Cache set error for {key}: {e}")
             return False
 
     async def delete(self, key: str) -> bool:
@@ -228,7 +228,7 @@ class RedisCache:
                 logger.debug(f"Cache deleted: {key}")
             return bool(result)
         except Exception as e:
-            logger.warning(f"Cache delete error for {key}: {e}")
+            logger.warning(f"[_delete] Cache delete error for {key}: {e}")
             return False
 
     async def delete_pattern(self, pattern: str) -> int:
@@ -254,7 +254,7 @@ class RedisCache:
                 return deleted
             return 0
         except Exception as e:
-            logger.warning(f"Cache delete pattern error for {pattern}: {e}")
+            logger.warning(f"[_delete_pattern] Cache delete pattern error for {pattern}: {e}")
             return 0
 
     async def exists(self, key: str) -> bool:
@@ -266,7 +266,7 @@ class RedisCache:
             # Type guard: we know _instance is not None here due to is_available check
             return bool(await self._instance.exists(key))  # type: ignore
         except Exception as e:
-            logger.warning(f"Cache exists error for {key}: {e}")
+            logger.warning(f"[_exists] Cache exists error for {key}: {e}")
             return False
 
     async def get_or_set(
@@ -316,7 +316,7 @@ class RedisCache:
 
             return value
         except Exception as e:
-            logger.error(f"Error fetching value for {key}: {e}")
+            logger.error(f"[_get_or_set] Error fetching value for {key}: {e}", exc_info=True)
             return None
 
     async def incr(self, key: str, amount: int = 1) -> int:
@@ -337,7 +337,7 @@ class RedisCache:
             # Type guard: we know _instance is not None here due to is_available check
             return await self._instance.incrby(key, amount)  # type: ignore
         except Exception as e:
-            logger.warning(f"Cache incr error for {key}: {e}")
+            logger.warning(f"[_incr] Cache incr error for {key}: {e}")
             return amount
 
     async def health_check(self) -> Dict[str, Any]:
@@ -367,7 +367,7 @@ class RedisCache:
                 "ops_per_sec": info.get("instantaneous_ops_per_sec", 0),
             }
         except Exception as e:
-            logger.warning(f"Redis health check failed: {e}")
+            logger.warning(f"[_health_check] Redis health check failed: {e}")
             return {"status": "unhealthy", "available": False, "error": str(e)}
 
     async def clear_all(self) -> bool:
@@ -386,7 +386,7 @@ class RedisCache:
             logger.warning("Cache cleared (all keys deleted)")
             return True
         except Exception as e:
-            logger.warning(f"Cache clear error: {e}")
+            logger.warning(f"[_clear_all] Cache clear error: {e}")
             return False
 
     async def close(self):
@@ -396,7 +396,7 @@ class RedisCache:
                 await self._instance.close()
                 logger.info("Redis connection closed")
             except Exception as e:
-                logger.warning(f"Error closing Redis connection: {e}")
+                logger.warning(f"[_close] Error closing Redis connection: {e}")
 
 
 # Convenience function for backward compatibility

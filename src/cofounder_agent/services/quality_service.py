@@ -274,7 +274,7 @@ class UnifiedQualityService:
             return assessment
 
         except Exception as e:
-            logger.error(f"❌ Evaluation failed: {e}")
+            logger.error(f"[_evaluate] ❌ Evaluation failed: {e}", exc_info=True)
             # Return minimal assessment on error
             return QualityAssessment(
                 dimensions=QualityDimensions(
@@ -570,7 +570,7 @@ class UnifiedQualityService:
             # await self.database_service.create_quality_evaluation({...})
             logger.debug("Evaluation stored in database")
         except Exception as e:
-            logger.error(f"Failed to store evaluation: {e}")
+            logger.error(f"[_store_evaluation] Failed to store evaluation: {e}", exc_info=True)
 
     # ========================================================================
     # STATISTICS & REPORTING

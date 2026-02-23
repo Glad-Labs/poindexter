@@ -127,7 +127,7 @@ class PoindexterTools:
             )
 
         except Exception as e:
-            logger.error(f"[RESEARCH] Failed: {e}")
+            logger.error(f"[_research_tool] [RESEARCH] Failed: {e}", exc_info=True)
             return ToolResult(success=False, data=None, cost=0.0, error=str(e))
 
     # ============================================================================
@@ -258,7 +258,7 @@ class PoindexterTools:
             )
 
         except Exception as e:
-            logger.error(f"[GENERATE] Failed: {e}")
+            logger.error(f"[_generate_content_tool] [GENERATE] Failed: {e}", exc_info=True)
             return ToolResult(success=False, data=None, error=str(e))
 
     # ============================================================================
@@ -305,7 +305,7 @@ class PoindexterTools:
             )
 
         except Exception as e:
-            logger.error(f"[CRITIQUE] Failed: {e}")
+            logger.error(f"[_critique_content_tool] [CRITIQUE] Failed: {e}", exc_info=True)
             return ToolResult(success=False, data=None, error=str(e))
 
     # ============================================================================
@@ -350,7 +350,7 @@ class PoindexterTools:
             )
 
         except Exception as e:
-            logger.error(f"[PUBLISH] Failed: {e}")
+            logger.error(f"[_publish_tool] [PUBLISH] Failed: {e}", exc_info=True)
             return ToolResult(success=False, data=None, error=str(e))
 
     # ============================================================================
@@ -386,7 +386,7 @@ class PoindexterTools:
             return ToolResult(success=True, data=result, cost=0.0, quality_score=1.0)
 
         except Exception as e:
-            logger.error(f"[METRICS] Failed: {e}")
+            logger.error(f"[_track_metrics_tool] [METRICS] Failed: {e}", exc_info=True)
             return ToolResult(success=False, data=None, error=str(e))
 
     # ============================================================================
@@ -425,7 +425,7 @@ class PoindexterTools:
             )
 
         except Exception as e:
-            logger.error(f"[IMAGES] Failed: {e}")
+            logger.error(f"[_fetch_images_tool] [IMAGES] Failed: {e}", exc_info=True)
             return ToolResult(success=False, data=None, error=str(e))
 
     # ============================================================================
@@ -461,7 +461,7 @@ class PoindexterTools:
             return ToolResult(success=True, data=refined, cost=0.10, quality_score=0.85)
 
         except Exception as e:
-            logger.error(f"[REFINE] Failed: {e}")
+            logger.error(f"[_refine_tool] [REFINE] Failed: {e}", exc_info=True)
             return ToolResult(success=False, data=None, error=str(e))
 
     # ============================================================================

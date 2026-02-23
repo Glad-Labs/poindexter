@@ -264,7 +264,9 @@ export function isValidURL(url) {
     new URL(url);
     return true;
   } catch (error) {
-    console.error('Invalid URL:', url, error);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('Invalid URL:', url, error);
+    }
     return false;
   }
 }

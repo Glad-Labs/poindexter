@@ -153,7 +153,7 @@ class OllamaClient:
                 response = await client.get(f"{self.base_url}/api/tags", timeout=5.0)
                 return response.status_code == 200
         except Exception as e:
-            logger.warning("Ollama health check failed", error=str(e))
+            logger.warning(f"[_check_health] Ollama health check failed", error=str(e))
             return False
 
     async def list_models(self) -> List[Dict[str, Any]]:
@@ -174,7 +174,7 @@ class OllamaClient:
                 return models
 
         except Exception as e:
-            logger.error("Failed to list models", error=str(e))
+            logger.error(f"[_list_models] Failed to list models", error=str(e), exc_info=True)
             return []
 
     async def generate(
@@ -363,7 +363,7 @@ class OllamaClient:
                 return True
 
         except Exception as e:
-            logger.error(f"Failed to pull model {model}", error=str(e))
+            logger.error(f"[_pull_model] Failed to pull model {model}", error=str(e), exc_info=True)
             return False
 
     def get_model_profile(self, model: str) -> Optional[Dict[str, Any]]:

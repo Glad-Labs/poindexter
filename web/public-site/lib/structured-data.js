@@ -305,7 +305,9 @@ export function schemaToJSON(schema) {
   try {
     return JSON.stringify(schema);
   } catch (error) {
-    console.error('Error converting schema to JSON:', error);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('Error converting schema to JSON:', error);
+    }
     return '';
   }
 }

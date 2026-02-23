@@ -105,7 +105,7 @@ class DatabaseService:
                 "✅ All database modules initialized (users, tasks, content, admin, writing_style)"
             )
         except Exception as e:
-            logger.error(f"❌ Failed to initialize database: {e}")
+            logger.error(f"[_initialize] ❌ Failed to initialize database: {e}", exc_info=True)
             raise
 
     async def close(self) -> None:

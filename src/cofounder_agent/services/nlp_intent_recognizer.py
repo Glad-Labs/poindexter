@@ -607,7 +607,7 @@ class NLPIntentRecognizer:
             }
 
         except Exception as e:
-            logger.error(f"Error executing recognized intent: {e}", exc_info=True)
+            logger.error(f"[_execute_recognized_intent] Error executing recognized intent: {e}", exc_info=True)
             return {
                 "success": False,
                 "error": str(e),

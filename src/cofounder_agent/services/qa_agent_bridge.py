@@ -195,7 +195,7 @@ class QAAgentBridge:
             return result
 
         except Exception as e:
-            logger.error(f"Error creating hybrid evaluation: {e}")
+            logger.error(f"[_create_hybrid_evaluation] Error creating hybrid evaluation: {e}", exc_info=True)
             raise
 
     def _synthesize_feedback(

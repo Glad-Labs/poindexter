@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from services.database_service import DatabaseService
 from services.workflow_history import WorkflowHistoryService
-from utils.route_utils import get_database_dependency
+from utils.route_utils import get_database_dependency, get_workflow_engine_dependency
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +152,7 @@ async def get_workflow_status(
 async def pause_workflow(
     workflow_id: str,
     db_service: DatabaseService = Depends(get_database_dependency),
+    workflow_engine: Any = Depends(get_workflow_engine_dependency),
 ):
     """
     Pause a currently executing workflow.
@@ -193,9 +194,16 @@ async def pause_workflow(
                 detail=f"Workflow must be in 'running' state to pause. Current state: {execution_data.get('status')}"
             )
         
-        # TODO: Phase 2 - Implement actual pause functionality via WorkflowEngine
-        # This would signal the executor to pause at the current phase boundary
-        # For now, update database status to 'paused'
+        # Pause the workflow via WorkflowEngine (updates in-memory context)
+        success = workflow_engine.pause_workflow(workflow_id)
+        
+        if not success:
+            # If engine doesn't have the workflow in memory, just update database
+            logger.warning(
+                f"[{workflow_id}] Workflow not found in engine memory, updating database status only"
+            )
+        
+        # Also update database for persistence
         await history_service.update_workflow_status(workflow_id, "paused")
         
         return {
@@ -214,6 +222,7 @@ async def pause_workflow(
 async def resume_workflow(
     workflow_id: str,
     db_service: DatabaseService = Depends(get_database_dependency),
+    workflow_engine: Any = Depends(get_workflow_engine_dependency),
 ):
     """
     Resume a paused workflow.
@@ -255,9 +264,16 @@ async def resume_workflow(
                 detail=f"Workflow must be in 'paused' state to resume. Current state: {execution_data.get('status')}"
             )
         
-        # TODO: Phase 2 - Implement actual resume functionality via WorkflowEngine
-        # This would resume execution from where it was paused
-        # For now, update database status to 'running'
+        # Resume the workflow via WorkflowEngine (updates in-memory context)
+        success = workflow_engine.resume_workflow(workflow_id)
+        
+        if not success:
+            # If engine doesn't have the workflow in memory, just update database
+            logger.warning(
+                f"[{workflow_id}] Workflow not found in engine memory, updating database status only"
+            )
+        
+        # Also update database for persistence
         await history_service.update_workflow_status(workflow_id, "running")
         
         return {
@@ -276,6 +292,7 @@ async def resume_workflow(
 async def cancel_workflow(
     workflow_id: str,
     db_service: DatabaseService = Depends(get_database_dependency),
+    workflow_engine: Any = Depends(get_workflow_engine_dependency),
 ):
     """
     Cancel a workflow (cannot be resumed).
@@ -318,8 +335,16 @@ async def cancel_workflow(
                 detail=f"Workflow must be in 'running' or 'paused' state to cancel. Current state: {current_status}"
             )
         
-        # TODO: Phase 2 - Implement actual cancel functionality via WorkflowEngine
-        # This would cleanly shut down the executor and mark workflow as cancelled
+        # Cancel the workflow via WorkflowEngine (updates in-memory context)
+        success = workflow_engine.cancel_workflow(workflow_id)
+        
+        if not success:
+            # If engine doesn't have the workflow in memory, just update database
+            logger.warning(
+                f"[{workflow_id}] Workflow not found in engine memory, updating database status only"
+            )
+        
+        # Also update database for persistence
         await history_service.update_workflow_status(workflow_id, "cancelled")
         
         return {

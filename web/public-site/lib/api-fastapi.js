@@ -44,7 +44,9 @@ async function fetchAPI(endpoint, options = {}) {
     const data = await response.json();
     return data;
   } catch (error) {
-    console.error(`[FastAPI] Error fetching ${endpoint}:`, error.message);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error(`[FastAPI] Error fetching ${endpoint}:`, error.message);
+    }
     throw error;
   }
 }
@@ -109,7 +111,9 @@ export async function getFeaturedPost() {
     }
     return null;
   } catch (error) {
-    console.error('[FastAPI] Error fetching featured post:', error);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('[FastAPI] Error fetching featured post:', error);
+    }
     return null;
   }
 }
@@ -139,7 +143,9 @@ export async function getPostBySlug(slug) {
     }
     return null;
   } catch (error) {
-    console.error(`[FastAPI] Error fetching post ${slug}:`, error);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error(`[FastAPI] Error fetching post ${slug}:`, error);
+    }
     return null;
   }
 }
@@ -154,7 +160,9 @@ export async function getCategories() {
     const response = await fetchAPI('/categories');
     return response.data || [];
   } catch (error) {
-    console.error('[FastAPI] Error fetching categories:', error);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('[FastAPI] Error fetching categories:', error);
+    }
     return [];
   }
 }

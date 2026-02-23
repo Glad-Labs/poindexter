@@ -124,7 +124,7 @@ class WritingSampleRAGService:
             ]
 
         except Exception as e:
-            logger.error(f"Error retrieving relevant samples: {e}")
+            logger.error(f"[_retrieve_relevant_samples] Error retrieving relevant samples: {e}", exc_info=True)
             return []
 
     async def retrieve_by_style_match(
@@ -168,7 +168,7 @@ class WritingSampleRAGService:
             return matched_samples[:limit]
 
         except Exception as e:
-            logger.error(f"Error retrieving by style: {e}")
+            logger.error(f"[_retrieve_by_style_match] Error retrieving by style: {e}", exc_info=True)
             return []
 
     async def retrieve_by_tone_match(
@@ -212,7 +212,7 @@ class WritingSampleRAGService:
             return matched_samples[:limit]
 
         except Exception as e:
-            logger.error(f"Error retrieving by tone: {e}")
+            logger.error(f"[_retrieve_by_tone_match] Error retrieving by tone: {e}", exc_info=True)
             return []
 
     def _calculate_relevance_score(
@@ -408,7 +408,7 @@ class WritingSampleRAGService:
             return rag_context
 
         except Exception as e:
-            logger.error(f"Error getting RAG context: {e}")
+            logger.error(f"[_get_rag_context] Error getting RAG context: {e}", exc_info=True)
             return {"has_context": False, "samples": [], "error": str(e)}
 
     @staticmethod

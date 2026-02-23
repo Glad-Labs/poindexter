@@ -39,6 +39,7 @@ from enum import Enum
 from typing import Any, Dict, Optional
 
 from services.websocket_event_broadcaster import emit_task_progress
+from utils.error_handler import handle_service_error
 
 logger = logging.getLogger(__name__)
 
@@ -268,7 +269,7 @@ class UnifiedOrchestrator:
             )
         except Exception as e:
             logger.debug(
-                f"Registry lookup failed for '{agent_name}': {e}, falling back to direct import"
+                f"[_resolve_agent_class] Registry lookup failed for '{agent_name}': {e}, falling back to direct import"
             )
 
         # Fallback: Direct import based on agent name
@@ -380,7 +381,7 @@ class UnifiedOrchestrator:
 
         except Exception as e:
             self.failed_requests += 1
-            logger.error("[%s] Error: %s", request_id, str(e), exc_info=True)
+            logger.error("[process_request] Error: %s", str(e), exc_info=True)
             return {
                 "request_id": request_id,
                 "status": "error",
@@ -685,7 +686,7 @@ class UnifiedOrchestrator:
                     message="Research phase completed - gathered background information",
                 )
             except Exception as e:
-                logger.warning(f"⚠️ Failed to emit research progress: {e}")
+                logger.warning(f"[_handle_content_creation] Failed to emit research progress: {e}")
 
             # ====================================================================
             # STAGE 2: CREATIVE DRAFT (25% → 45%)
@@ -751,7 +752,7 @@ class UnifiedOrchestrator:
 
                 except Exception as e:
                     logger.warning(
-                        "[%s] Could not retrieve writing sample: %s", request.request_id, e
+                        "[_handle_content_creation] Could not retrieve writing sample: %s, %s", request.request_id, e
                     )
 
             post = BlogPost(
@@ -800,7 +801,7 @@ class UnifiedOrchestrator:
                     message="Creative draft generated - ready for quality review",
                 )
             except Exception as e:
-                logger.warning(f"⚠️ Failed to emit creative progress: {e}")
+                logger.warning(f"[_handle_content_creation] Failed to emit creative progress: {e}")
 
             # ====================================================================
             # STAGE 3: QA REVIEW LOOP (45% → 60%)
@@ -904,7 +905,7 @@ class UnifiedOrchestrator:
                     message="Quality assurance review complete - content approved",
                 )
             except Exception as e:
-                logger.warning(f"⚠️ Failed to emit QA progress: {e}")
+                logger.warning(f"[_handle_content_creation] Failed to emit QA progress: {e}")
 
             # ====================================================================
             # STAGE 4: IMAGE SELECTION (60% → 75%)
@@ -922,7 +923,7 @@ class UnifiedOrchestrator:
                     featured_image_url = featured_image.url
                     logger.info("[%s] Featured image selected", request.request_id)
             except Exception as e:
-                logger.warning("[%s] Image selection failed: %s", request.request_id, e)
+                logger.warning("[_handle_content_creation] Image selection failed: %s, %s", request.request_id, e)
 
             # Emit progress: Image selection stage complete
             try:
@@ -936,7 +937,7 @@ class UnifiedOrchestrator:
                     message="Featured image selected - ready for final formatting",
                 )
             except Exception as e:
-                logger.warning(f"⚠️ Failed to emit image progress: {e}")
+                logger.warning(f"[_handle_content_creation] Failed to emit image progress: {e}")
 
             # ====================================================================
             # STAGE 5: FORMATTING (75% → 90%)
@@ -962,7 +963,7 @@ class UnifiedOrchestrator:
                     message="Content formatted and ready for publication",
                 )
             except Exception as e:
-                logger.warning(f"⚠️ Failed to emit formatting progress: {e}")
+                logger.warning(f"[_handle_content_creation] Failed to emit formatting progress: {e}")
 
             # ====================================================================
             # STAGE 6: AWAITING HUMAN APPROVAL (90% → 100%)
@@ -1014,7 +1015,7 @@ class UnifiedOrchestrator:
 
         except Exception as e:
             logger.error(
-                "[%s] Content creation failed: %s", request.request_id, str(e), exc_info=True
+                f"[_handle_content_creation] Content creation failed: {e}", exc_info=True
             )
             return ExecutionResult(
                 request_id=request.request_id,
@@ -1071,7 +1072,7 @@ class UnifiedOrchestrator:
                 feedback="Financial analysis complete",
             )
         except Exception as e:  # pylint: disable=broad-except
-            logger.error("[%s] Financial analysis failed: %s", request.request_id, e)
+            logger.error(f"[_handle_financial_analysis] Financial analysis failed: {e}")
             return ExecutionResult(
                 request_id=request.request_id,
                 request_type=request.request_type,
@@ -1106,7 +1107,7 @@ class UnifiedOrchestrator:
                 feedback="Compliance audit complete",
             )
         except Exception as e:  # pylint: disable=broad-except
-            logger.error("[%s] Compliance check failed: %s", request.request_id, e)
+            logger.error("[_handle_compliance_check] Compliance check failed: %s, %s", request.request_id, e, exc_info=True)
             return ExecutionResult(
                 request_id=request.request_id,
                 request_type=request.request_type,
@@ -1216,7 +1217,7 @@ class UnifiedOrchestrator:
             logger.info("Storing execution result: %s", result.request_id)
             # Result storage is handled by TaskExecutor service after processing
         except Exception as e:  # pylint: disable=broad-except
-            logger.error("Failed to store execution result: %s", e)
+            logger.error("[_store_execution_result] Failed to store execution result: %s", e, exc_info=True)
 
     def _result_to_dict(self, result: ExecutionResult) -> Dict[str, Any]:
         """Convert ExecutionResult to dictionary"""

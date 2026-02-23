@@ -115,7 +115,7 @@ class WorkflowExecutor:
                                 duration_ms=0,
                             )
                         except Exception as e:
-                            logger.debug(f"Failed to update progress for skipped phase: {e}")
+                            logger.debug(f"[_execute_workflow] Failed to update progress for skipped phase: {e}")
                     continue
 
                 logger.info(f"Executing phase {i}: {phase.name}")
@@ -130,7 +130,7 @@ class WorkflowExecutor:
                             phase_name=phase.name,
                         )
                     except Exception as e:
-                        logger.debug(f"Failed to update progress for phase start: {e}")
+                        logger.debug(f"[_execute_workflow] Failed to update progress for phase start: {e}")
 
                 # Prepare inputs for this phase
                 phase_inputs, input_traces = self._prepare_phase_inputs(
@@ -145,7 +145,7 @@ class WorkflowExecutor:
                 try:
                     result = self._execute_phase(phase, phase_inputs, execution_id)
                 except Exception as e:
-                    logger.error(f"Phase {i} ({phase.name}) failed: {str(e)}")
+                    logger.error(f"[_execute_workflow] Phase {i} ({phase.name}) failed: {str(e)}", exc_info=True)
                     result = PhaseResult(
                         status="failed",
                         error=str(e),
@@ -174,7 +174,7 @@ class WorkflowExecutor:
                                 error=result.error or "Unknown error",
                             )
                     except Exception as e:
-                        logger.debug(f"Failed to update progress for phase completion: {e}")
+                        logger.debug(f"[_execute_workflow] Failed to update progress for phase completion: {e}")
 
                 # Store result
                 phase_results[phase.name] = result
@@ -196,7 +196,7 @@ class WorkflowExecutor:
                     )
 
         except Exception as e:
-            logger.error(f"Workflow execution failed: {str(e)}")
+            logger.error(f"[_execute_workflow] Workflow execution failed: {str(e)}", exc_info=True)
             # Mark remaining phases as not executed
             for phase in phases[len(phase_results) :]:
                 if phase.name not in phase_results:

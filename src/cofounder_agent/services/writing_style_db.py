@@ -86,7 +86,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                 return self._format_sample(row)
 
         except Exception as e:
-            logger.error("Failed to create writing sample: %s", e)
+            logger.error(f"[_create_writing_sample] Failed to create writing sample: %s", e, exc_info=True)
             raise
 
     async def get_writing_sample(self, sample_id: str) -> Optional[Dict[str, Any]]:
@@ -111,7 +111,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                 )
                 return self._format_sample(row) if row else None
         except Exception as e:
-            logger.error("Failed to get writing sample: %s", e)
+            logger.error(f"[_get_writing_sample] Failed to get writing sample: %s", e, exc_info=True)
             raise
 
     async def get_user_writing_samples(self, user_id: str) -> List[Dict[str, Any]]:
@@ -138,7 +138,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                 )
                 return [self._format_sample(row) for row in rows]
         except Exception as e:
-            logger.error("Failed to get user writing samples: %s", e)
+            logger.error(f"[_get_user_writing_samples] Failed to get user writing samples: %s", e, exc_info=True)
             raise
 
     async def get_active_writing_sample(self, user_id: str) -> Optional[Dict[str, Any]]:
@@ -165,7 +165,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                 )
                 return self._format_sample(row) if row else None
         except Exception as e:
-            logger.error("Failed to get active writing sample: %s", e)
+            logger.error(f"[_get_active_writing_sample] Failed to get active writing sample: %s", e, exc_info=True)
             raise
 
     async def set_active_writing_sample(self, user_id: str, sample_id: str) -> Dict[str, Any]:
@@ -208,7 +208,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                 return self._format_sample(row)
 
         except Exception as e:
-            logger.error("Failed to set active writing sample: %s", e)
+            logger.error(f"[_set_active_writing_sample] Failed to set active writing sample: %s", e, exc_info=True)
             raise
 
     async def update_writing_sample(
@@ -286,7 +286,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                 return self._format_sample(row)
 
         except Exception as e:
-            logger.error("Failed to update writing sample: %s", e)
+            logger.error(f"[_update_writing_sample] Failed to update writing sample: %s", e, exc_info=True)
             raise
 
     async def delete_writing_sample(self, sample_id: str, user_id: str) -> bool:
@@ -318,7 +318,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                 return success
 
         except Exception as e:
-            logger.error("Failed to delete writing sample: %s", e)
+            logger.error(f"[_delete_writing_sample] Failed to delete writing sample: %s", e, exc_info=True)
             raise
 
     @staticmethod

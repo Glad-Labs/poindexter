@@ -58,7 +58,9 @@ export async function searchPosts(query, filters = {}) {
     );
 
     if (!response.ok) {
-      console.error('Search failed:', response.statusText);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error('Search failed:', response.statusText);
+      }
       return [];
     }
 
@@ -67,7 +69,9 @@ export async function searchPosts(query, filters = {}) {
     // Transform Strapi response to consistent format
     return (data.data || []).map(transformPost);
   } catch (error) {
-    console.error('Error searching posts:', error);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('Error searching posts:', error);
+    }
     return [];
   }
 }
@@ -97,14 +101,18 @@ export async function getTrendingPosts(limit = 5) {
     );
 
     if (!response.ok) {
-      console.error('Failed to fetch trending posts:', response.statusText);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error('Failed to fetch trending posts:', response.statusText);
+      }
       return [];
     }
 
     const data = await response.json();
     return (data.data || []).map(transformPost);
   } catch (error) {
-    console.error('Error fetching trending posts:', error);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('Error fetching trending posts:', error);
+    }
     return [];
   }
 }
@@ -146,7 +154,9 @@ export async function getPostsByCategory(
     const data = await response.json();
     return (data.data || []).map(transformPost);
   } catch (error) {
-    console.error('Error fetching posts by category:', error);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('Error fetching posts by category:', error);
+    }
     return [];
   }
 }
@@ -184,7 +194,9 @@ export async function getPostsByTag(tagSlug, searchQuery = '', limit = 10) {
     const data = await response.json();
     return (data.data || []).map(transformPost);
   } catch (error) {
-    console.error('Error fetching posts by tag:', error);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('Error fetching posts by tag:', error);
+    }
     return [];
   }
 }
@@ -238,7 +250,9 @@ export async function getSearchSuggestions(query, limit = 8) {
       type: 'post',
     }));
   } catch (error) {
-    console.error('Error getting search suggestions:', error);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('Error getting search suggestions:', error);
+    }
     return [];
   }
 }

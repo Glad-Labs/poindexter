@@ -19,6 +19,7 @@ from asyncpg import Pool
 from schemas.database_response_models import TaskCountsResponse, TaskResponse
 from schemas.model_converter import ModelConverter
 from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
+from utils.error_handler import handle_service_error
 
 from .database_mixin import DatabaseServiceMixin
 
@@ -118,7 +119,7 @@ class TasksDatabase(DatabaseServiceMixin):
         except Exception as e:
             if "content_tasks" in str(e) or "does not exist" in str(e) or "relation" in str(e):
                 return []
-            logger.warning(f"Error fetching pending tasks: {str(e)}")
+            logger.warning(f"[get_pending_tasks] Error fetching pending tasks: {str(e)}")
             return []
 
     async def get_all_tasks(self, limit: int = 100) -> List[TaskResponse]:
@@ -140,7 +141,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 rows = await conn.fetch(sql, *params)
                 return [ModelConverter.to_task_response(row) for row in rows]
         except Exception as e:
-            logger.error(f"Error fetching all tasks: {e}")
+            logger.error(f"[get_all_tasks] Error fetching all tasks: {e}", exc_info=True)
             return []
 
     async def add_task(self, task_data: Dict[str, Any]) -> str:
@@ -241,7 +242,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 logger.info(f"✅ Task added: {task_id}")
                 return str(result)
         except Exception as e:
-            logger.error(f"❌ Failed to add task: {e}")
+            logger.error(f"[add_task] Failed to add task {task_id}: {e}", exc_info=True)
             raise
 
     async def get_task(self, task_id: str) -> Optional[dict]:
@@ -274,7 +275,7 @@ class TasksDatabase(DatabaseServiceMixin):
                         task_response = ModelConverter.to_task_response(row)
                         return ModelConverter.to_dict(task_response)
             except Exception as e:
-                logger.debug(f"Numeric ID lookup failed for {task_id}: {e}")
+                logger.debug(f"[get_task] Numeric ID lookup failed for {task_id}: {e}")
 
         # Try UUID lookup
         builder = ParameterizedQueryBuilder()
@@ -292,7 +293,7 @@ class TasksDatabase(DatabaseServiceMixin):
                     return ModelConverter.to_dict(task_response)
                 return None
         except Exception as e:
-            logger.error(f"❌ Failed to get task {task_id}: {e}")
+            logger.error(f"[get_task] Failed to get task {task_id}: {e}", exc_info=True)
             return None
 
     async def update_task_status(
@@ -342,7 +343,7 @@ class TasksDatabase(DatabaseServiceMixin):
                     return self._convert_row_to_dict(row)
                 return None
         except Exception as e:
-            logger.error(f"❌ Failed to update task status {task_id}: {e}")
+            logger.error(f"[update_task_status] Failed to update task status {task_id}: {e}", exc_info=True)
             return None
 
     async def update_task(self, task_id: str, updates: Dict[str, Any]) -> Optional[dict]:
@@ -475,7 +476,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 logger.warning(f"⚠️  [DEBUG] Update returned no row for task {task_id}")
                 return None
         except Exception as e:
-            logger.error(f"❌ Failed to update task {task_id}: {e}", exc_info=True)
+            logger.error(f"[update_task] Failed to update task {task_id}: {e}", exc_info=True)
             return None
 
     async def get_tasks_paginated(
@@ -538,7 +539,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 logger.info(f"✅ Listed {len(tasks)} tasks (total: {total})")
                 return tasks, total
         except Exception as e:
-            logger.error(f"❌ Failed to list tasks: {e}")
+            logger.error(f"[get_tasks_paginated] Failed to list tasks: {e}", exc_info=True)
             return [], 0
 
     async def get_task_counts(self) -> TaskCountsResponse:
@@ -567,7 +568,7 @@ class TasksDatabase(DatabaseServiceMixin):
                     approved=counts.get("approved", 0),
                 )
         except Exception as e:
-            logger.error(f"❌ Failed to get task counts: {e}")
+            logger.error(f"[get_task_counts] Failed to get task counts: {e}", exc_info=True)
             return TaskCountsResponse(
                 total=0,
                 pending=0,
@@ -601,7 +602,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 rows = await conn.fetch(sql, *params)
                 return [ModelConverter.to_task_response(row) for row in rows]
         except Exception as e:
-            logger.error(f"❌ Failed to get queued tasks: {e}")
+            logger.error(f"[get_queued_tasks] Failed to get queued tasks: {e}", exc_info=True)
             return []
 
     async def get_tasks_by_date_range(
@@ -657,7 +658,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 )
                 return tasks
         except Exception as e:
-            logger.error(f"❌ Failed to get tasks by date range: {e}")
+            logger.error(f"[get_tasks_by_date_range] Failed to get tasks by date range: {e}", exc_info=True)
             return []
 
     async def delete_task(self, task_id: str) -> bool:
@@ -689,7 +690,7 @@ class TasksDatabase(DatabaseServiceMixin):
                     logger.info(f"✅ Task deleted: {task_id}")
                 return deleted
         except Exception as e:
-            logger.error(f"❌ Error deleting task {task_id}: {e}")
+            logger.error(f"[delete_task] Error deleting task {task_id}: {e}", exc_info=True)
             return False
 
     async def get_drafts(self, limit: int = 20, offset: int = 0) -> tuple:
@@ -726,7 +727,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 drafts = [self._convert_row_to_dict(row) for row in rows]
                 return (drafts, total or 0)
         except Exception as e:
-            logger.error(f"❌ Error getting drafts: {e}")
+            logger.error(f"[get_drafts] Error getting drafts: {e}", exc_info=True)
             return ([], 0)
 
     async def log_status_change(
@@ -766,7 +767,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 logger.info(f"✅ Status change logged: {task_id} {old_status} → {new_status}")
                 return True
         except Exception as e:
-            logger.error(f"❌ Failed to log status change: {e}")
+            logger.error(f"[log_status_change] Failed to log status change: {e}", exc_info=True)
             return False
 
     async def get_status_history(self, task_id: str, limit: int = 100) -> List[Dict[str, Any]]:
@@ -809,7 +810,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 logger.info(f"✅ Retrieved {len(history)} status changes for task {task_id}")
                 return history
         except Exception as e:
-            logger.error(f"❌ Failed to get status history: {e}")
+            logger.error(f"[get_status_history] Failed to get status history: {e}", exc_info=True)
             return []
 
     async def get_validation_failures(self, task_id: str, limit: int = 50) -> List[Dict[str, Any]]:
@@ -852,5 +853,5 @@ class TasksDatabase(DatabaseServiceMixin):
                 logger.info(f"✅ Retrieved {len(failures)} validation failures for task {task_id}")
                 return failures
         except Exception as e:
-            logger.error(f"❌ Failed to get validation failures: {e}")
+            logger.error(f"[get_validation_failures] Failed to get validation failures: {e}", exc_info=True)
             return []

@@ -37,7 +37,9 @@ export function formatDate(dateString) {
       day: 'numeric',
     });
   } catch (error) {
-    console.error('Date formatting error:', error);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('Date formatting error:', error);
+    }
     return '';
   }
 }
@@ -59,7 +61,9 @@ export function formatDateISO(dateString) {
 
     return date.toISOString().split('T')[0];
   } catch (error) {
-    console.error('ISO date formatting error:', error);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('ISO date formatting error:', error);
+    }
     return '';
   }
 }
@@ -121,7 +125,9 @@ export function formatDateRelative(dateString) {
     const years = Math.floor(seconds / 31536000);
     return `${years} year${years > 1 ? 's' : ''} ago`;
   } catch (error) {
-    console.error('Relative date formatting error:', error);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('Relative date formatting error:', error);
+    }
     return '';
   }
 }
@@ -244,7 +250,9 @@ export function parseFrontmatter(markdownContent) {
     const { data, content } = matter(markdownContent);
     return { frontmatter: data, content };
   } catch (error) {
-    console.error('Frontmatter parsing error:', error);
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('Frontmatter parsing error:', error);
+    }
     return { frontmatter: {}, content: markdownContent };
   }
 }

@@ -137,7 +137,7 @@ class ContentTaskStore:
             return task_id
 
         except Exception as e:
-            logger.error(f"❌ [CONTENT_TASK_STORE] ERROR: {e}", exc_info=True)
+            logger.error(f"[_create_task] ❌ [CONTENT_TASK_STORE] ERROR: {e}", exc_info=True)
             raise
 
     async def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
@@ -283,7 +283,7 @@ class ContentGenerationService:
             prompt = f"Create a visual representation for: {topic}\n\nContext: {content[:200]}"
             return prompt
         except Exception as e:
-            logger.warning(f"Error generating image prompt: {e}")
+            logger.warning(f"[_generate_featured_image_prompt] Error generating image prompt: {e}")
             return f"Featured image for: {topic}"
 
 
@@ -340,7 +340,7 @@ async def _generate_canonical_title(
         return None
 
     except Exception as e:
-        logger.warning(f"Error generating canonical title: {e}")
+        logger.warning(f"[_generate_canonical_title] Error generating canonical title: {e}")
         return None
 
 
@@ -452,7 +452,7 @@ async def process_content_generation_task(
                 logger.warning(f"⚠️  Task {task_id} not found - this should not happen")
                 result["stages"]["1_content_task_created"] = False
         except Exception as e:
-            logger.error(f"❌ Failed to verify task: {e}")
+            logger.error(f"[_process_content_generation_task] ❌ Failed to verify task: {e}", exc_info=True)
             result["stages"]["1_content_task_created"] = False
 
         # ================================================================================
@@ -648,7 +648,7 @@ async def process_content_generation_task(
                     result["stages"]["3_featured_image_found"] = False
                     logger.warning(f"⚠️  No featured image found for '{topic}'\n")
             except Exception as e:
-                logger.error(f"❌ Image search failed: {e}")
+                logger.error(f"[_process_content_generation_task] ❌ Image search failed: {e}", exc_info=True)
                 result["stages"]["3_featured_image_found"] = False
         else:
             result["stages"]["3_featured_image_found"] = False
@@ -858,7 +858,7 @@ async def process_content_generation_task(
         return result
 
     except Exception as e:
-        logger.error(f"❌ [BG-TASK] Pipeline error for task {task_id[:8]}...: {e}", exc_info=True)
+        logger.error(f"[_process_content_generation_task] ❌ [BG-TASK] Pipeline error for task {task_id[:8]}...: {e}", exc_info=True)
         logger.error(f"[BG-TASK] Detailed traceback:", exc_info=True)
 
         # Update content_task with failure status
@@ -1061,7 +1061,7 @@ async def _select_category_for_topic(
             )
         return cat_id
     except Exception as e:
-        logger.error(f"Error selecting category: {e}")
+        logger.error(f"[_select_category_for_topic] Error selecting category: {e}", exc_info=True)
         return None
 
 
@@ -1101,5 +1101,5 @@ async def _get_or_create_default_author(database_service: DatabaseService) -> Op
             return fallback_id
 
     except Exception as e:
-        logger.error(f"Error getting/creating default author: {e}")
+        logger.error(f"[_get_or_create_default_author] Error getting/creating default author: {e}", exc_info=True)
         return None

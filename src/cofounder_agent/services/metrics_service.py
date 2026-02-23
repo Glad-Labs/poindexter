@@ -234,7 +234,7 @@ class MetricsService:
 
             return True
         except Exception as e:
-            logger.error(f"❌ Failed to save metrics: {str(e)}", exc_info=True)
+            logger.error(f"[_save_metrics] ❌ Failed to save metrics: {str(e)}", exc_info=True)
             return False
 
     def update_metrics(self, **kwargs) -> None:

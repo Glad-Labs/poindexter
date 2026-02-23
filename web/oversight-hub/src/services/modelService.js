@@ -25,7 +25,9 @@ class ModelService {
       });
 
       if (!response.ok) {
-        console.warn('Could not fetch available models, using defaults');
+        if (process.env.NODE_ENV !== 'production') {
+          console.warn('Could not fetch available models, using defaults');
+        }
         return this.getDefaultModels();
       }
 
@@ -33,7 +35,9 @@ class ModelService {
       this.models = data.models || this.getDefaultModels();
       return this.models;
     } catch (error) {
-      console.warn('Error fetching models:', error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('Error fetching models:', error);
+      }
       return this.getDefaultModels();
     }
   }
@@ -103,7 +107,9 @@ class ModelService {
 
       return await response.json();
     } catch (error) {
-      console.warn('Error fetching provider status:', error);
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('Error fetching provider status:', error);
+      }
       return this.getDefaultStatus();
     }
   }

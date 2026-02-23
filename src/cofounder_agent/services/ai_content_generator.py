@@ -88,7 +88,7 @@ class AIContentGenerator:
             else:
                 logger.warning(f"⚠️ Ollama returned non-200 status: {response.status_code}")
         except Exception as e:
-            logger.warning(f"⚠️ Ollama health check failed: {type(e).__name__}: {e}")
+            logger.warning(f"[_check_ollama_async] ⚠️ Ollama health check failed: {type(e).__name__}: {e}")
             self.ollama_available = False
         finally:
             self.ollama_checked = True
@@ -259,7 +259,7 @@ class AIContentGenerator:
             pm = get_prompt_manager()
             logger.info("✓ Prompt manager loaded successfully")
         except Exception as e:
-            logger.error(f"Failed to load prompt manager: {e}")
+            logger.error(f"[_generate_blog_post] Failed to load prompt manager: {e}", exc_info=True)
             raise
 
         # Fetch prompts from centralized manager instead of hardcoding
@@ -275,7 +275,7 @@ class AIContentGenerator:
             )
             logger.info(f"✓ System prompt loaded ({len(system_prompt)} chars)")
         except Exception as e:
-            logger.error(f"Failed to load system prompt: {e}")
+            logger.error(f"[_generate_blog_post] Failed to load system prompt: {e}", exc_info=True)
             raise
 
         try:
@@ -299,7 +299,7 @@ class AIContentGenerator:
             )
             logger.info(f"✓ Generation prompt loaded ({len(generation_prompt)} chars)")
         except Exception as e:
-            logger.error(f"Failed to load generation prompt: {type(e).__name__}: {e}")
+            logger.error(f"[_generate_blog_post] Failed to load generation prompt: {type(e).__name__}: {e}", exc_info=True)
             raise
 
         # Create a callable refinement prompt getter
@@ -313,7 +313,7 @@ class AIContentGenerator:
                     target_audience=style,
                 )
             except Exception as e:
-                logger.error(f"Failed to load refinement prompt: {e}")
+                logger.error(f"[_get_refinement_prompt] Failed to load refinement prompt: {e}", exc_info=True)
                 raise
 
         # Track metrics
@@ -530,7 +530,7 @@ class AIContentGenerator:
             except Exception as e:
                 import traceback
 
-                logger.warning(f"User-selected Gemini failed: {type(e).__name__}: {str(e)}")
+                logger.warning(f"[_gemini_generate] User-selected Gemini failed: {type(e).__name__}: {str(e)}")
                 logger.debug(f"Gemini error traceback: {traceback.format_exc()}")
                 metrics["model_selection_log"]["decision_tree"]["gemini_error"] = str(e)[
                     :200
@@ -794,12 +794,12 @@ class AIContentGenerator:
                     except Exception as e:
                         # Catch other errors (500 errors, connection issues, etc.)
                         error_msg = str(e)[:150]  # Truncate long error messages
-                        logger.warning(f"Ollama model {model_name} failed: {error_msg}")
+                        logger.warning(f"[_gemini_generate] Ollama model {model_name} failed: {error_msg}")
                         attempts.append(("Ollama", f"{model_name}: {error_msg}"))
                         continue
 
             except Exception as e:
-                logger.warning(f"Ollama generation failed: {e}")
+                logger.warning(f"[_gemini_generate] Ollama generation failed: {e}")
                 if not attempts:  # Only append if attempts list is still empty
                     attempts.append(("Ollama", str(e)[:150]))
 
@@ -861,11 +861,11 @@ class AIContentGenerator:
                         logger.debug(f"HuggingFace model {model_id} timed out")
                         continue
                     except Exception as e:
-                        logger.debug(f"HuggingFace model {model_id} failed: {e}")
+                        logger.debug(f"[_gemini_generate] HuggingFace model {model_id} failed: {e}")
                         continue
 
             except Exception as e:
-                logger.warning(f"HuggingFace generation failed: {e}")
+                logger.warning(f"[_gemini_generate] HuggingFace generation failed: {e}")
                 attempts.append(("HuggingFace", str(e)))
 
         # 3. Fall back to Google Gemini (paid, but reliable)
@@ -968,7 +968,7 @@ class AIContentGenerator:
                 logger.warning(f"google.generativeai not installed: {e}")
                 attempts.append(("Gemini", "SDK not installed"))
             except Exception as e:
-                logger.warning(f"Gemini generation failed: {e}")
+                logger.warning(f"[_gemini_generate] Gemini generation failed: {e}")
                 attempts.append(("Gemini", str(e)[:150]))
 
         # If all models fail, use fallback

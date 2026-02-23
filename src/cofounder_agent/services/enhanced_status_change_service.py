@@ -107,7 +107,7 @@ class EnhancedStatusChangeService:
 
         except Exception as e:
             error = f"Error during status change: {str(e)}"
-            logger.error(f"❌ {error}", exc_info=True)
+            logger.error(f"[_validate_and_change_status] ❌ {error}", exc_info=True)
             return False, error, ["internal_error"]
 
     async def get_status_audit_trail(self, task_id: str, limit: int = 50) -> Dict[str, Any]:
@@ -126,7 +126,7 @@ class EnhancedStatusChangeService:
 
             return {"task_id": task_id, "history_count": len(history), "history": history}
         except Exception as e:
-            logger.error(f"❌ Failed to get audit trail: {e}")
+            logger.error(f"[_get_status_audit_trail] ❌ Failed to get audit trail: {e}", exc_info=True)
             return {"task_id": task_id, "history_count": 0, "history": [], "error": str(e)}
 
     async def get_validation_failures(self, task_id: str, limit: int = 50) -> Dict[str, Any]:
@@ -145,5 +145,5 @@ class EnhancedStatusChangeService:
 
             return {"task_id": task_id, "failure_count": len(failures), "failures": failures}
         except Exception as e:
-            logger.error(f"❌ Failed to get validation failures: {e}")
+            logger.error(f"[_get_validation_failures] ❌ Failed to get validation failures: {e}", exc_info=True)
             return {"task_id": task_id, "failure_count": 0, "failures": [], "error": str(e)}

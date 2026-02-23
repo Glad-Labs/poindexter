@@ -86,7 +86,7 @@ class ComplianceService:
             }
 
         except Exception as e:
-            logger.error(f"Compliance check failed: {e}", exc_info=True)
+            logger.error(f"[_check_legal_compliance] Compliance check failed: {e}", exc_info=True)
             return {
                 "phase": "compliance_check",
                 "error": str(e),
@@ -140,7 +140,7 @@ class ComplianceService:
             }
 
         except Exception as e:
-            logger.error(f"Privacy compliance assessment failed: {e}", exc_info=True)
+            logger.error(f"[_assess_privacy_compliance] Privacy compliance assessment failed: {e}", exc_info=True)
             return {"error": str(e), "assessment_type": "privacy_compliance"}
 
     async def risk_assessment(
@@ -189,7 +189,7 @@ class ComplianceService:
             }
 
         except Exception as e:
-            logger.error(f"Risk assessment failed: {e}", exc_info=True)
+            logger.error(f"[_risk_assessment] Risk assessment failed: {e}", exc_info=True)
             return {"error": str(e), "assessment_type": "risk_assessment"}
 
     def get_service_metadata(self) -> Dict[str, Any]:

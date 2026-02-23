@@ -88,7 +88,7 @@ class FinancialService:
             }
 
         except Exception as e:
-            logger.error(f"Financial analysis failed: {e}", exc_info=True)
+            logger.error(f"[_analyze_content_cost] Financial analysis failed: {e}", exc_info=True)
             return {
                 "phase": "financial_analysis",
                 "error": str(e),
@@ -142,7 +142,7 @@ class FinancialService:
             }
 
         except Exception as e:
-            logger.error(f"ROI calculation failed: {e}", exc_info=True)
+            logger.error(f"[_calculate_roi] ROI calculation failed: {e}", exc_info=True)
             return {"error": str(e), "content_id": content_id}
 
     async def forecast_budget(
@@ -193,7 +193,7 @@ class FinancialService:
             }
 
         except Exception as e:
-            logger.error(f"Budget forecast failed: {e}", exc_info=True)
+            logger.error(f"[_forecast_budget] Budget forecast failed: {e}", exc_info=True)
             return {"error": str(e)}
 
     def get_service_metadata(self) -> Dict[str, Any]:
