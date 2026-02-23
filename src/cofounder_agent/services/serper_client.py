@@ -89,7 +89,7 @@ class SerperClient:
             logger.error(f"Serper API request failed: {e}")
             return {}
         except Exception as e:
-            logger.error(f"Serper search error: {e}")
+            logger.error(f"[_search] Serper search error: {e}", exc_info=True)
             return {}
 
     async def news_search(self, query: str, num: int = 10) -> Dict[str, Any]:
@@ -148,7 +148,7 @@ class SerperClient:
                 "knowledge_panel": results.get("knowledgePanel", {}),
             }
         except Exception as e:
-            logger.error(f"Error getting search summary: {e}")
+            logger.error(f"[_get_search_results_summary] Error getting search summary: {e}", exc_info=True)
             return {}
 
     async def fact_check_claims(self, claims: List[str]) -> Dict[str, Any]:
@@ -180,7 +180,7 @@ class SerperClient:
                     ],
                 }
             except Exception as e:
-                logger.error(f"Error fact-checking '{claim}': {e}")
+                logger.error(f"[_fact_check_claims] Error fact-checking '{claim}': {e}", exc_info=True)
                 results[claim] = {"error": str(e)}
 
         return results
@@ -214,7 +214,7 @@ class SerperClient:
             return topics
 
         except Exception as e:
-            logger.error(f"Error getting trending topics: {e}")
+            logger.error(f"[_get_trending_topics] Error getting trending topics: {e}", exc_info=True)
             return []
 
     async def research_topic(
@@ -263,7 +263,7 @@ class SerperClient:
             return research
 
         except Exception as e:
-            logger.error(f"Error researching topic '{topic}': {e}")
+            logger.error(f"[_research_topic] Error researching topic '{topic}': {e}", exc_info=True)
             return research
 
     async def get_author_information(self, author_name: str) -> Dict[str, Any]:
@@ -293,7 +293,7 @@ class SerperClient:
                 "knowledge_panel": results.get("knowledgePanel", {}),
             }
         except Exception as e:
-            logger.error(f"Error getting author info: {e}")
+            logger.error(f"[_get_author_information] Error getting author info: {e}", exc_info=True)
             return {}
 
     def check_api_quota(self) -> Dict[str, Any]:

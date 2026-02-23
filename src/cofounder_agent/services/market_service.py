@@ -89,7 +89,7 @@ class MarketService:
             }
 
         except Exception as e:
-            logger.error(f"Market trend analysis failed: {e}", exc_info=True)
+            logger.error(f"[_analyze_market_trends] Market trend analysis failed: {e}", exc_info=True)
             return {
                 "phase": "market_trend_analysis",
                 "error": str(e),
@@ -143,7 +143,7 @@ class MarketService:
             }
 
         except Exception as e:
-            logger.error(f"Competitor research failed: {e}", exc_info=True)
+            logger.error(f"[_research_competitors] Competitor research failed: {e}", exc_info=True)
             return {
                 "error": str(e),
                 "analysis_type": "competitor_research",
@@ -206,7 +206,7 @@ class MarketService:
             }
 
         except Exception as e:
-            logger.error(f"Opportunity identification failed: {e}", exc_info=True)
+            logger.error(f"[_identify_opportunities] Opportunity identification failed: {e}", exc_info=True)
             return {
                 "error": str(e),
                 "analysis_type": "opportunity_identification",
@@ -261,7 +261,7 @@ class MarketService:
             }
 
         except Exception as e:
-            logger.error(f"Customer sentiment analysis failed: {e}", exc_info=True)
+            logger.error(f"[_analyze_customer_sentiment] Customer sentiment analysis failed: {e}", exc_info=True)
             return {
                 "error": str(e),
                 "analysis_type": "sentiment_analysis",

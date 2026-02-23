@@ -106,7 +106,7 @@ class AdminDatabase(DatabaseServiceMixin):
                 )
                 return ModelConverter.to_cost_log_response(row)
         except Exception as e:
-            logger.error(f"❌ Error logging cost: {e}")
+            logger.error(f"[_log_cost] ❌ Error logging cost: {e}", exc_info=True)
             raise
 
     async def get_task_costs(self, task_id: str) -> TaskCostBreakdownResponse:
@@ -173,7 +173,7 @@ class AdminDatabase(DatabaseServiceMixin):
                 )
                 return TaskCostBreakdownResponse(**response_data)
         except Exception as e:
-            logger.error(f"❌ Error getting task costs: {e}")
+            logger.error(f"[_get_task_costs] ❌ Error getting task costs: {e}", exc_info=True)
             return TaskCostBreakdownResponse(total=0.0, entries=[])
 
     # ========================================================================
@@ -201,7 +201,7 @@ class AdminDatabase(DatabaseServiceMixin):
                     "timestamp": result.isoformat() if result else None,
                 }
         except Exception as e:
-            logger.error(f"Health check failed: {e}")
+            logger.error(f"[_health_check] Health check failed: {e}", exc_info=True)
             return {
                 "status": "unhealthy",
                 "service": service,
@@ -231,7 +231,7 @@ class AdminDatabase(DatabaseServiceMixin):
                     return ModelConverter.to_setting_response(row)
                 return None
         except Exception as e:
-            logger.error(f"❌ Failed to get setting {key}: {e}")
+            logger.error(f"[_get_setting] ❌ Failed to get setting {key}: {e}", exc_info=True)
             return None
 
     async def get_all_settings(self, category: Optional[str] = None) -> List[SettingResponse]:
@@ -256,7 +256,7 @@ class AdminDatabase(DatabaseServiceMixin):
                 rows = await conn.fetch(sql, *params)
                 return [ModelConverter.to_setting_response(row) for row in rows]
         except Exception as e:
-            logger.error(f"❌ Failed to get settings: {e}")
+            logger.error(f"[_get_all_settings] ❌ Failed to get settings: {e}", exc_info=True)
             return []
 
     async def set_setting(
@@ -304,7 +304,7 @@ class AdminDatabase(DatabaseServiceMixin):
                 logger.info(f"✅ Setting saved: {key} = {value_str[:50]}")
                 return True
         except Exception as e:
-            logger.error(f"❌ Failed to set setting {key}: {e}")
+            logger.error(f"[_set_setting] ❌ Failed to set setting {key}: {e}", exc_info=True)
             return False
 
     async def delete_setting(self, key: str) -> bool:
@@ -325,7 +325,7 @@ class AdminDatabase(DatabaseServiceMixin):
                 logger.info(f"✅ Setting deleted: {key}")
                 return True
         except Exception as e:
-            logger.error(f"❌ Failed to delete setting {key}: {e}")
+            logger.error(f"[_delete_setting] ❌ Failed to delete setting {key}: {e}", exc_info=True)
             return False
 
     async def get_setting_value(self, key: str, default: Any = None) -> Any:
@@ -366,5 +366,5 @@ class AdminDatabase(DatabaseServiceMixin):
                 result = await conn.fetchval(sql, key)
                 return result or False
         except Exception as e:
-            logger.error(f"❌ Failed to check setting {key}: {e}")
+            logger.error(f"[_setting_exists] ❌ Failed to check setting {key}: {e}", exc_info=True)
             return False

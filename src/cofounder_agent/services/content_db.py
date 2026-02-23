@@ -189,7 +189,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 row = await conn.fetchrow(sql, *params)
                 return ModelConverter.to_post_response(row) if row else None
         except Exception as e:
-            logger.error(f"❌ Error getting post by slug '{slug}': {e}")
+            logger.error(f"[_get_post_by_slug] ❌ Error getting post by slug '{slug}': {e}", exc_info=True)
             return None
 
     async def update_post(self, post_id: int, updates: Dict[str, Any]) -> bool:
@@ -253,7 +253,7 @@ class ContentDatabase(DatabaseServiceMixin):
                     return False
 
         except Exception as e:
-            logger.error(f"❌ Error updating post {post_id}: {e}")
+            logger.error(f"[_update_post] ❌ Error updating post {post_id}: {e}", exc_info=True)
             return False
 
     async def get_all_categories(self) -> List[CategoryResponse]:
@@ -270,7 +270,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 )
                 return [ModelConverter.to_category_response(row) for row in rows]
         except Exception as e:
-            logger.warning(f"Could not fetch categories: {e}")
+            logger.warning(f"[_get_all_categories] Could not fetch categories: {e}")
             return []
 
     async def get_all_tags(self) -> List[TagResponse]:
@@ -287,7 +287,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 )
                 return [ModelConverter.to_tag_response(row) for row in rows]
         except Exception as e:
-            logger.warning(f"Could not fetch tags: {e}")
+            logger.warning(f"[_get_all_tags] Could not fetch tags: {e}")
             return []
 
     async def get_author_by_name(self, name: str) -> Optional[AuthorResponse]:
@@ -306,7 +306,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 row = await conn.fetchrow(sql, name)
                 return ModelConverter.to_author_response(row) if row else None
         except Exception as e:
-            logger.warning(f"Could not fetch author by name: {e}")
+            logger.warning(f"[_get_author_by_name] Could not fetch author by name: {e}")
             return None
 
     async def create_quality_evaluation(
@@ -370,7 +370,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 logger.info(f"✅ Created quality_evaluation for {eval_data['content_id']}")
                 return ModelConverter.to_quality_evaluation_response(row)
         except Exception as e:
-            logger.error(f"❌ Error creating quality_evaluation: {e}")
+            logger.error(f"[_create_quality_evaluation] ❌ Error creating quality_evaluation: {e}", exc_info=True)
             raise
 
     async def create_quality_improvement_log(
@@ -412,7 +412,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 logger.info(f"✅ Created quality_improvement_log: {initial:.0f} → {improved:.0f}")
                 return ModelConverter.to_quality_improvement_log_response(row)
         except Exception as e:
-            logger.error(f"❌ Error creating quality_improvement_log: {e}")
+            logger.error(f"[_create_quality_improvement_log] ❌ Error creating quality_improvement_log: {e}", exc_info=True)
             raise
 
     async def get_metrics(self) -> MetricsResponse:
@@ -493,7 +493,7 @@ class ContentDatabase(DatabaseServiceMixin):
                     total_cost=total_cost,
                 )
         except Exception as e:
-            logger.error(f"❌ Failed to get metrics: {e}")
+            logger.error(f"[_get_metrics] ❌ Failed to get metrics: {e}", exc_info=True)
             return MetricsResponse(
                 total_tasks=0,
                 completed_tasks=0,
@@ -547,5 +547,5 @@ class ContentDatabase(DatabaseServiceMixin):
                 logger.info(f"✅ Created orchestrator_training_data: {train_data['execution_id']}")
                 return ModelConverter.to_orchestrator_training_data_response(row)
         except Exception as e:
-            logger.error(f"❌ Error creating orchestrator_training_data: {e}")
+            logger.error(f"[_create_orchestrator_training_data] ❌ Error creating orchestrator_training_data: {e}", exc_info=True)
             raise

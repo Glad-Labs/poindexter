@@ -61,6 +61,7 @@ class ServiceContainer:
         self._task_executor = None
         self._intelligent_orchestrator = None
         self._workflow_history = None
+        self._workflow_engine = None
         self._additional_services = {}
 
     def set_database(self, service: Any) -> None:
@@ -88,6 +89,11 @@ class ServiceContainer:
         self._workflow_history = service
         logger.info("Workflow history service registered with ServiceContainer")
 
+    def set_workflow_engine(self, service: Any) -> None:
+        """Set the workflow engine service"""
+        self._workflow_engine = service
+        logger.info("Workflow engine service registered with ServiceContainer")
+
     def set_service(self, name: str, service: Any) -> None:
         """Set an arbitrary service by name"""
         self._additional_services[name] = service
@@ -113,6 +119,10 @@ class ServiceContainer:
         """Get the workflow history service"""
         return self._workflow_history
 
+    def get_workflow_engine(self) -> Optional[Any]:
+        """Get the workflow engine service"""
+        return self._workflow_engine
+
     def get_service(self, name: str) -> Optional[Any]:
         """Get an arbitrary service by name"""
         return self._additional_services.get(name)
@@ -125,6 +135,7 @@ class ServiceContainer:
             "task_executor": self._task_executor,
             "intelligent_orchestrator": self._intelligent_orchestrator,
             "workflow_history": self._workflow_history,
+            "workflow_engine": self._workflow_engine,
             **self._additional_services,
         }
 
@@ -227,6 +238,14 @@ def get_workflow_history_dependency() -> Any:
     if wh is None:
         raise RuntimeError("Workflow history service not initialized")
     return wh
+
+
+def get_workflow_engine_dependency() -> Any:
+    """FastAPI dependency for workflow engine service"""
+    engine = _services.get_workflow_engine()
+    if engine is None:
+        raise RuntimeError("Workflow engine service not initialized")
+    return engine
 
 
 def get_service_dependency(service_name: str) -> Any:

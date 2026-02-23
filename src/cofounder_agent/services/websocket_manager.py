@@ -92,7 +92,7 @@ class WebSocketManager:
             try:
                 await connection.send_text(message_json)
             except Exception as e:
-                logger.warning(f"Failed to send message to connection: {e}")
+                logger.warning(f"[_broadcast_to_namespace] Failed to send message to connection: {e}")
                 disconnected.add(connection)
 
         # Clean up disconnected connections

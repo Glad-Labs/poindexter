@@ -282,5 +282,5 @@ class UsersDatabase(DatabaseServiceMixin):
                 # Result is a string like "DELETE 1"
                 return "1" in result or "1" == result
         except Exception as e:
-            logger.warning(f"Error unlinking OAuth account: {str(e)}")
+            logger.warning(f"[_unlink_oauth_account] Error unlinking OAuth account: {str(e)}")
             return False

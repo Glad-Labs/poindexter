@@ -97,7 +97,7 @@ class TokenManager:
             return True
             
         except Exception as e:
-            logger.error(f"❌ Failed to store OAuth token: {e}")
+            logger.error(f"[_store_oauth_token] ❌ Failed to store OAuth token: {e}", exc_info=True)
             await self._audit_log("stored_token", user_id, provider, "failed")
             return False
 
@@ -140,7 +140,7 @@ class TokenManager:
                 return provider_data.get("access_token")
         
         except Exception as e:
-            logger.error(f"Error retrieving OAuth token: {e}")
+            logger.error(f"[_get_oauth_token] Error retrieving OAuth token: {e}", exc_info=True)
             return None
 
     async def mark_token_expired(self, user_id: str, provider: str) -> bool:
@@ -169,7 +169,7 @@ class TokenManager:
             return True
             
         except Exception as e:
-            logger.error(f"❌ Failed to revoke token: {e}")
+            logger.error(f"[_mark_token_expired] ❌ Failed to revoke token: {e}", exc_info=True)
             return False
 
     async def cleanup_old_tokens(self, days: int = 90) -> int:
@@ -198,7 +198,7 @@ class TokenManager:
                 return count
                 
         except Exception as e:
-            logger.error(f"❌ Cleanup failed: {e}")
+            logger.error(f"[_cleanup_old_tokens] ❌ Cleanup failed: {e}", exc_info=True)
             return 0
 
     # ==== PRIVATE ====
@@ -217,4 +217,4 @@ class TokenManager:
                 extra={"user_id": user_id, "provider": provider, "status": status},
             )
         except Exception as e:
-            logger.warning(f"Audit log failed: {e}")
+            logger.warning(f"[_audit_log] Audit log failed: {e}")

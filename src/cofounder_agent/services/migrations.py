@@ -62,7 +62,7 @@ class MigrationService:
             return True
 
         except Exception as e:
-            logger.error(f"❌ Migration failed: {str(e)}", exc_info=True)
+            logger.error(f"[_run_migrations] ❌ Migration failed: {str(e)}", exc_info=True)
             return False
 
     async def _run_migration(self, migration_file: Path) -> bool:
@@ -106,7 +106,7 @@ class MigrationService:
             return True
 
         except Exception as e:
-            logger.error(f"❌ Migration failed ({migration_file.name}): {str(e)}", exc_info=True)
+            logger.error(f"[_run_migration] ❌ Migration failed ({migration_file.name}): {str(e)}", exc_info=True)
             raise
 
     async def rollback_last_migration(self) -> bool:
@@ -130,7 +130,7 @@ class MigrationService:
             return True
 
         except Exception as e:
-            logger.error(f"❌ Rollback failed: {str(e)}", exc_info=True)
+            logger.error(f"[_rollback_last_migration] ❌ Rollback failed: {str(e)}", exc_info=True)
             return False
 
 

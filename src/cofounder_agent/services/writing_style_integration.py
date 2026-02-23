@@ -82,7 +82,7 @@ class WritingStyleIntegrationService:
             return sample_data
 
         except Exception as e:
-            logger.error(f"Error getting sample for content generation: {e}")
+            logger.error(f"[_get_sample_for_content_generation] Error getting sample for content generation: {e}", exc_info=True)
             return None
 
     def _analyze_sample(self, sample_text: str) -> Dict[str, Any]:
@@ -265,7 +265,7 @@ class WritingStyleIntegrationService:
             return enhanced_prompt
 
         except Exception as e:
-            logger.error(f"Error generating creative agent prompt injection: {e}")
+            logger.error(f"[_generate_creative_agent_prompt_injection] Error generating creative agent prompt injection: {e}", exc_info=True)
             return base_prompt
 
     @staticmethod
@@ -342,7 +342,7 @@ class WritingStyleIntegrationService:
             return results
 
         except Exception as e:
-            logger.error(f"Error verifying style match: {e}")
+            logger.error(f"[_verify_style_match] Error verifying style match: {e}", exc_info=True)
             return {"matched": False, "reason": f"Verification error: {str(e)}"}
 
     @staticmethod

@@ -90,7 +90,8 @@ def run_ollama(model: str, prompt: str, system: str) -> str:
         )
         if response.returncode == 0:
             result = json.loads(response.stdout)
-            return result.get("response", "")
+            response_text = result.get("response", "")
+            return str(response_text) if response_text else ""
         else:
             logger.error(f"❌ Ollama error: {response.stderr}")
             return ""

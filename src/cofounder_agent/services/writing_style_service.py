@@ -44,7 +44,7 @@ class WritingStyleService:
             return self._format_sample_for_prompt(sample)
 
         except Exception as e:
-            logger.error(f"Error retrieving active writing style: {e}")
+            logger.error(f"[_get_active_style_prompt] Error retrieving active writing style: {e}", exc_info=True)
             return ""
 
     async def get_style_prompt_for_generation(self, user_id: str) -> Optional[Dict[str, Any]]:
@@ -77,7 +77,7 @@ class WritingStyleService:
             }
 
         except Exception as e:
-            logger.error(f"Error preparing writing sample for generation: {e}")
+            logger.error(f"[_get_style_prompt_for_generation] Error preparing writing sample for generation: {e}", exc_info=True)
             return None
 
     async def get_style_prompt_for_specific_sample(
@@ -109,7 +109,7 @@ class WritingStyleService:
             }
 
         except Exception as e:
-            logger.error(f"Error retrieving specific writing sample {writing_style_id}: {e}")
+            logger.error(f"[_get_style_prompt_for_specific_sample] Error retrieving specific writing sample {writing_style_id}: {e}", exc_info=True)
             return None
 
     @staticmethod

@@ -141,7 +141,7 @@ class EmailPublisher:
             }
 
         except Exception as e:
-            logger.error(f"Email publishing error: {str(e)}")
+            logger.error(f"[_publish] Email publishing error: {str(e)}", exc_info=True)
             return {
                 "success": False,
                 "error": f"Email send failed: {str(e)}",
@@ -197,7 +197,7 @@ class EmailPublisher:
             }
 
         except Exception as e:
-            logger.error(f"Newsletter send error: {str(e)}")
+            logger.error(f"[_send_newsletter] Newsletter send error: {str(e)}", exc_info=True)
             return {
                 "success": False,
                 "error": str(e),
@@ -250,7 +250,7 @@ class EmailPublisher:
             return result
 
         except Exception as e:
-            logger.error(f"Notification send error: {str(e)}")
+            logger.error(f"[_send_notification] Notification send error: {str(e)}", exc_info=True)
             return {
                 "success": False,
                 "error": str(e),

@@ -194,7 +194,7 @@ Now generate the task JSON for the user's request:"""
                     execution_id = result.execution_id
                     logger.info(f"[Composer] Task executed: {execution_id}")
                 except Exception as e:
-                    logger.error(f"[Composer] Execution failed: {e}")
+                    logger.error(f"[_compose_from_request] [Composer] Execution failed: {e}", exc_info=True)
                     return TaskCompositionResult(
                         success=False,
                         suggested_task=task_dict,
@@ -212,7 +212,7 @@ Now generate the task JSON for the user's request:"""
             )
 
         except Exception as e:
-            logger.error(f"[Composer] Composition failed: {e}", exc_info=True)
+            logger.error(f"[_compose_from_request] [Composer] Composition failed: {e}", exc_info=True)
             return TaskCompositionResult(
                 success=False, error=str(e), explanation=f"Failed to compose task: {str(e)}"
             )

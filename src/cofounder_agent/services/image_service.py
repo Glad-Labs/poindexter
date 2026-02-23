@@ -71,6 +71,7 @@ except ImportError:
     OPTIMUM_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+from utils.error_handler import handle_service_error
 
 
 class FeaturedImageMetadata:
@@ -224,7 +225,7 @@ class ImageService:
                             f"Falling back to CPU mode."
                         )
                 except Exception as e:
-                    logger.warning(f"Could not verify GPU capability: {e}. Using CPU mode.")
+                    logger.warning(f"[__init__] Could not verify GPU capability: {e}. Using CPU mode.")
             else:
                 logger.warning("CUDA not available - using CPU mode (slower)")
 
@@ -271,7 +272,7 @@ class ImageService:
             )
 
         except Exception as e:
-            logger.error(f"Failed to load Stable Diffusion XL models: {e}")
+            logger.error(f"[__init__] Failed to load Stable Diffusion XL models: {e}", exc_info=True)
             self.sdxl_available = False
 
     def _apply_model_optimizations(self, pipe, device: str) -> None:
@@ -297,7 +298,7 @@ class ImageService:
                     pipe.enable_xformers_memory_efficient_attention()
                     logger.info("   ✓ xformers memory-efficient attention enabled (2-4x faster)")
                 except Exception as e:
-                    logger.warning(f"   ⚠️  Could not enable xformers: {e}")
+                    logger.warning(f"   [⚠️_apply_model_optimizations] Could not enable xformers: {e}")
 
             # 3. Enable Flash Attention v2 if available (PyTorch 2.0+)
             try:
@@ -305,7 +306,7 @@ class ImageService:
                     pipe.unet.enable_flash_attn(use_flash_attention_v2=True)
                     logger.info("   ✓ Flash Attention v2 enabled (30-50% faster)")
             except Exception as e:
-                logger.debug(f"   Flash Attention v2 not available: {e}")
+                logger.debug(f"[_apply_model_optimizations] Flash Attention v2 not available: {e}")
 
             # 4. Enable sequential CPU offloading for GPU mode (frees VRAM between steps)
             if device == "cuda":
@@ -313,7 +314,7 @@ class ImageService:
                     pipe.enable_sequential_cpu_offload()
                     logger.info("   ✓ Sequential CPU offloading enabled (GPU memory saver)")
                 except Exception as e:
-                    logger.debug(f"   Sequential CPU offload not available: {e}")
+                    logger.debug(f"[_apply_model_optimizations] Sequential CPU offload not available: {e}")
 
             # 5. Enable model CPU offload for memory-constrained GPUs
             if device == "cuda":
@@ -323,10 +324,10 @@ class ImageService:
                         pipe.enable_model_cpu_offload()
                         logger.info("   ✓ Model CPU offload enabled (constrained GPU memory)")
                 except Exception as e:
-                    logger.debug(f"   Model CPU offload not available: {e}")
+                    logger.debug(f"[_apply_model_optimizations] Model CPU offload not available: {e}")
 
         except Exception as e:
-            logger.warning(f"Error applying optimizations: {e}")
+            logger.warning(f"[_apply_model_optimizations] Error applying optimizations: {e}")
 
     # =========================================================================
     # FEATURED IMAGE SEARCH (Pexels - Free, Unlimited)
@@ -415,7 +416,7 @@ class ImageService:
                     )
                     return metadata
             except Exception as e:
-                logger.warning(f"Error searching for '{query}': {e}")
+                logger.warning(f"[get_featured_image] Error searching for '{query}': {e}")
 
         logger.warning(f"No featured image found for topic: {topic}")
         return None
@@ -457,7 +458,7 @@ class ImageService:
                     return all_images[:count]
 
             except Exception as e:
-                logger.warning(f"Error searching for gallery images '{query}': {e}")
+                logger.warning(f"[get_images_for_gallery] Error searching for gallery images '{query}': {e}")
 
         logger.info(f"Found {len(all_images)} gallery images (less than requested)")
         return all_images
@@ -527,7 +528,7 @@ class ImageService:
                 ]
 
         except Exception as e:
-            logger.error(f"Pexels search error: {e}")
+            logger.error(f"[_pexels_search] Pexels search error: {e}", exc_info=True)
             return []
 
     # =========================================================================
@@ -625,7 +626,7 @@ class ImageService:
             return True
 
         except Exception as e:
-            logger.error(f"❌ Error generating image: {e}")
+            logger.error(f"[generate_image] Error generating image: {e}", exc_info=True)
 
             # Mark progress as failed if tracking
             if task_id:

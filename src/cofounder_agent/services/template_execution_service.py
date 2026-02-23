@@ -264,7 +264,7 @@ class TemplateExecutionService:
             logger.error(f"Template validation error: {str(e)}")
             raise
         except Exception as e:
-            logger.error(f"Template execution error: {str(e)}", exc_info=True)
+            logger.error(f"[_execute_template] Template execution error: {str(e)}", exc_info=True)
             raise
 
     def _initialize_progress_tracking(
@@ -304,14 +304,14 @@ class TemplateExecutionService:
                     # Schedule the broadcast in a non-blocking way
                     asyncio.create_task(broadcast_workflow_progress(actual_execution_id, progress))
                 except Exception as e:
-                    logger.debug(f"Could not broadcast progress: {e}")
+                    logger.debug(f"[_broadcast_callback] Could not broadcast progress: {e}")
 
             progress_service.register_callback(actual_execution_id, broadcast_callback)
 
             logger.debug(f"Initialized progress tracking for execution {actual_execution_id}")
 
         except Exception as e:
-            logger.warning(f"Could not initialize progress tracking: {e}")
+            logger.warning(f"[_broadcast_callback] Could not initialize progress tracking: {e}")
             # Continue execution even if progress tracking fails
 
     async def get_execution_status(
@@ -332,7 +332,7 @@ class TemplateExecutionService:
                 execution_id, owner_id
             )
         except Exception as e:
-            logger.error(f"Failed to get execution status: {str(e)}")
+            logger.error(f"[_get_execution_status] Failed to get execution status: {str(e)}", exc_info=True)
             return None
 
     async def get_execution_history(
@@ -361,5 +361,5 @@ class TemplateExecutionService:
                 offset=offset,
             )
         except Exception as e:
-            logger.error(f"Failed to get execution history: {str(e)}")
+            logger.error(f"[_get_execution_history] Failed to get execution history: {str(e)}", exc_info=True)
             return {"executions": [], "total_count": 0}

@@ -131,7 +131,7 @@ class TwitterPublisher:
             }
 
         except Exception as e:  # pylint: disable=broad-except
-            logger.error("Twitter publishing error: %s", str(e))
+            logger.error(f"[_publish] Twitter publishing error: %s", str(e), exc_info=True)
             return {
                 "success": False,
                 "error": f"Publishing error: {str(e)}",
@@ -219,7 +219,7 @@ class TwitterPublisher:
             }
 
         except Exception as e:
-            logger.error(f"Twitter thread publishing error: {str(e)}")
+            logger.error(f"[_publish_thread] Twitter thread publishing error: {str(e)}", exc_info=True)
             return {
                 "success": False,
                 "error": str(e),

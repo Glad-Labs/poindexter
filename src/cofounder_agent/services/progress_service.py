@@ -156,7 +156,7 @@ class ProgressService:
             try:
                 callback(progress)
             except Exception as e:
-                logger.error(f"Error in progress callback: {e}")
+                logger.error(f"[_notify_callbacks] Error in progress callback: {e}", exc_info=True)
 
     def cleanup(self, task_id: str) -> None:
         """Clean up progress and callbacks for a task"""
