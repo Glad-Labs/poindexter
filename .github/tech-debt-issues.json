@@ -1,0 +1,255 @@
+{
+  "issues": [
+    {
+      "number": 3,
+      "priority": "P2-High",
+      "title": "[P2] Implement workflow pause/resume/cancel functionality",
+      "description": "Workflow control endpoints are incomplete - they return status updates but don't actually pause/resume execution.",
+      "files": [
+        "src/cofounder_agent/routes/workflow_routes.py",
+        "src/cofounder_agent/services/workflow_engine.py"
+      ],
+      "effort_hours": "3-4",
+      "labels": ["tech-debt:P2-high", "features", "workflows"],
+      "acceptance_criteria": [
+        "POST pause endpoint actually stops workflow execution",
+        "POST resume endpoint resumes from paused state",
+        "POST cancel endpoint terminates workflow",
+        "State persisted to PostgreSQL and restored on service restart"
+      ]
+    },
+    {
+      "number": 4,
+      "priority": "P2-High",
+      "title": "[P2] Complete GDPR data subject rights workflow",
+      "description": "GDPR requests not fully processed - missing database storage, email verification, and processing workflow.",
+      "files": ["src/cofounder_agent/routes/privacy_routes.py"],
+      "effort_hours": "4-5",
+      "labels": ["tech-debt:P2-high", "security", "compliance"],
+      "acceptance_criteria": [
+        "GDPR requests stored with verification status",
+        "Automated email sent for verification",
+        "Data export returns user data in standard format",
+        "Deletion workflow respects 30-day deadline"
+      ]
+    },
+    {
+      "number": 5,
+      "priority": "P2-High",
+      "title": "[P2] Add query performance monitoring decorator",
+      "description": "No performance monitoring on database queries - we're blind to slow queries in production.",
+      "files": ["src/cofounder_agent/services/database_service.py"],
+      "effort_hours": "2-3",
+      "labels": ["tech-debt:P2-high", "performance", "observability"],
+      "acceptance_criteria": [
+        "Slow queries (>threshold) logged with context",
+        "Query timing included in error logs",
+        "Performance metrics available in admin dashboard"
+      ]
+    },
+    {
+      "number": 6,
+      "priority": "P2-High",
+      "title": "[P2] Execute Phase 1C error handling uniformity across 68 service files",
+      "description": "Inconsistent exception handling across service layer - some use HTTPException, others use generic Exception. Strategy documented in PHASE_1C_COMPLETE_IMPLEMENTATION.md, ready for execution.",
+      "files": ["src/cofounder_agent/services/"],
+      "effort_hours": "8.5 (parallelizable)",
+      "labels": ["tech-debt:P2-high", "error-handling", "code-quality"],
+      "acceptance_criteria": [
+        "All service errors have proper status codes",
+        "All errors include request context for debugging",
+        "Error logs include tracing information"
+      ]
+    },
+    {
+      "number": 7,
+      "priority": "P3-Medium",
+      "title": "[P3] Fix 612 Pyright type annotation errors",
+      "description": "Missing type annotations on public API functions, generic Dict instead of Dict[str, Any], untyped parameters reduce type safety.",
+      "files": [
+        "src/cofounder_agent/services/unified_orchestrator.py",
+        "src/cofounder_agent/services/database_service.py"
+      ],
+      "effort_hours": "20-30 (parallelizable)",
+      "labels": ["tech-debt:P3-medium", "code-quality", "type-safety"],
+      "acceptance_criteria": [
+        "Pyright error count < 100",
+        "All public API functions typed",
+        "Critical services fully annotated"
+      ]
+    },
+    {
+      "number": 8,
+      "priority": "P3-Medium",
+      "title": "[P3] Expand E2E test suite (Playwright)",
+      "description": "E2E framework in place but needs comprehensive coverage for critical workflows.",
+      "files": ["playwright-tests/"],
+      "effort_hours": "8-12",
+      "labels": ["tech-debt:P3-medium", "testing", "e2e"],
+      "acceptance_criteria": [
+        "40+ E2E tests passing",
+        "All 5 workflow templates covered",
+        "Cross-browser testing automated"
+      ]
+    },
+    {
+      "number": 9,
+      "priority": "P3-Medium",
+      "title": "[P3] Refactor monolithic services",
+      "description": "Split unified_orchestrator.py (1,146 lines) and workflow_execution_adapter.py (726 lines) into smaller, focused services.",
+      "files": [
+        "src/cofounder_agent/services/unified_orchestrator.py",
+        "src/cofounder_agent/services/workflow_execution_adapter.py"
+      ],
+      "effort_hours": "6-8",
+      "labels": ["tech-debt:P3-medium", "refactoring", "maintainability"],
+      "acceptance_criteria": [
+        "Each service < 500 lines",
+        "Single responsibility per service",
+        "Test coverage maintained"
+      ]
+    },
+    {
+      "number": 10,
+      "priority": "P3-Medium",
+      "title": "[P3] Fix intermittent integration test failures",
+      "description": "Some integration tests marked as slow with intermittent failures due to async timing issues.",
+      "files": ["tests/integration/"],
+      "effort_hours": "2-3",
+      "labels": ["tech-debt:P3-medium", "testing", "reliability"],
+      "acceptance_criteria": [
+        "All integration tests pass consistently",
+        "No random failures in CI/CD",
+        "Clear test markers for slow tests"
+      ]
+    },
+    {
+      "number": 11,
+      "priority": "P3-Medium",
+      "title": "[P3] Add rate limiting middleware",
+      "description": "Security gap - no rate limiting on public endpoints leaves system vulnerable to DoS attacks.",
+      "files": ["src/cofounder_agent/main.py"],
+      "effort_hours": "3-4",
+      "labels": ["tech-debt:P3-medium", "security", "middleware"],
+      "acceptance_criteria": [
+        "Rate limit enforcement active",
+        "429 responses for exceeded limits",
+        "Rate limit headers in responses",
+        "Configurable via environment variables"
+      ]
+    },
+    {
+      "number": 12,
+      "priority": "P3-Medium",
+      "title": "[P3] Integrate webhook validation",
+      "description": "Webhook validation code exists in middleware but not connected to routes - security gap for webhook spoofing.",
+      "files": [
+        "src/cofounder_agent/middleware/webhook_security.py",
+        "src/cofounder_agent/routes/webhooks.py"
+      ],
+      "effort_hours": "2-3",
+      "labels": ["tech-debt:P3-medium", "security", "webhooks"],
+      "acceptance_criteria": [
+        "Webhook validation active on all endpoints",
+        "Spoofed webhooks rejected",
+        "Validation failures logged"
+      ]
+    },
+    {
+      "number": 13,
+      "priority": "P3-Medium",
+      "title": "[P3] Tune database connection pool",
+      "description": "Connection pool configured with default size=10, should be 50-100 for production workloads.",
+      "files": ["src/cofounder_agent/services/database_service.py"],
+      "effort_hours": "1",
+      "labels": ["tech-debt:P3-medium", "performance", "database"],
+      "acceptance_criteria": [
+        "Connection pool sized for expected load",
+        "No 'connection pool exhausted' errors",
+        "Pool metrics available in monitoring"
+      ]
+    },
+    {
+      "number": 14,
+      "priority": "P4-Low",
+      "title": "[P4] Migrate public-site to Vite (mirrors Phase 3B)",
+      "description": "Oversight Hub successfully migrated to Vite with 90% vulnerability reduction. Public Site should follow same pattern.",
+      "files": ["web/public-site/"],
+      "effort_hours": "6-8",
+      "labels": ["tech-debt:P4-low", "dependencies", "frontend"],
+      "acceptance_criteria": [
+        "Build succeeds in < 45 seconds",
+        "Dev server launches in < 1 second",
+        "npm audit shows < 10 vulnerabilities"
+      ]
+    },
+    {
+      "number": 15,
+      "priority": "P4-Low",
+      "title": "[P4] Set up database performance benchmarking",
+      "description": "Create baseline benchmarks for critical database operations to detect regressions.",
+      "files": ["tests/performance/benchmark_queries.py"],
+      "effort_hours": "4-6",
+      "labels": ["tech-debt:P4-low", "performance", "testing"],
+      "acceptance_criteria": [
+        "Baseline benchmarks established",
+        "Benchmark results tracked in CI/CD",
+        "Regression alerts when queries exceed targets"
+      ]
+    },
+    {
+      "number": 16,
+      "priority": "P4-Low",
+      "title": "[P4] Consolidate cost tracking services",
+      "description": "Cost tracking exists across multiple services but no unified reporting - need centralized cost attribution.",
+      "files": ["src/cofounder_agent/services/"],
+      "effort_hours": "4-6",
+      "labels": ["tech-debt:P4-low", "analytics", "monitoring"],
+      "acceptance_criteria": [
+        "Cost attribution report available",
+        "Per-feature cost breakdown working",
+        "Cost trends visible in admin dashboard"
+      ]
+    },
+    {
+      "number": 17,
+      "priority": "P4-Low",
+      "title": "[P4] Clean up markdown linting errors",
+      "description": "533 markdown lint errors across docs - mostly formatting issues fixable with prettier.",
+      "files": ["docs/", "*.md"],
+      "effort_hours": "0.5",
+      "labels": ["tech-debt:P4-low", "documentation"],
+      "acceptance_criteria": [
+        "0 markdown lint errors",
+        "npm run lint:md passes"
+      ]
+    },
+    {
+      "number": 18,
+      "priority": "P4-Low",
+      "title": "[P4] Set up performance benchmark suite",
+      "description": "Configure pytest-benchmark for tracking performance regressions over time.",
+      "files": ["tests/performance/"],
+      "effort_hours": "4-6",
+      "labels": ["tech-debt:P4-low", "performance", "testing"],
+      "acceptance_criteria": [
+        "Performance benchmarks run in CI/CD",
+        "Results tracked and alerted on regression"
+      ]
+    },
+    {
+      "number": 19,
+      "priority": "P4-Low",
+      "title": "[P4] Enhance service discovery advanced routing",
+      "description": "Basic service registry exists - add dynamic weighting, load balancing, and failover strategies.",
+      "files": ["src/cofounder_agent/services/service_registry.py"],
+      "effort_hours": "3-4",
+      "labels": ["tech-debt:P4-low", "orchestration"],
+      "acceptance_criteria": [
+        "Service registry fully functional",
+        "Automatic service discovery working",
+        "Failover tested and working"
+      ]
+    }
+  ]
+}

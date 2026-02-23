@@ -44,6 +44,12 @@ from .websocket_event_broadcaster import (
     emit_task_progress,
 )
 
+# Import error handling (Phase 1C - Error handling standardization)
+from .error_handler import (
+    ServiceError,
+    DatabaseError,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -173,10 +179,20 @@ class TaskExecutor:
                             logger.info(
                                 f"✅ [TASK_EXEC_LOOP] Task succeeded (total success: {self.success_count})"
                             )
+                        except ServiceError as e:
+                            logger.error(
+                                f"Service error processing task {task_id}",
+                                exc_info=True,
+                            )
                         except Exception as e:
                             logger.error(
-                                f"❌ [TASK_EXEC_LOOP] Error processing task {task_id}: {str(e)}",
+                                f"Unexpected error processing task {task_id}",
                                 exc_info=True,
+                            )
+                            raise ServiceError(
+                                message=f"Failed to process task {task_id}",
+                                details={"task_id": str(task_id), "error_type": type(e).__name__},
+                                cause=e,
                             )
                             # Update task as failed
                             try:
@@ -195,7 +211,13 @@ class TaskExecutor:
                                 )
                             except Exception as update_err:
                                 logger.error(
-                                    f"❌ [TASK_EXEC_LOOP] Failed to update task status: {str(update_err)}"
+                                    f"Failed to update task status to failed",
+                                    exc_info=True,
+                                )
+                                raise DatabaseError(
+                                    message=f"Failed to update task {task_id} status",
+                                    details={"task_id": str(task_id), "operation": "update_task"},
+                                    cause=update_err,
                                 )
                             self.error_count += 1
                             logger.info(
@@ -216,11 +238,16 @@ class TaskExecutor:
                 break
             except Exception as e:
                 logger.error(
-                    f"❌ [TASK_EXEC_LOOP] Unexpected error in task executor loop: {str(e)}",
+                    f"Unexpected error in task executor loop",
                     exc_info=True,
                 )
                 logger.info(
                     f"⏳ [TASK_EXEC_LOOP] Sleeping for {self.poll_interval}s before retry..."
+                )
+                raise ServiceError(
+                    message="Task executor polling loop encountered an error",
+                    details={"error_type": type(e).__name__, "poll_interval": self.poll_interval},
+                    cause=e,
                 )
                 await asyncio.sleep(self.poll_interval)
 
@@ -435,12 +462,18 @@ class TaskExecutor:
                         duration=5000,
                     )
                 except Exception as e:
-                    logger.warning(f"⚠️  Failed to emit task success event: {e}")
+                    logger.warning(f"Failed to emit task success event", exc_info=True)
 
-        except Exception as e:
-            logger.error(f"❌ [TASK_SINGLE] Task failed: {task_id} - {str(e)}", exc_info=True)
-            # Status already updated to 'failed' in _process_loop
+        except ServiceError as e:
+            logger.error(f"Service error processing task {task_id}", exc_info=True)
             raise
+        except Exception as e:
+            logger.error(f"Task failed: {task_id}", exc_info=True)
+            raise ServiceError(
+                message=f"Task {task_id} processing failed",
+                details={"task_id": str(task_id), "task_name": task_name},
+                cause=e,
+            )
 
     async def _execute_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -679,15 +712,26 @@ class TaskExecutor:
                 )
                 task_metrics.record_phase_end("content_generation", phase_1_start, status="success")
 
-            except Exception as e:
+            except ServiceError as e:
                 orchestrator_error = str(e)
                 logger.error(
-                    f"❌ [TASK_EXECUTE] PHASE 1 Failed: Orchestrator error - {orchestrator_error}",
+                    f"Service error in content generation",
                     exc_info=True,
                 )
                 generated_content = f"Error in content generation: {orchestrator_error}"
                 task_metrics.record_phase_end(
                     "content_generation", phase_1_start, status="error", error=orchestrator_error
+                )
+            except Exception as e:
+                orchestrator_error = str(e)
+                logger.error(
+                    f"Orchestrator error in content generation",
+                    exc_info=True,
+                )
+                raise ServiceError(
+                    message="Content generation through orchestrator failed",
+                    details={"task_id": str(task_id), "phase": "content_generation"},
+                    cause=e,
                 )
         else:
             logger.warning(f"⚠️ [TASK_EXECUTE] Orchestrator available: NO - Using fallback")

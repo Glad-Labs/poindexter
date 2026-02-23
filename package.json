@@ -1,8 +1,8 @@
 {
   "name": "glad-labs-monorepo",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "private": true,
-  "description": "Complete AI orchestration system with intelligent business management and autonomous agents",
+  "description": "Complete AI orchestration system with intelligent business management and autonomous agents. Phase 3B: Vite migration complete. Phase 1C: Error handling standardization in progress.",
   "license": "AGPL-3.0-or-later",
   "author": "Matthew M. Gladding (Glad Labs, LLC)",
   "workspaces": [
@@ -16,7 +16,7 @@
     "dev:backend": "npm run dev:cofounder",
     "dev:cofounder": "cd src/cofounder_agent && python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000 --log-level info",
     "dev:frontend": "concurrently \"npm run dev:public\" \"npm run dev:oversight\"",
-    "dev:oversight": "npm start --workspace=web/oversight-hub",
+    "dev:oversight": "npm run dev --workspace=web/oversight-hub",
     "dev:public": "npm run dev --workspace=web/public-site",
     "install:all": "npm install && npm install --workspaces && npm run setup:python",
     "setup": "npm run install:all && npm run setup:env",
