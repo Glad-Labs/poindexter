@@ -34,7 +34,7 @@ ollama_client = OllamaClient()
 model_router = ModelRouter(use_ollama=True)  # Prefer free local inference
 usage_tracker = get_usage_tracker()
 system_knowledge_rag = get_system_knowledge_rag()  # System knowledge base
-ai_cache = AICache()  # Response caching
+ai_cache = AIResponseCache()  # Response caching (uses Redis if available)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
