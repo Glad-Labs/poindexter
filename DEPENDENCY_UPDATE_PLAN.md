@@ -90,15 +90,15 @@ npm audit --json > audit-after-update.json
 
 **Recommended:** Start with Option B1 (safer), plan Option B2 for Phase 3
 
-**Tests to Run:**
+**Tests to Run (Post-Phase 3B Vite Migration):**
 ```bash
-# After updating react-scripts:
-npm start --workspace=web/oversight-hub
-# Check: UI loads, no console errors
+# After Vite migration - run Oversight Hub with Vite:
+npm run dev --workspace=web/oversight-hub
+# Check: Vite dev server starts, UI loads at http://localhost:5173, no console errors
 npm test --workspace=web/oversight-hub
-# Check: All tests pass
+# Check: Vitest passes (replaces Jest)
 npm run build --workspace=web/oversight-hub
-# Check: Production build succeeds
+# Check: Vite build succeeds, dist/ directory created
 ```
 
 ---

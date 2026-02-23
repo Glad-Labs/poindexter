@@ -84,7 +84,7 @@ if [ $MIGRATION_STATUS -eq 0 ]; then
     echo ""
     echo "Next steps:"
     echo "  1. Configure environment variables (see QUICK_INTEGRATION_GUIDE.md Step 3)"
-    echo "  2. Start the backend: npm start"
+    echo "  2. Start the backend: npm run dev:cofounder"
     echo "  3. Test API endpoints: curl http://localhost:8000/api/orchestrator/training/stats"
     echo ""
 else

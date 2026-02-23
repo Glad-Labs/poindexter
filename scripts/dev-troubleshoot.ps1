@@ -68,7 +68,7 @@ Write-Host "  npm run dev`n" -ForegroundColor Cyan
 
 Write-Host "Option 2: Start services individually (most reliable):" -ForegroundColor White
 Write-Host "  Terminal 1: cd web\public-site ; npm run dev" -ForegroundColor Cyan
-Write-Host "  Terminal 2: cd web\oversight-hub ; npm start`n" -ForegroundColor Cyan
+Write-Host "  Terminal 2: cd web\oversight-hub ; npm run dev`n" -ForegroundColor Cyan
 
 Write-Host "Option 3: Start all including Python backend:" -ForegroundColor White
 Write-Host "  npm run dev:full`n" -ForegroundColor Cyan
