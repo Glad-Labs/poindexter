@@ -8,8 +8,13 @@
 class WebSocketService {
   constructor() {
     this.ws = null;
-    // WebSocket endpoint: /api/ws/ (note the trailing slash for root endpoint)
-    this.url = `ws://${window.location.hostname}:8000/api/ws/`;
+    // Derive WebSocket URL from API base URL (stored in env var)
+    const apiBaseUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+    // Convert http(s):// to ws(s):// and append /api/ws/
+    const wsProtocol = apiBaseUrl.startsWith('https') ? 'wss' : 'ws';
+    const apiHost = apiBaseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    this.url = `${wsProtocol}://${apiHost}/api/ws/`;
+
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
     this.reconnectDelay = 3000; // 3 seconds
