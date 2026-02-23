@@ -317,7 +317,7 @@ async def _handle_blog_post_creation(
             "generate_featured_image": request.generate_featured_image,
             "tags": request.tags,
         },
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(timezone.utc),
     }
 
     # Store in database
@@ -353,7 +353,7 @@ async def _handle_blog_post_creation(
         "task_type": "blog_post",
         "topic": request.topic,
         "status": "pending",
-        "created_at": task_data["created_at"],
+        "created_at": task_data["created_at"].isoformat() if hasattr(task_data["created_at"], "isoformat") else task_data["created_at"],
         "message": "Blog post task created and queued",
     }
 
@@ -381,7 +381,7 @@ async def _handle_social_media_creation(
             "platforms": request.platforms,
             "tags": request.tags,
         },
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(timezone.utc),
     }
 
     returned_task_id = await db_service.add_task(task_data)
@@ -393,7 +393,7 @@ async def _handle_social_media_creation(
         "task_type": "social_media",
         "topic": request.topic,
         "status": "pending",
-        "created_at": task_data["created_at"],
+        "created_at": task_data["created_at"].isoformat() if hasattr(task_data["created_at"], "isoformat") else task_data["created_at"],
         "message": f"Social media task created for platforms: {', '.join(request.platforms or ['all'])}",
     }
 
@@ -416,7 +416,7 @@ async def _handle_email_creation(
         "status": "pending",
         "user_id": current_user.get("id", "system"),
         "metadata": {**(request.metadata or {}), "tags": request.tags},
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(timezone.utc),
     }
 
     returned_task_id = await db_service.add_task(task_data)
@@ -426,7 +426,7 @@ async def _handle_email_creation(
         "id": returned_task_id,
         "task_type": "email",
         "status": "pending",
-        "created_at": task_data["created_at"],
+        "created_at": task_data["created_at"].isoformat() if hasattr(task_data["created_at"], "isoformat") else task_data["created_at"],
         "message": "Email task created and queued",
     }
 
@@ -448,7 +448,7 @@ async def _handle_newsletter_creation(
         "status": "pending",
         "user_id": current_user.get("id", "system"),
         "metadata": {**(request.metadata or {}), "tags": request.tags},
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(timezone.utc),
     }
 
     returned_task_id = await db_service.add_task(task_data)
@@ -458,7 +458,7 @@ async def _handle_newsletter_creation(
         "id": returned_task_id,
         "task_type": "newsletter",
         "status": "pending",
-        "created_at": task_data["created_at"],
+        "created_at": task_data["created_at"].isoformat() if hasattr(task_data["created_at"], "isoformat") else task_data["created_at"],
         "message": "Newsletter task created and queued",
     }
 
@@ -485,7 +485,7 @@ async def _handle_business_analytics_creation(
             "time_period": request.time_period,
             "business_context": request.business_context,
         },
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(timezone.utc),
     }
 
     returned_task_id = await db_service.add_task(task_data)
@@ -495,7 +495,7 @@ async def _handle_business_analytics_creation(
         "id": returned_task_id,
         "task_type": "business_analytics",
         "status": "pending",
-        "created_at": task_data["created_at"],
+        "created_at": task_data["created_at"].isoformat() if hasattr(task_data["created_at"], "isoformat") else task_data["created_at"],
         "message": f"Business analytics task created - Analyzing: {', '.join(request.metrics or [])}",
     }
 
@@ -520,7 +520,7 @@ async def _handle_data_retrieval_creation(
             "data_sources": request.data_sources,
             "filters": request.filters,
         },
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(timezone.utc),
     }
 
     returned_task_id = await db_service.add_task(task_data)
@@ -530,7 +530,7 @@ async def _handle_data_retrieval_creation(
         "id": returned_task_id,
         "task_type": "data_retrieval",
         "status": "pending",
-        "created_at": task_data["created_at"],
+        "created_at": task_data["created_at"].isoformat() if hasattr(task_data["created_at"], "isoformat") else task_data["created_at"],
         "message": f"Data retrieval task created from sources: {', '.join(request.data_sources or [])}",
     }
 
@@ -552,7 +552,7 @@ async def _handle_market_research_creation(
         "status": "pending",
         "user_id": current_user.get("id", "system"),
         "metadata": {**(request.metadata or {})},
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(timezone.utc),
     }
 
     returned_task_id = await db_service.add_task(task_data)
@@ -562,7 +562,7 @@ async def _handle_market_research_creation(
         "id": returned_task_id,
         "task_type": "market_research",
         "status": "pending",
-        "created_at": task_data["created_at"],
+        "created_at": task_data["created_at"].isoformat() if hasattr(task_data["created_at"], "isoformat") else task_data["created_at"],
         "message": "Market research task created and queued",
     }
 
@@ -584,7 +584,7 @@ async def _handle_financial_analysis_creation(
         "status": "pending",
         "user_id": current_user.get("id", "system"),
         "metadata": {**(request.metadata or {})},
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(timezone.utc),
     }
 
     returned_task_id = await db_service.add_task(task_data)
@@ -594,7 +594,7 @@ async def _handle_financial_analysis_creation(
         "id": returned_task_id,
         "task_type": "financial_analysis",
         "status": "pending",
-        "created_at": task_data["created_at"],
+        "created_at": task_data["created_at"].isoformat() if hasattr(task_data["created_at"], "isoformat") else task_data["created_at"],
         "message": "Financial analysis task created and queued",
     }
 
