@@ -113,7 +113,7 @@ class TestCompetitorContentSearchTool:
 
     def test_competitor_search_initialization(self):
         """CompetitorContentSearchTool should initialize"""
-        if not TOOLS_AVAILABLE:TOOLS_AVAILABLE:
+        if not TOOLS_AVAILABLE:
             pytest.skip("crewai_tools not installed")
         tool = CompetitorContentSearchTool()
         assert tool is not None
@@ -122,7 +122,7 @@ class TestCompetitorContentSearchTool:
     @patch('src.agents.content_agent.utils.tools.WebsiteSearchTool.run')
     def test_competitor_content_search(self, mock_run):
         """CompetitorContentSearchTool should search websites"""
-        if not TOOLS_AVAILABLE:TOOLS_AVAILABLE:
+        if not TOOLS_AVAILABLE:
             pytest.skip("crewai_tools not installed")
         
         mock_run.return_value = "Competitor pricing info..."
@@ -136,14 +136,14 @@ class TestDocumentAccessTool:
 
     def test_document_tool_initialization(self):
         """DocumentAccessTool should initialize"""
-        if not TOOLS_AVAILABLE:TOOLS_AVAILABLE:
+        if not TOOLS_AVAILABLE:
             pytest.skip("crewai_tools not installed")
         tool = DocumentAccessTool()
         assert tool is not None
 
     def test_read_research_file_success(self, temp_test_dir):
         """DocumentAccessTool should read existing files"""
-        if not TOOLS_AVAILABLE:TOOLS_AVAILABLE:
+        if not TOOLS_AVAILABLE:
             pytest.skip("crewai_tools not installed")
         
         tool = DocumentAccessTool()
@@ -152,7 +152,7 @@ class TestDocumentAccessTool:
 
     def test_read_nonexistent_file(self):
         """DocumentAccessTool should handle missing files gracefully"""
-        if not TOOLS_AVAILABLE:TOOLS_AVAILABLE:
+        if not TOOLS_AVAILABLE:
             pytest.skip("crewai_tools not installed")
         
         tool = DocumentAccessTool()
@@ -168,21 +168,21 @@ class TestDirectoryAccessTool:
 
     def test_directory_tool_initialization_default(self):
         """DirectoryAccessTool should initialize with default path"""
-        if not TOOLS_AVAILABLE:TOOLS_AVAILABLE:
+        if not TOOLS_AVAILABLE:
             pytest.skip("crewai_tools not installed")
         tool = DirectoryAccessTool()
         assert tool is not None
 
     def test_directory_tool_initialization_custom(self, temp_test_dir):
         """DirectoryAccessTool should initialize with custom path"""
-        if not TOOLS_AVAILABLE:TOOLS_AVAILABLE:
+        if not TOOLS_AVAILABLE:
             pytest.skip("crewai_tools not installed")
         tool = DirectoryAccessTool(directory=str(temp_test_dir))
         assert tool is not None
 
     def test_directory_tool_discover_files(self, temp_test_dir):
         """DirectoryAccessTool should find files in directory"""
-        if not TOOLS_AVAILABLE:TOOLS_AVAILABLE:
+        if not TOOLS_AVAILABLE:
             pytest.skip("crewai_tools not installed")
         tool = DirectoryAccessTool(directory=str(temp_test_dir / "research"))
         assert tool is not None
@@ -194,7 +194,7 @@ class TestDataProcessingTool:
 
     def test_data_processing_tool_initialization(self):
         """DataProcessingTool should initialize"""
-        if not TOOLS_AVAILABLE:TOOLS_AVAILABLE:
+        if not TOOLS_AVAILABLE:
             pytest.skip("crewai_tools not installed")
         tool = DataProcessingTool()
         assert tool is not None
@@ -202,7 +202,7 @@ class TestDataProcessingTool:
     @pytest.mark.performance
     def test_data_processing_simple_calculation(self):
         """DataProcessingTool should execute simple calculations"""
-        if not TOOLS_AVAILABLE:TOOLS_AVAILABLE:
+        if not TOOLS_AVAILABLE:
             pytest.skip("crewai_tools not installed")
         
         tool = DataProcessingTool()
@@ -214,7 +214,7 @@ class TestDataProcessingTool:
     @pytest.mark.performance
     def test_data_processing_complex_analysis(self):
         """DataProcessingTool should execute complex data analysis"""
-        if not TOOLS_AVAILABLE:TOOLS_AVAILABLE:
+        if not TOOLS_AVAILABLE:
             pytest.skip("crewai_tools not installed")
         
         tool = DataProcessingTool()
@@ -239,7 +239,7 @@ class TestCrewAIToolsFactory:
 
     def test_factory_get_web_search_tool(self):
         """Factory should create/retrieve web search tool"""
-        if not TOOLS_AVAILABLE:TOOLS_AVAILABLE:
+        if not TOOLS_AVAILABLE:
             pytest.skip("crewai_tools not installed")
         
         tool1 = CrewAIToolsFactory.get_web_search_tool()
@@ -250,7 +250,7 @@ class TestCrewAIToolsFactory:
 
     def test_factory_get_competitor_search_tool(self):
         """Factory should create/retrieve competitor search tool"""
-        if not TOOLS_AVAILABLE:TOOLS_AVAILABLE:
+        if not TOOLS_AVAILABLE:
             pytest.skip("crewai_tools not installed")
         
         tool = CrewAIToolsFactory.get_competitor_search_tool()
@@ -258,7 +258,7 @@ class TestCrewAIToolsFactory:
 
     def test_factory_get_document_tool(self):
         """Factory should create/retrieve document tool"""
-        if not TOOLS_AVAILABLE:TOOLS_AVAILABLE:
+        if not TOOLS_AVAILABLE:
             pytest.skip("crewai_tools not installed")
         
         tool = CrewAIToolsFactory.get_document_tool()
@@ -266,7 +266,7 @@ class TestCrewAIToolsFactory:
 
     def test_factory_get_directory_tool(self, temp_test_dir):
         """Factory should create/retrieve directory tool"""
-        if not TOOLS_AVAILABLE:TOOLS_AVAILABLE:
+        if not TOOLS_AVAILABLE:
             pytest.skip("crewai_tools not installed")
         
         tool = CrewAIToolsFactory.get_directory_tool(str(temp_test_dir))
@@ -274,7 +274,7 @@ class TestCrewAIToolsFactory:
 
     def test_factory_get_data_processing_tool(self):
         """Factory should create/retrieve data processing tool"""
-        if not TOOLS_AVAILABLE:TOOLS_AVAILABLE:
+        if not TOOLS_AVAILABLE:
             pytest.skip("crewai_tools not installed")
         
         tool = CrewAIToolsFactory.get_data_processing_tool()
@@ -282,40 +282,40 @@ class TestCrewAIToolsFactory:
 
     def test_factory_get_content_agent_tools(self):
         """Factory should return all tools for content agent"""
-        if not TOOLS_AVAILABLE:TOOLS_AVAILABLE:
+        if not TOOLS_AVAILABLE:
             pytest.skip("crewai_tools not installed")
         
         tools = CrewAIToolsFactory.get_content_agent_tools()
         assert len(tools) > 0
-        assert any(isinstance(t, WebSearchTool) for t in tools) CrewAIToolsFactory.get_content_agent_tools()
+        assert any(isinstance(t, WebSearchTool) for t in tools)
         assert isinstance(tools, list)
         assert len(tools) >= 4  # Web, Competitor, Document, DataProcessing
 
     def test_factory_get_research_agent_tools(self, temp_test_dir):
         """Factory should return all tools for research agent"""
-        if not TOOLS_AVAILABLE:TOOLS_AVAILABLE:
+        if not TOOLS_AVAILABLE:
             pytest.skip("crewai_tools not installed")
         
         tools = CrewAIToolsFactory.get_content_agent_tools()
         assert len(tools) > 0
-        assert any(isinstance(t, WebSearchTool) for t in tools) CrewAIToolsFactory.get_research_agent_tools()
+        assert any(isinstance(t, WebSearchTool) for t in tools)
         assert isinstance(tools, list)
         assert len(tools) >= 4  # Web, Document, Directory, DataProcessing
 
     def test_factory_get_market_agent_tools(self):
         """Factory should return all tools for market agent"""
-        if not TOOLS_AVAILABLE:TOOLS_AVAILABLE:
+        if not TOOLS_AVAILABLE:
             pytest.skip("crewai_tools not installed")
         
         tools = CrewAIToolsFactory.get_content_agent_tools()
         assert len(tools) > 0
-        assert any(isinstance(t, WebSearchTool) for t in tools) CrewAIToolsFactory.get_market_agent_tools()
+        assert any(isinstance(t, WebSearchTool) for t in tools)
         assert isinstance(tools, list)
         assert len(tools) >= 3  # Web, Competitor, DataProcessing
 
     def test_factory_singleton_pattern(self):
         """Factory should maintain singleton instances"""
-        if not TOOLS_AVAILABLE:TOOLS_AVAILABLE:
+        if not TOOLS_AVAILABLE:
             pytest.skip("crewai_tools not installed")
         
         CrewAIToolsFactory.reset_instances()
@@ -327,7 +327,7 @@ class TestCrewAIToolsFactory:
 
     def test_factory_reset_instances(self):
         """Factory should reset instances when needed"""
-        if not TOOLS_AVAILABLE:TOOLS_AVAILABLE:
+        if not TOOLS_AVAILABLE:
             pytest.skip("crewai_tools not installed")
         
         # Get initial instances
@@ -356,7 +356,7 @@ class TestAgentToolsIntegration:
         """Content agent should access all its tools"""
         tools = CrewAIToolsFactory.get_content_agent_tools()
         assert len(tools) > 0
-        assert any(isinstance(t, WebSearchTool) for t in tools) CrewAIToolsFactory.get_content_agent_tools()
+        assert any(isinstance(t, WebSearchTool) for t in tools)
         assert len(tools) >= 4
         
         # All tools should have required methods
@@ -367,14 +367,14 @@ class TestAgentToolsIntegration:
         """Research agent should access all its tools"""
         tools = CrewAIToolsFactory.get_content_agent_tools()
         assert len(tools) > 0
-        assert any(isinstance(t, WebSearchTool) for t in tools) CrewAIToolsFactory.get_research_agent_tools()
+        assert any(isinstance(t, WebSearchTool) for t in tools)
         assert len(tools) >= 4
 
     def test_market_agent_can_access_tools(self):
         """Market agent should access all its tools"""
         tools = CrewAIToolsFactory.get_content_agent_tools()
         assert len(tools) > 0
-        assert any(isinstance(t, WebSearchTool) for t in tools) CrewAIToolsFactory.get_market_agent_tools()
+        assert any(isinstance(t, WebSearchTool) for t in tools)
         assert len(tools) >= 3
 
     @patch('src.agents.content_agent.utils.tools.SerperDevTool.run')
@@ -387,7 +387,7 @@ class TestAgentToolsIntegration:
 
     def test_tool_error_handling(self):
         """Tools should handle errors gracefully"""
-        if not TOOLS_AVAILABLE:TOOLS_AVAILABLE:
+        if not TOOLS_AVAILABLE:
             pytest.skip("crewai_tools not installed")
         
         tool = DocumentAccessTool()
@@ -439,7 +439,7 @@ class TestToolsPerformance:
         start = time.time()
         tools = CrewAIToolsFactory.get_content_agent_tools()
         assert len(tools) > 0
-        assert any(isinstance(t, WebSearchTool) for t in tools) CrewAIToolsFactory.get_content_agent_tools()
+        assert any(isinstance(t, WebSearchTool) for t in tools)
         duration = time.time() - start
         
         assert duration < 2.0, "Tool collection should be created < 2 seconds"
@@ -500,7 +500,12 @@ class TestToolsSmokeTests:
 def cleanup():
     """Cleanup after all tests"""
     yield
-    CrewAIToolsFactory.reset_instances()
+    # Reset factory instances if method exists
+    if hasattr(CrewAIToolsFactory, 'reset_instances'):
+        try:
+            CrewAIToolsFactory.reset_instances()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

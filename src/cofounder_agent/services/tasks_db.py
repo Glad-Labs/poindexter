@@ -232,9 +232,14 @@ class TasksDatabase(DatabaseServiceMixin):
                 "updated_at": now,
             }
 
+            # Serialize values for PostgreSQL (handles datetime, JSON, etc.)
+            serialized_data = {}
+            for key, value in insert_data.items():
+                serialized_data[key] = serialize_value_for_postgres(value)
+
             builder = ParameterizedQueryBuilder()
             sql, params = builder.insert(
-                table="content_tasks", columns=insert_data, return_columns=["task_id"]
+                table="content_tasks", columns=serialized_data, return_columns=["task_id"]
             )
 
             async with self.pool.acquire() as conn:

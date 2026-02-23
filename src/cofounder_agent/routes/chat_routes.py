@@ -20,7 +20,7 @@ from schemas.chat_schemas import (
     ChatRequest,
     ChatResponse,
 )
-from services.ai_cache import AICache
+from services.ai_cache import AIResponseCache
 from services.model_router import ModelRouter, TaskComplexity
 from services.ollama_client import OllamaClient
 from services.prompt_templates import PromptTemplates

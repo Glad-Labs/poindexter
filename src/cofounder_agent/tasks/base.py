@@ -4,7 +4,7 @@ import logging
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -196,7 +196,7 @@ class PureTask(Task):
         """
         import time
 
-        started_at = datetime.now()
+        started_at = datetime.now(timezone.utc)
         start_time = time.time()
 
         try:
@@ -210,7 +210,7 @@ class PureTask(Task):
                     output={},
                     error=validation_error,
                     started_at=started_at,
-                    completed_at=datetime.now(),
+                    completed_at=datetime.now(timezone.utc),
                 )
 
             # Execute task logic
@@ -218,7 +218,7 @@ class PureTask(Task):
             output = await self._execute_internal(input_data, context)
 
             # Success
-            completed_at = datetime.now()
+            completed_at = datetime.now(timezone.utc)
             duration = time.time() - start_time
 
             result = TaskResult(
@@ -253,7 +253,7 @@ class PureTask(Task):
                 output={},
                 error=str(e),
                 started_at=started_at,
-                completed_at=datetime.now(),
+                completed_at=datetime.now(timezone.utc),
                 duration_seconds=time.time() - start_time,
             )
 

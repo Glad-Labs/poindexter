@@ -25,7 +25,7 @@ import asyncio
 import logging
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
 try:
@@ -100,7 +100,7 @@ class FeaturedImageMetadata:
         self.caption = caption
         self.source = source
         self.search_query = search_query
-        self.retrieved_at = datetime.now()
+        self.retrieved_at = datetime.now(timezone.utc)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for database storage"""

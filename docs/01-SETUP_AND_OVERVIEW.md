@@ -1,12 +1,12 @@
 # 01 - Getting Started
 
 **Last Updated:** February 10, 2026  
-**Version:** 3.1.0  
+**Version:** 3.0.2
 **Status:** ‚úÖ Active
 
 ---
 
-## ÌøÉ Quick Start
+## ÔøΩÔøΩÔøΩ Quick Start
 
 ### 1. Prerequisite Check
 Ensure you have the following installed:
@@ -31,5 +31,5 @@ npm run dev        # Daily development
 
 ---
 
-## Ìª†Ô∏è Configuration
-All configuration is managed via the \`.env.local\` file in the root. See [05-ENVIRONMENT_VARIABLES.md](05-ENVIRONMENT_VARIABLES.md) for details.
+## ÔøΩÔøΩÔøΩÔ∏è Configuration
+All configuration is managed via the \`.env.local\` file in the root. See [07-BRANCH_SPECIFIC_VARIABLES.md](07-BRANCH_SPECIFIC_VARIABLES.md) for details.

@@ -7,7 +7,7 @@ to be streamed to WebSocket clients in real-time.
 
 import logging
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -31,7 +31,7 @@ class GenerationProgress:
 
     def __post_init__(self):
         if not self.timestamp:
-            self.timestamp = datetime.now().isoformat()
+            self.timestamp = datetime.now(timezone.utc).isoformat()
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization"""
@@ -102,7 +102,7 @@ class ProgressService:
         if message:
             progress.message = message
 
-        progress.timestamp = datetime.now().isoformat()
+        progress.timestamp = datetime.now(timezone.utc).isoformat()
 
         # Call registered callbacks
         self._notify_callbacks(task_id, progress)
@@ -120,7 +120,7 @@ class ProgressService:
             progress.percentage = 100.0
             progress.message = message
             progress.estimated_remaining = 0.0
-            progress.timestamp = datetime.now().isoformat()
+            progress.timestamp = datetime.now(timezone.utc).isoformat()
 
             # Call registered callbacks
             self._notify_callbacks(task_id, progress)
@@ -134,7 +134,7 @@ class ProgressService:
             progress.status = "failed"
             progress.error = error
             progress.message = f"Generation failed: {error}"
-            progress.timestamp = datetime.now().isoformat()
+            progress.timestamp = datetime.now(timezone.utc).isoformat()
 
             # Call registered callbacks
             self._notify_callbacks(task_id, progress)

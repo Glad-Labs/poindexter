@@ -82,6 +82,8 @@ markers = [
     "voice: voice interface tests",
     "websocket: websocket tests",
     "smoke: smoke tests - quick sanity checks",
+    "error_scenario: error scenario tests",
+    "concurrent: concurrent execution tests",
 ]
 [tool.mypy]
 # Type checking configuration for FastAPI backend
