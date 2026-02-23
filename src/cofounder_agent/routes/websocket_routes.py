@@ -286,11 +286,11 @@ async def websocket_endpoint(websocket: WebSocket):
     ```
     """
     await websocket.accept()
-    namespace = "global"
+    active_namespaces = {"global"}
 
     try:
-        # Register connection
-        await websocket_manager.connect(websocket, namespace)
+        # Register connection in the global namespace
+        await websocket_manager.connect(websocket, "global")
 
         logger.info(
             f"Global WebSocket client connected. Total connections: {websocket_manager.get_connection_count()}"
@@ -308,24 +308,36 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 # Handle different message types
                 if message.get("type") == "subscribe":
-                    namespace = message.get("namespace", "global")
-                    logger.info(f"Client subscribed to namespace: {namespace}")
+                    new_ns = message.get("namespace", "global")
+                    if new_ns not in active_namespaces:
+                        await websocket_manager.connect(websocket, new_ns)
+                        active_namespaces.add(new_ns)
+                    logger.info(f"Client subscribed to namespace: {new_ns}")
 
                 elif message.get("type") == "unsubscribe":
-                    namespace = message.get("namespace", "global")
-                    logger.info(f"Client unsubscribed from namespace: {namespace}")
+                    ns_to_remove = message.get("namespace", "global")
+                    if ns_to_remove in active_namespaces and ns_to_remove != "global":
+                        await websocket_manager.disconnect(websocket, ns_to_remove)
+                        active_namespaces.discard(ns_to_remove)
+                    logger.info(f"Client unsubscribed from namespace: {ns_to_remove}")
 
             except json.JSONDecodeError:
                 logger.warning(f"Invalid JSON received: {data}")
 
     except WebSocketDisconnect:
-        await websocket_manager.disconnect(websocket, namespace)
+        for ns in list(active_namespaces):
+            await websocket_manager.disconnect(websocket, ns)
         logger.info(
             f"Global WebSocket client disconnected. Total connections: {websocket_manager.get_connection_count()}"
         )
 
     except Exception as e:
         logger.error(f"WebSocket error: {e}", exc_info=True)
+        for ns in list(active_namespaces):
+            try:
+                await websocket_manager.disconnect(websocket, ns)
+            except Exception:
+                pass
         try:
             await websocket.close(code=1011, reason=str(e))
         except Exception as close_error:
