@@ -401,26 +401,11 @@ vercel --prod
 
 ---
 
-<<<<<<< HEAD
-
-- **Glad Labs Architecture:** [docs/02-ARCHITECTURE_AND_DESIGN.md](../../docs/02-ARCHITECTURE_AND_DESIGN.md)
-- **API Documentation:** [docs/reference/API_CONTRACT_CONTENT_CREATION.md](../../docs/reference/API_CONTRACT_CONTENT_CREATION.md)
-- **Components:** [docs/components/](../../docs/components/)
-
-**See full test documentation:**
+## 📖 Resources & Documentation
 
 - **[Setup Guide](../../docs/01-SETUP_AND_OVERVIEW.md)** - Getting started
 - **[Architecture](../../docs/02-ARCHITECTURE_AND_DESIGN.md)** - System design
 - **[Development Workflow](../../docs/04-DEVELOPMENT_WORKFLOW.md)** - Testing & CI/CD
 - **[Operations Guide](../../docs/06-OPERATIONS_AND_MAINTENANCE.md)** - Production support
-- **[Agent System](../agents/README.md)** - Individual agent documentation
 - **[Testing Guide](../../docs/reference/TESTING.md)** - Comprehensive test documentation
-
----
-
-=======
-
-> > > > > > > feat/refine
-> > > > > > > **Maintained by:** Glad Labs Development Team  
-> > > > > > > **Last Updated:** October 26, 2025  
-> > > > > > > **Status:** ✅ Production Ready | PostgreSQL Backend | Real-time Updates
+- **[API Documentation](../../docs/reference/API_CONTRACTS.md)** - REST API specifications

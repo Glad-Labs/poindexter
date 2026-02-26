@@ -280,8 +280,7 @@ class WorkflowExecutor:
         """
         Execute a single phase and return the result.
 
-        For now, this is a stub that returns mock results.
-        In production, this would delegate to agents via the orchestrator.
+        Delegates to agents based on phase definition's agent_type.
         """
         phase_def = self.registry.get_phase(phase.name)
         if not phase_def:
@@ -295,22 +294,76 @@ class WorkflowExecutor:
             )
 
         try:
-            # Mock execution - in production would call actual agent
+            import asyncio
+
             logger.info(f"Executing {phase.name} with {len(inputs)} inputs")
+            logger.debug(f"Agent type: {phase_def.agent_type}")
+
+            # Get the agent based on agent_type
+            agent = self._get_agent(phase_def.agent_type)
+            if not agent:
+                return PhaseResult(
+                    status="failed",
+                    output={},
+                    error=f"Agent '{phase_def.agent_type}' not found",
+                    execution_time_ms=0.0,
+                    model_used=None,
+                    tokens_used=None,
+                )
+
+            # Run the agent (handle both sync and async agents)
+            start_time = time.time()
+            if hasattr(agent, 'run') and callable(agent.run):
+                # Check if it's an async method
+                if asyncio.iscoroutinefunction(agent.run):
+                    # For async agents, we need to run in event loop
+                    try:
+                        loop = asyncio.get_event_loop()
+                    except RuntimeError:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+
+                    result_output = loop.run_until_complete(agent.run(inputs))
+                else:
+                    # For sync agents
+                    result_output = agent.run(inputs)
+            else:
+                return PhaseResult(
+                    status="failed",
+                    output={},
+                    error=f"Agent '{phase_def.agent_type}' has no run method",
+                    execution_time_ms=0.0,
+                    model_used=None,
+                    tokens_used=None,
+                )
+
+            execution_time_ms = (time.time() - start_time) * 1000
+
+            # Extract status from agent output
+            agent_status = result_output.get("status", "unknown")
+
+            # Check for errors in agent output
+            if agent_status == "failed":
+                return PhaseResult(
+                    status="failed",
+                    output=result_output,
+                    error=result_output.get("error", "Agent execution failed"),
+                    execution_time_ms=execution_time_ms,
+                    model_used=phase_def.agent_type,
+                    tokens_used=None,
+                )
 
             return PhaseResult(
-                status="completed",
-                output={
-                    "message": f"Completed {phase.name}",
-                    "input_count": len(inputs),
-                    "phase": phase.name,
-                },
+                status="completed" if agent_status == "success" else "completed",
+                output=result_output,
                 error=None,
-                execution_time_ms=100.0,
+                execution_time_ms=execution_time_ms,
                 model_used=phase_def.agent_type,
                 tokens_used=None,
             )
+
         except Exception as e:
+            logger.error(f"[_execute_phase] Failed to execute {phase.name}: {str(e)}", exc_info=True)
             return PhaseResult(
                 status="failed",
                 output={},
@@ -319,6 +372,56 @@ class WorkflowExecutor:
                 model_used=None,
                 tokens_used=None,
             )
+
+    def _get_agent(self, agent_type: str) -> Optional[Any]:
+        """
+        Get an agent instance by agent_type string.
+
+        Supports blog agents and other agent types.
+        """
+        try:
+            # Map agent_type to import path and factory function
+            agent_mapping = {
+                "blog_content_generator_agent": ("agents.blog_content_generator_agent", "get_blog_content_generator_agent"),
+                "blog_quality_agent": ("agents.blog_quality_agent", "get_blog_quality_agent"),
+                "blog_image_agent": ("agents.blog_image_agent", "get_blog_image_agent"),
+                "blog_publisher_agent": ("agents.blog_publisher_agent", "get_blog_publisher_agent"),
+                "research_agent": ("agents.content_agent.agents.research_agent", "get_research_agent"),
+                "creative_agent": ("agents.content_agent.agents.creative_agent", "get_creative_agent"),
+                "qa_agent": ("agents.content_agent.agents.qa_agent", "get_qa_agent"),
+                "image_agent": ("agents.content_agent.agents.image_agent", "get_image_agent"),
+                "publishing_agent": ("agents.content_agent.agents.publishing_agent", "get_publishing_agent"),
+            }
+
+            if agent_type not in agent_mapping:
+                logger.warning(f"Agent type '{agent_type}' not in mapping")
+                return None
+
+            module_path, factory_func = agent_mapping[agent_type]
+
+            try:
+                # Dynamically import the module
+                import importlib
+                module = importlib.import_module(module_path)
+
+                # Get the factory function
+                if hasattr(module, factory_func):
+                    agent_factory = getattr(module, factory_func)
+                    agent = agent_factory()
+                    logger.debug(f"Loaded agent '{agent_type}' from {module_path}")
+                    return agent
+                else:
+                    logger.warning(f"Factory function '{factory_func}' not found in {module_path}")
+                    return None
+
+            except ImportError as e:
+                logger.warning(f"Failed to import agent module '{module_path}': {e}")
+                return None
+
+        except Exception as e:
+            logger.error(f"[_get_agent] Error loading agent '{agent_type}': {e}", exc_info=True)
+            return None
+
 
     def _normalize_phases(self, phases: List[Any]) -> List[WorkflowPhase]:
         """Convert phases to WorkflowPhase objects"""
