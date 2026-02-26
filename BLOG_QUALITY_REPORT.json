@@ -1,0 +1,52 @@
+{
+  "timestamp": "2026-02-26T08:30:00Z",
+  "title": "Blog Workflow Quality Report - SEO Keywords Fix",
+  "summary": {
+    "total_posts": 37,
+    "posts_with_seo_keywords": 37,
+    "corrupted_posts_remaining": 0,
+    "fix_status": "COMPLETE"
+  },
+  "fixes_applied": {
+    "code_fix_location": "src/cofounder_agent/routes/task_routes.py",
+    "helper_function": "_parse_seo_keywords_for_db() (lines 128-168)",
+    "updated_calls": [
+      "Line 2067: Auto-publish post creation",
+      "Line 2278: Manual publish post creation"
+    ],
+    "root_cause": "seo_keywords from workflow were JSON-stringified arrays, causing .join() to iterate character-by-character",
+    "solution": "Parse JSON strings to lists before joining with commas"
+  },
+  "database_migration": {
+    "script_location": "scripts/fix_seo_keywords.py",
+    "posts_fixed": 37,
+    "method": "Character extraction from corrupted format"
+  },
+  "sample_posts": [
+    {
+      "title": "AI Just Unlocked a Skill Humans Never Mastered \u2014 And the Int",
+      "seo_keywords": "whale, human, whales, skill, internet",
+      "slug": "ai-just-unlocked-a-skill-humans-never-mastered--an-8d2064bf"
+    },
+    {
+      "title": "Beyond the Hype: Why Your Startup Needs an AI Governance Pla",
+      "seo_keywords": "ethical, governance, startup, principles, responsible",
+      "slug": "beyond-the-hype-why-your-startup-needs-an-ai-gover-4ce93b7b"
+    },
+    {
+      "title": "The Invisible Update: How AI Is Quietly Rewriting the Softwa",
+      "seo_keywords": "software, human, invisible, update, email",
+      "slug": "the-invisible-update-how-ai-is-quietly-rewriting-t-77ced714"
+    },
+    {
+      "title": "The Great AI Paywall: Why Your Digital Sidekick Now Demands ",
+      "seo_keywords": "free, value, assistants, features, paid",
+      "slug": "the-great-ai-paywall-why-your-digital-sidekick-now-21b679b2"
+    },
+    {
+      "title": "Unlock Your Inner Genius: How AI Became Your Ultimate Skill-",
+      "seo_keywords": "learning, skill, skills, into, tools",
+      "slug": "unlock-your-inner-genius-how-ai-became-your-ultima-480a029c"
+    }
+  ]
+}

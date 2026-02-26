@@ -125,6 +125,49 @@ def _normalize_seo_keywords_in_task(task: Dict[str, Any]) -> Dict[str, Any]:
     return task
 
 
+def _parse_seo_keywords_for_db(seo_keywords: Any) -> str:
+    """
+    Parse seo_keywords from various formats (JSON string, list, etc.) to comma-separated string.
+
+    Fixes issue where seo_keywords could be stored as JSON array string '["keyword1", "keyword2"]'
+    which would iterate character-by-character when joined.
+
+    Args:
+        seo_keywords: Could be:
+            - list: ["keyword1", "keyword2"]
+            - JSON string: '["keyword1", "keyword2"]'
+            - CSV string: "keyword1, keyword2"
+            - empty string or None
+
+    Returns:
+        Comma-separated string or empty string
+    """
+    if not seo_keywords:
+        return ""
+
+    # If it's a list, join with commas
+    if isinstance(seo_keywords, list):
+        return ", ".join(str(kw).strip() for kw in seo_keywords if kw)
+
+    # If it's a string, check if it's JSON
+    if isinstance(seo_keywords, str):
+        # Try to parse as JSON array first
+        if seo_keywords.strip().startswith("["):
+            try:
+                parsed = json.loads(seo_keywords)
+                if isinstance(parsed, list):
+                    return ", ".join(str(kw).strip() for kw in parsed if kw)
+            except (json.JSONDecodeError, TypeError):
+                # Not valid JSON, treat as CSV string
+                pass
+
+        # Already a CSV string, return as-is
+        return seo_keywords.strip()
+
+    # For other types, convert to string
+    return str(seo_keywords).strip()
+
+
 # Configure router with prefix and tags
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -2021,7 +2064,7 @@ async def approve_task(
                                 "status": "published",  # Published, not draft
                                 "seo_title": post_title,
                                 "seo_description": seo_description,
-                                "seo_keywords": ",".join(seo_keywords) if seo_keywords else "",
+                                "seo_keywords": _parse_seo_keywords_for_db(seo_keywords),
                                 "metadata": metadata,
                             }
                         )
@@ -2232,7 +2275,7 @@ async def publish_task(
                         "status": "published",  # Published, not draft
                         "seo_title": post_title,  # Use extracted title for SEO
                         "seo_description": seo_description,
-                        "seo_keywords": ",".join(seo_keywords) if seo_keywords else "",
+                        "seo_keywords": _parse_seo_keywords_for_db(seo_keywords),
                         "metadata": metadata,
                     }
                 )
