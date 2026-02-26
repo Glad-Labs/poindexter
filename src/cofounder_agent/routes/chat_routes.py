@@ -102,8 +102,11 @@ async def chat(request: ChatRequest) -> ChatResponse:
         )
 
         # Check cache first (before doing any heavy processing)
-        cache_key = f"{provider}_{request.message}_{request.temperature or 0.7}"
-        cached_response = ai_cache.get(cache_key)
+        cache_params = {
+            "temperature": request.temperature or 0.7,
+            "max_tokens": request.max_tokens or 500,
+        }
+        cached_response = await ai_cache.get(request.message, request.model, cache_params)
         if cached_response:
             logger.info(f"[Chat] Cache hit for query (saved ~{request.max_tokens or 500} tokens)")
             # Still add to conversation history
@@ -201,7 +204,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
                             response=response_text,
                             model=request.model,
                             conversationId=request.conversationId,
-                            timestamp=datetime.utcnow().isoformat(),
+                            timestamp=datetime.now(timezone.utc).isoformat(),
                             tokens_used=tokens_used,
                         )
                 except Exception as e:
@@ -240,10 +243,10 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 tokens_used = chat_result.get("tokens", len(response_text.split()))
 
                 # Cache the response for future similar queries
-                ai_cache.set(
-                    cache_key, response_text, ttl=86400
+                await ai_cache.set(
+                    request.message, request.model, cache_params, response_text
                 )  # 24 hour TTL for system questions
-                logger.debug(f"[Chat] Response cached with key (TTL: 24h)")
+                logger.debug(f"[Chat] Response cached (TTL: 24h)")
 
             except Exception as e:
                 logger.error(
@@ -267,7 +270,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
             tokens_used = len(response_text.split())
 
             # Cache demo response too
-            ai_cache.set(cache_key, response_text, ttl=3600)  # 1 hour TTL for other responses
+            await ai_cache.set(request.message, request.model, cache_params, response_text)
 
         # Add AI response to conversation history
         conversations[request.conversationId].append(
@@ -276,7 +279,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 "content": response_text,
                 "model": request.model,  # Keep original full model specification
                 "provider": provider,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
         )
 

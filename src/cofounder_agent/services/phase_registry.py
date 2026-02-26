@@ -148,6 +148,7 @@ class PhaseRegistry:
         self._initialized = True
         self._phases = {}
         self._register_builtin_phases()
+        self._register_blog_phases()
 
     @classmethod
     def get_instance(cls) -> "PhaseRegistry":
@@ -505,3 +506,373 @@ class PhaseRegistry:
         )
 
         logger.info(f"Initialized PhaseRegistry with {len(self._phases)} built-in phases")
+
+    def _register_blog_phases(self) -> None:
+        """Register blog post workflow phases"""
+
+        # Blog Content Generator Phase
+        self.register_phase(
+            PhaseDefinition(
+                name="blog_generate_content",
+                agent_type="blog_content_generator_agent",
+                description="Generate blog post content using AI",
+                input_schema={
+                    "topic": InputField(
+                        key="topic",
+                        label="Blog Topic",
+                        input_type=InputType.TEXT,
+                        required=True,
+                        placeholder="e.g., AI in Healthcare",
+                        description="The blog post topic",
+                    ),
+                    "style": InputField(
+                        key="style",
+                        label="Content Style",
+                        input_type=InputType.SELECT,
+                        required=False,
+                        default_value="balanced",
+                        options=[
+                            {"label": "Balanced", "value": "balanced"},
+                            {"label": "Technical", "value": "technical"},
+                            {"label": "Narrative", "value": "narrative"},
+                            {"label": "Listicle", "value": "listicle"},
+                            {"label": "Thought Leadership", "value": "thought-leadership"},
+                        ],
+                        description="Writing style for the content",
+                    ),
+                    "tone": InputField(
+                        key="tone",
+                        label="Content Tone",
+                        input_type=InputType.SELECT,
+                        required=False,
+                        default_value="professional",
+                        options=[
+                            {"label": "Professional", "value": "professional"},
+                            {"label": "Casual", "value": "casual"},
+                            {"label": "Academic", "value": "academic"},
+                            {"label": "Inspirational", "value": "inspirational"},
+                        ],
+                        description="Tone for the content",
+                    ),
+                    "target_length": InputField(
+                        key="target_length",
+                        label="Target Word Count",
+                        input_type=InputType.NUMBER,
+                        required=False,
+                        default_value=1500,
+                        description="Target word count for the post",
+                    ),
+                    "tags": InputField(
+                        key="tags",
+                        label="SEO Tags",
+                        input_type=InputType.TEXT,
+                        required=False,
+                        placeholder="Comma-separated keywords",
+                        description="Keywords for SEO optimization",
+                    ),
+                },
+                output_schema={
+                    "content": OutputField(
+                        key="content",
+                        label="Generated Content",
+                        content_type=ContentType.TEXT,
+                        description="Markdown-formatted blog post content",
+                    ),
+                    "model_used": OutputField(
+                        key="model_used",
+                        label="Model Used",
+                        content_type=ContentType.TEXT,
+                        description="LLM model used for generation",
+                    ),
+                    "word_count": OutputField(
+                        key="word_count",
+                        label="Word Count",
+                        content_type=ContentType.NUMBER,
+                        description="Actual word count of generated content",
+                    ),
+                    "metrics": OutputField(
+                        key="metrics",
+                        label="Generation Metrics",
+                        content_type=ContentType.OBJECT,
+                        description="Metrics about the generation process",
+                    ),
+                },
+                tags=["blog", "content-generation"],
+            )
+        )
+
+        # Blog Quality Evaluation Phase
+        self.register_phase(
+            PhaseDefinition(
+                name="blog_quality_evaluation",
+                agent_type="blog_quality_agent",
+                description="Evaluate blog post quality across 7 dimensions",
+                input_schema={
+                    "content": InputField(
+                        key="content",
+                        label="Content to Evaluate",
+                        input_type=InputType.TEXTAREA,
+                        required=True,
+                        description="Blog content to evaluate",
+                    ),
+                    "topic": InputField(
+                        key="topic",
+                        label="Blog Topic",
+                        input_type=InputType.TEXT,
+                        required=False,
+                        description="Blog topic for context",
+                    ),
+                    "evaluation_method": InputField(
+                        key="evaluation_method",
+                        label="Evaluation Method",
+                        input_type=InputType.SELECT,
+                        required=False,
+                        default_value="pattern-based",
+                        options=[
+                            {"label": "Pattern-Based (Fast)", "value": "pattern-based"},
+                            {"label": "LLM-Based (Accurate)", "value": "llm-based"},
+                            {"label": "Hybrid", "value": "hybrid"},
+                        ],
+                        description="Quality evaluation method",
+                    ),
+                },
+                output_schema={
+                    "overall_score": OutputField(
+                        key="overall_score",
+                        label="Overall Score",
+                        content_type=ContentType.NUMBER,
+                        description="Quality score 0-100",
+                    ),
+                    "clarity": OutputField(
+                        key="clarity",
+                        label="Clarity",
+                        content_type=ContentType.NUMBER,
+                        description="Content clarity score 0-100",
+                    ),
+                    "accuracy": OutputField(
+                        key="accuracy",
+                        label="Accuracy",
+                        content_type=ContentType.NUMBER,
+                        description="Information accuracy score 0-100",
+                    ),
+                    "completeness": OutputField(
+                        key="completeness",
+                        label="Completeness",
+                        content_type=ContentType.NUMBER,
+                        description="Topic coverage completeness 0-100",
+                    ),
+                    "relevance": OutputField(
+                        key="relevance",
+                        label="Relevance",
+                        content_type=ContentType.NUMBER,
+                        description="Content relevance to topic 0-100",
+                    ),
+                    "seo_quality": OutputField(
+                        key="seo_quality",
+                        label="SEO Quality",
+                        content_type=ContentType.NUMBER,
+                        description="SEO optimization score 0-100",
+                    ),
+                    "readability": OutputField(
+                        key="readability",
+                        label="Readability",
+                        content_type=ContentType.NUMBER,
+                        description="Content readability score 0-100",
+                    ),
+                    "engagement": OutputField(
+                        key="engagement",
+                        label="Engagement",
+                        content_type=ContentType.NUMBER,
+                        description="Content engagement potential 0-100",
+                    ),
+                    "passing": OutputField(
+                        key="passing",
+                        label="Passing Quality Threshold",
+                        content_type=ContentType.BOOLEAN,
+                        description="Whether content passes 70/100 threshold",
+                    ),
+                    "feedback": OutputField(
+                        key="feedback",
+                        label="Quality Feedback",
+                        content_type=ContentType.TEXT,
+                        description="Human-readable quality feedback",
+                    ),
+                    "suggestions": OutputField(
+                        key="suggestions",
+                        label="Improvement Suggestions",
+                        content_type=ContentType.ARRAY,
+                        description="List of improvement suggestions",
+                    ),
+                },
+                quality_threshold=0.7,
+                tags=["blog", "quality-assurance"],
+            )
+        )
+
+        # Blog Image Search Phase
+        self.register_phase(
+            PhaseDefinition(
+                name="blog_search_image",
+                agent_type="blog_image_agent",
+                description="Search for featured image for blog post",
+                input_schema={
+                    "topic": InputField(
+                        key="topic",
+                        label="Search Topic",
+                        input_type=InputType.TEXT,
+                        required=True,
+                        placeholder="e.g., AI in Healthcare",
+                        description="Topic for image search",
+                    ),
+                    "keywords": InputField(
+                        key="keywords",
+                        label="Additional Keywords",
+                        input_type=InputType.TEXT,
+                        required=False,
+                        placeholder="Comma-separated keywords",
+                        description="Additional keywords to try",
+                    ),
+                    "orientation": InputField(
+                        key="orientation",
+                        label="Image Orientation",
+                        input_type=InputType.SELECT,
+                        required=False,
+                        default_value="landscape",
+                        options=[
+                            {"label": "Landscape", "value": "landscape"},
+                            {"label": "Portrait", "value": "portrait"},
+                            {"label": "Square", "value": "square"},
+                        ],
+                        description="Preferred image orientation",
+                    ),
+                    "image_count": InputField(
+                        key="image_count",
+                        label="Number of Images",
+                        input_type=InputType.NUMBER,
+                        required=False,
+                        default_value=1,
+                        description="Number of images to retrieve",
+                    ),
+                },
+                output_schema={
+                    "featured_image": OutputField(
+                        key="featured_image",
+                        label="Featured Image",
+                        content_type=ContentType.OBJECT,
+                        description="Featured image metadata and URL",
+                    ),
+                    "gallery_images": OutputField(
+                        key="gallery_images",
+                        label="Gallery Images",
+                        content_type=ContentType.ARRAY,
+                        description="Additional gallery images",
+                    ),
+                    "image_markdown": OutputField(
+                        key="image_markdown",
+                        label="Image Markdown",
+                        content_type=ContentType.TEXT,
+                        description="Markdown for featured image with attribution",
+                    ),
+                    "image_count_found": OutputField(
+                        key="image_count_found",
+                        label="Images Found",
+                        content_type=ContentType.NUMBER,
+                        description="Number of images found",
+                    ),
+                },
+                tags=["blog", "media"],
+            )
+        )
+
+        # Blog Post Creation Phase
+        self.register_phase(
+            PhaseDefinition(
+                name="blog_create_post",
+                agent_type="blog_publisher_agent",
+                description="Create blog post in database",
+                input_schema={
+                    "content": InputField(
+                        key="content",
+                        label="Post Content",
+                        input_type=InputType.TEXTAREA,
+                        required=True,
+                        description="Blog post content (markdown)",
+                    ),
+                    "title": InputField(
+                        key="title",
+                        label="Post Title",
+                        input_type=InputType.TEXT,
+                        required=False,
+                        description="Post title",
+                    ),
+                    "topic": InputField(
+                        key="topic",
+                        label="Blog Topic",
+                        input_type=InputType.TEXT,
+                        required=False,
+                        description="Blog topic",
+                    ),
+                    "featured_image": InputField(
+                        key="featured_image",
+                        label="Featured Image",
+                        input_type=InputType.TEXT,
+                        required=False,
+                        description="Featured image URL or metadata",
+                    ),
+                    "tags": InputField(
+                        key="tags",
+                        label="Tags",
+                        input_type=InputType.TEXT,
+                        required=False,
+                        placeholder="Comma-separated tags",
+                        description="Post keywords/tags",
+                    ),
+                    "category": InputField(
+                        key="category",
+                        label="Category",
+                        input_type=InputType.TEXT,
+                        required=False,
+                        default_value="News",
+                        description="Post category",
+                    ),
+                    "publish": InputField(
+                        key="publish",
+                        label="Publish Immediately",
+                        input_type=InputType.BOOLEAN,
+                        required=False,
+                        default_value=True,
+                        description="Whether to publish immediately or save as draft",
+                    ),
+                },
+                output_schema={
+                    "post_id": OutputField(
+                        key="post_id",
+                        label="Post ID",
+                        content_type=ContentType.TEXT,
+                        description="Created post ID",
+                    ),
+                    "slug": OutputField(
+                        key="slug",
+                        label="Post Slug",
+                        content_type=ContentType.TEXT,
+                        description="Post URL slug",
+                    ),
+                    "url": OutputField(
+                        key="url",
+                        label="Post URL",
+                        content_type=ContentType.TEXT,
+                        description="Full post URL",
+                    ),
+                    "title": OutputField(
+                        key="title",
+                        label="Post Title",
+                        content_type=ContentType.TEXT,
+                        description="Post title as stored",
+                    ),
+                },
+                tags=["blog", "publishing"],
+            )
+        )
+
+        logger.info(f"Registered {4} blog phases - Total phases: {len(self._phases)}")
+

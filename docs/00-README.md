@@ -71,6 +71,7 @@
 
 ### 6. Archive ✅ ORGANIZED
 
+- **[ARCHIVE_NAVIGATION.md](ARCHIVE_NAVIGATION.md)** ⭐ **START HERE** - Guide to finding archived documentation
 - [archive-active/](archive-active/) - All archived Phase/Sprint/Session reports
 - [archive-active/root-cleanup-feb2026/](archive-active/root-cleanup-feb2026/) - Root cleanup batches (Feb 2026)
 - [archive-active/historical-reports/](archive-active/historical-reports/) - Older session logs and reports
@@ -196,10 +197,11 @@ All components of the enterprise documentation framework are now active and main
 
 ## 📦 Historical Archive
 
-- **[Archive Folder](./archive-old/)** - Session notes, status updates, superseded documentation
-  - **December 30, 2025:** Root-level session files archived (DATABASE_SERVICE_REFACTORING, DOCS_CLEANUP, etc.)
-  - **December 23+:** Previous session files preserved for historical context
-  - **Status:** "Not maintained—reference only for historical context"
+- **[Archive Navigation Guide](./ARCHIVE_NAVIGATION.md)** ⭐ Start here for finding archived docs
+- **[Archive Folder](./archive-active/)** - Phase/Sprint/Session reports and historical documentation
+  - **February 2026:** Root-level session files archived to improve organization
+  - **February 23, 2025:** Archive structure refined with clear navigation
+  - **Status:** Well-organized; reference for historical context only
 
 ---
 

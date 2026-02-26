@@ -13,6 +13,9 @@ architecture and domain-specific separation of concerns.
 
 All existing methods are delegated to appropriate modules.
 Connection pool is shared across all modules.
+
+Note: Workflow management is now handled by CustomWorkflowsService
+and PhaseRegistry instead of a separate database module.
 """
 
 import logging
@@ -40,6 +43,8 @@ class DatabaseService:
     - self.content: Posts/quality/metrics
     - self.admin: Logging/financial/settings
     - self.writing_style: Writing samples for style matching
+
+    Workflow management is handled by CustomWorkflowsService and PhaseRegistry.
 
     Maintains 100% backward compatibility with original DatabaseService.
     All existing method calls still work via delegation.

@@ -785,4 +785,4 @@ CREATE TABLE memories (
 
 **[← Back to Documentation Hub](./00-README.md)**
 
-[Setup](./01-SETUP_AND_OVERVIEW.md) • [Deployment](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) • [Development](./04-DEVELOPMENT_WORKFLOW.md) • [Guides](./guides/)
+[Setup](./01-SETUP_AND_OVERVIEW.md) • [Deployment](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) • [Development](./04-DEVELOPMENT_WORKFLOW.md)

@@ -43,3 +43,6 @@ nul
 
 .agents/
 .continue/skills
+test-results/
+screenshots/
+.playwright-mcp/
