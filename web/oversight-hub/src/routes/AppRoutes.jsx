@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { Settings, TaskManagement, CostMetricsDashboard } from './index';
 import ExecutiveDashboard from '../components/pages/ExecutiveDashboard';
 import UnifiedServicesPanel from '../components/pages/UnifiedServicesPanel';
+import BlogWorkflowPage from '../pages/BlogWorkflowPage';
 import AIStudio from './AIStudio';
 import Content from './Content';
 import PerformanceDashboard from './PerformanceDashboard';
@@ -96,6 +97,16 @@ function AppRoutes() {
           <ProtectedRoute>
             <LayoutWrapper>
               <PerformanceDashboard />
+            </LayoutWrapper>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/workflows"
+        element={
+          <ProtectedRoute>
+            <LayoutWrapper>
+              <BlogWorkflowPage />
             </LayoutWrapper>
           </ProtectedRoute>
         }

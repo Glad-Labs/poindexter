@@ -637,6 +637,77 @@ export const retryWithBackoff = async (apiCall, maxRetries = 3) => {
 };
 
 // ============================================================================
+// WORKFLOW MANAGEMENT ENDPOINTS
+// ============================================================================
+
+/**
+ * List all available phases in the phase registry
+ * @returns {Promise<Array>} List of phase definitions
+ */
+export const getAvailablePhases = async () => {
+  const response = await apiClient.get('/api/workflows/phases');
+  return response.data;
+};
+
+/**
+ * Create and execute a custom workflow
+ * @param {Object} workflow - Workflow definition with phases
+ * @returns {Promise<Object>} Workflow execution result
+ */
+export const executeWorkflow = async (workflow) => {
+  const response = await apiClient.post('/api/workflows/custom', workflow);
+  return response.data;
+};
+
+/**
+ * Get workflow execution status and progress
+ * @param {string} executionId - Workflow execution ID
+ * @returns {Promise<Object>} Execution status and progress
+ */
+export const getWorkflowProgress = async (executionId) => {
+  const response = await apiClient.get(
+    `/api/workflows/executions/${executionId}/progress`
+  );
+  return response.data;
+};
+
+/**
+ * Get detailed results from a completed workflow execution
+ * @param {string} executionId - Workflow execution ID
+ * @returns {Promise<Object>} Complete execution results
+ */
+export const getWorkflowResults = async (executionId) => {
+  const response = await apiClient.get(
+    `/api/workflows/executions/${executionId}/results`
+  );
+  return response.data;
+};
+
+/**
+ * List all workflow executions with history
+ * @param {Object} params - Query parameters (skip, limit, status, etc)
+ * @returns {Promise<Array>} List of workflow executions
+ */
+export const listWorkflowExecutions = async (params = {}) => {
+  const response = await apiClient.get('/api/workflows/executions', {
+    params,
+  });
+  return response.data;
+};
+
+/**
+ * Cancel a running workflow execution
+ * @param {string} executionId - Workflow execution ID
+ * @returns {Promise<Object>} Cancellation result
+ */
+export const cancelWorkflowExecution = async (executionId) => {
+  const response = await apiClient.post(
+    `/api/workflows/executions/${executionId}/cancel`
+  );
+  return response.data;
+};
+
+// ============================================================================
 // EXPORT ALL
 // ============================================================================
 
@@ -689,6 +760,14 @@ const apiClientMethods = {
   formatApiError,
   isRecoverableError,
   retryWithBackoff,
+
+  // Workflows
+  getAvailablePhases,
+  executeWorkflow,
+  getWorkflowProgress,
+  getWorkflowResults,
+  listWorkflowExecutions,
+  cancelWorkflowExecution,
 };
 
 export default apiClientMethods;
