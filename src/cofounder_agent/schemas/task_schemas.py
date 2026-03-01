@@ -6,7 +6,7 @@ Consolidates all Pydantic models for task management endpoints
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from schemas.unified_task_response import UnifiedTaskResponse
 
 
@@ -406,8 +406,8 @@ class ApproveTaskRequest(BaseModel):
     featured_image_url: Optional[str] = Field(None, description="Featured image URL for the post")
     image_source: Optional[str] = Field(None, description="Source of image (pexels, sdxl, etc.)")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "approved": True,
                 "auto_publish": True,
@@ -417,3 +417,4 @@ class ApproveTaskRequest(BaseModel):
                 "image_source": "pexels",
             }
         }
+    )

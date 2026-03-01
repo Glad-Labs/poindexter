@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional
 from uuid import uuid4 as uuid_lib_uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from routes.auth_unified import get_current_user
 from routes.websocket_routes import broadcast_approval_status
 from services.database_service import DatabaseService
@@ -53,8 +53,8 @@ class ApprovalRequest(BaseModel):
     image_source: Optional[str] = Field(None, description="Image source")
     human_feedback: Optional[str] = Field(None, description="Human feedback (maps to feedback)")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "approved": True,
                 "auto_publish": True,
@@ -62,6 +62,7 @@ class ApprovalRequest(BaseModel):
                 "human_feedback": "Ready to publish",
             }
         }
+    )
 
 
 class RejectionRequest(BaseModel):
@@ -1013,27 +1014,27 @@ async def get_task_approval_status(
 
 
 # ============================================================================
-# DEBUG/TEST ENDPOINTS
+# DEBUG TEST ENDPOINT
 # ============================================================================
 
 
-@router.post("/debug/test-approval-request", response_model=Dict[str, Any])
-async def debug_test_approval_request(request: ApprovalRequest):
-    """DEBUG ENDPOINT: Echo back the parsed ApprovalRequest exactly as received"""
+@router.post("/test-auto-publish", response_model=Dict[str, Any])
+async def test_auto_publish(request: ApprovalRequest):
+    """DEBUG: Test endpoint that echoes back the parsed auto_publish value"""
     return {
-        "received_request": {
-            "approved": request.approved,
-            "feedback": request.feedback,
-            "reviewer_notes": request.reviewer_notes,
+        "received": {
             "auto_publish": request.auto_publish,
             "auto_publish_type": str(type(request.auto_publish)),
-            "auto_publish_is_true": request.auto_publish is True,
-            "auto_publish_bool": bool(request.auto_publish),
-            "featured_image_url": request.featured_image_url,
-            "image_source": request.image_source,
-            "human_feedback": request.human_feedback,
+            "auto_publish_repr": repr(request.auto_publish),
+            "is_true": request.auto_publish is True,
+            "equals_true": request.auto_publish == True,
+            "bool_value": bool(request.auto_publish),
+            "will_trigger_if": True if request.auto_publish else False,
         },
-        "request_dict": request.__dict__,
-        "message": "This endpoint echoes back the parsed request for debugging purposes"
+        "model_dump": request.model_dump(),
     }
+
+
+
+# DEBUG/TEST ENDPOINTS (removed - using /test-auto-publish instead)
 
