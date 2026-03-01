@@ -18,6 +18,8 @@ Workflow:
 """
 
 import logging
+import json
+import re as re_module
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4 as uuid_lib_uuid4
@@ -28,6 +30,7 @@ from routes.auth_unified import get_current_user
 from routes.websocket_routes import broadcast_approval_status
 from services.database_service import DatabaseService
 from utils.route_utils import get_database_dependency
+from utils.json_encoder import convert_decimals, safe_json_dumps
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +48,23 @@ class ApprovalRequest(BaseModel):
     approved: bool = True
     feedback: Optional[str] = None
     reviewer_notes: Optional[str] = None
+    auto_publish: bool = False
+    featured_image_url: Optional[str] = None
+    image_source: Optional[str] = None
+
+    # Accept human_feedback from frontend (maps to feedback)
+    human_feedback: Optional[str] = None
+    reviewer_id: Optional[str] = None
+
+    class Config:
+        # Populate 'feedback' from 'human_feedback' if provided
+        populate_by_name = True
+
+    def __init__(self, **data):
+        # Merge human_feedback into feedback if feedback is empty
+        if data.get('human_feedback') and not data.get('feedback'):
+            data['feedback'] = data.pop('human_feedback')
+        super().__init__(**data)
 
 
 class RejectionRequest(BaseModel):
@@ -135,7 +155,15 @@ async def approve_task(
     - Task eligible for publishing
     """
     try:
-        logger.info(f"👤 [APPROVAL] User {current_user.get('id')} approving task {task_id}")
+        logger.info(f"[APPROVAL] User {current_user.get('id')} approving task {task_id}")
+        logger.info(f"[APPROVAL] ApprovalRequest object: {request}")
+        logger.info(f"[APPROVAL] Request: approved={request.approved}, auto_publish={request.auto_publish}, type={type(request.auto_publish)}")
+        logger.info(f"[APPROVAL] Bool check: auto_publish is True? {request.auto_publish is True}")
+        logger.info(f"[APPROVAL] Bool check: auto_publish == True? {request.auto_publish == True}")
+        logger.info(f"[APPROVAL] Bool check: bool(auto_publish)? {bool(request.auto_publish)}")
+        logger.info(f"[APPROVAL] Has feedback: {bool(request.feedback)}")
+        logger.info(f"[APPROVAL] Human feedback: {request.human_feedback}")
+        logger.info(f"[APPROVAL] Reviewer ID: {request.reviewer_id}")
 
         # Fetch task from database
         task = await db_service.get_task(task_id)
@@ -175,7 +203,140 @@ async def approve_task(
             },
         )
 
-        logger.info(f"✅ [APPROVAL] Task {task_id} approved by {current_user.get('id')}")
+        logger.info(f"[OK] [APPROVAL] Task {task_id} approved by {current_user.get('id')}")
+
+        # Handle auto-publish if requested
+        logger.info(f"[APPROVAL] Checking auto_publish: {request.auto_publish}")
+        if request.auto_publish:
+            logger.info(f"[APPROVAL] AUTO-PUBLISH TRIGGERED!")
+            try:
+                # Get task metadata for post creation
+                task_metadata = task.get("task_metadata", {})
+                if isinstance(task_metadata, str):
+                    try:
+                        task_metadata = json.loads(task_metadata) if task_metadata else {}
+                    except (json.JSONDecodeError, TypeError):
+                        task_metadata = {}
+                elif task_metadata is None:
+                    task_metadata = {}
+
+                # Get task result
+                task_result = task.get("result", {})
+                if isinstance(task_result, str):
+                    try:
+                        task_result = json.loads(task_result) if task_result else {}
+                    except (json.JSONDecodeError, TypeError):
+                        task_result = {}
+                elif task_result is None:
+                    task_result = {}
+
+                # Merge for all content data
+                merged_result = {**task_metadata, **task_result}
+                if request.featured_image_url:
+                    merged_result["featured_image_url"] = request.featured_image_url
+
+                # Extract needed fields for post creation
+                topic = task.get("topic", "") or merged_result.get("topic", "")
+                draft_content = (
+                    merged_result.get("draft_content", "")
+                    or merged_result.get("content", "")
+                    or ""
+                )
+                seo_description = merged_result.get("seo_description", "")
+                seo_keywords = merged_result.get("seo_keywords", [])
+                featured_image = request.featured_image_url or merged_result.get("featured_image_url")
+                metadata = merged_result.get("metadata", {})
+
+                # Extract title from content
+                def extract_title_from_content(content: str) -> tuple:
+                    if not content:
+                        return None, content
+                    match = re_module.match(r"^#+\s+(.+?)(?:\n|$)", content.strip())
+                    if match:
+                        title = match.group(1).strip()
+                        cleaned_content = re_module.sub(r"^#+\s+.+?(?:\n|$)", "", content.strip(), count=1)
+                        return title, cleaned_content.strip()
+                    return None, content
+
+                # Extract title
+                extracted_title, cleaned_content = extract_title_from_content(draft_content)
+                post_title = extracted_title or merged_result.get("title") or topic
+
+                if cleaned_content and post_title:
+                    # Create slug
+                    slug = (
+                        re_module.sub(r"[^\w\s-]", "", post_title)
+                        .lower()
+                        .replace(" ", "-")[:50]
+                    )
+                    slug = f"{slug}-{task_id[:8]}"
+
+                    # Helper to parse SEO keywords
+                    def parse_seo_keywords(keywords):
+                        if isinstance(keywords, str):
+                            try:
+                                kw_list = json.loads(keywords)
+                                if isinstance(kw_list, list):
+                                    return ", ".join(str(kw).strip() for kw in kw_list if kw)
+                                return keywords
+                            except (json.JSONDecodeError, TypeError):
+                                return keywords
+                        elif isinstance(keywords, list):
+                            return ", ".join(str(kw).strip() for kw in keywords if kw)
+                        return ""
+
+                    # Get or create author and category
+                    from services.content_router_service import (
+                        _get_or_create_default_author,
+                        _select_category_for_topic,
+                    )
+
+                    author_id = await _get_or_create_default_author(db_service)
+                    category_id = await _select_category_for_topic(post_title, db_service)
+
+                    # Create post
+                    post = await db_service.create_post(
+                        {
+                            "title": post_title,
+                            "slug": slug,
+                            "content": cleaned_content,
+                            "excerpt": seo_description,
+                            "featured_image_url": featured_image,
+                            "author_id": author_id,
+                            "category_id": category_id,
+                            "status": "published",
+                            "seo_title": post_title,
+                            "seo_description": seo_description,
+                            "seo_keywords": parse_seo_keywords(seo_keywords),
+                            "metadata": metadata,
+                        }
+                    )
+                    logger.info(f"[OK] Post created: {post.id if hasattr(post, 'id') else post.get('id')}")
+
+                    # Update task status to published and save post_id
+                    post_id = str(post.id) if hasattr(post, "id") else str(post.get("id"))
+                    publish_metadata = {
+                        "published_at": datetime.utcnow().isoformat(),
+                        "published_by": current_user.get("id"),
+                        "post_id": post_id,
+                        "post_slug": slug,
+                        "published_url": f"/posts/{slug}",
+                    }
+
+                    final_result = convert_decimals({
+                        **merged_result,
+                        **publish_metadata,
+                    })
+
+                    await db_service.update_task_status(
+                        task_id,
+                        "published",
+                        result=safe_json_dumps(final_result)
+                    )
+                    logger.info(f"[OK] Task {task_id} published with post_id: {post_id}")
+            except Exception as e:
+                logger.warning(f"[WARNING] Auto-publish failed: {str(e)}", exc_info=True)
+                # Don't fail the approval if auto-publish fails
 
         # Broadcast approval status to connected WebSocket clients
         try:
@@ -191,17 +352,41 @@ async def approve_task(
         except Exception as e:
             logger.warning(f"Failed to broadcast approval status: {e}")
 
-        return {
+        # Build response based on whether auto_publish happened
+        response_data = {
             "task_id": task_id,
-            "status": "approved",
+            "status": "published" if request.auto_publish else "approved",
             "approval_status": "approved",
             "approval_date": approval_date.isoformat(),
             "approval_timestamp": approval_date.isoformat(),
             "approved_by": current_user.get("id"),
             "feedback": request.feedback,
-            "message": "Task approved for publishing",
-            "next_action": f"Task will be published by the publishing agent",
+            "message": "Task approved and published" if request.auto_publish else "Task approved for publishing",
+            "next_action": "Task is published" if request.auto_publish else "Task will be published by the publishing agent",
         }
+
+        # If auto_publish was attempted, fetch the task to get post_id and post_slug
+        if request.auto_publish:
+            try:
+                updated_task = await db_service.get_task(task_id)
+                task_result = updated_task.get("result", {})
+                if isinstance(task_result, str):
+                    task_result = json.loads(task_result) if task_result else {}
+
+                if task_result:
+                    post_id = task_result.get("post_id")
+                    post_slug = task_result.get("post_slug")
+                    published_url = task_result.get("published_url")
+                    if post_id:
+                        response_data["post_id"] = post_id
+                    if post_slug:
+                        response_data["post_slug"] = post_slug
+                    if published_url:
+                        response_data["published_url"] = published_url
+            except Exception as e:
+                logger.warning(f"[WARNING] Could not fetch post_id from updated task: {e}")
+
+        return response_data
 
     except HTTPException:
         raise
