@@ -506,6 +506,7 @@ class AIContentGenerator:
 
                 if generated_content and len(generated_content) > 100:
                     validation = self._validate_content(generated_content, topic, target_length)
+                    word_count = len(generated_content.split())
                     metrics["validation_results"].append(
                         {
                             "attempt": metrics["generation_attempts"],
@@ -515,16 +516,128 @@ class AIContentGenerator:
                         }
                     )
 
-                    metrics["model_used"] = f"Google Gemini ({model_name})"
-                    metrics["models_used_by_phase"]["draft"] = metrics[
-                        "model_used"
-                    ]  # NEW: Track phase
+                    logger.info(
+                        f"   📊 Quality Score: {validation.quality_score:.1f}/{self.quality_threshold} | Words: {word_count} | Issues: {len(validation.issues)}"
+                    )
+
+                    if validation.issues:
+                        for issue in validation.issues:
+                            logger.debug(f"      ⚠️  {issue}")
+
+                    # If content passes QA, return it
+                    if validation.is_valid:
+                        logger.info(f"   ✅ Content APPROVED by QA")
+                        metrics["model_used"] = f"Google Gemini ({model_name})"
+                        metrics["models_used_by_phase"]["draft"] = metrics["model_used"]
+                        metrics["final_quality_score"] = validation.quality_score
+                        metrics["generation_time_seconds"] = time.time() - start_time
+                        metrics["model_selection_log"]["decision_tree"]["gemini_succeeded"] = True
+                        logger.info(
+                            f"✓ Content generated with user-selected Gemini: {validation.feedback}"
+                        )
+                        return generated_content, metrics["model_used"], metrics
+
+                    # If content fails QA but we have refinement attempts left, try to improve
+                    if metrics["refinement_attempts"] < self.max_refinement_attempts:
+                        logger.info(
+                            f"   ⚙️  Content below threshold. Refining ({metrics['refinement_attempts'] + 1}/{self.max_refinement_attempts})..."
+                        )
+
+                        metrics["refinement_attempts"] += 1
+                        refinement_prompt = get_refinement_prompt(
+                            feedback=validation.feedback,
+                            issues=validation.issues,
+                            content=generated_content,
+                        )
+
+                        # Try to refine with Gemini
+                        max_tokens_refinement = int(target_length * 4.5)
+                        try:
+                            if use_new_sdk:
+                                client = genai.Client(api_key=ProviderChecker.get_gemini_api_key())
+                                refinement_response = client.models.generate_content(
+                                    model=f"models/{model_name}",
+                                    contents=f"{system_prompt}\n\n{refinement_prompt}",
+                                    config={
+                                        "max_output_tokens": max_tokens_refinement,
+                                        "temperature": 0.7,
+                                    },
+                                )
+                            else:
+                                model = genai.GenerativeModel(model_name)
+                                refinement_response = model.generate_content(
+                                    f"{system_prompt}\n\n{refinement_prompt}",
+                                    generation_config=genai.types.GenerationConfig(
+                                        max_output_tokens=max_tokens_refinement,
+                                        temperature=0.7,
+                                    ),
+                                )
+
+                            refined_content = ""
+                            if use_new_sdk:
+                                refined_content = refinement_response.text if hasattr(refinement_response, "text") else refinement_response.content
+                            else:
+                                refined_content = refinement_response.text if hasattr(refinement_response, "text") else ""
+
+                            if refined_content and len(refined_content) > 100:
+                                logger.info(
+                                    f"   ✓ Refined content generated: {len(refined_content)} characters"
+                                )
+
+                                # Validate refined content
+                                logger.info(f"   🔍 Validating refined content...")
+                                refined_validation = self._validate_content(
+                                    refined_content, topic, target_length
+                                )
+                                metrics["validation_results"].append(
+                                    {
+                                        "attempt": metrics["generation_attempts"],
+                                        "refinement": metrics["refinement_attempts"],
+                                        "score": refined_validation.quality_score,
+                                        "issues": refined_validation.issues,
+                                        "passed": refined_validation.is_valid,
+                                    }
+                                )
+
+                                refined_word_count = len(refined_content.split())
+                                logger.info(
+                                    f"   📊 Refined Quality: {refined_validation.quality_score:.1f}/{self.quality_threshold} | Words: {refined_word_count} | Issues: {len(refined_validation.issues)}"
+                                )
+
+                                if refined_validation.is_valid:
+                                    logger.info(f"   ✅ Refined content APPROVED")
+                                    metrics["model_used"] = f"Google Gemini ({model_name}, refined)"
+                                    metrics["models_used_by_phase"]["draft"] = metrics["model_used"]
+                                    metrics["final_quality_score"] = refined_validation.quality_score
+                                    metrics["generation_time_seconds"] = time.time() - start_time
+                                    metrics["model_selection_log"]["decision_tree"]["gemini_succeeded"] = True
+                                    logger.info(f"\n{'='*80}")
+                                    logger.info(f"✅ GENERATION COMPLETE (with refinement)")
+                                    logger.info(f"   Model: {metrics['model_used']}")
+                                    logger.info(f"   Quality: {refined_validation.quality_score:.1f}/{self.quality_threshold}")
+                                    logger.info(f"   Time: {metrics['generation_time_seconds']:.1f}s")
+                                    logger.info(f"{'='*80}\n")
+                                    return refined_content, metrics["model_used"], metrics
+
+                                generated_content = refined_content  # Use refined for next check
+                        except Exception as refine_error:
+                            logger.warning(f"   ⚠️  Refinement failed: {refine_error}. Using original content.")
+
+                    # If still not passing after refinement, return best attempt with warning
+                    logger.warning(
+                        f"   ⚠️  Content below quality threshold but no more refinements available"
+                    )
+                    metrics["model_used"] = f"Google Gemini ({model_name}, below threshold)"
+                    metrics["models_used_by_phase"]["draft"] = metrics["model_used"]
                     metrics["final_quality_score"] = validation.quality_score
                     metrics["generation_time_seconds"] = time.time() - start_time
                     metrics["model_selection_log"]["decision_tree"]["gemini_succeeded"] = True
-                    logger.info(
-                        f"✓ Content generated with user-selected Gemini: {validation.feedback}"
-                    )
+                    logger.info(f"\n{'='*80}")
+                    logger.warning(f"⚠️  GENERATION COMPLETE (below quality threshold)")
+                    logger.info(f"   Model: {metrics['model_used']}")
+                    logger.info(f"   Quality: {validation.quality_score:.1f}/{self.quality_threshold}")
+                    logger.info(f"   Time: {metrics['generation_time_seconds']:.1f}s")
+                    logger.info(f"{'='*80}\n")
                     return generated_content, metrics["model_used"], metrics
 
             except Exception as e:
