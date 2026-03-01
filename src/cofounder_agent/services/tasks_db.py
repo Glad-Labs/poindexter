@@ -27,14 +27,18 @@ logger = logging.getLogger(__name__)
 
 
 def serialize_value_for_postgres(value: Any) -> Any:
-    """Serialize Python value for PostgreSQL, ensuring timezone-aware datetimes."""
+    """Serialize Python value for PostgreSQL, keeping datetimes naive UTC."""
     if value is None:
         return None
 
     # Handle datetime objects first - keep naive, let PostgreSQL handle timezone
     if isinstance(value, datetime):
-        # Return datetime as-is (naive UTC)
+        # Return datetime as-is (must be naive UTC)
         # PostgreSQL TIMESTAMP WITH TIME ZONE column will interpret naive datetimes as UTC
+        # If it's timezone-aware, strip the timezone info to keep it naive
+        if value.tzinfo is not None:
+            logger.warning(f"Converting timezone-aware datetime to naive UTC: {value}")
+            return value.replace(tzinfo=None)
         return value
 
     if isinstance(value, dict):
@@ -49,24 +53,27 @@ def serialize_value_for_postgres(value: Any) -> Any:
             try:
                 # Handle ISO format with or without microseconds and timezone
                 if value.endswith("Z"):
-                    value = value[:-1] + "+00:00"
+                    value = value[:-1]  # Remove 'Z' to make it naive
+                elif "+00:00" in value or value.endswith("+00:00"):
+                    value = value.split("+")[0]  # Remove timezone offset
                 # Try parsing with fromisoformat
                 dt = datetime.fromisoformat(value)
-                # Ensure timezone-aware
-                if dt.tzinfo is None:
-                    logger.warning(f"Converting naive datetime string to UTC: {value}")
-                    dt = dt.replace(tzinfo=timezone.utc)
+                # Ensure it's naive (strip any timezone info)
+                if dt.tzinfo is not None:
+                    logger.warning(f"Converting timezone-aware datetime string to naive UTC: {value}")
+                    dt = dt.replace(tzinfo=None)
                 return dt
             except (ValueError, AttributeError):
                 # Not a datetime string, return as-is
                 return value
         return value
     if hasattr(value, "isoformat"):
-        # Handle timezone-aware datetime objects
+        # Handle datetime objects
         if isinstance(value, datetime):
-            if value.tzinfo is None:
-                logger.warning(f"Converting naive datetime object to UTC: {value}")
-                return value.replace(tzinfo=timezone.utc)
+            # Keep naive, strip any timezone info
+            if value.tzinfo is not None:
+                logger.warning(f"Converting timezone-aware datetime object to naive UTC: {value}")
+                return value.replace(tzinfo=None)
         return value
     return str(value)
 
@@ -326,7 +333,8 @@ class TasksDatabase(DatabaseServiceMixin):
         Returns:
             Updated task dict or None if task not found
         """
-        now = datetime.now(timezone.utc)
+        # Use naive UTC datetime to avoid asyncpg timezone mismatch
+        now = datetime.utcnow()
 
         try:
             builder = ParameterizedQueryBuilder()
