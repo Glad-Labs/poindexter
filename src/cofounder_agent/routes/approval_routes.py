@@ -378,6 +378,9 @@ async def approve_task(
             "feedback": request.feedback,
             "message": "Task approved and published" if request.auto_publish else "Task approved for publishing",
             "next_action": "Task is published" if request.auto_publish else "Task will be published by the publishing agent",
+            "_debug_auto_publish_value": request.auto_publish,
+            "_debug_auto_publish_type": str(type(request.auto_publish)),
+            "_debug_auto_publish_bool": bool(request.auto_publish),
         }
 
         # If auto_publish was attempted, fetch the task to get post_id and post_slug
@@ -1007,3 +1010,30 @@ async def get_task_approval_status(
     except Exception as e:
         logger.error(f"❌ Failed to get approval status: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to get approval status: {str(e)}")
+
+
+# ============================================================================
+# DEBUG/TEST ENDPOINTS
+# ============================================================================
+
+
+@router.post("/debug/test-approval-request", response_model=Dict[str, Any])
+async def debug_test_approval_request(request: ApprovalRequest):
+    """DEBUG ENDPOINT: Echo back the parsed ApprovalRequest exactly as received"""
+    return {
+        "received_request": {
+            "approved": request.approved,
+            "feedback": request.feedback,
+            "reviewer_notes": request.reviewer_notes,
+            "auto_publish": request.auto_publish,
+            "auto_publish_type": str(type(request.auto_publish)),
+            "auto_publish_is_true": request.auto_publish is True,
+            "auto_publish_bool": bool(request.auto_publish),
+            "featured_image_url": request.featured_image_url,
+            "image_source": request.image_source,
+            "human_feedback": request.human_feedback,
+        },
+        "request_dict": request.__dict__,
+        "message": "This endpoint echoes back the parsed request for debugging purposes"
+    }
+

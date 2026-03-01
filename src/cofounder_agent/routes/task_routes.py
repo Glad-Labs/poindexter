@@ -36,6 +36,7 @@ from pydantic import BaseModel, Field
 from routes.auth_unified import get_current_user, get_current_user_optional
 from schemas.model_converter import ModelConverter
 from schemas.task_schemas import (
+    ApproveTaskRequest,
     IntentTaskRequest,
     MetricsResponse,
     TaskConfirmRequest,
@@ -1834,34 +1835,29 @@ async def confirm_and_execute_task(
 )
 async def approve_task(
     task_id: str,
-    approved: bool = True,
-    human_feedback: Optional[str] = None,
-    reviewer_id: Optional[str] = None,
-    featured_image_url: Optional[str] = None,
-    image_source: Optional[str] = None,
-    auto_publish: bool = False,
+    request: ApproveTaskRequest,
     current_user: dict = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
     Approve or reject a task for publishing.
-    
+
     Changes task status from 'awaiting_approval' to 'approved' or 'rejected'.
     Can include human feedback, image URL, and reviewer information.
     Publishing is now a SEPARATE step - call /publish endpoint to publish.
-    
+
     **Parameters:**
     - task_id: Task ID (UUID or numeric ID for backwards compatibility)
     - approved: Boolean - true to approve, false to reject
+    - auto_publish: Automatically publish after approval (default: false - publishing is manual)
     - human_feedback: Optional feedback from reviewer
     - reviewer_id: Optional ID of reviewer
     - featured_image_url: Optional featured image URL for the task
     - image_source: Optional source of image (pexels, sdxl)
-    - auto_publish: Automatically publish after approval (default: false - publishing is manual)
-    
+
     **Returns:**
     - Updated task with status 'approved' or 'rejected' (and 'published' if auto_publish=true)
-    
+
     **Example cURL:**
     ```bash
     curl -X POST http://localhost:8000/api/tasks/550e8400-e29b-41d4-a716-446655440000/approve \
@@ -1869,14 +1865,29 @@ async def approve_task(
       -H "Authorization: Bearer YOUR_JWT_TOKEN" \
       -d '{
         "approved": true,
+        "auto_publish": true,
         "human_feedback": "Great content!",
         "reviewer_id": "user123",
         "featured_image_url": "https://...",
-        "image_source": "pexels",
-        "auto_publish": true
+        "image_source": "pexels"
       }'
     ```
     """
+    # Extract parameters from request body
+    approved = request.approved
+    auto_publish = request.auto_publish
+    human_feedback = request.human_feedback
+    reviewer_id = request.reviewer_id
+    featured_image_url = request.featured_image_url
+    image_source = request.image_source
+
+    # DEBUG: Log the auto_publish value received
+    logger.info(f"[TASK_ROUTES_APPROVE_DEBUG] auto_publish extracted: {auto_publish!r} (type: {type(auto_publish).__name__})")
+    logger.info(f"[TASK_ROUTES_APPROVE_DEBUG] auto_publish == True: {auto_publish == True}")
+    logger.info(f"[TASK_ROUTES_APPROVE_DEBUG] auto_publish is True: {auto_publish is True}")
+    logger.info(f"[TASK_ROUTES_APPROVE_DEBUG] bool(auto_publish): {bool(auto_publish)}")
+    logger.info(f"[TASK_ROUTES_APPROVE_DEBUG] if auto_publish will trigger: {True if auto_publish else False}")
+
     try:
         # Accept both UUID and numeric task IDs (backwards compatibility)
         try:
@@ -2081,18 +2092,37 @@ async def approve_task(
                                 "metadata": metadata,
                             }
                         )
-                        logger.info(f"✅ Post created with status='published': {post.id}")
-                        logger.info(f"   Title: {post_title}")
-                        logger.info(f"   Slug: {slug}")
+                        logger.info(f"[OK] Post created with status='published': {post.id}")
+                        logger.info(f"     Title: {post_title}")
+                        logger.info(f"     Slug: {slug}")
 
                         # Store post info in merged_result for response
-                        merged_result["post_id"] = (
-                            str(post.id) if hasattr(post, "id") else str(post.get("id"))
-                        )
+                        post_id = str(post.id) if hasattr(post, "id") else str(post.get("id"))
+                        merged_result["post_id"] = post_id
                         merged_result["post_slug"] = slug
                         merged_result["published_url"] = (
                             f"/posts/{slug}"  # Relative URL for public site
                         )
+
+                        # [CRITICAL FIX] Save post_id and post_slug to DB
+                        # The post was just created, so we need to persist this relationship
+                        try:
+                            final_result = convert_decimals({
+                                **safe_publish_result,
+                                "post_id": post_id,
+                                "post_slug": slug,
+                                "published_url": f"/posts/{slug}",
+                            })
+                            await db_service.update_task_status(
+                                task_id,
+                                "published",
+                                result=safe_json_dumps(final_result)
+                            )
+                            logger.info(f"[OK] Saved post_id to database: {post_id}")
+                        except Exception as e:
+                            logger.warning(f"[WARNING] Failed to save post_id to database: {str(e)}")
+                            # Don't fail the entire operation if saving post_id fails
+                            # The post was created, just the DB link is missing
                     else:
                         logger.warning(f"⚠️  Skipping post creation: missing content or topic")
                 except (ValueError, KeyError, TypeError) as e:
@@ -2299,11 +2329,31 @@ async def publish_task(
                         "metadata": metadata,
                     }
                 )
-                logger.info(f"✅ Post created with status='published': {post.id}")
-                logger.info(f"   Title: {post_title}")
-                logger.info(f"   Slug: {slug}")
+                logger.info(f"[OK] Post created with status='published': {post.id}")
+                logger.info(f"     Title: {post_title}")
+                logger.info(f"     Slug: {slug}")
+
+                # [CRITICAL FIX] Save post_id and post_slug to DB
+                # The post was just created, so we need to persist this relationship
+                try:
+                    post_id = str(post.id) if hasattr(post, "id") else str(post.get("id"))
+                    final_result = convert_decimals({
+                        "post_id": post_id,
+                        "post_slug": slug,
+                        "published_url": f"/posts/{slug}",
+                    })
+                    await db_service.update_task_status(
+                        task_id,
+                        "published",
+                        result=safe_json_dumps(final_result)
+                    )
+                    logger.info(f"[OK] Saved post_id to database: {post_id}")
+                except Exception as e:
+                    logger.warning(f"[WARNING] Failed to save post_id to database: {str(e)}")
+                    # Don't fail the entire operation if saving post_id fails
+                    # The post was created, just the DB link is missing
             else:
-                logger.warning(f"⚠️  Skipping post creation: missing content or topic")
+                logger.warning(f"[WARNING] Skipping post creation: missing content or topic")
         except Exception as e:
             logger.error(f"Failed to create post for published task: {str(e)}", exc_info=True)
             # Don't fail the publish operation if post creation fails
