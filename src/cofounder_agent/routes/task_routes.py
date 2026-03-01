@@ -1881,12 +1881,17 @@ async def approve_task(
     featured_image_url = request.featured_image_url
     image_source = request.image_source
 
+    # DEBUG: File write to trace execution
+    with open("/tmp/approval_debug.txt", "a") as f:
+        f.write(f"TASK_ROUTES_APPROVE: auto_publish={auto_publish!r}, type={type(auto_publish).__name__}, is_true={auto_publish is True}, bool={bool(auto_publish)}\n")
+
     # DEBUG: Log the auto_publish value received
     logger.info(f"[TASK_ROUTES_APPROVE_DEBUG] auto_publish extracted: {auto_publish!r} (type: {type(auto_publish).__name__})")
     logger.info(f"[TASK_ROUTES_APPROVE_DEBUG] auto_publish == True: {auto_publish == True}")
     logger.info(f"[TASK_ROUTES_APPROVE_DEBUG] auto_publish is True: {auto_publish is True}")
     logger.info(f"[TASK_ROUTES_APPROVE_DEBUG] bool(auto_publish): {bool(auto_publish)}")
     logger.info(f"[TASK_ROUTES_APPROVE_DEBUG] if auto_publish will trigger: {True if auto_publish else False}")
+
 
     try:
         # Accept both UUID and numeric task IDs (backwards compatibility)

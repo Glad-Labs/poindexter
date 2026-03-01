@@ -153,6 +153,10 @@ async def approve_task(
     - Task eligible for publishing
     """
     try:
+        # DEBUG: Entry point - write immediately
+        with open("/tmp/approval_debug.txt", "a") as f:
+           f.write(f"APPROVAL_ENDPOINT_ENTRY: {task_id}, auto_publish_attr_exists={hasattr(request, 'auto_publish')}\n")
+
         logger.info(f"🔍 [ENDPOINT-ENTRY] approve_task called for task {task_id}")
         logger.info(f"🔍 [ENDPOINT-ENTRY] request object type: {type(request)}")
         logger.info(f"🔍 [ENDPOINT-ENTRY] request.auto_publish = {request.auto_publish!r} (type: {type(request.auto_publish).__name__})")
@@ -367,6 +371,13 @@ async def approve_task(
             )
         except Exception as e:
             logger.warning(f"Failed to broadcast approval status: {e}")
+
+        # DEBUG: Write to file so we can see this is executing
+        import os
+        debug_file = "/tmp/approval_debug.txt"
+        with open(debug_file, "a") as f:
+            f.write(f"APPROVAL_ENDPOINT_CALLED: auto_publish={request.auto_publish!r}, type={type(request.auto_publish).__name__}\n")
+
 
         # Build response based on whether auto_publish happened
         response_data = {
