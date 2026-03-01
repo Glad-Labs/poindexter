@@ -350,13 +350,18 @@ class TasksDatabase(DatabaseServiceMixin):
             logger.debug(f"[update_task_status] Executing UPDATE with where_column={where_column}, where_value={where_value}")
 
             async with self.pool.acquire() as conn:
+                logger.debug(f"[update_task_status] SQL: {sql}")
+                logger.debug(f"[update_task_status] Params: {params}")
+
                 row = await conn.fetchrow(sql, *params)
                 if row:
                     logger.info(f"Task status updated: {task_id} → {status}")
-                    return self._convert_row_to_dict(row)
+                    result = self._convert_row_to_dict(row)
+                    logger.debug(f"[update_task_status] Returned task status: {result.get('status')}")
+                    return result
 
                 # If not found with primary approach, try alternate column
-                logger.warning(f"[update_task_status] First attempt returned no rows. Task ID: {task_id}, where_column: {where_column}")
+                logger.warning(f"[update_task_status] First attempt returned no rows. Task ID: {task_id}, where_column: {where_column}, value: {where_value}")
 
                 # Try the opposite column
                 alt_where_column = "task_id" if where_column == "id" else "id"
@@ -371,13 +376,19 @@ class TasksDatabase(DatabaseServiceMixin):
                     return_columns=["*"],
                 )
 
+                logger.debug(f"[update_task_status] Alt SQL: {sql_alt}")
+                logger.debug(f"[update_task_status] Alt Params: {params_alt}")
+
                 row_alt = await conn.fetchrow(sql_alt, *params_alt)
                 if row_alt:
                     logger.info(f"Task status updated (alternate ID): {task_id} → {status}")
-                    return self._convert_row_to_dict(row_alt)
+                    result_alt = self._convert_row_to_dict(row_alt)
+                    logger.debug(f"[update_task_status] Returned task status (alt): {result_alt.get('status')}")
+                    return result_alt
 
                 # Task not found with either approach
-                logger.error(f"[update_task_status] Task not found with either ID approach. task_id={task_id}, tried columns: {where_column}, {alt_where_column}")
+                logger.error(f"[update_task_status] Task not found with either ID approach. task_id={task_id}, tried columns: {where_column} and {alt_where_column}")
+                logger.error(f"[update_task_status] Values tried: {where_value} and {alt_where_value}")
                 return None
 
         except Exception as e:
