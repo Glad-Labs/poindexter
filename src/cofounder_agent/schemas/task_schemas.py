@@ -394,3 +394,26 @@ class TaskConfirmResponse(BaseModel):
     status: str
     message: str
     execution_plan_id: str
+
+
+class ApproveTaskRequest(BaseModel):
+    """Request to approve or reject a task."""
+
+    approved: bool = Field(True, description="True to approve, False to reject")
+    auto_publish: bool = Field(False, description="Automatically publish after approval")
+    human_feedback: Optional[str] = Field(None, description="Feedback from reviewer")
+    reviewer_id: Optional[str] = Field(None, description="ID of the reviewer")
+    featured_image_url: Optional[str] = Field(None, description="Featured image URL for the post")
+    image_source: Optional[str] = Field(None, description="Source of image (pexels, sdxl, etc.)")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "approved": True,
+                "auto_publish": True,
+                "human_feedback": "Great content, ready to publish!",
+                "reviewer_id": "user@example.com",
+                "featured_image_url": "https://example.com/image.jpg",
+                "image_source": "pexels",
+            }
+        }

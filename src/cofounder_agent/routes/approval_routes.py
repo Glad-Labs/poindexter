@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional
 from uuid import uuid4 as uuid_lib_uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from routes.auth_unified import get_current_user
 from routes.websocket_routes import broadcast_approval_status
 from services.database_service import DatabaseService
@@ -45,49 +45,23 @@ router = APIRouter(prefix="/api/tasks", tags=["approval"])
 class ApprovalRequest(BaseModel):
     """Request body for approving a task"""
 
-    approved: bool = True
-    feedback: Optional[str] = None
-    reviewer_notes: Optional[str] = None
-    auto_publish: bool = False
-    featured_image_url: Optional[str] = None
-    image_source: Optional[str] = None
+    approved: bool = Field(True, description="True to approve")
+    feedback: Optional[str] = Field(None, description="Approval feedback")
+    reviewer_notes: Optional[str] = Field(None, description="Reviewer notes")
+    auto_publish: bool = Field(False, description="Automatically publish after approval")
+    featured_image_url: Optional[str] = Field(None, description="Featured image URL")
+    image_source: Optional[str] = Field(None, description="Image source")
+    human_feedback: Optional[str] = Field(None, description="Human feedback (maps to feedback)")
 
     class Config:
-        # Allow both feedback and human_feedback from frontend
-        populate_by_name = True
-        extra = "allow"  # Allow extra fields without failing
-
-    def __init__(self, **data):
-        # DEBUG: Log raw data BEFORE Pydantic validation
-        import sys
-        logger.info(f"[PYDANTIC-INIT] Raw request data keys: {list(data.keys())}")
-        logger.info(f"[PYDANTIC-INIT] auto_publish present: {'auto_publish' in data}")
-        if 'auto_publish' in data:
-            raw_val = data['auto_publish']
-            logger.info(f"[PYDANTIC-INIT] auto_publish raw value: {raw_val!r}")
-            logger.info(f"[PYDANTIC-INIT] auto_publish raw type: {type(raw_val)}")
-            logger.info(f"[PYDANTIC-INIT] auto_publish == True: {raw_val == True}")
-            logger.info(f"[PYDANTIC-INIT] auto_publish is True: {raw_val is True}")
-            logger.info(f"[PYDANTIC-INIT] bool(auto_publish): {bool(raw_val)}")
-
-        # Map human_feedback to feedback if feedback is empty
-        if 'human_feedback' in data and not data.get('feedback'):
-            data['feedback'] = data['human_feedback']
-            logger.info(f"[PYDANTIC-INIT] Mapped human_feedback to feedback")
-
-        # Parse auto_publish explicitly if it's a string
-        if 'auto_publish' in data and isinstance(data['auto_publish'], str):
-            logger.warning(f"[PYDANTIC-INIT] auto_publish is string: {data['auto_publish']!r}")
-            data['auto_publish'] = data['auto_publish'].lower() in ('true', '1', 'yes')
-            logger.info(f"[PYDANTIC-INIT] Converted to bool: {data['auto_publish']}")
-
-        super().__init__(**data)
-
-        # DEBUG: Log after Pydantic parsing
-        logger.info(f"[PYDANTIC-POST] self.auto_publish: {self.auto_publish!r}")
-        logger.info(f"[PYDANTIC-POST] type: {type(self.auto_publish)}")
-        logger.info(f"[PYDANTIC-POST] bool test: {bool(self.auto_publish)}")
-
+        json_schema_extra = {
+            "example": {
+                "approved": True,
+                "auto_publish": True,
+                "feedback": "Looks good!",
+                "human_feedback": "Ready to publish",
+            }
+        }
 
 
 class RejectionRequest(BaseModel):
@@ -178,6 +152,16 @@ async def approve_task(
     - Task eligible for publishing
     """
     try:
+        logger.info(f"🔍 [ENDPOINT-ENTRY] approve_task called for task {task_id}")
+        logger.info(f"🔍 [ENDPOINT-ENTRY] request object type: {type(request)}")
+        logger.info(f"🔍 [ENDPOINT-ENTRY] request.auto_publish = {request.auto_publish!r} (type: {type(request.auto_publish).__name__})")
+        logger.info(f"🔍 [ENDPOINT-ENTRY] request.__dict__ = {request.__dict__}")
+
+        # Map human_feedback to feedback if feedback is empty
+        if not request.feedback and request.human_feedback:
+            request.feedback = request.human_feedback
+            logger.info(f"[APPROVAL] Mapped human_feedback to feedback")
+
         logger.info(f"[APPROVAL] User {current_user.get('id')} approving task {task_id}")
         logger.info(f"[APPROVAL] ApprovalRequest object: {request}")
         logger.info(f"[APPROVAL] Request: approved={request.approved}, auto_publish={request.auto_publish}, type={type(request.auto_publish)}")
@@ -186,7 +170,6 @@ async def approve_task(
         logger.info(f"[APPROVAL] Bool check: bool(auto_publish)? {bool(request.auto_publish)}")
         logger.info(f"[APPROVAL] Has feedback: {bool(request.feedback)}")
         logger.info(f"[APPROVAL] Human feedback: {request.human_feedback}")
-        logger.info(f"[APPROVAL] Reviewer ID: {request.reviewer_id}")
 
         # Fetch task from database
         task = await db_service.get_task(task_id)
