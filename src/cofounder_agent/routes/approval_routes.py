@@ -52,18 +52,22 @@ class ApprovalRequest(BaseModel):
     featured_image_url: Optional[str] = None
     image_source: Optional[str] = None
 
-    # Accept human_feedback from frontend (maps to feedback)
-    human_feedback: Optional[str] = None
-    reviewer_id: Optional[str] = None
-
     class Config:
-        # Populate 'feedback' from 'human_feedback' if provided
+        # Allow both feedback and human_feedback from frontend
         populate_by_name = True
 
+    # Validator to accept human_feedback from frontend
+    @classmethod
+    def from_orm(cls, obj):
+        # Map human_feedback to feedback if feedback is missing
+        if isinstance(obj, dict) and obj.get('human_feedback') and not obj.get('feedback'):
+            obj = {**obj, 'feedback': obj['human_feedback']}
+        return super().from_orm(obj)
+
     def __init__(self, **data):
-        # Merge human_feedback into feedback if feedback is empty
-        if data.get('human_feedback') and not data.get('feedback'):
-            data['feedback'] = data.pop('human_feedback')
+        # Map human_feedback to feedback if feedback is empty
+        if 'human_feedback' in data and not data.get('feedback'):
+            data['feedback'] = data['human_feedback']
         super().__init__(**data)
 
 
@@ -206,7 +210,16 @@ async def approve_task(
         logger.info(f"[OK] [APPROVAL] Task {task_id} approved by {current_user.get('id')}")
 
         # Handle auto-publish if requested
-        logger.info(f"[APPROVAL] Checking auto_publish: {request.auto_publish}")
+        logger.info(f"[APPROVAL] ============================================")
+        logger.info(f"[APPROVAL] AUTO-PUBLISH CHECK:")
+        logger.info(f"[APPROVAL]   request.auto_publish = {request.auto_publish!r}")
+        logger.info(f"[APPROVAL]   type = {type(request.auto_publish)}")
+        logger.info(f"[APPROVAL]   is True = {request.auto_publish is True}")
+        logger.info(f"[APPROVAL]   == True = {request.auto_publish == True}")
+        logger.info(f"[APPROVAL]   bool() = {bool(request.auto_publish)}")
+        logger.info(f"[APPROVAL]   if check will trigger? {request.auto_publish}")
+        logger.info(f"[APPROVAL] ============================================")
+
         if request.auto_publish:
             logger.info(f"[APPROVAL] AUTO-PUBLISH TRIGGERED!")
             try:
