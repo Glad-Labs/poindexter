@@ -55,20 +55,39 @@ class ApprovalRequest(BaseModel):
     class Config:
         # Allow both feedback and human_feedback from frontend
         populate_by_name = True
-
-    # Validator to accept human_feedback from frontend
-    @classmethod
-    def from_orm(cls, obj):
-        # Map human_feedback to feedback if feedback is missing
-        if isinstance(obj, dict) and obj.get('human_feedback') and not obj.get('feedback'):
-            obj = {**obj, 'feedback': obj['human_feedback']}
-        return super().from_orm(obj)
+        extra = "allow"  # Allow extra fields without failing
 
     def __init__(self, **data):
+        # DEBUG: Log raw data BEFORE Pydantic validation
+        import sys
+        logger.info(f"[PYDANTIC-INIT] Raw request data keys: {list(data.keys())}")
+        logger.info(f"[PYDANTIC-INIT] auto_publish present: {'auto_publish' in data}")
+        if 'auto_publish' in data:
+            raw_val = data['auto_publish']
+            logger.info(f"[PYDANTIC-INIT] auto_publish raw value: {raw_val!r}")
+            logger.info(f"[PYDANTIC-INIT] auto_publish raw type: {type(raw_val)}")
+            logger.info(f"[PYDANTIC-INIT] auto_publish == True: {raw_val == True}")
+            logger.info(f"[PYDANTIC-INIT] auto_publish is True: {raw_val is True}")
+            logger.info(f"[PYDANTIC-INIT] bool(auto_publish): {bool(raw_val)}")
+
         # Map human_feedback to feedback if feedback is empty
         if 'human_feedback' in data and not data.get('feedback'):
             data['feedback'] = data['human_feedback']
+            logger.info(f"[PYDANTIC-INIT] Mapped human_feedback to feedback")
+
+        # Parse auto_publish explicitly if it's a string
+        if 'auto_publish' in data and isinstance(data['auto_publish'], str):
+            logger.warning(f"[PYDANTIC-INIT] auto_publish is string: {data['auto_publish']!r}")
+            data['auto_publish'] = data['auto_publish'].lower() in ('true', '1', 'yes')
+            logger.info(f"[PYDANTIC-INIT] Converted to bool: {data['auto_publish']}")
+
         super().__init__(**data)
+
+        # DEBUG: Log after Pydantic parsing
+        logger.info(f"[PYDANTIC-POST] self.auto_publish: {self.auto_publish!r}")
+        logger.info(f"[PYDANTIC-POST] type: {type(self.auto_publish)}")
+        logger.info(f"[PYDANTIC-POST] bool test: {bool(self.auto_publish)}")
+
 
 
 class RejectionRequest(BaseModel):
