@@ -27,20 +27,21 @@ logger = logging.getLogger(__name__)
 
 
 def serialize_value_for_postgres(value: Any) -> Any:
-    """Serialize Python value for PostgreSQL."""
+    """Serialize Python value for PostgreSQL, ensuring timezone-aware datetimes."""
     if value is None:
         return None
+
+    # Handle datetime objects first - keep naive, let PostgreSQL handle timezone
+    if isinstance(value, datetime):
+        # Return datetime as-is (naive UTC)
+        # PostgreSQL TIMESTAMP WITH TIME ZONE column will interpret naive datetimes as UTC
+        return value
+
     if isinstance(value, dict):
         return json.dumps(value)
     if isinstance(value, list):
         return json.dumps(value)
     if isinstance(value, (int, float, bool)):
-        return value
-    if isinstance(value, datetime):
-        # Ensure datetime is timezone-aware (UTC)
-        if value.tzinfo is None:
-            # Naive datetime, assume UTC
-            value = value.replace(tzinfo=timezone.utc)
         return value
     if isinstance(value, str):
         # Try to parse ISO format datetime strings
@@ -53,6 +54,7 @@ def serialize_value_for_postgres(value: Any) -> Any:
                 dt = datetime.fromisoformat(value)
                 # Ensure timezone-aware
                 if dt.tzinfo is None:
+                    logger.warning(f"Converting naive datetime string to UTC: {value}")
                     dt = dt.replace(tzinfo=timezone.utc)
                 return dt
             except (ValueError, AttributeError):
@@ -63,6 +65,7 @@ def serialize_value_for_postgres(value: Any) -> Any:
         # Handle timezone-aware datetime objects
         if isinstance(value, datetime):
             if value.tzinfo is None:
+                logger.warning(f"Converting naive datetime object to UTC: {value}")
                 return value.replace(tzinfo=timezone.utc)
         return value
     return str(value)
@@ -170,8 +173,9 @@ class TasksDatabase(DatabaseServiceMixin):
             metadata["task_name"] = task_data["task_name"]
 
         try:
-            # Use timezone-aware UTC datetime
-            now = datetime.now(timezone.utc)
+            # Use UTC datetime - note asyncpg prefers naive UTC which PostgreSQL auto-converts
+            # The column is TIMESTAMP WITH TIME ZONE, so PostgreSQL handles timezone conversion
+            utc_now = datetime.utcnow()
 
             # Build insert columns dict
             insert_data = {
@@ -228,14 +232,15 @@ class TasksDatabase(DatabaseServiceMixin):
                     if task_data.get("cost_breakdown")
                     else None
                 ),
-                "created_at": now,
-                "updated_at": now,
+                "created_at": utc_now,
+                "updated_at": utc_now,
             }
 
             # Serialize values for PostgreSQL (handles datetime, JSON, etc.)
             serialized_data = {}
             for key, value in insert_data.items():
-                serialized_data[key] = serialize_value_for_postgres(value)
+                serialized = serialize_value_for_postgres(value)
+                serialized_data[key] = serialized
 
             builder = ParameterizedQueryBuilder()
             sql, params = builder.insert(
@@ -311,6 +316,7 @@ class TasksDatabase(DatabaseServiceMixin):
         Update task status in content_tasks.
 
         Supports both numeric IDs (legacy) and UUID task IDs.
+        Tries both id and task_id columns to ensure match.
 
         Args:
             task_id: Task ID (numeric or UUID)
@@ -318,21 +324,21 @@ class TasksDatabase(DatabaseServiceMixin):
             result: Optional result data
 
         Returns:
-            Updated task dict or None
+            Updated task dict or None if task not found
         """
         now = datetime.now(timezone.utc)
 
         try:
-            # Determine which column to update (id for numeric, task_id for UUID)
-            where_column = "id" if task_id.isdigit() else "task_id"
-            where_value = int(task_id) if task_id.isdigit() else str(task_id)
-
             builder = ParameterizedQueryBuilder()
 
             updates = {"status": status, "updated_at": now}
 
             if result:
                 updates["result"] = result
+
+            # First, try to determine the right column to use
+            where_column = "id" if task_id.isdigit() else "task_id"
+            where_value = int(task_id) if task_id.isdigit() else str(task_id)
 
             sql, params = builder.update(
                 table="content_tasks",
@@ -341,14 +347,41 @@ class TasksDatabase(DatabaseServiceMixin):
                 return_columns=["*"],
             )
 
+            logger.debug(f"[update_task_status] Executing UPDATE with where_column={where_column}, where_value={where_value}")
+
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, *params)
                 if row:
-                    logger.info(f"✅ Task status updated: {task_id} → {status}")
+                    logger.info(f"Task status updated: {task_id} → {status}")
                     return self._convert_row_to_dict(row)
+
+                # If not found with primary approach, try alternate column
+                logger.warning(f"[update_task_status] First attempt returned no rows. Task ID: {task_id}, where_column: {where_column}")
+
+                # Try the opposite column
+                alt_where_column = "task_id" if where_column == "id" else "id"
+                alt_where_value = str(task_id) if where_column == "id" else (int(task_id) if task_id.isdigit() else task_id)
+
+                logger.debug(f"[update_task_status] Trying alternate where_column={alt_where_column}, where_value={alt_where_value}")
+
+                sql_alt, params_alt = builder.update(
+                    table="content_tasks",
+                    updates=updates,
+                    where_clauses=[(alt_where_column, SQLOperator.EQ, alt_where_value)],
+                    return_columns=["*"],
+                )
+
+                row_alt = await conn.fetchrow(sql_alt, *params_alt)
+                if row_alt:
+                    logger.info(f"Task status updated (alternate ID): {task_id} → {status}")
+                    return self._convert_row_to_dict(row_alt)
+
+                # Task not found with either approach
+                logger.error(f"[update_task_status] Task not found with either ID approach. task_id={task_id}, tried columns: {where_column}, {alt_where_column}")
                 return None
+
         except Exception as e:
-            logger.error(f"[update_task_status] Failed to update task status {task_id}: {e}", exc_info=True)
+            logger.error(f"[update_task_status] Exception updating task status {task_id}: {e}", exc_info=True)
             return None
 
     async def update_task(self, task_id: str, updates: Dict[str, Any]) -> Optional[dict]:

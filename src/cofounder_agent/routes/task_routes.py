@@ -1968,9 +1968,18 @@ async def approve_task(
         safe_result = convert_decimals({"metadata": approval_metadata, **merged_result})
 
         try:
-            await db_service.update_task_status(
+            update_result = await db_service.update_task_status(
                 task_id, new_status, result=safe_json_dumps(safe_result)
             )
+            if not update_result:
+                logger.error(f"Failed to update approval task: update_task_status returned None for task_id={task_id}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to update task status: task not found or update failed"
+                )
+            logger.info(f"Successfully updated task {task_id} to status '{new_status}'")
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Failed to update task status to {new_status}: {str(e)}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Failed to update task status: {str(e)}")
@@ -1992,9 +2001,13 @@ async def approve_task(
                 )
 
                 try:
-                    await db_service.update_task_status(
+                    publish_update_result = await db_service.update_task_status(
                         task_id, "published", result=safe_json_dumps(safe_publish_result)
                     )
+                    if publish_update_result:
+                        logger.info(f"Task {task_id} status updated to 'published'")
+                    else:
+                        logger.warning(f"Auto-publish: update_task_status returned None for task {task_id}")
                 except Exception as e:
                     logger.error(
                         f"Failed to update task status to published: {str(e)}", exc_info=True
@@ -2207,9 +2220,16 @@ async def publish_task(
             "published_at": datetime.now(timezone.utc).isoformat(),
             "published_by": current_user.get("id"),
         }
-        await db_service.update_task_status(
+        publish_update_result = await db_service.update_task_status(
             task_id, "published", result=json.dumps({"metadata": publish_metadata})
         )
+
+        if not publish_update_result:
+            logger.error(f"Failed to update task {task_id} status to published")
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to update task status to published"
+            )
 
         # Create post in posts table when publishing (not before)
         # This ensures posts only exist for published content
@@ -2359,9 +2379,16 @@ async def reject_task(
             "rejected_at": datetime.now(timezone.utc).isoformat(),
             "rejected_by": current_user.get("id"),
         }
-        await db_service.update_task_status(
+        reject_result = await db_service.update_task_status(
             task_id, "rejected", result=json.dumps({"metadata": reject_metadata})
         )
+
+        if not reject_result:
+            logger.error(f"Failed to update task {task_id} status to rejected")
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to update task status to rejected"
+            )
 
         # Fetch updated task
         updated_task = await db_service.get_task(task_id)
