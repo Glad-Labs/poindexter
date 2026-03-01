@@ -310,8 +310,11 @@ const ApprovalQueue = () => {
           },
           body: JSON.stringify({
             approved: true,
-            feedback: approveFeedback || undefined,
-            reviewer_notes: approveFeedback || undefined,
+            auto_publish: true,
+            human_feedback: approveFeedback || undefined,
+            reviewer_id: undefined,
+            featured_image_url: undefined,
+            image_source: undefined,
           }),
         }
       );
@@ -322,7 +325,7 @@ const ApprovalQueue = () => {
       }
 
       await response.json();
-      setSuccess(`Task approved: ${selectedTask.task_name}`);
+      setSuccess(`Task approved and published: ${selectedTask.task_name}`);
       setApproveDialogOpen(false);
 
       // Refresh list

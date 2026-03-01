@@ -575,7 +575,7 @@ async def process_content_generation_task(
         # ================================================================================
         # STAGE 2B: QUALITY EVALUATION (Early check after content generation)
         # ================================================================================
-        logger.info("⭐ STAGE 2B: Early quality evaluation...")
+        logger.info("⭐ STAGE 2B: Early quality evaluation with LLM feedback...")
 
         quality_result = await quality_service.evaluate(
             content=content_text,
@@ -584,7 +584,7 @@ async def process_content_generation_task(
                 "keywords": tags or [topic],
                 "audience": "General",
             },
-            method=EvaluationMethod.PATTERN_BASED,
+            method=EvaluationMethod.LLM_BASED,  # Changed to LLM_BASED for actual feedback
         )
 
         # Validate quality_result is not None
@@ -594,6 +594,7 @@ async def process_content_generation_task(
 
         result["quality_score"] = quality_result.overall_score
         result["quality_passing"] = quality_result.passing
+        result["qa_feedback"] = quality_result.feedback  # [CRITICAL FIX] Store QA feedback
         result["quality_details_initial"] = {
             "clarity": quality_result.dimensions.clarity,
             "accuracy": quality_result.dimensions.accuracy,
@@ -604,9 +605,10 @@ async def process_content_generation_task(
             "engagement": quality_result.dimensions.engagement,
         }
         result["stages"]["2b_quality_evaluated_initial"] = True
-        logger.info(f"✅ Initial quality evaluation complete:")
+        logger.info(f"✅ Quality evaluation complete:")
         logger.info(f"   Overall Score: {quality_result.overall_score:.1f}/100")
-        logger.info(f"   Passing: {quality_result.passing} (threshold ≥70.0)\n")
+        logger.info(f"   Passing: {quality_result.passing} (threshold ≥70.0)")
+        logger.info(f"   Feedback: {quality_result.feedback}\n")
 
         # ================================================================================
         # STAGE 3: SOURCE FEATURED IMAGE FROM UNIFIED IMAGE SERVICE
