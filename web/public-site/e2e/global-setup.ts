@@ -31,7 +31,7 @@ async function globalSetup(config: FullConfig) {
     
     // Check if frontend is running
     console.log('✓ Checking frontend availability...');
-    await page.goto(config.use.baseURL || 'http://localhost:3000', {
+    await page.goto('http://localhost:3000', {
       waitUntil: 'domcontentloaded',
     }).catch(() => console.warn('⚠️  Frontend not ready yet'));
     

@@ -24,10 +24,13 @@ export async function GET(
     // Unwrap the params promise (Next.js 15+)
     const { slug } = await params;
 
-    // Fetch all posts and filter by slug since by-slug endpoint doesn't exist
-    const response = await fetch(`${API_BASE}/api/posts?populate=*`, {
-      next: { revalidate: 3600 }, // ISR: revalidate every hour
-    });
+    // Fetch published posts and filter by slug
+    const response = await fetch(
+      `${API_BASE}/api/posts?published_only=true&limit=1000`,
+      {
+        next: { revalidate: 3600 }, // ISR: revalidate every hour
+      }
+    );
 
     if (!response.ok) {
       return NextResponse.json(

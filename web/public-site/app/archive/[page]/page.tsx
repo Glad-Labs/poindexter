@@ -43,7 +43,7 @@ export default function ArchivePage({ params }: ArchivePageProps) {
         setLoading(true);
         const skip = (pageNum - 1) * POSTS_PER_PAGE;
         const response = await fetch(
-          `${API_BASE}/api/posts?skip=${skip}&limit=${POSTS_PER_PAGE}&status=published`
+          `${API_BASE}/api/posts?skip=${skip}&limit=${POSTS_PER_PAGE}&published_only=true`
         );
 
         if (!response.ok) {

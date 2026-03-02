@@ -43,13 +43,33 @@ class APIClient {
     options?: { body?: any; headers?: Record<string, string> }
   ) {
     const url = `${this.baseUrl}${endpoint}`;
-    const response = await this.page.request[method.toLowerCase()](url, {
+    const requestOptions = {
       ...options,
       headers: {
         'Content-Type': 'application/json',
         ...options?.headers,
       },
-    });
+    };
+
+    const methodLower = method.toLowerCase();
+    let response;
+
+    switch (methodLower) {
+      case 'get':
+        response = await this.page.request.get(url, requestOptions);
+        break;
+      case 'post':
+        response = await this.page.request.post(url, requestOptions);
+        break;
+      case 'put':
+        response = await this.page.request.put(url, requestOptions);
+        break;
+      case 'delete':
+        response = await this.page.request.delete(url, requestOptions);
+        break;
+      default:
+        throw new Error(`Unsupported HTTP method: ${method}`);
+    }
 
     const data = await response.json().catch(() => null);
     return {
@@ -261,17 +281,17 @@ class VisualTesting {
       const walker = document.createTreeWalker(
         document.body,
         NodeFilter.SHOW_ELEMENT,
-        null,
-        false
+        null
       );
 
-      let node = walker.currentNode;
-      while ((node = walker.nextNode() as any)) {
-        if (node.getAttribute && node.getAttribute('role')) {
-          tree[node.id || node.className] = {
-            role: node.getAttribute('role'),
-            ariaLabel: node.getAttribute('aria-label'),
-            text: node.innerText?.substring(0, 50),
+      let node: any = walker.currentNode;
+      while ((node = walker.nextNode())) {
+        const element = node as HTMLElement;
+        if (element.getAttribute && element.getAttribute('role')) {
+          tree[element.id || element.className] = {
+            role: element.getAttribute('role'),
+            ariaLabel: element.getAttribute('aria-label'),
+            text: element.innerText?.substring(0, 50),
           };
         }
       }
