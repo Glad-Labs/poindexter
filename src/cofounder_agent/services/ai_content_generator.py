@@ -26,6 +26,7 @@ import httpx
 
 from .prompt_manager import get_prompt_manager
 from .provider_checker import ProviderChecker
+from .content_structure_validator import ContentStructureValidator
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,7 @@ class AIContentGenerator:
         self.ollama_checked = False  # Track if we've checked Ollama async
         self.generation_attempts = 0
         self.max_refinement_attempts = 3
+        self.structure_validator = ContentStructureValidator()
 
         logger.info("AIContentGenerator initialized (Ollama check deferred to first async call)")
         logger.debug(
@@ -101,11 +103,11 @@ class AIContentGenerator:
         Self-check: Validate generated content against quality rubric.
 
         Checks:
-        1. Content length (target ±30%)
-        2. Structure (has headings, sections)
-        3. Content quality (readability, completeness)
-        4. Markdown formatting
-        5. Presence of practical examples
+        1. Content length (target ±10% for tighter tolerance)
+        2. Structure (heading hierarchy, proper sections)
+        3. Forbidden/generic heading titles
+        4. Practical examples and call-to-action
+        5. Topic relevance and completeness
 
         Returns:
             ContentValidationResult with quality score and issues
@@ -113,50 +115,68 @@ class AIContentGenerator:
         issues = []
         score = 10.0
 
-        # 1. Check length
+        # 1. Check length (tighter tolerance: ±10% instead of ±30%)
         word_count = len(content.split())
-        min_words = int(target_length * 0.7)
-        max_words = int(target_length * 1.3)
+        min_words = int(target_length * 0.9)
+        max_words = int(target_length * 1.1)
 
         if word_count < min_words:
             issues.append(f"Content too short: {word_count} words (target: {target_length})")
             score -= 2.0
         elif word_count > max_words:
             issues.append(f"Content too long: {word_count} words (target: {target_length})")
-            score -= 1.0
-
-        # 2. Check structure (headings)
-        heading_count = len(re.findall(r"^##+ ", content, re.MULTILINE))
-        if heading_count < 3:
-            issues.append(f"Insufficient structure: {heading_count} sections (recommend 3-5)")
             score -= 1.5
 
-        # 3. Check for introduction
-        if not re.search(r"^# ", content, re.MULTILINE):
-            issues.append("Missing title (# heading)")
+        # 2. Use ContentStructureValidator for comprehensive structure check
+        structure_result = self.structure_validator.validate(content)
+
+        # Add structure issues to validation report
+        if not structure_result.heading_hierarchy_valid:
+            issues.append("Heading hierarchy is invalid (should be H1 → H2 → H3)")
+            score -= 2.0
+
+        if not structure_result.no_forbidden_titles:
+            issues.append(
+                f"Generic heading titles detected: {', '.join(structure_result.sections[0].heading_text for s in structure_result.sections if s.heading_text.lower() in {'introduction', 'conclusion'})} "
+                "(use benefit-focused titles instead)"
+            )
+            score -= 2.0
+
+        if structure_result.orphan_paragraph_count > 0:
+            issues.append(
+                f"Found {structure_result.orphan_paragraph_count} orphan paragraphs (single sentence). "
+                "Merge or expand these."
+            )
             score -= 1.0
 
-        # 4. Check for conclusion
-        conclusion_keywords = ["conclusion", "summary", "next steps", "takeaway"]
+        if structure_result.bloated_paragraph_count > 0:
+            issues.append(
+                f"Found {structure_result.bloated_paragraph_count} bloated paragraphs (>10 sentences). "
+                "Break these into smaller paragraphs."
+            )
+            score -= 0.5
+
+        # 3. Check for conclusion
+        conclusion_keywords = ["conclusion", "summary", "next steps", "takeaway", "key takeaways"]
         has_conclusion = any(keyword in content.lower() for keyword in conclusion_keywords)
         if not has_conclusion:
             issues.append("Missing conclusion section")
             score -= 1.5
 
-        # 5. Check for practical examples/lists
+        # 4. Check for practical examples/lists
         has_examples = "- " in content or "* " in content or "1. " in content
         if not has_examples:
             issues.append("Missing practical examples or bullet points")
             score -= 1.0
 
-        # 6. Check for call-to-action
-        cta_keywords = ["ready", "start", "begin", "try", "implement", "action", "next"]
+        # 5. Check for call-to-action
+        cta_keywords = ["ready", "start", "begin", "try", "implement", "action", "next", "discover", "learn"]
         has_cta = any(keyword in content.lower() for keyword in cta_keywords)
         if not has_cta:
             issues.append("Missing call-to-action")
             score -= 0.5
 
-        # 7. Check for topic mentions (relevance)
+        # 6. Check for topic mentions (relevance)
         topic_words = topic.lower().split()[:3]  # First 3 words
         topic_mentions = sum(1 for word in topic_words if word in content.lower())
         if topic_mentions < 2:
