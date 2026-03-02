@@ -57,10 +57,38 @@ class CreativeAgent:
         """
         raw_draft = ""
         if is_refinement and post.qa_feedback:
+            # NEW: BUILD ACCUMULATED FEEDBACK from ALL QA rounds (not just the last one)
+            accumulated_feedback = "QA FEEDBACK HISTORY:\n" + "\n".join([
+                f"Round {i+1}: {feedback}"
+                for i, feedback in enumerate(post.qa_feedback)
+            ])
+
+            logger.info(f"CreativeAgent: Using accumulated QA feedback ({len(post.qa_feedback)} rounds)")
+            logger.debug(f"Accumulated feedback:\n{accumulated_feedback}")
+
+            # NEW: SCORE IMPROVEMENT CHECK (if quality scores tracked)
+            if hasattr(post, 'quality_scores') and len(post.quality_scores) > 1:
+                latest_score = post.quality_scores[-1]
+                previous_score = post.quality_scores[-2]
+                score_improvement = latest_score - previous_score
+
+                logger.info(
+                    f"Quality score improvement: {previous_score:.1f} → {latest_score:.1f} "
+                    f"(+{score_improvement:.1f} points)"
+                )
+
+                # NEW: Early exit if improvement is minimal (less than 5 points on 0-100 scale)
+                if score_improvement < 5.0 and len(post.qa_feedback) > 1:
+                    logger.info(
+                        f"⏹️  CreativeAgent: Stopping refinement - minimal improvement ({score_improvement:.1f} points). "
+                        f"Returning current content (score: {latest_score:.1f}/100)"
+                    )
+                    return post  # Return without further refinement
+
             refinement_prompt = self.pm.get_prompt(
                 "blog_generation.iterative_refinement",
                 draft=post.raw_content,
-                critique=post.qa_feedback[-1],
+                critique=accumulated_feedback,  # ← CHANGED: Use ALL feedback, not just [-1]
                 target_audience=post.target_audience or "General",
                 primary_keyword=post.primary_keyword or "topic",
             )

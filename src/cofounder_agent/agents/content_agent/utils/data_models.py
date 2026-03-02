@@ -57,6 +57,13 @@ class BlogPost(BaseModel):
     # --- Refinement & State Tracking ---
     qa_feedback: List[str] = Field(default_factory=list)
 
+    # --- NEW: Quality Score Tracking ---
+    quality_scores: List[float] = Field(
+        default_factory=list,
+        description="Quality scores from each QA evaluation (0-100 scale). "
+                    "Allows tracking improvement trend across refinement iterations."
+    )
+
     # --- Metadata for Agent Coordination ---
     metadata: Optional[Dict[str, Any]] = Field(
         default_factory=dict,

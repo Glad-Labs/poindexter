@@ -364,6 +364,9 @@ class AIContentGenerator:
             },
         }
 
+        # NEW: Track refinement feedback history to accumulate feedback across attempts
+        refinement_feedback_history = []  # List of {attempt, feedback, issues, score}
+
         start_time = time.time()
 
         # Try models in order of preference
@@ -811,9 +814,53 @@ class AIContentGenerator:
                                     f"      ⚙️  Content below threshold. Refining ({metrics['refinement_attempts'] + 1}/{self.max_refinement_attempts})..."
                                 )
 
+                                # NEW: Accumulate feedback from this attempt
+                                refinement_feedback_history.append({
+                                    "attempt": metrics['refinement_attempts'] + 1,
+                                    "feedback": validation.feedback,
+                                    "issues": validation.issues,
+                                    "score": validation.quality_score,
+                                })
+
+                                # NEW: Check if improvement is worth continuing
+                                if len(refinement_feedback_history) >= 2:
+                                    latest_score = refinement_feedback_history[-1]["score"]
+                                    previous_score = refinement_feedback_history[-2]["score"]
+                                    score_improvement = latest_score - previous_score
+
+                                    if score_improvement < 0.5:  # Less than 0.5 point improvement
+                                        logger.info(
+                                            f"      ⏹️  Stopping refinement: minimal improvement ({score_improvement:.2f} points). "
+                                            f"Best attempt: {latest_score:.1f}/10"
+                                        )
+                                        # Return best attempt so far
+                                        metrics["model_used"] = f"Ollama - {model_name}"
+                                        metrics["models_used_by_phase"]["draft"] = metrics["model_used"]
+                                        metrics["final_quality_score"] = latest_score
+                                        metrics["generation_time_seconds"] = time.time() - start_time
+                                        logger.info(f"\n{'='*80}")
+                                        logger.info(f"⚠️  GENERATION COMPLETE (stops refinement due to minimal improvement)")
+                                        logger.info(f"   Model: {metrics['model_used']}")
+                                        logger.info(
+                                            f"   Quality: {latest_score:.1f}/{self.quality_threshold}"
+                                        )
+                                        logger.info(f"   Time: {metrics['generation_time_seconds']:.1f}s")
+                                        logger.info(f"{'='*80}\n")
+                                        return generated_content, metrics["model_used"], metrics
+
+                                # BUILD ACCUMULATED FEEDBACK STRING
+                                accumulated_feedback = "REFINEMENT HISTORY:\n" + "\n".join([
+                                    f"Attempt {item['attempt']}: Score {item['score']:.1f}/10\n"
+                                    f"  Feedback: {item['feedback']}\n"
+                                    f"  Issues: {', '.join(item['issues']) if item['issues'] else 'None'}"
+                                    for item in refinement_feedback_history
+                                ])
+
+                                logger.debug(f"Accumulated feedback for refinement:\n{accumulated_feedback}")
+
                                 metrics["refinement_attempts"] += 1
                                 refinement_prompt = get_refinement_prompt(
-                                    feedback=validation.feedback,
+                                    feedback=accumulated_feedback,  # ← CHANGED: Use ALL accumulated feedback
                                     issues=validation.issues,
                                     content=generated_content,
                                 )

@@ -28,6 +28,7 @@ from .image_service import ImageService, get_image_service
 from .prompt_manager import get_prompt_manager
 from .quality_service import EvaluationMethod, UnifiedQualityService
 from .seo_content_generator import get_seo_content_generator
+from .seo_validator import SEOValidator
 
 logger = logging.getLogger(__name__)
 
@@ -703,6 +704,42 @@ async def process_content_generation_task(
         logger.info(f"   Title: {seo_title}")
         logger.info(f"   Description: {seo_description[:80]}...")
         logger.info(f"   Keywords: {', '.join(seo_keywords[:5])}...\n")
+
+        # Validate SEO metadata using hard constraints
+        logger.info("🔍 VALIDATING SEO METADATA...")
+        seo_validator = SEOValidator()
+        seo_validation = seo_validator.validate(
+            content=content_text,
+            title=seo_title,
+            meta_description=seo_description,
+            keywords=seo_keywords,
+            primary_keyword=post_request.primary_keyword or (seo_keywords[0] if seo_keywords else None),
+            slug=None,  # Slug will be generated from title later
+        )
+
+        # Log validation results
+        if seo_validation.is_valid:
+            logger.info("✅ SEO validation passed")
+        else:
+            logger.warning("⚠️ SEO validation issues found:")
+            for error in seo_validation.errors:
+                logger.warning(f"   ❌ {error}")
+            for warning in seo_validation.warnings:
+                logger.warning(f"   ⚠️ {warning}")
+            for suggestion in seo_validation.suggestions:
+                logger.info(f"   💡 {suggestion}")
+
+        # Store validation result for debugging
+        result["seo_validation"] = {
+            "is_valid": seo_validation.is_valid,
+            "errors": seo_validation.errors,
+            "warnings": seo_validation.warnings,
+            "suggestions": seo_validation.suggestions,
+            "keyword_densities": {
+                kv.keyword: f"{kv.density:.2f}% ({kv.appearances} mentions)"
+                for kv in seo_validation.keyword_validations
+            }
+        }
 
         # ================================================================================
         # STAGE 5: CREATE POSTS RECORD
