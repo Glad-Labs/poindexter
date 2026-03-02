@@ -56,7 +56,17 @@ def convert_markdown_to_html(markdown_content: str) -> str:
         html = re.sub(r"^\s*={3,}\s*$", "", html, flags=re.MULTILINE)
         html = re.sub(r"^\s*-{3,}\s*$", "", html, flags=re.MULTILINE)
 
-        # Convert bold (**, __, **text**, __text__)
+        # Convert images before links: ![alt](url)
+        html = re.sub(
+            r"!\[([^\]]*)\]\(([^)]+)\)",
+            r'<img src="\2" alt="\1" loading="lazy">',
+            html,
+        )
+
+        # Convert inline links: [text](url)
+        html = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', html)
+
+        # Convert bold (**, __)
         html = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", html)
         html = re.sub(r"__(.*?)__", r"<strong>\1</strong>", html)
 
@@ -77,6 +87,7 @@ def convert_markdown_to_html(markdown_content: str) -> str:
                 or p.startswith("<ol")
                 or p.startswith("<ul")
                 or p.startswith("<blockquote")
+                or p.startswith("<img")
             ):
                 converted_paragraphs.append(p)
             # Handle numbered lists

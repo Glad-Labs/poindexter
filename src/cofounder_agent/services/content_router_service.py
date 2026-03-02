@@ -294,6 +294,63 @@ class ContentGenerationService:
 # ============================================================================
 
 
+def _embed_images_in_content(content: str, images: list) -> str:
+    """
+    Replace [IMAGE-N] placeholders with actual image markdown.
+
+    The LLM is instructed to include [IMAGE-1], [IMAGE-2], etc. at appropriate
+    locations in the draft. This function replaces each placeholder with a real
+    Pexels image. If no placeholders are found, images are inserted after every
+    other H2 heading as a fallback.
+    """
+    import re as _re
+
+    def _img_markdown(img) -> str:
+        if hasattr(img, "to_markdown"):
+            return img.to_markdown()
+        url = getattr(img, "url", "")
+        alt = getattr(img, "alt_text", "") or getattr(img, "caption", "") or "Related image"
+        photographer = getattr(img, "photographer", "")
+        md = f"![{alt}]({url})"
+        if photographer:
+            md += f"\n*Photo by {photographer} on Pexels*"
+        return md
+
+    # Check if LLM left [IMAGE-N] placeholders in the draft
+    placeholder_pattern = _re.compile(r"\[IMAGE-?\d+\]", _re.IGNORECASE)
+    placeholders = placeholder_pattern.findall(content)
+
+    if placeholders:
+        # Replace placeholders with real images in order
+        result = content
+        for i, placeholder in enumerate(placeholders):
+            if i < len(images):
+                replacement = f"\n\n{_img_markdown(images[i])}\n\n"
+            else:
+                replacement = ""  # Remove excess placeholders with no image
+            # Only replace first occurrence so we handle duplicates correctly
+            result = result.replace(placeholder, replacement, 1)
+        return result
+
+    # Fallback: insert after every second H2 heading
+    lines = content.split("\n")
+    result_lines = []
+    h2_count = 0
+    image_index = 0
+
+    for line in lines:
+        result_lines.append(line)
+        if _re.match(r"^## ", line) and image_index < len(images):
+            h2_count += 1
+            if h2_count % 2 == 0:
+                result_lines.append("")
+                result_lines.append(_img_markdown(images[image_index]))
+                result_lines.append("")
+                image_index += 1
+
+    return "\n".join(result_lines)
+
+
 async def _generate_canonical_title(
     topic: str, primary_keyword: str, content_excerpt: str
 ) -> Optional[str]:
@@ -656,6 +713,24 @@ async def process_content_generation_task(
         else:
             result["stages"]["3_featured_image_found"] = False
             logger.info("⏭️  Image search skipped (disabled)\n")
+
+        # ================================================================================
+        # STAGE 3B: EMBED BODY IMAGES INTO CONTENT
+        # ================================================================================
+        if generate_featured_image:
+            logger.info("🖼️  STAGE 3B: Fetching body images to embed in content...")
+            try:
+                body_images = await image_service.get_images_for_gallery(
+                    topic=topic, count=3, keywords=search_keywords
+                )
+                if body_images:
+                    content_text = _embed_images_in_content(content_text, body_images)
+                    result["content"] = content_text
+                    logger.info(f"✅ Embedded {len(body_images)} body images into content\n")
+                else:
+                    logger.info("ℹ️  No body images available to embed\n")
+            except Exception as e:
+                logger.warning(f"⚠️  Body image embedding failed (continuing): {e}")
 
         # ================================================================================
         # STAGE 4: GENERATE SEO METADATA
