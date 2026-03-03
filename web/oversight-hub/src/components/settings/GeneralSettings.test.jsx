@@ -11,12 +11,15 @@ describe('GeneralSettings Component', () => {
     vi.clearAllMocks();
   });
 
-  test('renders the component with title', () => {
+  test('renders the component with title', async () => {
     settingsService.getSetting.mockResolvedValue({ value: '30' });
     settingsService.createOrUpdateSetting.mockResolvedValue({});
 
     render(<GeneralSettings />);
-    expect(screen.getByText('Model Provider Preferences')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByText('General Settings')).toBeInTheDocument();
+    });
   });
 
   test('loads settings on mount', async () => {
@@ -27,7 +30,7 @@ describe('GeneralSettings Component', () => {
 
     await waitFor(() => {
       expect(settingsService.getSetting).toHaveBeenCalledWith(
-        'primary_llm_provider'
+        'auto_refresh_interval'
       );
     });
   });
@@ -44,19 +47,22 @@ describe('GeneralSettings Component', () => {
     expect(screen.getByRole('progressbar')).toBeInTheDocument();
   });
 
-  test('displays error message when loading fails', async () => {
-    const error = new Error('Failed to load settings');
-    settingsService.getSetting.mockRejectedValue(error);
+  test('uses default values when individual settings fail to load', async () => {
+    // Each getSetting call has an inner .catch() that returns defaults,
+    // so individual failures are silently handled.
+    settingsService.getSetting.mockRejectedValue(new Error('Network error'));
+    settingsService.createOrUpdateSetting.mockResolvedValue({});
 
     render(<GeneralSettings />);
 
+    // Component renders normally with default values
     await waitFor(() => {
-      expect(screen.getByText(/Failed to load settings/)).toBeInTheDocument();
+      expect(screen.getByText('General Settings')).toBeInTheDocument();
     });
   });
 
   test('displays error message when saving fails', async () => {
-    settingsService.getSetting.mockResolvedValue({ value: 'ollama' });
+    settingsService.getSetting.mockResolvedValue({ value: '30' });
     settingsService.createOrUpdateSetting.mockRejectedValue(
       new Error('Failed to save settings')
     );
@@ -64,7 +70,7 @@ describe('GeneralSettings Component', () => {
     render(<GeneralSettings />);
 
     await waitFor(() => {
-      const saveButton = screen.getByText('Save Model Preferences');
+      const saveButton = screen.getByText('Save General Settings');
       fireEvent.click(saveButton);
     });
 
@@ -74,18 +80,16 @@ describe('GeneralSettings Component', () => {
   });
 
   test('displays success message after saving', async () => {
-    settingsService.getSetting.mockResolvedValue({ value: 'ollama' });
+    settingsService.getSetting.mockResolvedValue({ value: '30' });
     settingsService.createOrUpdateSetting.mockResolvedValue({});
 
     render(<GeneralSettings />);
 
     await waitFor(() => {
-      const saveButton = screen.getByText('Save Model Preferences');
-      expect(saveButton).toBeInTheDocument();
+      expect(screen.getByText('Save General Settings')).toBeInTheDocument();
     });
 
-    const saveButton = screen.getByText('Save Model Preferences');
-    fireEvent.click(saveButton);
+    fireEvent.click(screen.getByText('Save General Settings'));
 
     await waitFor(() => {
       expect(
@@ -94,8 +98,8 @@ describe('GeneralSettings Component', () => {
     });
   });
 
-  test('disables buttons while saving', async () => {
-    settingsService.getSetting.mockResolvedValue({ value: 'ollama' });
+  test('disables save button while saving', async () => {
+    settingsService.getSetting.mockResolvedValue({ value: '30' });
     settingsService.createOrUpdateSetting.mockImplementation(
       () =>
         new Promise(() => {
@@ -106,11 +110,10 @@ describe('GeneralSettings Component', () => {
     render(<GeneralSettings />);
 
     await waitFor(() => {
-      const saveButton = screen.getByText('Save Model Preferences');
-      expect(saveButton).toBeInTheDocument();
+      expect(screen.getByText('Save General Settings')).toBeInTheDocument();
     });
 
-    const saveButton = screen.getByText('Save Model Preferences');
+    const saveButton = screen.getByText('Save General Settings');
     fireEvent.click(saveButton);
 
     await waitFor(() => {

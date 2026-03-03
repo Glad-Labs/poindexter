@@ -11,12 +11,19 @@ describe('ModelPreferences Component', () => {
     vi.clearAllMocks();
   });
 
-  test('renders the component with title', () => {
-    settingsService.getSetting.mockResolvedValue({ value: 'ollama' });
+  test('renders the component with title', async () => {
+    settingsService.getSetting.mockImplementation((key) => {
+      if (key === 'fallback_llm_providers') {
+        return Promise.resolve({ value: '["anthropic","openai","google"]' });
+      }
+      return Promise.resolve({ value: 'ollama' });
+    });
     settingsService.createOrUpdateSetting.mockResolvedValue({});
 
     render(<ModelPreferences />);
-    expect(screen.getByText('Model Provider Preferences')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('Model Provider Preferences')).toBeInTheDocument();
+    });
   });
 
   test('loads model preferences on mount', async () => {
@@ -44,14 +51,15 @@ describe('ModelPreferences Component', () => {
     expect(screen.getByRole('progressbar')).toBeInTheDocument();
   });
 
-  test('displays error message when loading fails', async () => {
-    const error = new Error('Failed to load settings');
-    settingsService.getSetting.mockRejectedValue(error);
+  test('uses default values when settings fail to load', async () => {
+    // Each getSetting call has an inner .catch() returning defaults,
+    // so individual failures are silently handled with defaults.
+    settingsService.getSetting.mockRejectedValue(new Error('Network error'));
 
     render(<ModelPreferences />);
 
     await waitFor(() => {
-      expect(screen.getByText(/Failed to load settings/)).toBeInTheDocument();
+      expect(screen.getByText('Model Provider Preferences')).toBeInTheDocument();
     });
   });
 
@@ -101,7 +109,12 @@ describe('ModelPreferences Component', () => {
   });
 
   test('shows cost-optimized toggle', async () => {
-    settingsService.getSetting.mockResolvedValue({ value: 'true' });
+    settingsService.getSetting.mockImplementation((key) => {
+      if (key === 'fallback_llm_providers') {
+        return Promise.resolve({ value: '["anthropic","openai","google"]' });
+      }
+      return Promise.resolve({ value: 'true' });
+    });
     settingsService.createOrUpdateSetting.mockResolvedValue({});
 
     render(<ModelPreferences />);

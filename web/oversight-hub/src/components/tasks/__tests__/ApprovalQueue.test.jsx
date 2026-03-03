@@ -177,7 +177,7 @@ describe('ApprovalQueue Component', () => {
       fireEvent.click(clearButton);
 
       await waitFor(() => {
-        expect(screen.queryByText(/tasks selected/)).not.toBeInTheDocument();
+        expect(screen.queryByText(/\d+ tasks? selected/)).not.toBeInTheDocument();
       });
     });
 
@@ -252,19 +252,15 @@ describe('ApprovalQueue Component', () => {
 
       render(<ApprovalQueue />);
 
-      await waitFor(() => {
-        const selectAllButton = screen.getByText(/Select All/);
-        fireEvent.click(selectAllButton);
-      });
+      const selectAllButton = await screen.findByText(/Select All/);
+      fireEvent.click(selectAllButton);
 
-      await waitFor(() => {
-        const bulkApproveBtn = screen.getByText(/Bulk Approve \(2\)/);
-        fireEvent.click(bulkApproveBtn);
-      });
+      const bulkApproveBtn = await screen.findByText(/Bulk Approve \(2\)/);
+      fireEvent.click(bulkApproveBtn);
 
       await waitFor(() => {
         expect(screen.getByText(/Bulk Approve Tasks/)).toBeInTheDocument();
-        expect(screen.getByText(/2 tasks/)).toBeInTheDocument();
+        expect(screen.getAllByText(/2 tasks/)[0]).toBeInTheDocument();
       });
     });
 
@@ -575,7 +571,14 @@ describe('ApprovalQueue Component', () => {
 
   describe('WebSocket Integration', () => {
     test('subscribes to WebSocket approval updates', async () => {
-      global.WebSocket = vi.fn();
+      global.WebSocket = vi.fn().mockImplementation(() => ({
+        onopen: null,
+        onmessage: null,
+        onerror: null,
+        onclose: null,
+        readyState: 0,
+        close: vi.fn(),
+      }));
 
       global.fetch.mockResolvedValueOnce({
         ok: true,
@@ -600,6 +603,11 @@ describe('ApprovalQueue Component', () => {
         close: vi.fn(),
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
+        onopen: null,
+        onmessage: null,
+        onerror: null,
+        onclose: null,
+        readyState: 0,
       };
 
       global.WebSocket = vi.fn(() => mockWebSocket);
@@ -614,50 +622,71 @@ describe('ApprovalQueue Component', () => {
 
       render(<ApprovalQueue />);
 
-      // Simulate WebSocket message
+      // Wait for the WebSocket onmessage handler to be set
       await waitFor(() => {
-        const callback = mockWebSocket.addEventListener.mock.calls[0][1];
-        callback({
-          data: JSON.stringify({
-            type: 'approval_status',
-            task_id: mockTasks[0].task_id,
-            status: 'approved',
-          }),
-        });
+        expect(mockWebSocket.onmessage).toBeInstanceOf(Function);
       });
 
-      // Verify component handles the message
-      expect(mockWebSocket.addEventListener).toHaveBeenCalledWith(
-        'message',
-        expect.any(Function)
-      );
+      // Simulate WebSocket message using the onmessage handler
+      mockWebSocket.onmessage({
+        data: JSON.stringify({
+          type: 'approval_status',
+          task_id: mockTasks[0].task_id,
+          status: 'approved',
+        }),
+      });
+
+      // Verify the handler was set
+      expect(mockWebSocket.onmessage).toBeInstanceOf(Function);
     });
   });
 
   describe('Pagination', () => {
     test('fetches next page when pagination button clicked', async () => {
+      // Return 11 tasks so pagination shows 2 pages (limit is 10)
+      const manyTasks = Array.from({ length: 11 }, (_, i) => ({
+        ...mockTasks[0],
+        task_id: `task-uuid-${i}`,
+        task_name: `Task ${i}`,
+      }));
+
       global.fetch.mockResolvedValueOnce({
         ok: true,
         json: async () => ({
-          tasks: mockTasks,
+          tasks: manyTasks,
+          total: 20,
+        }),
+      });
+
+      // Mock for page 2 fetch
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          tasks: [],
           total: 20,
         }),
       });
 
       render(<ApprovalQueue />);
 
+      // Wait for tasks to load and next page button to be enabled
       await waitFor(() => {
         const nextPageButtons = screen.getAllByLabelText(/next/i);
-        if (nextPageButtons.length > 0) {
-          fireEvent.click(nextPageButtons[0]);
-        }
+        const enabledNext = nextPageButtons.find((btn) => !btn.disabled);
+        expect(enabledNext).toBeTruthy();
       });
 
-      // Verify next page offset was used
-      expect(global.fetch).toHaveBeenLastCalledWith(
-        expect.stringContaining('offset=10'),
-        expect.any(Object)
-      );
+      const nextPageButtons = screen.getAllByLabelText(/next/i);
+      const enabledNext = nextPageButtons.find((btn) => !btn.disabled);
+      fireEvent.click(enabledNext);
+
+      // Verify next page offset was used in the second fetch call
+      await waitFor(() => {
+        expect(global.fetch).toHaveBeenCalledWith(
+          expect.stringContaining('offset=10'),
+          expect.any(Object)
+        );
+      });
     });
   });
 });

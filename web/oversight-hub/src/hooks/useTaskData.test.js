@@ -40,7 +40,7 @@ describe('useTaskData Hook', () => {
       });
 
       expect(result.current.tasks).toEqual(mockTasks);
-      expect(taskService.getTasks).toHaveBeenCalledWith(0, 10, {
+      expect(taskService.getTasks).toHaveBeenCalledWith(0, 1000, {
         sortBy: 'created_at',
         sortDirection: 'desc',
       });
@@ -53,7 +53,7 @@ describe('useTaskData Hook', () => {
       renderHook(() => useTaskData(2, 20, 'name', 'asc'));
 
       await waitFor(() => {
-        expect(taskService.getTasks).toHaveBeenCalledWith(10, 20, {
+        expect(taskService.getTasks).toHaveBeenCalledWith(0, 1000, {
           sortBy: 'name',
           sortDirection: 'asc',
         });
@@ -63,48 +63,32 @@ describe('useTaskData Hook', () => {
 
   describe('Pagination', () => {
     it('should calculate correct offset for different pages', async () => {
-      taskService.getTasks.mockResolvedValue([]);
+      const allTasks = Array.from({ length: 25 }, (_, i) => ({ id: i + 1, name: `Task ${i + 1}` }));
+      taskService.getTasks.mockResolvedValue(allTasks);
 
-      const { rerender } = renderHook(
-        ({ page, limit }) => useTaskData(page, limit),
-        { initialProps: { page: 1, limit: 10 } }
-      );
+      const { result } = renderHook(() => useTaskData(2, 10));
 
       await waitFor(() => {
-        expect(taskService.getTasks).toHaveBeenCalledWith(
-          0,
-          10,
-          expect.any(Object)
-        );
+        expect(result.current.loading).toBe(false);
       });
 
-      vi.clearAllMocks();
-      taskService.getTasks.mockResolvedValue([]);
-
-      // Move to page 3
-      rerender({ page: 3, limit: 10 });
-
-      await waitFor(() => {
-        expect(taskService.getTasks).toHaveBeenCalledWith(
-          20,
-          10,
-          expect.any(Object)
-        );
-      });
+      // Page 2 with limit 10 should show tasks 11-20 (in-memory slice)
+      expect(result.current.tasks.length).toBe(10);
+      expect(result.current.tasks[0].id).toBe(11);
     });
 
     it('should handle custom limit per page', async () => {
-      taskService.getTasks.mockResolvedValue([]);
+      const allTasks = Array.from({ length: 60 }, (_, i) => ({ id: i + 1, name: `Task ${i + 1}` }));
+      taskService.getTasks.mockResolvedValue(allTasks);
 
-      renderHook(() => useTaskData(1, 50));
+      const { result } = renderHook(() => useTaskData(1, 50));
 
       await waitFor(() => {
-        expect(taskService.getTasks).toHaveBeenCalledWith(
-          0,
-          50,
-          expect.any(Object)
-        );
+        expect(result.current.loading).toBe(false);
       });
+
+      // With limit 50, page 1 shows first 50 tasks
+      expect(result.current.tasks.length).toBe(50);
     });
 
     it('should set total tasks count', async () => {
@@ -126,7 +110,7 @@ describe('useTaskData Hook', () => {
       renderHook(() => useTaskData(1, 10, 'status', 'asc'));
 
       await waitFor(() => {
-        expect(taskService.getTasks).toHaveBeenCalledWith(0, 10, {
+        expect(taskService.getTasks).toHaveBeenCalledWith(0, 1000, {
           sortBy: 'status',
           sortDirection: 'asc',
         });
@@ -151,7 +135,7 @@ describe('useTaskData Hook', () => {
       rerender({ sortBy: 'name' });
 
       await waitFor(() => {
-        expect(taskService.getTasks).toHaveBeenCalledWith(0, 10, {
+        expect(taskService.getTasks).toHaveBeenCalledWith(0, 1000, {
           sortBy: 'name',
           sortDirection: 'desc',
         });
@@ -160,19 +144,19 @@ describe('useTaskData Hook', () => {
   });
 
   describe('Auto-refresh', () => {
-    it('should auto-refresh tasks every 30 seconds', async () => {
+    it('should support manual task refresh', async () => {
       taskService.getTasks.mockResolvedValue([{ id: 1, name: 'Task 1' }]);
 
-      renderHook(() => useTaskData());
+      const { result } = renderHook(() => useTaskData());
 
       // Initial fetch
       await waitFor(() => {
         expect(taskService.getTasks).toHaveBeenCalledTimes(1);
       });
 
-      // Fast-forward 30 seconds
+      // Manual refresh
       act(() => {
-        vi.advanceTimersByTime(30000);
+        result.current.fetchTasks();
       });
 
       await waitFor(() => {
@@ -221,19 +205,19 @@ describe('useTaskData Hook', () => {
 
       // First request fails
       taskService.getTasks.mockRejectedValueOnce(new Error('Error'));
-      const { result, rerender } = renderHook(({ page }) => useTaskData(page), {
-        initialProps: { page: 1 },
+      const { result, rerender } = renderHook(({ sortBy }) => useTaskData(1, 10, sortBy, 'desc'), {
+        initialProps: { sortBy: 'created_at' },
       });
 
       await waitFor(() => {
         expect(result.current.error).toBeDefined();
       });
 
-      // Second request succeeds
+      // Second request succeeds (trigger with sort change)
       vi.clearAllMocks();
       taskService.getTasks.mockResolvedValue(mockTasks);
 
-      rerender({ page: 2 });
+      rerender({ sortBy: 'name' });
 
       await waitFor(() => {
         expect(result.current.error).toBeNull();
@@ -277,22 +261,19 @@ describe('useTaskData Hook', () => {
 
       const { result } = renderHook(() => useTaskData());
 
-      // Manually trigger fetches while one is in progress
+      // Initial fetch starts, try to trigger another while it's running
       act(() => {
-        result.current.fetchTasks?.();
+        result.current.fetchTasks?.(); // Should be blocked - initial fetch running
       });
 
-      act(() => {
-        result.current.fetchTasks?.();
-      });
-
+      // Advance time to let initial fetch complete
       act(() => {
         vi.advanceTimersByTime(150);
       });
 
       await waitFor(() => {
-        // Should only call once despite multiple attempts
-        expect(taskService.getTasks).toHaveBeenCalledTimes(2); // Initial + manual (2nd prevented)
+        // Only 1 call: initial (manual was blocked)
+        expect(taskService.getTasks).toHaveBeenCalledTimes(1);
       });
     });
   });

@@ -10,7 +10,7 @@ export default defineConfig({
     setupFiles: ['./src/test-setup.js'],
     server: {
       deps: {
-        inline: [/@testing-library/],
+        inline: [/@testing-library/, /@mui\/icons-material/],
       },
     },
     coverage: {

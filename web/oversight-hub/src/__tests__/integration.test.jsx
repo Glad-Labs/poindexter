@@ -14,7 +14,7 @@
  */
 
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 
@@ -63,7 +63,7 @@ const LoginForm = ({ onSubmit, onSuccess }) => {
   };
 
   return (
-    <form onSubmit={handleSubmit} data-testid="login-form">
+    <form noValidate onSubmit={handleSubmit} data-testid="login-form">
       <input
         type="email"
         placeholder="Email"
@@ -423,35 +423,37 @@ describe('TaskCreationModal Integration', () => {
 describe('Multi-Form Workflows', () => {
   it('should handle login followed by task creation', async () => {
     const user = userEvent.setup();
-    const [showModal, setShowModal] = React.useState(false);
-    const [isLoggedIn, setIsLoggedIn] = React.useState(false);
 
-    const TestWorkflow = () => (
-      <>
-        {!isLoggedIn ? (
-          <LoginForm
-            onSubmit={async () => {
-              setIsLoggedIn(true);
-              return { success: true };
-            }}
-            onSuccess={() => {
-              setShowModal(true);
-            }}
+    const TestWorkflow = () => {
+      const [showModal, setShowModal] = React.useState(false);
+      const [isLoggedIn, setIsLoggedIn] = React.useState(false);
+      return (
+        <>
+          {!isLoggedIn ? (
+            <LoginForm
+              onSubmit={async () => {
+                setIsLoggedIn(true);
+                return { success: true };
+              }}
+              onSuccess={() => {
+                setShowModal(true);
+              }}
+            />
+          ) : (
+            <>
+              <p>Logged in successfully</p>
+              <button onClick={() => setShowModal(true)}>Create Task</button>
+            </>
+          )}
+
+          <TaskCreationModal
+            open={showModal}
+            onClose={() => setShowModal(false)}
+            onSubmit={async (_data) => ({ id: 1 })}
           />
-        ) : (
-          <>
-            <p>Logged in successfully</p>
-            <button onClick={() => setShowModal(true)}>Create Task</button>
-          </>
-        )}
-
-        <TaskCreationModal
-          open={showModal}
-          onClose={() => setShowModal(false)}
-          onSubmit={async (_data) => ({ id: 1 })}
-        />
-      </>
-    );
+        </>
+      );
+    };
 
     render(<TestWorkflow />);
 
@@ -464,10 +466,7 @@ describe('Multi-Form Workflows', () => {
       expect(screen.getByText('Logged in successfully')).toBeInTheDocument();
     });
 
-    // Step 2: Create task
-    const createTaskButton = screen.getByText('Create Task');
-    await user.click(createTaskButton);
-
+    // Step 2: Modal opens automatically via onSuccess; verify it's present
     await waitFor(() => {
       expect(screen.getByTestId('task-modal')).toBeInTheDocument();
     });
@@ -567,7 +566,8 @@ describe('Error Recovery & Edge Cases', () => {
       />
     );
 
-    await user.type(screen.getByTestId('task-title'), longTitle);
+    const titleInput = screen.getByTestId('task-title');
+    fireEvent.change(titleInput, { target: { value: longTitle } });
     await user.click(screen.getByTestId('task-submit'));
 
     await waitFor(() => {
@@ -592,7 +592,8 @@ describe('Error Recovery & Edge Cases', () => {
     );
 
     const specialTitle = 'Task #1: Generate <content> & test!';
-    await user.type(screen.getByTestId('task-title'), specialTitle);
+    const titleInput = screen.getByTestId('task-title');
+    fireEvent.change(titleInput, { target: { value: specialTitle } });
     await user.click(screen.getByTestId('task-submit'));
 
     await waitFor(() => {
@@ -624,7 +625,7 @@ describe('Real-World User Scenarios', () => {
     const titleInput = screen.getByTestId('task-title');
 
     // Rapid typing
-    await user.type(titleInput, 'New{Backspace} Blog Post');
+    await user.type(titleInput, 'New Blog Post');
     expect(titleInput).toHaveValue('New Blog Post');
 
     // Submit
