@@ -275,6 +275,7 @@ class CustomWorkflowsService:
         workflow: CustomWorkflow,
         initial_inputs: Optional[Dict[str, Any]] = None,
         execution_id: Optional[str] = None,
+        selected_model: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Execute a workflow and return results.
@@ -283,6 +284,7 @@ class CustomWorkflowsService:
             workflow: The workflow to execute
             initial_inputs: Initial input values for the first phase
             execution_id: Optional ID for tracking this execution
+            selected_model: Optional LLM model to use for execution (e.g., "ollama-mistral", "gpt-4-turbo")
 
         Returns:
             Dict with execution results:
@@ -315,6 +317,14 @@ class CustomWorkflowsService:
 
         logger.info(f"Starting workflow execution: {execution_id}")
         logger.info(f"Workflow: {workflow.name} ({len(workflow.phases)} phases)")
+        if selected_model:
+            logger.info(f"Selected model: {selected_model}")
+
+        # Inject selected_model into initial_inputs so it's available to phase handlers
+        if selected_model:
+            if initial_inputs is None:
+                initial_inputs = {}
+            initial_inputs["selected_model"] = selected_model
 
         # Initialize progress tracking
         progress_service = get_workflow_progress_service()

@@ -306,6 +306,7 @@ async def execute_custom_workflow(
     Args:
         workflow_id: Workflow UUID to execute
         request_body: Input data for workflow execution
+                      May include 'model' field to specify LLM provider
 
     Returns:
         Execution response with execution_id and phase results
@@ -322,6 +323,14 @@ async def execute_custom_workflow(
         if not workflow:
             raise HTTPException(status_code=404, detail=f"Workflow '{workflow_id}' not found")
 
+        # Extract model parameter if present
+        selected_model = None
+        if isinstance(request_body, dict):
+            selected_model = request_body.get("model") or request_body.get("selected_model")
+            # Remove model from input_data to avoid passing it as phase input
+            request_body.pop("model", None)
+            request_body.pop("selected_model", None)
+
         # Extract input data from request
         # Accept both payload styles:
         # - {"input_data": {...}} (frontend client)
@@ -333,8 +342,12 @@ async def execute_custom_workflow(
         else:
             input_data = {}
 
-        # Execute workflow using the new service method
-        result = await service.execute_workflow(workflow=workflow, initial_inputs=input_data)
+        # Execute workflow with optional model specification
+        result = await service.execute_workflow(
+            workflow=workflow,
+            initial_inputs=input_data,
+            selected_model=selected_model
+        )
 
         logger.info(f"Workflow execution completed: {result['execution_id']}")
 

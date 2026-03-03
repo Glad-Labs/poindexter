@@ -9,18 +9,26 @@ This migration creates a settings table to store:
 Schema:
 - settings_id: UUID primary key
 - key: VARCHAR unique identifier for setting
-- value: JSONB for flexible value storage
-- created_at: TIMESTAMP
-- updated_at: TIMESTAMP
+- value: TEXT for flexible value storage
+- category: VARCHAR for grouping settings
+- display_name: VARCHAR for UI display
 - description: VARCHAR optional description
+- is_active: BOOLEAN for soft deletes
+- created_at: TIMESTAMP
+- modified_at: TIMESTAMP
+- updated_at: TIMESTAMP (for compatibility)
 
 Migration SQL:
 CREATE TABLE IF NOT EXISTS settings (
     settings_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     key VARCHAR(255) UNIQUE NOT NULL,
-    value JSONB DEFAULT NULL,
+    value TEXT DEFAULT NULL,
+    category VARCHAR(255),
+    display_name VARCHAR(500),
     description VARCHAR(1000),
+    is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX idx_settings_key ON settings(key);
@@ -68,9 +76,13 @@ async def run_migration():
                     CREATE TABLE settings (
                         settings_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                         key VARCHAR(255) UNIQUE NOT NULL,
-                        value JSONB DEFAULT NULL,
+                        value TEXT DEFAULT NULL,
+                        category VARCHAR(255),
+                        display_name VARCHAR(500),
                         description VARCHAR(1000),
+                        is_active BOOLEAN DEFAULT true,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 """

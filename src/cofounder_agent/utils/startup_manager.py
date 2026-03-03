@@ -522,8 +522,8 @@ class StartupManager:
                     logger.info("   Task executor stopped")
                     stats = self.task_executor.get_stats()
                     logger.info(
-                        f"     Tasks processed: {stats['total_processed']}, "
-                        f"Success: {stats['successful']}, Failed: {stats['failed']}"
+                        f"     Tasks processed: {stats.get('task_count', 0)}, "
+                        f"Success: {stats.get('success_count', 0)}, Failed: {stats.get('error_count', 0)}"
                     )
             except Exception as e:
                 logger.error(f"   Error stopping task executor: {e}", exc_info=True)

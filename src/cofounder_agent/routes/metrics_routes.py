@@ -739,7 +739,9 @@ async def get_kpi_analytics(
 
 
 @metrics_router.get("/performance", response_model=Dict[str, Any])
-async def get_performance_metrics() -> Dict[str, Any]:
+async def get_performance_metrics(
+    current_user: UserProfile = Depends(get_current_user),
+) -> Dict[str, Any]:
     """
     Get API performance metrics aggregated from all routes.
 
@@ -759,14 +761,7 @@ async def get_performance_metrics() -> Dict[str, Any]:
 
         from services.redis_cache import RedisCache
 
-        # Get Redis cache for hit rate statistics
-        redis_cache = (
-            getattr(db_service.app.state, "redis_cache", None)
-            if hasattr(db_service, "app")
-            else None
-        )
-
-        # Calculate cache statistics from Redis if available
+        # Calculate cache statistics (estimated from typical patterns)
         cache_stats = {
             "agent_registry": {
                 "ttl": 300,
