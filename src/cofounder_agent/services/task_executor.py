@@ -1041,6 +1041,9 @@ class TaskExecutor:
                 # Convert UsageMetrics dataclass to dict for .get() access
                 operation_metrics_dict = asdict(operation_metrics)
 
+                # Normalize quality_score from 0-100 scale to 0-5 scale for schema
+                normalized_quality_score = (quality_score / 20.0) if quality_score is not None else None
+
                 cost_log = {
                     "task_id": str(task_id),
                     "user_id": task.get("user_id"),
@@ -1052,7 +1055,7 @@ class TaskExecutor:
                     "total_tokens": operation_metrics_dict.get("input_tokens", 0)
                     + operation_metrics_dict.get("output_tokens", 0),
                     "cost_usd": operation_metrics_dict.get("total_cost_usd", 0.0),
-                    "quality_score": quality_score,
+                    "quality_score": normalized_quality_score,
                     "duration_ms": int(operation_metrics_dict.get("duration_ms", 0)),
                     "success": True,
                 }

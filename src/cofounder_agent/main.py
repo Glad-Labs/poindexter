@@ -25,6 +25,7 @@ from services.container import service_container
 # Import services
 from services.logger_config import get_logger
 from services.quality_service import UnifiedQualityService
+from services.unified_orchestrator import UnifiedOrchestrator
 from services.sentry_integration import setup_sentry
 from services.telemetry import setup_telemetry
 
@@ -82,8 +83,6 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         logger.info("[LIFESPAN] Injecting services into app.state. ..")
         app.state.database = services["database"]
         app.state.redis_cache = services["redis_cache"]
-        # app.state.orchestrator will be set to UnifiedOrchestrator below
-        # (removed legacy Orchestrator)
         app.state.task_executor = services["task_executor"]
         app.state.workflow_history = services["workflow_history"]
         app.state.training_data_service = services.get("training_data_service")
@@ -116,6 +115,18 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         quality_service = UnifiedQualityService()
         service_container.register("quality", quality_service)
         logger.info("[LIFESPAN] ✅ Quality service initialized")
+
+        # Initialize UnifiedOrchestrator for task execution
+        logger.info("[LIFESPAN] Initializing UnifiedOrchestrator. ..")
+        try:
+            orchestrator = UnifiedOrchestrator()
+            app.state.orchestrator = orchestrator
+            service_container.register("orchestrator", orchestrator)
+            logger.info("[LIFESPAN] ✅ UnifiedOrchestrator initialized and injected into app.state")
+        except Exception as e:
+            logger.error(f"[LIFESPAN] ❌ Failed to initialize UnifiedOrchestrator: {e}", exc_info=True)
+            app.state.orchestrator = None
+            logger.warning("[LIFESPAN] ⚠️ Orchestrator initialization failed - system will use fallback template-based generation")
 
         # Register services in the global DI container for dependency injection
         logger.info("[LIFESPAN] Registering services in global DI container. ..")
