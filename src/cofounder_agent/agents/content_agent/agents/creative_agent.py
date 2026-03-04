@@ -2,7 +2,7 @@ import json
 import logging
 import re
 
-from ....services.prompt_manager import get_prompt_manager
+from services.prompt_manager import get_prompt_manager
 from ..config import config
 from ..services.llm_client import LLMClient
 from ..utils.data_models import BlogPost
@@ -221,3 +221,13 @@ class CreativeAgent:
             )
 
         return post
+
+
+def get_creative_agent():
+    """Factory used by workflow_executor dynamic loading.
+
+    Uses the workflow-compatible blog content generator agent implementation.
+    """
+    from agents.blog_content_generator_agent import get_blog_content_generator_agent
+
+    return get_blog_content_generator_agent()

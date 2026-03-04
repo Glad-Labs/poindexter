@@ -78,3 +78,13 @@ class PublishingAgent:
         content = re.sub(r"^### \*\*.*\*\*$", "", content, flags=re.MULTILINE)
         # This removes any leading/trailing whitespace and multiple newlines
         return content.strip()
+
+
+def get_publishing_agent():
+    """Factory used by workflow_executor dynamic loading.
+
+    Uses the workflow-compatible blog publisher agent implementation.
+    """
+    from agents.blog_publisher_agent import get_blog_publisher_agent
+
+    return get_blog_publisher_agent()

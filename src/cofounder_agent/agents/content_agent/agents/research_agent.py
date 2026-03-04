@@ -1,10 +1,11 @@
 import logging
+from typing import Any, Dict
 
 import httpx
 
 from ..config import config
 from ..utils.tools import CrewAIToolsFactory
-from ...services.research_quality_service import ResearchQualityService
+from services.research_quality_service import ResearchQualityService
 
 logger = logging.getLogger(__name__)
 
@@ -84,3 +85,43 @@ class ResearchAgent:
         except Exception as e:
             logger.error(f"An unexpected error occurred during research: {e}")
             return ""
+
+
+class _WorkflowResearchAgentAdapter:
+    """Adapter to make ResearchAgent compatible with workflow_executor `run(inputs)` contract."""
+
+    def __init__(self):
+        self._agent = None
+        self._init_error = None
+        try:
+            self._agent = ResearchAgent()
+        except Exception as e:
+            self._init_error = str(e)
+
+    async def run(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        topic = inputs.get("topic") or inputs.get("prompt") or "general topic"
+        keywords = inputs.get("keywords") or []
+        if not isinstance(keywords, list):
+            keywords = [str(keywords)]
+
+        if self._agent is None:
+            return {
+                "status": "success",
+                "research_data": "",
+                "notes": f"Research agent unavailable: {self._init_error}",
+                "topic": topic,
+                "keywords": keywords,
+            }
+
+        context = await self._agent.run(topic=topic, keywords=keywords)
+        return {
+            "status": "success",
+            "research_data": context,
+            "topic": topic,
+            "keywords": keywords,
+        }
+
+
+def get_research_agent():
+    """Factory used by workflow_executor dynamic agent loading."""
+    return _WorkflowResearchAgentAdapter()

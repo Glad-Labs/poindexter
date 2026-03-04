@@ -1,6 +1,6 @@
 import logging
 
-from ....services.prompt_manager import get_prompt_manager
+from services.prompt_manager import get_prompt_manager
 from ..config import config
 from ..services.llm_client import LLMClient
 from ..utils.data_models import BlogPost
@@ -85,3 +85,13 @@ class QAAgent:
         if approved:
             return True, "Content approved by QA."
         return False, feedback
+
+
+def get_qa_agent():
+    """Factory used by workflow_executor dynamic loading.
+
+    Uses the workflow-compatible blog quality agent implementation.
+    """
+    from agents.blog_quality_agent import get_blog_quality_agent
+
+    return get_blog_quality_agent()

@@ -151,3 +151,13 @@ class ImageAgent:
                 exc_info=True,
             )
             return None
+
+
+def get_image_agent():
+    """Factory used by workflow_executor dynamic loading.
+
+    Uses the workflow-compatible blog image agent implementation.
+    """
+    from agents.blog_image_agent import get_blog_image_agent
+
+    return get_blog_image_agent()
