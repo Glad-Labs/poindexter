@@ -788,7 +788,7 @@ async def process_content_generation_task(
             title=seo_title,
             meta_description=seo_description,
             keywords=seo_keywords,
-            primary_keyword=post_request.primary_keyword or (seo_keywords[0] if seo_keywords else None),
+            primary_keyword=(seo_keywords[0] if seo_keywords else None),
             slug=None,  # Slug will be generated from title later
         )
 

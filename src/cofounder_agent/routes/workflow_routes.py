@@ -59,10 +59,12 @@ async def get_workflow_phases(request: Request):
         ```
     """
     try:
-        from services.phase_registry import phase_registry
+        from services.phase_registry import PhaseRegistry
 
+        phase_registry = PhaseRegistry.get_instance()
         phases = []
-        for phase_id, phase_def in phase_registry.registry.items():
+        for phase_def in phase_registry.list_phases():
+            phase_id = getattr(phase_def, "name", "unknown")
             phases.append(
                 {
                     "phase_id": phase_id,

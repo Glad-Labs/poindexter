@@ -79,6 +79,13 @@ class CustomWorkflowsService:
             )
             return workflow
         except Exception as e:
+            if "custom_workflows_name_owner_unique" in str(e):
+                logger.warning(
+                    f"[create_workflow] Duplicate workflow name for owner {owner_id}: {workflow.name}"
+                )
+                raise ValueError(
+                    f"Workflow name '{workflow.name}' already exists for this user"
+                ) from e
             logger.error(f"[create_workflow] Failed to create workflow: {str(e)}", exc_info=True)
             raise
 
@@ -1017,13 +1024,17 @@ class CustomWorkflowsService:
     ) -> List[Dict[str, Any]]:
         """Get all workflow executions for a user."""
         try:
-            query = """
-                SELECT * FROM workflow_executions 
-                WHERE owner_id = %s 
-                ORDER BY created_at DESC 
-                LIMIT %s OFFSET %s
-            """
-            rows = await self.db.execute_query(query, (owner_id, limit, offset))
+            rows = await self.database_service.pool.fetch(
+                """
+                SELECT * FROM workflow_executions
+                WHERE owner_id = $1
+                ORDER BY created_at DESC
+                LIMIT $2 OFFSET $3
+                """,
+                owner_id,
+                limit,
+                offset,
+            )
             return [self._row_to_execution_dict(row) for row in rows] if rows else []
         except Exception as e:
             logger.error(f"[get_all_executions] Error fetching executions for owner {owner_id}: {str(e)}", exc_info=True)
@@ -1032,23 +1043,23 @@ class CustomWorkflowsService:
     async def get_workflow_statistics(self, owner_id: str) -> Dict[str, Any]:
         """Get aggregate statistics for user's workflows."""
         try:
-            # Query for statistics
-            query = """
-                SELECT 
+            row = await self.database_service.pool.fetchrow(
+                """
+                SELECT
                     COUNT(DISTINCT workflow_id) as total_workflows,
                     COUNT(*) as total_executions,
-                    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
-                    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
-                    SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) as running,
+                    SUM(CASE WHEN execution_status = 'completed' THEN 1 ELSE 0 END) as completed,
+                    SUM(CASE WHEN execution_status = 'failed' THEN 1 ELSE 0 END) as failed,
+                    SUM(CASE WHEN execution_status = 'running' THEN 1 ELSE 0 END) as running,
                     AVG(CAST(progress_percent AS FLOAT)) as avg_completion,
                     AVG(EXTRACT(EPOCH FROM (completed_at - created_at))) as avg_duration_seconds
                 FROM workflow_executions
-                WHERE owner_id = %s
+                WHERE owner_id = $1
                     AND created_at >= NOW() - INTERVAL '30 days'
-            """
-            rows = await self.db.execute_query(query, (owner_id,))
-            if rows:
-                row = rows[0]
+                """,
+                owner_id,
+            )
+            if row:
                 return {
                     "total_workflows": row.get("total_workflows", 0),
                     "total_executions": row.get("total_executions", 0),
@@ -1088,17 +1099,17 @@ class CustomWorkflowsService:
                 SELECT 
                     DATE_TRUNC('day', created_at)::DATE as date,
                     COUNT(*) as executions,
-                    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as successful,
-                    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
+                    SUM(CASE WHEN execution_status = 'completed' THEN 1 ELSE 0 END) as successful,
+                    SUM(CASE WHEN execution_status = 'failed' THEN 1 ELSE 0 END) as failed,
                     AVG(EXTRACT(EPOCH FROM (completed_at - created_at))) as avg_duration_seconds,
                     MAX(progress_percent) as max_completion
                 FROM workflow_executions
-                WHERE owner_id = %s
-                    AND created_at >= NOW() - INTERVAL %s
+                WHERE owner_id = $1
+                    AND created_at >= NOW() - ($2::interval)
                 GROUP BY DATE_TRUNC('day', created_at)
                 ORDER BY date DESC
             """
-            rows = await self.db.execute_query(query, (owner_id, interval))
+            rows = await self.database_service.pool.fetch(query, owner_id, interval)
 
             metrics = []
             if rows:
@@ -1133,13 +1144,16 @@ class CustomWorkflowsService:
     async def get_execution_details(self, execution_id: str, owner_id: str) -> Dict[str, Any]:
         """Get detailed information about a specific workflow execution."""
         try:
-            query = """
-                SELECT * FROM workflow_executions 
-                WHERE id = %s AND owner_id = %s
-            """
-            rows = await self.db.execute_query(query, (execution_id, owner_id))
-            if rows:
-                execution = self._row_to_execution_dict(rows[0])
+            row = await self.database_service.pool.fetchrow(
+                """
+                SELECT * FROM workflow_executions
+                WHERE id = $1 AND owner_id = $2
+                """,
+                execution_id,
+                owner_id,
+            )
+            if row:
+                execution = self._row_to_execution_dict(row)
                 # Add detailed results
                 return {
                     **execution,

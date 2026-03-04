@@ -388,11 +388,25 @@ class TemplateExecutionService:
             Dict with executions list and total count
         """
         try:
-            return await self.custom_workflows_service.get_workflow_executions(
+            executions = await self.custom_workflows_service.get_all_executions(
                 owner_id=owner_id,
                 limit=limit,
                 offset=offset,
             )
+
+            if template_name:
+                template_prefix = f"Template: {template_name}"
+                executions = [
+                    execution
+                    for execution in executions
+                    if isinstance(execution, dict)
+                    and str(execution.get("workflow_name", "")).startswith(template_prefix)
+                ]
+
+            return {
+                "executions": executions,
+                "total_count": len(executions),
+            }
         except Exception as e:
             logger.error(f"[_get_execution_history] Failed to get execution history: {str(e)}", exc_info=True)
             return {"executions": [], "total_count": 0}
