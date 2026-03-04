@@ -113,6 +113,37 @@ class CustomWorkflowsService:
             logger.error(f"[get_workflow] Failed to retrieve workflow {workflow_id}: {str(e)}", exc_info=True)
             raise
 
+    async def get_workflow_by_name(
+        self, name: str, owner_id: str
+    ) -> Optional[CustomWorkflow]:
+        """
+        Retrieve a workflow by name and owner (used for template lookups).
+
+        Args:
+            name: Workflow name
+            owner_id: Workflow owner ID
+
+        Returns:
+            CustomWorkflow or None if not found
+        """
+        try:
+            row = await self.database_service.pool.fetchrow(
+                """
+                SELECT id, name, description, phases, owner_id, created_at, updated_at, tags, is_template
+                FROM custom_workflows
+                WHERE name = $1 AND owner_id = $2
+                """,
+                name,
+                owner_id,
+            )
+            if not row:
+                logger.debug(f"Workflow '{name}' not found for owner {owner_id}")
+                return None
+            return self._row_to_workflow(row)
+        except Exception as e:
+            logger.error(f"[get_workflow_by_name] Failed to retrieve workflow '{name}': {str(e)}", exc_info=True)
+            raise
+
     async def list_workflows(
         self, owner_id: str, include_templates: bool = True, page: int = 1, page_size: int = 20
     ) -> Dict[str, Any]:
@@ -425,9 +456,11 @@ class CustomWorkflowsService:
 
             # Persist execution if we have database
             try:
+                logger.info(f"[execute_workflow] Persisting: selected_model={selected_model}, initial_inputs keys={list(initial_inputs.keys()) if initial_inputs else None}")
+                
                 await self.persist_workflow_execution(
                     execution_id=execution_id,
-                    workflow_id=workflow.id or "",
+                    workflow_id=str(workflow.id), 
                     owner_id=workflow.owner_id or "",
                     execution_status=overall_status,
                     phase_results=phase_results,
@@ -442,6 +475,8 @@ class CustomWorkflowsService:
                     ),
                     total_phases=len(phase_results),
                     progress_percent=100 if overall_status == "completed" else 50,
+                    selected_model=selected_model,
+                    execution_mode="agent",
                 )
             except Exception as e:
                 logger.warning(f"[execute_workflow] Failed to persist workflow execution: {e}")
@@ -740,6 +775,8 @@ class CustomWorkflowsService:
         progress_percent: int = 0,
         tags: Optional[list] = None,
         metadata: Optional[dict] = None,
+        selected_model: Optional[str] = None,
+        execution_mode: str = "agent",
     ) -> bool:
         """
         Save workflow execution results to database.
@@ -759,6 +796,8 @@ class CustomWorkflowsService:
             progress_percent: Completion percentage
             tags: Optional tags for execution
             metadata: Optional metadata
+            selected_model: Optional LLM model used (e.g., "ollama-mistral", "gpt-4-turbo")
+            execution_mode: Execution context ("agent", "batch", etc.) - defaults to "agent"
 
         Returns:
             True if successful
@@ -805,13 +844,13 @@ class CustomWorkflowsService:
                     created_at, started_at, completed_at, duration_ms,
                     initial_input, phase_results, final_output, error_message,
                     progress_percent, completed_phases, total_phases,
-                    tags, metadata
+                    tags, metadata, selected_model, execution_mode
                 ) VALUES (
                     $1, $2, $3, $4,
                     $5, $6, $7, $8,
                     $9, $10, $11, $12,
                     $13, $14, $15,
-                    $16, $17
+                    $16, $17, $18, $19
                 )
                 """,
                 execution_id,
@@ -831,6 +870,8 @@ class CustomWorkflowsService:
                 total_phases,
                 tags_json,
                 metadata_json,
+                selected_model,
+                execution_mode,
             )
 
             logger.info(

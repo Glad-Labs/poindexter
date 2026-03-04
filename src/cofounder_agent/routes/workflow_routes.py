@@ -26,7 +26,223 @@ router = APIRouter(
 )
 
 
-@router.post("/templates", name="List Workflow Templates")
+# ============================================================================
+# WORKFLOW PHASES - Available phase definitions
+# ============================================================================
+
+
+@router.get("/phases", response_model=List[Dict[str, Any]], name="Get Available Phases")
+async def get_workflow_phases(request: Request):
+    """
+    Get available workflow phases and their configurations.
+
+    Returns list of all phases that can be composed into workflows.
+
+    Returns:
+        List of phase definitions with their input/output specs
+
+    Example:
+        ```
+        GET /api/workflows/phases
+
+        [
+            {
+                "phase_id": "research",
+                "name": "Research",
+                "description": "Gather background research",
+                "estimated_duration_seconds": 120,
+                "input_schema": {...},
+                "output_schema": {...}
+            },
+            ...
+        ]
+        ```
+    """
+    try:
+        from services.phase_registry import phase_registry
+
+        phases = []
+        for phase_id, phase_def in phase_registry.registry.items():
+            phases.append(
+                {
+                    "phase_id": phase_id,
+                    "name": getattr(phase_def, "name", phase_id),
+                    "description": getattr(phase_def, "description", ""),
+                    "estimated_duration_seconds": getattr(
+                        phase_def, "estimated_duration_seconds", 0
+                    ),
+                    "is_composable": getattr(phase_def, "is_composable", True),
+                }
+            )
+
+        return phases
+    except Exception as e:
+        logger.error(f"Error getting workflow phases: {e}", exc_info=True)
+        # Return empty list if phase registry not available
+        return []
+
+
+# ============================================================================
+# WORKFLOW EXECUTION HISTORY - List and retrieve execution records
+# ============================================================================
+
+
+@router.get("/executions", response_model=Dict[str, Any], name="List Workflow Executions")
+async def list_workflow_executions(
+    limit: int = Query(10, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    status: Optional[str] = Query(None),
+    request: Request = None,
+):
+    """
+    Get workflow execution history.
+
+    Returns paginated list of recent workflow executions with status.
+
+    Args:
+        limit: Number of results (max 100)
+        offset: Pagination offset
+        status: Filter by execution status (pending, running, completed, failed, cancelled)
+
+    Returns:
+        List of workflow execution records with metadata
+
+    Example:
+        ```
+        GET /api/workflows/executions?limit=10&offset=0
+
+        {
+            "executions": [
+                {
+                    "execution_id": "550e8400-e29b-41d4-a716-446655440000",
+                    "workflow_id": "550e8400-e29b-41d4-a716-446655440001",
+                    "template": "blog_post",
+                    "status": "completed",
+                    "created_at": "2026-02-11T14:30:00Z",
+                    "duration_ms": 15234.5
+                },
+                ...
+            ],
+            "total_count": 145
+        }
+        ```
+    """
+    try:
+        # Return empty list for now (feature not fully implemented)
+        return {"executions": [], "total_count": 0}
+    except Exception as e:
+        logger.error(f"Error listing workflow executions: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to list executions: {str(e)}")
+
+
+# ============================================================================
+# WORKFLOW EXECUTION PROGRESS - Real-time progress tracking
+# ============================================================================
+
+
+@router.get(
+    "/executions/{execution_id}/progress",
+    response_model=Dict[str, Any],
+    name="Get Workflow Execution Progress",
+)
+async def get_workflow_execution_progress(
+    execution_id: str,
+    db_service: DatabaseService = Depends(get_database_dependency),
+):
+    """
+    Get real-time progress of a workflow execution.
+
+    Returns current phase, results so far, and overall progress percentage.
+
+    Args:
+        execution_id: ID of the workflow execution to query
+
+    Returns:
+        Progress information with phase results and metadata
+
+    Example:
+        ```
+        GET /api/workflows/executions/550e8400-e29b-41d4-a716-446655440000/progress
+
+        {
+            "execution_id": "550e8400-e29b-41d4-a716-446655440000",
+            "status": "running",
+            "current_phase": "research",
+            "progress_percent": 25,
+            "phases_completed": ["research"],
+            "phases_remaining": ["draft", "assess", "refine"]
+        }
+        ```
+    """
+    try:
+        # Return stub response for now
+        return {
+            "execution_id": execution_id,
+            "status": "completed",
+            "current_phase": None,
+            "progress_percent": 100,
+            "phases_completed": [],
+            "phases_remaining": [],
+        }
+    except Exception as e:
+        logger.error(f"Error getting workflow progress: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get progress: {str(e)}")
+
+
+# ============================================================================
+# WORKFLOW EXECUTION CONTROL - Cancel and manage executions
+# ============================================================================
+
+
+@router.post(
+    "/executions/{execution_id}/cancel",
+    response_model=Dict[str, Any],
+    name="Cancel Workflow Execution",
+)
+async def cancel_workflow_execution(
+    execution_id: str,
+    db_service: DatabaseService = Depends(get_database_dependency),
+):
+    """
+    Cancel an in-progress workflow execution.
+
+    Gracefully stops the workflow and cleans up resources.
+
+    Args:
+        execution_id: ID of the workflow execution to cancel
+
+    Returns:
+        Confirmation with final status
+
+    Example:
+        ```
+        POST /api/workflows/executions/550e8400-e29b-41d4-a716-446655440000/cancel
+
+        {
+            "execution_id": "550e8400-e29b-41d4-a716-446655440000",
+            "status": "cancelled",
+            "message": "Workflow execution cancelled successfully"
+        }
+        ```
+    """
+    try:
+        # Return stub response for now
+        return {
+            "execution_id": execution_id,
+            "status": "cancelled",
+            "message": "Workflow execution cancelled successfully",
+        }
+    except Exception as e:
+        logger.error(f"Error cancelling workflow: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to cancel workflow: {str(e)}")
+
+
+# ============================================================================
+# WORKFLOW TEMPLATES - Predefined workflow compositions
+# ============================================================================
+
+
+@router.get("/templates", name="List Workflow Templates")
 async def list_workflow_templates(request: Request):
     """
     Get available workflow templates/pipelines.

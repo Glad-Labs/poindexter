@@ -33,12 +33,13 @@ class WorkflowValidator:
         self.registry = registry or PhaseRegistry.get_instance()
         self.mapper = mapper or PhaseMapper(self.registry)
 
-    def validate_workflow(self, workflow: CustomWorkflow) -> Tuple[bool, List[str], List[str]]:
+    def validate_workflow(self, workflow: CustomWorkflow, initial_inputs: Optional[Dict[str, Any]] = None) -> Tuple[bool, List[str], List[str]]:
         """
         Validate a workflow definition.
 
         Args:
             workflow: The workflow to validate
+            initial_inputs: Optional initial input values (used for execution-time validation)
 
         Returns:
             (is_valid, errors, warnings)
@@ -134,13 +135,16 @@ class WorkflowValidator:
                                     f"Source output '{source_key}' not found in {prev_phase_def.name}"
                                 )
 
-                        # Check required inputs - can be satisfied by user input OR auto-mapping
+                        # Check required inputs - can be satisfied by user input, initial_inputs, OR auto-mapping
                         for target_key, target_input in phase_def.input_schema.items():
                             if target_input.required:
-                                # User provided? OK
+                                # Phase user input provided? OK
                                 if target_key in phase.user_inputs:
                                     continue
-                                # Can auto-map? OK
+                                # In initial_inputs (shared across all phases)? OK
+                                if initial_inputs and target_key in initial_inputs:
+                                    continue
+                                # Can auto-map from previous phase? OK
                                 if target_key in mapping:
                                     continue
                                 # Otherwise: error
@@ -185,7 +189,7 @@ class WorkflowValidator:
             (can_execute, list_of_errors)
         """
         errors = []
-        is_valid, val_errors, _ = self.validate_workflow(workflow)
+        is_valid, val_errors, _ = self.validate_workflow(workflow, initial_inputs=initial_inputs)
 
         if not is_valid:
             return False, val_errors

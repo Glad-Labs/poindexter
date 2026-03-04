@@ -240,7 +240,9 @@ async def websocket_workflow_progress(websocket: WebSocket, execution_id: str):
 
 async def broadcast_workflow_progress(execution_id: str, progress) -> None:
     """Broadcast workflow progress update to all connected clients"""
-    await connection_manager.broadcast(execution_id, {"type": "progress", **progress.to_dict()})
+    # If progress is a dict, use it directly; if it has to_dict(), call it
+    progress_data = progress if isinstance(progress, dict) else progress.to_dict()
+    await connection_manager.broadcast(execution_id, {"type": "progress", **progress_data})
 
 
 def get_connection_manager() -> ConnectionManager:

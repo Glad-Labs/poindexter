@@ -242,11 +242,44 @@ class TemplateExecutionService:
 
             logger.info(f"Executing template '{template_name}' with workflow {workflow.id}")
 
+            # Persist template workflow to database before execution
+            # This ensures the foreign key constraint in workflow_executions is satisfied
+            if not workflow.id:
+                try:
+                    # Try to find existing template workflow by name and owner
+                    existing = await self.custom_workflows_service.get_workflow_by_name(
+                        name=f"Template: {template_name}",
+                        owner_id=owner_id
+                    )
+                    if existing:
+                        workflow.id = existing.id
+                        logger.info(f"Using existing template workflow: {workflow.id}")
+                    else:
+                        # Create new template workflow
+                        workflow_save = await self.custom_workflows_service.create_workflow(
+                            workflow=workflow,
+                            owner_id=owner_id
+                        )
+                        workflow.id = workflow_save.id
+                        logger.info(f"Persisted template workflow: {workflow.id}")
+                except Exception as e:
+                    logger.error(f"Failed to persist/retrieve template workflow: {e}", exc_info=True)
+                    # Don't continue - we cannot execute without a valid workflow ID
+                    raise ValueError(f"Cannot persist template workflow: {str(e)}")
+
+            # Extract model parameter from task_input if provided
+            selected_model = None
+            if task_input and isinstance(task_input, dict):
+                selected_model = task_input.get("model")
+                if selected_model:
+                    logger.info(f"[template_execution] Model selected: {selected_model}")
+
             # Execute via CustomWorkflowsService
             result = await self.custom_workflows_service.execute_workflow(
                 workflow=workflow,
                 initial_inputs=task_input,
                 execution_id=execution_id,
+                selected_model=selected_model,
             )
 
             # Enrich result with template information
