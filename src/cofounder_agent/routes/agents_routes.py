@@ -31,6 +31,7 @@ from schemas.agent_schemas import (
     MemoryStats,
 )
 from services.logger_config import get_logger
+from utils.route_utils import get_orchestrator_dependency
 
 logger = get_logger(__name__)
 
@@ -41,13 +42,8 @@ router = APIRouter(prefix="/api/agents", tags=["agents"])
 # Helper Functions
 # ============================================================================
 
+# Helper function is no longer needed - use get_orchestrator_dependency from route_utils instead
 
-def get_orchestrator(request: Request):
-    """Get the orchestrator instance from app state"""
-    orchestrator = getattr(request.app.state, "orchestrator", None)
-    if not orchestrator:
-        raise HTTPException(status_code=503, detail="Orchestrator not initialized")
-    return orchestrator
 
 
 def get_agent_names() -> List[str]:
@@ -78,7 +74,7 @@ def format_agent_status(agent_name: str, orchestrator) -> AgentStatus:
 
 
 @router.get("/status", response_model=AllAgentsStatus)
-async def get_all_agents_status(orchestrator=Depends(get_orchestrator)):
+async def get_all_agents_status(orchestrator=Depends(get_orchestrator_dependency)):
     """
     Get status of all AI agents
 
@@ -161,7 +157,7 @@ async def get_all_agents_status(orchestrator=Depends(get_orchestrator)):
 
 
 @router.get("/{agent_name}/status", response_model=AgentStatus)
-async def get_agent_status(agent_name: str, orchestrator=Depends(get_orchestrator)):
+async def get_agent_status(agent_name: str, orchestrator=Depends(get_orchestrator_dependency)):
     """
     Get status of a specific agent
 
@@ -203,7 +199,7 @@ async def get_agent_status(agent_name: str, orchestrator=Depends(get_orchestrato
 
 @router.post("/{agent_name}/command", response_model=AgentCommandResult)
 async def send_agent_command(
-    agent_name: str, command: AgentCommand, orchestrator=Depends(get_orchestrator)
+    agent_name: str, command: AgentCommand, orchestrator=Depends(get_orchestrator_dependency)
 ):
     """
     Send a command to a specific agent
@@ -329,7 +325,7 @@ async def get_agent_logs(
 
 
 @router.get("/memory/stats", response_model=MemoryStats)
-async def get_memory_stats(orchestrator=Depends(get_orchestrator)):
+async def get_memory_stats(orchestrator=Depends(get_orchestrator_dependency)):
     """
     Get agent memory system statistics
 
@@ -401,7 +397,7 @@ async def get_memory_stats(orchestrator=Depends(get_orchestrator)):
 
 
 @router.get("/health", response_model=AgentHealth)
-async def get_agent_system_health(orchestrator=Depends(get_orchestrator)):
+async def get_agent_system_health(orchestrator=Depends(get_orchestrator_dependency)):
     """
     Get overall agent system health
 

@@ -12,7 +12,7 @@ import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from schemas.models_schemas import (
     ModelInfo,
     ModelsListResponse,
@@ -21,6 +21,7 @@ from schemas.models_schemas import (
 )
 from services.model_consolidation_service import get_model_consolidation_service
 from services.model_constants import PROVIDER_ICONS
+from utils.route_utils import get_redis_cache_optional
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +124,7 @@ async def get_available_models():
 
 
 @models_router.get("/status", description="Get status of all model providers")
-async def get_provider_status(request: Request):
+async def get_provider_status(redis_cache=Depends(get_redis_cache_optional)):
     """
     Get availability status of all model providers in the consolidation service.
 
@@ -134,7 +135,6 @@ async def get_provider_status(request: Request):
     - Number of available models
     """
     try:
-        redis_cache = getattr(request.app.state, "redis_cache", None)
         return await _get_provider_health_cached(redis_cache)
     except Exception as e:
         logger.error(f"Error getting provider status: {e}")
@@ -142,7 +142,7 @@ async def get_provider_status(request: Request):
 
 
 @models_router.post("/health/refresh", description="Refresh model provider health check cache")
-async def refresh_provider_health(request: Request):
+async def refresh_provider_health(redis_cache=Depends(get_redis_cache_optional)):
     """
     Refresh the provider health check cache.
 
@@ -153,7 +153,6 @@ async def refresh_provider_health(request: Request):
         Current provider status immediately after cache invalidation and fresh check
     """
     try:
-        redis_cache = getattr(request.app.state, "redis_cache", None)
         cache_key = "provider_health_status"
 
         # Invalidate cache

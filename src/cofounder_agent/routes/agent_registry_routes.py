@@ -11,7 +11,8 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from agents.registry import get_agent_registry
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from utils.route_utils import get_redis_cache_optional
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ router = APIRouter(
 
 
 @router.get("/registry", response_model=Dict[str, Any], name="Get Agent Registry")
-async def get_agent_registry_endpoint(request: Request):
+async def get_agent_registry_endpoint(redis_cache=Depends(get_redis_cache_optional)):
     """
     Get the complete agent registry with all agents and their metadata.
 
@@ -68,7 +69,6 @@ async def get_agent_registry_endpoint(request: Request):
         ```
     """
     # Try to get from cache first
-    redis_cache = getattr(request.app.state, "redis_cache", None)
     cache_key = "agent_registry_full"
 
     if redis_cache:

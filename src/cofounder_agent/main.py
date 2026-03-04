@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional
 from config import get_config
 
 # Third-party imports
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, validator
 
 # Load configuration
@@ -33,7 +33,7 @@ from services.telemetry import setup_telemetry
 from utils.exception_handlers import register_exception_handlers
 from utils.middleware_config import MiddlewareConfig
 from utils.route_registration import register_all_routes
-from utils.route_utils import initialize_services
+from utils.route_utils import initialize_services, get_orchestrator_dependency
 from utils.startup_manager import StartupManager
 
 try:
@@ -137,6 +137,9 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             task_executor=services["task_executor"],
             intelligent_orchestrator=services.get("intelligent_orchestrator"),
             workflow_history=services["workflow_history"],
+            redis_cache=services.get("redis_cache"),
+            custom_workflows_service=services.get("custom_workflows_service"),
+            template_execution_service=services.get("template_execution_service"),
         )
         logger.info("[LIFESPAN] ✅ Services registered in global DI container")
 
@@ -482,9 +485,9 @@ class CommandResponse(BaseModel):
 
 @app.post("/command", response_model=CommandResponse)
 async def process_command(
-    request: Request,
     command: CommandRequest,
     background_tasks: BackgroundTasks,
+    orchestrator=Depends(get_orchestrator_dependency),
 ):  # pylint: disable=unused-argument
     """
     Processes a command sent to the Co-Founder agent.
@@ -495,9 +498,7 @@ async def process_command(
     try:
         logger.info(f"Received command: {command.command}")
 
-        orchestrator = getattr(request.app.state, "orchestrator", None)
-        if orchestrator is None:
-            raise HTTPException(status_code=503, detail="Orchestrator not initialized")
+        # orchestrator is injected via Depends(get_orchestrator_dependency)
 
         # Execute the command asynchronously
         response = await orchestrator.process_command_async(command.command, command.context)

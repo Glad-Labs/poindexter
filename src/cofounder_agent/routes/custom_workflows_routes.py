@@ -26,6 +26,7 @@ from schemas.custom_workflow_schemas import (
 )
 from services.custom_workflows_service import CustomWorkflowsService
 from services.token_validator import JWTTokenValidator
+from utils.route_utils import get_custom_workflows_service_dependency
 
 logger = logging.getLogger(__name__)
 
@@ -36,12 +37,7 @@ router = APIRouter(
 )
 
 
-def get_workflows_service(request: Request) -> CustomWorkflowsService:
-    """Dependency injection for custom workflows service"""
-    service = getattr(request.app.state, "custom_workflows_service", None)
-    if not service:
-        raise HTTPException(status_code=503, detail="Workflows service not initialized")
-    return service
+# Helper function is no longer needed - use get_custom_workflows_service_dependency from route_utils instead
 
 
 def get_user_id(request: Request) -> str:
@@ -102,7 +98,7 @@ def get_user_id(request: Request) -> str:
 async def create_custom_workflow(
     workflow: CustomWorkflow,
     request: Request,
-    service: CustomWorkflowsService = Depends(get_workflows_service),
+    service: CustomWorkflowsService = Depends(get_custom_workflows_service_dependency),
 ) -> CustomWorkflow:
     """
     Create and save a new custom workflow.
@@ -133,7 +129,7 @@ async def create_custom_workflow(
 @router.get("/custom", response_model=WorkflowListPageResponse, name="List Custom Workflows")
 async def list_custom_workflows(
     request: Request,
-    service: CustomWorkflowsService = Depends(get_workflows_service),
+    service: CustomWorkflowsService = Depends(get_custom_workflows_service_dependency),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     page_size: int = Query(20, ge=1, le=100, description="Results per page"),
     include_templates: bool = Query(True, description="Include shared templates"),
@@ -184,7 +180,7 @@ async def list_custom_workflows(
 async def get_custom_workflow(
     workflow_id: str,
     request: Request,
-    service: CustomWorkflowsService = Depends(get_workflows_service),
+    service: CustomWorkflowsService = Depends(get_custom_workflows_service_dependency),
 ) -> CustomWorkflow:
     """
     Retrieve a custom workflow by ID.
@@ -220,7 +216,7 @@ async def update_custom_workflow(
     workflow_id: str,
     workflow: CustomWorkflow,
     request: Request,
-    service: CustomWorkflowsService = Depends(get_workflows_service),
+    service: CustomWorkflowsService = Depends(get_custom_workflows_service_dependency),
 ) -> CustomWorkflow:
     """
     Update an existing custom workflow.
@@ -258,7 +254,7 @@ async def update_custom_workflow(
 async def delete_custom_workflow(
     workflow_id: str,
     request: Request,
-    service: CustomWorkflowsService = Depends(get_workflows_service),
+    service: CustomWorkflowsService = Depends(get_custom_workflows_service_dependency),
 ) -> Dict[str, str]:
     """
     Delete a custom workflow.
@@ -296,7 +292,7 @@ async def execute_custom_workflow(
     workflow_id: str,
     request_body: Dict[str, Any],
     request: Request,
-    service: CustomWorkflowsService = Depends(get_workflows_service),
+    service: CustomWorkflowsService = Depends(get_custom_workflows_service_dependency),
 ) -> Dict[str, Any]:
     """
     Execute a saved custom workflow.
@@ -361,7 +357,7 @@ async def execute_custom_workflow(
 
 @router.get("/available-phases", name="Get Available Phases")
 async def get_available_phases(
-    service: CustomWorkflowsService = Depends(get_workflows_service),
+    service: CustomWorkflowsService = Depends(get_custom_workflows_service_dependency),
 ) -> Dict[str, Any]:
     """
     Get list of available phases that can be used when building workflows.
@@ -382,7 +378,7 @@ async def get_available_phases(
 async def get_workflow_execution(
     execution_id: str,
     request: Request,
-    service: CustomWorkflowsService = Depends(get_workflows_service),
+    service: CustomWorkflowsService = Depends(get_custom_workflows_service_dependency),
 ) -> Dict[str, Any]:
     """Get execution status and results for a workflow execution."""
     try:
@@ -402,7 +398,7 @@ async def get_workflow_execution(
 async def list_workflow_executions(
     workflow_id: str,
     request: Request,
-    service: CustomWorkflowsService = Depends(get_workflows_service),
+    service: CustomWorkflowsService = Depends(get_custom_workflows_service_dependency),
     limit: int = Query(20, ge=1, le=100, description="Max executions to return"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     status: Optional[str] = Query(None, description="Optional status filter"),
@@ -439,7 +435,7 @@ async def list_workflow_executions(
 @router.get("/history", name="Get Workflow Execution History")
 async def get_workflow_history(
     request: Request,
-    service: CustomWorkflowsService = Depends(get_workflows_service),
+    service: CustomWorkflowsService = Depends(get_custom_workflows_service_dependency),
     limit: int = Query(50, ge=1, le=500, description="Max results"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     status: Optional[str] = Query(None, description="Filter by status"),
@@ -480,7 +476,7 @@ async def get_workflow_history(
 @router.get("/statistics", name="Get Workflow Statistics")
 async def get_workflow_statistics(
     request: Request,
-    service: CustomWorkflowsService = Depends(get_workflows_service),
+    service: CustomWorkflowsService = Depends(get_custom_workflows_service_dependency),
 ) -> Dict[str, Any]:
     """Get aggregate statistics for user's workflows."""
     try:
@@ -499,7 +495,7 @@ async def get_workflow_statistics(
 @router.get("/performance-metrics", name="Get Performance Metrics")
 async def get_performance_metrics(
     request: Request,
-    service: CustomWorkflowsService = Depends(get_workflows_service),
+    service: CustomWorkflowsService = Depends(get_custom_workflows_service_dependency),
     range: str = Query("30d", description="Time range: 7d, 30d, 90d, all"),
 ) -> Dict[str, Any]:
     """Get workflow performance metrics."""
@@ -520,7 +516,7 @@ async def get_performance_metrics(
 async def get_execution_details(
     execution_id: str,
     request: Request,
-    service: CustomWorkflowsService = Depends(get_workflows_service),
+    service: CustomWorkflowsService = Depends(get_custom_workflows_service_dependency),
 ) -> Dict[str, Any]:
     """Get detailed information about a workflow execution."""
     try:

@@ -15,7 +15,11 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from services.database_service import DatabaseService
 from services.workflow_history import WorkflowHistoryService
-from utils.route_utils import get_database_dependency, get_workflow_engine_dependency
+from utils.route_utils import (
+    get_database_dependency,
+    get_workflow_engine_dependency,
+    get_template_execution_service_dependency,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -579,7 +583,6 @@ async def cancel_workflow(
 
 @router.post("/execute/{template_name}", name="Execute Workflow Template", status_code=202)
 async def execute_workflow_template(
-    request: Request,
     template_name: str,
     task_input: Dict[str, Any] = Body(..., description="Input data for the workflow"),
     skip_phases: Optional[List[str]] = Query(None, description="Phases to skip"),
@@ -587,6 +590,7 @@ async def execute_workflow_template(
         0.7, ge=0.0, le=1.0, description="Quality threshold for assessment"
     ),
     tags: Optional[List[str]] = Query(None, description="Tags for workflow"),
+    template_service=Depends(get_template_execution_service_dependency),
 ):
     """
     Execute a workflow template with custom parameters.
@@ -636,14 +640,7 @@ async def execute_workflow_template(
         - 500: Execution failed (check error_message in response)
     """
     try:
-        # Get template execution service from app state
-        template_service = getattr(request.app.state, "template_execution_service", None)
-        if not template_service:
-            logger.error("Template execution service not available in app state")
-            raise HTTPException(
-                status_code=500,
-                detail="Template execution service not initialized",
-            )
+        # template_service is injected via Depends(get_template_execution_service_dependency)
 
         # Validate template name
         try:
@@ -683,8 +680,8 @@ async def execute_workflow_template(
 
 @router.get("/status/{execution_id}", name="Get Workflow Execution Status")
 async def get_workflow_status(
-    request: Request,
     execution_id: str,
+    template_service=Depends(get_template_execution_service_dependency),
 ):
     """
     Get the status and results of a workflow execution.
@@ -715,13 +712,7 @@ async def get_workflow_status(
         - 404: Execution not found
     """
     try:
-        template_service = getattr(request.app.state, "template_execution_service", None)
-        if not template_service:
-            logger.error("Template execution service not available")
-            raise HTTPException(
-                status_code=500,
-                detail="Template execution service not initialized",
-            )
+        # template_service is injected via Depends(get_template_execution_service_dependency)
 
         # Get execution status (owner_id defaults to 'system' for template executions)
         result = await template_service.get_execution_status(
@@ -745,10 +736,10 @@ async def get_workflow_status(
 
 @router.get("/history", name="Get Workflow Execution History")
 async def get_workflow_history(
-    request: Request,
     limit: int = Query(50, ge=1, le=1000, description="Maximum number of executions to return"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
     template_name: Optional[str] = Query(None, description="Filter by template name (optional)"),
+    template_service=Depends(get_template_execution_service_dependency),
 ):
     """
     Get execution history for all workflows (or filtered by template).
@@ -783,13 +774,7 @@ async def get_workflow_history(
         ```
     """
     try:
-        template_service = getattr(request.app.state, "template_execution_service", None)
-        if not template_service:
-            logger.error("Template execution service not available")
-            raise HTTPException(
-                status_code=500,
-                detail="Template execution service not initialized",
-            )
+        # template_service is injected via Depends(get_template_execution_service_dependency)
 
         # Get execution history (owner_id defaults to 'system' for template executions)
         result = await template_service.get_execution_history(
