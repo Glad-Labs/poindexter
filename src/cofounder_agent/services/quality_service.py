@@ -502,7 +502,16 @@ class UnifiedQualityService:
 
     def _check_keywords(self, content: str, context: Dict[str, Any]) -> bool:
         """Check if keywords are present in content"""
-        keywords = context.get("keywords", [])
+        context = context or {}
+        keywords = context.get("keywords")
+        if keywords is None:
+            keywords = []
+        elif isinstance(keywords, str):
+            keywords = [keywords]
+        elif not isinstance(keywords, list):
+            keywords = [str(keywords)]
+
+        keywords = [kw for kw in keywords if isinstance(kw, str) and kw.strip()]
         content_lower = content.lower()
 
         return any(kw.lower() in content_lower for kw in keywords)

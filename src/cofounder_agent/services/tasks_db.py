@@ -440,6 +440,10 @@ class TasksDatabase(DatabaseServiceMixin):
         # Prepare normalized updates
         normalized_updates = dict(updates)
 
+        # Normalize "metadata" key to "task_metadata" (database column name)
+        if "metadata" in normalized_updates and "task_metadata" not in normalized_updates:
+            normalized_updates["task_metadata"] = normalized_updates.pop("metadata")
+
         # Handle task_name -> title mapping
         if "task_name" in normalized_updates and "title" not in normalized_updates:
             normalized_updates["title"] = normalized_updates.pop("task_name")

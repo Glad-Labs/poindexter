@@ -218,6 +218,35 @@ class ModelConverter:
     def to_cost_log_response(row: Any) -> CostLogResponse:
         """Convert row to CostLogResponse model."""
         data = ModelConverter._normalize_row_data(row)
+
+        if "id" in data and not isinstance(data["id"], str):
+            data["id"] = str(data["id"])
+
+        if "task_id" in data and data["task_id"] is not None and not isinstance(data["task_id"], str):
+            data["task_id"] = str(data["task_id"])
+
+        if "user_id" in data and data["user_id"] is not None and not isinstance(data["user_id"], str):
+            data["user_id"] = str(data["user_id"])
+
+        phase_map = {
+            "content_generation": "draft",
+            "generation": "draft",
+            "qa": "assess",
+            "publish": "finalize",
+        }
+        phase = data.get("phase")
+        if isinstance(phase, str):
+            data["phase"] = phase_map.get(phase, phase)
+
+        provider_map = {
+            "gemini": "google",
+            "hf": "google",
+            "unknown": "ollama",
+        }
+        provider = data.get("provider")
+        if isinstance(provider, str):
+            data["provider"] = provider_map.get(provider, provider)
+
         return CostLogResponse(**data)
 
     @staticmethod

@@ -93,14 +93,14 @@ async def bulk_task_operations(
         )
         raise HTTPException(status_code=400, detail=error_response.model_dump())
 
-    if request.action not in ["pause", "resume", "cancel", "reject"]:
+    if request.action not in ["pause", "resume", "cancel", "reject", "retry"]:
         error_response = (
             ErrorResponseBuilder()
             .error_code("VALIDATION_ERROR")
             .message("Invalid action specified")
             .with_field_error(
                 "action",
-                f"Must be one of: pause, resume, cancel, or reject. Got: {request.action}",
+                f"Must be one of: pause, resume, cancel, reject, or retry. Got: {request.action}",
                 "INVALID_CHOICE",
             )
             .build()
@@ -113,6 +113,7 @@ async def bulk_task_operations(
         "resume": "in_progress",
         "cancel": "cancelled",
         "reject": "rejected",
+        "retry": "pending",
     }
     new_status = status_map[request.action]
 

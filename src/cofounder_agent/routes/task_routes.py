@@ -2261,7 +2261,10 @@ async def publish_task(
         try:
             # Get task result which contains generated content
             task_result = task.get("result", {})
-            if isinstance(task_result, str):
+            # Handle None result explicitly
+            if task_result is None:
+                task_result = {}
+            elif isinstance(task_result, str):
                 import json as json_module
 
                 task_result = json_module.loads(task_result) if task_result else {}
