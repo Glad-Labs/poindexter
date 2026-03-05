@@ -982,7 +982,7 @@ class AIContentGenerator:
                         continue
 
             except Exception as e:
-                logger.warning(f"[_gemini_generate] Ollama generation failed: {e}")
+                logger.error(f"[_gemini_generate] Ollama generation failed: {e}", exc_info=True)
                 if not attempts:  # Only append if attempts list is still empty
                     attempts.append(("Ollama", str(e)[:150]))
 
@@ -1041,7 +1041,7 @@ class AIContentGenerator:
                                 return generated_content, metrics["model_used"], metrics
 
                     except asyncio.TimeoutError:
-                        logger.debug(f"HuggingFace model {model_id} timed out")
+                        logger.error(f"HuggingFace model {model_id} timed out", exc_info=True)
                         continue
                     except Exception as e:
                         logger.debug(f"[_gemini_generate] HuggingFace model {model_id} failed: {e}")
@@ -1148,7 +1148,7 @@ class AIContentGenerator:
                 attempts.append(("Gemini", f"SDK error: {str(e)[:100]}"))
 
             except ImportError as e:
-                logger.warning(f"google.generativeai not installed: {e}")
+                logger.error(f"google.generativeai not installed: {e}", exc_info=True)
                 attempts.append(("Gemini", "SDK not installed"))
             except Exception as e:
                 logger.warning(f"[_gemini_generate] Gemini generation failed: {e}")
