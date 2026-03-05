@@ -1044,11 +1044,11 @@ class AIContentGenerator:
                         logger.error(f"HuggingFace model {model_id} timed out", exc_info=True)
                         continue
                     except Exception as e:
-                        logger.debug(f"[_gemini_generate] HuggingFace model {model_id} failed: {e}")
+                        logger.error(f"[_gemini_generate] HuggingFace model {model_id} failed: {e}", exc_info=True)
                         continue
 
             except Exception as e:
-                logger.warning(f"[_gemini_generate] HuggingFace generation failed: {e}")
+                logger.error(f"[_gemini_generate] HuggingFace generation failed: {e}", exc_info=True)
                 attempts.append(("HuggingFace", str(e)))
 
         # 3. Fall back to Google Gemini (paid, but reliable)
@@ -1151,7 +1151,7 @@ class AIContentGenerator:
                 logger.error(f"google.generativeai not installed: {e}", exc_info=True)
                 attempts.append(("Gemini", "SDK not installed"))
             except Exception as e:
-                logger.warning(f"[_gemini_generate] Gemini generation failed: {e}")
+                logger.error(f"[_gemini_generate] Gemini generation failed: {e}", exc_info=True)
                 attempts.append(("Gemini", str(e)[:150]))
 
         # If all models fail, use fallback

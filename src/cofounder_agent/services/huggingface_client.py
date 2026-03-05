@@ -86,7 +86,7 @@ class HuggingFaceClient:
             ) as response:
                 return response.status in [200, 302]  # 302 = model loading
         except Exception as e:
-            logger.debug(f"[_is_available] HuggingFace not available: {e}")
+            logger.error(f"[_is_available] HuggingFace not available: {e}", exc_info=True)
             return False
 
     async def generate(
@@ -281,7 +281,7 @@ async def _session_cleanup() -> None:
         try:
             await client.close()
         except Exception as e:
-            logger.warning(f"[_session_cleanup] Error closing HuggingFace client: {e}")
+            logger.error(f"[_session_cleanup] Error closing HuggingFace client: {e}", exc_info=True)
     _active_clients.clear()
 
 
