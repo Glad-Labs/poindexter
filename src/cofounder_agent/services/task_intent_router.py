@@ -186,8 +186,8 @@ class TaskIntentRouter:
                 days = int(params["deadline_days"])
                 normalized["deadline"] = (datetime.now() + timedelta(days=days)).isoformat()
             except (ValueError, TypeError) as e:
-                logger.debug(
-                    f"Failed to parse deadline_days '{params['deadline_days']}': {type(e).__name__} - deadline not set"
+                logger.error(
+                    f"Failed to parse deadline_days '{params['deadline_days']}': {type(e).__name__} - deadline not set", exc_info=True
                 )
                 # deadline will remain unset if parsing fails
 
@@ -369,11 +369,7 @@ class TaskIntentRouter:
             "confidence": f"{intent_request.confidence * 100:.0f}%",
             "steps": steps,
             "total_estimated_time": self._format_duration(total_duration_ms),
-            "cost_estimate": (
-                await self.model_router.estimate_cost(task_data)
-                if hasattr(self, "model_router")
-                else "$2.15"
-            ),
+            "cost_estimate": "$2.15",  # Placeholder - removed async await call in sync function
             "next_action": (
                 "Ready to execute"
                 if not intent_request.requires_confirmation

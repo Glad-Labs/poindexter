@@ -486,8 +486,8 @@ class CircuitBreaker:
             self.failure_count += 1
             self.last_failure_time = datetime.utcnow()
 
-            logger.warning(
-                f"⚠️  Circuit breaker '{self.name}' - failure {self.failure_count}/{self.failure_threshold}: {e}"
+            logger.error(
+                f"⚠️  Circuit breaker '{self.name}' - failure {self.failure_count}/{self.failure_threshold}: {e}", exc_info=True
             )
 
             # Open circuit if threshold reached
@@ -534,8 +534,8 @@ class CircuitBreaker:
             self.failure_count += 1
             self.last_failure_time = datetime.utcnow()
 
-            logger.warning(
-                f"⚠️  Circuit breaker '{self.name}' - failure {self.failure_count}/{self.failure_threshold}: {e}"
+            logger.error(
+                f"⚠️  Circuit breaker '{self.name}' - failure {self.failure_count}/{self.failure_threshold}: {e}", exc_info=True
             )
 
             # Open circuit if threshold reached

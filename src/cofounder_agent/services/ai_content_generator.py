@@ -971,13 +971,13 @@ class AIContentGenerator:
                     except asyncio.TimeoutError as e:
                         # Explicitly catch timeout - model too slow or server unresponsive
                         error_msg = f"Timeout (120s exceeded) with {model_name}"
-                        logger.warning(f"Ollama model {model_name} timed out: {error_msg}")
+                        logger.error(f"Ollama model {model_name} timed out: {error_msg}", exc_info=True)
                         attempts.append(("Ollama", error_msg))
                         continue
                     except Exception as e:
                         # Catch other errors (500 errors, connection issues, etc.)
                         error_msg = str(e)[:150]  # Truncate long error messages
-                        logger.warning(f"[_gemini_generate] Ollama model {model_name} failed: {error_msg}")
+                        logger.error(f"[_gemini_generate] Ollama model {model_name} failed: {error_msg}", exc_info=True)
                         attempts.append(("Ollama", f"{model_name}: {error_msg}"))
                         continue
 

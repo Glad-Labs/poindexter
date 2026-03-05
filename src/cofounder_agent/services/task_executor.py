@@ -952,8 +952,8 @@ class TaskExecutor:
                     logger.error(
                         f"❌ [TASK_EXECUTE] Refinement failed: {refine_err}", exc_info=True
                     )
-                    logger.warning(
-                        f"   Keeping original content ({len(generated_content) if generated_content else 0} chars)"
+                    logger.error(
+                        f"   Keeping original content ({len(generated_content) if generated_content else 0} chars)", exc_info=True
                     )
 
                 logger.info(
