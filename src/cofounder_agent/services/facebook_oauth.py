@@ -112,7 +112,10 @@ class FacebookOAuthProvider(OAuthProvider):
             return access_token
 
         except httpx.HTTPError as e:
-            logger.error(f"Facebook OAuth token exchange failed: {e}")
+            logger.error(
+                f"[exchange_code_for_token] Facebook OAuth token exchange failed: {e}",
+                exc_info=True,
+            )
             raise OAuthException(f"Failed to exchange code for token: {str(e)}")
 
     def get_user_info(self, access_token: str) -> OAuthUser:
@@ -163,5 +166,8 @@ class FacebookOAuthProvider(OAuthProvider):
             return user
 
         except httpx.HTTPError as e:
-            logger.error(f"Failed to fetch Facebook user info: {e}")
+            logger.error(
+                f"[get_user_info] Failed to fetch Facebook user info: {e}",
+                exc_info=True,
+            )
             raise OAuthException(f"Failed to fetch user info: {str(e)}")

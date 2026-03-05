@@ -217,4 +217,4 @@ class TokenManager:
                 extra={"user_id": user_id, "provider": provider, "status": status},
             )
         except Exception as e:
-            logger.warning(f"[_audit_log] Audit log failed: {e}")
+            logger.error(f"[_audit_log] Audit log failed: {e}", exc_info=True)

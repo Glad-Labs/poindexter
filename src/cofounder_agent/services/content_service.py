@@ -185,7 +185,10 @@ class ContentService:
                         style_data.get("writing_style_guidance", "") if style_data else ""
                     )
                 except Exception as e:
-                    logger.warning(f"[_execute_draft] Could not retrieve writing style: {e}")
+                    logger.error(
+                        f"[_execute_draft] Could not retrieve writing style: {e}",
+                        exc_info=True,
+                    )
 
             # Execute draft
             research_text = research_context.get("research_text", "")
@@ -358,7 +361,10 @@ class ContentService:
             }
 
         except Exception as e:
-            logger.warning(f"[_execute_image_selection] Image selection phase failed (non-critical): {e}")
+            logger.error(
+                f"[_execute_image_selection] Image selection phase failed (non-critical): {e}",
+                exc_info=True,
+            )
             # Return empty result - image selection is optional
             return {
                 "phase": "image_selection",

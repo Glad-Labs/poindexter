@@ -415,7 +415,10 @@ class WorkflowExecutor:
                     return None
 
             except ImportError as e:
-                logger.warning(f"Failed to import agent module '{module_path}': {e}")
+                logger.error(
+                    f"[_get_agent] Failed to import agent module '{module_path}': {e}",
+                    exc_info=True,
+                )
                 return None
 
         except Exception as e:

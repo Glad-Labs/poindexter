@@ -140,7 +140,10 @@ class WorkflowHistoryService:
                         task_results=task_results or {},
                     )
                 except Exception as e:
-                    logger.warning(f"[_save_workflow_execution] ⚠️  Failed to emit workflow status event: {e}")
+                    logger.error(
+                        f"[_save_workflow_execution] Failed to emit workflow status event: {e}",
+                        exc_info=True,
+                    )
 
                 return self._row_to_dict(row)
 
