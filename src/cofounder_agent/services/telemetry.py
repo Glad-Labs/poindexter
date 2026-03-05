@@ -13,7 +13,10 @@ try:
     OPENTELEMETRY_AVAILABLE = True
 except (ImportError, AttributeError) as e:
     OPENTELEMETRY_AVAILABLE = False
-    logging.warning(f"OpenTelemetry not fully available: {e}. Tracing disabled.")
+    logging.error(
+        f"[setup_telemetry] OpenTelemetry not fully available: {e}. Tracing disabled.",
+        exc_info=True,
+    )
 
 # Suppress verbose OTLP exporter logs in development
 logging.getLogger("opentelemetry.exporter.otlp.proto.http.trace_exporter").setLevel(
@@ -87,9 +90,10 @@ def setup_telemetry(app, service_name="cofounder-agent"):
 
         except Exception as e:
             # If OTLP endpoint is not available, log warning but continue with no-op provider
-            logging.warning(
-                f"[TELEMETRY] Warning: OTLP exporter not available ({otlp_endpoint}): {e}. "
-                f"Spans will not be exported but application will continue."
+            logging.error(
+                f"[setup_telemetry] OTLP exporter not available ({otlp_endpoint}): {e}. "
+                f"Spans will not be exported but application will continue.",
+                exc_info=True,
             )
 
         # Set the global TracerProvider (only once, will override if already set)
@@ -99,13 +103,18 @@ def setup_telemetry(app, service_name="cofounder-agent"):
             # Provider already set - this is ok, just use the existing one
             if "current TracerProvider" not in str(e):
                 raise
-            logging.debug(f"[TELEMETRY] TracerProvider already set, using existing: {e}")
+            logging.error(
+                f"[setup_telemetry] TracerProvider already set, using existing: {e}",
+                exc_info=True,
+            )
 
         # Instrument the FastAPI app
         try:
             FastAPIInstrumentor.instrument_app(app, tracer_provider=provider)
         except Exception as e:
-            logging.warning(f"[TELEMETRY] Warning: Failed to instrument FastAPI: {e}")
+            logging.error(
+                f"[setup_telemetry] Failed to instrument FastAPI: {e}", exc_info=True
+            )
 
         # Instrument OpenAI SDK (if available)
         if OpenAIInstrumentor is not None:
@@ -113,9 +122,11 @@ def setup_telemetry(app, service_name="cofounder-agent"):
                 OpenAIInstrumentor().instrument()
                 logging.debug("[TELEMETRY] OpenAI SDK instrumented successfully")
             except Exception as e:
-                logging.warning(f"[TELEMETRY] Warning: Failed to instrument OpenAI SDK: {e}")
+                logging.error(
+                    f"[setup_telemetry] Failed to instrument OpenAI SDK: {e}", exc_info=True
+                )
 
     except Exception as e:
         # If telemetry setup fails entirely, just log and continue
-        logging.error(f"[TELEMETRY] Error setting up telemetry: {e}")
+        logging.error(f"[setup_telemetry] Error setting up telemetry: {e}", exc_info=True)
         logging.error(f"[TELEMETRY] Application will continue without OpenTelemetry tracing")
