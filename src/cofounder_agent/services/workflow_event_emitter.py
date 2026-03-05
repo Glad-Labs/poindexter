@@ -144,7 +144,7 @@ class WorkflowEventEmitter:
                     self._broadcast_function(execution_id, progress)
             except Exception as e:
                 logger.error(
-                    f"Error broadcasting progress for {execution_id}: {e}",
+                    f"[_broadcast_progress] Error broadcasting progress for execution_id={execution_id}: {e}",
                     exc_info=True,
                 )
 

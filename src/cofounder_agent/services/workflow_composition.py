@@ -62,7 +62,10 @@ async def create_agent_phase_handler(agent_name: str, phase_method: str = "run")
                 raise AttributeError(f"Agent '{agent_name}' has no method '{phase_method}'")
 
         except Exception as e:
-            logger.error(f"[_phase_handler] Phase handler failed for agent '{agent_name}': {e}", exc_info=True)
+            logger.error(
+                f"[_phase_handler] Phase handler failed for agent='{agent_name}', method='{phase_method}': {e}",
+                exc_info=True,
+            )
             raise
 
     return phase_handler
@@ -176,7 +179,10 @@ class WorkflowBuilder:
                 else:
                     raise AttributeError(f"Agent has no method '{agent_method}'")
             except Exception as e:
-                logger.error(f"[_agent_handler] Agent phase failed for '{agent_name}': {e}", exc_info=True)
+                logger.error(
+                    f"[_agent_handler] Agent phase failed for agent='{agent_name}', method='{agent_method}': {e}",
+                    exc_info=True,
+                )
                 raise
 
         phase_name = phase_name or agent_name

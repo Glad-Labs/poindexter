@@ -27,6 +27,8 @@ This ensures all loggers use the centralized configuration.
 import logging
 import os
 import sys
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from typing import Optional
 
 # Try to import structlog for structured logging support
@@ -44,6 +46,24 @@ except ImportError:
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 LOG_FORMAT = os.getenv("LOG_FORMAT", "json" if ENVIRONMENT == "production" else "text")
+LOG_DIR = Path(os.getenv("LOG_DIR", "logs"))
+LOG_FILE_NAME = os.getenv("LOG_FILE_NAME", "cofounder_agent.log")
+
+
+def _safe_int_env(name: str, default: int) -> int:
+    """Get integer environment variable with safe fallback."""
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+LOG_MAX_BYTES = _safe_int_env("LOG_MAX_BYTES", 10 * 1024 * 1024)
+LOG_BACKUP_COUNT = _safe_int_env("LOG_BACKUP_COUNT", 10)
+LOG_TO_FILE = os.getenv("LOG_TO_FILE", "true").lower() == "true"
 
 # Validate log level
 VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
@@ -123,13 +143,27 @@ def configure_standard_logging() -> None:
         # Human-readable format for development
         log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
+    handlers = [logging.StreamHandler(sys.stdout)]
+
+    if LOG_TO_FILE:
+        try:
+            LOG_DIR.mkdir(parents=True, exist_ok=True)
+            file_handler = RotatingFileHandler(
+                LOG_DIR / LOG_FILE_NAME,
+                maxBytes=LOG_MAX_BYTES,
+                backupCount=LOG_BACKUP_COUNT,
+                encoding="utf-8",
+            )
+            handlers.append(file_handler)
+        except Exception as e:
+            print(f"Warning: Failed to configure rotating file logging: {e}", file=sys.stderr)
+
     # Configure root logger
     logging.basicConfig(
         level=getattr(logging, LOG_LEVEL),
         format=log_format,
-        handlers=[
-            logging.StreamHandler(sys.stdout),
-        ],
+        handlers=handlers,
+        force=True,
     )
 
 
@@ -137,10 +171,10 @@ def configure_standard_logging() -> None:
 # INITIALIZATION
 # ============================================================================
 
-# Try to configure structlog first, fall back to standard logging
+# Always configure standard logging handlers first (stdout + rotating files).
+# Structlog (if available) then wraps standard logging for structured output.
+configure_standard_logging()
 _structlog_configured = configure_structlog()
-if not _structlog_configured:
-    configure_standard_logging()
 
 
 # ============================================================================

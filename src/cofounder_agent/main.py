@@ -33,7 +33,7 @@ from services.telemetry import setup_telemetry
 from utils.exception_handlers import register_exception_handlers
 from utils.middleware_config import MiddlewareConfig
 from utils.route_registration import register_all_routes
-from utils.route_utils import initialize_services, get_orchestrator_dependency
+from utils.route_utils import initialize_services, get_orchestrator_dependency, get_database_dependency, get_redis_cache_optional
 from utils.startup_manager import StartupManager
 
 try:
@@ -79,20 +79,12 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         logger.info("[LIFESPAN] ✅ All services initialized by startup_manager")
         logger.debug(f"[LIFESPAN] Services dict keys: {services.keys()}")
 
-        # Inject services into app state for access in routes
-        logger.info("[LIFESPAN] Injecting services into app.state. ..")
-        app.state.database = services["database"]
-        app.state.redis_cache = services["redis_cache"]
-        app.state.task_executor = services["task_executor"]
-        app.state.workflow_history = services["workflow_history"]
-        app.state.training_data_service = services.get("training_data_service")
-        app.state.fine_tuning_service = services.get("fine_tuning_service")
-        app.state.custom_workflows_service = services.get("custom_workflows_service")
-        app.state.template_execution_service = services.get("template_execution_service")
-        app.state.legacy_data_service = services.get("legacy_data_service")
+        # Framework-level app state flags (exception handling and startup status)
+        logger.info("[LIFESPAN] Initializing framework-level app state flags. ..")
         app.state.startup_error = services["startup_error"]
         app.state.startup_complete = True
-        logger.debug("[LIFESPAN] ✅ All services injected into app.state")
+        logger.debug("[LIFESPAN] ✅ Framework-level flags initialized")
+        logger.info("[LIFESPAN] NOTE: Application-level services are now injected via ServiceContainer + Depends()")
 
         # Initialize auth service
         logger.info("[LIFESPAN] Initializing authentication service. ..")
@@ -120,12 +112,10 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         logger.info("[LIFESPAN] Initializing UnifiedOrchestrator. ..")
         try:
             orchestrator = UnifiedOrchestrator()
-            app.state.orchestrator = orchestrator
             service_container.register("orchestrator", orchestrator)
-            logger.info("[LIFESPAN] ✅ UnifiedOrchestrator initialized and injected into app.state")
+            logger.info("[LIFESPAN] ✅ UnifiedOrchestrator initialized via ServiceContainer")
         except Exception as e:
             logger.error(f"[LIFESPAN] ❌ Failed to initialize UnifiedOrchestrator: {e}", exc_info=True)
-            app.state.orchestrator = None
             logger.warning("[LIFESPAN] ⚠️ Orchestrator initialization failed - system will use fallback template-based generation")
 
         # Register services in the global DI container for dependency injection
@@ -143,13 +133,14 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         )
         logger.info("[LIFESPAN] ✅ Services registered in global DI container")
 
-        # Start the background task executor
+        # Start the background task executor (get from ServiceContainer)
         logger.info("[LIFESPAN] Starting background task executor...")
-        if app.state.task_executor:
-            await app.state.task_executor.start()
+        task_executor = service_container.get("task_executor")
+        if task_executor:
+            await task_executor.start()
             logger.info("[LIFESPAN] ✅ Background task executor started")
         else:
-            logger.warning("[LIFESPAN] ⚠️ Task executor not available to start")
+            logger.warning("[LIFESPAN] ⚠️ Task executor not available in ServiceContainer")
 
         logger.info("[OK] Lifespan: Yielding control to FastAPI application. ..")
         try:
@@ -261,10 +252,13 @@ async def list_tasks_pub_dev(
     limit: int = Query(20, ge=1, le=1000),
     status: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
+    database_service: Any = Depends(get_database_dependency),
 ):
-    """Public endpoint for listing tasks - NO AUTHENTICATION REQUIRED (Development Only)"""
+    """Public endpoint for listing tasks - NO AUTHENTICATION REQUIRED (Development Only)
+    
+    DI-5: Now uses Depends() injection for database service
+    """
     try:
-        database_service = getattr(app.state, "database", None)
         if not database_service:
             return {
                 "success": True,
@@ -299,10 +293,14 @@ async def list_tasks_pub_dev(
 
 # ===== UNIFIED HEALTH CHECK ENDPOINT =====
 # Consolidated from: /api/health, /status, /metrics/health, and route-specific health endpoints
+# DI-5: Health check endpoints refactored to use Depends() for database and cache injection
 
 
 @app.get("/api/health")
-async def api_health():
+async def api_health(
+    database_service: Any = Depends(get_database_dependency),
+    redis_cache: Any = Depends(get_redis_cache_optional),
+):
     """
     Unified health check endpoint for Railway deployment and load balancers.
 
@@ -315,17 +313,16 @@ async def api_health():
 
     Used by: Railway load balancers, monitoring systems, external health checks
     Authentication: Not required (critical for load balancers)
+    
+    DI-5: Now uses Depends() injection for services instead of app.state
     """
     # Try to get from cache first (note: health checks may be called very frequently)
-    if hasattr(app.state, "redis_cache"):
-        redis_cache = app.state.redis_cache
-        cache_key = "database_health_check"
+    cache_key = "database_health_check"
+    if redis_cache is not None:
         cached_result = await redis_cache.get(cache_key)
         if cached_result is not None:
             logger.debug(f"Database health check cache hit for key: {cache_key}")
             return cached_result
-    else:
-        redis_cache = None
 
     try:
         # Build comprehensive health response
@@ -337,7 +334,7 @@ async def api_health():
             "components": {},
         }
 
-        # Check startup status
+        # Check startup status (framework-level, still via app.state)
         startup_error = getattr(app.state, "startup_error", None)
         startup_complete = getattr(app.state, "startup_complete", False)
 
@@ -350,8 +347,7 @@ async def api_health():
             health_data["status"] = "starting"
             health_data["startup_complete"] = False
 
-        # Include database status if available
-        database_service = getattr(app.state, "database", None)
+        # Include database status if available (now via Depends injection)
         if database_service:
             try:
                 db_health = await database_service.health_check()
@@ -362,7 +358,7 @@ async def api_health():
         else:
             health_data["components"]["database"] = "unavailable"
 
-        # Cache the result with 30s TTL
+        # Cache the result with 30s TTL (using injected redis_cache)
         if redis_cache:
             await redis_cache.set("database_health_check", health_data, ttl=30)
             logger.debug(f"Database health check cached with TTL 30s")
@@ -390,7 +386,9 @@ async def health():
 
 
 @app.get("/api/metrics")
-async def get_metrics_endpoint():
+async def get_metrics_endpoint(
+    database_service: Any = Depends(get_database_dependency),
+):
     """
     Aggregated task and system metrics endpoint.
 
@@ -408,9 +406,10 @@ async def get_metrics_endpoint():
     - success_rate: Success percentage (0-100)
     - avg_execution_time: Average task duration in seconds
     - total_cost: Estimated total cost in USD
+    
+    DI-5: Now uses Depends() injection for database service
     """
     try:
-        database_service = getattr(app.state, "database", None)
         if database_service:
             metrics = await database_service.get_metrics()
             return metrics
@@ -514,14 +513,16 @@ async def process_command(
 
 
 @app.get("/")
-async def root():
+async def root(database_service: Any = Depends(get_database_dependency)):
     """
     Root endpoint to confirm the server is running.
+    
+    DI-5: Now uses Depends() injection for database availability check
     """
     return {
         "message": "Glad Labs AI Co-Founder is running",
         "version": "3.0.1",
-        "database_enabled": hasattr(app.state, "database") and app.state.database is not None,
+        "database_enabled": database_service is not None,
     }
 
 
