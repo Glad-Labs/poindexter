@@ -225,7 +225,7 @@ class ImageService:
                             f"Falling back to CPU mode."
                         )
                 except Exception as e:
-                    logger.warning(f"[__init__] Could not verify GPU capability: {e}. Using CPU mode.")
+                    logger.error(f"[__init__] Could not verify GPU capability: {e}. Using CPU mode.", exc_info=True)
             else:
                 logger.warning("CUDA not available - using CPU mode (slower)")
 
@@ -298,7 +298,7 @@ class ImageService:
                     pipe.enable_xformers_memory_efficient_attention()
                     logger.info("   ✓ xformers memory-efficient attention enabled (2-4x faster)")
                 except Exception as e:
-                    logger.warning(f"   [⚠️_apply_model_optimizations] Could not enable xformers: {e}")
+                    logger.error(f"   [_apply_model_optimizations] Could not enable xformers: {e}", exc_info=True)
 
             # 3. Enable Flash Attention v2 if available (PyTorch 2.0+)
             try:
@@ -327,7 +327,7 @@ class ImageService:
                     logger.debug(f"[_apply_model_optimizations] Model CPU offload not available: {e}")
 
         except Exception as e:
-            logger.warning(f"[_apply_model_optimizations] Error applying optimizations: {e}")
+            logger.error(f"[_apply_model_optimizations] Error applying optimizations: {e}", exc_info=True)
 
     # =========================================================================
     # FEATURED IMAGE SEARCH (Pexels - Free, Unlimited)
@@ -416,7 +416,7 @@ class ImageService:
                     )
                     return metadata
             except Exception as e:
-                logger.warning(f"[get_featured_image] Error searching for '{query}': {e}")
+                logger.error(f"[get_featured_image] Error searching for '{query}': {e}", exc_info=True)
 
         logger.warning(f"No featured image found for topic: {topic}")
         return None
@@ -458,7 +458,7 @@ class ImageService:
                     return all_images[:count]
 
             except Exception as e:
-                logger.warning(f"[get_images_for_gallery] Error searching for gallery images '{query}': {e}")
+                logger.error(f"[get_images_for_gallery] Error searching for gallery images '{query}': {e}", exc_info=True)
 
         logger.info(f"Found {len(all_images)} gallery images (less than requested)")
         return all_images
@@ -768,8 +768,9 @@ class ImageService:
                 refined_image.save(output_path)
 
             except Exception as refine_error:
-                logger.warning(
-                    f"   ⚠️  Refinement failed, falling back to base image: {refine_error}"
+                logger.error(
+                    f"[generate_image] Refinement failed, falling back to base image: {refine_error}",
+                    exc_info=True
                 )
                 # Fallback: save base PIL image without refinement
                 try:
@@ -777,7 +778,7 @@ class ImageService:
                     logger.info(f"   ✓ Saved base image without refinement (fallback)")
 
                 except Exception as save_error:
-                    logger.error(f"   ❌ Save failed: {save_error}")
+                    logger.error(f"[generate_image] Save failed: {save_error}", exc_info=True)
                     raise
 
         else:
@@ -788,7 +789,7 @@ class ImageService:
                 logger.info(f"   ✓ Saved base image (refinement disabled)")
 
             except Exception as save_error:
-                logger.error(f"   ❌ Save failed: {save_error}")
+                logger.error(f"[generate_image] Save failed: {save_error}", exc_info=True)
                 raise
 
     # =========================================================================
