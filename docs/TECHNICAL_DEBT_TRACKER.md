@@ -245,7 +245,7 @@
 
 - **Files:** 68 service files across `src/cofounder_agent/services/`
 - **Priority:** P2-High
-- **Status:** 🟡 IN PROGRESS - **169/312 exceptions standardized (54.2%)** - Batch 8 complete, steady momentum
+- **Status:** 🟡 IN PROGRESS - **177/312 exceptions standardized (56.7%)** - Batch 9 complete, momentum sustained
 - **Effort:** 3-4 hours remaining (estimated 3-4 more batches to reach 100%)
 - **Progress Summary:**
   - **Batch 1** (12 exceptions): tasks_db, content_db, admin_db, writing_style_db, users_db ✅
@@ -256,8 +256,9 @@
   - **Batch 6** (11 exceptions): ollama_client (generate_with_retry, stream_generate, health_check, chat, generate) ✅
   - **Batch 7** (12 exceptions): telemetry, github_oauth, google_oauth, microsoft_oauth ✅
   - **Batch 8** (4 exceptions): redis_cache, task_executor, workflow_validator ✅
-  - **Completed Files:** 22 service files across 8 completed batches
-- **Next Batch Targets (Batch 9):**
+  - **Batch 9** (8 exceptions): custom_workflows_service, workflow_engine, ai_content_generator ✅
+  - **Completed Files:** 25 service files across 9 completed batches
+- **Next Batch Targets (Batch 10):**
   - Identified candidates: websocket integration, publishing services, image handlers
   - Estimated scope: 20-25 exceptions, 2.5-3 hours
   - Will identify via comprehensive scan for next batch
@@ -270,8 +271,9 @@
   - Batch 6: 1.5 hours (11 exceptions)
   - Batch 7: 1.5 hours (12 exceptions)
   - Batch 8: 1 hour (4 exceptions)
+  - Batch 9: 1.5 hours (8 exceptions)
   - Average velocity: 10-15 exceptions per hour, 2-3 hour batches
-  - Actual completion rate: 169 exceptions / ~15 hours = 11.3 exceptions/hour (ahead of plan)
+  - Actual completion rate: 177 exceptions / ~16.5 hours = 10.7 exceptions/hour (ahead of plan)
 - **Impact:** Inconsistent error handling, poor diagnostics, debugging friction
 - **Current Issues:**
   - Some files: Proper HTTPException with status codes
@@ -295,6 +297,7 @@
   - `12ab6aece`: Batch 6 (11 exceptions, 153/312 = 49.0%)
   - `e84acbebe`: Batch 7 (12 exceptions, 165/312 = 52.9%)
   - `16a39c98a`: Batch 8 (4 exceptions, 169/312 = 54.2%)
+  - `3efa09fc6`: Batch 9 (8 exceptions, 177/312 = 56.7%)
 
 - **Strategy:** Continue 2-3 hour batches with 3-4 service files per batch until completion (3-4 more batches to 100%)
 - **Team Parallelization:** Pattern proven solid enough for 3-4 developers working in parallel (estimated 4-5 hours total with team vs 30 hours solo)
@@ -662,7 +665,7 @@ X-Y hours
 - [x] Workflow pause/resume/cancel
 - [ ] GDPR data subject rights
 - [ ] Query performance monitoring
-- [x] Phase 1C error handling (In Progress - 54.2%)
+- [x] Phase 1C error handling (In Progress - 56.7%)
 - [ ] Depends-only DI standardization
 
 **P3 Medium (0/8 Not Started):**
