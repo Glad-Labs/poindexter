@@ -53,6 +53,11 @@ Production-ready AI orchestration system with autonomous agents, multi-provider 
 
 ## 🚀 Quick Start
 
+Environment setup references:
+
+- `docs/reference/ENVIRONMENT_SETUP.md`
+- `docs/reference/GITHUB_SECRETS_SETUP.md`
+
 ```bash
 npm run dev
 ```
