@@ -1,8 +1,8 @@
 # 📚 Glad Labs Documentation Hub
 
-**Last Updated:** February 23, 2026
+**Last Updated:** March 5, 2026
 **Status:** ✅ Production-Ready | Cleaned & Organized | Root Docs Archived
-**Structure:** 7 Core Docs | Intelligence Layer | Infrastructure & Ops | Organized Archive
+**Structure:** 7 Core Docs | Maintenance Guide | Intelligence Layer | Infrastructure & Ops | Organized Archive
 **Project:** Glad Labs AI Co-Founder System v3.0.2 | AGPL-3.0 License
 **Policy:** 🎯 **HIGH-LEVEL ONLY** (Architecture-focused, source-of-truth documentation)
 
@@ -23,6 +23,13 @@
 | AI Agents & Integration   | [05-AI_AGENTS_AND_INTEGRATION.md](05-AI_AGENTS_AND_INTEGRATION.md)         |
 | Operations & Maintenance  | [06-OPERATIONS_AND_MAINTENANCE.md](06-OPERATIONS_AND_MAINTENANCE.md)       |
 | Environment & Variables   | [07-BRANCH_SPECIFIC_VARIABLES.md](07-BRANCH_SPECIFIC_VARIABLES.md)         |
+
+---
+
+## 🛠️ Maintenance & Operations
+
+- **Documentation Maintenance:** [DOCUMENTATION_MAINTENANCE_GUIDE.md](DOCUMENTATION_MAINTENANCE_GUIDE.md) — Workflows and checklists for keeping all reference docs in sync
+- **Issue Tracking & Status:** [TECHNICAL_DEBT_TRACKER.md](TECHNICAL_DEBT_TRACKER.md) — Complete technical debt inventory with priorities and metrics
 
 ---
 
