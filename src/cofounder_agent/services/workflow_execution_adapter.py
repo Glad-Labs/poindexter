@@ -276,8 +276,9 @@ async def _execute_content_phase_fallback(
             f"Generated fallback output for phase '{phase_name}'.",
         )
         combined_reason = f"{fallback_reason}; model_fallback_error: {str(model_error)}"
-        logger.warning(
-            "Content phase fallback used placeholder output",
+        logger.error(
+            f"[_execute_content_phase] Content phase fallback used placeholder output",
+            exc_info=True,
             extra={
                 "phase": phase_name,
                 "selected_model": selected_model,
