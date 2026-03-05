@@ -284,7 +284,7 @@ class ContentGenerationService:
             prompt = f"Create a visual representation for: {topic}\n\nContext: {content[:200]}"
             return prompt
         except Exception as e:
-            logger.warning(f"[_generate_featured_image_prompt] Error generating image prompt: {e}")
+            logger.error(f"[_generate_featured_image_prompt] Error generating image prompt: {e}", exc_info=True)
             return f"Featured image for: {topic}"
 
 
@@ -398,7 +398,7 @@ async def _generate_canonical_title(
         return None
 
     except Exception as e:
-        logger.warning(f"[_generate_canonical_title] Error generating canonical title: {e}")
+        logger.error(f"[_generate_canonical_title] Error generating canonical title: {e}", exc_info=True)
         return None
 
 
@@ -730,7 +730,7 @@ async def process_content_generation_task(
                 else:
                     logger.info("ℹ️  No body images available to embed\n")
             except Exception as e:
-                logger.warning(f"⚠️  Body image embedding failed (continuing): {e}")
+                logger.error(f"[process_content] Body image embedding failed (continuing): {e}", exc_info=True)
 
         # ================================================================================
         # STAGE 4: GENERATE SEO METADATA

@@ -184,7 +184,7 @@ class OllamaAdapter(ProviderAdapter):
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.warning(f"[_generate] Ollama generation failed", error=str(e), model=model)
+            logger.error(f"[_generate] Ollama generation failed: {str(e)}", exc_info=True, model=model)
             raise
 
     def list_models(self) -> List[str]:
@@ -246,7 +246,7 @@ class HuggingFaceAdapter(ProviderAdapter):
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.warning(f"[_generate] HuggingFace generation failed", error=str(e), model=model)
+            logger.error(f"[_generate] HuggingFace generation failed: {str(e)}", exc_info=True, model=model)
             raise
 
     def list_models(self) -> List[str]:
@@ -314,7 +314,7 @@ class GoogleAdapter(ProviderAdapter):
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.warning(f"[_generate] Google Gemini generation failed", error=str(e), model=model)
+            logger.error(f"[_generate] Google Gemini generation failed: {str(e)}", exc_info=True, model=model)
             raise
 
     def list_models(self) -> List[str]:
@@ -392,7 +392,7 @@ class AnthropicAdapter(ProviderAdapter):
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.warning(f"[_generate] Anthropic generation failed", error=str(e), model=model)
+            logger.error(f"[_generate] Anthropic generation failed: {str(e)}", exc_info=True, model=model)
             raise
 
     def list_models(self) -> List[str]:
@@ -465,7 +465,7 @@ class OpenAIAdapter(ProviderAdapter):
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.warning(f"[_generate] OpenAI generation failed", error=str(e), model=model)
+            logger.error(f"[_generate] OpenAI generation failed: {str(e)}", exc_info=True, model=model)
             raise
 
     def list_models(self) -> List[str]:
@@ -540,8 +540,8 @@ class ModelConsolidationService:
                 )
                 logger.debug("Adapter initialized", provider=provider_type.value)
             except Exception as e:
-                logger.warning(
-                    "Failed to initialize adapter", provider=provider_type.value, error=str(e)
+                logger.error(
+                    "Failed to initialize adapter", provider=provider_type.value, error=str(e), exc_info=True
                 )
 
     async def _check_provider_availability(self, provider_type: ProviderType) -> bool:
@@ -570,7 +570,7 @@ class ModelConsolidationService:
 
             return is_available
         except Exception as e:
-            logger.warning(f"[_check_provider_availability] Provider check failed", provider=provider_type.value, error=str(e))
+            logger.error(f"[_check_provider_availability] Provider check failed: {str(e)}", exc_info=True, provider=provider_type.value)
 
             self.provider_status[provider_type] = ProviderStatus(
                 provider=provider_type,
