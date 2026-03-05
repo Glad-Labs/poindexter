@@ -61,13 +61,13 @@ async def run_migrations(database_service) -> bool:
                 logger.info(f"✅ Migration completed: {migration_name}")
 
             except Exception as e:
-                logger.error(f"❌ Migration failed: {migration_name}")
-                logger.error(f"   Error: {str(e)}")
+                logger.error(f"❌ Migration failed: {migration_name}", exc_info=True)
+                logger.error(f"   Error: {str(e)}", exc_info=True)
                 return False
 
         logger.info("✅ All migrations completed successfully")
         return True
 
     except Exception as e:
-        logger.error(f"❌ Migration runner error: {str(e)}")
+        logger.error(f"❌ Migration runner error: {str(e)}", exc_info=True)
         return False
