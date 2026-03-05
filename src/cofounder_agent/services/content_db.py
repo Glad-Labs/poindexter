@@ -270,7 +270,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 )
                 return [ModelConverter.to_category_response(row) for row in rows]
         except Exception as e:
-            logger.warning(f"[_get_all_categories] Could not fetch categories: {e}")
+            logger.error(f"[_get_all_categories] Failed to fetch categories: {e}", exc_info=True)
             return []
 
     async def get_all_tags(self) -> List[TagResponse]:
@@ -287,7 +287,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 )
                 return [ModelConverter.to_tag_response(row) for row in rows]
         except Exception as e:
-            logger.warning(f"[_get_all_tags] Could not fetch tags: {e}")
+            logger.error(f"[_get_all_tags] Failed to fetch tags: {e}", exc_info=True)
             return []
 
     async def get_author_by_name(self, name: str) -> Optional[AuthorResponse]:
@@ -306,7 +306,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 row = await conn.fetchrow(sql, name)
                 return ModelConverter.to_author_response(row) if row else None
         except Exception as e:
-            logger.warning(f"[_get_author_by_name] Could not fetch author by name: {e}")
+            logger.error(f"[_get_author_by_name] Failed to fetch author by name: {e}", exc_info=True)
             return None
 
     async def create_quality_evaluation(
@@ -461,7 +461,8 @@ class ContentDatabase(DatabaseServiceMixin):
                     logger.warning(f"Could not calculate avg execution time (data type error): {e}")
                 except Exception as e:
                     logger.error(
-                        f"Unexpected error calculating avg execution time: {type(e).__name__}: {e}"
+                        f"[get_metrics] Unexpected error calculating avg execution time: {type(e).__name__}: {e}",
+                        exc_info=True
                     )
 
                 # Calculate total cost from financial tracking (if implemented)
@@ -480,7 +481,8 @@ class ContentDatabase(DatabaseServiceMixin):
                     )
                 except Exception as e:
                     logger.error(
-                        f"Unexpected error calculating total cost: {type(e).__name__}: {e}"
+                        f"[get_metrics] Unexpected error calculating total cost: {type(e).__name__}: {e}",
+                        exc_info=True
                     )
 
                 return MetricsResponse(

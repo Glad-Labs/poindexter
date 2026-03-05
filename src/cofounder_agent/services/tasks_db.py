@@ -129,7 +129,7 @@ class TasksDatabase(DatabaseServiceMixin):
         except Exception as e:
             if "content_tasks" in str(e) or "does not exist" in str(e) or "relation" in str(e):
                 return []
-            logger.warning(f"[get_pending_tasks] Error fetching pending tasks: {str(e)}")
+            logger.error(f"[get_pending_tasks] Error fetching pending tasks: {str(e)}", exc_info=True)
             return []
 
     async def get_all_tasks(self, limit: int = 100) -> List[TaskResponse]:
@@ -292,7 +292,7 @@ class TasksDatabase(DatabaseServiceMixin):
                         task_response = ModelConverter.to_task_response(row)
                         return ModelConverter.to_dict(task_response)
             except Exception as e:
-                logger.debug(f"[get_task] Numeric ID lookup failed for {task_id}: {e}")
+                logger.debug(f"[get_task] Numeric ID lookup failed for {task_id}: {e}", exc_info=True)
 
         # Try UUID lookup
         builder = ParameterizedQueryBuilder()
