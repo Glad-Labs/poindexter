@@ -37,7 +37,7 @@ DATABASE_URL=postgresql://postgres:password@localhost:5432/glad_labs
 OLLAMA_BASE_URL=http://localhost:11434
 LOG_LEVEL=debug
 REACT_APP_API_URL=http://localhost:8000
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 ```
 
 ### Staging (`dev` branch)
@@ -49,8 +49,8 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 
 **Variables stored in GitHub Secrets:**
 
-- `STAGING_DATABASE_URL`
-- `STAGING_OPENAI_API_KEY`
+- `DATABASE_STAGING_URL`
+- `COFOUNDER_STAGING_OPENAI_API_KEY`
 
 ### Production (`main` branch)
 
@@ -61,10 +61,10 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 
 **Variables stored in GitHub Secrets:**
 
-- `PROD_DATABASE_URL`
-- `PROD_OPENAI_API_KEY`
-- `PROD_ANTHROPIC_API_KEY`
-- `PROD_GOOGLE_API_KEY`
+- `DATABASE_PROD_URL`
+- `COFOUNDER_PROD_OPENAI_API_KEY`
+- `COFOUNDER_PROD_ANTHROPIC_API_KEY`
+- `COFOUNDER_PROD_GOOGLE_API_KEY`
 
 ---
 
@@ -99,7 +99,7 @@ TASK_TIMEOUT_SECONDS=60
 ## 📊 Variable Inheritance
 
 | Variable | Source | Local | Staging | Production |
-|----------|--------|-------|---------|---------|
+| -------- | ------ | ----- | ------- | ---------- |
 | Database URL | .env.local / Secrets | localhost | Railway staging | Production DB |
 | LLM Keys | .env.local / Secrets | One key | Multiple keys | All keys |
 | Log Level | .env.local / Secrets | debug | info | warning |
