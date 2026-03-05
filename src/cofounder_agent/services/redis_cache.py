@@ -386,7 +386,7 @@ class RedisCache:
             logger.warning("Cache cleared (all keys deleted)")
             return True
         except Exception as e:
-            logger.warning(f"[_clear_all] Cache clear error: {e}")
+            logger.error(f"[_clear_all] Cache clear error: {e}", exc_info=True)
             return False
 
     async def close(self):
@@ -396,7 +396,7 @@ class RedisCache:
                 await self._instance.close()
                 logger.info("Redis connection closed")
             except Exception as e:
-                logger.warning(f"[_close] Error closing Redis connection: {e}")
+                logger.error(f"[_close] Error closing Redis connection: {e}", exc_info=True)
 
 
 # Convenience function for backward compatibility

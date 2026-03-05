@@ -704,7 +704,10 @@ class TaskExecutor:
                             f"   ✅ Fallback generation succeeded: {len(generated_content)} chars"
                         )
                     except Exception as fallback_err:
-                        logger.error(f"   ❌ Fallback generation also failed: {fallback_err}")
+                        logger.error(
+                            f"[_execute_task] Fallback generation also failed: {fallback_err}",
+                            exc_info=True,
+                        )
                         orchestrator_error = f"Orchestrator failed with: {orchestrator_error or 'Unknown error'}. Fallback also failed: {fallback_err}"
                         generated_content = None
 
