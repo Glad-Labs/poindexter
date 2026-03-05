@@ -268,8 +268,9 @@ class UnifiedOrchestrator:
                 f"Agent '{agent_name}' not found in registry, falling back to direct import"
             )
         except Exception as e:
-            logger.debug(
-                f"[_resolve_agent_class] Registry lookup failed for '{agent_name}': {e}, falling back to direct import"
+            logger.error(
+                f"[_resolve_agent_class] Registry lookup failed for '{agent_name}': {e}, falling back to direct import",
+                exc_info=True
             )
 
         # Fallback: Direct import based on agent name
@@ -686,7 +687,7 @@ class UnifiedOrchestrator:
                     message="Research phase completed - gathered background information",
                 )
             except Exception as e:
-                logger.warning(f"[_handle_content_creation] Failed to emit research progress: {e}")
+                logger.error(f"[_handle_content_creation] Failed to emit research progress: {e}", exc_info=True)
 
             # ====================================================================
             # STAGE 2: CREATIVE DRAFT (25% → 45%)
@@ -751,8 +752,11 @@ class UnifiedOrchestrator:
                         )
 
                 except Exception as e:
-                    logger.warning(
-                        "[_handle_content_creation] Could not retrieve writing sample: %s, %s", request.request_id, e
+                    logger.error(
+                        "[_handle_content_creation] Could not retrieve writing sample: %s, %s",
+                        request.request_id,
+                        e,
+                        exc_info=True
                     )
 
             post = BlogPost(
@@ -801,7 +805,7 @@ class UnifiedOrchestrator:
                     message="Creative draft generated - ready for quality review",
                 )
             except Exception as e:
-                logger.warning(f"[_handle_content_creation] Failed to emit creative progress: {e}")
+                logger.error(f"[_handle_content_creation] Failed to emit creative progress: {e}", exc_info=True)
 
             # ====================================================================
             # STAGE 3: QA REVIEW LOOP (45% → 60%)
@@ -905,7 +909,7 @@ class UnifiedOrchestrator:
                     message="Quality assurance review complete - content approved",
                 )
             except Exception as e:
-                logger.warning(f"[_handle_content_creation] Failed to emit QA progress: {e}")
+                logger.error(f"[_handle_content_creation] Failed to emit QA progress: {e}", exc_info=True)
 
             # ====================================================================
             # STAGE 4: IMAGE SELECTION (60% → 75%)
@@ -923,7 +927,7 @@ class UnifiedOrchestrator:
                     featured_image_url = featured_image.url
                     logger.info("[%s] Featured image selected", request.request_id)
             except Exception as e:
-                logger.warning("[_handle_content_creation] Image selection failed: %s, %s", request.request_id, e)
+                logger.error("[_handle_content_creation] Image selection failed: %s", e, exc_info=True)
 
             # Emit progress: Image selection stage complete
             try:
@@ -937,7 +941,7 @@ class UnifiedOrchestrator:
                     message="Featured image selected - ready for final formatting",
                 )
             except Exception as e:
-                logger.warning(f"[_handle_content_creation] Failed to emit image progress: {e}")
+                logger.error(f"[_handle_content_creation] Failed to emit image progress: {e}", exc_info=True)
 
             # ====================================================================
             # STAGE 5: FORMATTING (75% → 90%)
@@ -963,7 +967,7 @@ class UnifiedOrchestrator:
                     message="Content formatted and ready for publication",
                 )
             except Exception as e:
-                logger.warning(f"[_handle_content_creation] Failed to emit formatting progress: {e}")
+                logger.error(f"[_handle_content_creation] Failed to emit formatting progress: {e}", exc_info=True)
 
             # ====================================================================
             # STAGE 6: AWAITING HUMAN APPROVAL (90% → 100%)

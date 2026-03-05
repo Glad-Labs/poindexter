@@ -440,7 +440,7 @@ class WorkflowEngine:
                 if attempt < phase.max_retries:
                     # Calculate exponential backoff: 2^attempt seconds
                     wait_time = 2**attempt
-                    logger.warning(
+                    logger.error(
                         "[%s] Phase '%s' failed (attempt %d/%d): %s. Retrying in %ds...",
                         context.workflow_id,
                         phase.name,
@@ -448,6 +448,7 @@ class WorkflowEngine:
                         phase.max_retries + 1,
                         result.error,
                         wait_time,
+                        exc_info=True
                     )
                     await asyncio.sleep(wait_time)
                     result.status = PhaseStatus.RETRY
@@ -591,7 +592,7 @@ class WorkflowEngine:
             logger.info("[%s] Workflow result stored successfully", context.workflow_id)
 
         except Exception as e:
-            logger.warning(f"[_store_workflow_result]  Failed to store workflow result: %s", context.workflow_id, e)
+            logger.error(f"[_store_workflow_result] Failed to store workflow result: {e}", exc_info=True)
 
     async def execute_phase_with_quality_feedback(
         self,
