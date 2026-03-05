@@ -306,7 +306,7 @@ class ImageService:
                     pipe.unet.enable_flash_attn(use_flash_attention_v2=True)
                     logger.info("   ✓ Flash Attention v2 enabled (30-50% faster)")
             except Exception as e:
-                logger.debug(f"[_apply_model_optimizations] Flash Attention v2 not available: {e}")
+                logger.error(f"[_apply_model_optimizations] Flash Attention v2 not available: {e}", exc_info=True)
 
             # 4. Enable sequential CPU offloading for GPU mode (frees VRAM between steps)
             if device == "cuda":
@@ -314,7 +314,7 @@ class ImageService:
                     pipe.enable_sequential_cpu_offload()
                     logger.info("   ✓ Sequential CPU offloading enabled (GPU memory saver)")
                 except Exception as e:
-                    logger.debug(f"[_apply_model_optimizations] Sequential CPU offload not available: {e}")
+                    logger.error(f"[_apply_model_optimizations] Sequential CPU offload not available: {e}", exc_info=True)
 
             # 5. Enable model CPU offload for memory-constrained GPUs
             if device == "cuda":
@@ -324,7 +324,7 @@ class ImageService:
                         pipe.enable_model_cpu_offload()
                         logger.info("   ✓ Model CPU offload enabled (constrained GPU memory)")
                 except Exception as e:
-                    logger.debug(f"[_apply_model_optimizations] Model CPU offload not available: {e}")
+                    logger.error(f"[_apply_model_optimizations] Model CPU offload not available: {e}", exc_info=True)
 
         except Exception as e:
             logger.error(f"[_apply_model_optimizations] Error applying optimizations: {e}", exc_info=True)
