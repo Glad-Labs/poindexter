@@ -187,7 +187,7 @@ class CapabilityIntrospector:
             try:
                 type_hints = get_type_hints(func)
             except (TypeError, NameError, AttributeError) as e:
-                logger.warning(f"Failed to extract type hints for {name}: {e}")
+                logger.error(f"[register_function_as_capability] Failed to extract type hints for {name}: {e}", exc_info=True)
                 type_hints = {}
 
             # Use provided description or extract from docstring
@@ -202,7 +202,7 @@ class CapabilityIntrospector:
                 if not input_schema.parameters:
                     input_schema = self._extract_schema_from_signature(func, type_hints)
             except (ValueError, RuntimeError, KeyError) as e:
-                logger.warning(f"Failed to extract schema from docstring for {name}, using signature: {e}")
+                logger.error(f"[register_function_as_capability] Failed to extract schema from docstring for {name}: {e}", exc_info=True)
                 input_schema = self._extract_schema_from_signature(func, type_hints)
                 output_schema = OutputSchema()
 
@@ -220,7 +220,7 @@ class CapabilityIntrospector:
             return True
 
         except Exception as e:
-            print(f"Failed to register capability '{name}': {e}")
+            logger.error(f"[register_function_as_capability] Failed to register capability '{name}': {e}", exc_info=True)
             return False
 
     def register_class_methods_as_capabilities(
@@ -277,7 +277,7 @@ class CapabilityIntrospector:
                     count += 1
 
             except Exception as e:
-                print(f"Failed to register {cls.__name__}.{name}: {e}")
+                logger.error(f"[register_class_methods_as_capabilities] Failed to register {cls.__name__}.{name}: {e}", exc_info=True)
 
         return count
 
