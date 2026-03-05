@@ -266,7 +266,7 @@ async def test_huggingface():
             )
             print(f"Result: {result}")
         except Exception as e:
-            print(f"Generation failed: {e}")
+            logger.error(f"Generation failed: {e}", exc_info=True)
 
     await client.close()
 

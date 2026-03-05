@@ -683,8 +683,9 @@ class ModelConsolidationService:
 
             except Exception as e:
                 last_error = e
-                logger.warning(
+                logger.error(
                     f"❌ {provider_type.value} generation failed",
+                    exc_info=True,
                     provider=provider_type.value,
                     error=str(e),
                 )

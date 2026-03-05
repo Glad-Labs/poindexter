@@ -175,7 +175,7 @@ class PexelsClient:
             except Exception as e:
                 logger.error(f"[_get_featured_image] Error searching for '{query}': {e}", exc_info=True)
 
-        logger.warning(f"No featured image found for topic: {topic}")
+        logger.error(f"No featured image found for topic: {topic}", exc_info=True)
         return None
 
     async def get_images_for_gallery(
