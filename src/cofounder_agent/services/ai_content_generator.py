@@ -90,7 +90,7 @@ class AIContentGenerator:
             else:
                 logger.warning(f"⚠️ Ollama returned non-200 status: {response.status_code}")
         except Exception as e:
-            logger.warning(f"[_check_ollama_async] ⚠️ Ollama health check failed: {type(e).__name__}: {e}")
+            logger.error(f"[_check_ollama_async] Ollama health check failed: {type(e).__name__}: {e}", exc_info=True)
             self.ollama_available = False
         finally:
             self.ollama_checked = True
@@ -644,7 +644,7 @@ class AIContentGenerator:
 
                                 generated_content = refined_content  # Use refined for next check
                         except Exception as refine_error:
-                            logger.warning(f"   ⚠️  Refinement failed: {refine_error}. Using original content.")
+                            logger.error(f"[_generate_blog_post] Refinement failed: {refine_error}", exc_info=True)
 
                     # If still not passing after refinement, return best attempt with warning
                     logger.warning(
@@ -666,7 +666,7 @@ class AIContentGenerator:
             except Exception as e:
                 import traceback
 
-                logger.warning(f"[_gemini_generate] User-selected Gemini failed: {type(e).__name__}: {str(e)}")
+                logger.error(f"[_gemini_generate] User-selected Gemini failed: {type(e).__name__}: {str(e)}", exc_info=True)
                 logger.debug(f"Gemini error traceback: {traceback.format_exc()}")
                 metrics["model_selection_log"]["decision_tree"]["gemini_error"] = str(e)[
                     :200
