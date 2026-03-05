@@ -304,7 +304,10 @@ class UnifiedOrchestrator:
                     )
                     return agent_class()
             except (ImportError, AttributeError) as e:
-                logger.error(f"Failed to import agent '{agent_name}': {e}")
+                logger.error(
+                    f"Failed to import agent '{agent_name}': {e}",
+                    exc_info=True,
+                )
                 raise ValueError(
                     f"Agent '{agent_name}' not found in registry or importable via fallback"
                 )

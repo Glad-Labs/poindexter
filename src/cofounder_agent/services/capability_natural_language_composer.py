@@ -293,7 +293,7 @@ Now generate the task JSON for the user's request:"""
             json_str = response[start_idx:end_idx]
             return json.loads(json_str)
         except json.JSONDecodeError as e:
-            logger.error(f"[Composer] Failed to parse LLM JSON: {e}")
+            logger.error(f"[Composer] Failed to parse LLM JSON: {e}", exc_info=True)
             return {"error": f"Invalid JSON from LLM: {str(e)}"}
 
     def _validate_task_definition(self, task_dict: Dict[str, Any]) -> Dict[str, Any]:

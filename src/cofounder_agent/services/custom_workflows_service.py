@@ -469,7 +469,10 @@ class CustomWorkflowsService:
                         error=f"Phases failed: {', '.join(failed_phases)}",
                     )
             except Exception as e:
-                logger.debug(f"[execute_workflow] Failed to update final progress: {e}")
+                logger.error(
+                    f"[execute_workflow] Failed to update final progress: {e}",
+                    exc_info=True,
+                )
 
             # Persist execution if we have database
             try:
@@ -496,7 +499,10 @@ class CustomWorkflowsService:
                     execution_mode="agent",
                 )
             except Exception as e:
-                logger.warning(f"[execute_workflow] Failed to persist workflow execution: {e}")
+                logger.error(
+                    f"[execute_workflow] Failed to persist workflow execution: {e}",
+                    exc_info=True,
+                )
 
             return {
                 "execution_id": execution_id,
@@ -543,7 +549,10 @@ class CustomWorkflowsService:
                     error=str(e),
                 )
             except Exception as e2:
-                logger.debug(f"[execute_workflow] Failed to update progress on exception: {e2}")
+                logger.error(
+                    f"[execute_workflow] Failed to update progress on exception: {e2}",
+                    exc_info=True,
+                )
             return {
                 "execution_id": execution_id,
                 "workflow_id": workflow.id,

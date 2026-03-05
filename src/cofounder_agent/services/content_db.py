@@ -458,7 +458,10 @@ class ContentDatabase(DatabaseServiceMixin):
                     if time_result and time_result["avg_seconds"]:
                         avg_execution_time = round(float(time_result["avg_seconds"]), 2)
                 except (ValueError, TypeError, AttributeError) as e:
-                    logger.warning(f"Could not calculate avg execution time (data type error): {e}")
+                    logger.error(
+                        f"Could not calculate avg execution time (data type error): {e}",
+                        exc_info=True,
+                    )
                 except Exception as e:
                     logger.error(
                         f"[get_metrics] Unexpected error calculating avg execution time: {type(e).__name__}: {e}",
@@ -473,11 +476,15 @@ class ContentDatabase(DatabaseServiceMixin):
                     if cost_result and cost_result["total"]:
                         total_cost = round(float(cost_result["total"]), 2)
                 except (ValueError, TypeError, AttributeError) as e:
-                    logger.debug(f"Could not calculate total cost (data type error): {e}")
+                    logger.error(
+                        f"Could not calculate total cost (data type error): {e}",
+                        exc_info=True,
+                    )
                 except asyncpg.PostgresError as e:
                     # Table may not exist or permissions issue
-                    logger.debug(
-                        f"Cost tracking not available (database error): {type(e).__name__}"
+                    logger.error(
+                        f"Cost tracking not available (database error): {type(e).__name__}",
+                        exc_info=True,
                     )
                 except Exception as e:
                     logger.error(

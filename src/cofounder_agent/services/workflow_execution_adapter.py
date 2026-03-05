@@ -544,7 +544,10 @@ async def _get_agent_instance_async(agent_name: str) -> Any:
         return orchestrator._get_agent_instance(agent_name)
 
     except Exception as e:
-        logger.warning(f"[_get_agent_instance_async] Could not instantiate agent {agent_name}: {e}")
+        logger.error(
+            f"[_get_agent_instance_async] Could not instantiate agent {agent_name}: {e}",
+            exc_info=True,
+        )
         return None
 
 
