@@ -122,7 +122,10 @@ class MicrosoftOAuthProvider(OAuthProvider):
             return access_token
 
         except httpx.HTTPError as e:
-            logger.error(f"Microsoft OAuth token exchange failed: {e}")
+            logger.error(
+                f"[exchange_code_for_token] Microsoft OAuth token exchange failed: {e}",
+                exc_info=True,
+            )
             raise OAuthException(f"Failed to exchange code for token: {str(e)}")
 
     def get_user_info(self, access_token: str) -> OAuthUser:
@@ -164,5 +167,8 @@ class MicrosoftOAuthProvider(OAuthProvider):
             return user
 
         except httpx.HTTPError as e:
-            logger.error(f"Failed to fetch Microsoft user info: {e}")
+            logger.error(
+                f"[get_user_info] Failed to fetch Microsoft user info: {e}",
+                exc_info=True,
+            )
             raise OAuthException(f"Failed to fetch user info: {str(e)}")
