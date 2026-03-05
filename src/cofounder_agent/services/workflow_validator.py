@@ -160,6 +160,10 @@ class WorkflowValidator:
                     except PhaseMappingError as e:
                         errors.append(f"Phase {i} ({phase.name}): {str(e)}")
                     except Exception as e:
+                        logger.warning(
+                            f"[validate_workflow] Could not validate mapping for phase_index={i}, phase_name='{phase.name}': {str(e)}",
+                            exc_info=True,
+                        )
                         warnings.append(f"Could not validate mapping for phase {i}: {str(e)}")
 
         # Check timeout and retry sanity

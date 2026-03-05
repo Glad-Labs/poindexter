@@ -62,7 +62,7 @@ class TaskExecutor:
         database_service,
         orchestrator=None,
         poll_interval: int = 5,
-        app_state=None,
+        service_container=None,
     ):
         """
         Initialize task executor
@@ -71,11 +71,11 @@ class TaskExecutor:
             database_service: DatabaseService instance
             orchestrator: Optional Orchestrator instance for processing
             poll_interval: Seconds between polling for pending tasks (default: 5)
-            app_state: Optional FastAPI app.state for getting updated orchestrator reference
+            service_container: Optional ServiceContainer for getting updated orchestrator reference via DI
         """
         self.database_service = database_service
         self.orchestrator_initial = orchestrator  # Initial orchestrator from startup
-        self.app_state = app_state  # Reference to app.state for dynamic orchestrator updates
+        self.service_container = service_container  # Reference to ServiceContainer for dynamic orchestrator resolution (DI-4)
         self.quality_service = UnifiedQualityService()  # Quality validation service
         self.content_generator = AIContentGenerator()  # Fallback content generation
         self.poll_interval = poll_interval
@@ -96,13 +96,13 @@ class TaskExecutor:
     @property
     def orchestrator(self):
         """
-        Get the orchestrator dynamically.
-        First tries to get from app.state (which gets updated by main.py with UnifiedOrchestrator),
+        Get the orchestrator dynamically from ServiceContainer.
+        First tries to get from service_container (registered via DI during startup),
         then falls back to the initial orchestrator from startup.
         This ensures we use the properly-initialized UnifiedOrchestrator when available.
         """
-        if self.app_state and hasattr(self.app_state, "orchestrator"):
-            orch = getattr(self.app_state, "orchestrator", None)
+        if self.service_container:
+            orch = self.service_container.get("orchestrator")
             if orch is not None:
                 return orch
         return self.orchestrator_initial

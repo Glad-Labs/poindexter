@@ -6,6 +6,7 @@ inputs of the next step (pipeline data flow).
 """
 
 import asyncio
+import logging
 import re
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -13,6 +14,8 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from .capability_registry import get_registry
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -229,6 +232,10 @@ class CapabilityTaskExecutor:
                     result.step_results.append(step_result)
 
                 except Exception as e:
+                    logger.error(
+                        f"[execute] Step execution failed: task_id={task.id}, step_index={step_index}, capability='{step.capability_name}': {str(e)}",
+                        exc_info=True,
+                    )
                     # Record failed step
                     step_duration = (time.time() - step_start) * 1000
                     step_result = StepResult(
@@ -253,6 +260,10 @@ class CapabilityTaskExecutor:
                 result.final_outputs = context.copy()
 
         except Exception as e:
+            logger.error(
+                f"[execute] Task execution failed: task_id={task.id}, execution_id={result.execution_id}: {str(e)}",
+                exc_info=True,
+            )
             result.status = "failed"
             result.error = f"Task execution failed: {str(e)}"
 
@@ -338,6 +349,10 @@ class CapabilityTaskExecutor:
                 result.final_outputs = context.copy()
 
         except Exception as e:
+            logger.error(
+                f"[execute_parallel_steps] Parallel task execution failed: task_id={task.id}, execution_id={result.execution_id}: {str(e)}",
+                exc_info=True,
+            )
             result.status = "failed"
             result.error = str(e)
 
