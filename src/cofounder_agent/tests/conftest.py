@@ -1,108 +1,57 @@
 """
-Shared pytest configuration and fixtures for all tests.
-Central conftest.py for the entire test suite.
+Pytest configuration and shared fixtures for Glad Labs unit tests.
 
 This module provides:
-- Core pytest configuration and markers
 - Fixture definitions for common test dependencies
 - Mock factories for services and databases
 - Async test support configuration
 - Test environment setup
 """
-import os
-import sys
+
 import asyncio
-import pytest
-from pathlib import Path
-from dotenv import load_dotenv
+import os
 from typing import Any, Dict, Optional
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from pydantic import BaseModel
 
-# Add project root to path
-project_root = str(Path(__file__).parent.parent)
-backend_path = os.path.join(project_root, 'src/cofounder_agent')
 
-# Insert in order so backend code can be imported
-sys.path.insert(0, backend_path)      # Main backend imports: agents, services, routes, etc.
-sys.path.insert(0, project_root)       # Project root: src.mcp, src.mcp_server, etc.
+# ============================================================================
+# Pytest Configuration
+# ============================================================================
 
-# Load environment variables
-env_local_path = os.path.join(project_root, ".env")
-if os.path.exists(env_local_path):
-    load_dotenv(env_local_path, override=True)
-    os.environ['TESTING'] = '1'
+def pytest_configure(config):
+    """Configure pytest with custom markers."""
+    config.addinivalue_line("markers", "unit: Unit tests for individual components")
+    config.addinivalue_line("markers", "integration: Integration tests with multiple components")
+    config.addinivalue_line("markers", "e2e: End-to-end tests")
+    config.addinivalue_line("markers", "slow: Tests that take more than 5 seconds")
+    config.addinivalue_line("markers", "smoke: Fast smoke tests for CI pipelines")
+    config.addinivalue_line("markers", "websocket: Tests involving WebSocket connections")
+    config.addinivalue_line("markers", "performance: Performance benchmarking tests")
 
-# Try to import shared test utilities, but don't fail if not available
-imported_test_config: Any
-try:
-    from test_utils import test_utils, performance_monitor, test_config
-    imported_test_config = test_config
-except ImportError as e:
-    print(f"⚠️  Could not import test_utils: {e}")
-    # Define a minimal test config if import fails
-    class MinimalTestConfig:
-        pass
-    imported_test_config = MinimalTestConfig()
 
+# ============================================================================
+# Event Loop Management (for async tests)
+# ============================================================================
 
 @pytest.fixture(scope="session")
 def event_loop():
-    """Create event loop for async tests."""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    """Create an instance of the default event loop for the test session."""
+    loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
 
 
-@pytest.fixture(scope="session")
-def test_config_fixture():
-    """Test configuration fixture."""
-    return imported_test_config
-
-
-@pytest.fixture(scope="session")
-def project_root_path():
-    """Return the project root path."""
-    return Path(__file__).parent.parent
-
-
-@pytest.fixture(scope="session")
-def performance_monitor_fixture():
-    """Performance monitor fixture."""
-    return performance_monitor
-
-
-@pytest.fixture(scope="session")
-def test_utils_fixture():
-    """Test utilities fixture."""
-    return test_utils
-
-
-# Expose at module level for direct imports (backward compatibility with old tests)
-TEST_CONFIG = imported_test_config
-mock_api_responses: dict[str, Any] = {}
-performance_monitor = performance_monitor
-test_utils = test_utils
-
-
-# Pytest markers
-def pytest_configure(config):
-    """Register custom pytest markers."""
-    config.addinivalue_line("markers", "unit: unit tests")
-    config.addinivalue_line("markers", "integration: integration tests")
-    config.addinivalue_line("markers", "e2e: end-to-end tests")
-    config.addinivalue_line("markers", "api: API endpoint tests")
-    config.addinivalue_line("markers", "slow: slow running tests")
-    config.addinivalue_line("markers", "skip_ci: skip in CI environment")
-    config.addinivalue_line("markers", "asyncio: async tests")
-    config.addinivalue_line("markers", "performance: performance tests")
-    config.addinivalue_line("markers", "websocket: WebSocket tests")
-    config.addinivalue_line("markers", "smoke: Fast smoke tests for CI pipelines")
+@pytest.fixture
+async def async_context():
+    """Async context for tests that need async setup/teardown."""
+    yield None
 
 
 # ============================================================================
-# PHASE 1 MOCK SERVICES & FIXTURES
+# Mock Model Router Fixture
 # ============================================================================
 
 class MockModelResponse(BaseModel):
@@ -131,6 +80,10 @@ def mock_model_router():
     return router
 
 
+# ============================================================================
+# Mock Database Service Fixture
+# ============================================================================
+
 class MockDatabase:
     """In-memory mock database for testing."""
     
@@ -139,7 +92,7 @@ class MockDatabase:
         self.workflows: Dict[str, Any] = {}
         self.users: Dict[str, Any] = {}
         self.content: Dict[str, Any] = {}
-        self.audit_logs: list[Dict[str, Any]] = []
+        self.audit_logs: list = []
         self._counter = 0
     
     async def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
@@ -193,12 +146,16 @@ def mock_database_service(mock_database):
     return service
 
 
+# ============================================================================
+# Mock Workflow Executor Fixture
+# ============================================================================
+
 @pytest.fixture
 def mock_workflow_executor():
     """Mock WorkflowExecutor for testing."""
     executor = MagicMock()
     
-    async def mock_execute(workflow_id: str, **kwargs: Any) -> dict[str, Any]:
+    async def mock_execute(workflow_id: str, **kwargs):
         return {
             "workflow_id": workflow_id,
             "status": "completed",
@@ -214,12 +171,16 @@ def mock_workflow_executor():
     return executor
 
 
+# ============================================================================
+# Mock Task Executor Fixture
+# ============================================================================
+
 @pytest.fixture
 def mock_task_executor():
     """Mock TaskExecutor for testing."""
     executor = MagicMock()
     
-    async def mock_execute(task_id: str, **kwargs: Any) -> dict[str, Any]:
+    async def mock_execute(task_id: str, **kwargs):
         return {
             "task_id": task_id,
             "status": "completed",
@@ -233,6 +194,10 @@ def mock_task_executor():
     return executor
 
 
+# ============================================================================
+# Mock Unified Orchestrator Fixture
+# ============================================================================
+
 @pytest.fixture
 def mock_unified_orchestrator(mock_model_router, mock_database_service, mock_workflow_executor):
     """Mock UnifiedOrchestrator for testing."""
@@ -241,7 +206,7 @@ def mock_unified_orchestrator(mock_model_router, mock_database_service, mock_wor
     orchestrator.database_service = mock_database_service
     orchestrator.workflow_executor = mock_workflow_executor
     
-    async def mock_route_task(intent: str, **kwargs: Any) -> dict[str, Any]:
+    async def mock_route_task(intent: str, **kwargs):
         return {
             "selected_agents": ["research_agent", "creative_agent"],
             "execution_plan": "mock_plan",
@@ -254,7 +219,7 @@ def mock_unified_orchestrator(mock_model_router, mock_database_service, mock_wor
 
 
 # ============================================================================
-# TEST DATA FIXTURES
+# Test Data Fixtures
 # ============================================================================
 
 @pytest.fixture
@@ -312,7 +277,7 @@ def sample_content_data():
 
 
 # ============================================================================
-# ENVIRONMENT FIXTURES
+# Environment Fixtures
 # ============================================================================
 
 @pytest.fixture
@@ -332,7 +297,7 @@ def test_env(monkeypatch):
 
 
 # ============================================================================
-# CONTEXT MANAGER FIXTURES
+# Context Manager Fixtures
 # ============================================================================
 
 class AsyncContextManager:
@@ -358,15 +323,15 @@ def async_context_manager():
 
 
 # ============================================================================
-# CLEANUP FIXTURES
+# Cleanup Fixtures
 # ============================================================================
 
 @pytest.fixture
 def cleanup_resources():
     """Fixture for resource cleanup after tests."""
-    resources: list[Any] = []
+    resources = []
     
-    def register_resource(resource: Any) -> Any:
+    def register_resource(resource):
         resources.append(resource)
         return resource
     
@@ -382,7 +347,7 @@ def cleanup_resources():
 
 
 # ============================================================================
-# TEST COLLECTION MARKERS
+# Markers for Test Organization
 # ============================================================================
 
 def pytest_collection_modifyitems(config, items):
@@ -394,4 +359,3 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(pytest.mark.integration)
         elif "e2e" in str(item.fspath) or "playwright" in str(item.fspath):
             item.add_marker(pytest.mark.e2e)
-
