@@ -173,7 +173,7 @@ class PexelsClient:
                     logger.info(f"Found featured image for '{query}' via Pexels")
                     return images[0]
             except Exception as e:
-                logger.warning(f"[_get_featured_image] Error searching for '{query}': {e}")
+                logger.error(f"[_get_featured_image] Error searching for '{query}': {e}", exc_info=True)
 
         logger.warning(f"No featured image found for topic: {topic}")
         return None
@@ -207,7 +207,7 @@ class PexelsClient:
                     logger.info(f"Found {len(all_images)} images for gallery")
                     return all_images[:count]
             except Exception as e:
-                logger.warning(f"[_get_images_for_gallery] Error searching for gallery images '{query}': {e}")
+                logger.error(f"[get_images_for_gallery] Error searching for gallery images '{query}': {e}", exc_info=True)
 
         logger.info(f"Found {len(all_images)} gallery images")
         return all_images

@@ -115,7 +115,7 @@ class WorkflowExecutor:
                                 duration_ms=0,
                             )
                         except Exception as e:
-                            logger.debug(f"[_execute_workflow] Failed to update progress for skipped phase: {e}")
+                            logger.error(f"[_execute_workflow] Failed to update progress for skipped phase: {e}", exc_info=True)
                     continue
 
                 logger.info(f"Executing phase {i}: {phase.name}")
@@ -130,7 +130,7 @@ class WorkflowExecutor:
                             phase_name=phase.name,
                         )
                     except Exception as e:
-                        logger.debug(f"[_execute_workflow] Failed to update progress for phase start: {e}")
+                        logger.error(f"[_execute_workflow] Failed to update progress for phase start: {e}", exc_info=True)
 
                 # Prepare inputs for this phase
                 phase_inputs, input_traces = self._prepare_phase_inputs(
@@ -174,7 +174,7 @@ class WorkflowExecutor:
                                 error=result.error or "Unknown error",
                             )
                     except Exception as e:
-                        logger.debug(f"[_execute_workflow] Failed to update progress for phase completion: {e}")
+                        logger.error(f"[_execute_workflow] Failed to update progress for phase completion: {e}", exc_info=True)
 
                 # Store result
                 phase_results[phase.name] = result

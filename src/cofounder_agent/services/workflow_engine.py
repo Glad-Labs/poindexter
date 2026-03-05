@@ -291,7 +291,7 @@ class WorkflowEngine:
                 task_count=len(phases),
             )
         except Exception as _ws_err:
-            logger.debug("[%s] Broadcast workflow start failed (non-fatal): %s", context.workflow_id, _ws_err)
+            logger.error(f"[_run] Broadcast workflow start failed: {_ws_err}", exc_info=True)
 
         for phase in phases:
             if context.status in (WorkflowStatus.CANCELLED, WorkflowStatus.PAUSED):
@@ -342,7 +342,7 @@ class WorkflowEngine:
                 task_results={n: r.to_dict() for n, r in context.results.items()},
             )
         except Exception as _ws_err:
-            logger.debug("[%s] Broadcast workflow end failed (non-fatal): %s", context.workflow_id, _ws_err)
+            logger.error(f"[_run] Broadcast workflow end failed: {_ws_err}", exc_info=True)
 
         # Store in memory
         self.executed_workflows[context.workflow_id] = context
@@ -377,7 +377,7 @@ class WorkflowEngine:
                 task_results={phase.name: {"status": "running", "phase": phase.name}},
             )
         except Exception as _ws_err:
-            logger.debug("[%s] Broadcast phase start failed (non-fatal): %s", context.workflow_id, _ws_err)
+            logger.error(f"[_execute_phase] Broadcast phase start failed: {_ws_err}", exc_info=True)
 
         for attempt in range(phase.max_retries + 1):
             try:
@@ -424,7 +424,7 @@ class WorkflowEngine:
                             task_results={phase.name: result.to_dict()},
                         )
                     except Exception as _ws_err:
-                        logger.debug("[%s] Broadcast phase complete failed (non-fatal): %s", context.workflow_id, _ws_err)
+                        logger.error(f"[_execute_phase] Broadcast phase complete failed: {_ws_err}", exc_info=True)
 
                     return result
 
@@ -470,7 +470,7 @@ class WorkflowEngine:
                             task_results={phase.name: result.to_dict()},
                         )
                     except Exception as _ws_err:
-                        logger.debug("[%s] Broadcast phase fail failed (non-fatal): %s", context.workflow_id, _ws_err)
+                        logger.error(f"[_execute_phase] Broadcast phase fail failed: {_ws_err}", exc_info=True)
 
                     # Call custom error handler if provided
                     if self.error_handler:

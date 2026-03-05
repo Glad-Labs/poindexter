@@ -337,14 +337,14 @@ class TemplateExecutionService:
                     # Schedule the broadcast in a non-blocking way
                     asyncio.create_task(broadcast_workflow_progress(actual_execution_id, progress))
                 except Exception as e:
-                    logger.debug(f"[_broadcast_callback] Could not broadcast progress: {e}")
+                    logger.error(f"[_broadcast_callback] Could not broadcast progress: {e}", exc_info=True)
 
             progress_service.register_callback(actual_execution_id, broadcast_callback)
 
             logger.debug(f"Initialized progress tracking for execution {actual_execution_id}")
 
         except Exception as e:
-            logger.warning(f"[_broadcast_callback] Could not initialize progress tracking: {e}")
+            logger.error(f"[_initialize_progress_tracking] Could not initialize progress tracking: {e}", exc_info=True)
             # Continue execution even if progress tracking fails
 
     async def get_execution_status(
