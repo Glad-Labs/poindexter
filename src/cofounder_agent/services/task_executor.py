@@ -309,7 +309,7 @@ class TaskExecutor:
                     message=f"Starting task: {task_name}",
                 )
             except Exception as e:
-                logger.warning(f"[_process_single_task] Failed to emit task progress event: {e}", exc_info=True)
+                logger.error(f"[_process_single_task] Failed to emit task progress event: {e}", exc_info=True)
 
             # 2. Process through orchestrator/agent pipeline with timeout
             logger.info(
@@ -441,7 +441,7 @@ class TaskExecutor:
                         duration=8000,
                     )
                 except Exception as e:
-                    logger.warning(f"[_process_single_task] Failed to emit task failure event: {e}", exc_info=True)
+                    logger.error(f"[_process_single_task] Failed to emit task failure event: {e}", exc_info=True)
             else:
                 logger.info(f"✅ [TASK_SINGLE] Task awaiting approval: {task_id}")
 
@@ -463,7 +463,7 @@ class TaskExecutor:
                         duration=5000,
                     )
                 except Exception as e:
-                    logger.warning(f"[_process_single_task] Failed to emit task success event", exc_info=True)
+                    logger.error(f"[_process_single_task] Failed to emit task success event", exc_info=True)
 
         except ServiceError as e:
             logger.error(f"Service error processing task {task_id}", exc_info=True)
@@ -1062,7 +1062,7 @@ class TaskExecutor:
                 await self.database_service.log_cost(cost_log)
                 logger.debug(f"✅ Logged task cost: ${cost_log['cost_usd']:.6f} to database")
             except Exception as e:
-                logger.warning(f"[_execute_task] Failed to persist cost metrics: {e}", exc_info=True)
+                logger.error(f"[_execute_task] Failed to persist cost metrics: {e}", exc_info=True)
 
         # Store metadata in result
         metadata = {
