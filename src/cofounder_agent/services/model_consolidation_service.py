@@ -146,10 +146,10 @@ class OllamaAdapter(ProviderAdapter):
                     )
                 return is_available
         except asyncio.TimeoutError:
-            logger.debug("Ollama health check timed out (3s)", host=self.host)
+            logger.error("Ollama health check timed out (3s)", exc_info=True, host=self.host)
             return False
         except Exception as e:
-            logger.debug(f"[_is_available] Ollama unavailable", error=str(e), host=self.host)
+            logger.error(f"[_is_available] Ollama unavailable", exc_info=True, error=str(e), host=self.host)
             return False
 
     async def generate(
@@ -280,7 +280,7 @@ class GoogleAdapter(ProviderAdapter):
                 logger.debug("Google Gemini available", model_count=len(models))
             return is_available
         except Exception as e:
-            logger.debug(f"[_is_available] Google Gemini unavailable", error=str(e))
+            logger.error(f"[_is_available] Google Gemini unavailable", exc_info=True, error=str(e))
             return False
 
     async def generate(
@@ -345,7 +345,7 @@ class AnthropicAdapter(ProviderAdapter):
                 self.api_key = ProviderChecker.get_anthropic_api_key()
                 self.client = Anthropic(api_key=self.api_key)
             except ImportError:
-                logger.warning("Anthropic SDK not installed. Install with: pip install anthropic")
+                logger.error("Anthropic SDK not installed. Install with: pip install anthropic", exc_info=True)
                 self.client = None
 
         self.provider_type = ProviderType.ANTHROPIC
@@ -418,7 +418,7 @@ class OpenAIAdapter(ProviderAdapter):
                 self.api_key = ProviderChecker.get_openai_api_key()
                 self.client = OpenAI(api_key=self.api_key)
             except ImportError:
-                logger.warning("OpenAI SDK not installed. Install with: pip install openai")
+                logger.error("OpenAI SDK not installed. Install with: pip install openai", exc_info=True)
                 self.client = None
 
         self.provider_type = ProviderType.OPENAI

@@ -139,7 +139,7 @@ class TaskExecutor:
             try:
                 await self._processor_task
             except asyncio.CancelledError:
-                logger.debug("Task processor task cancelled successfully")
+                logger.error("Task processor task cancelled successfully", exc_info=True)
 
         logger.info(
             f"✅ Task executor stopped (processed: {self.task_count}, success: {self.success_count}, errors: {self.error_count})"
