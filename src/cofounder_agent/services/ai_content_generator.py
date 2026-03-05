@@ -524,7 +524,10 @@ class AIContentGenerator:
                             )
                             generated_content = ""
                 except AttributeError as e:
-                    logger.error(f"Failed to extract text from Gemini response: {e}")
+                    logger.error(
+                        f"Failed to extract text from Gemini response: {e}",
+                        exc_info=True,
+                    )
                     generated_content = ""
 
                 if generated_content and len(generated_content) > 100:

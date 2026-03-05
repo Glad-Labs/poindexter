@@ -459,6 +459,7 @@ class WorkflowEngine:
                         phase.name,
                         phase.max_retries + 1,
                         result.error,
+                        exc_info=True,
                     )
                     result.status = PhaseStatus.FAILED
                     result.completed_at = datetime.now(timezone.utc)
@@ -481,6 +482,7 @@ class WorkflowEngine:
                                 "[%s] Error handler failed: %s",
                                 context.workflow_id,
                                 handler_error,
+                                exc_info=True,
                             )
 
                     # Update context
@@ -655,11 +657,12 @@ class WorkflowEngine:
                     result.retry_count += 1
 
             except Exception as e:
-                logger.warning(
+                logger.error(
                     "[%s] Quality assessment failed for phase '%s': %s",
                     context.workflow_id,
                     phase.name,
                     e,
+                    exc_info=True,
                 )
                 # Continue with current result even if quality assessment fails
 

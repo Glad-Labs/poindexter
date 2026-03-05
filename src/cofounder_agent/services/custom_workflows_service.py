@@ -80,8 +80,9 @@ class CustomWorkflowsService:
             return workflow
         except Exception as e:
             if "custom_workflows_name_owner_unique" in str(e):
-                logger.warning(
-                    f"[create_workflow] Duplicate workflow name for owner {owner_id}: {workflow.name}"
+                logger.error(
+                    f"[create_workflow] Duplicate workflow name for owner {owner_id}: {workflow.name}",
+                    exc_info=True,
                 )
                 raise ValueError(
                     f"Workflow name '{workflow.name}' already exists for this user"
@@ -389,12 +390,18 @@ class CustomWorkflowsService:
                         broadcast_workflow_progress(execution_id, progress.to_dict())
                     )
                 except Exception as e:
-                    logger.debug(f"[execute_workflow] Could not broadcast progress: {e}")
+                    logger.error(
+                        f"[execute_workflow] Could not broadcast progress: {e}",
+                        exc_info=True,
+                    )
 
             progress_service.register_callback(execution_id, broadcast_progress)
 
         except Exception as e:
-            logger.warning(f"[execute_workflow] Failed to initialize progress tracking: {e}")
+            logger.error(
+                f"[execute_workflow] Failed to initialize progress tracking: {e}",
+                exc_info=True,
+            )
 
         # Validate workflow before executing
         is_valid, errors = self.workflow_validator.validate_for_execution(
@@ -409,7 +416,10 @@ class CustomWorkflowsService:
                     error=error_msg,
                 )
             except Exception as e:
-                logger.debug(f"[execute_workflow] Failed to update progress on validation failure: {e}")
+                logger.error(
+                    f"[execute_workflow] Failed to update progress on validation failure: {e}",
+                    exc_info=True,
+                )
             return {
                 "execution_id": execution_id,
                 "workflow_id": workflow.id,
