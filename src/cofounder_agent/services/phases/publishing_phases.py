@@ -6,7 +6,7 @@ Handle post creation, publication, and metadata updates.
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from .base_phase import (
     BasePhase,
@@ -15,6 +15,49 @@ from .base_phase import (
     PhaseInputType,
     PhaseOutputSpec,
 )
+
+
+async def _resolve_database_service(config: Dict[str, Any]) -> Tuple[Any, bool]:
+    """Return database service and whether this phase created it."""
+    db_service = config.get("database_service")
+    if db_service is not None:
+        return db_service, False
+
+    from ..database_service import DatabaseService
+
+    db_service = DatabaseService()
+    await db_service.initialize()
+    return db_service, True
+
+
+async def _close_database_service(db_service: Any, owns_service: bool) -> None:
+    """Close owned database service instances without masking execution errors."""
+    if not owns_service:
+        return
+
+    try:
+        await db_service.close()
+    except Exception as close_error:
+        logger.warning(
+            f"[_close_database_service] Failed to close database service: {close_error}",
+            exc_info=True,
+        )
+
+
+def _extract_field(payload: Any, field: str, default: Any = None) -> Any:
+    """Read fields from dict-like or model-like response payloads."""
+    if payload is None:
+        return default
+
+    if isinstance(payload, dict):
+        return payload.get(field, default)
+
+    if hasattr(payload, "model_dump"):
+        dumped = payload.model_dump()
+        if isinstance(dumped, dict):
+            return dumped.get(field, default)
+
+    return getattr(payload, field, default)
 
 logger = logging.getLogger(__name__)
 
@@ -116,10 +159,11 @@ class CreatePostPhase(BasePhase):
             self.error = error
             raise ValueError(error)
 
+        db_service = None
+        owns_service = False
+
         try:
             from slugify import slugify
-
-            from .database_service import DatabaseService
 
             content = inputs.get("content")
             topic = inputs.get("topic")
@@ -149,16 +193,21 @@ class CreatePostPhase(BasePhase):
 
             logger.info(f"[CreatePostPhase] Creating post: {seo_title} (slug: {slug})")
 
-            # TODO: Use database_service to create post
-            # For now, just simulate
-            post_id = f"post_{id(post_data)}"
+            db_service, owns_service = await _resolve_database_service(config)
+            created_post = await db_service.create_post(post_data)
+
+            post_id = str(_extract_field(created_post, "id", ""))
+            persisted_slug = _extract_field(created_post, "slug", slug)
+            persisted_status = _extract_field(
+                created_post, "status", config.get("status", "draft")
+            )
 
             self.status = "completed"
             self.result = {
                 "post_id": post_id,
-                "slug": slug,
-                "status": config.get("status", "draft"),
-                "post_data": post_data,  # For reference
+                "slug": persisted_slug,
+                "status": persisted_status,
+                "post_data": post_data,
             }
 
             logger.info(f"[CreatePostPhase] Created post {post_id}")
@@ -170,6 +219,10 @@ class CreatePostPhase(BasePhase):
             self.error = str(e)
             logger.error(f"[CreatePostPhase] Error: {str(e)}", exc_info=True)
             raise
+
+        finally:
+            if db_service is not None:
+                await _close_database_service(db_service, owns_service)
 
 
 class PublishPostPhase(BasePhase):
@@ -237,6 +290,9 @@ class PublishPostPhase(BasePhase):
             self.error = error
             raise ValueError(error)
 
+        db_service = None
+        owns_service = False
+
         try:
             post_id = inputs.get("post_id")
             slug = inputs.get("slug")
@@ -247,8 +303,15 @@ class PublishPostPhase(BasePhase):
 
             logger.info(f"[PublishPostPhase] Publishing post {post_id}")
 
-            # TODO: Use database_service to update post status to "published"
-            # For now, just simulate
+            db_service, owns_service = await _resolve_database_service(config)
+            updated = await db_service.update_post(
+                post_id,
+                {
+                    "status": "published",
+                },
+            )
+            if not updated:
+                raise ValueError(f"Failed to publish post {post_id}: post not found")
 
             self.status = "completed"
             self.result = {
@@ -266,3 +329,7 @@ class PublishPostPhase(BasePhase):
             self.error = str(e)
             logger.error(f"[PublishPostPhase] Error: {str(e)}", exc_info=True)
             raise
+
+        finally:
+            if db_service is not None:
+                await _close_database_service(db_service, owns_service)
