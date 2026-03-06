@@ -148,7 +148,9 @@ class SerperClient:
                 "knowledge_panel": results.get("knowledgePanel", {}),
             }
         except Exception as e:
-            logger.error(f"[_get_search_results_summary] Error getting search summary: {e}", exc_info=True)
+            logger.error(
+                f"[_get_search_results_summary] Error getting search summary: {e}", exc_info=True
+            )
             return {}
 
     async def fact_check_claims(self, claims: List[str]) -> Dict[str, Any]:
@@ -180,7 +182,9 @@ class SerperClient:
                     ],
                 }
             except Exception as e:
-                logger.error(f"[_fact_check_claims] Error fact-checking '{claim}': {e}", exc_info=True)
+                logger.error(
+                    f"[_fact_check_claims] Error fact-checking '{claim}': {e}", exc_info=True
+                )
                 results[claim] = {"error": str(e)}
 
         return results
@@ -214,7 +218,9 @@ class SerperClient:
             return topics
 
         except Exception as e:
-            logger.error(f"[_get_trending_topics] Error getting trending topics: {e}", exc_info=True)
+            logger.error(
+                f"[_get_trending_topics] Error getting trending topics: {e}", exc_info=True
+            )
             return []
 
     async def research_topic(

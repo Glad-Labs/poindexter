@@ -22,7 +22,9 @@ describe('ModelPreferences Component', () => {
 
     render(<ModelPreferences />);
     await waitFor(() => {
-      expect(screen.getByText('Model Provider Preferences')).toBeInTheDocument();
+      expect(
+        screen.getByText('Model Provider Preferences')
+      ).toBeInTheDocument();
     });
   });
 
@@ -59,7 +61,9 @@ describe('ModelPreferences Component', () => {
     render(<ModelPreferences />);
 
     await waitFor(() => {
-      expect(screen.getByText('Model Provider Preferences')).toBeInTheDocument();
+      expect(
+        screen.getByText('Model Provider Preferences')
+      ).toBeInTheDocument();
     });
   });
 

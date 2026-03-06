@@ -58,14 +58,14 @@ Invalid or expired CSRF token (403 Forbidden)
 
 ```javascript
 // BEFORE (missing state)
-body: JSON.stringify({ code })
+body: JSON.stringify({ code });
 
 // AFTER (includes state)
 const state = sessionStorage.getItem('oauth_state');
 if (!state) {
   throw new Error('CSRF state not found - session expired');
 }
-body: JSON.stringify({ code, state })
+body: JSON.stringify({ code, state });
 ```
 
 ---
@@ -99,7 +99,8 @@ const useMockAuth = process.env.REACT_APP_USE_MOCK_AUTH === 'true';
 
 // AFTER (only in development)
 const isDevelopment = process.env.NODE_ENV === 'development';
-const useMockAuth = isDevelopment && process.env.REACT_APP_USE_MOCK_AUTH === 'true';
+const useMockAuth =
+  isDevelopment && process.env.REACT_APP_USE_MOCK_AUTH === 'true';
 ```
 
 ---
@@ -262,14 +263,14 @@ console.log(sessionStorage.getItem('oauth_state'));
 
 ### Common Error Messages & Fixes
 
-| Error | Cause | Fix |
-|-------|-------|-----|
+| Error                                 | Cause                          | Fix                                                          |
+| ------------------------------------- | ------------------------------ | ------------------------------------------------------------ |
 | `Invalid or expired CSRF token (403)` | State token missing or expired | Check sessionStorage.oauth_state, state expires after 10 min |
-| `GitHub authentication failed (401)` | Wrong Client ID/Secret | Verify GH_OAUTH_CLIENT_ID and GH_OAUTH_CLIENT_SECRET |
-| `Failed to load resource: 404` | Endpoint mismatch | Use /api/auth/github/callback (with slash) |
-| `Missing authorization header` | No JWT token sent | Token should be in localStorage after login |
-| `OAuth callback failed` | Frontend error handling | Check browser console for stack trace |
-| `Mock auth in production` | REACT_APP_USE_MOCK_AUTH set | Remove from .env.production |
+| `GitHub authentication failed (401)`  | Wrong Client ID/Secret         | Verify GH_OAUTH_CLIENT_ID and GH_OAUTH_CLIENT_SECRET         |
+| `Failed to load resource: 404`        | Endpoint mismatch              | Use /api/auth/github/callback (with slash)                   |
+| `Missing authorization header`        | No JWT token sent              | Token should be in localStorage after login                  |
+| `OAuth callback failed`               | Frontend error handling        | Check browser console for stack trace                        |
+| `Mock auth in production`             | REACT_APP_USE_MOCK_AUTH set    | Remove from .env.production                                  |
 
 ---
 
@@ -334,11 +335,11 @@ git push  # Triggers Railway deploy
 
 ## Files Modified for Production Fix
 
-| File | Change | Impact |
-|------|--------|--------|
-| `web/oversight-hub/src/services/authService.js` | Fixed endpoint `/api/auth/github-callback` → `/api/auth/github/callback`, added CSRF state parameter | **HIGH** - Fixes 404 and CSRF errors |
-| `web/oversight-hub/src/pages/Login.jsx` | Added NODE_ENV check for mock auth, improved env var handling | **HIGH** - Prevents mock auth in production |
-| `src/cofounder_agent/routes/auth_unified.py` | Added fallback endpoint for backward compatibility | **MEDIUM** - Prevents future migration breaking |
+| File                                            | Change                                                                                               | Impact                                          |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `web/oversight-hub/src/services/authService.js` | Fixed endpoint `/api/auth/github-callback` → `/api/auth/github/callback`, added CSRF state parameter | **HIGH** - Fixes 404 and CSRF errors            |
+| `web/oversight-hub/src/pages/Login.jsx`         | Added NODE_ENV check for mock auth, improved env var handling                                        | **HIGH** - Prevents mock auth in production     |
+| `src/cofounder_agent/routes/auth_unified.py`    | Added fallback endpoint for backward compatibility                                                   | **MEDIUM** - Prevents future migration breaking |
 
 ---
 
@@ -348,7 +349,7 @@ After deploying these fixes:
 
 - [ ] Removed `REACT_APP_USE_MOCK_AUTH` from production config
 - [ ] Set `GH_OAUTH_CLIENT_ID` in backend environment
-- [ ] Set `GH_OAUTH_CLIENT_SECRET` in backend environment  
+- [ ] Set `GH_OAUTH_CLIENT_SECRET` in backend environment
 - [ ] Set `REACT_APP_GH_OAUTH_CLIENT_ID` in frontend environment
 - [ ] GitHub OAuth app callback URL updated to production domain
 - [ ] Tested full sign-in flow in production
@@ -368,7 +369,7 @@ After deploying these fixes:
    ```bash
    # Good: Use environment variables
    GH_OAUTH_CLIENT_SECRET=$(cat /path/to/secret)
-   
+
    # Bad: Don't do this
    GH_OAUTH_CLIENT_SECRET=abcd1234...
    ```
@@ -409,7 +410,7 @@ After deploying these fixes:
    ```bash
    # Backend
    echo $GH_OAUTH_CLIENT_ID
-   
+
    # Frontend (check build)
    grep "GH_OAUTH_CLIENT_ID" build/index.html
    ```

@@ -17,7 +17,6 @@ import React from 'react';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-
 // ============================================
 // Mock Components (Simulating Real Components)
 // ============================================
@@ -275,11 +274,7 @@ describe('TaskCreationModal Integration', () => {
     const mockSubmit = vi.fn();
 
     render(
-      <TaskCreationModal
-        open={true}
-        onClose={vi.fn()}
-        onSubmit={mockSubmit}
-      />
+      <TaskCreationModal open={true} onClose={vi.fn()} onSubmit={mockSubmit} />
     );
 
     await user.click(screen.getByTestId('task-submit'));
@@ -298,11 +293,7 @@ describe('TaskCreationModal Integration', () => {
     const mockSubmit = vi.fn();
 
     render(
-      <TaskCreationModal
-        open={true}
-        onClose={vi.fn()}
-        onSubmit={mockSubmit}
-      />
+      <TaskCreationModal open={true} onClose={vi.fn()} onSubmit={mockSubmit} />
     );
 
     await user.type(screen.getByTestId('task-title'), 'ab');
@@ -352,11 +343,7 @@ describe('TaskCreationModal Integration', () => {
     const mockSubmit = vi.fn(async () => ({ id: 1 }));
 
     render(
-      <TaskCreationModal
-        open={true}
-        onClose={vi.fn()}
-        onSubmit={mockSubmit}
-      />
+      <TaskCreationModal open={true} onClose={vi.fn()} onSubmit={mockSubmit} />
     );
 
     const titleInput = screen.getByTestId('task-title');
@@ -402,11 +389,7 @@ describe('TaskCreationModal Integration', () => {
     );
 
     render(
-      <TaskCreationModal
-        open={true}
-        onClose={vi.fn()}
-        onSubmit={mockSubmit}
-      />
+      <TaskCreationModal open={true} onClose={vi.fn()} onSubmit={mockSubmit} />
     );
 
     await user.type(screen.getByTestId('task-title'), 'Test Task');
@@ -536,11 +519,7 @@ describe('Error Recovery & Edge Cases', () => {
     const mockSubmit = vi.fn();
 
     render(
-      <TaskCreationModal
-        open={true}
-        onClose={vi.fn()}
-        onSubmit={mockSubmit}
-      />
+      <TaskCreationModal open={true} onClose={vi.fn()} onSubmit={mockSubmit} />
     );
 
     await user.type(screen.getByTestId('task-title'), '   ');
@@ -559,11 +538,7 @@ describe('Error Recovery & Edge Cases', () => {
     const longTitle = 'a'.repeat(1000);
 
     render(
-      <TaskCreationModal
-        open={true}
-        onClose={vi.fn()}
-        onSubmit={mockSubmit}
-      />
+      <TaskCreationModal open={true} onClose={vi.fn()} onSubmit={mockSubmit} />
     );
 
     const titleInput = screen.getByTestId('task-title');
@@ -584,11 +559,7 @@ describe('Error Recovery & Edge Cases', () => {
     const mockSubmit = vi.fn(async () => ({ id: 1 }));
 
     render(
-      <TaskCreationModal
-        open={true}
-        onClose={vi.fn()}
-        onSubmit={mockSubmit}
-      />
+      <TaskCreationModal open={true} onClose={vi.fn()} onSubmit={mockSubmit} />
     );
 
     const specialTitle = 'Task #1: Generate <content> & test!';
@@ -615,11 +586,7 @@ describe('Real-World User Scenarios', () => {
     const mockSubmit = vi.fn(async () => ({ id: 1 }));
 
     render(
-      <TaskCreationModal
-        open={true}
-        onClose={vi.fn()}
-        onSubmit={mockSubmit}
-      />
+      <TaskCreationModal open={true} onClose={vi.fn()} onSubmit={mockSubmit} />
     );
 
     const titleInput = screen.getByTestId('task-title');

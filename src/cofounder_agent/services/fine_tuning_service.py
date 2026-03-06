@@ -132,7 +132,9 @@ PARAMETER learning_rate {learning_rate}
                 "error": "Ollama not found. Please install Ollama first.",
             }
         except Exception as e:
-            logger.error(f"[_fine_tune_ollama] Failed to start Ollama fine-tuning: {e}", exc_info=True)
+            logger.error(
+                f"[_fine_tune_ollama] Failed to start Ollama fine-tuning: {e}", exc_info=True
+            )
             return {"job_id": job_id, "status": "failed", "error": str(e)}
 
     # ========================================================================
@@ -215,7 +217,9 @@ PARAMETER learning_rate {learning_rate}
                 "error": "google-generativeai not installed. Run: pip install google-generativeai",
             }
         except Exception as e:
-            logger.error(f"[_fine_tune_gemini] Failed to start Gemini fine-tuning: {e}", exc_info=True)
+            logger.error(
+                f"[_fine_tune_gemini] Failed to start Gemini fine-tuning: {e}", exc_info=True
+            )
             return {"job_id": job_id, "status": "failed", "error": str(e)}
 
     # ========================================================================
@@ -285,7 +289,9 @@ PARAMETER learning_rate {learning_rate}
                 "error": "anthropic not installed. Run: pip install anthropic",
             }
         except Exception as e:
-            logger.error(f"[_fine_tune_claude] Failed to start Claude fine-tuning: {e}", exc_info=True)
+            logger.error(
+                f"[_fine_tune_claude] Failed to start Claude fine-tuning: {e}", exc_info=True
+            )
             return {"job_id": job_id, "status": "failed", "error": str(e)}
 
     # ========================================================================
@@ -426,7 +432,9 @@ PARAMETER learning_rate {learning_rate}
                     ),
                 }
             except Exception as e:
-                logger.error(f"[_get_job_status] Failed to get Claude job status: {e}", exc_info=True)
+                logger.error(
+                    f"[_get_job_status] Failed to get Claude job status: {e}", exc_info=True
+                )
                 return {"status": "error", "error": str(e)}
 
         elif job["target"] == "gpt4":
@@ -456,7 +464,9 @@ PARAMETER learning_rate {learning_rate}
                     ),
                 }
             except Exception as e:
-                logger.error(f"[_get_job_status] Failed to get GPT-4 job status: {e}", exc_info=True)
+                logger.error(
+                    f"[_get_job_status] Failed to get GPT-4 job status: {e}", exc_info=True
+                )
                 return {"status": "error", "error": str(e)}
 
         return {"job_id": job_id, "status": "unknown"}

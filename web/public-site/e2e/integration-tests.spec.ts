@@ -1,7 +1,7 @@
 /**
  * UI/Backend Integration Tests
  * ============================
- * 
+ *
  * Comprehensive tests that validate:
  * - Full workflows from UI -> Backend -> Database
  * - API integration with real backend
@@ -151,7 +151,9 @@ test.describe('UI/Backend Integration Tests', () => {
       expect(taskTitle).toBeTruthy();
     } else {
       // Task might be on another page or need to be searched
-      console.log('⚠️  Task not visible in first load, checking API directly...');
+      console.log(
+        '⚠️  Task not visible in first load, checking API directly...'
+      );
     }
 
     // Step 4: Log all API requests made during workflow
@@ -222,9 +224,7 @@ test.describe('UI/Backend Integration Tests', () => {
         const ariaHidden = await img
           .getAttribute('aria-hidden')
           .catch(() => '');
-        expect(
-          ariaHidden === 'true' || alt !== ''
-        ).toBeTruthy();
+        expect(ariaHidden === 'true' || alt !== '').toBeTruthy();
       }
     }
   });

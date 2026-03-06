@@ -22,9 +22,16 @@ from typing import Any, Dict
 
 # Import model selection helper
 from routes.task_routes import get_model_for_phase
+from utils.error_handler import handle_service_error
 
 # Import AI content generator for fallback
 from .ai_content_generator import AIContentGenerator
+
+# Import error handling (Phase 1C - Error handling standardization)
+from .error_handler import (
+    DatabaseError,
+    ServiceError,
+)
 
 # Import metrics service (Sprint 5)
 from .metrics_service import TaskMetrics, get_metrics_service
@@ -43,13 +50,6 @@ from .websocket_event_broadcaster import (
     emit_notification,
     emit_task_progress,
 )
-
-# Import error handling (Phase 1C - Error handling standardization)
-from .error_handler import (
-    ServiceError,
-    DatabaseError,
-)
-from utils.error_handler import handle_service_error
 
 logger = logging.getLogger(__name__)
 
@@ -309,7 +309,9 @@ class TaskExecutor:
                     message=f"Starting task: {task_name}",
                 )
             except Exception as e:
-                logger.error(f"[_process_single_task] Failed to emit task progress event: {e}", exc_info=True)
+                logger.error(
+                    f"[_process_single_task] Failed to emit task progress event: {e}", exc_info=True
+                )
 
             # 2. Process through orchestrator/agent pipeline with timeout
             logger.info(
@@ -441,7 +443,10 @@ class TaskExecutor:
                         duration=8000,
                     )
                 except Exception as e:
-                    logger.error(f"[_process_single_task] Failed to emit task failure event: {e}", exc_info=True)
+                    logger.error(
+                        f"[_process_single_task] Failed to emit task failure event: {e}",
+                        exc_info=True,
+                    )
             else:
                 logger.info(f"✅ [TASK_SINGLE] Task awaiting approval: {task_id}")
 
@@ -463,13 +468,18 @@ class TaskExecutor:
                         duration=5000,
                     )
                 except Exception as e:
-                    logger.error(f"[_process_single_task] Failed to emit task success event", exc_info=True)
+                    logger.error(
+                        f"[_process_single_task] Failed to emit task success event", exc_info=True
+                    )
 
         except ServiceError as e:
             logger.error(f"Service error processing task {task_id}", exc_info=True)
             raise
         except Exception as e:
-            logger.error(f"[_process_single_task] Task processing failed for {task_id}: {str(e)}", exc_info=True)
+            logger.error(
+                f"[_process_single_task] Task processing failed for {task_id}: {str(e)}",
+                exc_info=True,
+            )
             raise ServiceError(
                 message=f"Task {task_id} processing failed",
                 details={"task_id": str(task_id), "task_name": task_name},
@@ -953,7 +963,8 @@ class TaskExecutor:
                         f"❌ [TASK_EXECUTE] Refinement failed: {refine_err}", exc_info=True
                     )
                     logger.error(
-                        f"   Keeping original content ({len(generated_content) if generated_content else 0} chars)", exc_info=True
+                        f"   Keeping original content ({len(generated_content) if generated_content else 0} chars)",
+                        exc_info=True,
                     )
 
                 logger.info(
@@ -1045,7 +1056,9 @@ class TaskExecutor:
                 operation_metrics_dict = asdict(operation_metrics)
 
                 # Normalize quality_score from 0-100 scale to 0-5 scale for schema
-                normalized_quality_score = (quality_score / 20.0) if quality_score is not None else None
+                normalized_quality_score = (
+                    (quality_score / 20.0) if quality_score is not None else None
+                )
 
                 cost_log = {
                     "task_id": str(task_id),
@@ -1221,7 +1234,9 @@ The key to success with {topic} is staying informed, adapting to changes, and co
             return content
 
         except Exception as e:
-            logger.error(f"[_fallback_generate_content] Fallback generation failed: {e}", exc_info=True)
+            logger.error(
+                f"[_fallback_generate_content] Fallback generation failed: {e}", exc_info=True
+            )
             # Emergency minimal content
             return f"# {topic}\n\nContent generation service temporarily unavailable. Please try again later.\n\nError: {str(e)[:100]}"
 

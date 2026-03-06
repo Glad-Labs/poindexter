@@ -1,4 +1,8 @@
-import { logError, logErrorToBackend, logErrorToSentry } from '../errorLoggingService';
+import {
+  logError,
+  logErrorToBackend,
+  logErrorToSentry,
+} from '../errorLoggingService';
 import * as cofounderAgentClient from '../cofounderAgentClient';
 
 // Mock cofounderAgentClient

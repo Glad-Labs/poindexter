@@ -57,7 +57,7 @@ class ErrorBoundary extends React.Component {
       // Silently fail - error logging should never break the app
       console.error('Error logging failed:', err);
     });
-  };;
+  };
 
   handleReset = () => {
     // Reset error state

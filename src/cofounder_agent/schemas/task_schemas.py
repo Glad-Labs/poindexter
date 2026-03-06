@@ -6,7 +6,8 @@ Consolidates all Pydantic models for task management endpoints
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
 from schemas.unified_task_response import UnifiedTaskResponse
 
 

@@ -3,13 +3,13 @@
 /**
  * Test Runner Infrastructure Validation
  * =====================================
- * 
+ *
  * Validates that the test-runner.js infrastructure works correctly:
  * - Discovers test files correctly
  * - Generates reports in correct format
  * - Handles parallel execution
  * - Properly aggregates results
- * 
+ *
  * Usage:
  *   node scripts/test-runner-validation.js
  */
@@ -46,7 +46,10 @@ function validateFileContent(filePath, pattern, description) {
     const content = fs.readFileSync(filePath, 'utf-8');
     if (typeof pattern === 'string') {
       if (!content.includes(pattern)) {
-        log(`✗ FAILED: ${description} - Pattern not found: "${pattern}"`, 'red');
+        log(
+          `✗ FAILED: ${description} - Pattern not found: "${pattern}"`,
+          'red'
+        );
         return false;
       }
     } else if (pattern instanceof RegExp) {
@@ -85,24 +88,42 @@ async function runValidations() {
   // ========================
   log('\n📋 Configuration Files\n', 'bright');
 
-  if (validateFileExists(path.join(process.cwd(), 'playwright.config.ts'), 'playwright.config.ts exists')) passCount++;
+  if (
+    validateFileExists(
+      path.join(process.cwd(), 'playwright.config.ts'),
+      'playwright.config.ts exists'
+    )
+  )
+    passCount++;
   else failCount++;
 
-  if (validateFileContent(
-    path.join(process.cwd(), 'playwright.config.ts'),
-    'defineConfig',
-    'playwright.config.ts has defineConfig'
-  )) passCount++;
+  if (
+    validateFileContent(
+      path.join(process.cwd(), 'playwright.config.ts'),
+      'defineConfig',
+      'playwright.config.ts has defineConfig'
+    )
+  )
+    passCount++;
   else failCount++;
 
-  if (validateFileExists(path.join(process.cwd(), 'scripts/test-runner.js'), 'test-runner.js exists')) passCount++;
+  if (
+    validateFileExists(
+      path.join(process.cwd(), 'scripts/test-runner.js'),
+      'test-runner.js exists'
+    )
+  )
+    passCount++;
   else failCount++;
 
-  if (validateFileContent(
-    path.join(process.cwd(), 'scripts/test-runner.js'),
-    'TEST_SUITES',
-    'test-runner.js defines TEST_SUITES'
-  )) passCount++;
+  if (
+    validateFileContent(
+      path.join(process.cwd(), 'scripts/test-runner.js'),
+      'TEST_SUITES',
+      'test-runner.js defines TEST_SUITES'
+    )
+  )
+    passCount++;
   else failCount++;
 
   // ========================
@@ -110,10 +131,22 @@ async function runValidations() {
   // ========================
   log('\n📁 Test Directories\n', 'bright');
 
-  if (validateDirectory(path.join(process.cwd(), 'web/public-site/e2e'), 'Playwright tests directory')) passCount++;
+  if (
+    validateDirectory(
+      path.join(process.cwd(), 'web/public-site/e2e'),
+      'Playwright tests directory'
+    )
+  )
+    passCount++;
   else failCount++;
 
-  if (validateDirectory(path.join(process.cwd(), 'tests/integration'), 'Pytest integration tests directory')) passCount++;
+  if (
+    validateDirectory(
+      path.join(process.cwd(), 'tests/integration'),
+      'Pytest integration tests directory'
+    )
+  )
+    passCount++;
   else failCount++;
 
   // ========================
@@ -121,37 +154,52 @@ async function runValidations() {
   // ========================
   log('\n🔧 Fixture Files\n', 'bright');
 
-  if (validateFileExists(
-    path.join(process.cwd(), 'web/public-site/e2e/fixtures.ts'),
-    'Playwright fixtures.ts exists'
-  )) passCount++;
+  if (
+    validateFileExists(
+      path.join(process.cwd(), 'web/public-site/e2e/fixtures.ts'),
+      'Playwright fixtures.ts exists'
+    )
+  )
+    passCount++;
   else failCount++;
 
-  if (validateFileContent(
-    path.join(process.cwd(), 'web/public-site/e2e/fixtures.ts'),
-    'class APIClient',
-    'Playwright fixtures define APIClient'
-  )) passCount++;
+  if (
+    validateFileContent(
+      path.join(process.cwd(), 'web/public-site/e2e/fixtures.ts'),
+      'class APIClient',
+      'Playwright fixtures define APIClient'
+    )
+  )
+    passCount++;
   else failCount++;
 
-  if (validateFileContent(
-    path.join(process.cwd(), 'web/public-site/e2e/fixtures.ts'),
-    'class PerformanceMetrics',
-    'Playwright fixtures define PerformanceMetrics'
-  )) passCount++;
+  if (
+    validateFileContent(
+      path.join(process.cwd(), 'web/public-site/e2e/fixtures.ts'),
+      'class PerformanceMetrics',
+      'Playwright fixtures define PerformanceMetrics'
+    )
+  )
+    passCount++;
   else failCount++;
 
-  if (validateFileExists(
-    path.join(process.cwd(), 'tests/conftest_enhanced.py'),
-    'Pytest conftest_enhanced.py exists'
-  )) passCount++;
+  if (
+    validateFileExists(
+      path.join(process.cwd(), 'tests/conftest_enhanced.py'),
+      'Pytest conftest_enhanced.py exists'
+    )
+  )
+    passCount++;
   else failCount++;
 
-  if (validateFileContent(
-    path.join(process.cwd(), 'tests/conftest_enhanced.py'),
-    'class APITester',
-    'Pytest fixtures define APITester'
-  )) passCount++;
+  if (
+    validateFileContent(
+      path.join(process.cwd(), 'tests/conftest_enhanced.py'),
+      'class APITester',
+      'Pytest fixtures define APITester'
+    )
+  )
+    passCount++;
   else failCount++;
 
   // ========================
@@ -159,16 +207,22 @@ async function runValidations() {
   // ========================
   log('\n🌍 Global Setup/Teardown\n', 'bright');
 
-  if (validateFileExists(
-    path.join(process.cwd(), 'web/public-site/e2e/global-setup.ts'),
-    'global-setup.ts exists'
-  )) passCount++;
+  if (
+    validateFileExists(
+      path.join(process.cwd(), 'web/public-site/e2e/global-setup.ts'),
+      'global-setup.ts exists'
+    )
+  )
+    passCount++;
   else failCount++;
 
-  if (validateFileExists(
-    path.join(process.cwd(), 'web/public-site/e2e/global-teardown.ts'),
-    'global-teardown.ts exists'
-  )) passCount++;
+  if (
+    validateFileExists(
+      path.join(process.cwd(), 'web/public-site/e2e/global-teardown.ts'),
+      'global-teardown.ts exists'
+    )
+  )
+    passCount++;
   else failCount++;
 
   // ========================
@@ -196,7 +250,10 @@ async function runValidations() {
         log(`✓ PASSED: npm script "${script}" defined`, 'green');
         passCount++;
       } else {
-        log(`✗ FAILED: npm script "${script}" not found in package.json`, 'red');
+        log(
+          `✗ FAILED: npm script "${script}" not found in package.json`,
+          'red'
+        );
         failCount++;
       }
     }
@@ -244,16 +301,18 @@ async function runValidations() {
 
   try {
     const requiredPackages = {
-      'playwright': 'web/public-site/e2e tests',
-      'pytest': 'backend integration tests',
-      'httpx': 'async HTTP client for tests',
+      playwright: 'web/public-site/e2e tests',
+      pytest: 'backend integration tests',
+      httpx: 'async HTTP client for tests',
     };
 
     const pyprojectPath = path.join(process.cwd(), 'pyproject.toml');
     const packageJsonPath = path.join(process.cwd(), 'package.json');
 
     const pyprojectContent = fs.readFileSync(pyprojectPath, 'utf-8');
-    const packageJsonContent = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+    const packageJsonContent = JSON.parse(
+      fs.readFileSync(packageJsonPath, 'utf-8')
+    );
 
     let hasRequestedPackages = 0;
     for (const [pkg, description] of Object.entries(requiredPackages)) {
@@ -286,7 +345,8 @@ async function runValidations() {
   ];
 
   for (const doc of docs) {
-    if (validateFileExists(path.join(process.cwd(), doc), `${doc} exists`)) passCount++;
+    if (validateFileExists(path.join(process.cwd(), doc), `${doc} exists`))
+      passCount++;
     else failCount++;
   }
 
@@ -310,7 +370,10 @@ async function runValidations() {
     log('\n🚀 Test infrastructure is ready for use!\n', 'green');
     return true;
   } else {
-    log(`❌ ${failCount} validation(s) FAILED. Fix issues and try again.\n`, 'red');
+    log(
+      `❌ ${failCount} validation(s) FAILED. Fix issues and try again.\n`,
+      'red'
+    );
     return false;
   }
 }

@@ -9,13 +9,13 @@
 
 ## 📊 Summary by Priority
 
-| Priority | Hours | Issues | Status | GitHub Issues |
-|----------|-------|--------|--------|---|
-| **P1 - CRITICAL** | 10-14h | 2 | **2/2 Complete ✅** | #1-2 |
-| **P2 - HIGH** | 24-28h | 5 | **Phase 1-2 of Issue #7 Complete (60%)** | #3-8 |
-| **P3 - MEDIUM** | 42-63h | 8 | **5/8 Tracked** | #10-13 |
-| **P4 - LOW** | 18-25h | 6 | **6/6 Tracked** | #14-19 |
-| **TOTAL** | **87-120h** | **20** | **17 Tracked** | |
+| Priority          | Hours       | Issues | Status                                   | GitHub Issues |
+| ----------------- | ----------- | ------ | ---------------------------------------- | ------------- |
+| **P1 - CRITICAL** | 10-14h      | 2      | **2/2 Complete ✅**                      | #1-2          |
+| **P2 - HIGH**     | 24-28h      | 5      | **Phase 1-2 of Issue #7 Complete (60%)** | #3-8          |
+| **P3 - MEDIUM**   | 42-63h      | 8      | **5/8 Tracked**                          | #10-13        |
+| **P4 - LOW**      | 18-25h      | 6      | **6/6 Tracked**                          | #14-19        |
+| **TOTAL**         | **87-120h** | **20** | **17 Tracked**                           |               |
 
 **✅ All technical debt items now tracked in GitHub Issues (19 total issues created)**
 
@@ -142,7 +142,7 @@
 - ✅ **Phase 1 (6-10h):** DI-1 + DI-2 - Routes + Providers
   - 24 endpoints migrated to Depends()
   - 6 new providers created
-- ✅ **Phase 2 (10-16h):** DI-3 + DI-4 - Startup + Background Tasks  
+- ✅ **Phase 2 (10-16h):** DI-3 + DI-4 - Startup + Background Tasks
   - 11 app.state service assignments removed
   - TaskExecutor refactored to use ServiceContainer
 - ✅ **Phase 3 (3-5h):** DI-5 + DI-6 - Health + Policy
@@ -630,24 +630,31 @@ Use this format for each issue. Create in GitHub project with labels:
 Title: [P1/P2/P3/P4] Issue Title
 
 Body:
+
 ## Description
+
 [Copy from issue description above]
 
 ## Files Affected
+
 - `path/to/file.py`
 
 ## Effort Estimate
+
 X-Y hours
 
 ## Acceptance Criteria
+
 - [ ] Criterion 1
 - [ ] Criterion 2
 - [ ] Criterion 3
 
 ## Dependencies
+
 - Issue #X (if any)
 
 ## Labels
+
 - tech-debt:P1-critical (or P2-high, P3-medium, P4-low)
 - category (dependencies, security, performance, testing, refactoring)
 ```
@@ -717,14 +724,14 @@ Each phase includes automated test validation before proceeding to next.
 
 ## ✅ Current Production Status
 
-| Component | Status | Issues |
-|-----------|--------|--------|
-| Backend (FastAPI) | ✅ Running | 0 blockers |
-| Database (PostgreSQL) | ✅ Running | Library-only deps |
-| Oversight Hub (React+Vite) | ✅ Running | 6 vulns (post-migration) |
-| Public Site (Next.js) | ✅ Running | 33 vulns (Jest deps) |
-| OAuth | ✅ Production-ready | 3-layer validation |
-| Workflows | ✅ Complete (pause/resume/cancel implemented) | 0 TODOs |
-| GDPR Compliance | ⚠️ Incomplete | 3 TODOs |
+| Component                  | Status                                        | Issues                   |
+| -------------------------- | --------------------------------------------- | ------------------------ |
+| Backend (FastAPI)          | ✅ Running                                    | 0 blockers               |
+| Database (PostgreSQL)      | ✅ Running                                    | Library-only deps        |
+| Oversight Hub (React+Vite) | ✅ Running                                    | 6 vulns (post-migration) |
+| Public Site (Next.js)      | ✅ Running                                    | 33 vulns (Jest deps)     |
+| OAuth                      | ✅ Production-ready                           | 3-layer validation       |
+| Workflows                  | ✅ Complete (pause/resume/cancel implemented) | 0 TODOs                  |
+| GDPR Compliance            | ⚠️ Incomplete                                 | 3 TODOs                  |
 
 **Overall Assessment:** Production-ready for feature work, with known gaps in control flows and compliance.

@@ -261,12 +261,15 @@ export const useFormValidation = ({
   /**
    * Reset form to initial values (or custom values if provided)
    */
-  const reset = useCallback((customValues) => {
-    setValues(customValues || initialValues);
-    setErrors({});
-    setTouched({});
-    setIsSubmitting(false);
-  }, [initialValues]);
+  const reset = useCallback(
+    (customValues) => {
+      setValues(customValues || initialValues);
+      setErrors({});
+      setTouched({});
+      setIsSubmitting(false);
+    },
+    [initialValues]
+  );
 
   /**
    * Set all form values
@@ -301,9 +304,11 @@ export const useFormValidation = ({
         },
         onBlur: (e) => {
           // Works with or without an event argument
-          const event =
-            e && e.target ? e : { target: { name: fieldName } };
-          handleBlur({ ...event, target: { name: fieldName, ...event.target } });
+          const event = e && e.target ? e : { target: { name: fieldName } };
+          handleBlur({
+            ...event,
+            target: { name: fieldName, ...event.target },
+          });
         },
         error: touched[fieldName] && !!errors[fieldName],
         helperText: touched[fieldName] && errors[fieldName],

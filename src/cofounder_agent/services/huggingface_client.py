@@ -227,7 +227,9 @@ class HuggingFaceClient:
             return await self.generate(model, prompt, max_tokens, temperature, top_p)
 
         except Exception as e:
-            logger.error(f"[_chat_completion] HuggingFace chat completion failed: {e}", exc_info=True)
+            logger.error(
+                f"[_chat_completion] HuggingFace chat completion failed: {e}", exc_info=True
+            )
             raise
 
     @classmethod

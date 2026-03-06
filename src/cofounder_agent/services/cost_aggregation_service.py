@@ -222,7 +222,10 @@ class CostAggregationService:
                     "last_updated": datetime.now(timezone.utc).isoformat(),
                 }
         except Exception as e:
-            logger.error(f"[_get_breakdown_by_phase] Error getting cost breakdown by phase: {e}", exc_info=True)
+            logger.error(
+                f"[_get_breakdown_by_phase] Error getting cost breakdown by phase: {e}",
+                exc_info=True,
+            )
             return self._get_empty_breakdown_by_phase(period)
 
     async def get_breakdown_by_model(
@@ -306,7 +309,10 @@ class CostAggregationService:
                     "last_updated": datetime.now(timezone.utc).isoformat(),
                 }
         except Exception as e:
-            logger.error(f"[_get_breakdown_by_model] Error getting cost breakdown by model: {e}", exc_info=True)
+            logger.error(
+                f"[_get_breakdown_by_model] Error getting cost breakdown by model: {e}",
+                exc_info=True,
+            )
             return self._get_empty_breakdown_by_model(period)
 
     async def get_history(self, period: str = "week") -> Dict[str, Any]:

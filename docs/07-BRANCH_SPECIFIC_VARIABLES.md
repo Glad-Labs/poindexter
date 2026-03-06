@@ -43,7 +43,7 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 ### Staging (`dev` branch)
 
 - **Deployment:** GitHub Actions → Railway (auto on push)
-- **Config source:** GitHub Secrets (STAGING_*)
+- **Config source:** GitHub Secrets (STAGING\_\*)
 - **Database:** Railway PostgreSQL staging instance
 - **Services:** Public Site (Vercel), Backend (Railway)
 
@@ -55,7 +55,7 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 ### Production (`main` branch)
 
 - **Deployment:** GitHub Actions → Vercel/Railway (auto on push)
-- **Config source:** GitHub Secrets (PROD_*)
+- **Config source:** GitHub Secrets (PROD\_\*)
 - **Database:** Production PostgreSQL instance
 - **Services:** Public Site (Vercel), Backend (Railway), Oversight Hub (Vercel)
 
@@ -98,11 +98,11 @@ TASK_TIMEOUT_SECONDS=60
 
 ## 📊 Variable Inheritance
 
-| Variable | Source | Local | Staging | Production |
-| -------- | ------ | ----- | ------- | ---------- |
-| Database URL | .env.local / Secrets | localhost | Railway staging | Production DB |
-| LLM Keys | .env.local / Secrets | One key | Multiple keys | All keys |
-| Log Level | .env.local / Secrets | debug | info | warning |
+| Variable     | Source               | Local          | Staging             | Production      |
+| ------------ | -------------------- | -------------- | ------------------- | --------------- |
+| Database URL | .env.local / Secrets | localhost      | Railway staging     | Production DB   |
+| LLM Keys     | .env.local / Secrets | One key        | Multiple keys       | All keys        |
+| Log Level    | .env.local / Secrets | debug          | info                | warning         |
 | API Endpoint | .env.local / Secrets | localhost:8000 | staging.railway.app | api.gladlabs.ai |
 
 ---

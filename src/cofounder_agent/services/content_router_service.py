@@ -284,7 +284,10 @@ class ContentGenerationService:
             prompt = f"Create a visual representation for: {topic}\n\nContext: {content[:200]}"
             return prompt
         except Exception as e:
-            logger.error(f"[_generate_featured_image_prompt] Error generating image prompt: {e}", exc_info=True)
+            logger.error(
+                f"[_generate_featured_image_prompt] Error generating image prompt: {e}",
+                exc_info=True,
+            )
             return f"Featured image for: {topic}"
 
 
@@ -398,7 +401,9 @@ async def _generate_canonical_title(
         return None
 
     except Exception as e:
-        logger.error(f"[_generate_canonical_title] Error generating canonical title: {e}", exc_info=True)
+        logger.error(
+            f"[_generate_canonical_title] Error generating canonical title: {e}", exc_info=True
+        )
         return None
 
 
@@ -510,7 +515,9 @@ async def process_content_generation_task(
                 logger.warning(f"⚠️  Task {task_id} not found - this should not happen")
                 result["stages"]["1_content_task_created"] = False
         except Exception as e:
-            logger.error(f"[_process_content_generation_task] ❌ Failed to verify task: {e}", exc_info=True)
+            logger.error(
+                f"[_process_content_generation_task] ❌ Failed to verify task: {e}", exc_info=True
+            )
             result["stages"]["1_content_task_created"] = False
 
         # ================================================================================
@@ -708,7 +715,9 @@ async def process_content_generation_task(
                     result["stages"]["3_featured_image_found"] = False
                     logger.warning(f"⚠️  No featured image found for '{topic}'\n")
             except Exception as e:
-                logger.error(f"[_process_content_generation_task] ❌ Image search failed: {e}", exc_info=True)
+                logger.error(
+                    f"[_process_content_generation_task] ❌ Image search failed: {e}", exc_info=True
+                )
                 result["stages"]["3_featured_image_found"] = False
         else:
             result["stages"]["3_featured_image_found"] = False
@@ -730,7 +739,10 @@ async def process_content_generation_task(
                 else:
                     logger.info("ℹ️  No body images available to embed\n")
             except Exception as e:
-                logger.error(f"[process_content] Body image embedding failed (continuing): {e}", exc_info=True)
+                logger.error(
+                    f"[process_content] Body image embedding failed (continuing): {e}",
+                    exc_info=True,
+                )
 
         # ================================================================================
         # STAGE 4: GENERATE SEO METADATA
@@ -813,7 +825,7 @@ async def process_content_generation_task(
             "keyword_densities": {
                 kv.keyword: f"{kv.density:.2f}% ({kv.appearances} mentions)"
                 for kv in seo_validation.keyword_validations
-            }
+            },
         }
 
         # ================================================================================
@@ -972,7 +984,10 @@ async def process_content_generation_task(
         return result
 
     except Exception as e:
-        logger.error(f"[_process_content_generation_task] ❌ [BG-TASK] Pipeline error for task {task_id[:8]}...: {e}", exc_info=True)
+        logger.error(
+            f"[_process_content_generation_task] ❌ [BG-TASK] Pipeline error for task {task_id[:8]}...: {e}",
+            exc_info=True,
+        )
         logger.error(f"[BG-TASK] Detailed traceback:", exc_info=True)
 
         # Update content_task with failure status
@@ -1215,5 +1230,8 @@ async def _get_or_create_default_author(database_service: DatabaseService) -> Op
             return fallback_id
 
     except Exception as e:
-        logger.error(f"[_get_or_create_default_author] Error getting/creating default author: {e}", exc_info=True)
+        logger.error(
+            f"[_get_or_create_default_author] Error getting/creating default author: {e}",
+            exc_info=True,
+        )
         return None

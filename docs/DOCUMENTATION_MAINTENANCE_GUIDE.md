@@ -12,17 +12,17 @@ This guide ensures documentation stays current, consistent, and useful as the pr
 
 ### Core Reference Files
 
-| File | Purpose | Audience | Update Frequency |
-|------|---------|----------|-----------------|
-| `.github/copilot-instructions.md` | Copilot-specific guidance and project overview | AI assistants (Copilot) | When major phases complete |
-| `CLAUDE.md` | Claude Code session guidance | AI assistants (Claude) | When major phases complete |
-| `docs/02-ARCHITECTURE_AND_DESIGN.md` | System architecture and design decisions | Developers, architects | Quarterly or after major refactors |
-| `docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md` | Deployment procedures and infrastructure | DevOps, backend developers | As deployment changes |
-| `docs/04-DEVELOPMENT_WORKFLOW.md` | Development processes, branching, testing | All developers | As workflows evolve |
-| `docs/05-AI_AGENTS_AND_INTEGRATION.md` | AI agent architecture and patterns | Backend developers | When agents change |
-| `docs/TECHNICAL_DEBT_TRACKER.md` | Issue tracking and completion status | Project leads, developers | After each completed issue |
-| `README.md` | Project overview and quick start | Everyone, especially new users | Quarterly |
-| `.env.example` | Environment variable templates | All developers | When env vars change |
+| File                                       | Purpose                                        | Audience                       | Update Frequency                   |
+| ------------------------------------------ | ---------------------------------------------- | ------------------------------ | ---------------------------------- |
+| `.github/copilot-instructions.md`          | Copilot-specific guidance and project overview | AI assistants (Copilot)        | When major phases complete         |
+| `CLAUDE.md`                                | Claude Code session guidance                   | AI assistants (Claude)         | When major phases complete         |
+| `docs/02-ARCHITECTURE_AND_DESIGN.md`       | System architecture and design decisions       | Developers, architects         | Quarterly or after major refactors |
+| `docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md` | Deployment procedures and infrastructure       | DevOps, backend developers     | As deployment changes              |
+| `docs/04-DEVELOPMENT_WORKFLOW.md`          | Development processes, branching, testing      | All developers                 | As workflows evolve                |
+| `docs/05-AI_AGENTS_AND_INTEGRATION.md`     | AI agent architecture and patterns             | Backend developers             | When agents change                 |
+| `docs/TECHNICAL_DEBT_TRACKER.md`           | Issue tracking and completion status           | Project leads, developers      | After each completed issue         |
+| `README.md`                                | Project overview and quick start               | Everyone, especially new users | Quarterly                          |
+| `.env.example`                             | Environment variable templates                 | All developers                 | When env vars change               |
 
 ### Documentation Relationships
 
@@ -262,14 +262,14 @@ find docs -name "*.md" -exec grep -l "^\[.*\](.*\.md)" {} \;
 
 These items should match across files:
 
-| Item | Files | Check |
-|------|-------|-------|
-| Last Updated date | copilot-instructions.md, CLAUDE.md, TECHNICAL_DEBT_TRACKER.md | Should be same or copilot-instructions most recent |
-| Version number | copilot-instructions.md header | Only place version is updated |
-| Service count | copilot-instructions.md, various sections | Update all mentions together |
-| Phase completion info | copilot-instructions.md, CLAUDE.md, TECHNICAL_DEBT_TRACKER.md | Mirror to all three |
-| Environment variable count | copilot-instructions.md, .env.example comment | Should match |
-| Route count | copilot-instructions.md header | Should match actual route modules |
+| Item                       | Files                                                         | Check                                              |
+| -------------------------- | ------------------------------------------------------------- | -------------------------------------------------- |
+| Last Updated date          | copilot-instructions.md, CLAUDE.md, TECHNICAL_DEBT_TRACKER.md | Should be same or copilot-instructions most recent |
+| Version number             | copilot-instructions.md header                                | Only place version is updated                      |
+| Service count              | copilot-instructions.md, various sections                     | Update all mentions together                       |
+| Phase completion info      | copilot-instructions.md, CLAUDE.md, TECHNICAL_DEBT_TRACKER.md | Mirror to all three                                |
+| Environment variable count | copilot-instructions.md, .env.example comment                 | Should match                                       |
+| Route count                | copilot-instructions.md header                                | Should match actual route modules                  |
 
 ---
 
@@ -281,7 +281,6 @@ Format: `MAJOR.MINOR` (e.g., 2.2, 3.0)
 
 - **MAJOR:** Incremented when significant architectural changes or new phases complete
   - Example: 2.0 → 3.0 when Phase 2 complete
-  
 - **MINOR:** Incremented for feature additions within same phase
   - Example: 2.1 → 2.2 when Phase 1C completes within Phase 2 timeline
 
@@ -337,19 +336,21 @@ NEW: "30+ route modules"
 **Purpose:** What does it do?
 
 **Key Components:**
+
 - Component 1: Description
 - Component 2: Description
 
 **Integration Points:**
+
 - Where it connects in the system
 - What it calls/what calls it
 
 **Configuration:**
+
 - Any environment variables
 - Any setup needed
 
 **Reference:** Link to detailed docs
-
 ```
 
 ---
@@ -380,6 +381,7 @@ NEW: "30+ route modules"
 - **Files affected:** Count and categories
 
 **Benefits:**
+
 - Benefit 1
 - Benefit 2
 - Benefit 3
@@ -405,7 +407,7 @@ Use this checklist before committing documentation changes:
 
 - [ ] Markdown passes lint validation
 - [ ] Headings are properly nested (h1, h2, h3, etc.)
-- [ ] Code blocks have language specifier (```bash,```python, etc.)
+- [ ] Code blocks have language specifier (`bash,`python, etc.)
 - [ ] Tables are properly formatted
 - [ ] Lists use consistent formatting
 

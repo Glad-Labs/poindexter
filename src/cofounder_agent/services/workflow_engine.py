@@ -424,7 +424,10 @@ class WorkflowEngine:
                             task_results={phase.name: result.to_dict()},
                         )
                     except Exception as _ws_err:
-                        logger.error(f"[_execute_phase] Broadcast phase complete failed: {_ws_err}", exc_info=True)
+                        logger.error(
+                            f"[_execute_phase] Broadcast phase complete failed: {_ws_err}",
+                            exc_info=True,
+                        )
 
                     return result
 
@@ -448,7 +451,7 @@ class WorkflowEngine:
                         phase.max_retries + 1,
                         result.error,
                         wait_time,
-                        exc_info=True
+                        exc_info=True,
                     )
                     await asyncio.sleep(wait_time)
                     result.status = PhaseStatus.RETRY
@@ -471,7 +474,10 @@ class WorkflowEngine:
                             task_results={phase.name: result.to_dict()},
                         )
                     except Exception as _ws_err:
-                        logger.error(f"[_execute_phase] Broadcast phase fail failed: {_ws_err}", exc_info=True)
+                        logger.error(
+                            f"[_execute_phase] Broadcast phase fail failed: {_ws_err}",
+                            exc_info=True,
+                        )
 
                     # Call custom error handler if provided
                     if self.error_handler:
@@ -558,10 +564,10 @@ class WorkflowEngine:
 
             # Persist workflow execution to database
             from .workflow_history import WorkflowHistoryService
-            
+
             pool = await self.database_service.get_connection_pool()
             history_service = WorkflowHistoryService(pool)
-            
+
             await history_service.save_workflow_execution(
                 workflow_id=context.workflow_id,
                 workflow_type="standard",
@@ -579,8 +585,7 @@ class WorkflowEngine:
                     for name, result in context.results.items()
                 ],
                 error_message=next(
-                    (result.error for result in context.results.values() if result.error),
-                    None
+                    (result.error for result in context.results.values() if result.error), None
                 ),
                 start_time=context.started_at,
                 duration_seconds=total_duration_ms / 1000.0,
@@ -594,7 +599,9 @@ class WorkflowEngine:
             logger.info("[%s] Workflow result stored successfully", context.workflow_id)
 
         except Exception as e:
-            logger.error(f"[_store_workflow_result] Failed to store workflow result: {e}", exc_info=True)
+            logger.error(
+                f"[_store_workflow_result] Failed to store workflow result: {e}", exc_info=True
+            )
 
     async def execute_phase_with_quality_feedback(
         self,

@@ -9,12 +9,12 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-# Import configuration
-from config import get_config
-
 # Third-party imports
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, validator
+
+# Import configuration
+from config import get_config
 
 # Load configuration
 config = get_config()
@@ -25,15 +25,20 @@ from services.container import service_container
 # Import services
 from services.logger_config import get_logger
 from services.quality_service import UnifiedQualityService
-from services.unified_orchestrator import UnifiedOrchestrator
 from services.sentry_integration import setup_sentry
 from services.telemetry import setup_telemetry
+from services.unified_orchestrator import UnifiedOrchestrator
 
 # Local application imports (must come after path setup)
 from utils.exception_handlers import register_exception_handlers
 from utils.middleware_config import MiddlewareConfig
 from utils.route_registration import register_all_routes
-from utils.route_utils import initialize_services, get_orchestrator_dependency, get_database_dependency, get_redis_cache_optional
+from utils.route_utils import (
+    get_database_dependency,
+    get_orchestrator_dependency,
+    get_redis_cache_optional,
+    initialize_services,
+)
 from utils.startup_manager import StartupManager
 
 try:
@@ -84,7 +89,9 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         app.state.startup_error = services["startup_error"]
         app.state.startup_complete = True
         logger.debug("[LIFESPAN] ✅ Framework-level flags initialized")
-        logger.info("[LIFESPAN] NOTE: Application-level services are now injected via ServiceContainer + Depends()")
+        logger.info(
+            "[LIFESPAN] NOTE: Application-level services are now injected via ServiceContainer + Depends()"
+        )
 
         # Initialize auth service
         logger.info("[LIFESPAN] Initializing authentication service. ..")
@@ -115,8 +122,12 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             service_container.register("orchestrator", orchestrator)
             logger.info("[LIFESPAN] ✅ UnifiedOrchestrator initialized via ServiceContainer")
         except Exception as e:
-            logger.error(f"[LIFESPAN] ❌ Failed to initialize UnifiedOrchestrator: {e}", exc_info=True)
-            logger.warning("[LIFESPAN] ⚠️ Orchestrator initialization failed - system will use fallback template-based generation")
+            logger.error(
+                f"[LIFESPAN] ❌ Failed to initialize UnifiedOrchestrator: {e}", exc_info=True
+            )
+            logger.warning(
+                "[LIFESPAN] ⚠️ Orchestrator initialization failed - system will use fallback template-based generation"
+            )
 
         # Register services in the global DI container for dependency injection
         logger.info("[LIFESPAN] Registering services in global DI container. ..")
@@ -255,7 +266,7 @@ async def list_tasks_pub_dev(
     database_service: Any = Depends(get_database_dependency),
 ):
     """Public endpoint for listing tasks - NO AUTHENTICATION REQUIRED (Development Only)
-    
+
     DI-5: Now uses Depends() injection for database service
     """
     try:
@@ -313,7 +324,7 @@ async def api_health(
 
     Used by: Railway load balancers, monitoring systems, external health checks
     Authentication: Not required (critical for load balancers)
-    
+
     DI-5: Now uses Depends() injection for services instead of app.state
     """
     # Try to get from cache first (note: health checks may be called very frequently)
@@ -406,7 +417,7 @@ async def get_metrics_endpoint(
     - success_rate: Success percentage (0-100)
     - avg_execution_time: Average task duration in seconds
     - total_cost: Estimated total cost in USD
-    
+
     DI-5: Now uses Depends() injection for database service
     """
     try:
@@ -516,7 +527,7 @@ async def process_command(
 async def root(database_service: Any = Depends(get_database_dependency)):
     """
     Root endpoint to confirm the server is running.
-    
+
     DI-5: Now uses Depends() injection for database availability check
     """
     return {

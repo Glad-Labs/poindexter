@@ -16,10 +16,11 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
 from asyncpg import Pool
+
 from schemas.database_response_models import TaskCountsResponse, TaskResponse
 from schemas.model_converter import ModelConverter
-from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 from utils.error_handler import handle_service_error
+from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 
 from .database_mixin import DatabaseServiceMixin
 
@@ -60,7 +61,9 @@ def serialize_value_for_postgres(value: Any) -> Any:
                 dt = datetime.fromisoformat(value)
                 # Ensure it's naive (strip any timezone info)
                 if dt.tzinfo is not None:
-                    logger.warning(f"Converting timezone-aware datetime string to naive UTC: {value}")
+                    logger.warning(
+                        f"Converting timezone-aware datetime string to naive UTC: {value}"
+                    )
                     dt = dt.replace(tzinfo=None)
                 return dt
             except (ValueError, AttributeError):
@@ -129,7 +132,9 @@ class TasksDatabase(DatabaseServiceMixin):
         except Exception as e:
             if "content_tasks" in str(e) or "does not exist" in str(e) or "relation" in str(e):
                 return []
-            logger.error(f"[get_pending_tasks] Error fetching pending tasks: {str(e)}", exc_info=True)
+            logger.error(
+                f"[get_pending_tasks] Error fetching pending tasks: {str(e)}", exc_info=True
+            )
             return []
 
     async def get_all_tasks(self, limit: int = 100) -> List[TaskResponse]:
@@ -292,7 +297,9 @@ class TasksDatabase(DatabaseServiceMixin):
                         task_response = ModelConverter.to_task_response(row)
                         return ModelConverter.to_dict(task_response)
             except Exception as e:
-                logger.debug(f"[get_task] Numeric ID lookup failed for {task_id}: {e}", exc_info=True)
+                logger.debug(
+                    f"[get_task] Numeric ID lookup failed for {task_id}: {e}", exc_info=True
+                )
 
         # Try UUID lookup
         builder = ParameterizedQueryBuilder()
@@ -355,7 +362,9 @@ class TasksDatabase(DatabaseServiceMixin):
                 return_columns=["*"],
             )
 
-            logger.debug(f"[update_task_status] Executing UPDATE with where_column={where_column}, where_value={where_value}")
+            logger.debug(
+                f"[update_task_status] Executing UPDATE with where_column={where_column}, where_value={where_value}"
+            )
 
             async with self.pool.acquire() as conn:
                 logger.debug(f"[update_task_status] SQL: {sql}")
@@ -365,17 +374,27 @@ class TasksDatabase(DatabaseServiceMixin):
                 if row:
                     logger.info(f"Task status updated: {task_id} → {status}")
                     result = self._convert_row_to_dict(row)
-                    logger.debug(f"[update_task_status] Returned task status: {result.get('status')}")
+                    logger.debug(
+                        f"[update_task_status] Returned task status: {result.get('status')}"
+                    )
                     return result
 
                 # If not found with primary approach, try alternate column
-                logger.warning(f"[update_task_status] First attempt returned no rows. Task ID: {task_id}, where_column: {where_column}, value: {where_value}")
+                logger.warning(
+                    f"[update_task_status] First attempt returned no rows. Task ID: {task_id}, where_column: {where_column}, value: {where_value}"
+                )
 
                 # Try the opposite column
                 alt_where_column = "task_id" if where_column == "id" else "id"
-                alt_where_value = str(task_id) if where_column == "id" else (int(task_id) if task_id.isdigit() else task_id)
+                alt_where_value = (
+                    str(task_id)
+                    if where_column == "id"
+                    else (int(task_id) if task_id.isdigit() else task_id)
+                )
 
-                logger.debug(f"[update_task_status] Trying alternate where_column={alt_where_column}, where_value={alt_where_value}")
+                logger.debug(
+                    f"[update_task_status] Trying alternate where_column={alt_where_column}, where_value={alt_where_value}"
+                )
 
                 sql_alt, params_alt = builder.update(
                     table="content_tasks",
@@ -391,16 +410,24 @@ class TasksDatabase(DatabaseServiceMixin):
                 if row_alt:
                     logger.info(f"Task status updated (alternate ID): {task_id} → {status}")
                     result_alt = self._convert_row_to_dict(row_alt)
-                    logger.debug(f"[update_task_status] Returned task status (alt): {result_alt.get('status')}")
+                    logger.debug(
+                        f"[update_task_status] Returned task status (alt): {result_alt.get('status')}"
+                    )
                     return result_alt
 
                 # Task not found with either approach
-                logger.error(f"[update_task_status] Task not found with either ID approach. task_id={task_id}, tried columns: {where_column} and {alt_where_column}")
-                logger.error(f"[update_task_status] Values tried: {where_value} and {alt_where_value}")
+                logger.error(
+                    f"[update_task_status] Task not found with either ID approach. task_id={task_id}, tried columns: {where_column} and {alt_where_column}"
+                )
+                logger.error(
+                    f"[update_task_status] Values tried: {where_value} and {alt_where_value}"
+                )
                 return None
 
         except Exception as e:
-            logger.error(f"[update_task_status] Exception updating task status {task_id}: {e}", exc_info=True)
+            logger.error(
+                f"[update_task_status] Exception updating task status {task_id}: {e}", exc_info=True
+            )
             return None
 
     async def update_task(self, task_id: str, updates: Dict[str, Any]) -> Optional[dict]:
@@ -719,7 +746,9 @@ class TasksDatabase(DatabaseServiceMixin):
                 )
                 return tasks
         except Exception as e:
-            logger.error(f"[get_tasks_by_date_range] Failed to get tasks by date range: {e}", exc_info=True)
+            logger.error(
+                f"[get_tasks_by_date_range] Failed to get tasks by date range: {e}", exc_info=True
+            )
             return []
 
     async def delete_task(self, task_id: str) -> bool:
@@ -914,5 +943,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 logger.info(f"✅ Retrieved {len(failures)} validation failures for task {task_id}")
                 return failures
         except Exception as e:
-            logger.error(f"[get_validation_failures] Failed to get validation failures: {e}", exc_info=True)
+            logger.error(
+                f"[get_validation_failures] Failed to get validation failures: {e}", exc_info=True
+            )
             return []

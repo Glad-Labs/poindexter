@@ -50,10 +50,16 @@ describe('TaskFilters Component', () => {
       const sortButton = screen.getAllByRole('combobox')[0];
       fireEvent.mouseDown(sortButton);
 
-      expect(screen.getByRole('option', { name: 'Created Date' })).toBeInTheDocument();
-      expect(screen.getByRole('option', { name: 'Status' })).toBeInTheDocument();
+      expect(
+        screen.getByRole('option', { name: 'Created Date' })
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('option', { name: 'Status' })
+      ).toBeInTheDocument();
       expect(screen.getByRole('option', { name: 'Name' })).toBeInTheDocument();
-      expect(screen.getByRole('option', { name: 'Task Type' })).toBeInTheDocument();
+      expect(
+        screen.getByRole('option', { name: 'Task Type' })
+      ).toBeInTheDocument();
     });
 
     it('should render direction options', () => {
@@ -62,8 +68,12 @@ describe('TaskFilters Component', () => {
       const directionButton = screen.getAllByRole('combobox')[1];
       fireEvent.mouseDown(directionButton);
 
-      expect(screen.getByRole('option', { name: 'Ascending' })).toBeInTheDocument();
-      expect(screen.getByRole('option', { name: 'Descending' })).toBeInTheDocument();
+      expect(
+        screen.getByRole('option', { name: 'Ascending' })
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('option', { name: 'Descending' })
+      ).toBeInTheDocument();
     });
 
     it('should render status filter options', () => {
@@ -72,9 +82,15 @@ describe('TaskFilters Component', () => {
       const statusButton = screen.getAllByRole('combobox')[2];
       fireEvent.mouseDown(statusButton);
 
-      expect(screen.getAllByText('All Statuses').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getByRole('option', { name: 'Pending' })).toBeInTheDocument();
-      expect(screen.getByRole('option', { name: 'In Progress' })).toBeInTheDocument();
+      expect(screen.getAllByText('All Statuses').length).toBeGreaterThanOrEqual(
+        1
+      );
+      expect(
+        screen.getByRole('option', { name: 'Pending' })
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('option', { name: 'In Progress' })
+      ).toBeInTheDocument();
     });
   });
 
@@ -279,7 +295,14 @@ describe('TaskFilters Component', () => {
 
   describe('PropTypes Validation', () => {
     it('should render with minimal props', () => {
-      render(<TaskFilters onSortChange={vi.fn()} onDirectionChange={vi.fn()} onStatusChange={vi.fn()} onResetFilters={vi.fn()} />);
+      render(
+        <TaskFilters
+          onSortChange={vi.fn()}
+          onDirectionChange={vi.fn()}
+          onStatusChange={vi.fn()}
+          onResetFilters={vi.fn()}
+        />
+      );
       expect(screen.getAllByRole('combobox').length).toBeGreaterThanOrEqual(3);
     });
 

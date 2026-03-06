@@ -1,9 +1,9 @@
 /**
  * ApprovalQueue Component
- * 
+ *
  * Displays tasks awaiting human approval before publishing.
  * Allows users to review, approve, or reject content with feedback.
- * 
+ *
  * Features:
  * - List pending approval tasks with pagination
  * - Task preview with content & featured image
@@ -44,7 +44,13 @@ import {
   Stack,
   Rating,
 } from '@mui/material';
-import { CheckCircle, Close, Info, Edit, Visibility } from '@mui/icons-material';
+import {
+  CheckCircle,
+  Close,
+  Info,
+  Edit,
+  Visibility,
+} from '@mui/icons-material';
 import { cofounderAgentClient } from '../../services/cofounderAgentClient';
 
 /**
@@ -555,22 +561,19 @@ const ApprovalQueue = () => {
     setError(null);
 
     try {
-      const response = await fetch(
-        `${getApiBaseUrl()}/api/tasks/bulk-reject`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
-          },
-          body: JSON.stringify({
-            task_ids: Array.from(selectedTaskIds),
-            reason: bulkRejectReason,
-            feedback: bulkRejectFeedback,
-            allow_revisions: bulkAllowRevisions,
-          }),
-        }
-      );
+      const response = await fetch(`${getApiBaseUrl()}/api/tasks/bulk-reject`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+        },
+        body: JSON.stringify({
+          task_ids: Array.from(selectedTaskIds),
+          reason: bulkRejectReason,
+          feedback: bulkRejectFeedback,
+          allow_revisions: bulkAllowRevisions,
+        }),
+      });
 
       if (!response.ok) {
         throw new Error(`Failed to reject tasks: ${response.statusText}`);
@@ -1205,12 +1208,18 @@ const ApprovalQueue = () => {
       />
     </Box>
   );
-};;
+};
 
 /**
  * Full Task Preview Dialog Component
  */
-const FullTaskPreviewDialog = ({ task, open, onClose, onApprove, onReject }) => {
+const FullTaskPreviewDialog = ({
+  task,
+  open,
+  onClose,
+  onApprove,
+  onReject,
+}) => {
   if (!task) return null;
 
   return (
@@ -1241,7 +1250,9 @@ const FullTaskPreviewDialog = ({ task, open, onClose, onApprove, onReject }) => 
           {/* Featured Image */}
           {task.featured_image_url && (
             <Box>
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>Featured Image:</Typography>
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                Featured Image:
+              </Typography>
               <Box
                 component="img"
                 src={task.featured_image_url}
@@ -1258,7 +1269,9 @@ const FullTaskPreviewDialog = ({ task, open, onClose, onApprove, onReject }) => 
 
           {/* Content */}
           <Box>
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>Content:</Typography>
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+              Content:
+            </Typography>
             <Box
               sx={{
                 bgcolor: 'white',
@@ -1277,14 +1290,20 @@ const FullTaskPreviewDialog = ({ task, open, onClose, onApprove, onReject }) => 
 
           {/* Metadata */}
           <Box>
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>Metadata:</Typography>
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+              Metadata:
+            </Typography>
             <Grid container spacing={1}>
               <Grid item xs={6}>
-                <Typography variant="body2" color="textSecondary">Topic:</Typography>
+                <Typography variant="body2" color="textSecondary">
+                  Topic:
+                </Typography>
                 <Typography variant="body2">{task.topic}</Typography>
               </Grid>
               <Grid item xs={6}>
-                <Typography variant="body2" color="textSecondary">Created:</Typography>
+                <Typography variant="body2" color="textSecondary">
+                  Created:
+                </Typography>
                 <Typography variant="body2">
                   {new Date(task.created_at).toLocaleDateString()}
                 </Typography>

@@ -19,7 +19,11 @@ import {
   generateCanonicalURL,
 } from '../../../lib/seo';
 import { generateTableOfContents } from '../../../lib/content-utils';
-import { getPreviousPost, getNextPost, getRelatedPosts } from '../../../lib/posts';
+import {
+  getPreviousPost,
+  getNextPost,
+  getRelatedPosts,
+} from '../../../lib/posts';
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ||
@@ -307,7 +311,9 @@ export default async function PostPage({
         {relatedPosts && relatedPosts.length > 0 && (
           <div className="px-4 sm:px-6 lg:px-8 pb-16">
             <div className="max-w-4xl mx-auto">
-              <h2 className="text-3xl font-bold text-white mb-8">Related Articles</h2>
+              <h2 className="text-3xl font-bold text-white mb-8">
+                Related Articles
+              </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {relatedPosts.map((relatedPost) => (
                   <Link
@@ -320,11 +326,14 @@ export default async function PostPage({
                     </h3>
                     {relatedPost.published_at && (
                       <div className="text-xs text-slate-400">
-                        {new Date(relatedPost.published_at).toLocaleDateString('en-US', {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric',
-                        })}
+                        {new Date(relatedPost.published_at).toLocaleDateString(
+                          'en-US',
+                          {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                          }
+                        )}
                       </div>
                     )}
                   </Link>

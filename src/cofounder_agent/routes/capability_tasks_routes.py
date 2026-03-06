@@ -19,6 +19,8 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+
+from routes.auth_unified import get_current_user
 from services.capability_natural_language_composer import get_composer
 from services.capability_registry import CapabilityMetadata, ParameterSchema, get_registry
 from services.capability_task_executor import (
@@ -28,7 +30,6 @@ from services.capability_task_executor import (
 )
 from services.capability_tasks_service import CapabilityTasksService
 from services.database_service import DatabaseService
-from routes.auth_unified import get_current_user
 from utils.route_utils import get_database_dependency
 
 # ============ Request/Response Models ============
@@ -394,7 +395,7 @@ async def create_capability_task(
     as inputs to the next step (pipeline data flow).
     """
     owner_id = current_user.get("id", "unknown")
-    
+
     # Validate all capabilities exist
     registry = get_registry()
     for step in request.steps:
@@ -453,7 +454,7 @@ async def list_capability_tasks(
 ):
     """List capability tasks for the current user."""
     owner_id = current_user.get("id", "unknown")
-    
+
     async with db_service.get_session() as session:
         task_service = CapabilityTasksService(session)
         tasks, total = await task_service.list_tasks(
@@ -497,14 +498,14 @@ async def get_capability_task(
 ):
     """Get details of a specific task."""
     owner_id = current_user.get("id", "unknown")
-    
+
     async with db_service.get_session() as session:
         task_service = CapabilityTasksService(session)
         task = await task_service.get_task(task_id, owner_id)
-    
+
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     return TaskResponse(
         id=task.id,
         name=task.name,
@@ -533,7 +534,7 @@ async def update_capability_task(
 ):
     """Update a capability task."""
     owner_id = current_user.get("id", "unknown")
-    
+
     # Validate all capabilities exist
     registry = get_registry()
     for step in request.steps:
@@ -559,7 +560,7 @@ async def update_capability_task(
         task = await task_service.get_task(task_id, owner_id)
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
-        
+
         # Update the task
         updated_task = await task_service.update_task(
             task_id=task_id,
@@ -597,17 +598,17 @@ async def delete_capability_task(
 ):
     """Delete a capability task."""
     owner_id = current_user.get("id", "unknown")
-    
+
     async with db_service.get_session() as session:
         task_service = CapabilityTasksService(session)
         # Check task exists and is owned by user
         task = await task_service.get_task(task_id, owner_id)
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
-        
+
         # Delete the task
         await task_service.delete_task(task_id, owner_id)
-    
+
     return {"message": "Task deleted"}
 
 
@@ -627,24 +628,24 @@ async def execute_capability_task_endpoint(
     the task definition. Returns execution result with all outputs.
     """
     owner_id = current_user.get("id", "unknown")
-    
+
     # Get task from database
     async with db_service.get_session() as session:
         task_service = CapabilityTasksService(session)
         task = await task_service.get_task(task_id, owner_id)
-    
+
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
     try:
         # Execute task using CapabilityTaskExecutor
         execution_result = await execute_capability_task(task)
-        
+
         # Persist result to database
         async with db_service.get_session() as session:
             task_service = CapabilityTasksService(session)
             await task_service.persist_execution(execution_result)
-        
+
         # Build response
         return ExecutionResponse(
             execution_id=execution_result.execution_id,
@@ -667,7 +668,9 @@ async def execute_capability_task_endpoint(
             progress_percent=execution_result.progress_percent,
             error=execution_result.error,
             started_at=execution_result.started_at.isoformat(),
-            completed_at=execution_result.completed_at.isoformat() if execution_result.completed_at else None,
+            completed_at=(
+                execution_result.completed_at.isoformat() if execution_result.completed_at else None
+            ),
         )
     except Exception as e:
         return ExecutionResponse(
@@ -692,14 +695,14 @@ async def get_execution_result(
 ):
     """Get the result of a specific task execution."""
     owner_id = current_user.get("id", "unknown")
-    
+
     async with db_service.get_session() as session:
         task_service = CapabilityTasksService(session)
         execution = await task_service.get_execution(exec_id, task_id, owner_id)
-    
+
     if not execution:
         raise HTTPException(status_code=404, detail="Execution not found")
-    
+
     return ExecutionResponse(
         execution_id=execution.execution_id,
         task_id=execution.task_id,
@@ -736,14 +739,14 @@ async def list_executions(
 ):
     """List execution history for a task."""
     owner_id = current_user.get("id", "unknown")
-    
+
     # Verify task exists and is owned by user
     async with db_service.get_session() as session:
         task_service = CapabilityTasksService(session)
         task = await task_service.get_task(task_id, owner_id)
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
-        
+
         # Get execution history
         executions, total = await task_service.list_executions(
             task_id=task_id,

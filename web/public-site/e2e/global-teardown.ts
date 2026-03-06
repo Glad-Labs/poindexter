@@ -1,7 +1,7 @@
 /**
  * Global Test Teardown
  * ====================
- * 
+ *
  * Runs once after all tests across all browsers
  * Perfect for:
  * - Cleanup operations
@@ -16,14 +16,14 @@ import * as path from 'path';
 
 async function globalTeardown(config: FullConfig) {
   console.log('\n🧹 Global Test Teardown Started');
-  
+
   try {
     // Ensure test results directory exists
     const resultsDir = path.join(process.cwd(), 'test-results');
     if (!fs.existsSync(resultsDir)) {
       fs.mkdirSync(resultsDir, { recursive: true });
     }
-    
+
     // Parse and summarize JSON results if available
     const jsonResultPath = path.join(resultsDir, 'results.json');
     if (fs.existsSync(jsonResultPath)) {
@@ -35,7 +35,7 @@ async function globalTeardown(config: FullConfig) {
         skipped: results.stats?.skipped || 0,
         duration: results.stats?.duration || 0,
       };
-      
+
       console.log(`
 📊 Test Summary:
    ├─ Total Tests: ${stats.total}
@@ -45,9 +45,8 @@ async function globalTeardown(config: FullConfig) {
    └─ Duration: ${(stats.duration / 1000).toFixed(2)}s
       `);
     }
-    
+
     console.log('✅ Global Test Teardown Complete');
-    
   } catch (error) {
     console.warn('⚠️  Teardown warning:', error);
   }

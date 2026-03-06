@@ -62,22 +62,26 @@ curl http://localhost:8000/api/analytics/kpis
 ### Dashboard Features
 
 **KPI Tab** - Executive summary
+
 - Total cost for period
 - Average cost per task
 - Task success rate
 - Average execution time
 
 **Tasks Tab** - Task trends and distribution
+
 - Line chart: Tasks completed over time
 - Status breakdown: Pie chart of completed/failed/pending
 - Category breakdown: Which content types were created
 
 **Costs Tab** - Cost analysis
+
 - Daily cost trend
 - Cost by provider (OpenAI, Claude, Google, Ollama)
 - Cost by model (which LLM burned the most money?)
 
 **Time Range Selector** - Bottom left
+
 - Select 7d, 30d, 90d, or all-time
 - Dashboard refreshes automatically every 60 seconds
 
@@ -127,11 +131,12 @@ curl http://localhost:8000/api/profiling/phase-breakdown | jq '.phase_breakdown[
 ```
 
 Example output:
+
 ```json
 {
-  "generation": { "avg_ms": 5250 },     // Content generation (longest)
-  "quality_assessment": { "avg_ms": 1200 },  // Quality check
-  "publishing": { "avg_ms": 800 }       // Final publishing
+  "generation": { "avg_ms": 5250 }, // Content generation (longest)
+  "quality_assessment": { "avg_ms": 1200 }, // Quality check
+  "publishing": { "avg_ms": 800 } // Final publishing
 }
 ```
 
@@ -147,11 +152,12 @@ Example output:
    - From database query? → Add to analytics_routes.py
 
 2. **Collect the data:**
+
    ```python
    # In task_executor.py
    task_metrics.custom_field = value
    task_metrics.record_phase_end("your_phase")
-   
+
    # Or in profiling_middleware.py
    profile = ProfileData(
        endpoint="/your/endpoint",
@@ -162,6 +168,7 @@ Example output:
    ```
 
 3. **Expose via API:**
+
    ```python
    # In analytics_routes.py or profiling_routes.py
    @router.get("/api/analytics/your-metric")
@@ -236,6 +243,7 @@ const mockData = {
 ### PerformanceDashboard Integration
 
 The PerformanceDashboard.jsx already receives performance data from:
+
 ```javascript
 // In PerformanceDashboard.jsx
 const { performanceData } = usePerformanceContext();
@@ -243,6 +251,7 @@ const { performanceData } = usePerformanceContext();
 ```
 
 Charts use Recharts (same as AnalyticsDashboard):
+
 - Bar charts for endpoint latencies
 - Pie charts for model router decisions
 - Line charts for trends
@@ -250,6 +259,7 @@ Charts use Recharts (same as AnalyticsDashboard):
 ### TaskExecutor Integration
 
 TaskMetrics are automatically recorded:
+
 ```python
 # In task_executor.py
 task_metrics = TaskMetrics()
@@ -269,6 +279,7 @@ await publish_service.publish():
 ## Performance Impact
 
 **Profiling Overhead:** < 1ms per request
+
 ```
 Request latency: 450ms
 Profiling adds: ~0.5ms (~0.1%)
@@ -276,6 +287,7 @@ Total: 450.5ms (negligible)
 ```
 
 **Database Impact:** Minimal
+
 ```
 Metrics recorded: 1 JSON entry per task per phase (3-4 per task)
 Storage: ~500 bytes per task
@@ -283,6 +295,7 @@ Storage: ~500 bytes per task
 ```
 
 **Memory Usage:**
+
 ```
 Profiling stores last 1000 requests in memory
 Profile size: ~200 bytes each
@@ -389,19 +402,19 @@ web/oversight-hub/
 
 ## Quick Reference: API Endpoints
 
-| Endpoint | Purpose | Query Params |
-|----------|---------|------------------|
-| `/api/profiling/health` | System status | None |
-| `/api/profiling/slow-endpoints` | Find slow routes | `threshold_ms` |
-| `/api/profiling/endpoint-stats` | Latency stats | None |
-| `/api/profiling/recent-requests` | Last N requests | `limit` |
-| `/api/profiling/phase-breakdown` | Task phase timing | None |
-| `/api/analytics/kpis` | Executive metrics | `range` |
-| `/api/analytics/tasks` | Task trends | `range` |
-| `/api/analytics/costs` | Cost breakdown | `range` |
-| `/api/analytics/content` | Publishing metrics | `range` |
-| `/api/analytics/quality` | Quality scores | `range` |
-| `/api/analytics/agents` | Agent performance | `range` |
+| Endpoint                         | Purpose            | Query Params   |
+| -------------------------------- | ------------------ | -------------- |
+| `/api/profiling/health`          | System status      | None           |
+| `/api/profiling/slow-endpoints`  | Find slow routes   | `threshold_ms` |
+| `/api/profiling/endpoint-stats`  | Latency stats      | None           |
+| `/api/profiling/recent-requests` | Last N requests    | `limit`        |
+| `/api/profiling/phase-breakdown` | Task phase timing  | None           |
+| `/api/analytics/kpis`            | Executive metrics  | `range`        |
+| `/api/analytics/tasks`           | Task trends        | `range`        |
+| `/api/analytics/costs`           | Cost breakdown     | `range`        |
+| `/api/analytics/content`         | Publishing metrics | `range`        |
+| `/api/analytics/quality`         | Quality scores     | `range`        |
+| `/api/analytics/agents`          | Agent performance  | `range`        |
 
 All analytics endpoints accept `range=7d|30d|90d|all`
 

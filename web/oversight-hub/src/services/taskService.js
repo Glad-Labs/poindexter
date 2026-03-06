@@ -166,7 +166,7 @@ export const approveTask = async (taskId, feedback = '') => {
 /**
  * Trigger frontend cache revalidation for post pages
  * Called after a post is published to update the public site
- * 
+ *
  * NOTE: Secret is handled server-side in the backend for security.
  * Never put secrets in browser code (they're exposed in minified JS)
  *
@@ -177,13 +177,16 @@ export const revalidatePublicSite = async (paths = []) => {
   try {
     // Call the FastAPI backend which has the real secret
     // Backend will safely call the public site revalidate endpoint
-    const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/revalidate-cache`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ paths }),
-    });
+    const response = await fetch(
+      `${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/revalidate-cache`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ paths }),
+      }
+    );
 
     if (!response.ok) {
       console.warn(

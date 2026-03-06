@@ -1,12 +1,15 @@
 # Manual Testing Execution Plan
+
 **Status: Ready to Execute**
 
 ## BEFORE YOU START
 
 1. **Verify services are running:**
+
    ```bash
    npm run dev
    ```
+
    Wait for message: "All services running in development mode"
 
 2. **In your browser, verify:**
@@ -22,14 +25,14 @@
 
 ## EXECUTION TIMELINE
 
-| Step | Action | Duration | Status |
-|------|--------|----------|--------|
-| 1 | Open Oversight Hub and navigate to create task | 1 min | - |
-| 2 | Fill blog form with Test 1 values | 2 min | - |
-| 3 | Click Generate and monitor progress | 3-5 min | - |
-| 4 | View completed post and validate 6 improvements | 5 min | - |
-| 5 | Document results in checklist below | 2 min | - |
-| **TOTAL** | **One complete test cycle** | **~15 min** | - |
+| Step      | Action                                          | Duration    | Status |
+| --------- | ----------------------------------------------- | ----------- | ------ |
+| 1         | Open Oversight Hub and navigate to create task  | 1 min       | -      |
+| 2         | Fill blog form with Test 1 values               | 2 min       | -      |
+| 3         | Click Generate and monitor progress             | 3-5 min     | -      |
+| 4         | View completed post and validate 6 improvements | 5 min       | -      |
+| 5         | Document results in checklist below             | 2 min       | -      |
+| **TOTAL** | **One complete test cycle**                     | **~15 min** | -      |
 
 ---
 
@@ -77,15 +80,15 @@
 
 **CAREFULLY type/paste these values:**
 
-| Field | Value |
-|-------|-------|
-| **Topic** | `Kubernetes Pod Security Best Practices 2025` |
-| **Target Audience** | `DevOps Engineers` |
-| **Primary Keyword** | `Kubernetes security` |
+| Field                   | Value                                          |
+| ----------------------- | ---------------------------------------------- |
+| **Topic**               | `Kubernetes Pod Security Best Practices 2025`  |
+| **Target Audience**     | `DevOps Engineers`                             |
+| **Primary Keyword**     | `Kubernetes security`                          |
 | **Additional Keywords** | `pod security standards,security context,RBAC` |
-| **Writing Style** | `Technical` |
-| **Tone** | `Professional` |
-| **Target Word Count** | `1500` |
+| **Writing Style**       | `Technical`                                    |
+| **Tone**                | `Professional`                                 |
+| **Target Word Count**   | `1500`                                         |
 
 ```
 After filling:
@@ -118,12 +121,14 @@ Typical flow:
 The status will change from **"Processing"** to **"Completed"**
 
 **What to watch for:**
+
 - [ ] Progress updates appearing in real-time
 - [ ] No error messages in red
 - [ ] Process completes within 2-5 minutes
 - [ ] Final status shows "Completed" or "Success"
 
 **If it times out (>5 min):**
+
 - Wait 1 more minute
 - If still stuck, check browser console (F12) for errors
 - Check terminal where `npm run dev` is running for error messages
@@ -155,6 +160,7 @@ When generation completes:
 Fill this out as you validate the 6 improvements:
 
 ### Test Information
+
 ```
 Date: _______________________
 Time Started: ________________
@@ -167,22 +173,25 @@ Browser: [ ] Chrome [ ] Firefox [ ] Safari [ ] Edge
 **Where to look:** "SEO Title" and "Meta Description" fields
 
 **Check 1a: Title Length**
+
 - [ ] I found the "SEO Title" field
 - [ ] Title is visible and readable
 - [ ] Title appears to be ≤60 characters
   - Actual title: `_________________________________________________________________`
-  - Approximate length: _____ characters
+  - Approximate length: **\_** characters
   - RESULT: [ ] PASS [ ] FAIL
 
 **Check 1b: Meta Description Length**
+
 - [ ] I found the "Meta Description" field
 - [ ] Description is complete and readable
 - [ ] Description appears to be ≤155 characters
   - Actual meta: `_________________________________________________________________`
-  - Approximate length: _____ characters
+  - Approximate length: **\_** characters
   - RESULT: [ ] PASS [ ] FAIL
 
 **Check 1c: Keywords in Content**
+
 - [ ] I used Ctrl+F to search the content
 - [ ] Searched for "Kubernetes security" - [ ] FOUND [ ] NOT FOUND
 - [ ] Searched for "pod security standards" - [ ] FOUND [ ] NOT FOUND
@@ -199,6 +208,7 @@ Browser: [ ] Chrome [ ] Firefox [ ] Safari [ ] Edge
 **Where to look:** Main content body and headings
 
 **Check 2a: Heading Structure**
+
 - [ ] I scrolled through the content
 - [ ] Headings appear to follow a logical structure
 - Describe what I see:
@@ -209,6 +219,7 @@ Browser: [ ] Chrome [ ] Firefox [ ] Safari [ ] Edge
   - RESULT: [ ] PASS [ ] FAIL
 
 **Check 2b: Forbidden Titles**
+
 - [ ] I used Ctrl+F to search for "Introduction" - [ ] NOT FOUND [ ] FOUND (BAD)
 - [ ] I used Ctrl+F to search for "Conclusion" - [ ] NOT FOUND [ ] FOUND (BAD)
 - [ ] I used Ctrl+F to search for "Summary" - [ ] NOT FOUND [ ] FOUND (BAD)
@@ -216,6 +227,7 @@ Browser: [ ] Chrome [ ] Firefox [ ] Safari [ ] Edge
   - RESULT: [ ] NONE FOUND (PASS) [ ] SOME FOUND (FAIL)
 
 **Check 2c: Creative Headings**
+
 - Are the section titles creative and specific?
 - Examples I see:
   1. `_________________________________________________________________`
@@ -225,6 +237,7 @@ Browser: [ ] Chrome [ ] Firefox [ ] Safari [ ] Edge
   - RESULT: [ ] PASS [ ] FAIL
 
 **Check 2d: Paragraph Balance**
+
 - [ ] I scrolled through paragraphs
 - [ ] Paragraphs look balanced (not 1-2 sentences, not giant walls)
 - [ ] Good mix of paragraph lengths
@@ -239,18 +252,21 @@ Browser: [ ] Chrome [ ] Firefox [ ] Safari [ ] Edge
 **Where to look:** General content quality
 
 **Check 3a: Professional Language**
+
 - [ ] I read 2-3 paragraphs carefully
 - [ ] Content is well-written and professional
 - [ ] No obvious grammar errors or awkward phrasing
   - RESULT: [ ] PASS [ ] FAIL
 
 **Check 3b: Sentence Variety**
+
 - [ ] Sentences vary in length
 - [ ] Mix of short and longer sentences
 - [ ] Not all short, not all long
   - RESULT: [ ] PASS [ ] FAIL
 
 **Check 3c: Logical Flow**
+
 - [ ] Content flows logically from topic to topic
 - [ ] Paragraphs build on each other
 - [ ] Ideas are connected, not random jumps
@@ -265,13 +281,15 @@ Browser: [ ] Chrome [ ] Firefox [ ] Safari [ ] Edge
 **Where to look:** Bottom of post ("Sources", "References", "Research")
 
 **Check 4a: Source Count**
+
 - [ ] I scrolled to the end of the post
 - [ ] I found the sources/references section
 - [ ] I counted the sources listed
-  - Number of sources found: _____
+  - Number of sources found: **\_**
   - RESULT: [ ] 5-7 sources (PASS) [ ] <5 or >7 (FAIL)
 
 **Check 4b: Source Credibility**
+
 - [ ] Sources appear to be from reputable domains
 - Examples of sources I see:
   1. `_________________________________________________________________`
@@ -281,6 +299,7 @@ Browser: [ ] Chrome [ ] Firefox [ ] Safari [ ] Edge
   - RESULT: [ ] PASS [ ] FAIL
 
 **Check 4c: No Duplicate Sources**
+
 - [ ] Looking at the source URLs/domains
 - [ ] All sources appear to be different
 - [ ] No repeated domains
@@ -295,28 +314,31 @@ Browser: [ ] Chrome [ ] Firefox [ ] Safari [ ] Edge
 **Where to look:** "Quality Score", "Quality Metrics", "Refinement History" sections
 
 **Check 5a: Quality Score Display**
+
 - [ ] I found the quality score field
 - [ ] Score is displayed as a number (e.g., "78/100")
-  - Actual score: _____ /100
+  - Actual score: **\_** /100
   - [ ] Score is ≥75 (PASS) [ ] Score is <75 (FAIL)
   - RESULT: [ ] PASS [ ] FAIL
 
 **Check 5b: QA Feedback Rounds**
+
 - [ ] I looked for "QA Feedback", "Refinement History", or similar section
 - [ ] If found, it shows multiple evaluation rounds
 - Feedback rounds I see:
   1. `_________________________________________________________________`
   2. `_________________________________________________________________`
   3. `_________________________________________________________________`
-  - Number of rounds visible: _____
+  - Number of rounds visible: **\_**
   - [ ] Multiple rounds visible (PASS) [ ] Only one or none (PARTIAL)
 
 **Check 5c: Score Improvement Trend**
+
 - [ ] Looking at quality scores if multiple rounds shown
 - Score history (if available):
-  - Round 1: _____ /100
-  - Round 2: _____ /100
-  - Round 3: _____ /100
+  - Round 1: **\_** /100
+  - Round 2: **\_** /100
+  - Round 3: **\_** /100
 - [ ] Scores stayed same or improved (PASS)
 - [ ] Scores regressed/worsened (FAIL)
   - RESULT: [ ] PASS [ ] FAIL (or N/A - single round)
@@ -331,9 +353,9 @@ Browser: [ ] Chrome [ ] Firefox [ ] Safari [ ] Edge
 
 **Blog Title:** `________________________________________________________________`
 
-**Generation Time:** _________ minutes
+**Generation Time:** ****\_**** minutes
 
-**Final Quality Score:** _________ /100
+**Final Quality Score:** ****\_**** /100
 
 **All 6 Improvements Assessment:**
 
@@ -347,12 +369,14 @@ IMPROVEMENT 6 - Quality Score Tracking:       [ ] PASS [ ] FAIL
 ```
 
 **Overall Result:**
+
 - [ ] ✓ ALL 6 IMPROVEMENTS WORKING (Excellent!)
 - [ ] 5/6 improvements working (Very Good)
 - [ ] 4/6 improvements working (Good - investigate 2 failures)
 - [ ] <4/6 improvements working (Issues Found - needs investigation)
 
 **Issues Found:**
+
 ```
 1. _________________________________________________________________
    Improvement: __________ Severity: [ ] Critical [ ] Major [ ] Minor
@@ -368,6 +392,7 @@ IMPROVEMENT 6 - Quality Score Tracking:       [ ] PASS [ ] FAIL
 ```
 
 **Overall Assessment:**
+
 ```
 System Status:       [ ] Working Well [ ] Working Fine [ ] Has Issues
 Quality of Output:   [ ] Excellent [ ] Good [ ] Fair [ ] Poor
@@ -393,6 +418,7 @@ If Test 1 passed completely (all 6/6), optionally run a second test to confirm c
 **Word Count:** 1200
 
 **Quick Result (can use abbreviated version):**
+
 - [ ] SEO: PASS / FAIL
 - [ ] Structure: PASS / FAIL
 - [ ] Readability: PASS / FAIL
@@ -407,6 +433,7 @@ If Test 1 passed completely (all 6/6), optionally run a second test to confirm c
 ## WHAT TO DO WITH RESULTS
 
 ### If All 6 Improvements PASS (Excellent!)
+
 ```
 ✓ System is working as designed
 ✓ All quality improvements validated
@@ -415,6 +442,7 @@ If Test 1 passed completely (all 6/6), optionally run a second test to confirm c
 ```
 
 ### If 5/6 Improvements PASS (Very Good)
+
 ```
 - Identify which improvement failed
 - Note the specific failure
@@ -424,6 +452,7 @@ If Test 1 passed completely (all 6/6), optionally run a second test to confirm c
 ```
 
 ### If <5/6 Improvements PASS
+
 ```
 - Document all failures
 - Check terminal logs for error messages
@@ -436,22 +465,22 @@ If Test 1 passed completely (all 6/6), optionally run a second test to confirm c
 
 ## QUICK REFERENCE: What to Look For
 
-| Improvement | Good Sign ✓ | Bad Sign ✗ |
-|------------|------------|-----------|
-| SEO Validator | Keywords in text, short title/meta | Keywords missing, long title/meta |
-| Structure | Creative headings, H1→H2→H3 | Generic titles, heading jumps |
-| Research | 5-7 credible sources | <5 sources, unknown domains |
-| Readability | Professional tone, varied sentences | Awkward language, all same length |
-| QA Feedback | Multiple rounds shown, improving scores | Only 1 round, same/lower scores |
-| Quality Scores | Score ≥75, trending upward | Score <75, no trend shown |
+| Improvement    | Good Sign ✓                             | Bad Sign ✗                        |
+| -------------- | --------------------------------------- | --------------------------------- |
+| SEO Validator  | Keywords in text, short title/meta      | Keywords missing, long title/meta |
+| Structure      | Creative headings, H1→H2→H3             | Generic titles, heading jumps     |
+| Research       | 5-7 credible sources                    | <5 sources, unknown domains       |
+| Readability    | Professional tone, varied sentences     | Awkward language, all same length |
+| QA Feedback    | Multiple rounds shown, improving scores | Only 1 round, same/lower scores   |
+| Quality Scores | Score ≥75, trending upward              | Score <75, no trend shown         |
 
 ---
 
 ## DONE!
 
 After completing validation, you can:
+
 1. Save this document with your notes
 2. Share with team/stakeholders
 3. Use for future reference on system health
 4. Monitor next few posts for consistency
-

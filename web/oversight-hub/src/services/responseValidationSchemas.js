@@ -119,12 +119,7 @@ export const validateBudgetStatus = (data) => {
     throw new Error('Budget status must be an object');
   }
 
-  const {
-    monthly_budget,
-    amount_spent,
-    amount_remaining,
-    percent_used,
-  } = data;
+  const { monthly_budget, amount_spent, amount_remaining, percent_used } = data;
 
   if (typeof monthly_budget !== 'number' || monthly_budget < 0) {
     throw new Error('monthly_budget must be a non-negative number');

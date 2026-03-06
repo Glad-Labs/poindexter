@@ -1,6 +1,6 @@
 /**
  * Capability Tasks Service - Client-side service for capability API
- * 
+ *
  * Handles all capability-related API calls:
  * - List capabilities
  * - Get capability details
@@ -21,7 +21,7 @@ class CapabilityTasksService {
 
     const queryStr = params.toString() ? `?${params.toString()}` : '';
     const response = await fetch(`${API_BASE}/capabilities${queryStr}`);
-    
+
     if (!response.ok) {
       throw new Error(`Failed to list capabilities: ${response.statusText}`);
     }
@@ -34,7 +34,7 @@ class CapabilityTasksService {
    */
   static async getCapability(name) {
     const response = await fetch(`${API_BASE}/capabilities/${name}`);
-    
+
     if (!response.ok) {
       throw new Error(`Failed to get capability: ${response.statusText}`);
     }
@@ -50,7 +50,7 @@ class CapabilityTasksService {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+        Authorization: `Bearer ${localStorage.getItem('authToken')}`,
       },
       body: JSON.stringify({
         name,
@@ -73,7 +73,7 @@ class CapabilityTasksService {
   static async getTask(taskId) {
     const response = await fetch(`${API_BASE}/tasks/capability/${taskId}`, {
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+        Authorization: `Bearer ${localStorage.getItem('authToken')}`,
       },
     });
 
@@ -92,7 +92,7 @@ class CapabilityTasksService {
       `${API_BASE}/tasks/capability?skip=${skip}&limit=${limit}`,
       {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+          Authorization: `Bearer ${localStorage.getItem('authToken')}`,
         },
       }
     );
@@ -112,7 +112,7 @@ class CapabilityTasksService {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+        Authorization: `Bearer ${localStorage.getItem('authToken')}`,
       },
       body: JSON.stringify({
         name,
@@ -135,7 +135,7 @@ class CapabilityTasksService {
     const response = await fetch(`${API_BASE}/tasks/capability/${taskId}`, {
       method: 'DELETE',
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+        Authorization: `Bearer ${localStorage.getItem('authToken')}`,
       },
     });
 
@@ -153,7 +153,7 @@ class CapabilityTasksService {
       {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+          Authorization: `Bearer ${localStorage.getItem('authToken')}`,
         },
       }
     );
@@ -173,7 +173,7 @@ class CapabilityTasksService {
       `${API_BASE}/tasks/capability/${taskId}/executions/${executionId}`,
       {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+          Authorization: `Bearer ${localStorage.getItem('authToken')}`,
         },
       }
     );
@@ -196,7 +196,7 @@ class CapabilityTasksService {
       `${API_BASE}/tasks/capability/${taskId}/executions?${params.toString()}`,
       {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+          Authorization: `Bearer ${localStorage.getItem('authToken')}`,
         },
       }
     );

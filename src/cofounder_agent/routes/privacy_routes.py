@@ -94,10 +94,12 @@ async def submit_data_request(request_data: DataSubjectRequest) -> Dict[str, Any
 
         # Generate unique request ID for tracking
         from uuid import uuid4
+
         request_id = str(uuid4())
-        
+
         # Log request for audit trail
         import json
+
         audit_log = {
             "request_id": request_id,
             "type": request_data.request_type,
@@ -108,13 +110,13 @@ async def submit_data_request(request_data: DataSubjectRequest) -> Dict[str, Any
             "status": "pending_verification",
         }
         logger.info(f"Audit: Privacy request created - {json.dumps(audit_log)}")
-        
+
         # TODO: Phase 2 - Store request in database (privacy_requests table)
         # This requires async context and proper database session management
-        
+
         # TODO: Phase 2 - Send verification email to user with confirmation link
         # This requires integrating with email service (SendGrid, AWS SES, etc.)
-        
+
         # TODO: Phase 2 - Implement workflow to process request within 30 days
         # This would schedule async task execution for data collection/deletion
 

@@ -222,10 +222,18 @@ class ModelConverter:
         if "id" in data and not isinstance(data["id"], str):
             data["id"] = str(data["id"])
 
-        if "task_id" in data and data["task_id"] is not None and not isinstance(data["task_id"], str):
+        if (
+            "task_id" in data
+            and data["task_id"] is not None
+            and not isinstance(data["task_id"], str)
+        ):
             data["task_id"] = str(data["task_id"])
 
-        if "user_id" in data and data["user_id"] is not None and not isinstance(data["user_id"], str):
+        if (
+            "user_id" in data
+            and data["user_id"] is not None
+            and not isinstance(data["user_id"], str)
+        ):
             data["user_id"] = str(data["user_id"])
 
         phase_map = {

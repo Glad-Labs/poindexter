@@ -59,7 +59,9 @@ describe('TaskTable Component', () => {
       render(<TaskTable {...defaultProps} />);
 
       mockTasks.forEach((task) => {
-        expect(screen.getByText(task.task_name.substring(0, 40))).toBeInTheDocument();
+        expect(
+          screen.getByText(task.task_name.substring(0, 40))
+        ).toBeInTheDocument();
         expect(screen.getByText(task.status)).toBeInTheDocument();
       });
     });
@@ -87,7 +89,9 @@ describe('TaskTable Component', () => {
       expect(pendingChip).toHaveClass('MuiChip-colorWarning');
 
       const completedChipLabel = screen.getByText('completed');
-      const completedChip = completedChipLabel.closest('[class*="MuiChip-root"]');
+      const completedChip = completedChipLabel.closest(
+        '[class*="MuiChip-root"]'
+      );
       expect(completedChip).toHaveClass('MuiChip-colorSuccess');
     });
   });
@@ -109,7 +113,10 @@ describe('TaskTable Component', () => {
       );
       fireEvent.click(taskCheckboxes[0]);
 
-      expect(defaultProps.onSelectOne).toHaveBeenCalledWith(mockTasks[0].id, expect.any(Boolean));
+      expect(defaultProps.onSelectOne).toHaveBeenCalledWith(
+        mockTasks[0].id,
+        expect.any(Boolean)
+      );
     });
 
     it('should call onSelectAll when header checkbox is clicked', () => {
@@ -175,7 +182,9 @@ describe('TaskTable Component', () => {
     it('should render pagination controls', () => {
       const { container } = render(<TaskTable {...defaultProps} />);
 
-      expect(container.querySelector('.MuiTablePagination-root')).toBeInTheDocument(); // Pagination
+      expect(
+        container.querySelector('.MuiTablePagination-root')
+      ).toBeInTheDocument(); // Pagination
     });
 
     it('should show correct page information', () => {
@@ -222,7 +231,9 @@ describe('TaskTable Component', () => {
 
       // Should render without errors
       expect(container.querySelector('table')).toBeInTheDocument();
-      expect(screen.getByText(mockTasks[0].task_name.substring(0, 40))).toBeInTheDocument();
+      expect(
+        screen.getByText(mockTasks[0].task_name.substring(0, 40))
+      ).toBeInTheDocument();
     });
   });
 

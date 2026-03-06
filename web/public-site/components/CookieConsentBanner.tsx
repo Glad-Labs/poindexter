@@ -9,7 +9,7 @@
  * - Non-intrusive design
  * - Links to privacy policy and cookie policy
  * - Compliant with GDPR and CCPA
- * 
+ *
  * GDPR COMPLIANCE:
  * - Analytics only loads AFTER user consent
  * - Users can withdraw consent at any time

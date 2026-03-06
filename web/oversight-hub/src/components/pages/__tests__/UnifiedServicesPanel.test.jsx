@@ -69,7 +69,9 @@ describe('UnifiedServicesPanel - Bug Fix Verification', () => {
     });
 
     it('should render without console errors related to tab state', () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const consoleSpy = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
 
       try {
         render(<UnifiedServicesPanel />);

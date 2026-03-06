@@ -1,12 +1,12 @@
 /**
  * Comprehensive Playwright Configuration
  * =====================================
- * 
+ *
  * Unified configuration for all E2E tests across:
  * - Public Site (Next.js @ port 3000)
  * - Oversight Hub (React @ port 3001)
  * - Backend API (FastAPI @ port 8000)
- * 
+ *
  * Features:
  * - Multi-browser testing (Chrome, Firefox, WebKit)
  * - Parallel execution with workers
@@ -26,58 +26,58 @@ export default defineConfig({
   // ========================
   // Project Configuration
   // ========================
-  
+
   testDir: './web/public-site/e2e',
   fullyParallel: true,
-  
+
   // Stop after first failure (useful for CI/CD debugging)
   forbidOnly: !!process.env.CI,
-  
+
   // Fail if any tests are skipped in CI
   // retries: process.env.CI ? 2 : 0,
-  
+
   // ========================
   // Execution Configuration
   // ========================
-  
+
   // Run tests in files in parallel
   workers: process.env.CI ? 1 : 4,
-  
+
   // Reporter configuration
   reporter: [
     ['html', { outputFolder: 'test-results/playwright-report' }],
     ['json', { outputFile: 'test-results/results.json' }],
     ['junit', { outputFile: 'test-results/junit.xml' }],
     ['list'],
-    ...(process.env.CI ? [['github']] : [] as any),
+    ...(process.env.CI ? [['github']] : ([] as any)),
   ],
-  
+
   // ========================
   // Timeout Configuration
   // ========================
-  
-  timeout: 30000,  // 30 seconds per test
+
+  timeout: 30000, // 30 seconds per test
   expect: {
-    timeout: 5000,  // 5 seconds for expect assertions
+    timeout: 5000, // 5 seconds for expect assertions
   },
 
   // ========================
   // Global Configuration
   // ========================
-  
+
   use: {
     // Base URL for relative navigation
     baseURL,
-    
+
     // Collect trace when retrying
     trace: 'on-first-retry',
-    
+
     // Screenshot on failure
     screenshot: 'only-on-failure',
-    
+
     // Video on failure
     video: 'retain-on-failure',
-    
+
     // API request context
     // httpCredentials: {
     //   username: 'test',
@@ -88,7 +88,7 @@ export default defineConfig({
   // ========================
   // Projects (Browsers)
   // ========================
-  
+
   projects: [
     // Desktop browsers
     {
@@ -118,7 +118,7 @@ export default defineConfig({
   // ========================
   // Web Server Configuration
   // ========================
-  
+
   webServer: [
     {
       command: process.env.SKIP_SERVER_START ? '' : 'npm run dev:public',
@@ -133,7 +133,7 @@ export default defineConfig({
   // ========================
   // Global Fixtures Setup
   // ========================
-  
+
   globalSetup: './web/public-site/e2e/global-setup.ts',
   globalTeardown: './web/public-site/e2e/global-teardown.ts',
 });

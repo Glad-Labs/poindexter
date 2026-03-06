@@ -47,6 +47,7 @@ class BlogPublisherAgent:
         if self.database_service is None:
             logger.debug("[BlogPublisherAgent] Lazy-loading DatabaseService...")
             from services.database_service import DatabaseService
+
             self.database_service = DatabaseService()
             await self.database_service.initialize()
             self._db_initialized = True
@@ -116,8 +117,12 @@ class BlogPublisherAgent:
             if featured_image:
                 if isinstance(featured_image, dict):
                     post_data["featured_image_url"] = featured_image.get("url")
-                    post_data["featured_image_alt"] = featured_image.get("alt_text", "Featured Image")
-                    post_data["featured_image_photographer"] = featured_image.get("photographer", "Unknown")
+                    post_data["featured_image_alt"] = featured_image.get(
+                        "alt_text", "Featured Image"
+                    )
+                    post_data["featured_image_photographer"] = featured_image.get(
+                        "photographer", "Unknown"
+                    )
                 else:
                     # If featured_image is just a URL string
                     post_data["featured_image_url"] = str(featured_image)
@@ -138,9 +143,7 @@ class BlogPublisherAgent:
             # Create post in database
             result = await self.database_service.create_post(post_data)
 
-            logger.info(
-                f"[BlogPublisherAgent] Post created successfully: {slug}"
-            )
+            logger.info(f"[BlogPublisherAgent] Post created successfully: {slug}")
 
             # Extract result data
             post_id = result.get("id") if isinstance(result, dict) else str(result)

@@ -121,9 +121,18 @@ function Content() {
 
       {/* Action Buttons */}
       <div className="content-actions">
-        <button className="btn btn-primary" onClick={() => setCreateTaskModalOpen(true)}>➕ Create New Content</button>
-        <button className="btn btn-secondary" disabled title="Coming soon">📤 Upload Files</button>
-        <button className="btn btn-secondary" disabled title="Coming soon">⚙️ Content Settings</button>
+        <button
+          className="btn btn-primary"
+          onClick={() => setCreateTaskModalOpen(true)}
+        >
+          ➕ Create New Content
+        </button>
+        <button className="btn btn-secondary" disabled title="Coming soon">
+          📤 Upload Files
+        </button>
+        <button className="btn btn-secondary" disabled title="Coming soon">
+          ⚙️ Content Settings
+        </button>
       </div>
 
       {/* Stats Cards */}

@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+
 from schemas.models_schemas import (
     ModelInfo,
     ModelsListResponse,

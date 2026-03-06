@@ -31,12 +31,12 @@ function initializeMetricsCollection() {
  */
 function collectMetric(endpoint, method, status, duration_ms, cached = false) {
   initializeMetricsCollection();
-  
+
   // Keep only last 1000 metrics in memory to prevent memory leaks
   if (window.apiMetrics.length >= 1000) {
     window.apiMetrics = window.apiMetrics.slice(-999);
   }
-  
+
   window.apiMetrics.push({
     endpoint,
     method,

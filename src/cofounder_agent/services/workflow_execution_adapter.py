@@ -734,13 +734,13 @@ async def execute_custom_workflow(
             # 3. Create celery task wrapper for execute_custom_workflow_execution
             # 4. Replace asyncio.create_task with celery task.delay()
             # 5. Add monitoring via Celery Flower (celery -A celery_app flower)
-            # 
+            #
             # Example Phase 2 code (pseudocode):
             # from celery import Celery
             # celery_app = Celery('workflows', broker='redis://localhost:6379')
             # @celery_app.task def execute_workflow_task(...):
             #     return await execute_custom_workflow_execution(...)
-            
+
             asyncio.create_task(
                 _execute_workflow_background(phases, context, custom_workflow, database_service)
             )
@@ -773,7 +773,9 @@ async def execute_custom_workflow(
             }
 
     except Exception as e:
-        logger.error(f"[_execute_workflow_task] Failed to execute workflow: {str(e)}", exc_info=True)
+        logger.error(
+            f"[_execute_workflow_task] Failed to execute workflow: {str(e)}", exc_info=True
+        )
         raise
 
 

@@ -3,9 +3,10 @@ from typing import Any, Dict
 
 import httpx
 
+from services.research_quality_service import ResearchQualityService
+
 from ..config import config
 from ..utils.tools import CrewAIToolsFactory
-from services.research_quality_service import ResearchQualityService
 
 logger = logging.getLogger(__name__)
 

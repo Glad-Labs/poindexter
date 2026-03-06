@@ -2,7 +2,7 @@
  * Unified Services Panel (Consolidated)
  *
  * Accordion-based dashboard consolidating workflow creation, monitoring, and service discovery:
- * 
+ *
  * 1. Workflow Studio (Collapsed by default)
  *    - Create Custom Workflow: Visual workflow builder with drag-drop canvas
  *    - My Workflows: List of user-created custom workflows
@@ -832,10 +832,18 @@ const UnifiedServicesPanel = () => {
                                       title="Execute"
                                       onClick={async () => {
                                         try {
-                                          await workflowManagementService.executeWorkflow(workflow.id);
-                                          console.log('Workflow execution started:', workflow.id);
+                                          await workflowManagementService.executeWorkflow(
+                                            workflow.id
+                                          );
+                                          console.log(
+                                            'Workflow execution started:',
+                                            workflow.id
+                                          );
                                         } catch (err) {
-                                          console.error('Failed to execute workflow:', err);
+                                          console.error(
+                                            'Failed to execute workflow:',
+                                            err
+                                          );
                                           setError(err.message);
                                         }
                                       }}
@@ -909,10 +917,18 @@ const UnifiedServicesPanel = () => {
                               size="small"
                               onClick={async () => {
                                 try {
-                                  await workflowManagementService.executeWorkflow(template.id);
-                                  console.log('Template execution started:', template.id);
+                                  await workflowManagementService.executeWorkflow(
+                                    template.id
+                                  );
+                                  console.log(
+                                    'Template execution started:',
+                                    template.id
+                                  );
                                 } catch (err) {
-                                  console.error('Failed to execute template:', err);
+                                  console.error(
+                                    'Failed to execute template:',
+                                    err
+                                  );
                                   setError(err.message);
                                 }
                               }}
@@ -1177,7 +1193,9 @@ const UnifiedServicesPanel = () => {
             color="success"
             onClick={async () => {
               try {
-                await workflowManagementService.executeWorkflow(selectedTemplate.id);
+                await workflowManagementService.executeWorkflow(
+                  selectedTemplate.id
+                );
                 console.log('Template execution started:', selectedTemplate.id);
                 setTemplateModalOpen(false);
               } catch (err) {

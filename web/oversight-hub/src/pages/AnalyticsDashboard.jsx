@@ -1,5 +1,15 @@
 import { useState, useEffect } from 'react';
-import { Box, Card, CardContent, CardHeader, Grid, Tab, Tabs, CircularProgress, Alert } from '@mui/material';
+import {
+  Box,
+  Card,
+  CardContent,
+  CardHeader,
+  Grid,
+  Tab,
+  Tabs,
+  CircularProgress,
+  Alert,
+} from '@mui/material';
 import {
   LineChart,
   Line,
@@ -15,7 +25,11 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { getKPIs, getTaskMetrics, getCostBreakdown } from '../services/analyticsService';
+import {
+  getKPIs,
+  getTaskMetrics,
+  getCostBreakdown,
+} from '../services/analyticsService';
 import './AnalyticsDashboard.css';
 
 function AnalyticsDashboard() {
@@ -44,7 +58,9 @@ function AnalyticsDashboard() {
         setCostBreakdown(costs);
       } catch (err) {
         console.error('Failed to fetch analytics:', err);
-        setError(err instanceof Error ? err.message : 'Failed to fetch analytics data');
+        setError(
+          err instanceof Error ? err.message : 'Failed to fetch analytics data'
+        );
       } finally {
         setLoading(false);
       }
@@ -93,7 +109,11 @@ function AnalyticsDashboard() {
                     <YAxis />
                     <Tooltip />
                     <Legend />
-                    <Line type="monotone" dataKey="completed" stroke="#82ca9d" />
+                    <Line
+                      type="monotone"
+                      dataKey="completed"
+                      stroke="#82ca9d"
+                    />
                     <Line type="monotone" dataKey="failed" stroke="#ff7c7c" />
                     <Line type="monotone" dataKey="pending" stroke="#ffc658" />
                   </LineChart>
@@ -111,17 +131,22 @@ function AnalyticsDashboard() {
                 <ResponsiveContainer width="100%" height={250}>
                   <PieChart>
                     <Pie
-                      data={Object.entries(taskMetrics.by_status).map(([name, value]) => ({
-                        name: name.charAt(0).toUpperCase() + name.slice(1),
-                        value,
-                      }))}
+                      data={Object.entries(taskMetrics.by_status).map(
+                        ([name, value]) => ({
+                          name: name.charAt(0).toUpperCase() + name.slice(1),
+                          value,
+                        })
+                      )}
                       cx="50%"
                       cy="50%"
                       outerRadius={80}
                       label
                     >
                       {Object.entries(taskMetrics.by_status).map((_, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={COLORS[index % COLORS.length]}
+                        />
                       ))}
                     </Pie>
                     <Tooltip />
@@ -139,10 +164,12 @@ function AnalyticsDashboard() {
               <CardContent>
                 <ResponsiveContainer width="100%" height={250}>
                   <BarChart
-                    data={Object.entries(taskMetrics.by_category).map(([category, count]) => ({
-                      name: category,
-                      count,
-                    }))}
+                    data={Object.entries(taskMetrics.by_category).map(
+                      ([category, count]) => ({
+                        name: category,
+                        count,
+                      })
+                    )}
                   >
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="name" />
@@ -172,18 +199,27 @@ function AnalyticsDashboard() {
                 <ResponsiveContainer width="100%" height={300}>
                   <PieChart>
                     <Pie
-                      data={Object.entries(costBreakdown.by_provider).map(([provider, cost]) => ({
-                        name: provider,
-                        value: parseFloat(cost),
-                      }))}
+                      data={Object.entries(costBreakdown.by_provider).map(
+                        ([provider, cost]) => ({
+                          name: provider,
+                          value: parseFloat(cost),
+                        })
+                      )}
                       cx="50%"
                       cy="50%"
                       outerRadius={80}
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      label={({ name, percent }) =>
+                        `${name} ${(percent * 100).toFixed(0)}%`
+                      }
                     >
-                      {Object.entries(costBreakdown.by_provider).map((_, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
+                      {Object.entries(costBreakdown.by_provider).map(
+                        (_, index) => (
+                          <Cell
+                            key={`cell-${index}`}
+                            fill={COLORS[index % COLORS.length]}
+                          />
+                        )
+                      )}
                     </Pie>
                     <Tooltip formatter={(value) => `$${value.toFixed(2)}`} />
                   </PieChart>
@@ -205,7 +241,11 @@ function AnalyticsDashboard() {
                     <YAxis />
                     <Tooltip formatter={(value) => `$${value.toFixed(2)}`} />
                     <Legend />
-                    <Bar dataKey="total_cost" fill="#82ca9d" name="Total Cost ($)" />
+                    <Bar
+                      dataKey="total_cost"
+                      fill="#82ca9d"
+                      name="Total Cost ($)"
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -229,14 +269,30 @@ function AnalyticsDashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {Object.entries(costBreakdown.by_model || {}).map(([model, data]) => (
-                        <tr key={model}>
-                          <td>{model}</td>
-                          <td>${typeof data === 'object' ? data.total?.toFixed(2) : data.toFixed(2)}</td>
-                          <td>{typeof data === 'object' ? data.requests?.toLocaleString() : '-'}</td>
-                          <td>${typeof data === 'object' ? (data.total / data.requests).toFixed(4) : '-'}</td>
-                        </tr>
-                      ))}
+                      {Object.entries(costBreakdown.by_model || {}).map(
+                        ([model, data]) => (
+                          <tr key={model}>
+                            <td>{model}</td>
+                            <td>
+                              $
+                              {typeof data === 'object'
+                                ? data.total?.toFixed(2)
+                                : data.toFixed(2)}
+                            </td>
+                            <td>
+                              {typeof data === 'object'
+                                ? data.requests?.toLocaleString()
+                                : '-'}
+                            </td>
+                            <td>
+                              $
+                              {typeof data === 'object'
+                                ? (data.total / data.requests).toFixed(4)
+                                : '-'}
+                            </td>
+                          </tr>
+                        )
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -273,7 +329,10 @@ function AnalyticsDashboard() {
         </div>
       ) : (
         <Box>
-          <Tabs value={activeTab} onChange={(e, newValue) => setActiveTab(newValue)}>
+          <Tabs
+            value={activeTab}
+            onChange={(e, newValue) => setActiveTab(newValue)}
+          >
             <Tab label="KPIs" />
             <Tab label="Tasks" />
             <Tab label="Costs" />

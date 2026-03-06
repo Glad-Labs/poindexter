@@ -11,14 +11,14 @@ The **Capability-Based Task System** replaces agent-based composition with **gra
 
 **Key Differences from Agent-Based System:**
 
-| Aspect | Agent-Based | Capability-Based |
-|--------|------------|------------------|
-| **Unit of Work** | Entire agent (5-10 methods) | Single capability (one method) |
-| **Composition** | Agent → Agent | Capability → Capability |
-| **Flexibility** | Limited to predefined agent pipelines | Any combination of capabilities |
-| **Data Flow** | Implicit (agent-internal) | Explicit (step outputs → step inputs) |
-| **Reusability** | Methods tied to agents | Capabilities standalone |
-| **Easy to Extend** | Add methods to agent | Register new capability |
+| Aspect             | Agent-Based                           | Capability-Based                      |
+| ------------------ | ------------------------------------- | ------------------------------------- |
+| **Unit of Work**   | Entire agent (5-10 methods)           | Single capability (one method)        |
+| **Composition**    | Agent → Agent                         | Capability → Capability               |
+| **Flexibility**    | Limited to predefined agent pipelines | Any combination of capabilities       |
+| **Data Flow**      | Implicit (agent-internal)             | Explicit (step outputs → step inputs) |
+| **Reusability**    | Methods tied to agents                | Capabilities standalone               |
+| **Easy to Extend** | Add methods to agent                  | Register new capability               |
 
 ---
 
@@ -152,7 +152,7 @@ curl http://localhost:8000/api/capabilities
 # Filter by tag
 curl http://localhost:8000/api/capabilities?tag=content
 
-# Filter by cost tier  
+# Filter by cost tier
 curl http://localhost:8000/api/capabilities?cost_tier=cheap
 
 # Get specific capability details (with schema)
@@ -365,11 +365,11 @@ from services.capability_registry import (
 async def my_capability(param1: str, param2: int = 5) -> dict:
     """
     Do something useful.
-    
+
     Args:
         param1 (string): First parameter
         param2 (integer): Second parameter
-    
+
     Returns:
         Dictionary with results
     """
@@ -413,10 +413,10 @@ from services.capability_registry import Capability, CapabilityMetadata
 
 class MyCapability(Capability):
     """Stateful capability with dependencies."""
-    
+
     def __init__(self, dependency_service):
         self.service = dependency_service
-    
+
     @property
     def metadata(self) -> CapabilityMetadata:
         return CapabilityMetadata(
@@ -424,15 +424,15 @@ class MyCapability(Capability):
             description="Capability with state",
             tags=["custom"],
         )
-    
+
     @property
     def input_schema(self) -> InputSchema:
         return InputSchema(parameters=[...])
-    
+
     @property
     def output_schema(self) -> OutputSchema:
         return OutputSchema(...)
-    
+
     async def execute(self, **inputs) -> dict:
         # Can use self.service
         result = await self.service.process(inputs['param'])
@@ -544,18 +544,18 @@ cheap_caps = registry.list_by_cost_tier("cheap")
 
 ## API Endpoints Reference
 
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| GET | `/api/capabilities` | List all capabilities |
-| GET | `/api/capabilities/{name}` | Get capability schema |
-| POST | `/api/tasks/capability` | Create task |
-| GET | `/api/tasks/capability` | List user's tasks |
-| GET | `/api/tasks/capability/{id}` | Get task details |
-| PUT | `/api/tasks/capability/{id}` | Update task |
-| DELETE | `/api/tasks/capability/{id}` | Delete task |
-| POST | `/api/tasks/capability/{id}/execute` | Execute task |
-| GET | `/api/tasks/capability/{id}/executions/{exec_id}` | Get execution result |
-| GET | `/api/tasks/capability/{id}/executions` | List execution history |
+| Method | Endpoint                                          | Purpose                |
+| ------ | ------------------------------------------------- | ---------------------- |
+| GET    | `/api/capabilities`                               | List all capabilities  |
+| GET    | `/api/capabilities/{name}`                        | Get capability schema  |
+| POST   | `/api/tasks/capability`                           | Create task            |
+| GET    | `/api/tasks/capability`                           | List user's tasks      |
+| GET    | `/api/tasks/capability/{id}`                      | Get task details       |
+| PUT    | `/api/tasks/capability/{id}`                      | Update task            |
+| DELETE | `/api/tasks/capability/{id}`                      | Delete task            |
+| POST   | `/api/tasks/capability/{id}/execute`              | Execute task           |
+| GET    | `/api/tasks/capability/{id}/executions/{exec_id}` | Get execution result   |
+| GET    | `/api/tasks/capability/{id}/executions`           | List execution history |
 
 All endpoints support:
 
@@ -602,12 +602,12 @@ async def test_capability_chain():
             ),
         ]
     )
-    
+
     # Execute
     from services.capability_task_executor import CapabilityTaskExecutor
     executor = CapabilityTaskExecutor()
     result = await executor.execute(task)
-    
+
     # Verify
     assert result.status == "completed"
     assert result.progress_percent == 100
@@ -671,7 +671,7 @@ A: Verify:
 ## Future Enhancements (Phase 2+)
 
 - [ ] **Parallel Step Groups** - Run independent steps in parallel
-- [ ] **Conditional Execution** - If/else based on previous results  
+- [ ] **Conditional Execution** - If/else based on previous results
 - [ ] **Loop Constructs** - Repeat steps N times or until condition met
 - [ ] **Error Handling** - Retry policies, fallback steps
 - [ ] **Cost Pre-calculation** - Estimate cost before execution
@@ -694,7 +694,7 @@ The **Capability-Based Task System** provides:
 ✅ **Multi-Tenant** - Owner-based isolation  
 ✅ **Persistent** - Full execution history in PostgreSQL  
 ✅ **Discoverable** - API to list all capabilities and schemas  
-✅ **Type-Safe** - Input/output validation via schemas  
+✅ **Type-Safe** - Input/output validation via schemas
 
 **Production Ready Status:** Phase 1 Complete ✅
 
@@ -705,4 +705,4 @@ The **Capability-Based Task System** provides:
 
 ---
 
-*For questions or issues, refer to docs/ folder or contact <support@gladlabs.io>*
+_For questions or issues, refer to docs/ folder or contact <support@gladlabs.io>_

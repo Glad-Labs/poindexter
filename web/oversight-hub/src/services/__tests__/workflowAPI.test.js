@@ -253,9 +253,9 @@ describe('API Endpoints', () => {
         new Error('Workflow execution failed')
       );
 
-      await expect(
-        apiClient.executeWorkflow(TEST_WORKFLOW)
-      ).rejects.toThrow('Workflow execution failed');
+      await expect(apiClient.executeWorkflow(TEST_WORKFLOW)).rejects.toThrow(
+        'Workflow execution failed'
+      );
     });
 
     it('should pass correct parameters to API', async () => {
@@ -287,11 +287,17 @@ describe('API Endpoints', () => {
         { ...MOCK_EXECUTION_PROGRESS, progress_percent: 25 },
         { ...MOCK_EXECUTION_PROGRESS, progress_percent: 50 },
         { ...MOCK_EXECUTION_PROGRESS, progress_percent: 75 },
-        { ...MOCK_EXECUTION_PROGRESS, status: 'completed', progress_percent: 100 },
+        {
+          ...MOCK_EXECUTION_PROGRESS,
+          status: 'completed',
+          progress_percent: 100,
+        },
       ];
 
       for (const update of progressUpdates) {
-        vi.spyOn(apiClient, 'getWorkflowProgress').mockResolvedValueOnce(update);
+        vi.spyOn(apiClient, 'getWorkflowProgress').mockResolvedValueOnce(
+          update
+        );
         const progress = await apiClient.getWorkflowProgress('exec-123');
         expect(progress).toBeDefined();
       }
@@ -495,7 +501,9 @@ describe('Workflow Execution Scenarios', () => {
       const postCreated = qualityScore >= 70;
 
       expect(postCreated).toBe(true);
-      expect(results.phase_results.blog_create_post.output.post_id).toBeDefined();
+      expect(
+        results.phase_results.blog_create_post.output.post_id
+      ).toBeDefined();
     });
   });
 
@@ -556,9 +564,9 @@ describe('Workflow Execution Scenarios', () => {
         },
       };
 
-      expect(
-        failedResults.phase_results.blog_generate_content.status
-      ).toBe('failed');
+      expect(failedResults.phase_results.blog_generate_content.status).toBe(
+        'failed'
+      );
     });
 
     it('should retry failed phases', async () => {

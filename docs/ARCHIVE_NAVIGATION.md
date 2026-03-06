@@ -171,18 +171,18 @@ These should **not** be used for current work:
 
 ### If you're looking for
 
-| Need | Use This | Location |
-|------|----------|----------|
-| Current setup instructions | `docs/01-SETUP_AND_OVERVIEW.md` | `docs/` |
-| Current API documentation | `docs/reference/API_CONTRACTS.md` | `docs/reference/` |
-| Current testing guide | `docs/reference/TESTING.md` | `docs/reference/` |
-| Current architecture | `docs/02-ARCHITECTURE_AND_DESIGN.md` | `docs/` |
-| Current troubleshooting | `docs/troubleshooting/` | `docs/troubleshooting/` |
-| --- | --- | --- |
-| Historical context | `docs/archive-active/` | `docs/archive-active/` |
-| Past phase documentation | `docs/archive-active/root-cleanup-feb2026/` | `docs/archive-active/` |
-| Test implementation history | `docs/archive-active/audits-and-testing/` | `docs/archive-active/` |
-| Cleanup procedures | `docs/archive-active/cleanup-and-implementation/` | `docs/archive-active/` |
+| Need                        | Use This                                          | Location                |
+| --------------------------- | ------------------------------------------------- | ----------------------- |
+| Current setup instructions  | `docs/01-SETUP_AND_OVERVIEW.md`                   | `docs/`                 |
+| Current API documentation   | `docs/reference/API_CONTRACTS.md`                 | `docs/reference/`       |
+| Current testing guide       | `docs/reference/TESTING.md`                       | `docs/reference/`       |
+| Current architecture        | `docs/02-ARCHITECTURE_AND_DESIGN.md`              | `docs/`                 |
+| Current troubleshooting     | `docs/troubleshooting/`                           | `docs/troubleshooting/` |
+| ---                         | ---                                               | ---                     |
+| Historical context          | `docs/archive-active/`                            | `docs/archive-active/`  |
+| Past phase documentation    | `docs/archive-active/root-cleanup-feb2026/`       | `docs/archive-active/`  |
+| Test implementation history | `docs/archive-active/audits-and-testing/`         | `docs/archive-active/`  |
+| Cleanup procedures          | `docs/archive-active/cleanup-and-implementation/` | `docs/archive-active/`  |
 
 ---
 

@@ -6,9 +6,10 @@ This module provides a centralized service registry and dependency injection mec
 
 from typing import Any, Dict, Optional
 
+from fastapi import FastAPI
+
 # Import configuration
 from config import get_config
-from fastapi import FastAPI
 
 # Get configuration
 config = get_config()

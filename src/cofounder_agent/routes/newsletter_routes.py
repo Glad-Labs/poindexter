@@ -11,6 +11,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr
+
 from utils.route_utils import get_database_dependency
 
 logger = logging.getLogger(__name__)

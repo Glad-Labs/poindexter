@@ -25,7 +25,7 @@ const getQualityBadge = (score) => {
   if (normalizedScore >= 75) return { label: 'Good', color: '#22c55e' };
   if (normalizedScore >= 50) return { label: 'Fair', color: '#eab308' };
   return { label: 'Poor', color: '#ef4444' };
-};;
+};
 
 const TaskMetadataDisplay = ({ task }) => {
   if (!task) return null;

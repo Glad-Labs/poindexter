@@ -148,7 +148,10 @@ class WorkflowHistoryService:
                 return self._row_to_dict(row)
 
         except Exception as e:
-            logger.error(f"[_save_workflow_execution] ❌ Failed to save workflow execution: {e}", exc_info=True)
+            logger.error(
+                f"[_save_workflow_execution] ❌ Failed to save workflow execution: {e}",
+                exc_info=True,
+            )
             raise
 
     async def get_workflow_execution(self, execution_id: str) -> Optional[Dict[str, Any]]:
@@ -169,7 +172,10 @@ class WorkflowHistoryService:
                 )
                 return self._row_to_dict(row) if row else None
         except Exception as e:
-            logger.error(f"[_get_workflow_execution] ❌ Failed to get workflow execution {execution_id}: {e}", exc_info=True)
+            logger.error(
+                f"[_get_workflow_execution] ❌ Failed to get workflow execution {execution_id}: {e}",
+                exc_info=True,
+            )
             raise
 
     async def get_user_workflow_history(
@@ -242,7 +248,10 @@ class WorkflowHistoryService:
                 }
 
         except Exception as e:
-            logger.error(f"[_get_user_workflow_history] ❌ Failed to get workflow history for user {user_id}: {e}", exc_info=True)
+            logger.error(
+                f"[_get_user_workflow_history] ❌ Failed to get workflow history for user {user_id}: {e}",
+                exc_info=True,
+            )
             raise
 
     async def get_workflow_statistics(
@@ -349,7 +358,10 @@ class WorkflowHistoryService:
                 }
 
         except Exception as e:
-            logger.error(f"[_get_workflow_statistics] ❌ Failed to get statistics for user {user_id}: {e}", exc_info=True)
+            logger.error(
+                f"[_get_workflow_statistics] ❌ Failed to get statistics for user {user_id}: {e}",
+                exc_info=True,
+            )
             raise
 
     async def update_workflow_execution(
@@ -398,7 +410,10 @@ class WorkflowHistoryService:
                 return self._row_to_dict(row) if row else None
 
         except Exception as e:
-            logger.error(f"[_update_workflow_execution] ❌ Failed to update workflow execution {execution_id}: {e}", exc_info=True)
+            logger.error(
+                f"[_update_workflow_execution] ❌ Failed to update workflow execution {execution_id}: {e}",
+                exc_info=True,
+            )
             raise
 
     async def get_performance_metrics(
@@ -494,7 +509,10 @@ class WorkflowHistoryService:
                 }
 
         except Exception as e:
-            logger.error(f"[_get_performance_metrics] ❌ Failed to get performance metrics for {user_id}: {e}", exc_info=True)
+            logger.error(
+                f"[_get_performance_metrics] ❌ Failed to get performance metrics for {user_id}: {e}",
+                exc_info=True,
+            )
             raise
 
     def _row_to_dict(self, row) -> Dict[str, Any]:

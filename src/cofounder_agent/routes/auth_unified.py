@@ -26,6 +26,7 @@ import httpx
 import jwt
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
+
 from schemas.auth_schemas import (
     GitHubCallbackRequest,
     LogoutResponse,

@@ -25,7 +25,7 @@ const taskDataReducer = (state, action) => {
   switch (action.type) {
     case 'FETCH_START':
       return { ...state, loading: true, isFetching: true, error: null };
-    
+
     case 'FETCH_SUCCESS':
       return {
         ...state,
@@ -35,7 +35,7 @@ const taskDataReducer = (state, action) => {
         isFetching: false,
         error: null,
       };
-    
+
     case 'FETCH_ERROR':
       return {
         ...state,
@@ -43,13 +43,17 @@ const taskDataReducer = (state, action) => {
         isFetching: false,
         error: action.payload,
       };
-    
+
     case 'SET_TASKS':
       return { ...state, tasks: action.payload };
-    
+
     case 'SET_ALL_TASKS':
-      return { ...state, allTasks: action.payload, total: action.payload.length };
-    
+      return {
+        ...state,
+        allTasks: action.payload,
+        total: action.payload.length,
+      };
+
     default:
       return state;
   }

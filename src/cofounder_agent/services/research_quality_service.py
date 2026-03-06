@@ -8,8 +8,8 @@ from Serper API results to improve research quality.
 import logging
 import re
 from dataclasses import dataclass
-from typing import List, Dict, Optional
 from difflib import SequenceMatcher
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ScoredSource:
     """A research source with quality score"""
+
     title: str
     url: str
     snippet: str
@@ -192,7 +193,7 @@ class ResearchQualityService:
 
     def _extract_domain(self, url: str) -> str:
         """Extract domain from URL"""
-        match = re.search(r'https?://(?:www\.)?([^/]+)', url)
+        match = re.search(r"https?://(?:www\.)?([^/]+)", url)
         return match.group(1) if match else ""
 
     def _score_domain_credibility(self, domain: str) -> float:
@@ -240,9 +241,7 @@ class ResearchQualityService:
         # Lesser-known sources
         return 0.5
 
-    def _score_snippet_quality(
-        self, snippet: str, query: Optional[str] = None
-    ) -> float:
+    def _score_snippet_quality(self, snippet: str, query: Optional[str] = None) -> float:
         """
         Score snippet quality (0.0-1.0)
 
@@ -273,9 +272,14 @@ class ResearchQualityService:
 
         # Penalize obvious ads/spam
         spam_keywords = [
-            "click here", "buy now", "limited time",
-            "sponsored", "advertisement", "promoted",
-            "error 404", "not found"
+            "click here",
+            "buy now",
+            "limited time",
+            "sponsored",
+            "advertisement",
+            "promoted",
+            "error 404",
+            "not found",
         ]
         if any(spam in snippet.lower() for spam in spam_keywords):
             score -= 0.3
@@ -333,9 +337,7 @@ class ResearchQualityService:
                     continue
 
                 # Calculate snippet similarity
-                similarity = self._calculate_similarity(
-                    source_a.snippet, source_b.snippet
-                )
+                similarity = self._calculate_similarity(source_a.snippet, source_b.snippet)
 
                 if similarity >= self.SIMILARITY_THRESHOLD:
                     similar_idx = j
@@ -362,9 +364,7 @@ class ResearchQualityService:
         matcher = SequenceMatcher(None, text_a.lower(), text_b.lower())
         return matcher.ratio()
 
-    def _recalculate_uniqueness(
-        self, sources: List[ScoredSource]
-    ) -> List[ScoredSource]:
+    def _recalculate_uniqueness(self, sources: List[ScoredSource]) -> List[ScoredSource]:
         """Recalculate uniqueness scores after deduplication"""
         # After deduplication, all remaining sources have high uniqueness
         for source in sources:
@@ -388,13 +388,9 @@ class ResearchQualityService:
         context_lines = []
         for i, source in enumerate(sources, 1):
             context_lines.append(
-                f"{i}. {source.title}\n"
-                f"   URL: {source.url}\n"
-                f"   {source.snippet}\n"
+                f"{i}. {source.title}\n" f"   URL: {source.url}\n" f"   {source.snippet}\n"
             )
 
-        header = (
-            f"RESEARCH SOURCES (Top {len(sources)} results):\n\n"
-        )
+        header = f"RESEARCH SOURCES (Top {len(sources)} results):\n\n"
 
         return header + "\n".join(context_lines)

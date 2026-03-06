@@ -311,7 +311,9 @@ class MCPCapabilityRegistry:
                 else:
                     return False, f"HTTP {response.status_code}"
         except Exception as e:
-            logger.error(f"[health_check_server] Health check failed for {server.name}: {e}", exc_info=True)
+            logger.error(
+                f"[health_check_server] Health check failed for {server.name}: {e}", exc_info=True
+            )
             error_msg = f"Health check failed: {str(e)}"
             server.is_available = False
             server.last_checked = datetime.now()

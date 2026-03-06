@@ -292,6 +292,6 @@ export const TaskControlPanel = ({ task, onTaskUpdated }) => {
       </Dialog>
     </Box>
   );
-};;
+};
 
 export default TaskControlPanel;

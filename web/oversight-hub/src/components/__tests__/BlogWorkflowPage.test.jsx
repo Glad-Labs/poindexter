@@ -11,7 +11,13 @@
  */
 
 import React from 'react';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import BlogWorkflowPage from '../../pages/BlogWorkflowPage';
@@ -164,7 +170,9 @@ describe('BlogWorkflowPage - Step 1: Design Workflow', () => {
     });
     await user.click(nextButton);
 
-    expect(screen.getByText('Configure Workflow Parameters')).toBeInTheDocument();
+    expect(
+      screen.getByText('Configure Workflow Parameters')
+    ).toBeInTheDocument();
   });
 
   it('should remember selected phases when navigating back', async () => {
@@ -316,7 +324,9 @@ describe('BlogWorkflowPage - Step 2: Configure Parameters', () => {
       const comboboxes = screen.getAllByRole('combobox');
       fireEvent.mouseDown(comboboxes[0]);
       fireEvent.click(screen.getByRole('option', { name: styleNames[style] }));
-      expect(screen.getAllByRole('combobox')[0]).toHaveTextContent(styleNames[style]);
+      expect(screen.getAllByRole('combobox')[0]).toHaveTextContent(
+        styleNames[style]
+      );
     }
   });
 
@@ -336,7 +346,9 @@ describe('BlogWorkflowPage - Step 2: Configure Parameters', () => {
       const comboboxes = screen.getAllByRole('combobox');
       fireEvent.mouseDown(comboboxes[1]);
       fireEvent.click(screen.getByRole('option', { name: toneNames[tone] }));
-      expect(screen.getAllByRole('combobox')[1]).toHaveTextContent(toneNames[tone]);
+      expect(screen.getAllByRole('combobox')[1]).toHaveTextContent(
+        toneNames[tone]
+      );
     }
   });
 
@@ -366,7 +378,9 @@ describe('BlogWorkflowPage - Step 3: Execute', () => {
     });
     await user.click(nextButton);
 
-    const executeButton = screen.getByRole('button', { name: /Execute Workflow/i });
+    const executeButton = screen.getByRole('button', {
+      name: /Execute Workflow/i,
+    });
     await user.click(executeButton);
   };
 
@@ -406,7 +420,9 @@ describe('BlogWorkflowPage - Step 3: Execute', () => {
         name: /Next: Configure Parameters/i,
       });
       await user.click(nextButton);
-      const execButton = screen.getByRole('button', { name: /Execute Workflow/i });
+      const execButton = screen.getByRole('button', {
+        name: /Execute Workflow/i,
+      });
       await user.click(execButton);
     };
 
@@ -436,7 +452,9 @@ describe('BlogWorkflowPage - Step 3: Execute', () => {
         name: /Next: Configure Parameters/i,
       });
       await user.click(nextButton);
-      const execButton = screen.getByRole('button', { name: /Execute Workflow/i });
+      const execButton = screen.getByRole('button', {
+        name: /Execute Workflow/i,
+      });
       await user.click(execButton);
     };
 
@@ -445,9 +463,12 @@ describe('BlogWorkflowPage - Step 3: Execute', () => {
     const startButton = screen.getByRole('button', { name: /Start Workflow/i });
     await user.click(startButton);
 
-    await waitFor(() => {
-      expect(apiClient.getWorkflowProgress).toHaveBeenCalled();
-    }, { timeout: 5000 });
+    await waitFor(
+      () => {
+        expect(apiClient.getWorkflowProgress).toHaveBeenCalled();
+      },
+      { timeout: 5000 }
+    );
   });
 
   it('should display cancel button during execution', async () => {
@@ -465,7 +486,9 @@ describe('BlogWorkflowPage - Step 3: Execute', () => {
         name: /Next: Configure Parameters/i,
       });
       await user.click(nextButton);
-      const execButton = screen.getByRole('button', { name: /Execute Workflow/i });
+      const execButton = screen.getByRole('button', {
+        name: /Execute Workflow/i,
+      });
       await user.click(execButton);
     };
 
@@ -475,7 +498,9 @@ describe('BlogWorkflowPage - Step 3: Execute', () => {
     await user.click(startButton);
 
     await waitFor(() => {
-      expect(screen.queryByRole('button', { name: /Cancel Workflow/i })).toBeTruthy();
+      expect(
+        screen.queryByRole('button', { name: /Cancel Workflow/i })
+      ).toBeTruthy();
     });
   });
 
@@ -497,7 +522,9 @@ describe('BlogWorkflowPage - Step 3: Execute', () => {
         name: /Next: Configure Parameters/i,
       });
       await user.click(nextButton);
-      const execButton = screen.getByRole('button', { name: /Execute Workflow/i });
+      const execButton = screen.getByRole('button', {
+        name: /Execute Workflow/i,
+      });
       await user.click(execButton);
     };
 
@@ -507,10 +534,14 @@ describe('BlogWorkflowPage - Step 3: Execute', () => {
     await user.click(startButton);
 
     await waitFor(() => {
-      const cancelButton = screen.queryByRole('button', { name: /Cancel Workflow/i });
+      const cancelButton = screen.queryByRole('button', {
+        name: /Cancel Workflow/i,
+      });
       if (cancelButton) {
         fireEvent.click(cancelButton);
-        expect(apiClient.cancelWorkflowExecution).toHaveBeenCalledWith('exec-123');
+        expect(apiClient.cancelWorkflowExecution).toHaveBeenCalledWith(
+          'exec-123'
+        );
       }
     });
   });

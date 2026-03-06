@@ -5,7 +5,10 @@ interface GiscusCommentsProps {
   postTitle: string;
 }
 
-export default function GiscusComments({ postSlug, postTitle }: GiscusCommentsProps) {
+export default function GiscusComments({
+  postSlug,
+  postTitle,
+}: GiscusCommentsProps) {
   return (
     <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6">
       <h3 className="text-lg font-semibold text-slate-300 mb-4">Comments</h3>

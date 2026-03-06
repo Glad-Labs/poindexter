@@ -177,7 +177,9 @@ describe('ApprovalQueue Component', () => {
       fireEvent.click(clearButton);
 
       await waitFor(() => {
-        expect(screen.queryByText(/\d+ tasks? selected/)).not.toBeInTheDocument();
+        expect(
+          screen.queryByText(/\d+ tasks? selected/)
+        ).not.toBeInTheDocument();
       });
     });
 

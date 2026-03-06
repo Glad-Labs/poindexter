@@ -149,7 +149,9 @@ class OllamaAdapter(ProviderAdapter):
             logger.error("Ollama health check timed out (3s)", exc_info=True, host=self.host)
             return False
         except Exception as e:
-            logger.error(f"[_is_available] Ollama unavailable", exc_info=True, error=str(e), host=self.host)
+            logger.error(
+                f"[_is_available] Ollama unavailable", exc_info=True, error=str(e), host=self.host
+            )
             return False
 
     async def generate(
@@ -184,7 +186,9 @@ class OllamaAdapter(ProviderAdapter):
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.error(f"[_generate] Ollama generation failed: {str(e)}", exc_info=True, model=model)
+            logger.error(
+                f"[_generate] Ollama generation failed: {str(e)}", exc_info=True, model=model
+            )
             raise
 
     def list_models(self) -> List[str]:
@@ -246,7 +250,9 @@ class HuggingFaceAdapter(ProviderAdapter):
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.error(f"[_generate] HuggingFace generation failed: {str(e)}", exc_info=True, model=model)
+            logger.error(
+                f"[_generate] HuggingFace generation failed: {str(e)}", exc_info=True, model=model
+            )
             raise
 
     def list_models(self) -> List[str]:
@@ -314,7 +320,9 @@ class GoogleAdapter(ProviderAdapter):
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.error(f"[_generate] Google Gemini generation failed: {str(e)}", exc_info=True, model=model)
+            logger.error(
+                f"[_generate] Google Gemini generation failed: {str(e)}", exc_info=True, model=model
+            )
             raise
 
     def list_models(self) -> List[str]:
@@ -345,7 +353,10 @@ class AnthropicAdapter(ProviderAdapter):
                 self.api_key = ProviderChecker.get_anthropic_api_key()
                 self.client = Anthropic(api_key=self.api_key)
             except ImportError:
-                logger.error("Anthropic SDK not installed. Install with: pip install anthropic", exc_info=True)
+                logger.error(
+                    "Anthropic SDK not installed. Install with: pip install anthropic",
+                    exc_info=True,
+                )
                 self.client = None
 
         self.provider_type = ProviderType.ANTHROPIC
@@ -392,7 +403,9 @@ class AnthropicAdapter(ProviderAdapter):
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.error(f"[_generate] Anthropic generation failed: {str(e)}", exc_info=True, model=model)
+            logger.error(
+                f"[_generate] Anthropic generation failed: {str(e)}", exc_info=True, model=model
+            )
             raise
 
     def list_models(self) -> List[str]:
@@ -418,7 +431,9 @@ class OpenAIAdapter(ProviderAdapter):
                 self.api_key = ProviderChecker.get_openai_api_key()
                 self.client = OpenAI(api_key=self.api_key)
             except ImportError:
-                logger.error("OpenAI SDK not installed. Install with: pip install openai", exc_info=True)
+                logger.error(
+                    "OpenAI SDK not installed. Install with: pip install openai", exc_info=True
+                )
                 self.client = None
 
         self.provider_type = ProviderType.OPENAI
@@ -465,7 +480,9 @@ class OpenAIAdapter(ProviderAdapter):
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
-            logger.error(f"[_generate] OpenAI generation failed: {str(e)}", exc_info=True, model=model)
+            logger.error(
+                f"[_generate] OpenAI generation failed: {str(e)}", exc_info=True, model=model
+            )
             raise
 
     def list_models(self) -> List[str]:
@@ -541,7 +558,10 @@ class ModelConsolidationService:
                 logger.debug("Adapter initialized", provider=provider_type.value)
             except Exception as e:
                 logger.error(
-                    "Failed to initialize adapter", provider=provider_type.value, error=str(e), exc_info=True
+                    "Failed to initialize adapter",
+                    provider=provider_type.value,
+                    error=str(e),
+                    exc_info=True,
                 )
 
     async def _check_provider_availability(self, provider_type: ProviderType) -> bool:
@@ -570,7 +590,11 @@ class ModelConsolidationService:
 
             return is_available
         except Exception as e:
-            logger.error(f"[_check_provider_availability] Provider check failed: {str(e)}", exc_info=True, provider=provider_type.value)
+            logger.error(
+                f"[_check_provider_availability] Provider check failed: {str(e)}",
+                exc_info=True,
+                provider=provider_type.value,
+            )
 
             self.provider_status[provider_type] = ProviderStatus(
                 provider=provider_type,

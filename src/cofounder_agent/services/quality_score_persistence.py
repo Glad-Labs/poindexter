@@ -116,7 +116,9 @@ class QualityScorePersistence:
             }
 
         except Exception as e:
-            logger.error(f"[_store_evaluation] ❌ Failed to store evaluation: {str(e)}", exc_info=True)
+            logger.error(
+                f"[_store_evaluation] ❌ Failed to store evaluation: {str(e)}", exc_info=True
+            )
             return {"stored": False, "error": str(e)}
 
     async def store_improvement(
@@ -178,7 +180,9 @@ class QualityScorePersistence:
             }
 
         except Exception as e:
-            logger.error(f"[_store_improvement] ❌ Failed to record improvement: {str(e)}", exc_info=True)
+            logger.error(
+                f"[_store_improvement] ❌ Failed to record improvement: {str(e)}", exc_info=True
+            )
             return {"recorded": False, "error": str(e)}
 
     async def get_evaluation_history(
@@ -212,7 +216,10 @@ class QualityScorePersistence:
             return [dict(row) for row in results] if results else []
 
         except Exception as e:
-            logger.error(f"[_get_evaluation_history] ❌ Failed to get evaluation history: {str(e)}", exc_info=True)
+            logger.error(
+                f"[_get_evaluation_history] ❌ Failed to get evaluation history: {str(e)}",
+                exc_info=True,
+            )
             return []
 
     async def get_latest_evaluation(self, content_id: str) -> Optional[Dict[str, Any]]:
@@ -266,7 +273,10 @@ class QualityScorePersistence:
                 }
 
         except Exception as e:
-            logger.error(f"[_get_quality_metrics_for_date] ❌ Failed to get metrics for date {target_date}: {str(e)}", exc_info=True)
+            logger.error(
+                f"[_get_quality_metrics_for_date] ❌ Failed to get metrics for date {target_date}: {str(e)}",
+                exc_info=True,
+            )
             return {}
 
     async def get_quality_trend(self, days: int = 7) -> List[Dict[str, Any]]:
@@ -296,7 +306,9 @@ class QualityScorePersistence:
             return [dict(row) for row in results] if results else []
 
         except Exception as e:
-            logger.error(f"[_get_quality_trend] ❌ Failed to get quality trend: {str(e)}", exc_info=True)
+            logger.error(
+                f"[_get_quality_trend] ❌ Failed to get quality trend: {str(e)}", exc_info=True
+            )
             return []
 
     async def get_content_quality_summary(self, content_id: str) -> Dict[str, Any]:
@@ -342,7 +354,10 @@ class QualityScorePersistence:
             }
 
         except Exception as e:
-            logger.error(f"[_get_content_quality_summary] ❌ Failed to get quality summary: {str(e)}", exc_info=True)
+            logger.error(
+                f"[_get_content_quality_summary] ❌ Failed to get quality summary: {str(e)}",
+                exc_info=True,
+            )
             return {"error": str(e)}
 
     async def calculate_and_store_daily_metrics(self) -> bool:
@@ -431,7 +446,10 @@ class QualityScorePersistence:
             return True
 
         except Exception as e:
-            logger.error(f"[_calculate_and_store_daily_metrics] ❌ Failed to calculate daily metrics: {str(e)}", exc_info=True)
+            logger.error(
+                f"[_calculate_and_store_daily_metrics] ❌ Failed to calculate daily metrics: {str(e)}",
+                exc_info=True,
+            )
             return False
 
 

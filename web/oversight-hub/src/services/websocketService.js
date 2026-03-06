@@ -205,7 +205,10 @@ class WebSocketService {
   subscribeToTaskProgress(taskId, callback) {
     const namespace = `task.${taskId}`;
     this._sendToServer({ type: 'subscribe', namespace });
-    const unsubscribeLocal = this.subscribe(`task.progress.${taskId}`, callback);
+    const unsubscribeLocal = this.subscribe(
+      `task.progress.${taskId}`,
+      callback
+    );
     return () => {
       unsubscribeLocal();
       this._sendToServer({ type: 'unsubscribe', namespace });
@@ -221,7 +224,10 @@ class WebSocketService {
   subscribeToWorkflowStatus(workflowId, callback) {
     const namespace = `workflow.${workflowId}`;
     this._sendToServer({ type: 'subscribe', namespace });
-    const unsubscribeLocal = this.subscribe(`workflow.status.${workflowId}`, callback);
+    const unsubscribeLocal = this.subscribe(
+      `workflow.status.${workflowId}`,
+      callback
+    );
     return () => {
       unsubscribeLocal();
       this._sendToServer({ type: 'unsubscribe', namespace });

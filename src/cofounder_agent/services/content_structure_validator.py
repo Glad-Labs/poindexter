@@ -9,10 +9,10 @@ Provides validation for:
 - Content flow and structure
 """
 
-import re
 import logging
+import re
 from dataclasses import dataclass
-from typing import List, Optional, Dict, Tuple
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ParagraphValidation:
     """Validation for a paragraph"""
+
     index: int
     sentence_count: int
     word_count: int
@@ -32,6 +33,7 @@ class ParagraphValidation:
 @dataclass
 class SectionValidation:
     """Validation for a section (heading + content)"""
+
     heading_level: int
     heading_text: str
     heading_index: int
@@ -45,6 +47,7 @@ class SectionValidation:
 @dataclass
 class ContentStructureResult:
     """Complete structure validation result"""
+
     is_valid: bool
     heading_hierarchy_valid: bool
     no_forbidden_titles: bool
@@ -127,9 +130,7 @@ class ContentStructureValidator:
             )
 
         # Validate heading hierarchy
-        hierarchy_valid, hierarchy_errors = self._validate_heading_hierarchy(
-            sections
-        )
+        hierarchy_valid, hierarchy_errors = self._validate_heading_hierarchy(sections)
         if not hierarchy_valid:
             errors.extend(hierarchy_errors)
 
@@ -156,12 +157,8 @@ class ContentStructureValidator:
                     )
 
         # Count orphan paragraphs
-        orphan_count = sum(
-            sum(1 for p in s.paragraphs if p.is_orphan) for s in sections
-        )
-        bloated_count = sum(
-            sum(1 for p in s.paragraphs if p.is_bloated) for s in sections
-        )
+        orphan_count = sum(sum(1 for p in s.paragraphs if p.is_orphan) for s in sections)
+        bloated_count = sum(sum(1 for p in s.paragraphs if p.is_bloated) for s in sections)
 
         if orphan_count > 0:
             warnings.append(
@@ -225,7 +222,7 @@ class ContentStructureValidator:
             List of sections with their content
         """
         # Find all headings
-        heading_pattern = r'^(#+)\s+(.+?)$'
+        heading_pattern = r"^(#+)\s+(.+?)$"
         headings = []
         for match in re.finditer(heading_pattern, content, re.MULTILINE):
             level = len(match.group(1))
@@ -249,8 +246,8 @@ class ContentStructureValidator:
             section_content = content[start_pos:end_pos]
 
             # Remove the heading itself
-            section_lines = section_content.split('\n')[1:]
-            section_text = '\n'.join(section_lines).strip()
+            section_lines = section_content.split("\n")[1:]
+            section_text = "\n".join(section_lines).strip()
 
             # Validate paragraphs in section
             paragraphs = self._validate_paragraphs(section_text)
@@ -283,16 +280,16 @@ class ContentStructureValidator:
             List of paragraph validations
         """
         # Split by double newlines (paragraph breaks)
-        raw_paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+        raw_paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
 
         paragraphs = []
         for i, para_text in enumerate(raw_paragraphs):
             # Skip list items and other non-prose
-            if para_text.startswith(('-', '*', '1.', '2.', '3.')):
+            if para_text.startswith(("-", "*", "1.", "2.", "3.")):
                 continue
 
             # Count sentences
-            sentences = re.split(r'[.!?]+', para_text)
+            sentences = re.split(r"[.!?]+", para_text)
             sentences = [s.strip() for s in sentences if s.strip()]
             sentence_count = len(sentences)
 

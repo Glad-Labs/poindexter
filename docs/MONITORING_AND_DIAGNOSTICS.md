@@ -18,6 +18,7 @@ curl http://localhost:3000                           # Public site frontend
 ```
 
 Expected responses:
+
 - Backend: `{"status": "ok", ...}`
 - Profiling: `{"status": "healthy", "profiles_tracked": N, ...}`
 
@@ -93,6 +94,7 @@ Expected responses:
 **Symptoms:** Profiling endpoints return empty data
 
 **Diagnosis:**
+
 ```bash
 # Check if middleware is initialized
 curl http://localhost:8000/api/profiling/health
@@ -105,11 +107,13 @@ grep -n "add_middleware\|ProfilingMiddleware" src/cofounder_agent/main.py
 ```
 
 **Common Causes:**
+
 - Middleware not registered in `middleware_config.py`
 - Middleware registered AFTER a route (must be BEFORE)
 - Health checks filtered out (they are, by design)
 
 **Fix:**
+
 ```python
 # In src/cofounder_agent/utils/middleware_config.py
 # Profiling middleware should be near top (after CORS, before RequestLogging)
@@ -126,6 +130,7 @@ def setup_middleware(app):
 **Symptoms:** AnalyticsDashboard.jsx shows empty charts or "Loading..." forever
 
 **Diagnosis:**
+
 ```bash
 # Check if analytics endpoints work
 curl http://localhost:8000/api/analytics/kpis?range=30d
@@ -139,12 +144,14 @@ psql $DATABASE_URL -c "\dt admin_logs"
 ```
 
 **Common Causes:**
+
 - Database empty (no tasks executed yet)
 - CORS misconfiguration
 - Database query timestamp filtering wrong
 - PostgreSQL connection failed
 
 **Fix:**
+
 ```bash
 # Generate test data
 npm run test:python:smoke
@@ -163,6 +170,7 @@ curl -i http://localhost:8000/api/analytics/kpis | grep -i "access-control"
 **Symptoms:** Charts display as broken or "undefined" on PerformanceDashboard.jsx
 
 **Diagnosis:**
+
 ```bash
 # Verify Recharts is installed
 npm ls recharts --workspace=oversight-hub
@@ -172,11 +180,13 @@ curl http://localhost:8000/api/metrics/performance | jq .
 ```
 
 **Common Causes:**
+
 - Recharts not installed (`npm install` not run after package.json update)
 - API endpoint returns wrong data format
 - Browser version doesn't support Recharts
 
 **Fix:**
+
 ```bash
 # Install dependencies
 cd web/oversight-hub
@@ -196,6 +206,7 @@ npm ls recharts
 **Symptoms:** Request took 2000ms but profiling reports it's not slow
 
 **Diagnosis:**
+
 ```bash
 # Check slow endpoint threshold
 curl http://localhost:8000/api/profiling/slow-endpoints?threshold_ms=1000 | jq '.threshold_ms'
@@ -205,11 +216,13 @@ curl http://localhost:8000/api/profiling/recent-requests | jq '.profiles[] | sel
 ```
 
 **Common Causes:**
+
 - Threshold too high (default 1000ms)
 - Request completed before profiling report generated
 - Profiling overhead affected timing
 
 **Fix:**
+
 ```bash
 # Lower threshold to detect more slow requests
 curl "http://localhost:8000/api/profiling/slow-endpoints?threshold_ms=500"
@@ -225,6 +238,7 @@ watch -n 1 'curl -s http://localhost:8000/api/profiling/slow-endpoints?threshold
 **Symptoms:** Server CPU usage spikes, profiling adds latency
 
 **Diagnosis:**
+
 ```bash
 # Check profiling overhead
 curl http://localhost:8000/api/profiling/endpoint-stats | jq '.endpoints[] | {endpoint: .endpoint, avg_ms: .avg_duration_ms}' | head -10
@@ -238,16 +252,18 @@ done
 ```
 
 **Common Causes:**
+
 - Too many requests being profiled
 - Profile storage unlimited (should be 1000 max)
 - Profiling percentile calculation inefficient
 
 **Fix:**
+
 ```python
 # In profiling_middleware.py, limit profile storage
 class ProfilingMiddleware:
     MAX_PROFILES = 1000  # Limit stored profiles
-    
+
     def store_profile(self, profile):
         if len(self.profiles) >= self.MAX_PROFILES:
             self.profiles.pop(0)  # Remove oldest
@@ -261,12 +277,13 @@ class ProfilingMiddleware:
 **Symptoms:** Analytics shows different costs than admin dashboard
 
 **Diagnosis:**
+
 ```bash
 # Check what's being recorded
 psql $DATABASE_URL -c "
-SELECT COUNT(*), 
+SELECT COUNT(*),
        ROUND(SUM((data->>'total_cost')::numeric), 2) as total_cost
-FROM admin_logs 
+FROM admin_logs
 WHERE data ? 'total_cost'
 ORDER BY created_at DESC LIMIT 10;"
 
@@ -275,11 +292,13 @@ curl http://localhost:8000/api/analytics/costs?range=7d | jq '.by_provider'
 ```
 
 **Common Causes:**
+
 - Multiple LLM providers active (costs scattered across providers)
 - TaskMetrics not recording costs at phase end
 - Query time range mismatch
 
 **Fix:**
+
 ```python
 # In task_executor.py, ensure cost is recorded per phase
 task_metrics.cost_usd = result.get("cost_usd", 0.0)
@@ -313,29 +332,29 @@ import json
 
 def check_profiling_health():
     health = requests.get("http://localhost:8000/api/profiling/health").json()
-    
+
     if health["slow_endpoints_detected"] > 5:
         print("⚠️  WARNING: Multiple slow endpoints detected")
         return False
-    
+
     if health["profiles_tracked"] > 900:
         print("⚠️  WARNING: Profile memory near capacity")
         return False
-    
+
     return True
 
 def check_cost_spike():
     costs = requests.get(
         "http://localhost:8000/api/analytics/costs?range=7d"
     ).json()
-    
+
     daily_avg = costs["total_cost_usd"] / 7
     today_cost = costs["time_series"][-1]["total_cost"]
-    
+
     if today_cost > daily_avg * 1.5:
         print(f"⚠️  WARNING: Cost spike detected (${today_cost} vs ${daily_avg:.2f} avg)")
         return False
-    
+
     return True
 
 # Run checks
@@ -354,7 +373,7 @@ systemctl restart cofounder_agent
 # Archive analytics to long-term storage (optional)
 psql $DATABASE_URL -c "
 COPY (
-  SELECT * FROM admin_logs 
+  SELECT * FROM admin_logs
   WHERE created_at < NOW() - INTERVAL '90 days'
 ) TO PROGRAM 'gzip > /backups/analytics_$(date +%Y%m%d).json.gz';"
 ```
@@ -363,22 +382,22 @@ COPY (
 
 ## Key Metrics to Monitor
 
-| Metric | Threshold | Action |
-|--------|-----------|--------|
-| Slow endpoints (1000ms+) | < 3 | None |
-| Slow endpoints | 3-10 | Review and optimize |
-| Slow endpoints | > 10 | Page on-call engineer |
-| Avg cost/task | < $0.50 | None |
-| Avg cost/task | $0.50-$1.00 | Review model selection |
-| Avg cost/task | > $1.00 | Escalate to product |
-| Task success rate | > 95% | None |
-| Task success rate | 85-95% | Investigate failures |
-| Task success rate | < 85% | Page on-call engineer |
-| P99 latency | < 2000ms | None |
-| P99 latency | 2-5 seconds | Optimize slow endpoints |
-| P99 latency | > 5 seconds | Incident response |
-| Profiling overhead | < 2ms per request | None |
-| Profiling overhead | > 5ms per request | Disable profiling temporarily |
+| Metric                   | Threshold         | Action                        |
+| ------------------------ | ----------------- | ----------------------------- |
+| Slow endpoints (1000ms+) | < 3               | None                          |
+| Slow endpoints           | 3-10              | Review and optimize           |
+| Slow endpoints           | > 10              | Page on-call engineer         |
+| Avg cost/task            | < $0.50           | None                          |
+| Avg cost/task            | $0.50-$1.00       | Review model selection        |
+| Avg cost/task            | > $1.00           | Escalate to product           |
+| Task success rate        | > 95%             | None                          |
+| Task success rate        | 85-95%            | Investigate failures          |
+| Task success rate        | < 85%             | Page on-call engineer         |
+| P99 latency              | < 2000ms          | None                          |
+| P99 latency              | 2-5 seconds       | Optimize slow endpoints       |
+| P99 latency              | > 5 seconds       | Incident response             |
+| Profiling overhead       | < 2ms per request | None                          |
+| Profiling overhead       | > 5ms per request | Disable profiling temporarily |
 
 ---
 
@@ -428,7 +447,7 @@ curl http://localhost:8000/api/profiling/recent-requests?limit=50 | jq '.profile
 
 # Step 4: Check database performance
 psql $DATABASE_URL -c "
-EXPLAIN ANALYZE 
+EXPLAIN ANALYZE
 SELECT * FROM admin_logs WHERE created_at > NOW() - INTERVAL '1 hour';"
 ```
 
@@ -460,7 +479,7 @@ tail -f server.log | grep -i "error\|failed\|exception" | head -20
 # Step 3: Check if errors are being recorded
 psql $DATABASE_URL -c "
 SELECT COUNT(*), MAX(data->>'error_message') as latest_error
-FROM admin_logs 
+FROM admin_logs
 WHERE data @> '{\"phase\": \"quality_assessment\"}'
 AND data ? 'error_message'
 ORDER BY created_at DESC LIMIT 10;"
@@ -476,6 +495,7 @@ curl -X POST http://localhost:8000/api/tasks \
 ## When to Escalate
 
 **Page on-call engineer if:**
+
 - ❌ Task success rate drops below 85%
 - ❌ More than 10 slow endpoints detected
 - ❌ P99 latency exceeds 5 seconds
@@ -484,12 +504,14 @@ curl -X POST http://localhost:8000/api/tasks \
 - ❌ Cost per task exceeds $2.00
 
 **Schedule optimization if:**
+
 - ⚠️ 3-10 slow endpoints detected
 - ⚠️ P99 latency between 2-5 seconds
 - ⚠️ Cost per task is $0.50-$1.00
 - ⚠️ Success rate between 85-95%
 
 **No action needed:**
+
 - ✅ Slow endpoints < 3
 - ✅ P99 latency < 2 seconds
 - ✅ Cost per task < $0.50

@@ -9,16 +9,19 @@
 ## QUICK START - 3 EASY STEPS
 
 ### Step 1: Open Oversight Hub
+
 ```
 Browser: http://localhost:3001
 System: Oversight Hub (React Admin UI)
 ```
 
 ### Step 2: Authenticate (if required)
+
 - Use GitHub OAuth, Email login, or mock credentials
 - After login, you'll see the dashboard
 
 ### Step 3: Start Testing
+
 - Click "Create Task" → "Blog Post Generation"
 - Fill form and click "Generate"
 - Wait 2-5 minutes
@@ -49,6 +52,7 @@ FORM INPUTS:
 **Validation Points - SEO:**
 
 ☐ **Title Length Check**
+
 - What to look for: SEO title displayed (usually below the main content)
 - Expected: ≤60 characters
 - Where to find: "SEO Title" field in post details
@@ -56,17 +60,20 @@ FORM INPUTS:
 - If FAIL: Title truncated or over 60 chars
 
 ☐ **Meta Description Check**
+
 - Expected: ≤155 characters
 - Where to find: "Meta Description" field
 - If PASS: Complete meta description under 155 chars
 - If FAIL: Meta cut off or over limit
 
 ☐ **Keyword Presence Check**
+
 - Primary keyword "Kubernetes pod security" appears naturally in content multiple times
 - Secondary keywords "security context", "RBAC", "security standards" all present
 - Use browser Find (Ctrl+F) to verify each
 
 **Result Fields to Record:**
+
 ```
 Title: _________________________________ (Actual length: ___ chars)
 Meta:  _________________________________ (Actual length: ___ chars)
@@ -84,6 +91,7 @@ Heading hierarchy, forbidden title detection, paragraph structure
 **Validation Points - Structure:**
 
 ☐ **Heading Hierarchy Check**
+
 - Scroll through entire post
 - Count headings and their levels
 - Expected pattern: H1 → H2 → H3 → H2 → H3, etc (no jumps)
@@ -91,6 +99,7 @@ Heading hierarchy, forbidden title detection, paragraph structure
 - OR visually verify: # = H1, ## = H2, ### = H3
 
 **Record:**
+
 ```
 H1 Headings: __________________________________________________________
 H2 Headings: __________________________________________________________
@@ -99,6 +108,7 @@ Hierarchy valid (no H1→H3 jumps): [ ] YES [ ] NO
 ```
 
 ☐ **Forbidden Titles Check**
+
 - Look for these generic titles (case-insensitive):
   - "Introduction"
   - "Conclusion"
@@ -112,6 +122,7 @@ Hierarchy valid (no H1→H3 jumps): [ ] YES [ ] NO
 - If found: That's a FAIL - improvement not working
 
 **Record:**
+
 ```
 Forbidden titles detected: [ ] NONE [ ] FOUND: _________________________
 All headings are creative: [ ] YES [ ] NO
@@ -119,9 +130,10 @@ Examples of creative titles: ________________________________________
 ```
 
 ☐ **Heading Count & Distribution**
+
 - Expected: 4-7 main sections (H2)
 - Expected: Subsections (H3) under major sections
-- Record count: _____ H2 sections, _____ H3 subsections
+- Record count: **\_** H2 sections, **\_** H3 subsections
 
 ---
 
@@ -133,23 +145,27 @@ Word count, sentence length, paragraph balance, readable language
 **Validation Points - Readability:**
 
 ☐ **Word Count**
+
 - Expected: 1200-1800 words (depending on target)
 - Where to find: Usually shown in post metadata
 - Manual count: Select all text (Ctrl+A) and copy to word counter
 
 **Record:**
+
 ```
 Total word count: _____ words (target was: _____ words)
 Within range: [ ] YES [ ] NO
 ```
 
 ☐ **Sentence & Paragraph Structure**
+
 - Visual inspection: Do paragraphs look balanced (not too short, not walls-of-text)?
 - Expected: 3-7 sentences per paragraph (balanced)
 - Check for variety: mixture of short and long sentences
 - Look for logical flow between ideas
 
 **Record:**
+
 ```
 Paragraphs balanced: [ ] YES [ ] NO
 Sentence variety present: [ ] YES [ ] NO
@@ -157,11 +173,13 @@ Logical flow: [ ] EXCELLENT [ ] GOOD [ ] POOR
 ```
 
 ☐ **Language Professionalism**
+
 - Read 2-3 paragraphs
 - Check for: Grammar errors, awkward phrasing, clarity
 - Style should match selected style (Technical/Narrative/Educational)
 
 **Record:**
+
 ```
 Grammar quality: [ ] EXCELLENT [ ] GOOD [ ] POOR
 Style match: [ ] EXCELLENT [ ] GOOD [ ] POOR
@@ -178,17 +196,20 @@ Feedback accumulation, quality score tracking, improvement trend
 **Validation Points - QA & Scoring:**
 
 ☐ **Quality Score Display**
+
 - Where to find: "Quality Score" or "Overall Score" field
 - Expected: ≥75/100
 - Look for score like "78/100" or "81.5/100"
 
 **Record:**
+
 ```
 Final quality score: ___/100
 Meets minimum (≥75): [ ] YES [ ] NO
 ```
 
 ☐ **QA Feedback Rounds**
+
 - Where to find: "QA Feedback", "Refinement History", or "Evaluation" section
 - Expected: 1-3 rounds of feedback shown
 - Look for messages like:
@@ -197,6 +218,7 @@ Meets minimum (≥75): [ ] YES [ ] NO
   - "Round 3: Improve..."
 
 **Record:**
+
 ```
 Number of QA rounds: _____
 QA feedback messages shown: [ ] YES [ ] NO
@@ -204,11 +226,13 @@ Feedback examples: _________________________________________
 ```
 
 ☐ **Quality Score History**
+
 - Where to find: Look for list like [72, 75, 78, 81] or scores trending upward
 - Expected: Scores improve or stay ~same (no major regressions)
 - Pattern: Should show improvement trend
 
 **Record:**
+
 ```
 Quality score progression: [___, ___, ___, ___]
 Trend is improving: [ ] YES [ ] NO
@@ -216,6 +240,7 @@ Final > Initial: [ ] YES [ ] NO (Improvement: _____ points)
 ```
 
 ☐ **Early Exit Logic (Advanced)**
+
 - Look in backend logs for message: "Stopping refinement - minimal improvement"
 - This indicates improvement was <5 points, so system stopped early
 - This is a GOOD sign (efficient!)
@@ -230,12 +255,14 @@ Source credibility, deduplication, result count
 **Validation Points - Research:**
 
 ☐ **Source Count & Credibility**
+
 - Look for "Sources" or "References" section at end of article
 - Count total sources listed
 - Expected: 5-7 sources
 - Expected: Mix of credible domains (.edu, .gov, known publications)
 
 **Record:**
+
 ```
 Number of sources: _____
 Sources include [check all that apply]:
@@ -248,12 +275,14 @@ Credibility rating: [ ] EXCELLENT [ ] GOOD [ ] FAIR
 ```
 
 ☐ **Source Deduplication Check**
+
 - Look at source URLs if listed
 - Check if any sources are duplicates/near-duplicates
 - Expected: All sources are unique and diverse
 - Domains should come from different root domains
 
 **Record:**
+
 ```
 Duplicate sources detected: [ ] NONE [ ] SOME: _______________
 Source domain diversity: [ ] EXCELLENT [ ] GOOD [ ] POOR
@@ -333,26 +362,31 @@ _____________________________________________________________________________
 ## EXPECTED VISUAL INDICATORS OF SUCCESS
 
 ### ✓ SEO Improvement Indicators
+
 - Title appears compact and readable (not truncated)
 - Meta description is complete and makes sense
 - Keywords scattered naturally throughout text (not in clumps)
 
 ### ✓ Structure Improvement Indicators
+
 - Headings follow clear outline structure
 - No "Introduction", "Conclusion" or similar generic titles
 - Paragraphs are visually balanced (no huge walls of text)
 
 ### ✓ Readability Improvement Indicators
+
 - Text reads smoothly and professionally
 - Mix of sentence lengths (not all long, not all short)
 - Paragraphs broken up appropriately (good white space)
 
 ### ✓ QA/Scoring Improvement Indicators
+
 - Final quality score visible (75+/100)
 - Multiple refinement rounds shown if available
 - Score shows improvement trend (e.g., 72 → 78 → 81)
 
 ### ✓ Research Improvement Indicators
+
 - Multiple sources listed at end
 - Sources from reputable/credible sites
 - No repeated domains
@@ -361,21 +395,22 @@ _____________________________________________________________________________
 
 ## TESTING TIMELINE
 
-| Phase | Action | Time |
-|-------|--------|------|
-| Setup | Open http://localhost:3001 | 1 min |
-| Generate | Create & wait for Technical Blog | 5 min |
-| Validate | Complete checklist for Blog 1 | 3 min |
-| Generate | Create & wait for Narrative Blog | 5 min |
-| Validate | Complete checklist for Blog 2 | 3 min |
-| Summary | Review results & document | 2 min |
-| **TOTAL** | | **~19 minutes** |
+| Phase     | Action                           | Time            |
+| --------- | -------------------------------- | --------------- |
+| Setup     | Open http://localhost:3001       | 1 min           |
+| Generate  | Create & wait for Technical Blog | 5 min           |
+| Validate  | Complete checklist for Blog 1    | 3 min           |
+| Generate  | Create & wait for Narrative Blog | 5 min           |
+| Validate  | Complete checklist for Blog 2    | 3 min           |
+| Summary   | Review results & document        | 2 min           |
+| **TOTAL** |                                  | **~19 minutes** |
 
 ---
 
 ## WHAT TO DO WITH RESULTS
 
 ### If All Tests Pass (6/6 Improvements Working):
+
 ```
 SUCCESS: Blog Quality Improvements Fully Operational
 - All 6 improvements validated
@@ -384,6 +419,7 @@ SUCCESS: Blog Quality Improvements Fully Operational
 ```
 
 ### If 5/6 Pass (One improvement partial):
+
 ```
 GOOD: Minor issue with one improvement
 - Identify which improvement has issue
@@ -392,6 +428,7 @@ GOOD: Minor issue with one improvement
 ```
 
 ### If Less Than 5/6:
+
 ```
 INVESTIGATION NEEDED: Report issues found
 - Document specific improvement failures
@@ -404,29 +441,30 @@ INVESTIGATION NEEDED: Report issues found
 
 ## QUICK REFERENCE: WHERE TO FIND EACH IMPROVEMENT
 
-| Improvement | Demo Location | What to Look For |
-|------------|---------------|------------------|
-| SEO Validator | Title/Meta fields | Length constraints enforced |
-| Structure | Content body | No forbidden titles, valid heading hierarchy |
-| Research | References/Sources | Credible, diverse, deduplicated sources |
-| Readability | Full text | Professional tone, balanced paragraphs |
-| QA Feedback | Quality section | Multiple rounds displayed |
-| Quality Scores | Score field | ≥75/100 with improvement trend |
+| Improvement    | Demo Location      | What to Look For                             |
+| -------------- | ------------------ | -------------------------------------------- |
+| SEO Validator  | Title/Meta fields  | Length constraints enforced                  |
+| Structure      | Content body       | No forbidden titles, valid heading hierarchy |
+| Research       | References/Sources | Credible, diverse, deduplicated sources      |
+| Readability    | Full text          | Professional tone, balanced paragraphs       |
+| QA Feedback    | Quality section    | Multiple rounds displayed                    |
+| Quality Scores | Score field        | ≥75/100 with improvement trend               |
 
 ---
 
 ## SUCCESS CRITERIA - FINAL SIGN-OFF
 
 All requirements met if:
-- [  ] Generated 2+ blog posts successfully
-- [  ] All 6 improvements visible in generated content
-- [  ] SEO validation working (title, meta, keywords)
-- [  ] Structure validation working (no forbidden titles, valid hierarchy)
-- [  ] Quality scores ≥75/100
-- [  ] QA feedback accumulated (multiple rounds visible)
-- [  ] Research shows diverse, credible sources
-- [  ] Content reads professionally and naturally
-- [  ] No errors in system / console
+
+- [ ] Generated 2+ blog posts successfully
+- [ ] All 6 improvements visible in generated content
+- [ ] SEO validation working (title, meta, keywords)
+- [ ] Structure validation working (no forbidden titles, valid hierarchy)
+- [ ] Quality scores ≥75/100
+- [ ] QA feedback accumulated (multiple rounds visible)
+- [ ] Research shows diverse, credible sources
+- [ ] Content reads professionally and naturally
+- [ ] No errors in system / console
 
 **All criteria met:** ✓ SYSTEM READY FOR DEPLOYMENT
 
@@ -442,6 +480,6 @@ All requirements met if:
 
 ---
 
-**Testing completed by:** __________________________
-**Date:** _________________
+**Testing completed by:** ************\_\_************
+**Date:** ********\_********
 **Result:** [ ] SUCCESS [ ] NEEDS INVESTIGATION

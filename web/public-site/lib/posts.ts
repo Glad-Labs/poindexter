@@ -199,8 +199,8 @@ export async function getAllPublishedPosts(): Promise<Post[]> {
     // Sort by published_at descending (newest first)
     return posts.sort(
       (a: Post, b: Post) =>
-        new Date((b.published_at || b.created_at)).getTime() -
-        new Date((a.published_at || a.created_at)).getTime()
+        new Date(b.published_at || b.created_at).getTime() -
+        new Date(a.published_at || a.created_at).getTime()
     );
   } catch (error) {
     console.error('Error fetching all published posts:', error);
@@ -230,7 +230,9 @@ export async function getNextPost(currentSlug: string): Promise<Post | null> {
 /**
  * Get the previous post in chronological order (newer post)
  */
-export async function getPreviousPost(currentSlug: string): Promise<Post | null> {
+export async function getPreviousPost(
+  currentSlug: string
+): Promise<Post | null> {
   try {
     const allPosts = await getAllPublishedPosts();
     const currentIndex = allPosts.findIndex((p) => p.slug === currentSlug);

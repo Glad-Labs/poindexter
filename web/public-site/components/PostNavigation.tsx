@@ -32,11 +32,14 @@ export function PostNavigation({
             </h3>
             {previousPost.published_at && (
               <div className="text-xs text-slate-400 mt-2">
-                {new Date(previousPost.published_at).toLocaleDateString('en-US', {
-                  year: 'numeric',
-                  month: 'short',
-                  day: 'numeric',
-                })}
+                {new Date(previousPost.published_at).toLocaleDateString(
+                  'en-US',
+                  {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                  }
+                )}
               </div>
             )}
           </Link>

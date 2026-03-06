@@ -14,17 +14,10 @@ BLOG_GENERATION_ONLY = {
     "phases": [
         {
             "type": "generate_content",
-            "config": {
-                "style": "balanced",
-                "tone": "professional",
-                "target_length": 1500
-            }
+            "config": {"style": "balanced", "tone": "professional", "target_length": 1500},
         },
-        {
-            "type": "quality_evaluation",
-            "config": {"threshold": 70}
-        }
-    ]
+        {"type": "quality_evaluation", "config": {"threshold": 70}},
+    ],
 }
 
 # ============================================================================
@@ -36,29 +29,13 @@ BLOG_COMPLETE_WORKFLOW = {
     "phases": [
         {
             "type": "generate_content",
-            "config": {
-                "style": "balanced",
-                "tone": "professional",
-                "target_length": 2000
-            }
+            "config": {"style": "balanced", "tone": "professional", "target_length": 2000},
         },
-        {
-            "type": "quality_evaluation",
-            "config": {"threshold": 75}
-        },
-        {
-            "type": "search_image",
-            "config": {"enabled": True}
-        },
-        {
-            "type": "generate_seo",
-            "config": {}
-        },
-        {
-            "type": "create_post",
-            "config": {"status": "draft"}
-        }
-    ]
+        {"type": "quality_evaluation", "config": {"threshold": 75}},
+        {"type": "search_image", "config": {"enabled": True}},
+        {"type": "generate_seo", "config": {}},
+        {"type": "create_post", "config": {"status": "draft"}},
+    ],
 }
 
 # ============================================================================
@@ -78,7 +55,7 @@ BLOG_TO_SOCIAL_WORKFLOW = {
         #     }
         # }
     ],
-    "requires_existing_content": True
+    "requires_existing_content": True,
 }
 
 # ============================================================================
@@ -95,17 +72,10 @@ RESEARCH_AND_CONTENT_WORKFLOW = {
         # },
         {
             "type": "generate_content",
-            "config": {
-                "style": "balanced",
-                "tone": "professional",
-                "target_length": 2500
-            }
+            "config": {"style": "balanced", "tone": "professional", "target_length": 2500},
         },
-        {
-            "type": "quality_evaluation",
-            "config": {"threshold": 80}
-        }
-    ]
+        {"type": "quality_evaluation", "config": {"threshold": 80}},
+    ],
 }
 
 # ============================================================================

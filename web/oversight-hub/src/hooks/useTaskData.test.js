@@ -63,7 +63,10 @@ describe('useTaskData Hook', () => {
 
   describe('Pagination', () => {
     it('should calculate correct offset for different pages', async () => {
-      const allTasks = Array.from({ length: 25 }, (_, i) => ({ id: i + 1, name: `Task ${i + 1}` }));
+      const allTasks = Array.from({ length: 25 }, (_, i) => ({
+        id: i + 1,
+        name: `Task ${i + 1}`,
+      }));
       taskService.getTasks.mockResolvedValue(allTasks);
 
       const { result } = renderHook(() => useTaskData(2, 10));
@@ -78,7 +81,10 @@ describe('useTaskData Hook', () => {
     });
 
     it('should handle custom limit per page', async () => {
-      const allTasks = Array.from({ length: 60 }, (_, i) => ({ id: i + 1, name: `Task ${i + 1}` }));
+      const allTasks = Array.from({ length: 60 }, (_, i) => ({
+        id: i + 1,
+        name: `Task ${i + 1}`,
+      }));
       taskService.getTasks.mockResolvedValue(allTasks);
 
       const { result } = renderHook(() => useTaskData(1, 50));
@@ -205,9 +211,12 @@ describe('useTaskData Hook', () => {
 
       // First request fails
       taskService.getTasks.mockRejectedValueOnce(new Error('Error'));
-      const { result, rerender } = renderHook(({ sortBy }) => useTaskData(1, 10, sortBy, 'desc'), {
-        initialProps: { sortBy: 'created_at' },
-      });
+      const { result, rerender } = renderHook(
+        ({ sortBy }) => useTaskData(1, 10, sortBy, 'desc'),
+        {
+          initialProps: { sortBy: 'created_at' },
+        }
+      );
 
       await waitFor(() => {
         expect(result.current.error).toBeDefined();

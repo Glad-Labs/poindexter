@@ -156,13 +156,13 @@ cd src/cofounder_agent && poetry run pytest tests/ -m slow -v          # Slow te
 
 ## Documentation for Reference
 
-| Document | Purpose | Location |
-|----------|---------|----------|
-| PHASE_1_COMPLETION_REPORT.md | Full Phase 1 results | Root directory |
-| PHASE_1_TEST_INFRASTRUCTURE.md | Detailed implementation | Root directory |
-| TEST_INFRASTRUCTURE_GUIDE.md | Developer quick-start | Root directory |
-| conftest.py | Pytest fixtures | tests/conftest.py |
-| pytest.ini | Test configuration | Root directory |
+| Document                       | Purpose                 | Location          |
+| ------------------------------ | ----------------------- | ----------------- |
+| PHASE_1_COMPLETION_REPORT.md   | Full Phase 1 results    | Root directory    |
+| PHASE_1_TEST_INFRASTRUCTURE.md | Detailed implementation | Root directory    |
+| TEST_INFRASTRUCTURE_GUIDE.md   | Developer quick-start   | Root directory    |
+| conftest.py                    | Pytest fixtures         | tests/conftest.py |
+| pytest.ini                     | Test configuration      | Root directory    |
 
 ---
 

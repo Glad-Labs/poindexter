@@ -1,6 +1,6 @@
 /**
  * Capability Composer Component
- * 
+ *
  * Visual builder for composing capability-based tasks.
  * Users can:
  * - Browse available capabilities

@@ -875,4 +875,3 @@ class PhaseRegistry:
         )
 
         logger.info(f"Registered {4} blog phases - Total phases: {len(self._phases)}")
-

@@ -1,7 +1,7 @@
 /**
  * Playwright Fixtures Validation Tests
  * ====================================
- * 
+ *
  * Validates that all Playwright test fixtures work correctly:
  * - APIClient initialization and methods
  * - PerformanceMetrics timing accuracy
@@ -135,7 +135,10 @@ test.describe('Fixtures Validation', () => {
     expect(allRequests).toBeDefined();
   });
 
-  test('requestLogger filters API requests', async ({ page, requestLogger }) => {
+  test('requestLogger filters API requests', async ({
+    page,
+    requestLogger,
+  }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
@@ -146,7 +149,10 @@ test.describe('Fixtures Validation', () => {
     expect(Array.isArray(apiRequests)).toBeTruthy();
   });
 
-  test('requestLogger tracks request details', async ({ page, requestLogger }) => {
+  test('requestLogger tracks request details', async ({
+    page,
+    requestLogger,
+  }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
@@ -164,7 +170,10 @@ test.describe('Fixtures Validation', () => {
   // VisualTesting Tests
   // ========================
 
-  test('visual.getAccessibilityTree() returns data', async ({ page, visual }) => {
+  test('visual.getAccessibilityTree() returns data', async ({
+    page,
+    visual,
+  }) => {
     await page.goto('/');
 
     const tree = await visual.getAccessibilityTree();
@@ -174,7 +183,10 @@ test.describe('Fixtures Validation', () => {
     expect(typeof tree).toBe('object');
   });
 
-  test('visual.getAccessibilityTree() finds elements', async ({ page, visual }) => {
+  test('visual.getAccessibilityTree() finds elements', async ({
+    page,
+    visual,
+  }) => {
     await page.goto('/');
 
     const tree = await visual.getAccessibilityTree();
@@ -209,7 +221,11 @@ test.describe('Fixtures Validation', () => {
     await page.goto('/');
     metrics.mark('combined-end');
 
-    const duration = metrics.measure('combined', 'combined-start', 'combined-end');
+    const duration = metrics.measure(
+      'combined',
+      'combined-start',
+      'combined-end'
+    );
     expect(duration).toBeGreaterThan(0);
   });
 
@@ -226,7 +242,9 @@ test.describe('Fixtures Validation', () => {
 test.describe('Fixtures Edge Cases', () => {
   test('apiClient handles network errors gracefully', async ({ apiClient }) => {
     // Call non-existent endpoint
-    const result = await apiClient.get('/api/this-endpoint-does-not-exist-12345');
+    const result = await apiClient.get(
+      '/api/this-endpoint-does-not-exist-12345'
+    );
 
     // Should handle error gracefully
     expect(result).toBeTruthy();

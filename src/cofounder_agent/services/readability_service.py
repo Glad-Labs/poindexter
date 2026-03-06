@@ -9,8 +9,8 @@ Provides accurate readability metrics including:
 - Passive voice detection
 """
 
-import re
 import logging
+import re
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ReadabilityMetrics:
     """Complete readability analysis"""
+
     flesch_reading_ease: float  # 0-100 (higher = easier)
     flesch_grade_level: float  # Grade equivalent
     syllables_per_word: float  # Average
@@ -69,12 +70,31 @@ class ReadabilityService:
         # This is a fallback - better approach is to use NLTK
         self.SYLLABLE_DICTIONARY = {
             # Single syllable
-            "the": 1, "a": 1, "is": 1, "and": 1, "or": 1, "to": 1,
-            "from": 1, "for": 1, "with": 1, "by": 1, "at": 1, "it": 1,
+            "the": 1,
+            "a": 1,
+            "is": 1,
+            "and": 1,
+            "or": 1,
+            "to": 1,
+            "from": 1,
+            "for": 1,
+            "with": 1,
+            "by": 1,
+            "at": 1,
+            "it": 1,
             # Two syllables
-            "about": 2, "also": 2, "after": 2, "before": 2, "between": 2,
-            "different": 3, "important": 3, "information": 4, "understand": 3,
-            "development": 4, "technology": 4, "documentation": 4,
+            "about": 2,
+            "also": 2,
+            "after": 2,
+            "before": 2,
+            "between": 2,
+            "different": 3,
+            "important": 3,
+            "information": 4,
+            "understand": 3,
+            "development": 4,
+            "technology": 4,
+            "documentation": 4,
         }
 
     def analyze(self, content: str) -> ReadabilityMetrics:
@@ -105,29 +125,19 @@ class ReadabilityService:
         # Calculate averages
         syllables_per_word = syllables / total_words if total_words > 0 else 0
         words_per_sentence = total_words / total_sentences if total_sentences > 0 else 0
-        sentences_per_paragraph = (
-            total_sentences / total_paragraphs if total_paragraphs > 0 else 0
-        )
+        sentences_per_paragraph = total_sentences / total_paragraphs if total_paragraphs > 0 else 0
         avg_sentence_length = words_per_sentence
         avg_paragraph_length = total_words / total_paragraphs if total_paragraphs > 0 else 0
 
         # Calculate Flesch Reading Ease
-        flesch_ease = self._calculate_flesch_reading_ease(
-            total_words, total_sentences, syllables
-        )
+        flesch_ease = self._calculate_flesch_reading_ease(total_words, total_sentences, syllables)
 
         # Calculate Flesch-Kincaid Grade Level
-        flesch_grade = self._calculate_flesch_grade_level(
-            total_words, total_sentences, syllables
-        )
+        flesch_grade = self._calculate_flesch_grade_level(total_words, total_sentences, syllables)
 
         # Analyze structure
-        has_long_paragraphs = any(
-            len(p.split()) > 250 for p in paragraphs
-        )
-        has_orphan_paragraphs = any(
-            len(p.split(".")) == 1 for p in paragraphs
-        )
+        has_long_paragraphs = any(len(p.split()) > 250 for p in paragraphs)
+        has_orphan_paragraphs = any(len(p.split(".")) == 1 for p in paragraphs)
 
         # Check sentence variety (different lengths)
         sentence_lengths = [len(s.split()) for s in sentences]
@@ -170,18 +180,18 @@ class ReadabilityService:
     def _extract_sentences(self, text: str) -> List[str]:
         """Extract sentences from text"""
         # Simple sentence splitting on ., !, ?
-        sentences = re.split(r'[.!?]+', text)
+        sentences = re.split(r"[.!?]+", text)
         return [s.strip() for s in sentences if s.strip()]
 
     def _extract_paragraphs(self, text: str) -> List[str]:
         """Extract paragraphs (separated by blank lines)"""
-        paragraphs = text.split('\n\n')
+        paragraphs = text.split("\n\n")
         return [p.strip() for p in paragraphs if p.strip()]
 
     def _extract_words(self, text: str) -> List[str]:
         """Extract words from text"""
         # Remove punctuation, convert to lowercase
-        words = re.findall(r'\b[a-z]+\b', text.lower())
+        words = re.findall(r"\b[a-z]+\b", text.lower())
         return words
 
     def _count_syllables(self, word: str) -> int:
@@ -216,29 +226,27 @@ class ReadabilityService:
             return 1
 
         # Count vowel groups (more accurate than individual vowels)
-        vowel_pattern = r'[aeiouy]+'
+        vowel_pattern = r"[aeiouy]+"
         matches = len(re.findall(vowel_pattern, word))
         syllable_count = matches
 
         # Adjust for silent e at end
-        if word.endswith('e'):
+        if word.endswith("e"):
             syllable_count -= 1
 
         # Adjust for common endings
-        if word.endswith(('le', 'ey', 'ed')):
-            if not word.endswith('eed'):
+        if word.endswith(("le", "ey", "ed")):
+            if not word.endswith("eed"):
                 syllable_count += 1
 
         # Some words ending in -tion, -sion
-        if word.endswith(('tion', 'sion')):
+        if word.endswith(("tion", "sion")):
             syllable_count = max(syllable_count, 2)
 
         # Ensure at least 1 syllable
         return max(1, syllable_count)
 
-    def _calculate_flesch_reading_ease(
-        self, words: int, sentences: int, syllables: int
-    ) -> float:
+    def _calculate_flesch_reading_ease(self, words: int, sentences: int, syllables: int) -> float:
         """
         Calculate Flesch Reading Ease score (0-100)
 
@@ -256,18 +264,12 @@ class ReadabilityService:
         if words == 0 or sentences == 0:
             return 0.0
 
-        score = (
-            206.835
-            - (1.015 * (words / sentences))
-            - (84.6 * (syllables / words))
-        )
+        score = 206.835 - (1.015 * (words / sentences)) - (84.6 * (syllables / words))
 
         # Clamp score to 0-100 range
         return max(0.0, min(100.0, score))
 
-    def _calculate_flesch_grade_level(
-        self, words: int, sentences: int, syllables: int
-    ) -> float:
+    def _calculate_flesch_grade_level(self, words: int, sentences: int, syllables: int) -> float:
         """
         Calculate Flesch-Kincaid Grade Level
 
@@ -278,11 +280,7 @@ class ReadabilityService:
         if words == 0 or sentences == 0:
             return 0.0
 
-        score = (
-            (0.39 * (words / sentences))
-            + (11.8 * (syllables / words))
-            - 15.59
-        )
+        score = (0.39 * (words / sentences)) + (11.8 * (syllables / words)) - 15.59
 
         # Clamp to reasonable range (0-18+)
         return max(0.0, score)
@@ -300,10 +298,7 @@ class ReadabilityService:
 
         for sentence in sentences:
             # Simple pattern: "is/was/are/been + past participle"
-            if re.search(
-                r'\b(is|was|are|been|be|being)\s+\w+(?:ed|en)\b',
-                sentence.lower()
-            ):
+            if re.search(r"\b(is|was|are|been|be|being)\s+\w+(?:ed|en)\b", sentence.lower()):
                 passive_count += 1
 
         return (passive_count / len(sentences)) * 100

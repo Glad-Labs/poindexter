@@ -20,8 +20,7 @@ export default async function AuthorPage({
   const { id } = await params;
 
   // Get author profile or use default
-  const author =
-    authorProfiles[id] || authorProfiles.default;
+  const author = authorProfiles[id] || authorProfiles.default;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900">
@@ -57,7 +56,8 @@ export default async function AuthorPage({
           </h2>
           <div className="bg-slate-800/30 border border-slate-700 rounded-lg p-8 text-center">
             <p className="text-slate-400 text-sm">
-              Articles from this author coming soon. Check back to see their latest work!
+              Articles from this author coming soon. Check back to see their
+              latest work!
             </p>
           </div>
         </div>

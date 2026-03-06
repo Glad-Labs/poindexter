@@ -14,15 +14,15 @@
 
 ## 🎯 Core Documentation - 7 Essential Files
 
-| Component                 | File                                                                       |
-| ------------------------- | -------------------------------------------------------------------------- |
-| Fundamentals & Setup      | [01-SETUP_AND_OVERVIEW.md](01-SETUP_AND_OVERVIEW.md)                       |
-| System Architecture       | [02-ARCHITECTURE_AND_DESIGN.md](02-ARCHITECTURE_AND_DESIGN.md)             |
+| Component                   | File                                                                       |
+| --------------------------- | -------------------------------------------------------------------------- |
+| Fundamentals & Setup        | [01-SETUP_AND_OVERVIEW.md](01-SETUP_AND_OVERVIEW.md)                       |
+| System Architecture         | [02-ARCHITECTURE_AND_DESIGN.md](02-ARCHITECTURE_AND_DESIGN.md)             |
 | Deployment & Infrastructure | [03-DEPLOYMENT_AND_INFRASTRUCTURE.md](03-DEPLOYMENT_AND_INFRASTRUCTURE.md) |
-| Development Workflow      | [04-DEVELOPMENT_WORKFLOW.md](04-DEVELOPMENT_WORKFLOW.md)                   |
-| AI Agents & Integration   | [05-AI_AGENTS_AND_INTEGRATION.md](05-AI_AGENTS_AND_INTEGRATION.md)         |
-| Operations & Maintenance  | [06-OPERATIONS_AND_MAINTENANCE.md](06-OPERATIONS_AND_MAINTENANCE.md)       |
-| Environment & Variables   | [07-BRANCH_SPECIFIC_VARIABLES.md](07-BRANCH_SPECIFIC_VARIABLES.md)         |
+| Development Workflow        | [04-DEVELOPMENT_WORKFLOW.md](04-DEVELOPMENT_WORKFLOW.md)                   |
+| AI Agents & Integration     | [05-AI_AGENTS_AND_INTEGRATION.md](05-AI_AGENTS_AND_INTEGRATION.md)         |
+| Operations & Maintenance    | [06-OPERATIONS_AND_MAINTENANCE.md](06-OPERATIONS_AND_MAINTENANCE.md)       |
+| Environment & Variables     | [07-BRANCH_SPECIFIC_VARIABLES.md](07-BRANCH_SPECIFIC_VARIABLES.md)         |
 
 ---
 
@@ -82,7 +82,6 @@
 - [archive-active/](archive-active/) - All archived Phase/Sprint/Session reports
 - [archive-active/root-cleanup-feb2026/](archive-active/root-cleanup-feb2026/) - Root cleanup batches (Feb 2026)
 - [archive-active/historical-reports/](archive-active/historical-reports/) - Older session logs and reports
-
 
 ---
 

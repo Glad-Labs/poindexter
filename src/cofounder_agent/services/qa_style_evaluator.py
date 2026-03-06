@@ -242,7 +242,10 @@ class StyleConsistencyValidator:
             return result
 
         except Exception as e:
-            logger.error(f"[_validate_style_consistency] Error validating style consistency: {e}", exc_info=True)
+            logger.error(
+                f"[_validate_style_consistency] Error validating style consistency: {e}",
+                exc_info=True,
+            )
             return self._create_failed_result(
                 f"Validation error: {str(e)}", reference_style, reference_tone
             )

@@ -1,18 +1,18 @@
 /**
  * Shared Playwright Fixtures
  * ==========================
- * 
+ *
  * Provides reusable fixtures for E2E tests:
  * - API client for backend integration
  * - Authentication helpers
  * - Database state management
  * - Performance metrics
  * - Visual testing utilities
- * 
+ *
  * Usage:
  * ```
  * import { test, expect } from './fixtures';
- * 
+ *
  * test('my test', async ({ page, apiClient, metrics }) => {
  *   await page.goto('/');
  *   await metrics.mark('page-load');
@@ -48,7 +48,7 @@ class APIClient {
       headers: {
         'Content-Type': 'application/json',
         // Dev auth token - accepted by TokenValidationMiddleware and get_current_user
-        'Authorization': 'Bearer dev-token',
+        Authorization: 'Bearer dev-token',
         ...options?.headers,
       },
     };

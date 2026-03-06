@@ -33,6 +33,7 @@ from uuid import UUID
 import aiohttp
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+
 from routes.auth_unified import get_current_user, get_current_user_optional
 from schemas.model_converter import ModelConverter
 from schemas.task_schemas import (
@@ -397,7 +398,11 @@ async def _handle_blog_post_creation(
         "task_type": "blog_post",
         "topic": request.topic,
         "status": "pending",
-        "created_at": task_data["created_at"].isoformat() if hasattr(task_data["created_at"], "isoformat") else task_data["created_at"],
+        "created_at": (
+            task_data["created_at"].isoformat()
+            if hasattr(task_data["created_at"], "isoformat")
+            else task_data["created_at"]
+        ),
         "message": "Blog post task created and queued",
     }
 
@@ -437,7 +442,11 @@ async def _handle_social_media_creation(
         "task_type": "social_media",
         "topic": request.topic,
         "status": "pending",
-        "created_at": task_data["created_at"].isoformat() if hasattr(task_data["created_at"], "isoformat") else task_data["created_at"],
+        "created_at": (
+            task_data["created_at"].isoformat()
+            if hasattr(task_data["created_at"], "isoformat")
+            else task_data["created_at"]
+        ),
         "message": f"Social media task created for platforms: {', '.join(request.platforms or ['all'])}",
     }
 
@@ -470,7 +479,11 @@ async def _handle_email_creation(
         "id": returned_task_id,
         "task_type": "email",
         "status": "pending",
-        "created_at": task_data["created_at"].isoformat() if hasattr(task_data["created_at"], "isoformat") else task_data["created_at"],
+        "created_at": (
+            task_data["created_at"].isoformat()
+            if hasattr(task_data["created_at"], "isoformat")
+            else task_data["created_at"]
+        ),
         "message": "Email task created and queued",
     }
 
@@ -502,7 +515,11 @@ async def _handle_newsletter_creation(
         "id": returned_task_id,
         "task_type": "newsletter",
         "status": "pending",
-        "created_at": task_data["created_at"].isoformat() if hasattr(task_data["created_at"], "isoformat") else task_data["created_at"],
+        "created_at": (
+            task_data["created_at"].isoformat()
+            if hasattr(task_data["created_at"], "isoformat")
+            else task_data["created_at"]
+        ),
         "message": "Newsletter task created and queued",
     }
 
@@ -539,7 +556,11 @@ async def _handle_business_analytics_creation(
         "id": returned_task_id,
         "task_type": "business_analytics",
         "status": "pending",
-        "created_at": task_data["created_at"].isoformat() if hasattr(task_data["created_at"], "isoformat") else task_data["created_at"],
+        "created_at": (
+            task_data["created_at"].isoformat()
+            if hasattr(task_data["created_at"], "isoformat")
+            else task_data["created_at"]
+        ),
         "message": f"Business analytics task created - Analyzing: {', '.join(request.metrics or [])}",
     }
 
@@ -574,7 +595,11 @@ async def _handle_data_retrieval_creation(
         "id": returned_task_id,
         "task_type": "data_retrieval",
         "status": "pending",
-        "created_at": task_data["created_at"].isoformat() if hasattr(task_data["created_at"], "isoformat") else task_data["created_at"],
+        "created_at": (
+            task_data["created_at"].isoformat()
+            if hasattr(task_data["created_at"], "isoformat")
+            else task_data["created_at"]
+        ),
         "message": f"Data retrieval task created from sources: {', '.join(request.data_sources or [])}",
     }
 
@@ -606,7 +631,11 @@ async def _handle_market_research_creation(
         "id": returned_task_id,
         "task_type": "market_research",
         "status": "pending",
-        "created_at": task_data["created_at"].isoformat() if hasattr(task_data["created_at"], "isoformat") else task_data["created_at"],
+        "created_at": (
+            task_data["created_at"].isoformat()
+            if hasattr(task_data["created_at"], "isoformat")
+            else task_data["created_at"]
+        ),
         "message": "Market research task created and queued",
     }
 
@@ -638,7 +667,11 @@ async def _handle_financial_analysis_creation(
         "id": returned_task_id,
         "task_type": "financial_analysis",
         "status": "pending",
-        "created_at": task_data["created_at"].isoformat() if hasattr(task_data["created_at"], "isoformat") else task_data["created_at"],
+        "created_at": (
+            task_data["created_at"].isoformat()
+            if hasattr(task_data["created_at"], "isoformat")
+            else task_data["created_at"]
+        ),
         "message": "Financial analysis task created and queued",
     }
 
@@ -1881,7 +1914,6 @@ async def approve_task(
     featured_image_url = request.featured_image_url
     image_source = request.image_source
 
-
     try:
         # Accept both UUID and numeric task IDs (backwards compatibility)
         try:
@@ -1977,10 +2009,12 @@ async def approve_task(
                 task_id, new_status, result=safe_json_dumps(safe_result)
             )
             if not update_result:
-                logger.error(f"Failed to update approval task: update_task_status returned None for task_id={task_id}")
+                logger.error(
+                    f"Failed to update approval task: update_task_status returned None for task_id={task_id}"
+                )
                 raise HTTPException(
                     status_code=500,
-                    detail=f"Failed to update task status: task not found or update failed"
+                    detail=f"Failed to update task status: task not found or update failed",
                 )
             logger.info(f"Successfully updated task {task_id} to status '{new_status}'")
         except HTTPException:
@@ -2012,7 +2046,9 @@ async def approve_task(
                     if publish_update_result:
                         logger.info(f"Task {task_id} status updated to 'published'")
                     else:
-                        logger.warning(f"Auto-publish: update_task_status returned None for task {task_id}")
+                        logger.warning(
+                            f"Auto-publish: update_task_status returned None for task {task_id}"
+                        )
                 except Exception as e:
                     logger.error(
                         f"Failed to update task status to published: {str(e)}", exc_info=True
@@ -2101,20 +2137,22 @@ async def approve_task(
                         # [CRITICAL FIX] Save post_id and post_slug to DB
                         # The post was just created, so we need to persist this relationship
                         try:
-                            final_result = convert_decimals({
-                                **safe_publish_result,
-                                "post_id": post_id,
-                                "post_slug": slug,
-                                "published_url": f"/posts/{slug}",
-                            })
+                            final_result = convert_decimals(
+                                {
+                                    **safe_publish_result,
+                                    "post_id": post_id,
+                                    "post_slug": slug,
+                                    "published_url": f"/posts/{slug}",
+                                }
+                            )
                             await db_service.update_task_status(
-                                task_id,
-                                "published",
-                                result=safe_json_dumps(final_result)
+                                task_id, "published", result=safe_json_dumps(final_result)
                             )
                             logger.info(f"[OK] Saved post_id to database: {post_id}")
                         except Exception as e:
-                            logger.warning(f"[WARNING] Failed to save post_id to database: {str(e)}")
+                            logger.warning(
+                                f"[WARNING] Failed to save post_id to database: {str(e)}"
+                            )
                             # Don't fail the entire operation if saving post_id fails
                             # The post was created, just the DB link is missing
                     else:
@@ -2250,10 +2288,7 @@ async def publish_task(
 
         if not publish_update_result:
             logger.error(f"Failed to update task {task_id} status to published")
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to update task status to published"
-            )
+            raise HTTPException(status_code=500, detail="Failed to update task status to published")
 
         # Create post in posts table when publishing (not before)
         # This ensures posts only exist for published content
@@ -2334,15 +2369,15 @@ async def publish_task(
                 # The post was just created, so we need to persist this relationship
                 try:
                     post_id = str(post.id) if hasattr(post, "id") else str(post.get("id"))
-                    final_result = convert_decimals({
-                        "post_id": post_id,
-                        "post_slug": slug,
-                        "published_url": f"/posts/{slug}",
-                    })
+                    final_result = convert_decimals(
+                        {
+                            "post_id": post_id,
+                            "post_slug": slug,
+                            "published_url": f"/posts/{slug}",
+                        }
+                    )
                     await db_service.update_task_status(
-                        task_id,
-                        "published",
-                        result=safe_json_dumps(final_result)
+                        task_id, "published", result=safe_json_dumps(final_result)
                     )
                     logger.info(f"[OK] Saved post_id to database: {post_id}")
                 except Exception as e:
@@ -2432,10 +2467,7 @@ async def reject_task(
 
         if not reject_result:
             logger.error(f"Failed to update task {task_id} status to rejected")
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to update task status to rejected"
-            )
+            raise HTTPException(status_code=500, detail="Failed to update task status to rejected")
 
         # Fetch updated task
         updated_task = await db_service.get_task(task_id)

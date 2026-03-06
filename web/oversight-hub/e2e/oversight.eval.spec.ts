@@ -40,14 +40,18 @@ test.beforeEach(async ({ page }) => {
 // ─── 1. Auth & Layout ────────────────────────────────────────────────────────
 
 test.describe('Auth & Layout', () => {
-  test('dev-mode auto-auth: redirects to dashboard, not login', async ({ page }) => {
+  test('dev-mode auto-auth: redirects to dashboard, not login', async ({
+    page,
+  }) => {
     await expect(page).toHaveURL('http://localhost:3001/');
     await expect(page.locator('h1').first()).toBeVisible();
   });
 
   test('header renders with app title', async ({ page }) => {
     // Actual rendered text is "🎛️ Oversight Hub" (Header.jsx)
-    await expect(page.locator('h1', { hasText: 'Oversight Hub' }).first()).toBeVisible();
+    await expect(
+      page.locator('h1', { hasText: 'Oversight Hub' }).first()
+    ).toBeVisible();
   });
 
   test('navigation menu button is accessible', async ({ page }) => {
@@ -56,18 +60,35 @@ test.describe('Auth & Layout', () => {
 
   test('opening nav menu shows all 9 navigation items', async ({ page }) => {
     await page.locator('.nav-menu-btn').click();
-    const navItems = ['Dashboard', 'Tasks', 'Content', 'Approvals', 'Services', 'AI Studio', 'Costs', 'Performance', 'Settings'];
+    const navItems = [
+      'Dashboard',
+      'Tasks',
+      'Content',
+      'Approvals',
+      'Services',
+      'AI Studio',
+      'Costs',
+      'Performance',
+      'Settings',
+    ];
     for (const label of navItems) {
-      await expect(page.locator('.nav-menu-item', { hasText: label })).toBeVisible();
+      await expect(
+        page.locator('.nav-menu-item', { hasText: label })
+      ).toBeVisible();
     }
   });
 
-  test('login page is accessible at /login (public route)', async ({ page }) => {
+  test('login page is accessible at /login (public route)', async ({
+    page,
+  }) => {
     await page.goto('/login');
     await page.waitForLoadState('networkidle');
     // Should render a login UI, not redirect away
     await expect(page.locator('body')).toBeVisible();
-    await page.screenshot({ path: 'test-results/screenshots/login.png', fullPage: true });
+    await page.screenshot({
+      path: 'test-results/screenshots/login.png',
+      fullPage: true,
+    });
   });
 });
 
@@ -75,15 +96,21 @@ test.describe('Auth & Layout', () => {
 
 test.describe('Executive Dashboard (/)', () => {
   test('renders dashboard heading', async ({ page }) => {
-    await expect(page.locator('h1', { hasText: 'Executive Dashboard' })).toBeVisible();
+    await expect(
+      page.locator('h1', { hasText: 'Executive Dashboard' })
+    ).toBeVisible();
   });
 
   test('KPI section is present', async ({ page }) => {
     await expect(page.locator('.kpi-section')).toBeVisible();
-    await expect(page.locator('h2', { hasText: 'Key Performance Indicators' })).toBeVisible();
+    await expect(
+      page.locator('h2', { hasText: 'Key Performance Indicators' })
+    ).toBeVisible();
   });
 
-  test('KPI cards render (Revenue, Content Published, Tasks Completed, AI Savings)', async ({ page }) => {
+  test('KPI cards render (Revenue, Content Published, Tasks Completed, AI Savings)', async ({
+    page,
+  }) => {
     await expect(page.locator('.kpi-card.revenue-card')).toBeVisible();
     await expect(page.locator('.kpi-card.content-card')).toBeVisible();
     await expect(page.locator('.kpi-card.tasks-card')).toBeVisible();
@@ -99,11 +126,14 @@ test.describe('Executive Dashboard (/)', () => {
     page.on('pageerror', (err) => errors.push(err.message));
     await page.reload();
     await waitForAuth(page);
-    expect(errors.filter(e => !e.includes('ResizeObserver'))).toHaveLength(0);
+    expect(errors.filter((e) => !e.includes('ResizeObserver'))).toHaveLength(0);
   });
 
   test('screenshot: dashboard full page', async ({ page }) => {
-    await page.screenshot({ path: 'test-results/screenshots/dashboard.png', fullPage: true });
+    await page.screenshot({
+      path: 'test-results/screenshots/dashboard.png',
+      fullPage: true,
+    });
   });
 });
 
@@ -121,18 +151,33 @@ test.describe('Task Management (/tasks)', () => {
 
   test('task list or empty state is visible', async ({ page }) => {
     // Either a task table/list OR an empty state message renders
-    const hasContent = await page.locator('table, [class*="task-list"], [class*="TaskTable"], [class*="empty"]').first().isVisible().catch(() => false);
+    const hasContent = await page
+      .locator(
+        'table, [class*="task-list"], [class*="TaskTable"], [class*="empty"]'
+      )
+      .first()
+      .isVisible()
+      .catch(() => false);
     expect(hasContent).toBe(true);
   });
 
   test('filters/controls area renders', async ({ page }) => {
     // Some filter control should be present (search, status filter, etc.)
-    const hasFilters = await page.locator('input[type="search"], input[type="text"], select, [class*="filter"], [class*="Filter"]').first().isVisible().catch(() => false);
+    const hasFilters = await page
+      .locator(
+        'input[type="search"], input[type="text"], select, [class*="filter"], [class*="Filter"]'
+      )
+      .first()
+      .isVisible()
+      .catch(() => false);
     expect(hasFilters).toBe(true);
   });
 
   test('screenshot: tasks page', async ({ page }) => {
-    await page.screenshot({ path: 'test-results/screenshots/tasks.png', fullPage: true });
+    await page.screenshot({
+      path: 'test-results/screenshots/tasks.png',
+      fullPage: true,
+    });
   });
 });
 
@@ -153,11 +198,14 @@ test.describe('Content (/content)', () => {
     const errors: string[] = [];
     page.on('pageerror', (err) => errors.push(err.message));
     await page.waitForTimeout(2000);
-    expect(errors.filter(e => !e.includes('ResizeObserver'))).toHaveLength(0);
+    expect(errors.filter((e) => !e.includes('ResizeObserver'))).toHaveLength(0);
   });
 
   test('screenshot: content page', async ({ page }) => {
-    await page.screenshot({ path: 'test-results/screenshots/content.png', fullPage: true });
+    await page.screenshot({
+      path: 'test-results/screenshots/content.png',
+      fullPage: true,
+    });
   });
 });
 
@@ -176,12 +224,21 @@ test.describe('Approvals (/approvals)', () => {
   test('approval queue UI renders', async ({ page }) => {
     await expect(page.locator('body')).toBeVisible();
     // Either items or an empty/loading state
-    const hasUI = await page.locator('[class*="approval"], [class*="Approval"], [class*="queue"], h1, h2').first().isVisible().catch(() => false);
+    const hasUI = await page
+      .locator(
+        '[class*="approval"], [class*="Approval"], [class*="queue"], h1, h2'
+      )
+      .first()
+      .isVisible()
+      .catch(() => false);
     expect(hasUI).toBe(true);
   });
 
   test('screenshot: approvals page', async ({ page }) => {
-    await page.screenshot({ path: 'test-results/screenshots/approvals.png', fullPage: true });
+    await page.screenshot({
+      path: 'test-results/screenshots/approvals.png',
+      fullPage: true,
+    });
   });
 });
 
@@ -199,12 +256,19 @@ test.describe('Services (/services)', () => {
 
   test('services panel renders', async ({ page }) => {
     await expect(page.locator('body')).toBeVisible();
-    const hasContent = await page.locator('[class*="service"], [class*="Service"], h1, h2').first().isVisible().catch(() => false);
+    const hasContent = await page
+      .locator('[class*="service"], [class*="Service"], h1, h2')
+      .first()
+      .isVisible()
+      .catch(() => false);
     expect(hasContent).toBe(true);
   });
 
   test('screenshot: services page', async ({ page }) => {
-    await page.screenshot({ path: 'test-results/screenshots/services.png', fullPage: true });
+    await page.screenshot({
+      path: 'test-results/screenshots/services.png',
+      fullPage: true,
+    });
   });
 });
 
@@ -222,12 +286,21 @@ test.describe('AI Studio (/ai)', () => {
 
   test('AI studio UI renders', async ({ page }) => {
     await expect(page.locator('body')).toBeVisible();
-    const hasContent = await page.locator('[class*="ai"], [class*="studio"], [class*="Studio"], textarea, h1, h2').first().isVisible().catch(() => false);
+    const hasContent = await page
+      .locator(
+        '[class*="ai"], [class*="studio"], [class*="Studio"], textarea, h1, h2'
+      )
+      .first()
+      .isVisible()
+      .catch(() => false);
     expect(hasContent).toBe(true);
   });
 
   test('screenshot: AI studio page', async ({ page }) => {
-    await page.screenshot({ path: 'test-results/screenshots/ai-studio.png', fullPage: true });
+    await page.screenshot({
+      path: 'test-results/screenshots/ai-studio.png',
+      fullPage: true,
+    });
   });
 });
 
@@ -245,12 +318,19 @@ test.describe('Cost Metrics (/costs)', () => {
 
   test('cost dashboard renders', async ({ page }) => {
     await expect(page.locator('body')).toBeVisible();
-    const hasContent = await page.locator('[class*="cost"], [class*="Cost"], [class*="metric"], h1, h2').first().isVisible().catch(() => false);
+    const hasContent = await page
+      .locator('[class*="cost"], [class*="Cost"], [class*="metric"], h1, h2')
+      .first()
+      .isVisible()
+      .catch(() => false);
     expect(hasContent).toBe(true);
   });
 
   test('screenshot: costs page', async ({ page }) => {
-    await page.screenshot({ path: 'test-results/screenshots/costs.png', fullPage: true });
+    await page.screenshot({
+      path: 'test-results/screenshots/costs.png',
+      fullPage: true,
+    });
   });
 });
 
@@ -268,12 +348,19 @@ test.describe('Performance (/performance)', () => {
 
   test('performance dashboard renders', async ({ page }) => {
     await expect(page.locator('body')).toBeVisible();
-    const hasContent = await page.locator('[class*="performance"], [class*="Performance"], h1, h2').first().isVisible().catch(() => false);
+    const hasContent = await page
+      .locator('[class*="performance"], [class*="Performance"], h1, h2')
+      .first()
+      .isVisible()
+      .catch(() => false);
     expect(hasContent).toBe(true);
   });
 
   test('screenshot: performance page', async ({ page }) => {
-    await page.screenshot({ path: 'test-results/screenshots/performance.png', fullPage: true });
+    await page.screenshot({
+      path: 'test-results/screenshots/performance.png',
+      fullPage: true,
+    });
   });
 });
 
@@ -291,12 +378,19 @@ test.describe('Settings (/settings)', () => {
 
   test('settings sections render', async ({ page }) => {
     await expect(page.locator('body')).toBeVisible();
-    const hasContent = await page.locator('[class*="setting"], [class*="Setting"], h1, h2, h3').first().isVisible().catch(() => false);
+    const hasContent = await page
+      .locator('[class*="setting"], [class*="Setting"], h1, h2, h3')
+      .first()
+      .isVisible()
+      .catch(() => false);
     expect(hasContent).toBe(true);
   });
 
   test('screenshot: settings page', async ({ page }) => {
-    await page.screenshot({ path: 'test-results/screenshots/settings.png', fullPage: true });
+    await page.screenshot({
+      path: 'test-results/screenshots/settings.png',
+      fullPage: true,
+    });
   });
 });
 
@@ -314,19 +408,30 @@ test.describe('Workflows (/workflows)', () => {
 
   test('blog workflow page renders', async ({ page }) => {
     await expect(page.locator('body')).toBeVisible();
-    const hasContent = await page.locator('[class*="workflow"], [class*="Workflow"], [class*="blog"], h1, h2').first().isVisible().catch(() => false);
+    const hasContent = await page
+      .locator(
+        '[class*="workflow"], [class*="Workflow"], [class*="blog"], h1, h2'
+      )
+      .first()
+      .isVisible()
+      .catch(() => false);
     expect(hasContent).toBe(true);
   });
 
   test('screenshot: workflows page', async ({ page }) => {
-    await page.screenshot({ path: 'test-results/screenshots/workflows.png', fullPage: true });
+    await page.screenshot({
+      path: 'test-results/screenshots/workflows.png',
+      fullPage: true,
+    });
   });
 });
 
 // ─── 12. 404 / Unknown Routes ────────────────────────────────────────────────
 
 test.describe('Routing Edge Cases', () => {
-  test('unknown route redirects to dashboard (catch-all route)', async ({ page }) => {
+  test('unknown route redirects to dashboard (catch-all route)', async ({
+    page,
+  }) => {
     await page.goto('/this-route-does-not-exist');
     await page.waitForLoadState('networkidle');
     // AppRoutes has <Navigate to="/" replace /> for unknown routes

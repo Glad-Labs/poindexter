@@ -8,25 +8,27 @@ Provides hard validation constraints for:
 - Heading structure validation
 """
 
-import re
 import logging
+import re
 from dataclasses import dataclass
-from typing import List, Optional, Dict, Tuple
 from enum import Enum
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
 
 class KeywordDensityStatus(Enum):
     """Status of keyword density validation"""
-    TOO_LOW = "too_low"        # < 0.5%
-    OPTIMAL = "optimal"         # 0.5% - 3%
-    TOO_HIGH = "too_high"       # > 3%
+
+    TOO_LOW = "too_low"  # < 0.5%
+    OPTIMAL = "optimal"  # 0.5% - 3%
+    TOO_HIGH = "too_high"  # > 3%
 
 
 @dataclass
 class KeywordValidation:
     """Validation result for a single keyword"""
+
     keyword: str
     appears_in_content: bool
     density: float  # percentage
@@ -38,6 +40,7 @@ class KeywordValidation:
 @dataclass
 class SEOValidationResult:
     """Complete SEO validation result"""
+
     is_valid: bool
     title_valid: bool
     meta_valid: bool
@@ -118,9 +121,7 @@ class SEOValidator:
         # Validate title
         title_valid = len(title) <= self.TITLE_MAX_CHARS
         if not title_valid:
-            errors.append(
-                f"Title too long: {len(title)} chars (max {self.TITLE_MAX_CHARS})"
-            )
+            errors.append(f"Title too long: {len(title)} chars (max {self.TITLE_MAX_CHARS})")
 
         # Validate meta description
         meta_valid = len(meta_description) <= self.META_MAX_CHARS
@@ -151,16 +152,12 @@ class SEOValidator:
         keywords_all_valid = True
 
         for keyword in keywords:
-            validation = self._validate_keyword(
-                keyword, content_lower, word_count
-            )
+            validation = self._validate_keyword(keyword, content_lower, word_count)
             keyword_validations.append(validation)
 
             if not validation.appears_in_content:
                 keywords_all_valid = False
-                errors.append(
-                    f"Keyword not found in content: '{keyword}'"
-                )
+                errors.append(f"Keyword not found in content: '{keyword}'")
             elif validation.status == KeywordDensityStatus.TOO_LOW:
                 warnings.append(
                     f"Keyword '{keyword}' density too low: "
@@ -185,9 +182,7 @@ class SEOValidator:
                 )
 
         # Validate heading hierarchy
-        hierarchy_valid, hierarchy_errors = self._validate_heading_hierarchy(
-            content
-        )
+        hierarchy_valid, hierarchy_errors = self._validate_heading_hierarchy(content)
         if not hierarchy_valid:
             errors.extend(hierarchy_errors)
 
@@ -213,8 +208,7 @@ class SEOValidator:
         # Generate suggestions
         if not is_valid:
             suggestions = self._generate_suggestions(
-                title_valid, meta_valid, slug_valid, h1_valid,
-                keyword_validations, forbidden_found
+                title_valid, meta_valid, slug_valid, h1_valid, keyword_validations, forbidden_found
             )
 
         return SEOValidationResult(
@@ -243,7 +237,7 @@ class SEOValidator:
         keyword_lower = keyword.lower()
 
         # Count appearances (phrase matching)
-        pattern = r'\b' + re.escape(keyword_lower) + r'\b'
+        pattern = r"\b" + re.escape(keyword_lower) + r"\b"
         appearances = len(re.findall(pattern, content_lower))
 
         if appearances == 0:
@@ -253,7 +247,7 @@ class SEOValidator:
                 density=0.0,
                 status=KeywordDensityStatus.TOO_LOW,
                 appearances=0,
-                reason="Keyword not found in content"
+                reason="Keyword not found in content",
             )
 
         # Calculate density (keyword frequency / total words * 100)
@@ -272,7 +266,7 @@ class SEOValidator:
             density=density,
             status=status,
             appearances=appearances,
-            reason=f"Density: {density:.2f}%"
+            reason=f"Density: {density:.2f}%",
         )
 
     def _validate_slug(self, slug: str) -> bool:
@@ -287,12 +281,12 @@ class SEOValidator:
             return False
 
         # Pattern: starts/ends with alphanumeric, contains alphanumeric and hyphens
-        pattern = r'^[a-z0-9]([a-z0-9-]*[a-z0-9])?$'
+        pattern = r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"
         return bool(re.match(pattern, slug))
 
     def _extract_h1(self, content: str) -> Optional[str]:
         """Extract H1 heading text, if it exists"""
-        match = re.search(r'^#\s+(.+?)$', content, re.MULTILINE)
+        match = re.search(r"^#\s+(.+?)$", content, re.MULTILINE)
         if match:
             return match.group(1).strip()
         return None
@@ -321,15 +315,13 @@ class SEOValidator:
             return True
 
         # Check first N words
-        first_words = " ".join(content.split()[:self.PRIMARY_KEYWORD_WORD_LIMIT])
+        first_words = " ".join(content.split()[: self.PRIMARY_KEYWORD_WORD_LIMIT])
         if pk_lower in first_words.lower():
             return True
 
         return False
 
-    def _validate_heading_hierarchy(
-        self, content: str
-    ) -> Tuple[bool, List[str]]:
+    def _validate_heading_hierarchy(self, content: str) -> Tuple[bool, List[str]]:
         """
         Validate heading hierarchy (H1 → H2 → H3, no skips)
 
@@ -339,7 +331,7 @@ class SEOValidator:
         errors = []
 
         # Find all headings with their levels
-        heading_pattern = r'^(#+)\s+(.+?)$'
+        heading_pattern = r"^(#+)\s+(.+?)$"
         headings = [
             (len(m.group(1)), m.group(2).strip())
             for m in re.finditer(heading_pattern, content, re.MULTILINE)
@@ -379,7 +371,7 @@ class SEOValidator:
         Returns:
             List of forbidden headings found
         """
-        heading_pattern = r'^#+\s+(.+?)$'
+        heading_pattern = r"^#+\s+(.+?)$"
         found = []
 
         for match in re.finditer(heading_pattern, content, re.MULTILINE):
@@ -403,14 +395,10 @@ class SEOValidator:
         suggestions = []
 
         if not title_valid:
-            suggestions.append(
-                f"Shorten SEO title to max {self.TITLE_MAX_CHARS} characters"
-            )
+            suggestions.append(f"Shorten SEO title to max {self.TITLE_MAX_CHARS} characters")
 
         if not meta_valid:
-            suggestions.append(
-                f"Shorten meta description to max {self.META_MAX_CHARS} characters"
-            )
+            suggestions.append(f"Shorten meta description to max {self.META_MAX_CHARS} characters")
 
         if not slug_valid:
             suggestions.append(

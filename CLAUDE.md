@@ -5,6 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 Glad Labs is an AI orchestration system (v3.0.2) — a monorepo with three integrated services:
+
 - **Backend:** Python FastAPI orchestrator with 87+ service modules (port 8000)
 - **Admin UI:** React 18 + Material-UI dashboard for agent monitoring (port 3001)
 - **Public Site:** Next.js 15 content distribution website (port 3000)
@@ -25,6 +26,7 @@ Glad Labs is an AI orchestration system (v3.0.2) — a monorepo with three integ
 ## Development Commands
 
 ### Starting Services
+
 ```bash
 npm run dev                  # Start all three services concurrently (primary command)
 npm run dev:cofounder        # Backend only (FastAPI + uvicorn)
@@ -33,6 +35,7 @@ npm run dev:oversight        # React admin only
 ```
 
 ### Setup & Installation
+
 ```bash
 npm run clean:install        # Full reset: remove node_modules, reinstall everything
 npm run install:all          # Install all Node + Python deps
@@ -40,6 +43,7 @@ npm run setup                # Full setup with environment config
 ```
 
 ### Testing
+
 ```bash
 # Python backend
 npm run test:python           # Integration + e2e (full suite)
@@ -63,6 +67,7 @@ npm run test:playwright:headed # With visible browser
 ```
 
 ### Code Quality
+
 ```bash
 npm run lint                  # ESLint all workspaces
 npm run lint:fix              # Fix ESLint issues
@@ -74,6 +79,7 @@ npm run type:check            # Python mypy
 ```
 
 ### Build
+
 ```bash
 npm run build                 # Build all workspaces
 # Oversight Hub output: web/oversight-hub/build/
@@ -87,6 +93,7 @@ npm run build                 # Build all workspaces
 **Entry point:** `main.py` — FastAPI app initializing service container, database pools, orchestrator, and registering all 29+ route modules via `register_all_routes()`.
 
 **Key services:**
+
 - `services/model_router.py` — LLM provider selection with automatic fallback: Ollama → Anthropic → OpenAI → Google → echo/mock. **Never hardcode model names; use cost tiers.**
 - `services/database_service.py` — Coordinates 5 specialized DB modules (Users, Tasks, Content, Admin, WritingStyle). PostgreSQL-only; no SQLite fallback.
 - `services/unified_orchestrator.py` — Master agent choreography and task distribution
@@ -112,6 +119,7 @@ npm run build                 # Build all workspaces
 **`.env.local`** at project root is the single source of truth for all three services (Python and Node both read it).
 
 **Minimum required:**
+
 ```env
 DATABASE_URL=postgresql://user:pass@localhost:5432/glad_labs_dev
 # Plus at least ONE of: ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY, or OLLAMA_BASE_URL

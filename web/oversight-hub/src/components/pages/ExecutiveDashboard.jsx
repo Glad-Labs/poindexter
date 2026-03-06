@@ -78,7 +78,7 @@ const ExecutiveDashboard = () => {
       if (!costByDayList || costByDayList.length === 0) {
         return { avg: 0, peak: 0, low: 0 };
       }
-      const costs = costByDayList.map(d => d.cost || 0);
+      const costs = costByDayList.map((d) => d.cost || 0);
       return {
         avg: costs.reduce((a, b) => a + b, 0) / costs.length,
         peak: Math.max(...costs),
@@ -91,7 +91,7 @@ const ExecutiveDashboard = () => {
       if (!taskByDayList || taskByDayList.length === 0) {
         return { avg: 0, peak: 0, low: 0 };
       }
-      const counts = taskByDayList.map(d => d.count || 0);
+      const counts = taskByDayList.map((d) => d.count || 0);
       return {
         avg: counts.reduce((a, b) => a + b, 0) / counts.length,
         peak: Math.max(...counts),
@@ -116,7 +116,16 @@ const ExecutiveDashboard = () => {
         contentPublished: {
           current: apiData.total_tasks || 0,
           previous: Math.max(0, (apiData.total_tasks || 0) - 5),
-          change: Math.min(45, Math.max(0, ((apiData.total_tasks || 0) / Math.max(1, (apiData.total_tasks || 0) - 5) - 1) * 100)),
+          change: Math.min(
+            45,
+            Math.max(
+              0,
+              ((apiData.total_tasks || 0) /
+                Math.max(1, (apiData.total_tasks || 0) - 5) -
+                1) *
+                100
+            )
+          ),
           unit: 'tasks',
           icon: '📝',
         },
@@ -174,7 +183,7 @@ const ExecutiveDashboard = () => {
         // Map tasks_per_day to publishing trend
         publishing: {
           title: 'Task Trend (last 30 days)',
-          data: (apiData.tasks_per_day || []).map(d => d.count || 0),
+          data: (apiData.tasks_per_day || []).map((d) => d.count || 0),
           avg: taskStats.avg,
           peak: taskStats.peak,
           low: taskStats.low,
@@ -183,7 +192,7 @@ const ExecutiveDashboard = () => {
         // Map success_trend to engagement
         engagement: {
           title: 'Success Rate Trend (last 30 days)',
-          data: (apiData.success_trend || []).map(d => {
+          data: (apiData.success_trend || []).map((d) => {
             const rate = d.total > 0 ? (d.completed / d.total) * 100 : 0;
             return Math.round(rate * 10) / 10; // Round to 1 decimal
           }),
@@ -195,7 +204,7 @@ const ExecutiveDashboard = () => {
         // Map cost_per_day to cost trend
         costTrend: {
           title: 'AI Cost Trend (last 30 days)',
-          data: (apiData.cost_per_day || []).map(d => d.cost || 0),
+          data: (apiData.cost_per_day || []).map((d) => d.cost || 0),
           avg: costStats.avg,
           peak: costStats.peak,
           low: costStats.low,
@@ -205,8 +214,8 @@ const ExecutiveDashboard = () => {
       systemStatus: {
         agentsActive: 2,
         agentsTotal: 5,
-        tasksQueued: (apiData.pending_tasks || 0),
-        tasksFailed: (apiData.failed_tasks || 0),
+        tasksQueued: apiData.pending_tasks || 0,
+        tasksFailed: apiData.failed_tasks || 0,
         uptime: 99.8,
         lastSync: '2 minutes ago',
       },
@@ -214,13 +223,23 @@ const ExecutiveDashboard = () => {
         thisMonth: {
           postsCreated: apiData.total_tasks || 0,
           tasksCompleted: apiData.completed_tasks || 0,
-          automationRate: Math.round(((apiData.completed_tasks || 0) / Math.max(1, apiData.total_tasks || 1)) * 100),
+          automationRate: Math.round(
+            ((apiData.completed_tasks || 0) /
+              Math.max(1, apiData.total_tasks || 1)) *
+              100
+          ),
           costSaved: Math.round((apiData.total_cost_usd || 0) * 10),
         },
         thisYear: {
           postsCreated: apiData.total_tasks ? apiData.total_tasks * 5 : 0, // Estimate year = month * 5
-          tasksCompleted: apiData.completed_tasks ? apiData.completed_tasks * 5 : 0,
-          automationRate: Math.round(((apiData.completed_tasks || 0) / Math.max(1, apiData.total_tasks || 1)) * 100),
+          tasksCompleted: apiData.completed_tasks
+            ? apiData.completed_tasks * 5
+            : 0,
+          automationRate: Math.round(
+            ((apiData.completed_tasks || 0) /
+              Math.max(1, apiData.total_tasks || 1)) *
+              100
+          ),
           costSaved: Math.round((apiData.total_cost_usd || 0) * 50),
         },
       },

@@ -106,7 +106,9 @@ class BlogImageAgent:
 
             return {
                 "featured_image": featured_image.to_dict() if featured_image else None,
-                "gallery_images": [img.to_dict() for img in gallery_images] if gallery_images else [],
+                "gallery_images": (
+                    [img.to_dict() for img in gallery_images] if gallery_images else []
+                ),
                 "image_markdown": image_markdown,
                 "image_count_found": len(gallery_images),
                 "status": "success",

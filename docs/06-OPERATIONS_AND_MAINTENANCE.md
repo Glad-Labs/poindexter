@@ -25,15 +25,15 @@ curl http://localhost:8000/api/metrics
 
 Returns aggregated system metrics:
 
-| Field | Description |
-| :--- | :--- |
-| `total_tasks` | Total tasks ever created |
-| `completed_tasks` | Successfully completed |
-| `failed_tasks` | Failed tasks |
-| `pending_tasks` | Queued or in-progress |
-| `success_rate` | Percentage (0–100) |
+| Field                | Description                 |
+| :------------------- | :-------------------------- |
+| `total_tasks`        | Total tasks ever created    |
+| `completed_tasks`    | Successfully completed      |
+| `failed_tasks`       | Failed tasks                |
+| `pending_tasks`      | Queued or in-progress       |
+| `success_rate`       | Percentage (0–100)          |
 | `avg_execution_time` | Average duration in seconds |
-| `total_cost` | Estimated total cost in USD |
+| `total_cost`         | Estimated total cost in USD |
 
 ### WebSocket Connection Stats
 

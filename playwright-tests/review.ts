@@ -17,11 +17,11 @@ const pagesToTest = [
   '/',
   '/oversight-hub-home',
   '/dashboard-after-task',
-  '/poindexter-chat-prepared'
+  '/poindexter-chat-prepared',
 ];
 
 describe('Review website', () => {
-  pagesToTest.forEach(page => {
+  pagesToTest.forEach((page) => {
     it(`should load ${page} correctly`, async ({ page }) => {
       await page.goto(page);
       // Take screenshot

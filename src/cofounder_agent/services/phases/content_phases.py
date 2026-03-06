@@ -6,15 +6,15 @@ Each phase is a discrete, composable step in content creation.
 """
 
 import logging
-from typing import Any, Dict, Optional
 from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 
 from .base_phase import (
     BasePhase,
     PhaseConfig,
     PhaseInputSpec,
-    PhaseOutputSpec,
     PhaseInputType,
+    PhaseOutputSpec,
 )
 
 logger = logging.getLogger(__name__)
@@ -79,9 +79,7 @@ class GenerateContentPhase(BasePhase):
             },
         )
 
-    async def execute(
-        self, inputs: Dict[str, Any], config: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def execute(self, inputs: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
         """Generate content using AI"""
 
         # Validate inputs
@@ -102,9 +100,7 @@ class GenerateContentPhase(BasePhase):
             tone = config.get("tone", "professional")
             target_length = config.get("target_length", 1500)
 
-            logger.info(
-                f"[GenerateContentPhase] Generating {style} {tone} content on '{topic}'"
-            )
+            logger.info(f"[GenerateContentPhase] Generating {style} {tone} content on '{topic}'")
 
             # Use existing content generation logic
             content_generator = get_content_generator()
@@ -213,9 +209,7 @@ class QualityEvaluationPhase(BasePhase):
             },
         )
 
-    async def execute(
-        self, inputs: Dict[str, Any], config: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def execute(self, inputs: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
         """Evaluate content quality"""
 
         is_valid, error = await self.validate_inputs(inputs)
@@ -323,9 +317,7 @@ class SearchImagePhase(BasePhase):
             },
         )
 
-    async def execute(
-        self, inputs: Dict[str, Any], config: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def execute(self, inputs: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
         """Search for featured image"""
 
         if not config.get("enabled", True):
@@ -354,22 +346,16 @@ class SearchImagePhase(BasePhase):
 
             # Use existing image service
             image_service = get_image_service()
-            featured_image = await image_service.search_featured_image(
-                topic=topic, keywords=tags
-            )
+            featured_image = await image_service.search_featured_image(topic=topic, keywords=tags)
 
             self.status = "completed"
             self.result = {
                 "image_url": featured_image.get("url") if featured_image else None,
-                "photographer": featured_image.get("photographer")
-                if featured_image
-                else None,
+                "photographer": featured_image.get("photographer") if featured_image else None,
                 "source": "Pexels" if featured_image else None,
             }
 
-            logger.info(
-                f"[SearchImagePhase] Found image: {self.result['image_url'] is not None}"
-            )
+            logger.info(f"[SearchImagePhase] Found image: {self.result['image_url'] is not None}")
 
             return self.result
 
@@ -439,9 +425,7 @@ class GenerateSEOPhase(BasePhase):
             configurable_params={},
         )
 
-    async def execute(
-        self, inputs: Dict[str, Any], config: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def execute(self, inputs: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
         """Generate SEO metadata"""
 
         is_valid, error = await self.validate_inputs(inputs)
@@ -550,9 +534,7 @@ class CaptureTrainingDataPhase(BasePhase):
             configurable_params={},
         )
 
-    async def execute(
-        self, inputs: Dict[str, Any], config: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def execute(self, inputs: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
         """Capture training data"""
 
         is_valid, error = await self.validate_inputs(inputs)
