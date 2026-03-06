@@ -262,7 +262,8 @@ class TemplateExecutionService:
                         logger.info(f"Persisted template workflow: {workflow.id}")
                 except Exception as e:
                     logger.error(
-                        f"Failed to persist/retrieve template workflow: {e}", exc_info=True
+                        f"[_execute_template] Failed to persist/retrieve template workflow: {e}",
+                        exc_info=True,
                     )
                     # Don't continue - we cannot execute without a valid workflow ID
                     raise ValueError(f"Cannot persist template workflow: {str(e)}")
@@ -294,7 +295,9 @@ class TemplateExecutionService:
             return result
 
         except ValueError as e:
-            logger.error(f"Template validation error: {str(e)}")
+            logger.error(
+                f"[_execute_template] Template validation error: {str(e)}", exc_info=True
+            )
             raise
         except Exception as e:
             logger.error(f"[_execute_template] Template execution error: {str(e)}", exc_info=True)

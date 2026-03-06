@@ -247,7 +247,7 @@ class ServiceBase(ABC):
         except Exception as e:
             execution_time = (datetime.now() - start_time).total_seconds() * 1000
             self.logger.error(
-                f"Unexpected error in action '{action_name}': {str(e)}", exc_info=True
+                f"[execute_action] Unexpected error in action '{action_name}': {str(e)}", exc_info=True
             )
             return ActionResult(
                 action=action_name,

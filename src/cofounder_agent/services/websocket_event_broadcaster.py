@@ -191,4 +191,4 @@ def emit_task_progress_sync(task_id: str, **kwargs):
         else:
             loop.run_until_complete(emit_task_progress(task_id=task_id, **kwargs))
     except RuntimeError:
-        logger.error("Could not emit task progress: no event loop", exc_info=True)
+        logger.error("[emit_task_progress_sync] Could not emit task progress: no event loop", exc_info=True)
