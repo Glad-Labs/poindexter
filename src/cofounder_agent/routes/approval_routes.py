@@ -17,20 +17,21 @@ Workflow:
 6. Task can proceed to publishing (if approved)
 """
 
-import logging
 import json
+import logging
 import re as re_module
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4 as uuid_lib_uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
 from routes.auth_unified import get_current_user
 from routes.websocket_routes import broadcast_approval_status
 from services.database_service import DatabaseService
-from utils.route_utils import get_database_dependency
 from utils.json_encoder import convert_decimals, safe_json_dumps
+from utils.route_utils import get_database_dependency
 
 logger = logging.getLogger(__name__)
 
@@ -163,7 +164,9 @@ async def approve_task(
 
         logger.info(f"[APPROVAL] User {current_user.get('id')} approving task {task_id}")
         logger.info(f"[APPROVAL] ApprovalRequest object: {request}")
-        logger.info(f"[APPROVAL] Request: approved={request.approved}, auto_publish={request.auto_publish}, type={type(request.auto_publish)}")
+        logger.info(
+            f"[APPROVAL] Request: approved={request.approved}, auto_publish={request.auto_publish}, type={type(request.auto_publish)}"
+        )
         logger.info(f"[APPROVAL] Bool check: auto_publish is True? {request.auto_publish is True}")
         logger.info(f"[APPROVAL] Bool check: auto_publish == True? {request.auto_publish == True}")
         logger.info(f"[APPROVAL] Bool check: bool(auto_publish)? {bool(request.auto_publish)}")
@@ -252,13 +255,13 @@ async def approve_task(
                 # Extract needed fields for post creation
                 topic = task.get("topic", "") or merged_result.get("topic", "")
                 draft_content = (
-                    merged_result.get("draft_content", "")
-                    or merged_result.get("content", "")
-                    or ""
+                    merged_result.get("draft_content", "") or merged_result.get("content", "") or ""
                 )
                 seo_description = merged_result.get("seo_description", "")
                 seo_keywords = merged_result.get("seo_keywords", [])
-                featured_image = request.featured_image_url or merged_result.get("featured_image_url")
+                featured_image = request.featured_image_url or merged_result.get(
+                    "featured_image_url"
+                )
                 metadata = merged_result.get("metadata", {})
 
                 # Extract title from content
@@ -268,7 +271,9 @@ async def approve_task(
                     match = re_module.match(r"^#+\s+(.+?)(?:\n|$)", content.strip())
                     if match:
                         title = match.group(1).strip()
-                        cleaned_content = re_module.sub(r"^#+\s+.+?(?:\n|$)", "", content.strip(), count=1)
+                        cleaned_content = re_module.sub(
+                            r"^#+\s+.+?(?:\n|$)", "", content.strip(), count=1
+                        )
                         return title, cleaned_content.strip()
                     return None, content
 
@@ -278,11 +283,7 @@ async def approve_task(
 
                 if cleaned_content and post_title:
                     # Create slug
-                    slug = (
-                        re_module.sub(r"[^\w\s-]", "", post_title)
-                        .lower()
-                        .replace(" ", "-")[:50]
-                    )
+                    slug = re_module.sub(r"[^\w\s-]", "", post_title).lower().replace(" ", "-")[:50]
                     slug = f"{slug}-{task_id[:8]}"
 
                     # Helper to parse SEO keywords
@@ -325,7 +326,9 @@ async def approve_task(
                             "metadata": metadata,
                         }
                     )
-                    logger.info(f"[OK] Post created: {post.id if hasattr(post, 'id') else post.get('id')}")
+                    logger.info(
+                        f"[OK] Post created: {post.id if hasattr(post, 'id') else post.get('id')}"
+                    )
 
                     # Update task status to published and save post_id
                     post_id = str(post.id) if hasattr(post, "id") else str(post.get("id"))
@@ -337,15 +340,15 @@ async def approve_task(
                         "published_url": f"/posts/{slug}",
                     }
 
-                    final_result = convert_decimals({
-                        **merged_result,
-                        **publish_metadata,
-                    })
+                    final_result = convert_decimals(
+                        {
+                            **merged_result,
+                            **publish_metadata,
+                        }
+                    )
 
                     await db_service.update_task_status(
-                        task_id,
-                        "published",
-                        result=safe_json_dumps(final_result)
+                        task_id, "published", result=safe_json_dumps(final_result)
                     )
                     logger.info(f"[OK] Task {task_id} published with post_id: {post_id}")
             except Exception as e:
@@ -375,8 +378,16 @@ async def approve_task(
             "approval_timestamp": approval_date.isoformat(),
             "approved_by": current_user.get("id"),
             "feedback": request.feedback,
-            "message": "Task approved and published" if request.auto_publish else "Task approved for publishing",
-            "next_action": "Task is published" if request.auto_publish else "Task will be published by the publishing agent",
+            "message": (
+                "Task approved and published"
+                if request.auto_publish
+                else "Task approved for publishing"
+            ),
+            "next_action": (
+                "Task is published"
+                if request.auto_publish
+                else "Task will be published by the publishing agent"
+            ),
             "_debug_auto_publish_value": request.auto_publish,
             "_debug_auto_publish_type": str(type(request.auto_publish)),
             "_debug_auto_publish_bool": bool(request.auto_publish),
@@ -1033,6 +1044,4 @@ async def test_auto_publish(request: ApprovalRequest):
     }
 
 
-
 # DEBUG/TEST ENDPOINTS (removed - using /test-auto-publish instead)
-

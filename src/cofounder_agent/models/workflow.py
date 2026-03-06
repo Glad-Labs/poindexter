@@ -112,16 +112,18 @@ class WorkflowResponse:
             "user_id": self.user_id,
             "output": self.output,
             "task_results": [
-                tr
-                if isinstance(tr, dict)
-                else {
-                    "task_id": getattr(tr, "task_id", None),
-                    "task_name": getattr(tr, "task_name", None),
-                    "status": getattr(tr, "status", None),
-                    "output": getattr(tr, "output", None),
-                    "error": getattr(tr, "error", None),
-                    "duration_seconds": getattr(tr, "duration_seconds", None),
-                }
+                (
+                    tr
+                    if isinstance(tr, dict)
+                    else {
+                        "task_id": getattr(tr, "task_id", None),
+                        "task_name": getattr(tr, "task_name", None),
+                        "status": getattr(tr, "status", None),
+                        "output": getattr(tr, "output", None),
+                        "error": getattr(tr, "error", None),
+                        "duration_seconds": getattr(tr, "duration_seconds", None),
+                    }
+                )
                 for tr in self.task_results
             ],
             "start_time": self.start_time.isoformat(),

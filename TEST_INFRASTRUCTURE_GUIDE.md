@@ -1,8 +1,7 @@
 """
 Phase 1 Test Infrastructure - Implementation Guide
 
-Quick Start Commands
-=====================
+# Quick Start Commands
 
 # Run all unit tests
 
@@ -34,8 +33,8 @@ cd src/cofounder_agent && poetry run pytest tests/unit/services/test_model_route
 
 # Run with markers
 
-cd src/cofounder_agent && poetry run pytest tests/ -m unit -v        # Unit tests only
-cd src/cofounder_agent && poetry run pytest tests/ -m slow -v        # Slow tests only
+cd src/cofounder_agent && poetry run pytest tests/ -m unit -v # Unit tests only
+cd src/cofounder_agent && poetry run pytest tests/ -m slow -v # Slow tests only
 
 # Watch mode (with pytest-watch)
 
@@ -47,57 +46,54 @@ cd src/cofounder_agent && poetry run pytest tests/ --cov=. --cov-report=html
 
 # Open htmlcov/index.html in browser
 
-Test File Organization
-=======================
+# Test File Organization
 
-src/cofounder_agent/
+src/cofounder*agent/
 ├── tests/
-│   ├── conftest.py                           # Shared fixtures & configuration
-│   ├── unit/
-│   │   ├── test_main.py                      # Main app tests
-│   │   ├── services/
-│   │   │   ├── test_model_router.py          # 9 tests
-│   │   │   ├── test_database_service.py      # 12 tests
-│   │   │   ├── test_workflow_executor.py     # 11 tests
-│   │   │   ├── test_task_executor.py         # 12 tests
-│   │   │   └── test_*.py (other services)    # More to add Phase 2
-│   │   ├── routes/
-│   │   │   ├── test_workflow_routes.py       # 9 tests
-│   │   │   ├── test_task_routes.py           # 11 tests
-│   │   │   └── test_*.py (other routes)      # More to add Phase 2
-│   │   ├── agents/
-│   │   │   └── test_*.py                     # Agent tests (Phase 2)
-│   │   └── test_blog_workflow.py             # Integration tests
-│   └── utils/
-│       └── (mock_factory.py, fixtures.py)    # Utilities (in conftest)
+│ ├── conftest.py # Shared fixtures & configuration
+│ ├── unit/
+│ │ ├── test_main.py # Main app tests
+│ │ ├── services/
+│ │ │ ├── test_model_router.py # 9 tests
+│ │ │ ├── test_database_service.py # 12 tests
+│ │ │ ├── test_workflow_executor.py # 11 tests
+│ │ │ ├── test_task_executor.py # 12 tests
+│ │ │ └── test*_.py (other services) # More to add Phase 2
+│ │ ├── routes/
+│ │ │ ├── test*workflow_routes.py # 9 tests
+│ │ │ ├── test_task_routes.py # 11 tests
+│ │ │ └── test*_.py (other routes) # More to add Phase 2
+│ │ ├── agents/
+│ │ │ └── test\_\*.py # Agent tests (Phase 2)
+│ │ └── test_blog_workflow.py # Integration tests
+│ └── utils/
+│ └── (mock_factory.py, fixtures.py) # Utilities (in conftest)
 
-Fixture Reference
-==================
+# Fixture Reference
 
 Available Fixtures (in tests/conftest.py):
 
 async def test_with_fixtures(mock_model_router, mock_database_service):
-    '''Example test using fixtures'''
-    response = await mock_model_router.route(prompt="test")
-    task_id = await mock_database_service.create_task(sample_task_data)
+'''Example test using fixtures'''
+response = await mock_model_router.route(prompt="test")
+task_id = await mock_database_service.create_task(sample_task_data)
 
 Key Fixtures:
 
-- mock_model_router          : Mocked LLM model router
-- mock_database_service      : Mocked PostgreSQL database
-- mock_workflow_executor     : Mocked workflow execution engine
-- mock_task_executor         : Mocked task executor
-- mock_unified_orchestrator  : Mocked agent orchestrator
-- sample_task_data          : Sample task for tests
-- sample_workflow_data      : Sample workflow for tests
-- sample_user_data          : Sample user data
-- sample_content_data       : Sample content
-- test_env                  : Test environment variables
-- async_context_manager     : For testing async context managers
-- cleanup_resources         : For resource cleanup
+- mock_model_router : Mocked LLM model router
+- mock_database_service : Mocked PostgreSQL database
+- mock_workflow_executor : Mocked workflow execution engine
+- mock_task_executor : Mocked task executor
+- mock_unified_orchestrator : Mocked agent orchestrator
+- sample_task_data : Sample task for tests
+- sample_workflow_data : Sample workflow for tests
+- sample_user_data : Sample user data
+- sample_content_data : Sample content
+- test_env : Test environment variables
+- async_context_manager : For testing async context managers
+- cleanup_resources : For resource cleanup
 
-Test Development Workflow
-===========================
+# Test Development Workflow
 
 1. Create a new test file in appropriate directory:
    - Service tests: tests/unit/services/test_service_name.py
@@ -107,20 +103,19 @@ Test Development Workflow
 2. Import fixtures from conftest:
    @pytest.mark.unit
    @pytest.mark.asyncio
-   async def test_something(mock_model_router, sample_task_data):
-       # Your test code here
-       pass
+   async def test_something(mock_model_router, sample_task_data): # Your test code here
+   pass
 
 3. Use pytest markers:
-   @pytest.mark.unit          # Unit test
-   @pytest.mark.asyncio       # Async test
-   @pytest.mark.slow          # Tests > 5 seconds
-   @pytest.mark.smoke         # Fast smoke test for CI
+   @pytest.mark.unit # Unit test
+   @pytest.mark.asyncio # Async test
+   @pytest.mark.slow # Tests > 5 seconds
+   @pytest.mark.smoke # Fast smoke test for CI
 
 4. Run tests:
-   pytest tests/ -v           # Verbose output
-   pytest tests/ --cov=.      # With coverage
-   pytest tests/ -m unit      # Only unit tests
+   pytest tests/ -v # Verbose output
+   pytest tests/ --cov=. # With coverage
+   pytest tests/ -m unit # Only unit tests
 
 5. Check coverage:
 
@@ -128,23 +123,22 @@ Test Development Workflow
 
    pytest tests/ --cov=. --cov-report=term-missing
 
-Converting Debug Functions to Tests
-====================================
+# Converting Debug Functions to Tests
 
 Before (in production code):
-    async def debug_feature():
-        '''Manual test function'''
-        service = MyService()
-        result = await service.do_something()
-        print(result)
+async def debug_feature():
+'''Manual test function'''
+service = MyService()
+result = await service.do_something()
+print(result)
 
 After (in test file):
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    async def test_feature(mock_service):
-        '''Proper unit test'''
-        result = await mock_service.do_something()
-        assert result is not None
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_feature(mock_service):
+'''Proper unit test'''
+result = await mock_service.do_something()
+assert result is not None
 
 Key Differences:
 ✓ Moved to tests/ directory
@@ -153,8 +147,7 @@ Key Differences:
 ✓ Uses fixtures instead of instantiating services
 ✓ Can be run automatically in CI/CD
 
-Common Assertion Patterns
-===========================
+# Common Assertion Patterns
 
 # Basic assertions
 
@@ -170,15 +163,14 @@ assert isinstance(result, (str, bytes))
 # Exception assertions
 
 with pytest.raises(ValueError):
-    invalid_function()
+invalid_function()
 
 # Async assertions
 
 result = await async_function()
 assert result["status"] == "completed"
 
-Phase 1 → Phase 2 Transition
-==============================
+# Phase 1 → Phase 2 Transition
 
 After Phase 1 tests pass, Phase 2 adds:
 
@@ -190,8 +182,7 @@ After Phase 1 tests pass, Phase 2 adds:
 Total Phase 2: 30+ additional tests
 Target coverage: 80% critical services, 70% overall
 
-Debugging Test Failures
-========================
+# Debugging Test Failures
 
 # Run with verbose output
 
@@ -217,8 +208,7 @@ pytest tests/unit/services/test_model_router.py --pdb
 
 pytest tests/unit/services/test_model_router.py --log-cli-level=DEBUG
 
-CI/CD Integration
-===================
+# CI/CD Integration
 
 GitHub Actions will run:
 npm run test:python
@@ -233,8 +223,7 @@ Configuration:
 - Generate coverage report
 - Show test results in PR checks
 
-Next Phase (Phase 2): Database & Agent Tests
-=============================================
+# Next Phase (Phase 2): Database & Agent Tests
 
 Phase 2 will add unit tests for:
 

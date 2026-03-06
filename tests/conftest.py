@@ -299,6 +299,23 @@ def sample_user_data():
     }
 
 
+# ============================================================================
+# PHASE 2 DATABASE MODULE FIXTURES
+# ============================================================================
+
+@pytest.fixture
+def mock_pool():
+    """Mock asyncpg connection pool for database module testing."""
+    pool = MagicMock()
+    
+    # Configure pool to support async context manager pattern
+    mock_conn = AsyncMock()
+    pool.acquire.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
+    pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
+    
+    return pool
+
+
 @pytest.fixture
 def sample_content_data():
     """Sample content data for testing."""

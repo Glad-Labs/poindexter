@@ -106,7 +106,10 @@ class MigrationService:
             return True
 
         except Exception as e:
-            logger.error(f"[_run_migration] ❌ Migration failed ({migration_file.name}): {str(e)}", exc_info=True)
+            logger.error(
+                f"[_run_migration] ❌ Migration failed ({migration_file.name}): {str(e)}",
+                exc_info=True,
+            )
             raise
 
     async def rollback_last_migration(self) -> bool:

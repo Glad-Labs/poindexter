@@ -6,22 +6,24 @@
 
 ---
 
-## íº€ Infrastructure Stack
+## ï¿½ï¿½ï¿½ Infrastructure Stack
 
 Glad Labs is deployed using a split-infrastructure strategy:
 
 ### Backend: Railway.app
+
 - **Service:** FastAPI Orchestrator
 - **Database:** PostgreSQL (Managed)
 - **Secrets:** Synchronized from GitHub Secrets
 
 ### Frontends: Vercel
+
 - **Public Site:** Next.js 15 (SSG/ISR)
 - **Oversight Hub:** React (SPA)
 
 ---
 
-## í¿—ï¸ CI/CD Pipeline
+## ï¿½ï¿½ï¿½ï¸ CI/CD Pipeline
 
 The system uses GitHub Actions for automated deployment:
 

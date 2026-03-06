@@ -10,8 +10,9 @@ This follows the same pattern as service_registry_routes.py but for agents inste
 import logging
 from typing import Any, Dict, List, Optional
 
-from agents.registry import get_agent_registry
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+
+from agents.registry import get_agent_registry
 from utils.route_utils import get_redis_cache_optional
 
 logger = logging.getLogger(__name__)

@@ -38,8 +38,7 @@ class BlogQualityAgent:
         """
         logger.info("Initializing BlogQualityAgent")
         self.quality_service = get_quality_service(
-            model_router=model_router,
-            database_service=database_service
+            model_router=model_router, database_service=database_service
         )
 
     async def run(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
@@ -72,7 +71,9 @@ class BlogQualityAgent:
         """
 
         try:
-            logger.info(f"[BlogQualityAgent] Evaluating content: {len(inputs.get('content', ''))} chars")
+            logger.info(
+                f"[BlogQualityAgent] Evaluating content: {len(inputs.get('content', ''))} chars"
+            )
 
             content = inputs.get("content")
             if not content or len(content.strip()) < 10:
@@ -87,7 +88,9 @@ class BlogQualityAgent:
             try:
                 evaluation_method = EvaluationMethod(evaluation_method_str)
             except ValueError:
-                logger.warning(f"Unknown evaluation method '{evaluation_method_str}', using pattern-based")
+                logger.warning(
+                    f"Unknown evaluation method '{evaluation_method_str}', using pattern-based"
+                )
                 evaluation_method = EvaluationMethod.PATTERN_BASED
 
             # Build context for evaluation

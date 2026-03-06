@@ -3,6 +3,7 @@ import logging
 import re
 
 from services.prompt_manager import get_prompt_manager
+
 from ..config import config
 from ..services.llm_client import LLMClient
 from ..utils.data_models import BlogPost
@@ -58,16 +59,17 @@ class CreativeAgent:
         raw_draft = ""
         if is_refinement and post.qa_feedback:
             # NEW: BUILD ACCUMULATED FEEDBACK from ALL QA rounds (not just the last one)
-            accumulated_feedback = "QA FEEDBACK HISTORY:\n" + "\n".join([
-                f"Round {i+1}: {feedback}"
-                for i, feedback in enumerate(post.qa_feedback)
-            ])
+            accumulated_feedback = "QA FEEDBACK HISTORY:\n" + "\n".join(
+                [f"Round {i+1}: {feedback}" for i, feedback in enumerate(post.qa_feedback)]
+            )
 
-            logger.info(f"CreativeAgent: Using accumulated QA feedback ({len(post.qa_feedback)} rounds)")
+            logger.info(
+                f"CreativeAgent: Using accumulated QA feedback ({len(post.qa_feedback)} rounds)"
+            )
             logger.debug(f"Accumulated feedback:\n{accumulated_feedback}")
 
             # NEW: SCORE IMPROVEMENT CHECK (if quality scores tracked)
-            if hasattr(post, 'quality_scores') and len(post.quality_scores) > 1:
+            if hasattr(post, "quality_scores") and len(post.quality_scores) > 1:
                 latest_score = post.quality_scores[-1]
                 previous_score = post.quality_scores[-2]
                 score_improvement = latest_score - previous_score

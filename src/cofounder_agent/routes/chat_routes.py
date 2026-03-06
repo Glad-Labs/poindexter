@@ -15,6 +15,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+
 from schemas.chat_schemas import (
     ChatMessage,
     ChatRequest,
@@ -98,7 +99,11 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
         # Add user message to conversation history
         conversations[request.conversationId].append(
-            {"role": "user", "content": request.message, "timestamp": datetime.now(timezone.utc).isoformat()}
+            {
+                "role": "user",
+                "content": request.message,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
         )
 
         # Check cache first (before doing any heavy processing)

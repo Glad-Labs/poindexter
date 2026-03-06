@@ -8,12 +8,11 @@ Workflow: [blog_generate_content] → [blog_quality_evaluation] → [blog_search
 
 import asyncio
 import logging
-from typing import Dict, Any
+from typing import Any, Dict
 
 # Setup logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -21,8 +20,8 @@ logger = logging.getLogger(__name__)
 async def test_blog_workflow():
     """Test complete blog workflow execution"""
     from schemas.custom_workflow_schemas import CustomWorkflow, WorkflowPhase
-    from services.workflow_executor import WorkflowExecutor
     from services.phase_registry import PhaseRegistry
+    from services.workflow_executor import WorkflowExecutor
 
     # Create workflow with blog phases
     workflow = CustomWorkflow(
@@ -37,32 +36,21 @@ async def test_blog_workflow():
                     "style": "balanced",
                     "tone": "professional",
                     "target_length": 1500,
-                    "tags": ["AI", "Healthcare", "Machine Learning"]
-                }
+                    "tags": ["AI", "Healthcare", "Machine Learning"],
+                },
             ),
             WorkflowPhase(
                 index=1,
                 name="blog_quality_evaluation",
-                user_inputs={
-                    "evaluation_method": "pattern-based"
-                }
+                user_inputs={"evaluation_method": "pattern-based"},
             ),
             WorkflowPhase(
                 index=2,
                 name="blog_search_image",
-                user_inputs={
-                    "image_count": 1,
-                    "orientation": "landscape"
-                }
+                user_inputs={"image_count": 1, "orientation": "landscape"},
             ),
-            WorkflowPhase(
-                index=3,
-                name="blog_create_post",
-                user_inputs={
-                    "publish": True
-                }
-            ),
-        ]
+            WorkflowPhase(index=3, name="blog_create_post", user_inputs={"publish": True}),
+        ],
     )
 
     logger.info("=" * 80)

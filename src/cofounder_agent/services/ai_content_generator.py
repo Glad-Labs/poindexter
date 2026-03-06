@@ -24,9 +24,9 @@ from typing import Any, Dict, Optional, Tuple
 
 import httpx
 
+from .content_structure_validator import ContentStructureValidator
 from .prompt_manager import get_prompt_manager
 from .provider_checker import ProviderChecker
-from .content_structure_validator import ContentStructureValidator
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +90,10 @@ class AIContentGenerator:
             else:
                 logger.warning(f"⚠️ Ollama returned non-200 status: {response.status_code}")
         except Exception as e:
-            logger.error(f"[_check_ollama_async] Ollama health check failed: {type(e).__name__}: {e}", exc_info=True)
+            logger.error(
+                f"[_check_ollama_async] Ollama health check failed: {type(e).__name__}: {e}",
+                exc_info=True,
+            )
             self.ollama_available = False
         finally:
             self.ollama_checked = True
@@ -170,7 +173,17 @@ class AIContentGenerator:
             score -= 1.0
 
         # 5. Check for call-to-action
-        cta_keywords = ["ready", "start", "begin", "try", "implement", "action", "next", "discover", "learn"]
+        cta_keywords = [
+            "ready",
+            "start",
+            "begin",
+            "try",
+            "implement",
+            "action",
+            "next",
+            "discover",
+            "learn",
+        ]
         has_cta = any(keyword in content.lower() for keyword in cta_keywords)
         if not has_cta:
             issues.append("Missing call-to-action")
@@ -319,7 +332,10 @@ class AIContentGenerator:
             )
             logger.info(f"✓ Generation prompt loaded ({len(generation_prompt)} chars)")
         except Exception as e:
-            logger.error(f"[_generate_blog_post] Failed to load generation prompt: {type(e).__name__}: {e}", exc_info=True)
+            logger.error(
+                f"[_generate_blog_post] Failed to load generation prompt: {type(e).__name__}: {e}",
+                exc_info=True,
+            )
             raise
 
         # Create a callable refinement prompt getter
@@ -333,7 +349,9 @@ class AIContentGenerator:
                     target_audience=style,
                 )
             except Exception as e:
-                logger.error(f"[_get_refinement_prompt] Failed to load refinement prompt: {e}", exc_info=True)
+                logger.error(
+                    f"[_get_refinement_prompt] Failed to load refinement prompt: {e}", exc_info=True
+                )
                 raise
 
         # Track metrics
@@ -601,9 +619,17 @@ class AIContentGenerator:
 
                             refined_content = ""
                             if use_new_sdk:
-                                refined_content = refinement_response.text if hasattr(refinement_response, "text") else refinement_response.content
+                                refined_content = (
+                                    refinement_response.text
+                                    if hasattr(refinement_response, "text")
+                                    else refinement_response.content
+                                )
                             else:
-                                refined_content = refinement_response.text if hasattr(refinement_response, "text") else ""
+                                refined_content = (
+                                    refinement_response.text
+                                    if hasattr(refinement_response, "text")
+                                    else ""
+                                )
 
                             if refined_content and len(refined_content) > 100:
                                 logger.info(
@@ -634,20 +660,31 @@ class AIContentGenerator:
                                     logger.info(f"   ✅ Refined content APPROVED")
                                     metrics["model_used"] = f"Google Gemini ({model_name}, refined)"
                                     metrics["models_used_by_phase"]["draft"] = metrics["model_used"]
-                                    metrics["final_quality_score"] = refined_validation.quality_score
+                                    metrics["final_quality_score"] = (
+                                        refined_validation.quality_score
+                                    )
                                     metrics["generation_time_seconds"] = time.time() - start_time
-                                    metrics["model_selection_log"]["decision_tree"]["gemini_succeeded"] = True
+                                    metrics["model_selection_log"]["decision_tree"][
+                                        "gemini_succeeded"
+                                    ] = True
                                     logger.info(f"\n{'='*80}")
                                     logger.info(f"✅ GENERATION COMPLETE (with refinement)")
                                     logger.info(f"   Model: {metrics['model_used']}")
-                                    logger.info(f"   Quality: {refined_validation.quality_score:.1f}/{self.quality_threshold}")
-                                    logger.info(f"   Time: {metrics['generation_time_seconds']:.1f}s")
+                                    logger.info(
+                                        f"   Quality: {refined_validation.quality_score:.1f}/{self.quality_threshold}"
+                                    )
+                                    logger.info(
+                                        f"   Time: {metrics['generation_time_seconds']:.1f}s"
+                                    )
                                     logger.info(f"{'='*80}\n")
                                     return refined_content, metrics["model_used"], metrics
 
                                 generated_content = refined_content  # Use refined for next check
                         except Exception as refine_error:
-                            logger.error(f"[_generate_blog_post] Refinement failed: {refine_error}", exc_info=True)
+                            logger.error(
+                                f"[_generate_blog_post] Refinement failed: {refine_error}",
+                                exc_info=True,
+                            )
 
                     # If still not passing after refinement, return best attempt with warning
                     logger.warning(
@@ -661,7 +698,9 @@ class AIContentGenerator:
                     logger.info(f"\n{'='*80}")
                     logger.warning(f"⚠️  GENERATION COMPLETE (below quality threshold)")
                     logger.info(f"   Model: {metrics['model_used']}")
-                    logger.info(f"   Quality: {validation.quality_score:.1f}/{self.quality_threshold}")
+                    logger.info(
+                        f"   Quality: {validation.quality_score:.1f}/{self.quality_threshold}"
+                    )
                     logger.info(f"   Time: {metrics['generation_time_seconds']:.1f}s")
                     logger.info(f"{'='*80}\n")
                     return generated_content, metrics["model_used"], metrics
@@ -669,7 +708,10 @@ class AIContentGenerator:
             except Exception as e:
                 import traceback
 
-                logger.error(f"[_gemini_generate] User-selected Gemini failed: {type(e).__name__}: {str(e)}", exc_info=True)
+                logger.error(
+                    f"[_gemini_generate] User-selected Gemini failed: {type(e).__name__}: {str(e)}",
+                    exc_info=True,
+                )
                 logger.debug(f"Gemini error traceback: {traceback.format_exc()}")
                 metrics["model_selection_log"]["decision_tree"]["gemini_error"] = str(e)[
                     :200
@@ -818,12 +860,14 @@ class AIContentGenerator:
                                 )
 
                                 # NEW: Accumulate feedback from this attempt
-                                refinement_feedback_history.append({
-                                    "attempt": metrics['refinement_attempts'] + 1,
-                                    "feedback": validation.feedback,
-                                    "issues": validation.issues,
-                                    "score": validation.quality_score,
-                                })
+                                refinement_feedback_history.append(
+                                    {
+                                        "attempt": metrics["refinement_attempts"] + 1,
+                                        "feedback": validation.feedback,
+                                        "issues": validation.issues,
+                                        "score": validation.quality_score,
+                                    }
+                                )
 
                                 # NEW: Check if improvement is worth continuing
                                 if len(refinement_feedback_history) >= 2:
@@ -838,28 +882,40 @@ class AIContentGenerator:
                                         )
                                         # Return best attempt so far
                                         metrics["model_used"] = f"Ollama - {model_name}"
-                                        metrics["models_used_by_phase"]["draft"] = metrics["model_used"]
+                                        metrics["models_used_by_phase"]["draft"] = metrics[
+                                            "model_used"
+                                        ]
                                         metrics["final_quality_score"] = latest_score
-                                        metrics["generation_time_seconds"] = time.time() - start_time
+                                        metrics["generation_time_seconds"] = (
+                                            time.time() - start_time
+                                        )
                                         logger.info(f"\n{'='*80}")
-                                        logger.info(f"⚠️  GENERATION COMPLETE (stops refinement due to minimal improvement)")
+                                        logger.info(
+                                            f"⚠️  GENERATION COMPLETE (stops refinement due to minimal improvement)"
+                                        )
                                         logger.info(f"   Model: {metrics['model_used']}")
                                         logger.info(
                                             f"   Quality: {latest_score:.1f}/{self.quality_threshold}"
                                         )
-                                        logger.info(f"   Time: {metrics['generation_time_seconds']:.1f}s")
+                                        logger.info(
+                                            f"   Time: {metrics['generation_time_seconds']:.1f}s"
+                                        )
                                         logger.info(f"{'='*80}\n")
                                         return generated_content, metrics["model_used"], metrics
 
                                 # BUILD ACCUMULATED FEEDBACK STRING
-                                accumulated_feedback = "REFINEMENT HISTORY:\n" + "\n".join([
-                                    f"Attempt {item['attempt']}: Score {item['score']:.1f}/10\n"
-                                    f"  Feedback: {item['feedback']}\n"
-                                    f"  Issues: {', '.join(item['issues']) if item['issues'] else 'None'}"
-                                    for item in refinement_feedback_history
-                                ])
+                                accumulated_feedback = "REFINEMENT HISTORY:\n" + "\n".join(
+                                    [
+                                        f"Attempt {item['attempt']}: Score {item['score']:.1f}/10\n"
+                                        f"  Feedback: {item['feedback']}\n"
+                                        f"  Issues: {', '.join(item['issues']) if item['issues'] else 'None'}"
+                                        for item in refinement_feedback_history
+                                    ]
+                                )
 
-                                logger.debug(f"Accumulated feedback for refinement:\n{accumulated_feedback}")
+                                logger.debug(
+                                    f"Accumulated feedback for refinement:\n{accumulated_feedback}"
+                                )
 
                                 metrics["refinement_attempts"] += 1
                                 refinement_prompt = get_refinement_prompt(
@@ -971,13 +1027,18 @@ class AIContentGenerator:
                     except asyncio.TimeoutError as e:
                         # Explicitly catch timeout - model too slow or server unresponsive
                         error_msg = f"Timeout (120s exceeded) with {model_name}"
-                        logger.error(f"Ollama model {model_name} timed out: {error_msg}", exc_info=True)
+                        logger.error(
+                            f"Ollama model {model_name} timed out: {error_msg}", exc_info=True
+                        )
                         attempts.append(("Ollama", error_msg))
                         continue
                     except Exception as e:
                         # Catch other errors (500 errors, connection issues, etc.)
                         error_msg = str(e)[:150]  # Truncate long error messages
-                        logger.error(f"[_gemini_generate] Ollama model {model_name} failed: {error_msg}", exc_info=True)
+                        logger.error(
+                            f"[_gemini_generate] Ollama model {model_name} failed: {error_msg}",
+                            exc_info=True,
+                        )
                         attempts.append(("Ollama", f"{model_name}: {error_msg}"))
                         continue
 
@@ -1044,11 +1105,16 @@ class AIContentGenerator:
                         logger.error(f"HuggingFace model {model_id} timed out", exc_info=True)
                         continue
                     except Exception as e:
-                        logger.error(f"[_gemini_generate] HuggingFace model {model_id} failed: {e}", exc_info=True)
+                        logger.error(
+                            f"[_gemini_generate] HuggingFace model {model_id} failed: {e}",
+                            exc_info=True,
+                        )
                         continue
 
             except Exception as e:
-                logger.error(f"[_gemini_generate] HuggingFace generation failed: {e}", exc_info=True)
+                logger.error(
+                    f"[_gemini_generate] HuggingFace generation failed: {e}", exc_info=True
+                )
                 attempts.append(("HuggingFace", str(e)))
 
         # 3. Fall back to Google Gemini (paid, but reliable)

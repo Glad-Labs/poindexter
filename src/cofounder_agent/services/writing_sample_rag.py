@@ -124,7 +124,10 @@ class WritingSampleRAGService:
             ]
 
         except Exception as e:
-            logger.error(f"[_retrieve_relevant_samples] Error retrieving relevant samples: {e}", exc_info=True)
+            logger.error(
+                f"[_retrieve_relevant_samples] Error retrieving relevant samples: {e}",
+                exc_info=True,
+            )
             return []
 
     async def retrieve_by_style_match(
@@ -168,7 +171,9 @@ class WritingSampleRAGService:
             return matched_samples[:limit]
 
         except Exception as e:
-            logger.error(f"[_retrieve_by_style_match] Error retrieving by style: {e}", exc_info=True)
+            logger.error(
+                f"[_retrieve_by_style_match] Error retrieving by style: {e}", exc_info=True
+            )
             return []
 
     async def retrieve_by_tone_match(

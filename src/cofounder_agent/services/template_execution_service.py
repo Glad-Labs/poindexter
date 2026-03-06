@@ -248,8 +248,7 @@ class TemplateExecutionService:
                 try:
                     # Try to find existing template workflow by name and owner
                     existing = await self.custom_workflows_service.get_workflow_by_name(
-                        name=f"Template: {template_name}",
-                        owner_id=owner_id
+                        name=f"Template: {template_name}", owner_id=owner_id
                     )
                     if existing:
                         workflow.id = existing.id
@@ -257,13 +256,14 @@ class TemplateExecutionService:
                     else:
                         # Create new template workflow
                         workflow_save = await self.custom_workflows_service.create_workflow(
-                            workflow=workflow,
-                            owner_id=owner_id
+                            workflow=workflow, owner_id=owner_id
                         )
                         workflow.id = workflow_save.id
                         logger.info(f"Persisted template workflow: {workflow.id}")
                 except Exception as e:
-                    logger.error(f"Failed to persist/retrieve template workflow: {e}", exc_info=True)
+                    logger.error(
+                        f"Failed to persist/retrieve template workflow: {e}", exc_info=True
+                    )
                     # Don't continue - we cannot execute without a valid workflow ID
                     raise ValueError(f"Cannot persist template workflow: {str(e)}")
 
@@ -337,14 +337,19 @@ class TemplateExecutionService:
                     # Schedule the broadcast in a non-blocking way
                     asyncio.create_task(broadcast_workflow_progress(actual_execution_id, progress))
                 except Exception as e:
-                    logger.error(f"[_broadcast_callback] Could not broadcast progress: {e}", exc_info=True)
+                    logger.error(
+                        f"[_broadcast_callback] Could not broadcast progress: {e}", exc_info=True
+                    )
 
             progress_service.register_callback(actual_execution_id, broadcast_callback)
 
             logger.debug(f"Initialized progress tracking for execution {actual_execution_id}")
 
         except Exception as e:
-            logger.error(f"[_initialize_progress_tracking] Could not initialize progress tracking: {e}", exc_info=True)
+            logger.error(
+                f"[_initialize_progress_tracking] Could not initialize progress tracking: {e}",
+                exc_info=True,
+            )
             # Continue execution even if progress tracking fails
 
     async def get_execution_status(
@@ -365,7 +370,9 @@ class TemplateExecutionService:
                 execution_id, owner_id
             )
         except Exception as e:
-            logger.error(f"[_get_execution_status] Failed to get execution status: {str(e)}", exc_info=True)
+            logger.error(
+                f"[_get_execution_status] Failed to get execution status: {str(e)}", exc_info=True
+            )
             return None
 
     async def get_execution_history(
@@ -408,5 +415,7 @@ class TemplateExecutionService:
                 "total_count": len(executions),
             }
         except Exception as e:
-            logger.error(f"[_get_execution_history] Failed to get execution history: {str(e)}", exc_info=True)
+            logger.error(
+                f"[_get_execution_history] Failed to get execution history: {str(e)}", exc_info=True
+            )
             return {"executions": [], "total_count": 0}

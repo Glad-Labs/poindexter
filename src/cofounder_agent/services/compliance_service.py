@@ -140,7 +140,10 @@ class ComplianceService:
             }
 
         except Exception as e:
-            logger.error(f"[_assess_privacy_compliance] Privacy compliance assessment failed: {e}", exc_info=True)
+            logger.error(
+                f"[_assess_privacy_compliance] Privacy compliance assessment failed: {e}",
+                exc_info=True,
+            )
             return {"error": str(e), "assessment_type": "privacy_compliance"}
 
     async def risk_assessment(

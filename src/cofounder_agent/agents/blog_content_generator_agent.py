@@ -61,7 +61,9 @@ class BlogContentGeneratorAgent:
         """
 
         try:
-            logger.info(f"[BlogContentGeneratorAgent] Generating content for topic: {inputs.get('topic')}")
+            logger.info(
+                f"[BlogContentGeneratorAgent] Generating content for topic: {inputs.get('topic')}"
+            )
 
             topic = inputs.get("topic")
             if not topic or len(topic.strip()) < 3:

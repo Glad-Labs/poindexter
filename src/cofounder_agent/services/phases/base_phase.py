@@ -11,22 +11,24 @@ A Phase is an independent, composable unit of work that:
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
 from enum import Enum
+from typing import Any, Dict, List, Optional
 
 
 class PhaseInputType(Enum):
     """Types of phase inputs"""
+
     USER_PROVIDED = "user_provided"  # From workflow params or user
-    PHASE_OUTPUT = "phase_output"    # From previous phase output
-    OPTIONAL = "optional"            # Optional, has default
+    PHASE_OUTPUT = "phase_output"  # From previous phase output
+    OPTIONAL = "optional"  # Optional, has default
 
 
 @dataclass
 class PhaseInputSpec:
     """Specification for a phase input"""
-    name: str                                    # e.g., "topic", "content"
-    type: str                                    # python type: "str", "dict", "list"
+
+    name: str  # e.g., "topic", "content"
+    type: str  # python type: "str", "dict", "list"
     description: str
     source: PhaseInputType = PhaseInputType.OPTIONAL
     required: bool = True
@@ -37,19 +39,21 @@ class PhaseInputSpec:
 @dataclass
 class PhaseOutputSpec:
     """Specification for a phase output"""
-    name: str            # e.g., "content", "image_url"
-    type: str            # python type
+
+    name: str  # e.g., "content", "image_url"
+    type: str  # python type
     description: str
 
 
 @dataclass
 class PhaseConfig:
     """Specification for a phase's capabilities"""
-    name: str                                    # Human-readable name
-    description: str                             # What it does
-    inputs: List[PhaseInputSpec]                 # Required/optional inputs
-    outputs: List[PhaseOutputSpec]               # What it produces
-    configurable_params: Dict[str, Any]          # {param_name: default_value}
+
+    name: str  # Human-readable name
+    description: str  # What it does
+    inputs: List[PhaseInputSpec]  # Required/optional inputs
+    outputs: List[PhaseOutputSpec]  # What it produces
+    configurable_params: Dict[str, Any]  # {param_name: default_value}
 
 
 class BasePhase(ABC):
@@ -89,11 +93,7 @@ class BasePhase(ABC):
         pass
 
     @abstractmethod
-    async def execute(
-        self,
-        inputs: Dict[str, Any],
-        config: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def execute(self, inputs: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute the phase.
 
@@ -111,10 +111,7 @@ class BasePhase(ABC):
         """
         pass
 
-    async def validate_inputs(
-        self,
-        inputs: Dict[str, Any]
-    ) -> tuple[bool, Optional[str]]:
+    async def validate_inputs(self, inputs: Dict[str, Any]) -> tuple[bool, Optional[str]]:
         """
         Validate that inputs satisfy the phase's requirements.
 

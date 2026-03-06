@@ -254,7 +254,9 @@ class RedisCache:
                 return deleted
             return 0
         except Exception as e:
-            logger.error(f"[_delete_pattern] Cache delete pattern error for {pattern}: {e}", exc_info=True)
+            logger.error(
+                f"[_delete_pattern] Cache delete pattern error for {pattern}: {e}", exc_info=True
+            )
             return 0
 
     async def exists(self, key: str) -> bool:

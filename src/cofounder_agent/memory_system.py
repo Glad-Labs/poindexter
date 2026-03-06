@@ -19,6 +19,7 @@ from uuid import uuid4
 
 import asyncpg
 import numpy as np
+
 from services.logger_config import get_logger
 
 try:

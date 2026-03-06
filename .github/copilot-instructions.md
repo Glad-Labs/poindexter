@@ -193,6 +193,7 @@ The content pipeline orchestrates 7 specialized sub-agents that work together to
 - **Event emission:** Real-time WebSocket updates track progress through all 7 stages
 
 **Execution Flow:**
+
 ```
 Research → Creative Draft → QA Critique → Creative Refinement → Image Selection → Publishing Prep → DB Storage
      ↓           ↓              ↓              ↓                 ↓                 ↓               ↓
@@ -230,6 +231,7 @@ GET    /api/workflow-progress/{id}                  Real-time progress (WebSocke
 ```
 
 **Built-in Templates:**
+
 - `social_media` - Social post generation and scheduling
 - `email` - Email campaign creation
 - `blog_post` - Blog post generation
@@ -237,6 +239,7 @@ GET    /api/workflow-progress/{id}                  Real-time progress (WebSocke
 - `market_analysis` - Market research and reporting
 
 **Phase-Based Architecture:**
+
 - Workflows consist of sequential phases, each with input/output contracts
 - Real-time WebSocket events emit after each phase completion
 - Automatic input mapping between phase outputs and next phase inputs
@@ -244,6 +247,7 @@ GET    /api/workflow-progress/{id}                  Real-time progress (WebSocke
 - Semantic validation ensures workflow compatibility
 
 **Real-time Tracking:**
+
 - WebSocket endpoint `/api/workflow-progress/{workflow_id}` streams events
 - Events include phase completion, status changes, and quality metrics
 - Oversight Hub UI listens and displays real-time progress
@@ -261,12 +265,14 @@ GET    /api/service-registry                        List available services
 ```
 
 **How It Works:**
+
 1. **Intent Parsing:** Natural language task request is analyzed for required capabilities
 2. **Service Registry:** Available agents/services are queried for matching capabilities
 3. **Task Planning:** Best agent combination is selected and composed
 4. **Automatic Routing:** Task is routed to appropriate agent without manual assignment
 
 **Capability Examples:**
+
 - `image_generation` - Generate, edit, or enhance images
 - `research` - Find and synthesize information
 - `content_writing` - Create marketing copy, blog posts, newsletters
@@ -277,19 +283,19 @@ GET    /api/service-registry                        List available services
 
 ### 9. Key Files Reference
 
-| Purpose             | Path                                                   | What It Does                                                    |
-| ------------------- | ------------------------------------------------------ | --------------------------------------------------------------- |
-| FastAPI entry       | `src/cofounder_agent/main.py`                          | Route registration, middleware setup, app initialization        |
-| Agent orchestration | `src/cofounder_agent/services/unified_orchestrator.py` | Coordinates agent fleet, task distribution                      |
-| Database service    | `src/cofounder_agent/services/database_service.py`     | PostgreSQL queries, ORM models, persistence                     |
-| Model routing       | `src/cofounder_agent/services/model_router.py`         | LLM provider selection with fallback chain                      |
-| Content agent       | `src/cofounder_agent/agents/content_agent/`            | 7-stage self-critiquing pipeline with sub-agents
-| Workflow executor   | `src/cofounder_agent/services/workflow_executor.py`    | Phase-based workflow execution and event emission
-| Capability system   | `src/cofounder_agent/services/capability_registry.py`  | Agent capability introspection and dynamic routing
-| Tasks               | `src/cofounder_agent/tasks/`                           | Task models, execution logic, status tracking
-| Routes              | `src/cofounder_agent/routes/`                          | 29 REST endpoints for tasks, agents, workflows, capabilities
-| Oversight Hub       | `web/oversight-hub/`                                   | React dashboard, agent monitoring, task management              |
-| Public Site         | `web/public-site/`                                     | Next.js content distribution, SEO optimization                  |
+| Purpose             | Path                                                   | What It Does                                                 |
+| ------------------- | ------------------------------------------------------ | ------------------------------------------------------------ |
+| FastAPI entry       | `src/cofounder_agent/main.py`                          | Route registration, middleware setup, app initialization     |
+| Agent orchestration | `src/cofounder_agent/services/unified_orchestrator.py` | Coordinates agent fleet, task distribution                   |
+| Database service    | `src/cofounder_agent/services/database_service.py`     | PostgreSQL queries, ORM models, persistence                  |
+| Model routing       | `src/cofounder_agent/services/model_router.py`         | LLM provider selection with fallback chain                   |
+| Content agent       | `src/cofounder_agent/agents/content_agent/`            | 7-stage self-critiquing pipeline with sub-agents             |
+| Workflow executor   | `src/cofounder_agent/services/workflow_executor.py`    | Phase-based workflow execution and event emission            |
+| Capability system   | `src/cofounder_agent/services/capability_registry.py`  | Agent capability introspection and dynamic routing           |
+| Tasks               | `src/cofounder_agent/tasks/`                           | Task models, execution logic, status tracking                |
+| Routes              | `src/cofounder_agent/routes/`                          | 29 REST endpoints for tasks, agents, workflows, capabilities |
+| Oversight Hub       | `web/oversight-hub/`                                   | React dashboard, agent monitoring, task management           |
+| Public Site         | `web/public-site/`                                     | Next.js content distribution, SEO optimization               |
 
 ### 10. Common Developer Patterns
 
@@ -556,6 +562,7 @@ DEFAULT_WRITING_STYLE_ID=...         # Default style for content
 - **Files:** All 68 service files in `src/cofounder_agent/services/`
 
 **Benefits:**
+
 - Consistent error handling and logging across entire backend
 - Stack traces captured for all exceptions
 - Operation context preserved in all error logs

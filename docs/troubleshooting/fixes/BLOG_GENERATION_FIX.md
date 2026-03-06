@@ -57,7 +57,7 @@ try:
     use_new_sdk = True
 except ImportError:
     import google.generativeai as genai  # FALLBACK
-    
+
 if use_new_sdk:
     # NEW SDK path with non-existent GenerateContentConfig
     response = await asyncio.to_thread(
@@ -86,7 +86,7 @@ response = await gemini_model.generate_content_async(
 ✅ All model services compile successfully  
 ✅ Ollama client signature verified (no 'options' parameter)  
 ✅ Gemini client imports without GenerateContentConfig errors  
-✅ Model consolidation service initializes all 5 adapters  
+✅ Model consolidation service initializes all 5 adapters
 
 ### Impact
 

@@ -5,15 +5,15 @@ Handle post creation, publication, and metadata updates.
 """
 
 import logging
-from typing import Any, Dict, Optional
 from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 
 from .base_phase import (
     BasePhase,
     PhaseConfig,
     PhaseInputSpec,
-    PhaseOutputSpec,
     PhaseInputType,
+    PhaseOutputSpec,
 )
 
 logger = logging.getLogger(__name__)
@@ -107,9 +107,7 @@ class CreatePostPhase(BasePhase):
             },
         )
 
-    async def execute(
-        self, inputs: Dict[str, Any], config: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def execute(self, inputs: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
         """Create a post record"""
 
         is_valid, error = await self.validate_inputs(inputs)
@@ -119,8 +117,9 @@ class CreatePostPhase(BasePhase):
             raise ValueError(error)
 
         try:
-            from .database_service import DatabaseService
             from slugify import slugify
+
+            from .database_service import DatabaseService
 
             content = inputs.get("content")
             topic = inputs.get("topic")
@@ -229,9 +228,7 @@ class PublishPostPhase(BasePhase):
             },
         )
 
-    async def execute(
-        self, inputs: Dict[str, Any], config: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def execute(self, inputs: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
         """Publish a post"""
 
         is_valid, error = await self.validate_inputs(inputs)

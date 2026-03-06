@@ -187,7 +187,8 @@ class TaskIntentRouter:
                 normalized["deadline"] = (datetime.now() + timedelta(days=days)).isoformat()
             except (ValueError, TypeError) as e:
                 logger.error(
-                    f"Failed to parse deadline_days '{params['deadline_days']}': {type(e).__name__} - deadline not set", exc_info=True
+                    f"Failed to parse deadline_days '{params['deadline_days']}': {type(e).__name__} - deadline not set",
+                    exc_info=True,
                 )
                 # deadline will remain unset if parsing fails
 

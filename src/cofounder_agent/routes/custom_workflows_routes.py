@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+
 from schemas.custom_workflow_schemas import (
     AvailablePhasesResponse,
     CustomWorkflow,
@@ -340,9 +341,7 @@ async def execute_custom_workflow(
 
         # Execute workflow with optional model specification
         result = await service.execute_workflow(
-            workflow=workflow,
-            initial_inputs=input_data,
-            selected_model=selected_model
+            workflow=workflow, initial_inputs=input_data, selected_model=selected_model
         )
 
         logger.info(f"Workflow execution completed: {result['execution_id']}")

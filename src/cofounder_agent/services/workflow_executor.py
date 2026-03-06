@@ -115,7 +115,10 @@ class WorkflowExecutor:
                                 duration_ms=0,
                             )
                         except Exception as e:
-                            logger.error(f"[_execute_workflow] Failed to update progress for skipped phase: {e}", exc_info=True)
+                            logger.error(
+                                f"[_execute_workflow] Failed to update progress for skipped phase: {e}",
+                                exc_info=True,
+                            )
                     continue
 
                 logger.info(f"Executing phase {i}: {phase.name}")
@@ -130,7 +133,10 @@ class WorkflowExecutor:
                             phase_name=phase.name,
                         )
                     except Exception as e:
-                        logger.error(f"[_execute_workflow] Failed to update progress for phase start: {e}", exc_info=True)
+                        logger.error(
+                            f"[_execute_workflow] Failed to update progress for phase start: {e}",
+                            exc_info=True,
+                        )
 
                 # Prepare inputs for this phase
                 phase_inputs, input_traces = self._prepare_phase_inputs(
@@ -145,7 +151,10 @@ class WorkflowExecutor:
                 try:
                     result = self._execute_phase(phase, phase_inputs, execution_id)
                 except Exception as e:
-                    logger.error(f"[_execute_workflow] Phase {i} ({phase.name}) failed: {str(e)}", exc_info=True)
+                    logger.error(
+                        f"[_execute_workflow] Phase {i} ({phase.name}) failed: {str(e)}",
+                        exc_info=True,
+                    )
                     result = PhaseResult(
                         status="failed",
                         error=str(e),
@@ -174,7 +183,10 @@ class WorkflowExecutor:
                                 error=result.error or "Unknown error",
                             )
                     except Exception as e:
-                        logger.error(f"[_execute_workflow] Failed to update progress for phase completion: {e}", exc_info=True)
+                        logger.error(
+                            f"[_execute_workflow] Failed to update progress for phase completion: {e}",
+                            exc_info=True,
+                        )
 
                 # Store result
                 phase_results[phase.name] = result
@@ -313,7 +325,7 @@ class WorkflowExecutor:
 
             # Run the agent (handle both sync and async agents)
             start_time = time.time()
-            if hasattr(agent, 'run') and callable(agent.run):
+            if hasattr(agent, "run") and callable(agent.run):
                 # Check if it's an async method
                 if asyncio.iscoroutinefunction(agent.run):
                     # For async agents, we need to run in event loop
@@ -363,7 +375,9 @@ class WorkflowExecutor:
             )
 
         except Exception as e:
-            logger.error(f"[_execute_phase] Failed to execute {phase.name}: {str(e)}", exc_info=True)
+            logger.error(
+                f"[_execute_phase] Failed to execute {phase.name}: {str(e)}", exc_info=True
+            )
             return PhaseResult(
                 status="failed",
                 output={},
@@ -382,15 +396,27 @@ class WorkflowExecutor:
         try:
             # Map agent_type to import path and factory function
             agent_mapping = {
-                "blog_content_generator_agent": ("agents.blog_content_generator_agent", "get_blog_content_generator_agent"),
+                "blog_content_generator_agent": (
+                    "agents.blog_content_generator_agent",
+                    "get_blog_content_generator_agent",
+                ),
                 "blog_quality_agent": ("agents.blog_quality_agent", "get_blog_quality_agent"),
                 "blog_image_agent": ("agents.blog_image_agent", "get_blog_image_agent"),
                 "blog_publisher_agent": ("agents.blog_publisher_agent", "get_blog_publisher_agent"),
-                "research_agent": ("agents.content_agent.agents.research_agent", "get_research_agent"),
-                "creative_agent": ("agents.content_agent.agents.creative_agent", "get_creative_agent"),
+                "research_agent": (
+                    "agents.content_agent.agents.research_agent",
+                    "get_research_agent",
+                ),
+                "creative_agent": (
+                    "agents.content_agent.agents.creative_agent",
+                    "get_creative_agent",
+                ),
                 "qa_agent": ("agents.content_agent.agents.qa_agent", "get_qa_agent"),
                 "image_agent": ("agents.content_agent.agents.image_agent", "get_image_agent"),
-                "publishing_agent": ("agents.content_agent.agents.publishing_agent", "get_publishing_agent"),
+                "publishing_agent": (
+                    "agents.content_agent.agents.publishing_agent",
+                    "get_publishing_agent",
+                ),
             }
 
             if agent_type not in agent_mapping:
@@ -402,6 +428,7 @@ class WorkflowExecutor:
             try:
                 # Dynamically import the module
                 import importlib
+
                 module = importlib.import_module(module_path)
 
                 # Get the factory function
@@ -424,7 +451,6 @@ class WorkflowExecutor:
         except Exception as e:
             logger.error(f"[_get_agent] Error loading agent '{agent_type}': {e}", exc_info=True)
             return None
-
 
     def _normalize_phases(self, phases: List[Any]) -> List[WorkflowPhase]:
         """Convert phases to WorkflowPhase objects"""

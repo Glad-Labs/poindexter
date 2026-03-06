@@ -219,7 +219,9 @@ class TwitterPublisher:
             }
 
         except Exception as e:
-            logger.error(f"[_publish_thread] Twitter thread publishing error: {str(e)}", exc_info=True)
+            logger.error(
+                f"[_publish_thread] Twitter thread publishing error: {str(e)}", exc_info=True
+            )
             return {
                 "success": False,
                 "error": str(e),

@@ -33,7 +33,9 @@ class WorkflowValidator:
         self.registry = registry or PhaseRegistry.get_instance()
         self.mapper = mapper or PhaseMapper(self.registry)
 
-    def validate_workflow(self, workflow: CustomWorkflow, initial_inputs: Optional[Dict[str, Any]] = None) -> Tuple[bool, List[str], List[str]]:
+    def validate_workflow(
+        self, workflow: CustomWorkflow, initial_inputs: Optional[Dict[str, Any]] = None
+    ) -> Tuple[bool, List[str], List[str]]:
         """
         Validate a workflow definition.
 

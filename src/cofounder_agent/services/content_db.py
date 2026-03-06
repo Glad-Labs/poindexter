@@ -18,6 +18,7 @@ from uuid import uuid4
 
 import asyncpg
 from asyncpg import Pool
+
 from schemas.database_response_models import (
     AuthorResponse,
     CategoryResponse,
@@ -189,7 +190,9 @@ class ContentDatabase(DatabaseServiceMixin):
                 row = await conn.fetchrow(sql, *params)
                 return ModelConverter.to_post_response(row) if row else None
         except Exception as e:
-            logger.error(f"[_get_post_by_slug] ❌ Error getting post by slug '{slug}': {e}", exc_info=True)
+            logger.error(
+                f"[_get_post_by_slug] ❌ Error getting post by slug '{slug}': {e}", exc_info=True
+            )
             return None
 
     async def update_post(self, post_id: int, updates: Dict[str, Any]) -> bool:
@@ -306,7 +309,9 @@ class ContentDatabase(DatabaseServiceMixin):
                 row = await conn.fetchrow(sql, name)
                 return ModelConverter.to_author_response(row) if row else None
         except Exception as e:
-            logger.error(f"[_get_author_by_name] Failed to fetch author by name: {e}", exc_info=True)
+            logger.error(
+                f"[_get_author_by_name] Failed to fetch author by name: {e}", exc_info=True
+            )
             return None
 
     async def create_quality_evaluation(
@@ -370,7 +375,10 @@ class ContentDatabase(DatabaseServiceMixin):
                 logger.info(f"✅ Created quality_evaluation for {eval_data['content_id']}")
                 return ModelConverter.to_quality_evaluation_response(row)
         except Exception as e:
-            logger.error(f"[_create_quality_evaluation] ❌ Error creating quality_evaluation: {e}", exc_info=True)
+            logger.error(
+                f"[_create_quality_evaluation] ❌ Error creating quality_evaluation: {e}",
+                exc_info=True,
+            )
             raise
 
     async def create_quality_improvement_log(
@@ -412,7 +420,10 @@ class ContentDatabase(DatabaseServiceMixin):
                 logger.info(f"✅ Created quality_improvement_log: {initial:.0f} → {improved:.0f}")
                 return ModelConverter.to_quality_improvement_log_response(row)
         except Exception as e:
-            logger.error(f"[_create_quality_improvement_log] ❌ Error creating quality_improvement_log: {e}", exc_info=True)
+            logger.error(
+                f"[_create_quality_improvement_log] ❌ Error creating quality_improvement_log: {e}",
+                exc_info=True,
+            )
             raise
 
     async def get_metrics(self) -> MetricsResponse:
@@ -465,7 +476,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 except Exception as e:
                     logger.error(
                         f"[get_metrics] Unexpected error calculating avg execution time: {type(e).__name__}: {e}",
-                        exc_info=True
+                        exc_info=True,
                     )
 
                 # Calculate total cost from financial tracking (if implemented)
@@ -489,7 +500,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 except Exception as e:
                     logger.error(
                         f"[get_metrics] Unexpected error calculating total cost: {type(e).__name__}: {e}",
-                        exc_info=True
+                        exc_info=True,
                     )
 
                 return MetricsResponse(
@@ -556,5 +567,8 @@ class ContentDatabase(DatabaseServiceMixin):
                 logger.info(f"✅ Created orchestrator_training_data: {train_data['execution_id']}")
                 return ModelConverter.to_orchestrator_training_data_response(row)
         except Exception as e:
-            logger.error(f"[_create_orchestrator_training_data] ❌ Error creating orchestrator_training_data: {e}", exc_info=True)
+            logger.error(
+                f"[_create_orchestrator_training_data] ❌ Error creating orchestrator_training_data: {e}",
+                exc_info=True,
+            )
             raise

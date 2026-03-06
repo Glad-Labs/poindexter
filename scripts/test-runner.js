@@ -3,19 +3,19 @@
 /**
  * Unified Test Runner
  * ===================
- * 
+ *
  * Orchestrates running all tests:
  * - Playwright E2E tests (frontend)
  * - Pytest tests (backend)
  * - Jest component tests (React)
- * 
+ *
  * Features:
  * - Parallel execution
  * - Comprehensive reporting
  * - Performance summary
  * - Coverage collection
  * - CI/CD integration
- * 
+ *
  * Usage:
  *   npm run test:unified                  # Run all tests
  *   npm run test:unified -- --watch       # Watch mode
@@ -41,7 +41,14 @@ const TEST_SUITES = {
   pytest: {
     name: 'Pytest Backend Tests',
     command: 'poetry',
-    args: ['run', 'pytest', 'tests/integration/', 'tests/e2e/', '-v', '--tb=short'],
+    args: [
+      'run',
+      'pytest',
+      'tests/integration/',
+      'tests/e2e/',
+      '-v',
+      '--tb=short',
+    ],
     cwd: '.',
     timeout: 120000,
     critical: true,
@@ -74,14 +81,21 @@ function createLogger(testName) {
   };
 
   return {
-    info: (msg) => console.log(`${colors.cyan}[${testName}]${colors.reset} ${msg}`),
+    info: (msg) =>
+      console.log(`${colors.cyan}[${testName}]${colors.reset} ${msg}`),
     success: (msg) =>
-      console.log(`${colors.green}✓${colors.reset} ${colors.bright}${msg}${colors.reset}`),
+      console.log(
+        `${colors.green}✓${colors.reset} ${colors.bright}${msg}${colors.reset}`
+      ),
     error: (msg) =>
-      console.log(`${colors.red}✗${colors.reset} ${colors.bright}${msg}${colors.reset}`),
-    warn: (msg) =>
-      console.log(`${colors.yellow}⚠${colors.reset} ${msg}`),
-    debug: (msg) => (process.argv.includes('--debug') ? console.log(`${colors.dim}${msg}${colors.reset}`) : null),
+      console.log(
+        `${colors.red}✗${colors.reset} ${colors.bright}${msg}${colors.reset}`
+      ),
+    warn: (msg) => console.log(`${colors.yellow}⚠${colors.reset} ${msg}`),
+    debug: (msg) =>
+      process.argv.includes('--debug')
+        ? console.log(`${colors.dim}${msg}${colors.reset}`)
+        : null,
   };
 }
 
@@ -195,11 +209,15 @@ async function runAllTests() {
     );
   });
 
-  console.log(`\n📈 Overall: ${summary.passed}/${summary.tests} passed in ${(totalDuration / 1000).toFixed(2)}s\n`);
+  console.log(
+    `\n📈 Overall: ${summary.passed}/${summary.tests} passed in ${(totalDuration / 1000).toFixed(2)}s\n`
+  );
 
   // --- Check for critical failures ---
 
-  const criticalFailures = results.filter((r) => r.critical && r.status !== 'passed');
+  const criticalFailures = results.filter(
+    (r) => r.critical && r.status !== 'passed'
+  );
 
   if (criticalFailures.length > 0) {
     console.log('\x1b[31m❌ Critical tests failed:\x1b[0m\n');

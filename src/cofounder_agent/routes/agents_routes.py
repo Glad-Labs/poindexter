@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
+
 from schemas.agent_schemas import (
     AgentCommand,
     AgentCommandResult,
@@ -43,7 +44,6 @@ router = APIRouter(prefix="/api/agents", tags=["agents"])
 # ============================================================================
 
 # Helper function is no longer needed - use get_orchestrator_dependency from route_utils instead
-
 
 
 def get_agent_names() -> List[str]:

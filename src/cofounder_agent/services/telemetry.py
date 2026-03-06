@@ -112,9 +112,7 @@ def setup_telemetry(app, service_name="cofounder-agent"):
         try:
             FastAPIInstrumentor.instrument_app(app, tracer_provider=provider)
         except Exception as e:
-            logging.error(
-                f"[setup_telemetry] Failed to instrument FastAPI: {e}", exc_info=True
-            )
+            logging.error(f"[setup_telemetry] Failed to instrument FastAPI: {e}", exc_info=True)
 
         # Instrument OpenAI SDK (if available)
         if OpenAIInstrumentor is not None:

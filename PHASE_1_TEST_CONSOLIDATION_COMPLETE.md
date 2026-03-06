@@ -153,8 +153,8 @@ All Phase 1 test files copied to `tests/unit/backend/`:
 
 - ✅ test_main.py → tests/unit/backend/test_main.py
 - ✅ test_blog_workflow.py → tests/unit/backend/test_blog_workflow.py
-- ✅ services/*.py → tests/unit/backend/services/*.py
-- ✅ routes/*.py → tests/unit/backend/routes/*.py
+- ✅ services/_.py → tests/unit/backend/services/_.py
+- ✅ routes/_.py → tests/unit/backend/routes/_.py
 
 ### 4. Obsolete Directory Removal ✅
 
@@ -223,7 +223,7 @@ No errors found
 
 - ✅ TestConfig name collision fixed (imported_test_config: Any)
 - ✅ Type annotations added to all generic types (list[Dict[str, Any]], dict[str, Any])
-- ✅ Type hints added to all async functions (**kwargs: Any)
+- ✅ Type hints added to all async functions (\*\*kwargs: Any)
 - ✅ Zero lint errors remaining
 
 ---
@@ -352,7 +352,7 @@ No errors found
 1. **Fixture Merging Requires Care:**
    - Name collisions must be resolved (TestConfig → imported_test_config)
    - Type annotations required for all modern Python (Pyright strict mode)
-   - Async functions need explicit type hints for **kwargs
+   - Async functions need explicit type hints for \*\*kwargs
 
 2. **pytest Discovery Is Context-Sensitive:**
    - pytest.ini path determines rootdir

@@ -371,7 +371,9 @@ class UnifiedMetadataService:
                     logger.info("LLM generated excerpt")
                     return excerpt
             except Exception as e:
-                logger.error(f"[_generate_excerpt] LLM excerpt generation failed: {e}", exc_info=True)
+                logger.error(
+                    f"[_generate_excerpt] LLM excerpt generation failed: {e}", exc_info=True
+                )
 
         # Fallback: Use content start
         excerpt = content[:max_length]
@@ -431,7 +433,9 @@ class UnifiedMetadataService:
                 return excerpt[:max_length] if excerpt else None
 
         except Exception as e:
-            logger.error(f"[_llm_generate_excerpt] LLM excerpt generation error: {e}", exc_info=True)
+            logger.error(
+                f"[_llm_generate_excerpt] LLM excerpt generation error: {e}", exc_info=True
+            )
             return None
 
     # ========================================================================
@@ -466,7 +470,9 @@ class UnifiedMetadataService:
                 else:
                     result["seo_description"] = content[:155]
             except Exception as e:
-                logger.error(f"[_generate_seo_metadata] LLM SEO description failed: {e}", exc_info=True)
+                logger.error(
+                    f"[_generate_seo_metadata] LLM SEO description failed: {e}", exc_info=True
+                )
                 result["seo_description"] = content[:155]
         else:
             result["seo_description"] = content[:155]
@@ -483,7 +489,9 @@ class UnifiedMetadataService:
                 if not keywords_list:
                     keywords_list = self._extract_keywords_fallback(title)
             except Exception as e:
-                logger.error(f"[_generate_seo_metadata] LLM keyword extraction error: {e}", exc_info=True)
+                logger.error(
+                    f"[_generate_seo_metadata] LLM keyword extraction error: {e}", exc_info=True
+                )
                 keywords_list = self._extract_keywords_fallback(title)
         else:
             keywords_list = self._extract_keywords_fallback(title)
@@ -514,7 +522,9 @@ class UnifiedMetadataService:
             return result.text[:155] if result and result.text else None
 
         except Exception as e:
-            logger.error(f"[_llm_generate_seo_description] LLM SEO description error: {e}", exc_info=True)
+            logger.error(
+                f"[_llm_generate_seo_description] LLM SEO description error: {e}", exc_info=True
+            )
             return None
 
     async def _llm_extract_keywords(self, title: str, content: str) -> Optional[List[str]]:
@@ -540,7 +550,9 @@ class UnifiedMetadataService:
             return None
 
         except Exception as e:
-            logger.error(f"[_llm_extract_keywords] LLM keyword extraction error: {e}", exc_info=True)
+            logger.error(
+                f"[_llm_extract_keywords] LLM keyword extraction error: {e}", exc_info=True
+            )
             return None
 
     def _extract_keywords_fallback(self, title: str) -> List[str]:

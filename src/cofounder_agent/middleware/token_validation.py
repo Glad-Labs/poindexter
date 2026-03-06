@@ -22,16 +22,16 @@ logger = logging.getLogger(__name__)
 class TokenValidationMiddleware(BaseHTTPMiddleware):
     """
     Middleware for validating JWT tokens on protected endpoints.
-    
+
     Features:
     - Validates JWT token expiration and signature
     - Checks OAuth token status (optional, non-blocking)
     - Allows development mode token bypass via DISABLE_AUTH_FOR_DEV
     - Skips validation for public and WebSocket endpoints
-    
+
     Protected Endpoints (require valid token):
     - /api/* (except public routes)
-    
+
     Public Endpoints (no token required):
     - GET /api/public/*
     - /api/auth/* (login/logout)
@@ -73,9 +73,7 @@ class TokenValidationMiddleware(BaseHTTPMiddleware):
 
             # Skip validation for protected paths not matched (let them through)
             # Validation happens at dependency level via get_current_user()
-            is_protected = any(
-                request.url.path.startswith(path) for path in self.PROTECTED_PATHS
-            )
+            is_protected = any(request.url.path.startswith(path) for path in self.PROTECTED_PATHS)
 
             if not is_protected:
                 # Not a protected endpoint, proceed

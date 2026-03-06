@@ -61,7 +61,7 @@ class BlogPost(BaseModel):
     quality_scores: List[float] = Field(
         default_factory=list,
         description="Quality scores from each QA evaluation (0-100 scale). "
-                    "Allows tracking improvement trend across refinement iterations."
+        "Allows tracking improvement trend across refinement iterations.",
     )
 
     # --- Metadata for Agent Coordination ---

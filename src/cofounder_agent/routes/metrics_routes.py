@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+
 from routes.auth_unified import get_current_user
 from schemas.auth_schemas import UserProfile
 from schemas.metrics_schemas import (
@@ -624,8 +625,9 @@ async def get_kpi_analytics(
         total_cost = cost_summary.get("month_cost", 0.0) if cost_summary else 0.0
 
         # Query task counts from database
-        from schemas.common_schemas import ContentTask
         from sqlalchemy import and_, func, select
+
+        from schemas.common_schemas import ContentTask
 
         async with db_service.get_session() as session:
             # Count completed tasks

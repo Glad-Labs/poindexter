@@ -1,6 +1,7 @@
 # QUICK START - Manual UI Testing (10-15 minutes)
 
 ## Prerequisites
+
 - [ ] Backend running: http://localhost:8000/health (verify responsive)
 - [ ] Admin UI running: http://localhost:3001 (verify loads)
 - [ ] You're logged in or in development mode (no auth barrier)
@@ -10,11 +11,13 @@
 ## TEST 1: Generate a Technical Blog Post (5 minutes)
 
 ### Step 1.1: Navigate and Create Task
+
 1. Open browser to: **http://localhost:3001**
 2. Click **"Create Task"** or **"+ New Task"**
 3. Select **"Blog Post Generation"**
 
 ### Step 1.2: Fill Form with These Values
+
 ```
 Topic: "Kubernetes Pod Security Best Practices 2025"
 Target Audience: "DevOps Engineers"
@@ -26,6 +29,7 @@ Target Word Count: 1500
 ```
 
 ### Step 1.3: Submit and Monitor
+
 1. Click **"Generate"** button
 2. Watch real-time progress updates (should see messages like):
    - "Researching topic..."
@@ -44,6 +48,7 @@ Target Word Count: 1500
 Use this checklist to verify all 6 improvements are working:
 
 ### ✅ IMPROVEMENT 1: SEO Validation
+
 **Location:** Look for "SEO Title" and "Meta Description" fields
 
 - [ ] **Title Length**: Title is visible and reasonable length (≤60 chars)
@@ -61,12 +66,14 @@ Use this checklist to verify all 6 improvements are working:
   - Red flag: Keywords don't appear or appear only once ✗
 
 **Assessment**:
+
 - [ ] All 3 checks passed → **SEO Improvement WORKING ✓**
-- [ ] Any check failed → Note issue: _______________________
+- [ ] Any check failed → Note issue: **********\_\_\_**********
 
 ---
 
 ### ✅ IMPROVEMENT 2: Content Structure
+
 **Location:** Scroll through main content body
 
 - [ ] **Heading Hierarchy Valid**:
@@ -97,12 +104,14 @@ Use this checklist to verify all 6 improvements are working:
   - Red flag: Many single-sentence paragraphs OR giant wall-of-text blocks ✗
 
 **Assessment**:
+
 - [ ] All 4 checks passed → **Structure Improvement WORKING ✓**
-- [ ] Any check failed → Note issue: _______________________
+- [ ] Any check failed → Note issue: **********\_\_\_**********
 
 ---
 
 ### ✅ IMPROVEMENT 4: Readability
+
 **Location:** Reading quality of the content
 
 - [ ] **Professional Language**:
@@ -120,12 +129,14 @@ Use this checklist to verify all 6 improvements are working:
   - Red flag: Random jumps between topics, disjointed flow ✗
 
 **Assessment**:
+
 - [ ] All 3 checks passed → **Readability Improvement WORKING ✓**
-- [ ] Any check failed → Note issue: _______________________
+- [ ] Any check failed → Note issue: **********\_\_\_**********
 
 ---
 
 ### ✅ IMPROVEMENT 3: Research Quality
+
 **Location:** Look for "Sources" or "References" section (usually at end)
 
 - [ ] **Source Count**:
@@ -146,12 +157,14 @@ Use this checklist to verify all 6 improvements are working:
   - Red flag: Same domain repeated multiple times ✗
 
 **Assessment**:
+
 - [ ] All 3 checks passed → **Research Improvement WORKING ✓**
-- [ ] Any check failed → Note issue: _______________________
+- [ ] Any check failed → Note issue: **********\_\_\_**********
 
 ---
 
 ### ✅ IMPROVEMENTS 5 & 6: QA Feedback & Quality Scores
+
 **Location:** Look for "Quality Score" or "Refinement History" section
 
 - [ ] **Quality Score Display**:
@@ -173,9 +186,10 @@ Use this checklist to verify all 6 improvements are working:
   - Red flag: Score drops between rounds ✗
 
 **Assessment**:
+
 - [ ] Quality score ≥75 → **Quality Score WORKING ✓**
 - [ ] Score improvement visible → **Feedback Accumulation WORKING ✓**
-- [ ] Any check failed → Note issue: _______________________
+- [ ] Any check failed → Note issue: **********\_\_\_**********
 
 ---
 
@@ -213,6 +227,7 @@ QUALITY SCORE: ___________ /100
 If Test 1 passed completely, optionally run a second test with different style:
 
 ### Form Values:
+
 ```
 Topic: "How Microservices Architecture Transformed Our Engineering Team"
 Target Audience: "Engineering Managers"
@@ -223,6 +238,7 @@ Target Word Count: 1200
 ```
 
 ### Quick Validation (Same 6 Improvements):
+
 - [ ] SEO: Keywords present, title/meta within limits
 - [ ] Structure: Creative headings, no forbidden titles, valid hierarchy
 - [ ] Readability: Narrative tone, smooth flow
@@ -239,6 +255,7 @@ If you want to verify validators are actually running, check your terminal where
 ### Look for these log messages:
 
 **For SEO Validator:**
+
 ```
 [SEOValidator] Title length: 52 chars (max: 60) - VALID
 [SEOValidator] Meta length: 142 chars (max: 155) - VALID
@@ -247,6 +264,7 @@ If you want to verify validators are actually running, check your terminal where
 ```
 
 **For Structure Validator:**
+
 ```
 [ContentStructureValidator] Heading hierarchy validation started
 [ContentStructureValidator] Heading hierarchy status: VALID (H1→H2→H3)
@@ -254,6 +272,7 @@ If you want to verify validators are actually running, check your terminal where
 ```
 
 **For QA Feedback Accumulation:**
+
 ```
 [CreativeAgent] Using accumulated QA feedback (2 rounds)
 [CreativeAgent] Quality score improvement: 72.0 → 78.5 (+6.5 points)
@@ -261,6 +280,7 @@ If you want to verify validators are actually running, check your terminal where
 ```
 
 Or (if early exit triggered):
+
 ```
 [CreativeAgent] Stopping refinement - minimal improvement (1.8 points < 5.0)
 ```
@@ -287,25 +307,33 @@ Or (if early exit triggered):
 ## TROUBLESHOOTING
 
 ### Issue: Blog generation times out (>5 minutes)
+
 **Check:**
+
 - Is backend still running? `curl http://localhost:8000/health`
 - Are there error messages in terminal? Look for red text / "ERROR"
 - Try creating another task (might be one-off issue)
 
 ### Issue: Quality score shows 0
+
 **Check:**
+
 - Wait 30 more seconds and refresh page (validation running in background)
 - Check browser developer tools (F12 → Console) for errors
 - Check backend logs for validation errors
 
 ### Issue: No keywords found in content
+
 **Check:**
+
 - Use Ctrl+F to search case-insensitively
 - Try searching just the keyword fragment (e.g., "Kubernetes" vs "kubernetes security")
 - Check if keywords are in admin UI form vs actual content
 
 ### Issue: No QA feedback rounds visible
+
 **Check:**
+
 - This is OK - not all posts require refinement
 - Quality score ≥75 means no further refinement needed
 - Check backend logs for message: "Already high quality, no refinement needed"
@@ -323,12 +351,11 @@ Or (if early exit triggered):
 
 ## QUICK REFERENCE: What Each Improvement Does
 
-| Improvement | What It Does | How to Verify |
-|------------|-------------|--------------|
-| SEO Validator | Ensures keywords appear naturally in content, title/meta within length limits | Search for keywords, check title/meta character count |
-| Structure Validator | Validates heading hierarchy (H1→H2→H3), rejects generic titles | Check heading structure, search for forbidden titles |
-| Research Quality | Deduplicates sources, scores credibility, filters spam | Count sources (5-7), verify domains are reputable |
-| Readability | Ensures professional tone, balanced sentences/paragraphs | Read text, check sentence/paragraph variety |
-| QA Feedback | Accumulates ALL feedback across refinement attempts | Check for multiple QA rounds in history |
-| Quality Scores | Tracks quality scores across QA rounds | Look for score history (e.g., 72 → 78 → 81) |
-
+| Improvement         | What It Does                                                                  | How to Verify                                         |
+| ------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------- |
+| SEO Validator       | Ensures keywords appear naturally in content, title/meta within length limits | Search for keywords, check title/meta character count |
+| Structure Validator | Validates heading hierarchy (H1→H2→H3), rejects generic titles                | Check heading structure, search for forbidden titles  |
+| Research Quality    | Deduplicates sources, scores credibility, filters spam                        | Count sources (5-7), verify domains are reputable     |
+| Readability         | Ensures professional tone, balanced sentences/paragraphs                      | Read text, check sentence/paragraph variety           |
+| QA Feedback         | Accumulates ALL feedback across refinement attempts                           | Check for multiple QA rounds in history               |
+| Quality Scores      | Tracks quality scores across QA rounds                                        | Look for score history (e.g., 72 → 78 → 81)           |

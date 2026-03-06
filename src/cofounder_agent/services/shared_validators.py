@@ -17,12 +17,12 @@ Usage:
     class UserRequest(BaseModel):
         email: str
         name: str
-        
+
         @field_validator('email')
         @classmethod
         def validate_email_field(cls, v: str) -> str:
             return validate_email(v)
-        
+
         @field_validator('name')
         @classmethod
         def validate_name_field(cls, v: str) -> str:
@@ -89,9 +89,7 @@ def validate_non_empty_string(
 
     if len(value) < min_length:
         if min_length == 1:
-            raise ValidationError(
-                field_name, f"Cannot be empty", "REQUIRED"
-            )
+            raise ValidationError(field_name, f"Cannot be empty", "REQUIRED")
         raise ValidationError(
             field_name,
             f"Must be at least {min_length} characters",

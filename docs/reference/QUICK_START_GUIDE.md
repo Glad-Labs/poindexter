@@ -28,7 +28,7 @@ curl http://localhost:8000/api/capabilities | jq '.'
           }
         ]
       }
-    },
+    }
     // ... more capabilities
   ],
   "total": 7
@@ -192,7 +192,7 @@ Pass data between steps using references:
 {
   "capability_name": "step_2",
   "inputs": {
-    "data": "$step_1_output"  // Reference to previous step's output_key
+    "data": "$step_1_output" // Reference to previous step's output_key
   }
 }
 ```
@@ -217,7 +217,7 @@ Input→┤
 ### Pattern 3: Conditional (coming Phase 2)
 
 ```
-Generate → Critique → if score > 8? 
+Generate → Critique → if score > 8?
                         No: Regenerate
                         Yes: Publish
 ```
@@ -303,7 +303,7 @@ from services.capability_registry import Capability, CapabilityMetadata
 class MyCapability(Capability):
     def __init__(self, service):
         self.service = service
-    
+
     @property
     def metadata(self) -> CapabilityMetadata:
         return CapabilityMetadata(
@@ -311,15 +311,15 @@ class MyCapability(Capability):
             description="Description",
             tags=["tag"],
         )
-    
+
     @property
     def input_schema(self) -> InputSchema:
         return InputSchema(parameters=[...])
-    
+
     @property
     def output_schema(self) -> OutputSchema:
         return OutputSchema(...)
-    
+
     async def execute(self, **inputs) -> dict:
         result = await self.service.process(inputs['param'])
         return result
@@ -333,13 +333,13 @@ registry.register(MyCapability(my_service))
 
 ## Troubleshooting
 
-| Problem | Solution |
-|---------|----------|
-| Capability not found | Check spelling, list all capabilities with `GET /api/capabilities` |
+| Problem                        | Solution                                                              |
+| ------------------------------ | --------------------------------------------------------------------- |
+| Capability not found           | Check spelling, list all capabilities with `GET /api/capabilities`    |
 | Variable reference not working | Use exact format `$output_key`, must match previous step's output_key |
-| Execution fails at step 2 | Check step 2's inputs are valid for that capability |
-| Input validation error | Check input types match capability's input_schema |
-| Database error | Run migration: `cd src/cofounder_agent && alembic upgrade head` |
+| Execution fails at step 2      | Check step 2's inputs are valid for that capability                   |
+| Input validation error         | Check input types match capability's input_schema                     |
+| Database error                 | Run migration: `cd src/cofounder_agent && alembic upgrade head`       |
 
 ---
 
@@ -383,18 +383,18 @@ curl http://localhost:8000/api/tasks/capability/$TASK_ID/executions/$EXEC_ID | j
 
 ## API Endpoints Reference
 
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/api/capabilities` | GET | List all capabilities |
-| `/api/capabilities/{name}` | GET | Get capability details |
-| `/api/tasks/capability` | POST | Create task |
-| `/api/tasks/capability` | GET | List tasks (pagination) |
-| `/api/tasks/capability/{id}` | GET | Get task details |
-| `/api/tasks/capability/{id}` | PUT | Update task |
-| `/api/tasks/capability/{id}` | DELETE | Delete task |
-| `/api/tasks/capability/{id}/execute` | POST | Execute task |
-| `/api/tasks/capability/{id}/executions/{exec_id}` | GET | Get execution result |
-| `/api/tasks/capability/{id}/executions` | GET | List execution history |
+| Endpoint                                          | Method | Purpose                 |
+| ------------------------------------------------- | ------ | ----------------------- |
+| `/api/capabilities`                               | GET    | List all capabilities   |
+| `/api/capabilities/{name}`                        | GET    | Get capability details  |
+| `/api/tasks/capability`                           | POST   | Create task             |
+| `/api/tasks/capability`                           | GET    | List tasks (pagination) |
+| `/api/tasks/capability/{id}`                      | GET    | Get task details        |
+| `/api/tasks/capability/{id}`                      | PUT    | Update task             |
+| `/api/tasks/capability/{id}`                      | DELETE | Delete task             |
+| `/api/tasks/capability/{id}/execute`              | POST   | Execute task            |
+| `/api/tasks/capability/{id}/executions/{exec_id}` | GET    | Get execution result    |
+| `/api/tasks/capability/{id}/executions`           | GET    | List execution history  |
 
 ---
 

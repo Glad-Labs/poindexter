@@ -580,7 +580,9 @@ class OllamaClient:
                                 continue
 
         except httpx.HTTPError as e:
-            logger.error(f"[stream_generate] Ollama streaming failed: {e}", exc_info=True, model=model)
+            logger.error(
+                f"[stream_generate] Ollama streaming failed: {e}", exc_info=True, model=model
+            )
             raise
 
 
