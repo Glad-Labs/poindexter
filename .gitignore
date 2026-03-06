@@ -46,3 +46,4 @@ nul
 test-results/
 screenshots/
 .playwright-mcp/
+.env.local.mstr

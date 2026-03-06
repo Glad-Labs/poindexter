@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 from asyncpg import Pool
 
 from .database_mixin import DatabaseServiceMixin
+from .decorators import log_query_performance
 
 logger = logging.getLogger(__name__)
 

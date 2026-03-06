@@ -23,6 +23,7 @@ from utils.error_handler import handle_service_error
 from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 
 from .database_mixin import DatabaseServiceMixin
+from .decorators import log_query_performance
 
 logger = logging.getLogger(__name__)
 
@@ -567,6 +568,7 @@ class TasksDatabase(DatabaseServiceMixin):
             logger.error(f"[update_task] Failed to update task {task_id}: {e}", exc_info=True)
             return None
 
+    @log_query_performance(operation="get_tasks_paginated", category="task_retrieval", slow_threshold_ms=50)
     async def get_tasks_paginated(
         self,
         offset: int = 0,
@@ -693,6 +695,7 @@ class TasksDatabase(DatabaseServiceMixin):
             logger.error(f"[get_queued_tasks] Failed to get queued tasks: {e}", exc_info=True)
             return []
 
+    @log_query_performance(operation="get_tasks_by_date_range", category="analytics", slow_threshold_ms=200)
     async def get_tasks_by_date_range(
         self,
         start_date: Optional[datetime] = None,

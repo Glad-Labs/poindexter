@@ -24,7 +24,7 @@ from typing import Any, Dict, Optional
 
 import httpx
 import jwt
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
 
 from schemas.auth_schemas import (
@@ -40,6 +40,10 @@ from utils.route_utils import get_database_dependency
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+AUTH_COOKIE_NAME = os.getenv("AUTH_COOKIE_NAME", "gladlabs_auth")
+AUTH_COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "false").lower() == "true"
+AUTH_COOKIE_MAX_AGE_SECONDS = AuthConfig.ACCESS_TOKEN_EXPIRE_MINUTES * 60
 
 # GitHub Configuration
 # Note: Using GH_OAUTH_ prefix instead of GITHUB_ because GitHub Actions
@@ -204,6 +208,24 @@ def create_jwt_token(user_data: Dict[str, Any]) -> str:
     return token
 
 
+def set_auth_cookie(response: Response, token: str) -> None:
+    """Attach the short-lived auth token as an HttpOnly cookie."""
+    response.set_cookie(
+        key=AUTH_COOKIE_NAME,
+        value=token,
+        max_age=AUTH_COOKIE_MAX_AGE_SECONDS,
+        httponly=True,
+        secure=AUTH_COOKIE_SECURE,
+        samesite="lax",
+        path="/",
+    )
+
+
+def clear_auth_cookie(response: Response) -> None:
+    """Remove the auth cookie during logout/cleanup."""
+    response.delete_cookie(key=AUTH_COOKIE_NAME, path="/")
+
+
 # ============================================================================
 # Dependency: Get Current User (Auth-Agnostic)
 # ============================================================================
@@ -270,10 +292,12 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
     """
     try:
         auth_header = request.headers.get("Authorization", "")
+        cookie_token = request.cookies.get(AUTH_COOKIE_NAME)
+        token: Optional[str] = None
 
-        # DEVELOPMENT MODE: If no auth header provided, allow access with dev user
+        # DEVELOPMENT MODE: If no auth token provided, allow access with dev user
         # This allows frontend development/testing without authentication
-        if not auth_header:
+        if not auth_header and not cookie_token:
             logger.info("[get_current_user] No auth header - allowing development access")
             return {
                 "id": "dev-user-123",
@@ -285,15 +309,24 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
                 "token": "dev-token",
             }
 
-        if not auth_header.startswith("Bearer "):
-            logger.warning(f"[get_current_user] Invalid auth header format")
+        if auth_header:
+            if not auth_header.startswith("Bearer "):
+                logger.warning("[get_current_user] Invalid auth header format")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Missing or invalid authorization header",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            token = auth_header[7:]  # Remove "Bearer " prefix
+        elif cookie_token:
+            token = cookie_token
+
+        if not token:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authorization header",
+                detail="Authentication token missing",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-
-        token = auth_header[7:]  # Remove "Bearer " prefix
 
         # DEVELOPMENT MODE: Allow dev tokens without JWT validation
         # This allows frontend development/testing with mock tokens
@@ -365,6 +398,7 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
 @router.post("/github/callback")
 async def github_callback(
     request_data: GitHubCallbackRequest,
+    response: Response,
     db: DatabaseService = Depends(get_database_dependency),
 ) -> Dict[str, Any]:
     """
@@ -490,6 +524,8 @@ async def github_callback(
 
         logger.info(f"GitHub authentication successful for user: {user_info['username']}")
 
+        set_auth_cookie(response, jwt_token)
+
         return {
             "token": jwt_token,
             "user": user_info,
@@ -505,6 +541,7 @@ async def github_callback(
 @router.post("/github-callback")
 async def github_callback_fallback(
     request_data: GitHubCallbackRequest,
+    response: Response,
     db: DatabaseService = Depends(get_database_dependency),
 ) -> Dict[str, Any]:
     """
@@ -520,11 +557,12 @@ async def github_callback_fallback(
         "Deprecated endpoint /api/auth/github-callback called. Use /api/auth/github/callback instead."
     )
     # Forward to the main handler with database service
-    return await github_callback(request_data, db)
+    return await github_callback(request_data, response, db)
 
 
 @router.post("/logout", response_model=LogoutResponse)
 async def unified_logout(
+    response: Response,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> LogoutResponse:
     """
@@ -572,6 +610,8 @@ async def unified_logout(
         #     await revoke_oauth_refresh_token(current_user["token_id"])
         # else:
         #     await add_token_to_blacklist(current_user["token"])
+
+        clear_auth_cookie(response)
 
         logger.info(f"User {user_id} logged out successfully ({auth_provider})")
 
