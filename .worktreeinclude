@@ -1,0 +1,48 @@
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Node.js
+node_modules/
+.next/
+build/
+dist/
+.pnp.*
+npm-debug.log*
+yarn-error.log*
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.eggs/
+*.egg-info/
+*.egg
+
+# Temporary files
+.tmp/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+.env.test
+.env.staging
+
+# Environment & Credentials
+credentials.json
+service-account-key.json
+token.json
+*.log
+.env.old
+nul
+
+.agents/
+.continue/skills
+test-results/
+screenshots/
+.playwright-mcp/
