@@ -216,13 +216,10 @@ async def get_current_user_optional(request: Request) -> Dict[str, Any]:
 
     Returns mock user if DEVELOPMENT_MODE=true and no auth provided.
     """
-    print("\n[OPTIONAL_AUTH] Function called!")  # DEBUG
     auth_header = request.headers.get("Authorization", "")
-    print(f"[OPTIONAL_AUTH] auth_header: {bool(auth_header)}")  # DEBUG
 
     # No auth header - return dev user (allows testing without real token)
     if not auth_header:
-        print("[OPTIONAL_AUTH] Returning dev user!")  # DEBUG
         logger.debug(
             "[get_current_user_optional] No auth header - returning dev user for development"
         )
@@ -235,8 +232,6 @@ async def get_current_user_optional(request: Request) -> Dict[str, Any]:
             "created_at": datetime.now(timezone.utc).isoformat(),
             "token": "dev-token",
         }
-
-    print("[OPTIONAL_AUTH] Auth header present, validating...")  # DEBUG
     # Auth header provided - validate normally
     return await get_current_user(request)
 

@@ -1023,25 +1023,4 @@ async def get_task_approval_status(
 
 
 # ============================================================================
-# DEBUG TEST ENDPOINT
-# ============================================================================
-
-
-@router.post("/test-auto-publish", response_model=Dict[str, Any])
-async def test_auto_publish(request: ApprovalRequest):
-    """DEBUG: Test endpoint that echoes back the parsed auto_publish value"""
-    return {
-        "received": {
-            "auto_publish": request.auto_publish,
-            "auto_publish_type": str(type(request.auto_publish)),
-            "auto_publish_repr": repr(request.auto_publish),
-            "is_true": request.auto_publish is True,
-            "equals_true": request.auto_publish == True,
-            "bool_value": bool(request.auto_publish),
-            "will_trigger_if": True if request.auto_publish else False,
-        },
-        "model_dump": request.model_dump(),
-    }
-
-
-# DEBUG/TEST ENDPOINTS (removed - using /test-auto-publish instead)
+# DEBUG/TEST ENDPOINTS (removed)

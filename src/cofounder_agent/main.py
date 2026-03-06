@@ -235,13 +235,7 @@ middleware_config = MiddlewareConfig()
 middleware_config.register_all_middleware(app)
 
 
-# ===== SIMPLE TEST ENDPOINT =====
-@app.get("/test-auth")
-async def test_auth():
-    """Simple endpoint to verify authentication bypass is working"""
-    return {"message": "Success! This endpoint requires no auth"}
-
-
+# ===== PUBLIC ENDPOINTS =====
 @app.get("/api/tasks-public", response_model=dict)
 async def list_tasks_public():
     """Public version of list tasks - no auth required"""
@@ -451,12 +445,6 @@ async def get_metrics_endpoint(
 
 # ===== PUBLIC DEVELOPMENT ENDPOINTS (NO AUTH REQUIRED) =====
 # These endpoints are for development/testing only and may expose data without authentication
-
-
-@app.get("/test-endpoint")
-async def test_endpoint():
-    """Simple test endpoint to verify main.py is being served."""
-    return {"message": "test endpoint works"}
 
 
 class CommandRequest(BaseModel):
