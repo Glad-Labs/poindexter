@@ -96,10 +96,14 @@ class UnifiedPromptManager:
 The target audience is {target_audience}. 
 The primary keyword to focus on is '{primary_keyword}'.
 
+🎯 MANDATORY WORD COUNT: You MUST write {word_count} words (±10% acceptable range).
+   Your content will be REJECTED if it's too short. Write detailed, thorough content.
+
 ⭐ CRITICAL REQUIREMENTS:
 1. Start your response with a Markdown heading (# Your Title Here) on the first line
 2. Include 3-5 main sections with ## subheadings
-3. ⚠️ SECTION TITLES MUST BE CATCHY AND CREATIVE - NOT GENERIC!
+3. Write DETAILED content in each section - don't be brief!
+4. ⚠️ SECTION TITLES MUST BE CATCHY AND CREATIVE - NOT GENERIC!
    ❌ AVOID these boring titles: Introduction, Background, Overview, Conclusion, Summary, The End, Final Thoughts, Wrap-up
    ✅ USE these approaches:
       - Curiosity-driven: "Why Most People Get [Topic] Wrong", "The Hidden Truth About [Topic]"
@@ -107,10 +111,10 @@ The primary keyword to focus on is '{primary_keyword}'.
       - Action-oriented: "Start With [Action]", "Never [Mistake] Again", "The Quickest Way to [Goal]"
       - Insight-focused: "What the Data Shows", "Industry Insiders Reveal", "The Surprising Connection"
       - Story-based: "From [Problem] to [Solution]", "How [Entity] Transformed"
-4. Incorporate research context provided below
-5. Add [IMAGE-1], [IMAGE-2], etc. where visuals would enhance the content
-6. Target word count: {word_count} words (±10% tolerance acceptable)
+5. Incorporate research context provided below
+6. Add [IMAGE-1], [IMAGE-2], etc. where visuals would enhance the content
 7. Format: Valid Markdown with proper structure
+8. Write multiple paragraphs per section with concrete examples and details
 
 ⭐ RESEARCH CONTEXT TO INCORPORATE:
 {research_context}
@@ -682,7 +686,13 @@ Example Response Format: tag1, tag2, tag3, tag4, tag5""",
 Your writing style is {style}.
 Your tone is {tone}.
 Write for an educated but general audience.
-Generate approximately {target_length} words.
+
+🎯 CRITICAL WORD COUNT REQUIREMENT: You MUST write EXACTLY {target_length} words (±10% tolerance).
+   - Minimum acceptable: {min_words} words
+   - Target: {target_length} words
+   - Maximum: {max_words} words
+   - Your response will be REJECTED if it falls outside this range.
+
 Format as Markdown with proper headings (# for title, ## for sections, ### for subsections).
 
 ⭐ CRITICAL GUIDANCE ON SECTION TITLES:
@@ -701,9 +711,9 @@ Include:
 - Real-world examples or bullet points
 - Clear conclusion with call-to-action (avoid "Conclusion" as title - use something like "Your Next Step", "Ready to Begin?")
 Tags: {tags}""",
-            description="System prompt for blog generation with creative title guidance",
+            description="System prompt for blog generation with strict word count enforcement",
             output_format="markdown",
-            notes="v2.0: Added explicit guidance on creative section titles with examples",
+            notes="v3.0: Added strict word count requirements with min/max bounds + Creative title guidance",
         )
 
         self._register_prompt(

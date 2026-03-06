@@ -163,6 +163,9 @@ class ModelConverter:
             "primary_keyword",  # ADD: Primary SEO keyword
             "estimated_cost",  # ADD: Cost tracking
             "cost_breakdown",  # ADD: Cost breakdown
+            "model_used",  # ADD: Model tracking
+            "models_used_by_phase",  # ADD: Phase-level model tracking
+            "model_selection_log",  # ADD: Model selection decision log
         ]
 
         for field in normalized_fields:

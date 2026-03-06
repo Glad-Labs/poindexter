@@ -50,11 +50,12 @@ class ContentValidationResult:
 class AIContentGenerator:
     """Unified content generation with provider fallback and self-checking"""
 
-    def __init__(self, quality_threshold: float = 7.0):
+    def __init__(self, quality_threshold: float = 7.5):
         """Initialize content generator
 
         Args:
             quality_threshold: Minimum quality score (0-10) for content acceptance
+                               Default 7.5 ensures content meets length requirements
         """
         self.quality_threshold = quality_threshold
         self.ollama_available = False
@@ -118,17 +119,35 @@ class AIContentGenerator:
         issues = []
         score = 10.0
 
-        # 1. Check length (tighter tolerance: ±10% instead of ±30%)
+        # 1. Check length (strict enforcement: ±10% tolerance)
         word_count = len(content.split())
         min_words = int(target_length * 0.9)
         max_words = int(target_length * 1.1)
-
+        
+        # Calculate severity based on how far from target
         if word_count < min_words:
-            issues.append(f"Content too short: {word_count} words (target: {target_length})")
-            score -= 2.0
+            deficit_pct = ((min_words - word_count) / target_length) * 100
+            
+            # Very short content (< 70% of target) should FAIL quality check
+            if word_count < target_length * 0.7:
+                issues.append(
+                    f"❌ CRITICAL: Content severely too short: {word_count} words (target: {target_length}, {deficit_pct:.0f}% deficit). "
+                    f"Need at least {int(target_length * 0.7)} words minimum."
+                )
+                score -= 5.0  # Major penalty - will fail quality check
+            # Moderately short (70-90% of target)
+            else:
+                issues.append(
+                    f"⚠️  Content too short: {word_count} words (target: {target_length}, {deficit_pct:.0f}% deficit). "
+                    f"Need {min_words - word_count} more words to meet minimum."
+                )
+                score -= 3.0  # Significant penalty - likely to fail quality check
         elif word_count > max_words:
-            issues.append(f"Content too long: {word_count} words (target: {target_length})")
-            score -= 1.5
+            excess_pct = ((word_count - max_words) / target_length) * 100
+            issues.append(
+                f"Content slightly too long: {word_count} words (target: {target_length}, {excess_pct:.0f}% over)"
+            )
+            score -= 1.0  # Minor penalty - still acceptable
 
         # 2. Use ContentStructureValidator for comprehensive structure check
         structure_result = self.structure_validator.validate(content)
@@ -299,14 +318,21 @@ class AIContentGenerator:
         # This ensures all prompts are versioned, documented, and easy to maintain
         try:
             logger.info("📝 Loading system prompt...")
+            # Calculate min/max word counts for prompt
+            min_words = int(target_length * 0.9)
+            max_words = int(target_length * 1.1)
+            
             system_prompt = pm.get_prompt(
                 "blog_generation.blog_system_prompt",
                 style=style,
                 tone=tone,
                 target_length=target_length,
+                min_words=min_words,
+                max_words=max_words,
                 tags=", ".join(tags) if tags else "general",
             )
             logger.info(f"✓ System prompt loaded ({len(system_prompt)} chars)")
+            logger.info(f"   Word count requirement: {min_words}-{max_words} words (target: {target_length})")
         except Exception as e:
             logger.error(f"[_generate_blog_post] Failed to load system prompt: {e}", exc_info=True)
             raise
