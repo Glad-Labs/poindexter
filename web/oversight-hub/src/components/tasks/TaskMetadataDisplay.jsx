@@ -105,6 +105,18 @@ const TaskMetadataDisplay = ({ task }) => {
     executionTime = `${diffMins} min${diffMins !== 1 ? 's' : ''}`;
   }
 
+  // 🐛 DEBUG: Log task data to see what's actually available
+  console.group('🐛 TaskMetadataDisplay Debug - Task:', task.id || 'unknown');
+  console.log('model_used (top-level):', task.model_used);
+  console.log('selected_model (top-level):', task.selected_model);
+  console.log('model (top-level):', task.model);
+  console.log('target_length (top-level):', task.target_length);
+  console.log('parsedResult:', parsedResult);
+  console.log('parsedTaskMeta:', parsedTaskMeta);
+  console.log('extractedMetadata:', extractedMetadata);
+  console.log('Full task object:', task);
+  console.groupEnd();
+
   const metadataItems = [
     {
       label: 'Category',
@@ -132,7 +144,32 @@ const TaskMetadataDisplay = ({ task }) => {
     },
     {
       label: 'Word Count',
-      value: wordCount ? `${wordCount} words` : 'Not specified',
+      value: (() => {
+        const target = task.target_length || parsedTaskMeta.target_length;
+        const actual =
+          extractedMetadata.word_count ||
+          parsedTaskMeta.word_count ||
+          (parsedResult.content
+            ? parsedResult.content.split(/\s+/).length
+            : null);
+
+        if (target && actual) {
+          const percentage = ((actual / target) * 100).toFixed(0);
+          const color =
+            percentage >= 90 && percentage <= 110 ? '#4ade80' : '#eab308';
+          return (
+            <span>
+              {actual} / {target} words{' '}
+              <span style={{ color }}>({percentage}%)</span>
+            </span>
+          );
+        } else if (actual) {
+          return `${actual} words`;
+        } else if (target) {
+          return `Target: ${target} words`;
+        }
+        return 'Not specified';
+      })(),
     },
     {
       label: 'Quality Score',
@@ -172,6 +209,21 @@ const TaskMetadataDisplay = ({ task }) => {
     {
       label: 'Task Type',
       value: task.task_type || 'Standard',
+    },
+    {
+      label: 'Model Used',
+      value:
+        task.model_used ||
+        task.selected_model ||
+        task.model ||
+        parsedTaskMeta.model_used ||
+        parsedTaskMeta.model ||
+        parsedTaskMeta.selected_model ||
+        parsedResult.model_used ||
+        parsedResult.model ||
+        parsedResult.selected_model ||
+        'Not specified',
+      color: '#a78bfa',
     },
     {
       label: 'Published',
@@ -378,7 +430,7 @@ const TaskMetadataDisplay = ({ task }) => {
       )}
     </Box>
   );
-};
+};;
 
 TaskMetadataDisplay.propTypes = {
   task: PropTypes.shape({
