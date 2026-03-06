@@ -75,16 +75,11 @@ export const exchangeCodeForToken = async (code) => {
       avatar_url: 'https://avatars.githubusercontent.com/u/1?v=4',
     };
 
-    // Generate a temporary mock token (NEVER use in production)
-    const mockToken =
-      'mock_jwt_token_dev_' + Math.random().toString(36).substring(2, 15);
-
-    // Store token and user data
-    localStorage.setItem('auth_token', mockToken);
+    // Store non-sensitive profile only. Session token is cookie-based.
     localStorage.setItem('user', JSON.stringify(mockUser));
 
     return {
-      token: mockToken,
+      token: null,
       user: mockUser,
     };
   } catch (error) {
@@ -98,12 +93,7 @@ export const exchangeCodeForToken = async (code) => {
  */
 export const verifySession = async () => {
   try {
-    const token = localStorage.getItem('auth_token');
-    if (!token) {
-      return null;
-    }
-
-    // If token exists, consider session valid
+    // In mock mode we only rely on a cached local profile.
     const user = localStorage.getItem('user');
     return user ? JSON.parse(user) : null;
   } catch (error) {
@@ -116,7 +106,6 @@ export const verifySession = async () => {
  * Logout - removes stored credentials
  */
 export const logout = async () => {
-  localStorage.removeItem('auth_token');
   localStorage.removeItem('user');
   sessionStorage.removeItem('mock_auth_code');
 };

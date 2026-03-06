@@ -4,6 +4,8 @@
  * Provides model availability, selection, and information to the UI
  */
 
+import { getApiUrl } from '../config/apiConfig';
+
 class ModelService {
   constructor() {
     this.models = [];
@@ -16,8 +18,7 @@ class ModelService {
    */
   async getAvailableModels() {
     try {
-      const API_BASE_URL =
-        process.env.REACT_APP_API_URL || 'http://localhost:8000';
+      const API_BASE_URL = getApiUrl();
       const response = await fetch(`${API_BASE_URL}/api/models/available`, {
         headers: {
           Accept: 'application/json',
@@ -93,8 +94,7 @@ class ModelService {
    */
   async getProviderStatus() {
     try {
-      const API_BASE_URL =
-        process.env.REACT_APP_API_URL || 'http://localhost:8000';
+      const API_BASE_URL = getApiUrl();
       const response = await fetch(`${API_BASE_URL}/api/models/status`, {
         headers: {
           Accept: 'application/json',

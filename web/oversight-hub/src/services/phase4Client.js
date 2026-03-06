@@ -10,15 +10,15 @@
  * @module phase4Client
  */
 
-import authService from './authService';
 import { logError } from './errorLoggingService';
+import { getApiUrl } from '../config/apiConfig';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_BASE_URL = getApiUrl();
 const REQUEST_TIMEOUT = 30000; // 30 seconds
 
 /**
  * Core makeRequest wrapper - mirrors cofounderAgentClient pattern
- * Handles JWT auth, timeouts, and error formatting
+ * Handles cookie-based auth, timeouts, and error formatting
  */
 async function makeRequest(endpoint, options = {}) {
   const {
@@ -29,11 +29,9 @@ async function makeRequest(endpoint, options = {}) {
   } = options;
 
   try {
-    const token = authService.getAuthToken();
     const finalHeaders = {
       'Content-Type': 'application/json',
       ...headers,
-      ...(token && { Authorization: `Bearer ${token}` }),
     };
 
     const controller = new AbortController();
@@ -42,6 +40,7 @@ async function makeRequest(endpoint, options = {}) {
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       method,
       headers: finalHeaders,
+      credentials: 'include',
       body: body ? JSON.stringify(body) : null,
       signal: controller.signal,
     });

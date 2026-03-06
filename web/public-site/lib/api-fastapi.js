@@ -30,6 +30,7 @@ async function fetchAPI(endpoint, options = {}) {
   try {
     const response = await fetch(url, {
       ...options,
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
         ...CACHE_HEADERS,
@@ -417,15 +418,8 @@ export async function handleOAuthCallback(provider, code, state) {
  */
 export async function getCurrentUser() {
   try {
-    const token = localStorage.getItem('auth_token');
-    if (!token) return null;
-
-    const response = await fetchAPI('/auth/verify', {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-    return response.data || null;
+    const response = await fetchAPI('/auth/me');
+    return response || null;
   } catch (error) {
     console.error('[FastAPI] Error getting current user:', error);
     return null;
@@ -437,14 +431,8 @@ export async function getCurrentUser() {
  * @returns {Promise<Object>}
  */
 export async function logout() {
-  const token = localStorage.getItem('auth_token');
-  if (!token) return { success: true };
-
   return fetchAPI('/auth/logout', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
   });
 }
 
@@ -458,14 +446,8 @@ export async function logout() {
  * @returns {Promise<Object>}
  */
 export async function createTask(taskData) {
-  const token = localStorage.getItem('auth_token');
-  if (!token) throw new Error('Not authenticated');
-
   return fetchAPI('/tasks', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
     body: JSON.stringify(taskData),
   });
 }
@@ -478,19 +460,12 @@ export async function createTask(taskData) {
  * @returns {Promise<Object>} { data: [...tasks], meta: {...} }
  */
 export async function listTasks(limit = 20, offset = 0, status = null) {
-  const token = localStorage.getItem('auth_token');
-  if (!token) throw new Error('Not authenticated');
-
   let endpoint = `/tasks?limit=${limit}&offset=${offset}`;
   if (status) {
     endpoint += `&status=${encodeURIComponent(status)}`;
   }
 
-  return fetchAPI(endpoint, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+  return fetchAPI(endpoint);
 }
 
 /**
@@ -499,14 +474,7 @@ export async function listTasks(limit = 20, offset = 0, status = null) {
  * @returns {Promise<Object>}
  */
 export async function getTaskById(taskId) {
-  const token = localStorage.getItem('auth_token');
-  if (!token) throw new Error('Not authenticated');
-
-  return fetchAPI(`/tasks/${taskId}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+  return fetchAPI(`/tasks/${taskId}`);
 }
 
 /**
@@ -514,14 +482,7 @@ export async function getTaskById(taskId) {
  * @returns {Promise<Object>}
  */
 export async function getTaskMetrics() {
-  const token = localStorage.getItem('auth_token');
-  if (!token) throw new Error('Not authenticated');
-
-  return fetchAPI('/tasks/metrics', {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+  return fetchAPI('/tasks/metrics');
 }
 
 // ============================================================================

@@ -32,58 +32,30 @@
  */
 
 import axios from 'axios';
+import { getApiUrl } from '../config/apiConfig';
 
 // ============================================================================
 // API CLIENT CONFIGURATION
 // ============================================================================
 
-const API_BASE_URL =
-  process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000';
+const API_BASE_URL = getApiUrl();
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   timeout: 15000,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
 });
-
-// Request interceptor: Add authorization token
-apiClient.interceptors.request.use(
-  (config) => {
-    // Try to get token from Zustand persist storage first
-    let token = null;
-
-    const persistedData = localStorage.getItem('oversight-hub-storage');
-    if (persistedData) {
-      try {
-        const parsed = JSON.parse(persistedData);
-        token = parsed.state?.accessToken || parsed.state?.auth_token;
-      } catch (e) {
-        console.warn('Failed to parse Zustand persist storage:', e);
-      }
-    }
-
-    // Fallback to direct localStorage key (for backwards compatibility)
-    if (!token) {
-      token = localStorage.getItem('auth_token');
-    }
-
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
 
 // Response interceptor: Handle common errors
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Token expired, clear auth
-      localStorage.removeItem('auth_token');
+      // Session expired, clear cached user and force re-auth.
+      localStorage.removeItem('user');
       window.location.href = '/login';
     }
     return Promise.reject(error);

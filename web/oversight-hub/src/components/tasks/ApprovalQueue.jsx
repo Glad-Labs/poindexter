@@ -52,12 +52,13 @@ import {
   Visibility,
 } from '@mui/icons-material';
 import { cofounderAgentClient } from '../../services/cofounderAgentClient';
+import { getApiUrl } from '../../config/apiConfig';
 
 /**
- * Get API base URL from environment or fallback to localhost
+ * Get API base URL from validated config (no localhost fallback)
  */
 const getApiBaseUrl = () => {
-  return process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000';
+  return getApiUrl();
 };
 
 /**
@@ -136,9 +137,9 @@ const ApprovalQueue = () => {
         `${getApiBaseUrl()}/api/tasks/pending-approval?${params}`,
         {
           method: 'GET',
+          credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
           },
         }
       );
@@ -310,9 +311,9 @@ const ApprovalQueue = () => {
         `${getApiBaseUrl()}/api/tasks/${selectedTask.task_id}/approve`,
         {
           method: 'POST',
+          credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
           },
           body: JSON.stringify({
             approved: true,
@@ -374,9 +375,9 @@ const ApprovalQueue = () => {
         `${getApiBaseUrl()}/api/tasks/${selectedTask.task_id}/reject`,
         {
           method: 'POST',
+          credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
           },
           body: JSON.stringify({
             reason: rejectReason,
@@ -498,9 +499,9 @@ const ApprovalQueue = () => {
         `${getApiBaseUrl()}/api/tasks/bulk-approve`,
         {
           method: 'POST',
+          credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
           },
           body: JSON.stringify({
             task_ids: Array.from(selectedTaskIds),
@@ -563,9 +564,9 @@ const ApprovalQueue = () => {
     try {
       const response = await fetch(`${getApiBaseUrl()}/api/tasks/bulk-reject`, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
         },
         body: JSON.stringify({
           task_ids: Array.from(selectedTaskIds),

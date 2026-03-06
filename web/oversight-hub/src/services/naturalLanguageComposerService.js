@@ -5,7 +5,9 @@
  * Integrates with the backend LLM-powered composition service.
  */
 
-const API_BASE = 'http://localhost:8000';
+import { getApiUrl } from '../config/apiConfig';
+
+const API_BASE = getApiUrl();
 
 /**
  * Compose a task from natural language request
@@ -19,20 +21,14 @@ const API_BASE = 'http://localhost:8000';
 export async function composeTaskFromNaturalLanguage(request, options = {}) {
   const { autoExecute = false, saveTask = true } = options;
 
-  const token = localStorage.getItem('auth_token');
-
-  if (!token) {
-    throw new Error('Authentication required');
-  }
-
   try {
     const response = await fetch(
       `${API_BASE}/api/tasks/capability/compose-from-natural-language`,
       {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           request,
@@ -67,20 +63,14 @@ export async function composeTaskFromNaturalLanguage(request, options = {}) {
  * @returns {Promise<Object>} Execution result
  */
 export async function composeAndExecuteTask(request, options = {}) {
-  const token = localStorage.getItem('auth_token');
-
-  if (!token) {
-    throw new Error('Authentication required');
-  }
-
   try {
     const response = await fetch(
       `${API_BASE}/api/tasks/capability/compose-and-execute`,
       {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           request,

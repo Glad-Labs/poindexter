@@ -33,6 +33,7 @@ from schemas.model_converter import ModelConverter
 from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 
 from .database_mixin import DatabaseServiceMixin
+from .decorators import log_query_performance
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +159,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 logger.error(f"❌ DATABASE ERROR while creating post: {db_error}", exc_info=True)
                 raise Exception(f"Failed to create post in database: {str(db_error)}")
 
+    @log_query_performance(operation="get_post_by_slug", category="content_retrieval", slow_threshold_ms=50)
     async def get_post_by_slug(self, slug: str) -> Optional[PostResponse]:
         """
         Get post by slug - used to check for existing posts before creation.
@@ -426,6 +428,7 @@ class ContentDatabase(DatabaseServiceMixin):
             )
             raise
 
+    @log_query_performance(operation="get_metrics", category="analytics", slow_threshold_ms=200)
     async def get_metrics(self) -> MetricsResponse:
         """
         Get system metrics from content_tasks database.

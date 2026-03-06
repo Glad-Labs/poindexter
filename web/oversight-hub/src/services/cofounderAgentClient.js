@@ -1,16 +1,16 @@
 /**
- * Cofounder Agent API Client - JWT Auth
+ * Cofounder Agent API Client - Cookie Session Auth
  *
  * Environment Variables (required):
  * - REACT_APP_API_URL: Backend API base URL (e.g., https://api.example.com or http://localhost:8000)
  *
  * NOTE: This service does NOT directly update Zustand store.
  * Auth state updates are handled by AuthContext only.
- * Use getAuthToken() to read current token from localStorage.
  */
-import { getAuthToken } from './authService';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+import { getApiUrl } from '../config/apiConfig';
+
+const API_BASE_URL = getApiUrl();
 
 /**
  * Initialize metrics collection on window object for performance dashboard
@@ -65,12 +65,7 @@ function capitalizeWords(str) {
 // API configuration validation - REACT_APP_API_URL should be set in environment
 
 function getAuthHeaders() {
-  const accessToken = getAuthToken();
-  const headers = { 'Content-Type': 'application/json' };
-  if (accessToken) {
-    headers['Authorization'] = `Bearer ${accessToken}`;
-  }
-  return headers;
+  return { 'Content-Type': 'application/json' };
 }
 
 export async function makeRequest(
@@ -109,6 +104,7 @@ export async function makeRequest(
       );
     }
     const config = { method, headers: getAuthHeaders() };
+    config.credentials = 'include';
 
     // Handle FormData (file uploads) - must NOT set Content-Type header
     if (data instanceof FormData) {
@@ -247,26 +243,11 @@ export async function logout() {
 }
 
 export async function refreshAccessToken() {
-  // Token refresh endpoint - requests a new token using refresh token
-  // The backend will validate the refresh token and issue a new access token
+  // Cookie session flow does not expose refresh tokens to JavaScript.
+  // Keep helper for compatibility by attempting server-side refresh endpoint.
   try {
-    const refreshToken = localStorage.getItem('refresh_token');
-    if (!refreshToken) {
-      // No refresh token available - user needs to re-authenticate
-      return false;
-    }
-
-    const response = await makeRequest('/api/auth/refresh', 'POST', {
-      refresh_token: refreshToken,
-    });
-
-    if (response.access_token) {
-      // Update stored access token
-      localStorage.setItem('auth_token', response.access_token);
-      return true;
-    }
-
-    return false;
+    await makeRequest('/api/auth/refresh', 'POST');
+    return true;
   } catch (error) {
     if (process.env.NODE_ENV === 'development') {
       console.error('Token refresh failed:', error);

@@ -7,8 +7,6 @@ import React, { createContext, useState, useEffect, useCallback } from 'react';
 import {
   logout as authLogout,
   getStoredUser,
-  getAuthToken,
-  initializeDevToken,
   handleOAuthCallbackNew,
   validateAndGetCurrentUser,
 } from '../services/authService';
@@ -24,7 +22,6 @@ export const AuthProvider = ({ children }) => {
   // Get Zustand store functions
   const setStoreUser = useStore((state) => state.setUser);
   const setStoreIsAuthenticated = useStore((state) => state.setIsAuthenticated);
-  const setStoreAccessToken = useStore((state) => state.setAccessToken);
   const storeLogout = useStore((state) => state.logout);
 
   // Initialize auth state ONCE on mount
@@ -36,62 +33,29 @@ export const AuthProvider = ({ children }) => {
         );
         const startTime = Date.now();
 
-        // Initialize dev token for local development if needed
-        if (process.env.NODE_ENV === 'development') {
-          console.log('[AuthContext] 🔧 Initializing development token...');
-          try {
-            await initializeDevToken();
-            console.log(
-              '[AuthContext] ✅ Development token initialized successfully'
-            );
-          } catch (tokenError) {
-            console.error(
-              '[AuthContext] ❌ Development token initialization failed:',
-              tokenError
-            );
-          }
-          // Small delay to ensure localStorage write is complete
-          await new Promise((resolve) => setTimeout(resolve, 10));
-        }
-
-        // First check if user is stored in localStorage (from recent login OR dev init)
-        const storedUser = getStoredUser();
-        const token = getAuthToken();
-
-        if (storedUser && token) {
-          console.log(
-            '✅ [AuthContext] Found stored user and token, using cached session'
-          );
-          // Sync EVERYTHING to Zustand FIRST before setting loading to false
-          setStoreUser(storedUser);
+        // Validate active cookie-based session first.
+        const currentUser = await validateAndGetCurrentUser();
+        if (currentUser) {
+          setStoreUser(currentUser);
           setStoreIsAuthenticated(true);
-          setStoreAccessToken(token);
-          // THEN set context state
-          setUser(storedUser);
+          setUser(currentUser);
           setError(null);
-          // FINALLY set loading to false (all state is ready)
           setLoading(false);
           const elapsed = Date.now() - startTime;
-          console.log(
-            `✅ [AuthContext] Initialization complete (${elapsed}ms)`
-          );
+          console.log(`✅ [AuthContext] Session restored (${elapsed}ms)`);
           return;
         }
 
-        // No user/token found - this is normal for production (user not logged in)
-        // In development, this should NOT happen since initializeDevToken creates them
-        if (process.env.NODE_ENV === 'development') {
-          console.warn(
-            '⚠️ [AuthContext] Development token initialization may have failed, no token in localStorage'
-          );
+        // Fall back to cached user profile for UI continuity when session lookup fails.
+        const storedUser = getStoredUser();
+        if (storedUser) {
+          setStoreUser(storedUser);
+          setStoreIsAuthenticated(false);
+          setUser(storedUser);
         } else {
-          console.log(
-            '🔍 [AuthContext] No cached session - user needs to login'
-          );
+          setStoreIsAuthenticated(false);
+          setUser(null);
         }
-
-        setStoreIsAuthenticated(false);
-        setUser(null);
         setError(null);
         setLoading(false);
         const elapsed = Date.now() - startTime;
@@ -106,7 +70,7 @@ export const AuthProvider = ({ children }) => {
     };
 
     initializeAuth();
-  }, [setStoreUser, setStoreIsAuthenticated, setStoreAccessToken]);
+  }, [setStoreUser, setStoreIsAuthenticated]);
 
   // Logout handler - sync with both AuthContext and Zustand
   const logout = useCallback(async () => {
@@ -129,14 +93,8 @@ export const AuthProvider = ({ children }) => {
       setUser(userData);
       setStoreUser(userData);
       setStoreIsAuthenticated(!!userData);
-      if (userData) {
-        const token = getAuthToken();
-        if (token) {
-          setStoreAccessToken(token);
-        }
-      }
     },
-    [setStoreUser, setStoreIsAuthenticated, setStoreAccessToken]
+    [setStoreUser, setStoreIsAuthenticated]
   );
 
   // OAuth callback handler
@@ -149,12 +107,11 @@ export const AuthProvider = ({ children }) => {
         setLoading(true);
         const result = await handleOAuthCallbackNew(provider, code, state);
 
-        if (result.user && result.token) {
+        if (result.user) {
           console.log(
             `✅ [AuthContext] OAuth login successful for ${provider}`
           );
           setAuthUser(result.user);
-          setStoreAccessToken(result.token);
           setError(null);
           return result.user;
         } else {
@@ -167,7 +124,7 @@ export const AuthProvider = ({ children }) => {
         throw err;
       }
     },
-    [setStoreAccessToken, setAuthUser]
+    [setAuthUser]
   );
 
   // Validate current user token

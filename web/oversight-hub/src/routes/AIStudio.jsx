@@ -172,7 +172,10 @@ function AIStudio() {
 
     const fetchOllamaModels = async () => {
       try {
-        const response = await fetch('http://localhost:11434/api/tags');
+        // Use centralized config with fallback to localhost:11434 for local Ollama
+        const ollamaUrl =
+          process.env.REACT_APP_OLLAMA_URL || 'http://localhost:11434';
+        const response = await fetch(`${ollamaUrl}/api/tags`);
         if (!response.ok) throw new Error('Failed to fetch Ollama models');
 
         const data = await response.json();
@@ -214,7 +217,10 @@ function AIStudio() {
     const startTime = Date.now();
 
     try {
-      const response = await fetch('http://localhost:11434/api/generate', {
+      // Use centralized config with fallback to localhost:11434 for local Ollama
+      const ollamaUrl =
+        process.env.REACT_APP_OLLAMA_URL || 'http://localhost:11434';
+      const response = await fetch(`${ollamaUrl}/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

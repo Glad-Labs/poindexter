@@ -5,15 +5,13 @@
  * Manages connection lifecycle, event subscriptions, and automatic reconnection
  */
 
+import { getWebSocketUrl } from '../config/apiConfig';
+
 class WebSocketService {
   constructor() {
     this.ws = null;
-    // Derive WebSocket URL from API base URL (stored in env var)
-    const apiBaseUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
-    // Convert http(s):// to ws(s):// and append /api/ws/
-    const wsProtocol = apiBaseUrl.startsWith('https') ? 'wss' : 'ws';
-    const apiHost = apiBaseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
-    this.url = `${wsProtocol}://${apiHost}/api/ws/`;
+    // Get validated WebSocket URL from centralized config
+    this.url = `${getWebSocketUrl()}/api/ws/`;
 
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;

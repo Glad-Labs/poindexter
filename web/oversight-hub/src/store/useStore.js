@@ -336,12 +336,9 @@ const useStore = create(
     {
       name: 'oversight-hub-storage',
       partialize: (state) => ({
-        // ✅ NEW: Persist authentication state (including auth_token for dev)
-        accessToken: state.accessToken,
-        refreshToken: state.refreshToken,
+        // Persist non-sensitive auth state only (session token is HttpOnly cookie).
         user: state.user,
         isAuthenticated: state.isAuthenticated,
-        auth_token: state.accessToken, // Also store as auth_token for backwards compatibility
 
         // Existing: UI preferences
         theme: state.theme,

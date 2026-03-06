@@ -7,7 +7,9 @@
  * Uses API proxy at /api/ollama/* to maintain security and centralized authentication.
  */
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+import { getApiUrl } from '../config/apiConfig';
+
+const API_BASE_URL = getApiUrl();
 const OLLAMA_TIMEOUT = 10000; // 10 second timeout for Ollama operations
 
 /**

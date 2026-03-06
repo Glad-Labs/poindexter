@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { getWebSocketUrl } from '../config/apiConfig';
 
 /**
  * Hook for streaming blog creation progress from LangGraph
@@ -31,12 +32,9 @@ export function useLangGraphStream(requestId) {
       return;
     }
 
-    // Get WebSocket URL from environment or derive from current origin
-    const apiBaseUrl =
-      process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000';
-    const wsProtocol = apiBaseUrl.startsWith('https') ? 'wss' : 'ws';
-    const wsHost = apiBaseUrl.replace(/^https?:\/\//, '');
-    const wsUrl = `${wsProtocol}://${wsHost}/api/content/langgraph/ws/blog-posts/${requestId}`;
+    // Get WebSocket URL from validated config
+    const wsBaseUrl = getWebSocketUrl();
+    const wsUrl = `${wsBaseUrl}/api/content/langgraph/ws/blog-posts/${requestId}`;
 
     const ws = new WebSocket(wsUrl);
 
@@ -106,7 +104,7 @@ export function useLangGraphStream(requestId) {
         ws.close();
       }
     };
-  }, [requestId]);
+  };, [requestId]);
 
   return progress;
 }
