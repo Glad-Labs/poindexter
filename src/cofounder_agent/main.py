@@ -144,14 +144,14 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         )
         logger.info("[LIFESPAN] ✅ Services registered in global DI container")
 
-        # Start the background task executor (get from ServiceContainer)
+        # Start the background task executor (get from services dict - fixed)
         logger.info("[LIFESPAN] Starting background task executor...")
-        task_executor = service_container.get("task_executor")
+        task_executor = services.get("task_executor")
         if task_executor:
             await task_executor.start()
             logger.info("[LIFESPAN] ✅ Background task executor started")
         else:
-            logger.warning("[LIFESPAN] ⚠️ Task executor not available in ServiceContainer")
+            logger.warning("[LIFESPAN] ⚠️ Task executor not available in services dict")
 
         logger.info("[OK] Lifespan: Yielding control to FastAPI application. ..")
         try:

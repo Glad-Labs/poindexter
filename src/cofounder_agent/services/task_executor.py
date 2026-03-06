@@ -979,19 +979,46 @@ class TaskExecutor:
         logger.info(f"✅ [TASK_EXECUTE] PHASE 2 Complete: Quality assessment recorded")
 
         # ===== Validate Content Generation =====
-        # Ensure meaningful content was actually generated
-        content_is_valid = (
+        # Ensure meaningful content was actually generated and meets length constraints.
+        base_content_valid = (
             generated_content is not None
             and isinstance(generated_content, str)
             and len(generated_content.strip()) >= 50
         )
 
+        word_count = len(generated_content.split()) if generated_content else 0
+        effective_target_length = target_length
+        if not isinstance(effective_target_length, int) or effective_target_length <= 0:
+            effective_target_length = 1500 if task.get("task_type") == "blog_post" else None
+
+        min_words_required = (
+            int(effective_target_length * 0.9) if effective_target_length else None
+        )
+        meets_min_length = (
+            True if min_words_required is None else word_count >= min_words_required
+        )
+
+        content_is_valid = base_content_valid and meets_min_length
+
+        if min_words_required is not None:
+            logger.info(
+                f"   Length gate: words={word_count}, min_required={min_words_required}, "
+                f"target={effective_target_length}, pass={meets_min_length}"
+            )
+
         final_status = "awaiting_approval" if content_is_valid else "failed"
         if not content_is_valid:
-            error_msg = (
-                f"Content validation failed: {orchestrator_error or 'Content too short or empty'} "
-                f"(length: {len(generated_content) if generated_content else 0} chars)"
-            )
+            if not base_content_valid:
+                error_msg = (
+                    f"Content validation failed: {orchestrator_error or 'Content too short or empty'} "
+                    f"(length: {len(generated_content) if generated_content else 0} chars)"
+                )
+            else:
+                error_msg = (
+                    f"Content validation failed: word count {word_count} below minimum "
+                    f"{min_words_required} for target length {effective_target_length}"
+                )
+
             logger.error(f"❌ [TASK_EXECUTE] {error_msg}")
             if not orchestrator_error:
                 orchestrator_error = error_msg
@@ -1023,7 +1050,7 @@ class TaskExecutor:
             "critique_feedback": feedback_text,
             "critique_suggestions": suggestions_list,
             # Metadata
-            "word_count": len(generated_content.split()) if generated_content else 0,
+            "word_count": word_count,
             "completed_at": datetime.now(timezone.utc).isoformat(),
             "pipeline_summary": {
                 "phase_1_generation": "✅" if generated_content else "❌",

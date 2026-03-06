@@ -928,12 +928,29 @@ async def process_content_generation_task(
         # ================================================================================
         # UPDATE CONTENT_TASK WITH FINAL STATUS AND ALL METADATA
         # ================================================================================
+        # Enforce hard length gate before allowing human approval queue.
+        min_words_required = int(target_length * 0.9) if target_length else 0
+        meets_length_requirement = word_count >= min_words_required
+
+        if meets_length_requirement:
+            final_status = "awaiting_approval"
+            final_approval_status = "pending_human_review"
+            logger.info(
+                f"✅ Length gate passed: {word_count} words (minimum required: {min_words_required})"
+            )
+        else:
+            final_status = "failed"
+            final_approval_status = "failed"
+            logger.warning(
+                f"❌ Length gate failed: {word_count} words (minimum required: {min_words_required}, target: {target_length})"
+            )
+
         # 🔑 CRITICAL: Store featured_image_url and all other metadata so approval endpoint can find it
         await database_service.update_task(
             task_id=task_id,
             updates={
-                "status": "awaiting_approval",
-                "approval_status": "pending_human_review",
+                "status": final_status,
+                "approval_status": final_approval_status,
                 "quality_score": int(quality_result.overall_score),
                 "featured_image_url": result.get("featured_image_url"),
                 "seo_title": seo_title,
@@ -960,13 +977,15 @@ async def process_content_generation_task(
                     "post_id": result.get("post_id"),
                     "quality_score": quality_result.overall_score,
                     "content_length": len(content_text),
-                    "word_count": len(content_text.split()),
+                    "word_count": word_count,
+                    "min_words_required": min_words_required,
+                    "meets_length_requirement": meets_length_requirement,
                 },
             },
         )
 
-        result["status"] = "awaiting_approval"
-        result["approval_status"] = "pending_human_review"
+        result["status"] = final_status
+        result["approval_status"] = final_approval_status
 
         logger.info(f"{'='*80}")
         logger.info(f"✅ COMPLETE CONTENT GENERATION PIPELINE FINISHED")
@@ -978,7 +997,10 @@ async def process_content_generation_task(
         )
         logger.info(f"   Quality Score: {quality_result.overall_score:.1f}/10")
         logger.info(f"   Status: {result['status']}")
-        logger.info(f"   Next: Human review & approval")
+        if result["status"] == "awaiting_approval":
+            logger.info("   Next: Human review & approval")
+        else:
+            logger.info("   Next: Regenerate content (failed length gate)")
         logger.info(f"{'='*80}\n")
 
         return result
