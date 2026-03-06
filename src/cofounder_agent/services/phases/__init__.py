@@ -11,12 +11,18 @@ Available phases can be discovered via PhaseRegistry.
 """
 
 from .base_phase import BasePhase, PhaseConfig, PhaseInputSpec, PhaseOutputSpec
-from .phase_registry import get_phase_registry
+
+try:
+    from .phase_registry import get_phase_registry
+except ImportError:
+    get_phase_registry = None
 
 __all__ = [
     "BasePhase",
     "PhaseConfig",
     "PhaseInputSpec",
     "PhaseOutputSpec",
-    "get_phase_registry",
 ]
+
+if get_phase_registry is not None:
+    __all__.append("get_phase_registry")
