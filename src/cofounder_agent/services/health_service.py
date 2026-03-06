@@ -57,7 +57,7 @@ class HealthService:
                 health_data["components"]["database"] = db_health.get("status", "unknown")
             except Exception as e:  # pylint: disable=broad-except
                 # Log the error but don't fail the health check
-                logger.error(f"Database health check failed: {str(e)}", exc_info=True)
+                logger.error(f"[get_health] Database health check failed: {str(e)}", exc_info=True)
                 health_data["components"]["database"] = "degraded"
         else:
             health_data["components"]["database"] = "unavailable"

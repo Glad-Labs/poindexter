@@ -60,6 +60,9 @@ class SampleUploadService:
             return True, ""
 
         except Exception as e:
+            logger.error(
+                f"[validate_file] File validation failed: {str(e)}", exc_info=True
+            )
             return False, f"File validation error: {str(e)}"
 
     async def parse_file(self, file: UploadFile, content_type: str) -> Optional[str]:
@@ -125,10 +128,19 @@ class SampleUploadService:
             return text.strip()
 
         except json.JSONDecodeError as e:
+            logger.error(
+                f"[parse_file] Invalid JSON in file: {str(e)}", exc_info=True
+            )
             raise ValueError(f"Invalid JSON: {str(e)}")
-        except UnicodeDecodeError:
+        except UnicodeDecodeError as e:
+            logger.error(
+                f"[parse_file] File encoding not supported: {str(e)}", exc_info=True
+            )
             raise ValueError("File encoding not supported. Use UTF-8")
         except Exception as e:
+            logger.error(
+                f"[parse_file] File parsing error: {str(e)}", exc_info=True
+            )
             raise ValueError(f"File parsing error: {str(e)}")
 
     async def extract_metadata(
@@ -189,6 +201,9 @@ class SampleUploadService:
             return metadata
 
         except Exception as e:
+            logger.error(
+                f"[extract_metadata] Metadata extraction failed: {str(e)}", exc_info=True
+            )
             raise ValueError(f"Metadata extraction error: {str(e)}")
 
     def _detect_tone(self, content: str) -> str:
@@ -345,5 +360,9 @@ class SampleUploadService:
             return sample_id
 
         except Exception as e:
+            logger.error(
+                f"[store_sample] Failed to store sample for user {user_id}: {str(e)}",
+                exc_info=True,
+            )
             await db.rollback()
             raise ValueError(f"Failed to store sample: {str(e)}")

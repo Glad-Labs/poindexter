@@ -487,7 +487,7 @@ class CircuitBreaker:
             self.last_failure_time = datetime.utcnow()
 
             logger.error(
-                f"⚠️  Circuit breaker '{self.name}' - failure {self.failure_count}/{self.failure_threshold}: {e}",
+                f"[call] Circuit breaker '{self.name}' - failure {self.failure_count}/{self.failure_threshold}: {e}",
                 exc_info=True,
             )
 
@@ -536,7 +536,7 @@ class CircuitBreaker:
             self.last_failure_time = datetime.utcnow()
 
             logger.error(
-                f"⚠️  Circuit breaker '{self.name}' - failure {self.failure_count}/{self.failure_threshold}: {e}",
+                f"[call_async] Circuit breaker '{self.name}' - failure {self.failure_count}/{self.failure_threshold}: {e}",
                 exc_info=True,
             )
 
