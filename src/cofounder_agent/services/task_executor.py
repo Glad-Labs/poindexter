@@ -42,6 +42,15 @@ from .prompt_manager import get_prompt_manager
 # Import unified quality service for content validation
 from .quality_service import QualityAssessment, UnifiedQualityService
 
+# Import style consistency validator (Task 2 - Style gate)
+from .qa_style_evaluator import StyleConsistencyValidator
+
+# Import SEO validator (Task 5 - SEO gating)
+from .seo_validator import SEOValidator
+
+# Import constraint utilities (Task 3 - Unified constraint gating)
+from ..utils.constraint_utils import validate_constraints, ContentConstraints
+
 # Import usage tracking
 from .usage_tracker import get_usage_tracker
 
@@ -978,8 +987,8 @@ class TaskExecutor:
         )
         logger.info(f"✅ [TASK_EXECUTE] PHASE 2 Complete: Quality assessment recorded")
 
-        # ===== Validate Content Generation =====
-        # Ensure meaningful content was actually generated and meets length constraints.
+        # ===== LAZY-AI-PROOF VALIDATION PIPELINE =====
+        # Gate 1: Content generation validity
         base_content_valid = (
             generated_content is not None
             and isinstance(generated_content, str)
@@ -991,37 +1000,110 @@ class TaskExecutor:
         if not isinstance(effective_target_length, int) or effective_target_length <= 0:
             effective_target_length = 1500 if task.get("task_type") == "blog_post" else None
 
-        min_words_required = (
-            int(effective_target_length * 0.9) if effective_target_length else None
-        )
-        meets_min_length = (
-            True if min_words_required is None else word_count >= min_words_required
-        )
-
-        content_is_valid = base_content_valid and meets_min_length
-
-        if min_words_required is not None:
-            logger.info(
-                f"   Length gate: words={word_count}, min_required={min_words_required}, "
-                f"target={effective_target_length}, pass={meets_min_length}"
+        # Gate 1: Length constraint validation (using unified constraint system)
+        try:
+            constraints = ContentConstraints(
+                word_count=effective_target_length or 1500,
+                writing_style=style or "educational",
+                word_count_tolerance=10,
+                strict_mode=True  # Enforce strictly for lazy-AI-proof
             )
+            constraint_result = validate_constraints(
+                content=generated_content,
+                constraints=constraints,
+                phase_name="finalization",
+                word_count_target=effective_target_length
+            )
+            length_gate_passes = constraint_result.word_count_within_tolerance
+            
+            logger.info(
+                f"🔍 [LENGTH_GATE] words={word_count}, target={effective_target_length}, "
+                f"tolerance=10%, required={int(effective_target_length*0.9) if effective_target_length else 0}, "
+                f"pass={length_gate_passes}"
+            )
+        except Exception as e:
+            logger.error(f"[LENGTH_GATE] Constraint validation error: {e}", exc_info=True)
+            length_gate_passes = False
+            constraint_result = None
 
+        # Gate 2: Style consistency validation (Task 2 - Wire style gate)
+        style_gate_passes = True
+        style_feedback = ""
+        try:
+            if style and generated_content:
+                style_validator = StyleConsistencyValidator()
+                style_result = await style_validator.validate_style_consistency(
+                    generated_content=generated_content,
+                    reference_style=style,
+                    reference_tone=tone or "professional"
+                )
+                style_gate_passes = style_result.passing
+                style_feedback = "; ".join(style_result.issues) if style_result.issues else "style consistent"
+                
+                logger.info(
+                    f"🎨 [STYLE_GATE] style={style}, tone={tone}, "
+                    f"score={style_result.style_consistency_score:.2f}, pass={style_gate_passes}"
+                )
+                if not style_gate_passes:
+                    logger.warning(f"⚠️  Style inconsistencies detected: {style_feedback}")
+        except Exception as e:
+            logger.warning(f"[STYLE_GATE] Validation error (non-blocking): {e}", exc_info=True)
+            # Non-blocking - continue even if style validation fails
+
+        # Gate 3: SEO validation (Task 5 - Make SEO block approval)
+        seo_gate_passes = True
+        seo_feedback = ""
+        try:
+            if generated_content and task.get("primary_keyword"):
+                seo_validator = SEOValidator()
+                seo_result = seo_validator.validate(
+                    content=generated_content,
+                    title=task.get("seo_title", task.get("topic", "Untitled")),
+                    meta_description=task.get("seo_description", ""),
+                    keywords=task.get("seo_keywords", [task.get("primary_keyword", "")]),
+                    primary_keyword=task.get("primary_keyword"),
+                    slug=task.get("slug", "")
+                )
+                seo_gate_passes = seo_result.is_valid
+                seo_feedback = "; ".join(seo_result.errors) if seo_result.errors else "SEO compliant"
+                
+                logger.info(
+                    f"🔎 [SEO_GATE] valid={seo_gate_passes}, "
+                    f"errors={len(seo_result.errors)}, warnings={len(seo_result.warnings)}"
+                )
+                if not seo_gate_passes:
+                    logger.warning(f"⚠️  SEO violations: {seo_feedback}")
+        except Exception as e:
+            logger.warning(f"[SEO_GATE] Validation error (non-blocking): {e}", exc_info=True)
+            # Non-blocking - continue even if SEO validation fails
+
+        # Consolidated gating logic: LAZY-AI-PROOF requires ALL gates to pass
+        content_is_valid = (
+            base_content_valid 
+            and length_gate_passes 
+            and style_gate_passes 
+            and seo_gate_passes
+        )
+        
         final_status = "awaiting_approval" if content_is_valid else "failed"
+        
         if not content_is_valid:
+            failure_reasons = []
             if not base_content_valid:
-                error_msg = (
-                    f"Content validation failed: {orchestrator_error or 'Content too short or empty'} "
-                    f"(length: {len(generated_content) if generated_content else 0} chars)"
-                )
-            else:
-                error_msg = (
-                    f"Content validation failed: word count {word_count} below minimum "
-                    f"{min_words_required} for target length {effective_target_length}"
-                )
-
-            logger.error(f"❌ [TASK_EXECUTE] {error_msg}")
+                failure_reasons.append(f"content too short or empty ({len(generated_content) if generated_content else 0} chars)")
+            if not length_gate_passes:
+                failure_reasons.append(f"word count insufficient ({word_count} < {int(effective_target_length*0.9) if effective_target_length else 0})")
+            if not style_gate_passes:
+                failure_reasons.append(f"style inconsistent ({style_feedback})")
+            if not seo_gate_passes:
+                failure_reasons.append(f"SEO issues ({seo_feedback})")
+            
+            error_msg = f"Content validation failed: {'; '.join(failure_reasons)}"
+            logger.error(f"❌ [LAZY_AI_PROOF_GATE] {error_msg}")
             if not orchestrator_error:
                 orchestrator_error = error_msg
+        else:
+            logger.info(f"✅ [LAZY_AI_PROOF_GATE] All validation gates passed (length, style, SEO)")
 
         # ===== Build Final Result =====
         result = {
