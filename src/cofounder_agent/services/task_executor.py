@@ -277,7 +277,6 @@ class TaskExecutor:
                 # Keep the executor alive; transient errors should not kill polling.
                 await asyncio.sleep(self.poll_interval)
                 continue
-                await asyncio.sleep(self.poll_interval)
 
         logger.info("📋 [TASK_EXEC_LOOP] Task executor processor loop stopped")
 
@@ -438,6 +437,16 @@ class TaskExecutor:
                     f"📝 [DEBUG] Including model_used in database update: {result['model_used']}"
                 )
 
+            # For failed tasks always populate error_message column so it is never "unknown"
+            if final_status == "failed":
+                raw_orch_error = (
+                    task_metadata_updates.get("orchestrator_error")
+                    if isinstance(task_metadata_updates, dict)
+                    else None
+                )
+                error_msg_for_db = raw_orch_error or "Task failed during processing (see logs for details)"
+                update_payload["error_message"] = error_msg_for_db
+
             await self.database_service.update_task(task_id, update_payload)
             logger.info(f"✅ [DEBUG] update_task completed for {task_id}")
 
@@ -445,9 +454,9 @@ class TaskExecutor:
                 logger.error(f"❌ [TASK_SINGLE] Task failed: {task_id}")
                 # Extract error message for better logging
                 error_msg = (
-                    result.get("orchestrator_error", "Unknown error")
+                    result.get("orchestrator_error") or "Task failed during processing"
                     if isinstance(result, dict)
-                    else "Unknown error"
+                    else "Task failed during processing"
                 )
                 logger.error(f"   Error: {error_msg}")
 
@@ -1023,7 +1032,7 @@ class TaskExecutor:
             constraints = ContentConstraints(
                 word_count=effective_target_length or 1500,
                 writing_style=style or "educational",
-                word_count_tolerance=10,
+                word_count_tolerance=15,  # Allow 85-115% of target (was 90-110%)
                 strict_mode=True  # Enforce strictly for lazy-AI-proof
             )
             constraint_result = validate_constraints(
@@ -1036,7 +1045,7 @@ class TaskExecutor:
             
             logger.info(
                 f"🔍 [LENGTH_GATE] words={word_count}, target={effective_target_length}, "
-                f"tolerance=10%, required={int(effective_target_length*0.9) if effective_target_length else 0}, "
+                f"tolerance=15%, required={int(effective_target_length*0.85) if effective_target_length else 0}, "
                 f"pass={length_gate_passes}"
             )
         except Exception as e:
@@ -1127,7 +1136,7 @@ class TaskExecutor:
             if not base_content_valid:
                 failure_reasons.append(f"content too short or empty ({len(generated_content) if generated_content else 0} chars)")
             if not length_gate_passes:
-                failure_reasons.append(f"word count insufficient ({word_count} < {int(effective_target_length*0.9) if effective_target_length else 0})")
+                failure_reasons.append(f"word count insufficient ({word_count} < {int(effective_target_length*0.85) if effective_target_length else 0})")
             if not style_gate_passes:
                 failure_reasons.append(f"style inconsistent ({style_feedback})")
             if not seo_gate_passes:

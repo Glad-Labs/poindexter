@@ -431,3 +431,32 @@ def register_all_routes(
     )
 
     return status
+
+
+def register_workflow_history_routes(app: FastAPI, database_service: Any, workflow_history_service: Any) -> bool:
+    """
+    Register workflow history routes once services are available during lifespan.
+
+    Called from main.py lifespan after database and workflow_history services are initialized.
+    Separated from register_all_routes because those services aren't available at module load time.
+    """
+    try:
+        from routes.workflow_history import alias_router as workflow_history_alias_router
+        from routes.workflow_history import initialize_history_service
+        from routes.workflow_history import router as workflow_history_router
+
+        if not database_service or not workflow_history_service:
+            logger.warning("workflow_history routes skipped: database or workflow_history service not available")
+            return False
+
+        initialize_history_service(database_service.pool)
+        app.include_router(workflow_history_router)
+        app.include_router(workflow_history_alias_router)
+        logger.info("workflow_history_router registered (both /api/workflow/* and /api/workflows/* paths)")
+        return True
+    except ImportError as e:
+        logger.warning(f"workflow_history routes not available: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"workflow_history route registration failed: {e}", exc_info=True)
+        return False

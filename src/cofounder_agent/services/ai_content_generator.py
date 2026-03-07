@@ -348,11 +348,11 @@ class AIContentGenerator:
             generation_prompt = pm.get_prompt(
                 "blog_generation.initial_draft",
                 topic=topic,
-                target_audience=style,
-                primary_keyword=tags[0] if tags else "",
-                research_context="",
-                internal_link_titles=internal_links_str,
-                word_count=target_length,
+                target_audience=style or "General",
+                primary_keyword=tags[0] if tags else topic,
+                research_context="No research data provided",
+                internal_link_titles=internal_links_str or "",
+                word_count=target_length or 1500,
                 style=style,
                 tone=tone,
             )

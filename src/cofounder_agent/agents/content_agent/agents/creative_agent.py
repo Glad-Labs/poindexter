@@ -28,6 +28,7 @@ class CreativeAgent:
     def __init__(self, llm_client: LLMClient):
         self.llm_client = llm_client
         self.pm = get_prompt_manager()
+        self.prompts = {}  # Defensive stub — use self.pm for all prompt access
         try:
             self.tools = CrewAIToolsFactory.get_content_agent_tools()
             logger.info("CreativeAgent: Initialized with all content agent tools")

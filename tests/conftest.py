@@ -303,6 +303,28 @@ def sample_user_data():
 # PHASE 2 DATABASE MODULE FIXTURES
 # ============================================================================
 
+def create_mock_db_row(**kwargs) -> Dict[str, Any]:
+    """
+    Create a complete mock database row with all required fields.
+    
+    Args:
+        **kwargs: Override default values for specific fields
+    
+    Returns:
+        Dict with all standard database fields including datetime objects
+    """
+    from datetime import datetime, timezone
+    
+    defaults = {
+        "id": "test_id_1",
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+    }
+    
+    # Merge defaults with provided kwargs
+    return {**defaults, **kwargs}
+
+
 @pytest.fixture
 def mock_pool():
     """Mock asyncpg connection pool for database module testing."""
