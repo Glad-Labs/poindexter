@@ -9,6 +9,7 @@
  */
 
 import { getApiUrl } from '../config/apiConfig';
+import { authClient } from '../lib/authClient';
 
 const API_BASE_URL = getApiUrl();
 
@@ -65,15 +66,8 @@ function capitalizeWords(str) {
 // API configuration validation - REACT_APP_API_URL should be set in environment
 
 function getAuthHeaders() {
-  const headers = { 'Content-Type': 'application/json' };
-
-  // Include JWT token if available (from mock auth or real OAuth)
-  const token = localStorage.getItem('auth_token');
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  return headers;
+  // Use centralized auth client for token retrieval
+  return authClient.getAuthHeaders();
 }
 
 export async function makeRequest(

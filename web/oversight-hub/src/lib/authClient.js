@@ -1,0 +1,258 @@
+/**
+ * Centralized Authentication Client
+ *
+ * Single source of truth for token and session management.
+ * Replaces scattered localStorage/sessionStorage access with a unified API.
+ *
+ * Features:
+ * - Token storage/retrieval abstraction
+ * - Token expiry checking
+ * - Automatic refresh logic
+ * - Logout cleanup
+ * - Event-based auth state changes
+ *
+ * Usage:
+ *   import { authClient } from './lib/authClient';
+ *
+ *   const token = authClient.getToken();
+ *   authClient.setToken(newToken);
+ *   authClient.logout();
+ */
+
+// Storage keys - centralized configuration
+const STORAGE_KEYS = {
+  AUTH_TOKEN: 'auth_token',
+  USER: 'user',
+  OAUTH_STATE: 'oauth_state',
+  TOKEN_EXPIRY: 'token_expiry',
+};
+
+// Token expiry buffer (refresh 5 minutes before actual expiry)
+const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
+
+class AuthClient {
+  constructor() {
+    this.listeners = [];
+    this._storage = typeof window !== 'undefined' ? window.localStorage : null;
+    this._sessionStorage =
+      typeof window !== 'undefined' ? window.sessionStorage : null;
+  }
+
+  /**
+   * Get current authentication token
+   * @returns {string|null} JWT token or null if not authenticated
+   */
+  getToken() {
+    if (!this._storage) return null;
+
+    const token = this._storage.getItem(STORAGE_KEYS.AUTH_TOKEN);
+
+    if (!token) {
+      return null;
+    }
+
+    // Check if token is expired
+    if (this.isTokenExpired()) {
+      console.warn('[AuthClient] Token expired, clearing...');
+      this.clearToken();
+      return null;
+    }
+
+    return token;
+  }
+
+  /**
+   * Store authentication token
+   * @param {string} token - JWT token
+   * @param {number} expiresIn - Token lifetime in seconds (optional)
+   */
+  setToken(token, expiresIn = null) {
+    if (!this._storage) return;
+
+    this._storage.setItem(STORAGE_KEYS.AUTH_TOKEN, token);
+
+    // Calculate expiry if provided
+    if (expiresIn) {
+      const expiryTime = Date.now() + expiresIn * 1000;
+      this._storage.setItem(STORAGE_KEYS.TOKEN_EXPIRY, expiryTime.toString());
+    }
+
+    this._notifyListeners('token_set');
+  }
+
+  /**
+   * Clear authentication token
+   */
+  clearToken() {
+    if (!this._storage) return;
+
+    this._storage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
+    this._storage.removeItem(STORAGE_KEYS.TOKEN_EXPIRY);
+    this._notifyListeners('token_cleared');
+  }
+
+  /**
+   * Check if current token is expired
+   * @returns {boolean} True if token is expired or will expire soon
+   */
+  isTokenExpired() {
+    if (!this._storage) return true;
+
+    const expiryStr = this._storage.getItem(STORAGE_KEYS.TOKEN_EXPIRY);
+    if (!expiryStr) {
+      // No expiry set, assume token is valid (cookies handle expiry)
+      return false;
+    }
+
+    const expiryTime = parseInt(expiryStr, 10);
+    const now = Date.now();
+
+    // Consider expired if within buffer window
+    return now >= expiryTime - TOKEN_EXPIRY_BUFFER_MS;
+  }
+
+  /**
+   * Get stored user profile
+   * @returns {object|null} User object or null
+   */
+  getUser() {
+    if (!this._storage) return null;
+
+    const userStr = this._storage.getItem(STORAGE_KEYS.USER);
+    if (!userStr) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(userStr);
+    } catch (error) {
+      console.error('[AuthClient] Failed to parse user data:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Store user profile
+   * @param {object} user - User profile object
+   */
+  setUser(user) {
+    if (!this._storage) return;
+
+    this._storage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
+    this._notifyListeners('user_set');
+  }
+
+  /**
+   * Clear user profile
+   */
+  clearUser() {
+    if (!this._storage) return;
+
+    this._storage.removeItem(STORAGE_KEYS.USER);
+    this._notifyListeners('user_cleared');
+  }
+
+  /**
+   * Get OAuth state value (CSRF protection)
+   * @returns {string|null} OAuth state or null
+   */
+  getOAuthState() {
+    if (!this._sessionStorage) return null;
+    return this._sessionStorage.getItem(STORAGE_KEYS.OAUTH_STATE);
+  }
+
+  /**
+   * Set OAuth state value
+   * @param {string} state - Random state string
+   */
+  setOAuthState(state) {
+    if (!this._sessionStorage) return;
+    this._sessionStorage.setItem(STORAGE_KEYS.OAUTH_STATE, state);
+  }
+
+  /**
+   * Clear OAuth state
+   */
+  clearOAuthState() {
+    if (!this._sessionStorage) return;
+    this._sessionStorage.removeItem(STORAGE_KEYS.OAUTH_STATE);
+  }
+
+  /**
+   * Check if user is authenticated
+   * @returns {boolean} True if valid token exists
+   */
+  isAuthenticated() {
+    return this.getToken() !== null;
+  }
+
+  /**
+   * Complete logout - clear all auth data
+   */
+  logout() {
+    this.clearToken();
+    this.clearUser();
+    this.clearOAuthState();
+    this._notifyListeners('logout');
+  }
+
+  /**
+   * Subscribe to auth state changes
+   * @param {function} callback - Called when auth state changes
+   * @returns {function} Unsubscribe function
+   */
+  subscribe(callback) {
+    this.listeners.push(callback);
+    return () => {
+      this.listeners = this.listeners.filter((cb) => cb !== callback);
+    };
+  }
+
+  /**
+   * Notify all subscribers of auth state change
+   * @private
+   */
+  _notifyListeners(event) {
+    this.listeners.forEach((callback) => {
+      try {
+        callback(event);
+      } catch (error) {
+        console.error('[AuthClient] Listener error:', error);
+      }
+    });
+  }
+
+  /**
+   * Get authorization headers for API requests
+   * @returns {object} Headers object with Authorization if token exists
+   */
+  getAuthHeaders() {
+    const token = this.getToken();
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    return headers;
+  }
+}
+
+// Singleton instance
+export const authClient = new AuthClient();
+
+// Named exports for convenience
+export const getToken = () => authClient.getToken();
+export const setToken = (token, expiresIn) =>
+  authClient.setToken(token, expiresIn);
+export const clearToken = () => authClient.clearToken();
+export const getUser = () => authClient.getUser();
+export const setUser = (user) => authClient.setUser(user);
+export const clearUser = () => authClient.clearUser();
+export const isAuthenticated = () => authClient.isAuthenticated();
+export const logout = () => authClient.logout();
+export const getAuthHeaders = () => authClient.getAuthHeaders();
+
+export default authClient;

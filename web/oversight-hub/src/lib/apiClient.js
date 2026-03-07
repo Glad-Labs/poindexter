@@ -49,13 +49,16 @@ const apiClient = axios.create({
   },
 });
 
+// Import centralized auth client for token management
+import { authClient } from './authClient';
+
 // Response interceptor: Handle common errors
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Session expired, clear cached user and force re-auth.
-      localStorage.removeItem('user');
+      // Session expired, clear auth data and force re-auth
+      authClient.logout();
       window.location.href = '/login';
     }
     return Promise.reject(error);

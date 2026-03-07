@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh issue:*)",
+      "Bash(echo:*)",
+      "Bash(where gh)",
+      "Read(//c/Program Files/GitHub CLI/**)",
+      "Read(//c/Users/mattm/glad-labs-website/$LOCALAPPDATA/Programs/GitHub CLI/**)",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" auth:*)",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" issue:*)",
+      "mcp__postgres__query",
+      "Bash(\"$GH\" issue:*)",
+      "Bash(poetry run:*)",
+      "Bash(npm run:*)",
+      "Bash(do:*)"
+    ]
+  }
+}

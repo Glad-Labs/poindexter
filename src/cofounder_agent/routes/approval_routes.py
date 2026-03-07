@@ -226,6 +226,27 @@ async def approve_task(
 
         if request.auto_publish:
             logger.info(f"[APPROVAL] AUTO-PUBLISH TRIGGERED!")
+            # Enforce minimum quality score for auto-publish
+            quality_score = task.get("quality_score")
+            MIN_AUTO_PUBLISH_QUALITY = 60  # below-this, require manual publish step
+            if quality_score is not None and float(quality_score) < MIN_AUTO_PUBLISH_QUALITY:
+                logger.warning(
+                    f"[APPROVAL] Auto-publish blocked: quality_score={quality_score} < {MIN_AUTO_PUBLISH_QUALITY}"
+                )
+                return {
+                    **{
+                        "task_id": task_id,
+                        "status": "approved",
+                        "approval_status": "approved",
+                        "approval_date": approval_date.isoformat(),
+                        "approved_by": current_user.get("id"),
+                        "feedback": request.feedback,
+                        "message": "Task approved but not auto-published: quality score too low for automatic publishing",
+                        "quality_score": quality_score,
+                        "min_auto_publish_quality": MIN_AUTO_PUBLISH_QUALITY,
+                        "next_action": "Review content and publish manually after quality improvements",
+                    }
+                }
             try:
                 # Get task metadata for post creation
                 task_metadata = task.get("task_metadata", {})

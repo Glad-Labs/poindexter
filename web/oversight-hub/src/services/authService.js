@@ -4,6 +4,7 @@
  */
 
 import { getApiUrl } from '../config/apiConfig';
+import { authClient } from '../lib/authClient';
 
 const API_BASE_URL = getApiUrl();
 
@@ -39,7 +40,7 @@ export const generateGitHubAuthURL = (clientId) => {
   const state = Math.random().toString(36).substring(7); // Simple state for CSRF protection
 
   // Store state in session storage for verification
-  sessionStorage.setItem('oauth_state', state);
+  authClient.setOAuthState(state);
 
   return `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}&state=${state}`;
 };
@@ -61,7 +62,7 @@ export const exchangeCodeForToken = async (code) => {
     }
 
     // Real GitHub OAuth
-    const state = sessionStorage.getItem('oauth_state');
+    const state = authClient.getOAuthState();
     if (!state) {
       throw new Error('CSRF state not found - session expired');
     }
@@ -81,14 +82,14 @@ export const exchangeCodeForToken = async (code) => {
 
     const data = await response.json();
 
-    // Store user profile
+    // Store user profile using centralized auth client
     if (data.user) {
-      localStorage.setItem('user', JSON.stringify(data.user));
+      authClient.setUser(data.user);
     }
 
     // Store JWT token if provided by backend
     if (data.token) {
-      localStorage.setItem('auth_token', data.token);
+      authClient.setToken(data.token, data.expires_in);
     }
 
     return data;
@@ -125,15 +126,12 @@ export const logout = async () => {
       credentials: 'include',
     });
 
-    // Clear client-side profile cache regardless of API response
-    localStorage.removeItem('user');
-    localStorage.removeItem('auth_token');
-    sessionStorage.removeItem('oauth_state');
+    // Clear client-side auth data using centralized client
+    authClient.logout();
   } catch (error) {
     console.error('Error during logout:', error);
     // Still clear local cache even if API call fails
-    localStorage.removeItem('user');
-    localStorage.removeItem('auth_token');
+    authClient.logout();
   }
 };
 
@@ -142,11 +140,16 @@ export const logout = async () => {
  * @returns {object|null} - Parsed user object or null
  */
 export const getStoredUser = () => {
-  const userStr = localStorage.getItem('user');
+  const user = authClient.getUser();
   console.log(
     '[authService.getStoredUser] Looking for user...',
-    userStr ? 'FOUND' : 'NOT FOUND'
+    user ? 'FOUND' : 'NOT FOUND'
   );
+  return user;
+};
+
+// Legacy function body preserved for reference:
+/*
   try {
     const parsed = userStr ? JSON.parse(userStr) : null;
     if (parsed) {
