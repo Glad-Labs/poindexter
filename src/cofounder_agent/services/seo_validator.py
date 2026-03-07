@@ -118,10 +118,16 @@ class SEOValidator:
         warnings = []
         suggestions = []
 
-        # Validate title
-        title_valid = len(title) <= self.TITLE_MAX_CHARS
-        if not title_valid:
-            errors.append(f"Title too long: {len(title)} chars (max {self.TITLE_MAX_CHARS})")
+        # Validate title — hard-fail above 80 chars; warn for 61-80 (Google truncates but ranks)
+        title_len = len(title)
+        title_valid = title_len <= 80
+        if title_len > 80:
+            errors.append(f"Title too long: {title_len} chars (max 80 hard limit, 60 recommended)")
+        elif title_len > self.TITLE_MAX_CHARS:
+            warnings.append(
+                f"Title may be truncated in search results: {title_len} chars "
+                f"(recommended max {self.TITLE_MAX_CHARS})"
+            )
 
         # Validate meta description
         meta_valid = len(meta_description) <= self.META_MAX_CHARS
@@ -395,7 +401,7 @@ class SEOValidator:
         suggestions = []
 
         if not title_valid:
-            suggestions.append(f"Shorten SEO title to max {self.TITLE_MAX_CHARS} characters")
+            suggestions.append("Shorten SEO title to max 60 characters (80 hard limit)")
 
         if not meta_valid:
             suggestions.append(f"Shorten meta description to max {self.META_MAX_CHARS} characters")

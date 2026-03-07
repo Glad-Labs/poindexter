@@ -301,32 +301,11 @@ def register_all_routes(
 
     # ===== OPTIONAL ROUTES (Conditional on availability) =====
 
-    try:
-        # ===== WORKFLOW HISTORY (Phase 5) =====
-        from routes.workflow_history import alias_router as workflow_history_alias_router
-        from routes.workflow_history import (
-            initialize_history_service,
-        )
-        from routes.workflow_history import router as workflow_history_router
-        from services.workflow_history import WorkflowHistoryService
-
-        if database_service and workflow_history_service:
-            initialize_history_service(database_service.pool)
-            app.include_router(workflow_history_router)
-            app.include_router(workflow_history_alias_router)
-            logger.info(
-                " workflow_history_router registered (both /api/workflow/* and /api/workflows/* paths)"
-            )
-            status["workflow_history_router"] = True
-        else:
-            logger.warning(" workflow_history not available (dependencies missing)")
-            status["workflow_history_router"] = False
-    except ImportError as e:
-        logger.warning(f" workflow_history not available: {e}")
-        status["workflow_history_router"] = False
-    except Exception as e:
-        logger.error(f" workflow_history registration failed: {e}")
-        status["workflow_history_router"] = False
+    # ===== WORKFLOW HISTORY =====
+    # Registered via register_workflow_history_routes() called from lifespan in main.py
+    # after database and workflow_history services are initialized. Do NOT register here
+    # or routes will be duplicated on startup.
+    status["workflow_history_router"] = False  # updated to True by lifespan if successful
 
     # ===== INTELLIGENT ORCHESTRATOR (DEPRECATED - replaced by UnifiedOrchestrator) =====
     # This router is no longer registered. Use orchestrator_routes instead.

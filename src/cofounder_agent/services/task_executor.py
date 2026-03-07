@@ -20,8 +20,8 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-# Import model selection helper
-from routes.task_routes import get_model_for_phase
+# Import model selection helper (lives in services to avoid service→route circular dep)
+from .model_router import get_model_for_phase
 from utils.error_handler import handle_service_error
 
 # Import AI content generator for fallback
@@ -229,6 +229,7 @@ class TaskExecutor:
                                     task_id,
                                     {
                                         "status": "failed",
+                                        "error_message": str(e),
                                         "task_metadata": {
                                             "error": str(e),
                                             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -1025,7 +1026,13 @@ class TaskExecutor:
         word_count = len(generated_content.split()) if generated_content else 0
         effective_target_length = target_length
         if not isinstance(effective_target_length, int) or effective_target_length <= 0:
-            effective_target_length = 1500 if task.get("task_type") == "blog_post" else None
+            _type_defaults = {
+                "blog_post": 1200,
+                "newsletter": 600,
+                "email": 300,
+                "social_media": 150,
+            }
+            effective_target_length = _type_defaults.get(task.get("task_type", ""), 1200)
 
         # Gate 1: Length constraint validation (using unified constraint system)
         try:
@@ -1081,7 +1088,7 @@ class TaskExecutor:
         seo_gate_passes = True
         seo_feedback = ""
         try:
-            if generated_content and task.get("primary_keyword"):
+            if generated_content:
                 # Normalize optional SEO fields to avoid NoneType len() errors inside validator.
                 seo_title = (task.get("seo_title") or task.get("topic") or "Untitled").strip()
                 seo_description = (task.get("seo_description") or "").strip()
@@ -1093,7 +1100,13 @@ class TaskExecutor:
                 else:
                     seo_keywords = []
 
+                # Derive primary keyword from topic if not explicitly set
                 primary_kw = str(task.get("primary_keyword") or "").strip()
+                if not primary_kw:
+                    topic_words = str(task.get("topic") or "").split()
+                    primary_kw = " ".join(topic_words[:3]).lower().strip()
+                    if primary_kw:
+                        logger.info(f"[SEO_GATE] primary_keyword not set; derived '{primary_kw}' from topic")
                 if primary_kw and primary_kw not in seo_keywords:
                     seo_keywords.append(primary_kw)
 
@@ -1277,121 +1290,28 @@ class TaskExecutor:
         logger.info(f"   Audience: {audience}")
 
         try:
-            # Ensure Ollama check is done (async)
-            await self.content_generator._check_ollama_async()
+            style = str(task.get("style") or "educational")
+            tone = str(task.get("tone") or "professional")
+            target_length = task.get("target_length") or 1200
+            if not isinstance(target_length, int) or target_length <= 0:
+                target_length = 1200
+            tags = [keyword] if keyword and keyword != "keyword" else []
 
-            # Try to generate with AIContentGenerator
-            # For now, use template-based fallback since async generation might not be implemented
-            # Content generation uses AIContentGenerator.generate_async() with Ollama support
-
-            content = f"""# {topic}
-
-## Introduction
-
-This article explores the key aspects of {topic} and its relevance to {audience}. We'll cover the essential information you need to know about this important subject.
-
-## Understanding {topic}
-
-{topic} is a crucial area that impacts many aspects of modern business and personal development. By understanding {keyword}, professionals and enthusiasts can make more informed decisions and stay ahead of industry trends.
-
-### Key Concepts
-
-When discussing {topic}, it's important to grasp these fundamental concepts:
-
-1. **Definition and Scope**: {topic} encompasses a broad range of practices and methodologies designed to {keyword.lower()} effectively.
-
-2. **Importance**: The relevance of {topic} has grown significantly in recent years, making it essential knowledge for anyone in the {category} sector.
-
-3. **Applications**: {topic} can be applied across various contexts to improve outcomes and drive better results.
-
-## Best Practices
-
-### For {audience}
-
-When implementing strategies related to {topic}:
-
-- **Research thoroughly** before making decisions related to {keyword}
-- **Stay updated** with the latest developments in {topic}
-- **Consult experts** when dealing with complex aspects of {topic}
-- **Measure results** to ensure your approach to {keyword} is effective
-- **Adapt and iterate** based on performance metrics
-
-### Common Pitfalls to Avoid
-
-1. **Ignoring {keyword}**: Overlooking this aspect can lead to suboptimal outcomes
-2. **Not staying current**: {topic} evolves rapidly; staying informed is critical
-3. **Implementation without planning**: Proper planning before implementing {topic} strategies is essential
-4. **Insufficient testing**: Always validate approaches before full-scale deployment
-
-## Advanced Considerations
-
-### Emerging Trends
-
-The {topic} landscape continues to evolve with:
-- Increasing automation and AI integration
-- Shift towards data-driven approaches
-- Growing emphasis on sustainability and ethics
-- Integration with emerging technologies
-
-### Future Outlook
-
-Looking ahead, {topic} will likely see:
-- Continued innovation in {keyword}-related solutions
-- Greater focus on measurable outcomes
-- Evolution of best practices and standards
-- Increased collaboration across {category} professionals
-
-## Practical Implementation
-
-### Getting Started
-
-1. Assess your current approach to {topic}
-2. Identify gaps related to {keyword}
-3. Develop an implementation plan
-4. Execute in phases
-5. Monitor and optimize
-
-### Measuring Success
-
-Track these metrics to evaluate your {topic} strategy:
-- **Quality improvements** in {keyword}-related outputs
-- **Efficiency gains** from implementing {topic} practices
-- **User satisfaction** metrics
-- **ROI** of {topic} investments
-- **Adoption rates** among your {audience}
-
-## Conclusion
-
-{topic} remains a vital area of focus for any organization or individual serious about success in {category}. By understanding and properly implementing strategies around {keyword}, you can achieve significant improvements in your outcomes.
-
-The key to success with {topic} is staying informed, adapting to changes, and continuously refining your approach based on results.
-
----
-
-## Resources and Further Reading
-
-- Industry publications and journals on {topic}
-- Expert blogs and thought leadership articles
-- Online communities focused on {topic}
-- Certification programs and training courses
-- Webinars and conferences on {category}
-
----
-
-*This content was automatically generated by Glad Labs AI Content Generator (Fallback Mode)*  
-*Generated: {datetime.now(timezone.utc).isoformat()}*  
-*Category: {category}*
-"""
-
-            logger.info(f"✅ Generated fallback content: {len(content)} chars")
+            content, model_used, _metrics = await self.content_generator.generate_blog_post(
+                topic=topic,
+                style=style,
+                tone=tone,
+                target_length=target_length,
+                tags=tags,
+            )
+            logger.info(f"✅ Fallback generation succeeded via {model_used}: {len(content)} chars")
             return content
 
         except Exception as e:
             logger.error(
                 f"[_fallback_generate_content] Fallback generation failed: {e}", exc_info=True
             )
-            # Emergency minimal content
-            return f"# {topic}\n\nContent generation service temporarily unavailable. Please try again later.\n\nError: {str(e)[:100]}"
+            raise
 
     def get_stats(self) -> Dict[str, Any]:
         """Get performance statistics for the executor"""

@@ -47,7 +47,7 @@ class StyleConsistencyResult:
     vocabulary_diversity: float
 
     # Pass/fail determination
-    passing: bool  # True if consistency >= 0.75
+    passing: bool  # True if consistency >= 0.65
     issues: List[str]  # List of identified issues
     suggestions: List[str]  # Improvement suggestions
 

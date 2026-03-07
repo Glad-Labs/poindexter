@@ -546,3 +546,61 @@ def initialize_model_router(default_model: str = "ollama/mistral") -> ModelRoute
     _model_router = ModelRouter(default_model=default_model)
     logger.info("Global model router initialized")
     return _model_router
+
+
+def get_model_for_phase(
+    phase: str, model_selections: Dict[str, str], quality_preference: str
+) -> str:
+    """
+    Get the appropriate LLM model for a given generation phase.
+
+    Moved from routes.task_routes to break the backwards service→route dependency.
+
+    Args:
+        phase: Generation phase ('draft', 'assess', 'refine', 'finalize')
+        model_selections: User's per-phase model selections (e.g., {"draft": "gpt-4"})
+        quality_preference: Fallback preference (fast, balanced, quality)
+
+    Returns:
+        Model identifier string (e.g., "gpt-4", "ollama/gpt-oss:20b")
+    """
+    defaults_by_phase = {
+        "fast": {
+            "research": "ollama/gpt-oss:20b",
+            "outline": "ollama/gpt-oss:20b",
+            "draft": "ollama/gpt-oss:20b",
+            "assess": "ollama/gpt-oss:20b",
+            "refine": "ollama/gpt-oss:20b",
+            "finalize": "ollama/gpt-oss:20b",
+        },
+        "balanced": {
+            "research": "ollama/gpt-oss:20b",
+            "outline": "ollama/gpt-oss:20b",
+            "draft": "ollama/gpt-oss:20b",
+            "assess": "ollama/gpt-oss:20b",
+            "refine": "ollama/gpt-oss:20b",
+            "finalize": "ollama/gpt-oss:20b",
+        },
+        "quality": {
+            "research": "ollama/gpt-oss:120b",
+            "outline": "ollama/gpt-oss:120b",
+            "draft": "ollama/gpt-oss:120b",
+            "assess": "ollama/gpt-oss:120b",
+            "refine": "ollama/gpt-oss:120b",
+            "finalize": "ollama/gpt-oss:120b",
+        },
+    }
+
+    if model_selections and phase in model_selections:
+        selected = model_selections[phase]
+        if selected and selected != "auto":
+            logger.info(f"[MODEL_ROUTER] Using selected model for {phase}: {selected}")
+            return selected
+
+    quality = quality_preference or "balanced"
+    if quality not in defaults_by_phase:
+        quality = "balanced"
+
+    model = defaults_by_phase[quality].get(phase, "ollama/gpt-oss:20b")
+    logger.info(f"[MODEL_ROUTER] Using {quality} quality model for {phase}: {model}")
+    return model
