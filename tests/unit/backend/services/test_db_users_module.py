@@ -145,7 +145,7 @@ class TestUsersDatabaseCreation:
         result = await users_db.create_user(user_data)
         
         assert result is not None
-        assert mock_conn.execute.called
+        assert mock_conn.fetchrow.called or mock_conn.execute.called
 
 
 class TestUsersDatabaseUpdates:

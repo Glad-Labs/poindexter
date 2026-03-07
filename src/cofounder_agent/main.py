@@ -32,7 +32,7 @@ from services.unified_orchestrator import UnifiedOrchestrator
 # Local application imports (must come after path setup)
 from utils.exception_handlers import register_exception_handlers
 from utils.middleware_config import MiddlewareConfig
-from utils.route_registration import register_all_routes
+from utils.route_registration import register_all_routes, register_workflow_history_routes
 from utils.route_utils import (
     get_database_dependency,
     get_orchestrator_dependency,
@@ -143,6 +143,18 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             template_execution_service=services.get("template_execution_service"),
         )
         logger.info("[LIFESPAN] ✅ Services registered in global DI container")
+
+        # Register workflow history routes now that services are available
+        logger.info("[LIFESPAN] Registering workflow history routes...")
+        wh_registered = register_workflow_history_routes(
+            app,
+            database_service=services["database"],
+            workflow_history_service=services["workflow_history"],
+        )
+        if wh_registered:
+            logger.info("[LIFESPAN] ✅ Workflow history routes registered")
+        else:
+            logger.warning("[LIFESPAN] ⚠️ Workflow history routes not available")
 
         # Start the background task executor (get from services dict - fixed)
         logger.info("[LIFESPAN] Starting background task executor...")

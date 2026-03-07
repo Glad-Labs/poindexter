@@ -1,6 +1,6 @@
 """Tests for TasksDatabase module with correct method signatures."""
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
@@ -119,19 +119,25 @@ class TestTasksDatabaseRetrieval:
         mock_conn = AsyncMock()
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         mock_conn.fetch.return_value = [
             {
+                "id": "task_1",
                 "task_id": "task_1",
                 "title": "Task 1",
                 "status": "pending",
                 "created_at": now,
+                "updated_at": now,
+                "task_metadata": {}
             },
             {
+                "id": "task_2",
                 "task_id": "task_2",
                 "title": "Task 2",
                 "status": "completed",
                 "created_at": now,
+                "updated_at": now,
+                "task_metadata": {}
             }
         ]
         
@@ -158,17 +164,23 @@ class TestTasksDatabaseRetrieval:
         mock_conn = AsyncMock()
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         mock_conn.fetch.return_value = [
             {
+                "id": "task_1",
                 "task_id": "task_1",
                 "status": "pending",
                 "created_at": now,
+                "updated_at": now,
+                "task_metadata": {}
             },
             {
+                "id": "task_2",
                 "task_id": "task_2",
                 "status": "pending",
                 "created_at": now,
+                "updated_at": now,
+                "task_metadata": {}
             }
         ]
         
@@ -191,20 +203,26 @@ class TestTasksDatabaseRetrieval:
 
     @pytest.mark.asyncio
     async def test_get_tasks_paginated(self, tasks_db, mock_pool):
-        """Test get_tasks_paginated returns paginated results."""
+        """Test get_tasks_paginated returns tuple of (tasks list, total count)."""
         mock_conn = AsyncMock()
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         mock_conn.fetch.return_value = [
-            {"task_id": "task_1", "created_at": now},
-            {"task_id": "task_2", "created_at": now},
-            {"task_id": "task_3", "created_at": now}
+            {"id": "task_1", "task_id": "task_1", "created_at": now, "updated_at": now, "task_metadata": {}},
+            {"id": "task_2", "task_id": "task_2", "created_at": now, "updated_at": now, "task_metadata": {}},
+            {"id": "task_3", "task_id": "task_3", "created_at": now, "updated_at": now, "task_metadata": {}}
         ]
+        mock_conn.fetchval.return_value = 3  # Total count
         
-        tasks = await tasks_db.get_tasks_paginated(offset=0, limit=10)
+        result = await tasks_db.get_tasks_paginated(offset=0, limit=10)
         
+        # Returns tuple of (list, count)
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        tasks, total = result
         assert isinstance(tasks, list)
+        assert isinstance(total, int)
         assert mock_conn.fetch.called
 
 
@@ -217,12 +235,15 @@ class TestTasksDatabaseUpdates:
         mock_conn = AsyncMock()
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         mock_conn.fetchrow.return_value = {
+            "id": "task_123",
             "task_id": "task_123",
             "title": "Updated Title",
-            "status": "pending",
-            "updated_at": now
+            "status": "in_progress",
+            "created_at": now,
+            "updated_at": now,
+            "task_metadata": {}
         }
         
         updates = {
@@ -234,7 +255,7 @@ class TestTasksDatabaseUpdates:
         
         assert result is not None
         assert isinstance(result, dict)
-        assert mock_conn.execute.called
+        assert mock_conn.fetchrow.called
 
     @pytest.mark.asyncio
     async def test_update_task_status_with_parameters(self, tasks_db, mock_pool):
@@ -251,11 +272,11 @@ class TestTasksDatabaseUpdates:
         result = await tasks_db.update_task_status(
             task_id="task_456",
             status="completed",
-            completion_timestamp=now
+            result="Task completed successfully"
         )
         
         assert result is not None
-        assert mock_conn.execute.called
+        assert mock_conn.fetchrow.called
 
     @pytest.mark.asyncio
     async def test_delete_task_returns_bool(self, tasks_db, mock_pool):
@@ -279,18 +300,22 @@ class TestTasksDatabaseMetrics:
         mock_conn = AsyncMock()
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         
-        mock_conn.fetchrow.return_value = {
-            "pending": 5,
-            "in_progress": 2,
-            "completed": 10,
-            "failed": 1
-        }
+        # get_task_counts uses fetch() to get status counts
+        mock_conn.fetch.return_value = [
+            {"status": "pending", "count": 5},
+            {"status": "in_progress", "count": 2},
+            {"status": "completed", "count": 10},
+            {"status": "failed", "count": 1}
+        ]
         
         counts = await tasks_db.get_task_counts()
         
-        assert isinstance(counts, TaskCountsResponse) or isinstance(counts, dict)
-        assert "pending" in counts or hasattr(counts, "pending")
-        assert mock_conn.fetchrow.called
+        # Result should be TaskCountsResponse Pydantic model
+        assert counts is not None
+        assert hasattr(counts, 'pending'), "Result should be TaskCountsResponse with status counts"
+        assert hasattr(counts, 'total')
+        assert counts.total == 18  # 5 + 2 + 10 + 1
+        assert mock_conn.fetch.called
 
     @pytest.mark.asyncio
     async def test_get_tasks_by_date_range(self, tasks_db, mock_pool):

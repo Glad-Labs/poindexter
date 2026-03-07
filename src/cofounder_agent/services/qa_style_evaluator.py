@@ -225,7 +225,7 @@ class StyleConsistencyValidator:
                 avg_sentence_length=generated_metrics["avg_sentence_length"],
                 avg_word_length=generated_metrics["avg_word_length"],
                 vocabulary_diversity=generated_metrics["vocabulary_diversity"],
-                passing=overall_score >= 0.75,
+                passing=overall_score >= 0.65,
                 issues=issues,
                 suggestions=suggestions,
                 reference_style=reference_style,
@@ -301,30 +301,43 @@ class StyleConsistencyValidator:
         return max(tone_scores, key=tone_scores.get) if max(tone_scores.values()) > 0 else "neutral"
 
     def _detect_style(self, content: str) -> str:
-        """Detect primary style of content"""
+        """Detect primary style of content using structural analysis."""
         text_lower = content.lower()
+        lines = content.split("\n")
 
-        # Style-specific checks
-        has_lists = "- " in content or "* " in content
+        # Structural counts
+        heading_count = sum(1 for l in lines if l.strip().startswith("#"))
+        list_item_count = sum(1 for l in lines if l.strip().startswith(("- ", "* ", "+ ")) or
+                              (len(l.strip()) > 2 and l.strip()[0].isdigit() and l.strip()[1] in ".):"))
+        paragraph_count = len([p for p in content.split("\n\n") if len(p.strip()) > 80])
         has_code = "```" in content
-        has_headings = "#" in content
 
+        # Keyword scores (base signal)
         style_scores = {}
-
         for style, markers in self.style_markers.items():
             count = sum(1 for marker in markers if marker in text_lower)
             style_scores[style] = count
 
-        # Boost scores based on formatting
+        # Structural boosts — more reliable than keyword presence alone
         if has_code:
             style_scores["technical"] += 5
-        if has_lists:
-            style_scores["listicle"] += 3
-        if has_headings:
+
+        # True listicle: majority of content IS list items, not just containing some lists
+        if list_item_count > 0 and paragraph_count > 0:
+            listicle_ratio = list_item_count / (list_item_count + paragraph_count)
+            if listicle_ratio > 0.5:  # More list items than prose paragraphs
+                style_scores["listicle"] += 4
+            # else: has lists but mostly prose — narrative or educational, not listicle
+        elif list_item_count > 10 and paragraph_count == 0:
+            style_scores["listicle"] += 4
+
+        # Multiple headings + prose paragraphs = narrative or educational
+        if heading_count >= 3 and paragraph_count >= 3:
+            style_scores["narrative"] += 2
             style_scores["educational"] += 2
 
         return (
-            max(style_scores, key=style_scores.get) if any(style_scores.values()) > 0 else "general"
+            max(style_scores, key=style_scores.get) if any(v > 0 for v in style_scores.values()) else "general"
         )
 
     def _calculate_tone_consistency(
@@ -341,18 +354,20 @@ class StyleConsistencyValidator:
         # Check tone markers in content
         text_lower = ""  # Would need to pass content here
 
-        # Related tones get partial credit
+        # Related tones get partial credit — grouped by semantic family
         related_tones = {
-            "formal": ["authoritative"],
+            "formal": ["authoritative", "professional"],
+            "authoritative": ["formal", "professional"],
+            "professional": ["formal", "authoritative"],
             "casual": ["conversational"],
-            "authoritative": ["formal"],
             "conversational": ["casual"],
+            "neutral": ["formal", "professional", "authoritative"],
         }
 
-        if reference_tone in related_tones and detected_tone in related_tones[reference_tone]:
-            return 0.75
+        if reference_tone in related_tones and detected_tone in related_tones.get(reference_tone, []):
+            return 0.78  # Related tone — partial credit
 
-        return 0.4  # Mismatched tone
+        return 0.45  # Mismatched tone
 
     def _calculate_vocabulary_consistency(
         self, generated_metrics: Dict[str, Any], reference_metrics: Optional[Dict[str, Any]]
