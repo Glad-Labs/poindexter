@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * useMessageExpand Hook
  *
@@ -26,7 +27,7 @@ import { useState, useCallback } from 'react';
  *   - handleToggle: function with callbacks
  *
  * @example
- * const { expanded, toggle, handleToggle } = useMessageExpand(false, () => console.log('Expanded'), () => console.log('Collapsed'));
+ * const { expanded, toggle, handleToggle } = useMessageExpand(false, () => logger.log('Expanded'), () => logger.log('Collapsed'));
  * return (
  *   <>
  *     <button onClick={handleToggle}>

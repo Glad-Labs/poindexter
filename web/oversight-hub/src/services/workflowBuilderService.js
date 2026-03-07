@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * Workflow Builder Service
  *
@@ -22,24 +23,24 @@ import { makeRequest } from './cofounderAgentClient';
  */
 export const getAvailablePhases = async () => {
   try {
-    console.log('[workflowBuilderService] Calling getAvailablePhases()');
+    logger.log('[workflowBuilderService] Calling getAvailablePhases()');
     const response = await makeRequest(
       '/api/workflows/available-phases',
       'GET'
     );
-    console.log(
+    logger.log(
       '[workflowBuilderService] getAvailablePhases response:',
       response
     );
     if (!response || !response.phases) {
-      console.warn(
+      logger.warn(
         '[workflowBuilderService] getAvailablePhases: response.phases is missing',
         response
       );
     }
     return response;
   } catch (error) {
-    console.error(
+    logger.error(
       '[workflowBuilderService] Error fetching available phases:',
       error
     );
@@ -78,7 +79,7 @@ export const createWorkflow = async (workflowDefinition) => {
     );
     return response;
   } catch (error) {
-    console.error('Error creating workflow:', error);
+    logger.error('Error creating workflow:', error);
     throw new Error(`Failed to create workflow: ${error.message}`);
   }
 };
@@ -120,7 +121,7 @@ export const listWorkflows = async (options = {}) => {
     );
     return response;
   } catch (error) {
-    console.error('Error listing workflows:', error);
+    logger.error('Error listing workflows:', error);
     throw new Error(`Failed to load workflows: ${error.message}`);
   }
 };
@@ -142,7 +143,7 @@ export const getWorkflow = async (workflowId) => {
     );
     return response;
   } catch (error) {
-    console.error('Error fetching workflow:', error);
+    logger.error('Error fetching workflow:', error);
     throw new Error(`Failed to load workflow: ${error.message}`);
   }
 };
@@ -188,7 +189,7 @@ export const updateWorkflow = async (workflowId, updates) => {
     );
     return response;
   } catch (error) {
-    console.error('Error updating workflow:', error);
+    logger.error('Error updating workflow:', error);
     throw new Error(`Failed to update workflow: ${error.message}`);
   }
 };
@@ -210,7 +211,7 @@ export const deleteWorkflow = async (workflowId) => {
     );
     return response;
   } catch (error) {
-    console.error('Error deleting workflow:', error);
+    logger.error('Error deleting workflow:', error);
     throw new Error(`Failed to delete workflow: ${error.message}`);
   }
 };
@@ -238,7 +239,7 @@ export const executeWorkflow = async (workflowId, inputData = {}) => {
     );
     return response;
   } catch (error) {
-    console.error('Error executing workflow:', error);
+    logger.error('Error executing workflow:', error);
     throw new Error(`Failed to execute workflow: ${error.message}`);
   }
 };
@@ -298,7 +299,7 @@ export const getExecutionStatus = async (executionId) => {
       error?.status || error?.statusCode || error?.response?.status || null;
 
     if (!(status === 404 || message.includes('not found'))) {
-      console.error('Error fetching execution status:', error);
+      logger.error('Error fetching execution status:', error);
     }
 
     throw new Error(`Failed to load execution status: ${error.message}`);
@@ -336,7 +337,7 @@ export const getWorkflowExecutions = async (workflowId, options = {}) => {
     );
     return response;
   } catch (error) {
-    console.error('Error fetching workflow executions:', error);
+    logger.error('Error fetching workflow executions:', error);
     throw new Error(`Failed to load workflow executions: ${error.message}`);
   }
 };
@@ -350,7 +351,7 @@ export const exportWorkflowToJSON = (workflow) => {
   try {
     return JSON.stringify(workflow, null, 2);
   } catch (error) {
-    console.error('Error exporting workflow:', error);
+    logger.error('Error exporting workflow:', error);
     throw new Error('Failed to export workflow');
   }
 };
@@ -371,7 +372,7 @@ export const importWorkflowFromJSON = (jsonString) => {
 
     return workflow;
   } catch (error) {
-    console.error('Error importing workflow:', error);
+    logger.error('Error importing workflow:', error);
     throw new Error(`Failed to import workflow: ${error.message}`);
   }
 };

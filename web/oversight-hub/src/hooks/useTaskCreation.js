@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * useTaskCreation.js
  *
@@ -93,7 +94,7 @@ const useTaskCreation = (onSuccess) => {
       const errorMessage =
         err.message || 'An error occurred while creating the task';
       setError(errorMessage);
-      console.error('Task creation error:', err);
+      logger.error('Task creation error:', err);
       throw err;
     } finally {
       setIsSubmitting(false);

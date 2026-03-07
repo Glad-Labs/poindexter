@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import { revalidatePath } from 'next/cache';
 
 /**
@@ -32,7 +33,7 @@ export async function POST(request) {
             '/posts', // Posts listing
           ];
 
-    console.log('🔄 Revalidating paths:', pathsToRevalidate);
+    logger.log('🔄 Revalidating paths:', pathsToRevalidate);
 
     for (const path of pathsToRevalidate) {
       await revalidatePath(path, 'page');
@@ -51,7 +52,7 @@ export async function POST(request) {
       }
     );
   } catch (error) {
-    console.error('❌ Revalidation error:', error);
+    logger.error('❌ Revalidation error:', error);
     return new Response(
       JSON.stringify({
         error: 'Revalidation failed',

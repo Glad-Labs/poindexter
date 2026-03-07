@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * TaskManagement.jsx - Enhanced Task Management Page
  * Features: Task creation, filtering, sorting, detail view, actions (pause/resume/cancel/delete)
@@ -43,7 +44,7 @@ function TaskManagement() {
 
   // Handler to open detail modal for editing
   const handleEditTask = (task) => {
-    console.log('👁️ handleEditTask called with task:', task);
+    logger.log('👁️ handleEditTask called with task:', task);
     setSelectedTask(task);
     setSelectedTask(task); // Set in store so TaskDetailModal can access it
     setShowDetailModal(true);
@@ -73,7 +74,7 @@ function TaskManagement() {
         setError('Failed to reject task');
       }
     } catch (err) {
-      console.error('Error rejecting task:', err);
+      logger.error('Error rejecting task:', err);
       setError(`Failed to reject task: ${err.message}`);
     } finally {
       setDeleting(false);
@@ -102,7 +103,7 @@ function TaskManagement() {
         setError(`Failed to ${action} task`);
       }
     } catch (err) {
-      console.error(`Error performing ${action} on task:`, err);
+      logger.error(`Error performing ${action} on task:`, err);
       setError(`Failed to ${action} task: ${err.message}`);
     }
   };

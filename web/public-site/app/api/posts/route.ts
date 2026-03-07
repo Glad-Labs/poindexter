@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * Posts API Route Handler
  * Provides unified access to posts from FastAPI backend
@@ -37,7 +38,7 @@ export async function GET(request: NextRequest) {
       total: data.meta?.pagination?.total || data.total || 0,
     });
   } catch (error) {
-    console.error('Error in posts API route:', error);
+    logger.error('Error in posts API route:', error);
     return NextResponse.json(
       { error: 'Failed to fetch posts', items: [], total: 0 },
       { status: 500 }

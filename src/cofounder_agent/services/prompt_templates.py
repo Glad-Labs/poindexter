@@ -5,7 +5,7 @@ Centralized storage for all system prompts and templates.
 Makes it easier to version, edit, and manage prompts.
 """
 
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 
 class PromptTemplates:
@@ -47,7 +47,9 @@ class PromptTemplates:
         return prompt
 
     @staticmethod
-    def content_critique_prompt(content: str, context: Optional[Dict] = None) -> str:
+    def content_critique_prompt(
+        content: str, context: Optional[Dict[str, Any]] = None
+    ) -> str:
         """Generate a prompt for content critique"""
         context_str = ""
         style_guidance = ""

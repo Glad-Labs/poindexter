@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import { useState, useEffect } from 'react';
 import './CostMetricsDashboard.css';
 import {
@@ -113,7 +114,7 @@ function CostMetricsDashboard() {
         setCostHistory(validatedHistoryData?.daily_data || []);
         setBudgetStatus(validatedBudgetData);
       } catch (err) {
-        console.error('Error fetching cost data:', err);
+        logger.error('Error fetching cost data:', err);
         setError(
           err instanceof Error ? err.message : 'Failed to fetch cost data'
         );

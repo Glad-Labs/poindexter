@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import React, { useState, useCallback } from 'react';
 import {
   Dialog,
@@ -86,7 +87,7 @@ const TaskDetailModal = ({ onClose, onUpdate }) => {
           throw new Error('No image URL in response');
         }
       } catch (error) {
-        console.error('❌ Image generation error:', error);
+        logger.error('❌ Image generation error:', error);
         alert(`❌ Error generating image: ${error.message}`);
       } finally {
         setImageGenerating(false);
@@ -117,7 +118,7 @@ const TaskDetailModal = ({ onClose, onUpdate }) => {
         setSelectedTask(null);
         onClose();
       } catch (error) {
-        console.error('❌ Approval error:', error);
+        logger.error('❌ Approval error:', error);
         alert(`❌ Error approving task: ${error.message}`);
       } finally {
         setApprovalLoading(false);
@@ -144,7 +145,7 @@ const TaskDetailModal = ({ onClose, onUpdate }) => {
       setSelectedTask(null);
       onClose();
     } catch (error) {
-      console.error('❌ Publishing error:', error);
+      logger.error('❌ Publishing error:', error);
       alert(`❌ Error publishing task: ${error.message}`);
     } finally {
       setApprovalLoading(false);
@@ -170,7 +171,7 @@ const TaskDetailModal = ({ onClose, onUpdate }) => {
         setSelectedTask(null);
         onClose();
       } catch (error) {
-        console.error('❌ Rejection error:', error);
+        logger.error('❌ Rejection error:', error);
         alert(`❌ Error rejecting task: ${error.message}`);
       } finally {
         setApprovalLoading(false);

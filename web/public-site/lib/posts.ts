@@ -1,3 +1,4 @@
+import logger from './logger';
 /**
  * Posts API Functions
  * Fetches post data from the FastAPI backend
@@ -66,7 +67,7 @@ export async function getPosts(page: number = 1): Promise<PostsResponse> {
       totalPages: Math.ceil((data.total || 0) / POSTS_PER_PAGE),
     };
   } catch (error) {
-    console.error('Error fetching posts:', error);
+    logger.error('Error fetching posts:', error);
     // Return empty result on error
     return {
       posts: [],
@@ -101,7 +102,7 @@ export async function getPostBySlug(slug: string): Promise<Post | null> {
 
     return post || null;
   } catch (error) {
-    console.error(`Error fetching post with slug ${slug}:`, error);
+    logger.error(`Error fetching post with slug ${slug}:`, error);
     return null;
   }
 }
@@ -129,7 +130,7 @@ export async function getRelatedPosts(
     const data = await response.json();
     return data.items || [];
   } catch (error) {
-    console.error('Error fetching related posts:', error);
+    logger.error('Error fetching related posts:', error);
     return [];
   }
 }
@@ -165,7 +166,7 @@ export async function getPostsByCategory(
       totalPages: Math.ceil((data.total || 0) / POSTS_PER_PAGE),
     };
   } catch (error) {
-    console.error('Error fetching posts by category:', error);
+    logger.error('Error fetching posts by category:', error);
     return {
       posts: [],
       total: 0,
@@ -203,7 +204,7 @@ export async function getAllPublishedPosts(): Promise<Post[]> {
         new Date(a.published_at || a.created_at).getTime()
     );
   } catch (error) {
-    console.error('Error fetching all published posts:', error);
+    logger.error('Error fetching all published posts:', error);
     return [];
   }
 }
@@ -222,7 +223,7 @@ export async function getNextPost(currentSlug: string): Promise<Post | null> {
 
     return allPosts[currentIndex + 1];
   } catch (error) {
-    console.error('Error fetching next post:', error);
+    logger.error('Error fetching next post:', error);
     return null;
   }
 }
@@ -243,7 +244,7 @@ export async function getPreviousPost(
 
     return allPosts[currentIndex - 1];
   } catch (error) {
-    console.error('Error fetching previous post:', error);
+    logger.error('Error fetching previous post:', error);
     return null;
   }
 }

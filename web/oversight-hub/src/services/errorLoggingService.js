@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * Error Logging Service
  *
@@ -34,7 +35,7 @@ export const logErrorToBackend = async (error, context = {}) => {
     // This ensures proper auth headers are included
     return await makeRequest('/api/errors', 'POST', errorPayload);
   } catch (err) {
-    console.error('Failed to log error to backend:', err);
+    logger.error('Failed to log error to backend:', err);
     // Don't throw - error logging should never break the app
     return null;
   }
@@ -59,7 +60,7 @@ export const logErrorToSentry = (error, context = {}) => {
       });
     }
   } catch (err) {
-    console.error('Failed to log error to Sentry:', err);
+    logger.error('Failed to log error to Sentry:', err);
   }
 };
 
@@ -78,7 +79,7 @@ export const logError = async (error, context = {}) => {
     return await logErrorToBackend(error, context);
   } catch (err) {
     // Ensure promise rejection is handled - log to console but don't throw
-    console.error('[errorLoggingService] Failed to log error:', err);
+    logger.error('[errorLoggingService] Failed to log error:', err);
     return null;
   }
 };
@@ -104,7 +105,7 @@ export const logWarning = async (message, component = '', context = {}) => {
       custom_context: context || null,
     });
   } catch (err) {
-    console.error('[errorLoggingService] Failed to log warning:', err);
+    logger.error('[errorLoggingService] Failed to log warning:', err);
     return null;
   }
 };
@@ -130,7 +131,7 @@ export const logInfo = async (message, component = '', context = {}) => {
       custom_context: context || null,
     });
   } catch (err) {
-    console.error('[errorLoggingService] Failed to log info:', err);
+    logger.error('[errorLoggingService] Failed to log info:', err);
     return null;
   }
 };
@@ -144,7 +145,7 @@ export const getErrorLogs = async () => {
     const response = await makeRequest('/api/errors', 'GET');
     return Array.isArray(response) ? response : [];
   } catch (err) {
-    console.error('[errorLoggingService] Failed to retrieve error logs:', err);
+    logger.error('[errorLoggingService] Failed to retrieve error logs:', err);
     return [];
   }
 };
@@ -159,7 +160,7 @@ export const deleteErrorLog = async (errorId) => {
     await makeRequest(`/api/errors/${errorId}`, 'DELETE');
     return true;
   } catch (err) {
-    console.error('[errorLoggingService] Failed to delete error log:', err);
+    logger.error('[errorLoggingService] Failed to delete error log:', err);
     return false;
   }
 };
@@ -173,7 +174,7 @@ export const clearAllLogs = async () => {
     await makeRequest('/api/errors', 'DELETE');
     return true;
   } catch (err) {
-    console.error('[errorLoggingService] Failed to clear error logs:', err);
+    logger.error('[errorLoggingService] Failed to clear error logs:', err);
     return false;
   }
 };

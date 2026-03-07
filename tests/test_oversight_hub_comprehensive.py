@@ -8,8 +8,11 @@ import asyncio
 import httpx
 import json
 import time
+import pytest
 from datetime import datetime
 from typing import Dict, List, Any
+
+pytestmark = pytest.mark.e2e
 
 class OversightHubSystemTester:
     """Comprehensive tester for entire Oversight Hub system"""

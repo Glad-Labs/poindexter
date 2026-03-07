@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * AdUnit Component
  * Displays responsive Google AdSense ad units
@@ -17,7 +18,7 @@ export default function AdUnit({ format = 'responsive', className = '' }) {
       try {
         window.adsbygoogle.push({});
       } catch (error) {
-        console.warn('[AdUnit] Failed to push ad:', error);
+        logger.warn('[AdUnit] Failed to push ad:', error);
       }
     }
   }, [adSenseId]);

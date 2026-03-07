@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
@@ -276,7 +277,7 @@ export function ModelSelectionPanel({
       setTotalCost(parseFloat(total.toFixed(4)));
       setTotalElectricityCost(parseFloat(totalElectricity.toFixed(4)));
     } catch (err) {
-      console.error('Error estimating costs:', err);
+      logger.error('Error estimating costs:', err);
       setError('Failed to estimate costs');
     }
   }, [modelSelections, calculateElectricityCost]);
@@ -360,7 +361,7 @@ export function ModelSelectionPanel({
         const ollamaData = await getOllamaModels();
 
         if (!ollamaData || ollamaData.length === 0) {
-          console.warn('No models available, using defaults');
+          logger.warn('No models available, using defaults');
           setPhaseModels(getDefaultPhaseModels());
           setError('No models available - using defaults');
           return;
@@ -434,13 +435,13 @@ export function ModelSelectionPanel({
       setPhaseModels(modelsForAllPhases);
       setError(null);
 
-      console.log('✅ Loaded models from unified API:', {
+      logger.log('✅ Loaded models from unified API:', {
         total: models.length,
         grouped,
       });
     } catch (err) {
-      console.error('Error fetching models:', err);
-      console.warn('Falling back to default models');
+      logger.error('Error fetching models:', err);
+      logger.warn('Falling back to default models');
 
       // Fall back to default models
       setPhaseModels(getDefaultPhaseModels());

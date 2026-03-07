@@ -73,7 +73,7 @@ export default [
       'react/no-unknown-property': 'off',
       '@next/next/no-html-link-for-pages': 'off',
       '@next/next/no-img-element': 'warn',
-      'no-console': 'off',
+      'no-console': ['error', { allow: [] }],
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
       'no-useless-escape': 'off',
       'no-unreachable': 'warn',

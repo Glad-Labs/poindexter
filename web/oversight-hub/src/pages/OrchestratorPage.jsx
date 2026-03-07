@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import React, { useState, useEffect } from 'react';
 import {
   AlertCircle,
@@ -60,7 +61,7 @@ const OrchestratorPage = () => {
       setError(null);
     } catch (err) {
       setError(err.message);
-      console.error('Error loading orchestrations:', err);
+      logger.error('Error loading orchestrations:', err);
     }
   };
 
@@ -69,7 +70,7 @@ const OrchestratorPage = () => {
       const response = await makeRequest('/api/orchestrator/stats', 'GET');
       setExecutionStats(response.stats);
     } catch (err) {
-      console.error('Error loading stats:', err);
+      logger.error('Error loading stats:', err);
     }
   };
 

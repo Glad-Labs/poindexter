@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * Task Data Formatter Utilities
  *
@@ -191,7 +192,7 @@ export const formatDate = (date) => {
       day: 'numeric',
     });
   } catch {
-    console.warn('Invalid date:', date);
+    logger.warn('Invalid date:', date);
     return '';
   }
 };
@@ -215,7 +216,7 @@ export const formatDateTime = (date) => {
       hour12: true,
     });
   } catch {
-    console.warn('Invalid date:', date);
+    logger.warn('Invalid date:', date);
     return '';
   }
 };
@@ -250,7 +251,7 @@ export const getDurationDisplay = (startDate, endDate) => {
     return `${hours}h ${mins}m`;
   } catch {
     if (process.env.NODE_ENV !== 'production') {
-      console.warn('Invalid dates:', startDate, endDate);
+      logger.warn('Invalid dates:', startDate, endDate);
     }
     return '';
   }

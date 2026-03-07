@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import React, { useState, useEffect } from 'react';
 import {
   Box,
@@ -71,7 +72,7 @@ export const SocialPublisher = () => {
       const result = await getPlatforms();
       setPlatforms(result || {});
     } catch (err) {
-      console.error('Failed to load platforms:', err);
+      logger.error('Failed to load platforms:', err);
     }
   };
 

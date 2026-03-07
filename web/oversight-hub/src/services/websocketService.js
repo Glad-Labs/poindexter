@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * websocketService.js (Phase 4)
  *
@@ -33,7 +34,7 @@ class WebSocketService {
 
         this.ws.onopen = () => {
           if (process.env.NODE_ENV === 'development') {
-            console.log('WebSocket connected');
+            logger.log('WebSocket connected');
           }
           this.reconnectAttempts = 0;
 
@@ -60,14 +61,14 @@ class WebSocketService {
             }
           } catch (error) {
             if (process.env.NODE_ENV === 'development') {
-              console.error('Failed to parse WebSocket message:', error);
+              logger.error('Failed to parse WebSocket message:', error);
             }
           }
         };
 
         this.ws.onerror = (error) => {
           if (process.env.NODE_ENV === 'development') {
-            console.error('WebSocket error:', error);
+            logger.error('WebSocket error:', error);
           }
           this.emit('error', error);
           reject(error);
@@ -75,7 +76,7 @@ class WebSocketService {
 
         this.ws.onclose = () => {
           if (process.env.NODE_ENV === 'development') {
-            console.log('WebSocket disconnected');
+            logger.log('WebSocket disconnected');
           }
           this.emit('disconnected');
 
@@ -88,7 +89,7 @@ class WebSocketService {
         };
       } catch (error) {
         if (process.env.NODE_ENV === 'development') {
-          console.error('Failed to create WebSocket:', error);
+          logger.error('Failed to create WebSocket:', error);
         }
         reject(error);
       }
@@ -105,7 +106,7 @@ class WebSocketService {
     const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
 
     if (process.env.NODE_ENV === 'development') {
-      console.log(
+      logger.log(
         `Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts}) in ${delay}ms`
       );
     }
@@ -114,7 +115,7 @@ class WebSocketService {
       if (!this.isIntentionallyClosed) {
         this.connect().catch((error) => {
           if (process.env.NODE_ENV === 'development') {
-            console.error('Reconnection failed:', error);
+            logger.error('Reconnection failed:', error);
           }
         });
       }
@@ -155,7 +156,7 @@ class WebSocketService {
           callback(data);
         } catch (error) {
           if (process.env.NODE_ENV === 'development') {
-            console.error(`Error in listener for ${eventName}:`, error);
+            logger.error(`Error in listener for ${eventName}:`, error);
           }
         }
       });
@@ -189,7 +190,7 @@ class WebSocketService {
       // Queue message if not connected
       this.messageQueue.push(message);
       if (process.env.NODE_ENV === 'development') {
-        console.warn('WebSocket not connected, queueing message:', message);
+        logger.warn('WebSocket not connected, queueing message:', message);
       }
     }
   }

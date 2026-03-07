@@ -1,3 +1,4 @@
+import logger from './logger';
 /**
  * Search posts using FastAPI full-text search
  * Filters by title, excerpt, and content
@@ -59,7 +60,7 @@ export async function searchPosts(query, filters = {}) {
 
     if (!response.ok) {
       if (process.env.NODE_ENV !== 'production') {
-        console.error('Search failed:', response.statusText);
+        logger.error('Search failed:', response.statusText);
       }
       return [];
     }
@@ -70,7 +71,7 @@ export async function searchPosts(query, filters = {}) {
     return (data.data || []).map(transformPost);
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error('Error searching posts:', error);
+      logger.error('Error searching posts:', error);
     }
     return [];
   }
@@ -102,7 +103,7 @@ export async function getTrendingPosts(limit = 5) {
 
     if (!response.ok) {
       if (process.env.NODE_ENV !== 'production') {
-        console.error('Failed to fetch trending posts:', response.statusText);
+        logger.error('Failed to fetch trending posts:', response.statusText);
       }
       return [];
     }
@@ -111,7 +112,7 @@ export async function getTrendingPosts(limit = 5) {
     return (data.data || []).map(transformPost);
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error('Error fetching trending posts:', error);
+      logger.error('Error fetching trending posts:', error);
     }
     return [];
   }
@@ -155,7 +156,7 @@ export async function getPostsByCategory(
     return (data.data || []).map(transformPost);
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error('Error fetching posts by category:', error);
+      logger.error('Error fetching posts by category:', error);
     }
     return [];
   }
@@ -195,7 +196,7 @@ export async function getPostsByTag(tagSlug, searchQuery = '', limit = 10) {
     return (data.data || []).map(transformPost);
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error('Error fetching posts by tag:', error);
+      logger.error('Error fetching posts by tag:', error);
     }
     return [];
   }
@@ -251,7 +252,7 @@ export async function getSearchSuggestions(query, limit = 8) {
     }));
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error('Error getting search suggestions:', error);
+      logger.error('Error getting search suggestions:', error);
     }
     return [];
   }

@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * useTaskData - Custom hook for task data fetching and management
  *
@@ -104,7 +105,7 @@ export function useTaskData(
         type: 'FETCH_ERROR',
         payload: `Unable to load tasks: ${errorMessage}`,
       });
-      console.error('Failed to fetch tasks:', err);
+      logger.error('Failed to fetch tasks:', err);
     } finally {
       isFetchingRef.current = false;
     }

@@ -132,6 +132,50 @@ describe('AuthClient', () => {
       const state = authClient.getOAuthState();
       expect(state).toBeNull();
     });
+
+    test('should validate and consume matching OAuth state', () => {
+      authClient.setOAuthState('state-123', 'github');
+
+      const result = authClient.validateAndConsumeOAuthState('state-123', {
+        provider: 'github',
+      });
+
+      expect(result.valid).toBe(true);
+      expect(result.reason).toBeNull();
+      expect(authClient.getOAuthState()).toBeNull();
+    });
+
+    test('should reject mismatched OAuth provider', () => {
+      authClient.setOAuthState('state-123', 'google');
+
+      const result = authClient.validateAndConsumeOAuthState('state-123', {
+        provider: 'github',
+      });
+
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('provider_mismatch');
+      expect(authClient.getOAuthState()).toBeNull();
+    });
+
+    test('should reject expired OAuth state', () => {
+      vi.useFakeTimers();
+      const start = new Date('2026-01-01T00:00:00.000Z');
+      vi.setSystemTime(start);
+
+      authClient.setOAuthState('state-123', 'github');
+
+      vi.setSystemTime(new Date(start.getTime() + 11 * 60 * 1000));
+
+      const result = authClient.validateAndConsumeOAuthState('state-123', {
+        provider: 'github',
+      });
+
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('state_expired');
+      expect(authClient.getOAuthState()).toBeNull();
+
+      vi.useRealTimers();
+    });
   });
 
   describe('Authentication Headers', () => {

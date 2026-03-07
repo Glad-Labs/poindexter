@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * Natural Language Task Composition Service
  *
@@ -50,7 +51,7 @@ export async function composeTaskFromNaturalLanguage(request, options = {}) {
     const data = await response.json();
     return data;
   } catch (error) {
-    console.error('[NLComposer] Composition failed:', error);
+    logger.error('[NLComposer] Composition failed:', error);
     throw new Error(`Failed to compose task: ${error.message}`);
   }
 }
@@ -92,7 +93,7 @@ export async function composeAndExecuteTask(request, options = {}) {
     const data = await response.json();
     return data;
   } catch (error) {
-    console.error('[NLComposer] Execution failed:', error);
+    logger.error('[NLComposer] Execution failed:', error);
     throw new Error(`Failed to execute task: ${error.message}`);
   }
 }

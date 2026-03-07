@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import React, { useState, useEffect } from 'react';
 import {
   Box,
@@ -64,7 +65,7 @@ export const GeneralSettings = () => {
         defaultTaskQualityPreference: quality?.value || 'balanced',
       });
     } catch (err) {
-      console.error('Failed to load general settings:', err);
+      logger.error('Failed to load general settings:', err);
       setError(`Failed to load settings: ${err.message}`);
     } finally {
       setLoading(false);

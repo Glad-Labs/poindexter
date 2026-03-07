@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import React, { useState, useEffect } from 'react';
 import {
   Box,
@@ -81,7 +82,7 @@ export const ServiceExplorer = () => {
       const details = await getServiceMetadata(serviceName);
       setServiceDetails(details);
     } catch (err) {
-      console.error(`Failed to load service details: ${err.message}`);
+      logger.error(`Failed to load service details: ${err.message}`);
       setServiceDetails(null);
     } finally {
       setDetailsLoading(false);

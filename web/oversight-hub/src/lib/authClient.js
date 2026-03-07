@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * Centralized Authentication Client
  *
@@ -24,11 +25,14 @@ const STORAGE_KEYS = {
   AUTH_TOKEN: 'auth_token',
   USER: 'user',
   OAUTH_STATE: 'oauth_state',
+  OAUTH_STATE_PROVIDER: 'oauth_state_provider',
+  OAUTH_STATE_CREATED_AT: 'oauth_state_created_at',
   TOKEN_EXPIRY: 'token_expiry',
 };
 
 // Token expiry buffer (refresh 5 minutes before actual expiry)
 const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
+const DEFAULT_OAUTH_STATE_MAX_AGE_MS = 10 * 60 * 1000;
 
 class AuthClient {
   constructor() {
@@ -53,7 +57,7 @@ class AuthClient {
 
     // Check if token is expired
     if (this.isTokenExpired()) {
-      console.warn('[AuthClient] Token expired, clearing...');
+      logger.warn('[AuthClient] Token expired, clearing...');
       this.clearToken();
       return null;
     }
@@ -126,7 +130,7 @@ class AuthClient {
     try {
       return JSON.parse(userStr);
     } catch (error) {
-      console.error('[AuthClient] Failed to parse user data:', error);
+      logger.error('[AuthClient] Failed to parse user data:', error);
       return null;
     }
   }
@@ -165,9 +169,15 @@ class AuthClient {
    * Set OAuth state value
    * @param {string} state - Random state string
    */
-  setOAuthState(state) {
+  setOAuthState(state, provider = 'github') {
     if (!this._sessionStorage) return;
     this._sessionStorage.setItem(STORAGE_KEYS.OAUTH_STATE, state);
+    this._sessionStorage.setItem(STORAGE_KEYS.OAUTH_STATE_PROVIDER, provider);
+    this._sessionStorage.setItem(
+      STORAGE_KEYS.OAUTH_STATE_CREATED_AT,
+      Date.now().toString()
+    );
+    this._notifyListeners('oauth_state_set');
   }
 
   /**
@@ -176,6 +186,68 @@ class AuthClient {
   clearOAuthState() {
     if (!this._sessionStorage) return;
     this._sessionStorage.removeItem(STORAGE_KEYS.OAUTH_STATE);
+    this._sessionStorage.removeItem(STORAGE_KEYS.OAUTH_STATE_PROVIDER);
+    this._sessionStorage.removeItem(STORAGE_KEYS.OAUTH_STATE_CREATED_AT);
+    this._notifyListeners('oauth_state_cleared');
+  }
+
+  /**
+   * Validate OAuth state for CSRF protection without clearing it.
+   * @param {string} receivedState - State from callback query params
+   * @param {object} options - Validation options
+   * @param {string|null} options.provider - Expected provider (optional)
+   * @param {number} options.maxAgeMs - Max state age in milliseconds
+   * @returns {{valid: boolean, reason: string|null}}
+   */
+  validateOAuthState(receivedState, options = {}) {
+    const { provider = null, maxAgeMs = DEFAULT_OAUTH_STATE_MAX_AGE_MS } =
+      options;
+
+    if (!this._sessionStorage) {
+      return { valid: false, reason: 'session_storage_unavailable' };
+    }
+
+    const storedState = this.getOAuthState();
+    if (!storedState) {
+      return { valid: false, reason: 'state_missing' };
+    }
+
+    if (!receivedState || receivedState !== storedState) {
+      return { valid: false, reason: 'state_mismatch' };
+    }
+
+    const createdAtStr = this._sessionStorage.getItem(
+      STORAGE_KEYS.OAUTH_STATE_CREATED_AT
+    );
+    if (createdAtStr) {
+      const createdAt = parseInt(createdAtStr, 10);
+      if (Number.isFinite(createdAt) && Date.now() - createdAt > maxAgeMs) {
+        return { valid: false, reason: 'state_expired' };
+      }
+    }
+
+    if (provider) {
+      const storedProvider = this._sessionStorage.getItem(
+        STORAGE_KEYS.OAUTH_STATE_PROVIDER
+      );
+      if (storedProvider && storedProvider !== provider) {
+        return { valid: false, reason: 'provider_mismatch' };
+      }
+    }
+
+    return { valid: true, reason: null };
+  }
+
+  /**
+   * Validate and consume OAuth state in a single operation.
+   * @param {string} receivedState - State from callback query params
+   * @param {object} options - Validation options
+   * @returns {{valid: boolean, reason: string|null}}
+   */
+  validateAndConsumeOAuthState(receivedState, options = {}) {
+    const validation = this.validateOAuthState(receivedState, options);
+    this.clearOAuthState();
+    return validation;
   }
 
   /**
@@ -217,7 +289,7 @@ class AuthClient {
       try {
         callback(event);
       } catch (error) {
-        console.error('[AuthClient] Listener error:', error);
+        logger.error('[AuthClient] Listener error:', error);
       }
     });
   }

@@ -1,3 +1,4 @@
+import logger from './logger';
 /**
  * Post Data Mapper
  *
@@ -101,7 +102,7 @@ export function getPostDate(post) {
     });
   } catch (e) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error('[Post Mapper] Error formatting date:', dateString, e);
+      logger.error('[Post Mapper] Error formatting date:', dateString, e);
     }
     return 'Invalid date';
   }
@@ -120,7 +121,7 @@ export function getPostDateISO(post) {
     return new Date(dateString).toISOString().split('T')[0];
   } catch (e) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error('[Post Mapper] Error formatting ISO date:', dateString, e);
+      logger.error('[Post Mapper] Error formatting ISO date:', dateString, e);
     }
     return new Date().toISOString().split('T')[0];
   }

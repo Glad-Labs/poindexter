@@ -8,6 +8,7 @@ import websockets
 import sys
 import os
 import logging
+import pytest
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(message)s')
@@ -15,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src/cofounder_agent'))
+
+pytestmark = [pytest.mark.websocket, pytest.mark.integration]
 
 async def test_websocket():
     """Test WebSocket connection to LangGraph blog progress endpoint"""

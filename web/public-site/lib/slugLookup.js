@@ -1,3 +1,4 @@
+import logger from './logger';
 /**
  * Slug-Based Content Lookup Utilities
  *
@@ -74,7 +75,7 @@ export async function getBySlug(endpoint, slug, fetchAPI, options = {}) {
     return item;
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error(`Error fetching ${endpoint} by slug "${slug}":`, error);
+      logger.error(`Error fetching ${endpoint} by slug "${slug}":`, error);
     }
     return null;
   }
@@ -92,7 +93,7 @@ export async function getBySlug(endpoint, slug, fetchAPI, options = {}) {
  *
  * @example
  * const category = await getCategoryBySlug('tech-news', fetchAPI);
- * console.log(category.name); // 'Tech News'
+ * logger.log(category.name); // 'Tech News'
  */
 export async function getCategoryBySlug(slug, fetchAPI, options = {}) {
   return getBySlug('categories', slug, fetchAPI, {
@@ -114,7 +115,7 @@ export async function getCategoryBySlug(slug, fetchAPI, options = {}) {
  *
  * @example
  * const tag = await getTagBySlug('javascript', fetchAPI);
- * console.log(tag.name); // 'JavaScript'
+ * logger.log(tag.name); // 'JavaScript'
  */
 export async function getTagBySlug(slug, fetchAPI, options = {}) {
   return getBySlug('tags', slug, fetchAPI, {
@@ -136,7 +137,7 @@ export async function getTagBySlug(slug, fetchAPI, options = {}) {
  *
  * @example
  * const post = await getPostBySlug('my-first-post', fetchAPI);
- * console.log(post.title); // 'My First Post'
+ * logger.log(post.title); // 'My First Post'
  */
 export async function getPostBySlug(slug, fetchAPI, options = {}) {
   return getBySlug('posts', slug, fetchAPI, {
@@ -159,7 +160,7 @@ export async function getPostBySlug(slug, fetchAPI, options = {}) {
  *
  * @example
  * const aboutPage = await getPageBySlug('about', fetchAPI);
- * console.log(aboutPage.content);
+ * logger.log(aboutPage.content);
  */
 export async function getPageBySlug(slug, fetchAPI, options = {}) {
   return getBySlug('pages', slug, fetchAPI, {
@@ -201,7 +202,7 @@ export function clearLookupCache(endpoint = null) {
  *
  * @example
  * const stats = getCacheStats();
- * console.log(`Cache size: ${stats.size}, Entries: ${JSON.stringify(stats.entries)}`);
+ * logger.log(`Cache size: ${stats.size}, Entries: ${JSON.stringify(stats.entries)}`);
  */
 export function getCacheStats() {
   const entries = Array.from(lookupCache.keys());

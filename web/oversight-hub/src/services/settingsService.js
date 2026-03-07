@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * Settings Service
  *
@@ -71,7 +72,7 @@ export const getSettingWithDefault = async (key, defaultValue) => {
     const result = await getSetting(key);
     return result?.value ?? defaultValue;
   } catch (error) {
-    console.warn(`Setting ${key} not found, using default`, error);
+    logger.warn(`Setting ${key} not found, using default`, error);
     return defaultValue;
   }
 };

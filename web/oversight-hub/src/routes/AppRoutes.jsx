@@ -12,13 +12,14 @@ import AuthCallback from '../pages/AuthCallback';
 import ProtectedRoute from '../components/ProtectedRoute';
 import LayoutWrapper from '../components/LayoutWrapper';
 import ApprovalQueue from '../components/tasks/ApprovalQueue';
+import ErrorBoundary from '../components/ErrorBoundary';
 
 function AppRoutes() {
   return (
     <Routes>
       {/* Public Routes */}
-      <Route path="/login" element={<Login />} />
-      <Route path="/auth/callback" element={<AuthCallback />} />
+      <Route path="/login" element={<ErrorBoundary name="Login"><Login /></ErrorBoundary>} />
+      <Route path="/auth/callback" element={<ErrorBoundary name="AuthCallback"><AuthCallback /></ErrorBoundary>} />
 
       {/* Protected Routes with Layout */}
       <Route
@@ -26,7 +27,9 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <LayoutWrapper>
-              <ExecutiveDashboard />
+              <ErrorBoundary name="ExecutiveDashboard">
+                <ExecutiveDashboard />
+              </ErrorBoundary>
             </LayoutWrapper>
           </ProtectedRoute>
         }
@@ -36,7 +39,9 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <LayoutWrapper>
-              <TaskManagement />
+              <ErrorBoundary name="TaskManagement">
+                <TaskManagement />
+              </ErrorBoundary>
             </LayoutWrapper>
           </ProtectedRoute>
         }
@@ -46,7 +51,9 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <LayoutWrapper>
-              <Content />
+              <ErrorBoundary name="Content">
+                <Content />
+              </ErrorBoundary>
             </LayoutWrapper>
           </ProtectedRoute>
         }
@@ -56,7 +63,9 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <LayoutWrapper>
-              <ApprovalQueue />
+              <ErrorBoundary name="ApprovalQueue">
+                <ApprovalQueue />
+              </ErrorBoundary>
             </LayoutWrapper>
           </ProtectedRoute>
         }
@@ -66,7 +75,9 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <LayoutWrapper>
-              <AIStudio />
+              <ErrorBoundary name="AIStudio">
+                <AIStudio />
+              </ErrorBoundary>
             </LayoutWrapper>
           </ProtectedRoute>
         }
@@ -76,7 +87,9 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <LayoutWrapper>
-              <Settings />
+              <ErrorBoundary name="Settings">
+                <Settings />
+              </ErrorBoundary>
             </LayoutWrapper>
           </ProtectedRoute>
         }
@@ -86,7 +99,9 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <LayoutWrapper>
-              <CostMetricsDashboard />
+              <ErrorBoundary name="CostMetrics">
+                <CostMetricsDashboard />
+              </ErrorBoundary>
             </LayoutWrapper>
           </ProtectedRoute>
         }
@@ -96,7 +111,9 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <LayoutWrapper>
-              <PerformanceDashboard />
+              <ErrorBoundary name="PerformanceDashboard">
+                <PerformanceDashboard />
+              </ErrorBoundary>
             </LayoutWrapper>
           </ProtectedRoute>
         }
@@ -106,7 +123,9 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <LayoutWrapper>
-              <BlogWorkflowPage />
+              <ErrorBoundary name="BlogWorkflow">
+                <BlogWorkflowPage />
+              </ErrorBoundary>
             </LayoutWrapper>
           </ProtectedRoute>
         }
@@ -116,7 +135,9 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <LayoutWrapper>
-              <UnifiedServicesPanel />
+              <ErrorBoundary name="UnifiedServices">
+                <UnifiedServicesPanel />
+              </ErrorBoundary>
             </LayoutWrapper>
           </ProtectedRoute>
         }

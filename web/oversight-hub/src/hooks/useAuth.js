@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * useAuth Hook - Simple authentication interface using Zustand
  *
@@ -41,7 +42,7 @@ export const useAuth = () => {
       // Clear from service (localStorage)
       await authServiceLogout();
     } catch (err) {
-      console.error('Logout error:', err);
+      logger.error('Logout error:', err);
     } finally {
       // Clear from store
       storeLogout();

@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import React, { useState, useEffect } from 'react';
 import {
   Box,
@@ -59,7 +60,7 @@ export const AdvancedAnalyticsDashboard = () => {
         setCostBreakdown(costs);
         setContentMetrics(content);
       } catch (err) {
-        console.error('Failed to load analytics:', err);
+        logger.error('Failed to load analytics:', err);
         setError(`Failed to load analytics: ${err.message}`);
       } finally {
         setLoading(false);

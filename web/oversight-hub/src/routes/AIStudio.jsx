@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * AIStudio.jsx
  *
@@ -122,7 +123,7 @@ function AIStudio() {
       );
       setStats(response);
     } catch (err) {
-      console.error('Error loading stats:', err);
+      logger.error('Error loading stats:', err);
     }
   }, [filters]);
 
@@ -134,7 +135,7 @@ function AIStudio() {
       );
       setDatasets(response.datasets || []);
     } catch (err) {
-      console.error('Error loading datasets:', err);
+      logger.error('Error loading datasets:', err);
     }
   }, []);
 
@@ -146,7 +147,7 @@ function AIStudio() {
       );
       setTrainingJobs(response.jobs || []);
     } catch (err) {
-      console.error('Error loading jobs:', err);
+      logger.error('Error loading jobs:', err);
     }
   }, []);
 
@@ -186,7 +187,7 @@ function AIStudio() {
           setSelectedModel(modelsArray[0].name);
         }
       } catch (error) {
-        console.error('Error fetching Ollama models:', error);
+        logger.error('Error fetching Ollama models:', error);
         setOllamaModels([]);
       }
     };
@@ -254,7 +255,7 @@ function AIStudio() {
       setTestResult(result);
       setTestHistory([result, ...testHistory.slice(0, 9)]);
     } catch (error) {
-      console.error('Error running test:', error);
+      logger.error('Error running test:', error);
       setTestError(`Test failed: ${error.message}`);
     } finally {
       setTestLoading(false);

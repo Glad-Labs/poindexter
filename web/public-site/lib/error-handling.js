@@ -1,3 +1,4 @@
+import logger from './logger';
 /**
  * Error Handling Utilities for Glad Labs
  * Provides error boundary components, error logging, and recovery strategies
@@ -22,10 +23,10 @@ export function logError(error, context = {}) {
     // Sentry.captureException(error, { extra: context });
 
     // For now, log to console
-    console.error('Error logged:', errorInfo);
+    logger.error('Error logged:', errorInfo);
   } else {
     // Development: Always log
-    console.error('Error (dev):', errorInfo);
+    logger.error('Error (dev):', errorInfo);
   }
 
   return errorInfo;
@@ -152,7 +153,7 @@ export function safeJsonParse(json, fallback = null) {
     return JSON.parse(json);
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.warn('JSON parse error:', error);
+      logger.warn('JSON parse error:', error);
     }
     return fallback;
   }
@@ -166,7 +167,7 @@ export function safeJsonStringify(obj, fallback = '{}') {
     return JSON.stringify(obj);
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.warn('JSON stringify error:', error);
+      logger.warn('JSON stringify error:', error);
     }
     return fallback;
   }

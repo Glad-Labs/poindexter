@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import React, { useState } from 'react';
 
 /**
@@ -31,7 +32,7 @@ const ErrorDetailPanel = ({ task }) => {
           try {
             errors.metadata = JSON.parse(task.task_metadata.error_details);
           } catch (parseErr) {
-            console.error('Failed to parse error_details:', parseErr);
+            logger.error('Failed to parse error_details:', parseErr);
             errors.secondary.push(task.task_metadata.error_details);
           }
         } else {
@@ -74,7 +75,7 @@ const ErrorDetailPanel = ({ task }) => {
             );
           }
         } catch (parseErr) {
-          console.error('Failed to parse metadata field:', parseErr);
+          logger.error('Failed to parse metadata field:', parseErr);
           if (task.metadata) errors.secondary.push(task.metadata);
         }
       } else if (task.metadata && typeof task.metadata === 'object') {
@@ -104,7 +105,7 @@ const ErrorDetailPanel = ({ task }) => {
             );
           }
         } catch (parseErr) {
-          console.error('Failed to parse result field:', parseErr);
+          logger.error('Failed to parse result field:', parseErr);
           if (task.result) errors.secondary.push(task.result);
         }
       } else if (typeof task.result === 'object') {

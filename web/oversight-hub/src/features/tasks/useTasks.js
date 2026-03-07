@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import useStore from '../../store/useStore';
@@ -32,7 +33,7 @@ export const useTasks = (page = 1, limit = 10) => {
         // This prevents the UI from hanging indefinitely
         loadingTimeout = setTimeout(() => {
           if (isMounted) {
-            console.warn('⏱️ Tasks fetch timeout - taking too long');
+            logger.warn('⏱️ Tasks fetch timeout - taking too long');
             setError(
               'Tasks fetch timeout - backend may not be responding. Check http://localhost:8000/docs'
             );
@@ -90,7 +91,7 @@ export const useTasks = (page = 1, limit = 10) => {
         }
 
         if (isMounted) {
-          console.error('❌ Error fetching tasks:', err.message, {
+          logger.error('❌ Error fetching tasks:', err.message, {
             retryCount,
             maxRetries,
           });
@@ -106,7 +107,7 @@ export const useTasks = (page = 1, limit = 10) => {
           if (retryCount < maxRetries && err.code !== 'ECONNABORTED') {
             retryCount++;
             const retryDelay = 1000 * retryCount;
-            console.log(
+            logger.log(
               `⏳ Retrying tasks fetch in ${retryDelay}ms (attempt ${retryCount}/${maxRetries})`
             );
             setTimeout(fetchTasks, retryDelay);

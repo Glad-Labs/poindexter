@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * GitHub OAuth Authentication Service
  * Handles OAuth flow and cookie-based session verification.
@@ -40,7 +41,7 @@ export const generateGitHubAuthURL = (clientId) => {
   const state = Math.random().toString(36).substring(7); // Simple state for CSRF protection
 
   // Store state in session storage for verification
-  authClient.setOAuthState(state);
+  authClient.setOAuthState(state, 'github');
 
   return `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}&state=${state}`;
 };
@@ -50,7 +51,11 @@ export const generateGitHubAuthURL = (clientId) => {
  * @param {string} code - Authorization code from GitHub
  * @returns {Promise<object>} - User data and token
  */
-export const exchangeCodeForToken = async (code) => {
+export const exchangeCodeForToken = async (
+  code,
+  callbackState = null,
+  provider = 'github'
+) => {
   try {
     if (isMockCode(code)) {
       if (!isMockAuthEnabled()) {
@@ -62,9 +67,18 @@ export const exchangeCodeForToken = async (code) => {
     }
 
     // Real GitHub OAuth
-    const state = authClient.getOAuthState();
-    if (!state) {
-      throw new Error('CSRF state not found - session expired');
+    const effectiveState = callbackState || authClient.getOAuthState();
+    const stateValidation = authClient.validateAndConsumeOAuthState(
+      effectiveState,
+      {
+        provider,
+      }
+    );
+
+    if (!stateValidation.valid) {
+      throw new Error(
+        `CSRF validation failed: ${stateValidation.reason || 'unknown_error'}`
+      );
     }
 
     const response = await fetch(`${API_BASE_URL}/api/auth/github/callback`, {
@@ -72,7 +86,7 @@ export const exchangeCodeForToken = async (code) => {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ code, state }),
+      body: JSON.stringify({ code, state: effectiveState }),
       credentials: 'include', // Include cookies for session
     });
 
@@ -94,7 +108,7 @@ export const exchangeCodeForToken = async (code) => {
 
     return data;
   } catch (error) {
-    console.error('Error exchanging code for token:', error);
+    logger.error('Error exchanging code for token:', error);
     throw error;
   }
 };
@@ -107,7 +121,7 @@ export const verifySession = async () => {
   try {
     return await validateAndGetCurrentUser();
   } catch (error) {
-    console.error('Error verifying session:', error);
+    logger.error('Error verifying session:', error);
     return null;
   }
 };
@@ -129,7 +143,7 @@ export const logout = async () => {
     // Clear client-side auth data using centralized client
     authClient.logout();
   } catch (error) {
-    console.error('Error during logout:', error);
+    logger.error('Error during logout:', error);
     // Still clear local cache even if API call fails
     authClient.logout();
   }
@@ -141,7 +155,7 @@ export const logout = async () => {
  */
 export const getStoredUser = () => {
   const user = authClient.getUser();
-  console.log(
+  logger.log(
     '[authService.getStoredUser] Looking for user...',
     user ? 'FOUND' : 'NOT FOUND'
   );
@@ -153,11 +167,11 @@ export const getStoredUser = () => {
   try {
     const parsed = userStr ? JSON.parse(userStr) : null;
     if (parsed) {
-      console.log('[authService.getStoredUser] Parsed user:', parsed.login);
+      logger.log('[authService.getStoredUser] Parsed user:', parsed.login);
     }
     return parsed;
   } catch (e) {
-    console.error('[authService.getStoredUser] Failed to parse user:', e);
+    logger.error('[authService.getStoredUser] Failed to parse user:', e);
     return null;
   }
 };
@@ -201,10 +215,10 @@ export const initializeDevToken = async () => {
 
     localStorage.setItem('user', JSON.stringify(mockUser));
     localStorage.setItem('auth_token', mockToken);
-    console.log('[authService] Development profile initialized');
+    logger.log('[authService] Development profile initialized');
     return null;
   } catch (error) {
-    console.error('[authService] ERROR in initializeDevToken:', error);
+    logger.error('[authService] ERROR in initializeDevToken:', error);
     return null;
   }
 };
@@ -279,7 +293,7 @@ export async function getAvailableOAuthProviders() {
     const data = await response.json();
     return data.providers || [];
   } catch (error) {
-    console.error('Error fetching OAuth providers:', error);
+    logger.error('Error fetching OAuth providers:', error);
     return [];
   }
 }
@@ -304,7 +318,7 @@ export async function getOAuthLoginURL(provider) {
     const data = await response.json();
     return data.login_url;
   } catch (error) {
-    console.error(`Error getting ${provider} login URL:`, error);
+    logger.error(`Error getting ${provider} login URL:`, error);
     throw error;
   }
 }
@@ -325,14 +339,22 @@ export async function handleOAuthCallbackNew(provider, code, state) {
 
       const mockAuth = await import('./mockAuthService');
       const mockData = await mockAuth.exchangeCodeForToken(code);
-      sessionStorage.removeItem('oauth_state');
+      authClient.clearOAuthState();
       return mockData;
     }
 
-    // Verify CSRF state
-    const storedState = sessionStorage.getItem('oauth_state');
-    if (storedState && storedState !== state) {
-      throw new Error('CSRF state mismatch - potential security breach');
+    const effectiveState = state || authClient.getOAuthState();
+    const stateValidation = authClient.validateAndConsumeOAuthState(
+      effectiveState,
+      {
+        provider,
+      }
+    );
+
+    if (!stateValidation.valid) {
+      throw new Error(
+        `CSRF validation failed: ${stateValidation.reason || 'unknown_error'}`
+      );
     }
 
     const response = await fetch(
@@ -340,7 +362,7 @@ export async function handleOAuthCallbackNew(provider, code, state) {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, state }),
+        body: JSON.stringify({ code, state: effectiveState }),
         credentials: 'include',
       }
     );
@@ -353,20 +375,17 @@ export async function handleOAuthCallbackNew(provider, code, state) {
 
     // Store user profile
     if (data.user) {
-      localStorage.setItem('user', JSON.stringify(data.user));
+      authClient.setUser(data.user);
     }
 
     // Store JWT token if provided by backend
     if (data.token) {
-      localStorage.setItem('auth_token', data.token);
+      authClient.setToken(data.token, data.expires_in);
     }
-
-    // Clear state
-    sessionStorage.removeItem('oauth_state');
 
     return data;
   } catch (error) {
-    console.error(`Error handling ${provider} callback:`, error);
+    logger.error(`Error handling ${provider} callback:`, error);
     throw error;
   }
 }
@@ -398,17 +417,17 @@ export async function validateAndGetCurrentUser() {
 
     // Store user profile
     if (data.user) {
-      localStorage.setItem('user', JSON.stringify(data.user));
+      authClient.setUser(data.user);
     }
 
     // Store JWT token if provided
     if (data.token) {
-      localStorage.setItem('auth_token', data.token);
+      authClient.setToken(data.token, data.expires_in);
     }
 
     return data.user;
   } catch (error) {
-    console.error('Error validating user:', error);
+    logger.error('Error validating user:', error);
     return null;
   }
 }

@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * useFormValidation Hook
  *
@@ -200,7 +201,7 @@ export const useFormValidation = ({
           setIsSubmitting(true);
           await onSubmit(values);
         } catch (error) {
-          console.error('Form submission error:', error);
+          logger.error('Form submission error:', error);
           setErrors((prev) => ({
             ...prev,
             _global: error.message || 'An error occurred',

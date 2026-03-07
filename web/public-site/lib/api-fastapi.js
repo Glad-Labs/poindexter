@@ -1,3 +1,4 @@
+import logger from './logger';
 /**
  * FastAPI CMS Client - Optimized for Performance
  *
@@ -9,11 +10,9 @@
  * - Production-ready caching headers
  */
 
-// API Configuration
-const FASTAPI_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  process.env.NEXT_PUBLIC_FASTAPI_URL ||
-  'http://localhost:8000';
+// API Configuration — validated centrally in url.js
+import { getAPIBaseURL } from './url';
+const FASTAPI_URL = getAPIBaseURL();
 const API_BASE = `${FASTAPI_URL}/api`;
 
 // Cache control for static content
@@ -46,7 +45,7 @@ async function fetchAPI(endpoint, options = {}) {
     return data;
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error(`[FastAPI] Error fetching ${endpoint}:`, error.message);
+      logger.error(`[FastAPI] Error fetching ${endpoint}:`, error.message);
     }
     throw error;
   }
@@ -113,7 +112,7 @@ export async function getFeaturedPost() {
     return null;
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error('[FastAPI] Error fetching featured post:', error);
+      logger.error('[FastAPI] Error fetching featured post:', error);
     }
     return null;
   }
@@ -145,7 +144,7 @@ export async function getPostBySlug(slug) {
     return null;
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error(`[FastAPI] Error fetching post ${slug}:`, error);
+      logger.error(`[FastAPI] Error fetching post ${slug}:`, error);
     }
     return null;
   }
@@ -162,7 +161,7 @@ export async function getCategories() {
     return response.data || [];
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error('[FastAPI] Error fetching categories:', error);
+      logger.error('[FastAPI] Error fetching categories:', error);
     }
     return [];
   }
@@ -178,7 +177,7 @@ export async function getTags() {
     const response = await fetchAPI('/tags');
     return response.data || [];
   } catch (error) {
-    console.error('[FastAPI] Error fetching tags:', error);
+    logger.error('[FastAPI] Error fetching tags:', error);
     return [];
   }
 }
@@ -246,7 +245,7 @@ export async function getAllPosts() {
 
     return allPosts;
   } catch (error) {
-    console.error('[FastAPI] Error fetching all posts:', error);
+    logger.error('[FastAPI] Error fetching all posts:', error);
     return [];
   }
 }
@@ -275,7 +274,7 @@ export async function getRelatedPosts(postId, tagIds = [], limit = 3) {
       .filter((post) => post.id !== postId)
       .slice(0, limit);
   } catch (error) {
-    console.error('[FastAPI] Error fetching related posts:', error);
+    logger.error('[FastAPI] Error fetching related posts:', error);
     return [];
   }
 }
@@ -298,7 +297,7 @@ export async function searchPosts(query, limit = 20) {
 
     return response.data || [];
   } catch (error) {
-    console.error('[FastAPI] Error searching posts:', error);
+    logger.error('[FastAPI] Error searching posts:', error);
     return [];
   }
 }
@@ -314,7 +313,7 @@ export async function getCMSStatus() {
     const response = await fetchAPI('/cms/status');
     return response;
   } catch (error) {
-    console.error('[FastAPI] Error checking CMS status:', error);
+    logger.error('[FastAPI] Error checking CMS status:', error);
     return { status: 'error', message: error.message };
   }
 }
@@ -330,7 +329,7 @@ export async function validateFastAPI() {
     const status = await getCMSStatus();
     return status.status === 'healthy';
   } catch (error) {
-    console.error('[FastAPI] CMS health check failed:', error);
+    logger.error('[FastAPI] CMS health check failed:', error);
     return false;
   }
 }
@@ -421,7 +420,7 @@ export async function getCurrentUser() {
     const response = await fetchAPI('/auth/me');
     return response || null;
   } catch (error) {
-    console.error('[FastAPI] Error getting current user:', error);
+    logger.error('[FastAPI] Error getting current user:', error);
     return null;
   }
 }
@@ -498,7 +497,7 @@ export async function getAvailableModels() {
     const response = await fetchAPI('/models');
     return response.data || [];
   } catch (error) {
-    console.error('[FastAPI] Error fetching models:', error);
+    logger.error('[FastAPI] Error fetching models:', error);
     return [];
   }
 }
@@ -548,7 +547,7 @@ export async function subscribeToNewsletter(data) {
 
     return await response.json();
   } catch (error) {
-    console.error('[FastAPI] Newsletter subscription error:', error.message);
+    logger.error('[FastAPI] Newsletter subscription error:', error.message);
     throw error;
   }
 }
@@ -577,7 +576,7 @@ export async function unsubscribeFromNewsletter(data) {
 
     return await response.json();
   } catch (error) {
-    console.error('[FastAPI] Newsletter unsubscribe error:', error.message);
+    logger.error('[FastAPI] Newsletter unsubscribe error:', error.message);
     throw error;
   }
 }
@@ -596,7 +595,7 @@ export async function getNewsletterSubscriberCount() {
 
     return await response.json();
   } catch (error) {
-    console.error('[FastAPI] Error fetching subscriber count:', error.message);
+    logger.error('[FastAPI] Error fetching subscriber count:', error.message);
     throw error;
   }
 }

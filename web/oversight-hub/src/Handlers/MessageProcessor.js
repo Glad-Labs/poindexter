@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * MessageProcessor.js
  *
@@ -43,9 +44,9 @@ export class MessageProcessor {
    *
    * @example
    * processor.use((message, next) => {
-   *   console.log('Processing:', message.type);
+   *   logger.log('Processing:', message.type);
    *   const result = next(message);
-   *   console.log('Completed:', result);
+   *   logger.log('Completed:', result);
    *   return result;
    * });
    */
@@ -190,13 +191,13 @@ export const loggingMiddleware = (options = {}) => {
     const startTime = performance.now();
 
     if (verbose) {
-      console.log(`${prefix} Start: ${message.type}`, message);
+      logger.log(`${prefix} Start: ${message.type}`, message);
     }
 
     const result = next(message);
 
     const duration = performance.now() - startTime;
-    console.log(
+    logger.log(
       `${prefix} Complete: ${message.type} (${duration.toFixed(2)}ms)`,
       result
     );

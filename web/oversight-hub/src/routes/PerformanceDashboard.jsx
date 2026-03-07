@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import { useState, useEffect } from 'react';
 import './PerformanceDashboard.css';
 import {
@@ -55,7 +56,7 @@ function PerformanceDashboard() {
 
         setPerformanceData(data);
       } catch (err) {
-        console.error('Error fetching performance data:', err);
+        logger.error('Error fetching performance data:', err);
         setError(
           err instanceof Error
             ? err.message

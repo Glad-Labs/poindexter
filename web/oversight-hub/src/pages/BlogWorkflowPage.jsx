@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
@@ -101,7 +102,7 @@ function BlogWorkflowPage() {
       const executions = await apiClient.listWorkflowExecutions({ limit: 10 });
       setWorkflowHistory(executions.executions || executions || []);
     } catch (err) {
-      console.error('Failed to load workflow history:', err);
+      logger.error('Failed to load workflow history:', err);
     }
   };
 
@@ -174,7 +175,7 @@ function BlogWorkflowPage() {
       setIsExecuting(true);
 
       const workflowDef = buildWorkflowDefinition();
-      console.log('Executing workflow:', workflowDef);
+      logger.log('Executing workflow:', workflowDef);
 
       const result = await apiClient.executeWorkflow(workflowDef);
       setExecutionId(result.execution_id || result.id);
@@ -204,7 +205,7 @@ function BlogWorkflowPage() {
           await loadWorkflowHistory();
         }
       } catch (err) {
-        console.error('Error polling progress:', err);
+        logger.error('Error polling progress:', err);
         // Continue polling even if there's an error
       }
     }, 2000); // Poll every 2 seconds

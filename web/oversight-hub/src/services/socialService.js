@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * socialService.js (Phase 2.3)
  *
@@ -27,7 +28,7 @@ export const getPlatforms = async () => {
     return response;
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error('Failed to fetch social platforms:', error);
+      logger.error('Failed to fetch social platforms:', error);
     }
     throw error;
   }
@@ -56,7 +57,7 @@ export const connectPlatform = async (params) => {
     return response;
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error('Failed to connect platform:', error);
+      logger.error('Failed to connect platform:', error);
     }
     throw error;
   }
@@ -83,7 +84,7 @@ export const disconnectPlatform = async (platform) => {
     return response;
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error('Failed to disconnect platform:', error);
+      logger.error('Failed to disconnect platform:', error);
     }
     throw error;
   }
@@ -119,7 +120,7 @@ export const getPosts = async (options = {}) => {
     return response;
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error('Failed to fetch social posts:', error);
+      logger.error('Failed to fetch social posts:', error);
     }
     throw error;
   }
@@ -152,7 +153,7 @@ export const createPost = async (postData) => {
     return response;
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error('Failed to create post:', error);
+      logger.error('Failed to create post:', error);
     }
     throw error;
   }
@@ -180,7 +181,7 @@ export const updatePost = async (postId, updates) => {
     return response;
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error('Failed to update post:', error);
+      logger.error('Failed to update post:', error);
     }
     throw error;
   }
@@ -207,7 +208,7 @@ export const deletePost = async (postId) => {
     return response;
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error('Failed to delete post:', error);
+      logger.error('Failed to delete post:', error);
     }
     throw error;
   }
@@ -234,7 +235,7 @@ export const getSocialAnalytics = async (range = '30d') => {
     return response;
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error('Failed to fetch social analytics:', error);
+      logger.error('Failed to fetch social analytics:', error);
     }
     throw error;
   }
@@ -261,7 +262,7 @@ export const getPostAnalytics = async (postId) => {
     return response;
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error('Failed to fetch post analytics:', error);
+      logger.error('Failed to fetch post analytics:', error);
     }
     throw error;
   }

@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * Single Post API Route Handler
  * Provides access to a specific post by slug
@@ -50,7 +51,7 @@ export async function GET(
     return NextResponse.json(post);
   } catch (error) {
     const slug = (params as any).slug || 'unknown';
-    console.error(`Error fetching post ${slug}:`, error);
+    logger.error(`Error fetching post ${slug}:`, error);
     return NextResponse.json(
       { error: 'Failed to fetch post' },
       { status: 500 }

@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import React, { useState, useEffect } from 'react';
 import './PostEditor.css';
 
@@ -54,7 +55,7 @@ function PostEditor({ post, onClose, onSave }) {
     try {
       await onSave({ ...post, ...formData });
     } catch (error) {
-      console.error('Save failed:', error);
+      logger.error('Save failed:', error);
       alert('Failed to save changes. Please try again.');
     } finally {
       setSaving(false);

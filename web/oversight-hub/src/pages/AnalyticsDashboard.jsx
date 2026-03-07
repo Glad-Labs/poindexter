@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import { useState, useEffect } from 'react';
 import {
   Box,
@@ -57,7 +58,7 @@ function AnalyticsDashboard() {
         setTaskMetrics(tasks);
         setCostBreakdown(costs);
       } catch (err) {
-        console.error('Failed to fetch analytics:', err);
+        logger.error('Failed to fetch analytics:', err);
         setError(
           err instanceof Error ? err.message : 'Failed to fetch analytics data'
         );

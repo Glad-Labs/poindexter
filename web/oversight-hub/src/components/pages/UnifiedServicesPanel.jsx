@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * Unified Services Panel (Consolidated)
  *
@@ -504,7 +505,7 @@ const UnifiedServicesPanel = () => {
       } catch (err) {
         const errorMessage = err.message || 'Failed to load services';
         setError(`Error loading services: ${errorMessage}`);
-        console.error('UnifiedServicesPanel error:', err);
+        logger.error('UnifiedServicesPanel error:', err);
       } finally {
         setLoadingServices(false);
       }
@@ -525,7 +526,7 @@ const UnifiedServicesPanel = () => {
   const loadWorkflowStudioData = async () => {
     setLoadingWorkflows(true);
     try {
-      console.log('[UnifiedServicesPanel] Loading workflow studio data...');
+      logger.log('[UnifiedServicesPanel] Loading workflow studio data...');
 
       // Load available phases
       const phasesRes = await workflowBuilderService.getAvailablePhases();
@@ -568,7 +569,7 @@ const UnifiedServicesPanel = () => {
     } catch (err) {
       const errorMsg =
         err?.message || String(err) || 'Unknown error loading workflow data';
-      console.error('[UnifiedServicesPanel] Error loading workflow data:', err);
+      logger.error('[UnifiedServicesPanel] Error loading workflow data:', err);
       setError(`Workflow Error: ${errorMsg}`);
     } finally {
       setLoadingWorkflows(false);
@@ -578,7 +579,7 @@ const UnifiedServicesPanel = () => {
   const loadWorkflowMonitorData = async () => {
     setMonitorLoading(true);
     try {
-      console.log('[UnifiedServicesPanel] Loading workflow monitor data...');
+      logger.log('[UnifiedServicesPanel] Loading workflow monitor data...');
 
       // Load execution history
       const historyRes = await workflowManagementService.getWorkflowHistory({
@@ -599,7 +600,7 @@ const UnifiedServicesPanel = () => {
     } catch (err) {
       const errorMsg =
         err?.message || String(err) || 'Unknown error loading monitor data';
-      console.error('[UnifiedServicesPanel] Error loading monitor data:', err);
+      logger.error('[UnifiedServicesPanel] Error loading monitor data:', err);
       setMonitorError(`Monitor Error: ${errorMsg}`);
     } finally {
       setMonitorLoading(false);
@@ -635,7 +636,7 @@ const UnifiedServicesPanel = () => {
 
   // Handle action execution
   const handleExecuteAction = async (serviceName) => {
-    console.log(`Execute action for service: ${serviceName}`);
+    logger.log(`Execute action for service: ${serviceName}`);
   };
 
   const handleDeleteWorkflow = async (workflowId) => {
@@ -835,12 +836,12 @@ const UnifiedServicesPanel = () => {
                                           await workflowManagementService.executeWorkflow(
                                             workflow.id
                                           );
-                                          console.log(
+                                          logger.log(
                                             'Workflow execution started:',
                                             workflow.id
                                           );
                                         } catch (err) {
-                                          console.error(
+                                          logger.error(
                                             'Failed to execute workflow:',
                                             err
                                           );
@@ -920,12 +921,12 @@ const UnifiedServicesPanel = () => {
                                   await workflowManagementService.executeWorkflow(
                                     template.id
                                   );
-                                  console.log(
+                                  logger.log(
                                     'Template execution started:',
                                     template.id
                                   );
                                 } catch (err) {
-                                  console.error(
+                                  logger.error(
                                     'Failed to execute template:',
                                     err
                                   );
@@ -1196,10 +1197,10 @@ const UnifiedServicesPanel = () => {
                 await workflowManagementService.executeWorkflow(
                   selectedTemplate.id
                 );
-                console.log('Template execution started:', selectedTemplate.id);
+                logger.log('Template execution started:', selectedTemplate.id);
                 setTemplateModalOpen(false);
               } catch (err) {
-                console.error('Failed to execute template:', err);
+                logger.error('Failed to execute template:', err);
                 setError(err.message);
               }
             }}

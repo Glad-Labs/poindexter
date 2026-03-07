@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * AuthContext - Global authentication state
  * Syncs with Zustand store to keep auth state consistent across entire app
@@ -28,7 +29,7 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const initializeAuth = async () => {
       try {
-        console.log(
+        logger.log(
           '🔐 [AuthContext] Starting authentication initialization...'
         );
         const startTime = Date.now();
@@ -42,7 +43,7 @@ export const AuthProvider = ({ children }) => {
           setError(null);
           setLoading(false);
           const elapsed = Date.now() - startTime;
-          console.log(`✅ [AuthContext] Session restored (${elapsed}ms)`);
+          logger.log(`✅ [AuthContext] Session restored (${elapsed}ms)`);
           return;
         }
 
@@ -59,9 +60,9 @@ export const AuthProvider = ({ children }) => {
         setError(null);
         setLoading(false);
         const elapsed = Date.now() - startTime;
-        console.log(`✅ [AuthContext] Initialization complete (${elapsed}ms)`);
+        logger.log(`✅ [AuthContext] Initialization complete (${elapsed}ms)`);
       } catch (err) {
-        console.error('❌ [AuthContext] Initialization error:', err);
+        logger.error('❌ [AuthContext] Initialization error:', err);
         setError(err.message);
         setStoreIsAuthenticated(false);
         setUser(null);
@@ -75,13 +76,13 @@ export const AuthProvider = ({ children }) => {
   // Logout handler - sync with both AuthContext and Zustand
   const logout = useCallback(async () => {
     try {
-      console.log('🚪 [AuthContext] Logging out...');
+      logger.log('🚪 [AuthContext] Logging out...');
       await authLogout();
       setUser(null);
       storeLogout(); // Clear Zustand store
-      console.log('✅ [AuthContext] Logout complete');
+      logger.log('✅ [AuthContext] Logout complete');
     } catch (err) {
-      console.error('❌ [AuthContext] Logout error:', err);
+      logger.error('❌ [AuthContext] Logout error:', err);
       setError(err.message);
     }
   }, [storeLogout]);
@@ -89,7 +90,7 @@ export const AuthProvider = ({ children }) => {
   // Set user after login - sync with both context and Zustand
   const setAuthUser = useCallback(
     (userData) => {
-      console.log('👤 [AuthContext] Setting user:', userData?.login);
+      logger.log('👤 [AuthContext] Setting user:', userData?.login);
       setUser(userData);
       setStoreUser(userData);
       setStoreIsAuthenticated(!!userData);
@@ -101,14 +102,14 @@ export const AuthProvider = ({ children }) => {
   const handleOAuthCallback = useCallback(
     async (provider, code, state) => {
       try {
-        console.log(
+        logger.log(
           `🔐 [AuthContext] Processing ${provider} OAuth callback...`
         );
         setLoading(true);
         const result = await handleOAuthCallbackNew(provider, code, state);
 
         if (result.user) {
-          console.log(
+          logger.log(
             `✅ [AuthContext] OAuth login successful for ${provider}`
           );
           setAuthUser(result.user);
@@ -118,7 +119,7 @@ export const AuthProvider = ({ children }) => {
           throw new Error(`No user data returned from ${provider} OAuth`);
         }
       } catch (err) {
-        console.error('❌ [AuthContext] OAuth callback error:', err);
+        logger.error('❌ [AuthContext] OAuth callback error:', err);
         setError(err.message);
         setLoading(false);
         throw err;
@@ -130,7 +131,7 @@ export const AuthProvider = ({ children }) => {
   // Validate current user token
   const validateCurrentUser = useCallback(async () => {
     try {
-      console.log('🔐 [AuthContext] Validating current user...');
+      logger.log('🔐 [AuthContext] Validating current user...');
       const user = await validateAndGetCurrentUser();
       if (user) {
         setAuthUser(user);
@@ -142,7 +143,7 @@ export const AuthProvider = ({ children }) => {
         return null;
       }
     } catch (err) {
-      console.error('❌ [AuthContext] Validation error:', err);
+      logger.error('❌ [AuthContext] Validation error:', err);
       setError(err.message);
       return null;
     }

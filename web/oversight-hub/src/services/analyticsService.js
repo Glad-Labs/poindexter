@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * analyticsService.js (Phase 2.1)
  *
@@ -27,7 +28,7 @@ export const getKPIs = async (range = '30d') => {
     }
     return response;
   } catch (error) {
-    console.error('Failed to fetch KPIs:', error);
+    logger.error('Failed to fetch KPIs:', error);
     throw error;
   }
 };
@@ -52,7 +53,7 @@ export const getTaskMetrics = async (range = '30d') => {
     }
     return response;
   } catch (error) {
-    console.error('Failed to fetch task metrics:', error);
+    logger.error('Failed to fetch task metrics:', error);
     throw error;
   }
 };
@@ -77,7 +78,7 @@ export const getCostBreakdown = async (range = '30d') => {
     }
     return response;
   } catch (error) {
-    console.error('Failed to fetch cost breakdown:', error);
+    logger.error('Failed to fetch cost breakdown:', error);
     throw error;
   }
 };
@@ -102,7 +103,7 @@ export const getContentMetrics = async (range = '30d') => {
     }
     return response;
   } catch (error) {
-    console.error('Failed to fetch content metrics:', error);
+    logger.error('Failed to fetch content metrics:', error);
     throw error;
   }
 };
@@ -126,7 +127,7 @@ export const getSystemMetrics = async () => {
     }
     return response;
   } catch (error) {
-    console.error('Failed to fetch system metrics:', error);
+    logger.error('Failed to fetch system metrics:', error);
     throw error;
   }
 };
@@ -151,7 +152,7 @@ export const getAgentMetrics = async (range = '30d') => {
     }
     return response;
   } catch (error) {
-    console.error('Failed to fetch agent metrics:', error);
+    logger.error('Failed to fetch agent metrics:', error);
     throw error;
   }
 };
@@ -176,7 +177,7 @@ export const getQualityMetrics = async (range = '30d') => {
     }
     return response;
   } catch (error) {
-    console.error('Failed to fetch quality metrics:', error);
+    logger.error('Failed to fetch quality metrics:', error);
     throw error;
   }
 };

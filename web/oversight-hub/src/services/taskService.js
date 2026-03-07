@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * Task Service - Uses FastAPI backend (PostgreSQL)
  *
@@ -187,7 +188,7 @@ export const revalidatePublicSite = async (paths = []) => {
     });
 
     if (!response.ok) {
-      console.warn(
+      logger.warn(
         `⚠️  Frontend revalidation returned status ${response.status}`
       );
       // Don't throw - revalidation failure shouldn't break the publish flow
@@ -195,10 +196,10 @@ export const revalidatePublicSite = async (paths = []) => {
     }
 
     const data = await response.json();
-    console.log('✅ Frontend cache revalidated:', data);
+    logger.log('✅ Frontend cache revalidated:', data);
     return data;
   } catch (error) {
-    console.warn('⚠️  Could not trigger frontend revalidation:', error.message);
+    logger.warn('⚠️  Could not trigger frontend revalidation:', error.message);
     // Don't throw - publish should succeed even if revalidation fails
     return { success: false, error: error.message };
   }
@@ -232,7 +233,7 @@ export const publishTask = async (taskId) => {
   if (result && typeof result === 'object') {
     // Revalidate homepage and archive pages
     revalidatePublicSite(['/', '/archive']).catch((err) => {
-      console.warn('⚠️ Public site revalidation failed:', err);
+      logger.warn('⚠️ Public site revalidation failed:', err);
       // Track this as a metric but don't block the response
     });
   }

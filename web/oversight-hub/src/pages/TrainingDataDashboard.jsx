@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   AlertCircle,
@@ -49,7 +50,7 @@ const TrainingDataDashboard = () => {
       );
       setStats(response);
     } catch (err) {
-      console.error('Error loading stats:', err);
+      logger.error('Error loading stats:', err);
     }
   }, [filters]);
 
@@ -61,7 +62,7 @@ const TrainingDataDashboard = () => {
       );
       setDatasets(response.datasets || []);
     } catch (err) {
-      console.error('Error loading datasets:', err);
+      logger.error('Error loading datasets:', err);
     }
   }, []);
 
@@ -73,7 +74,7 @@ const TrainingDataDashboard = () => {
       );
       setTrainingJobs(response.jobs || []);
     } catch (err) {
-      console.error('Error loading jobs:', err);
+      logger.error('Error loading jobs:', err);
     }
   }, []);
 

@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * TaskMetadataDisplay - Display task metadata in grid format
  *
@@ -42,7 +43,7 @@ const TaskMetadataDisplay = ({ task }) => {
     try {
       parsedTaskMeta = JSON.parse(taskMeta);
     } catch (error) {
-      console.error('Failed to parse task metadata:', error);
+      logger.error('Failed to parse task metadata:', error);
       parsedTaskMeta = {};
     }
   }
@@ -53,7 +54,7 @@ const TaskMetadataDisplay = ({ task }) => {
     try {
       parsedResult = JSON.parse(result);
     } catch (error) {
-      console.error('Failed to parse task result:', error);
+      logger.error('Failed to parse task result:', error);
       parsedResult = {};
     }
   }
@@ -105,17 +106,17 @@ const TaskMetadataDisplay = ({ task }) => {
     executionTime = `${diffMins} min${diffMins !== 1 ? 's' : ''}`;
   }
 
-  // 🐛 DEBUG: Log task data to see what's actually available
-  console.group('🐛 TaskMetadataDisplay Debug - Task:', task.id || 'unknown');
-  console.log('model_used (top-level):', task.model_used);
-  console.log('selected_model (top-level):', task.selected_model);
-  console.log('model (top-level):', task.model);
-  console.log('target_length (top-level):', task.target_length);
-  console.log('parsedResult:', parsedResult);
-  console.log('parsedTaskMeta:', parsedTaskMeta);
-  console.log('extractedMetadata:', extractedMetadata);
-  console.log('Full task object:', task);
-  console.groupEnd();
+  logger.debug('TaskMetadataDisplay task data', {
+    id: task.id,
+    model_used: task.model_used,
+    selected_model: task.selected_model,
+    model: task.model,
+    target_length: task.target_length,
+    parsedResult,
+    parsedTaskMeta,
+    extractedMetadata,
+    task,
+  });
 
   const metadataItems = [
     {

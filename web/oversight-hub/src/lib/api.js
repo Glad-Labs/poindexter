@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import axios from 'axios';
 import { getApiUrl } from '../config/apiConfig';
 
@@ -21,7 +22,7 @@ export const submitOrchestratorCommand = async (payload) => {
     const response = await api.post('/api/orchestrator/process', payload);
     return response.data;
   } catch (error) {
-    console.error('Error submitting orchestrator command:', error);
+    logger.error('Error submitting orchestrator command:', error);
     throw error;
   }
 };
@@ -36,7 +37,7 @@ export const getOrchestratorStatus = async (executionId) => {
     const response = await api.get(`/api/orchestrator/status/${executionId}`);
     return response.data;
   } catch (error) {
-    console.error('Error getting orchestrator status:', error);
+    logger.error('Error getting orchestrator status:', error);
     throw error;
   }
 };
@@ -55,7 +56,7 @@ export const approveOrchestratorResult = async (executionId, feedback = {}) => {
     );
     return response.data;
   } catch (error) {
-    console.error('Error approving orchestrator result:', error);
+    logger.error('Error approving orchestrator result:', error);
     throw error;
   }
 };
@@ -73,7 +74,7 @@ export const rejectOrchestratorResult = async (executionId, feedback = {}) => {
     });
     return response.data;
   } catch (error) {
-    console.error('Error rejecting orchestrator result:', error);
+    logger.error('Error rejecting orchestrator result:', error);
     throw error;
   }
 };
@@ -92,7 +93,7 @@ export const exportTrainingData = async (executionId, options = {}) => {
     });
     return response.data;
   } catch (error) {
-    console.error('Error exporting training data:', error);
+    logger.error('Error exporting training data:', error);
     throw error;
   }
 };
@@ -124,7 +125,7 @@ export const connectToStatusUpdates = (
     ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
-      console.log(`Connected to status updates for execution ${executionId}`);
+      logger.log(`Connected to status updates for execution ${executionId}`);
     };
 
     ws.onmessage = (event) => {
@@ -134,7 +135,7 @@ export const connectToStatusUpdates = (
           onUpdate(data);
         }
       } catch (parseError) {
-        console.error('Error parsing WebSocket message:', parseError);
+        logger.error('Error parsing WebSocket message:', parseError);
         if (onError) {
           onError(parseError);
         }
@@ -142,19 +143,19 @@ export const connectToStatusUpdates = (
     };
 
     ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
+      logger.error('WebSocket error:', error);
       if (onError) {
         onError(error);
       }
     };
 
     ws.onclose = () => {
-      console.log(
+      logger.log(
         `Disconnected from status updates for execution ${executionId}`
       );
     };
   } catch (error) {
-    console.error('Error establishing WebSocket connection:', error);
+    logger.error('Error establishing WebSocket connection:', error);
     if (onError) {
       onError(error);
     }
@@ -195,7 +196,7 @@ export const pollOrchestratorStatus = (
         clearInterval(pollInterval);
       }
     } catch (error) {
-      console.error('Error polling orchestrator status:', error);
+      logger.error('Error polling orchestrator status:', error);
     }
   }, intervalMs);
 

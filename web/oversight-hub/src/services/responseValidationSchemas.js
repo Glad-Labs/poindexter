@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * API Response Validation Schemas
  *
@@ -215,7 +216,7 @@ export const validateSettings = (data) => {
   Object.keys(data).forEach((key) => {
     if (!validKeys.includes(key)) {
       // Allow unknown keys for extensibility, but log warning
-      console.warn(`Unknown settings key: ${key}`);
+      logger.warn(`Unknown settings key: ${key}`);
     }
   });
 
@@ -250,7 +251,7 @@ export const safeValidate = (validator, data, label = 'Response') => {
   try {
     return validator(data);
   } catch (err) {
-    console.error(`${label} validation failed:`, err.message);
+    logger.error(`${label} validation failed:`, err.message);
     return null;
   }
 };

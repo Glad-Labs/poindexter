@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import React, { useState, useEffect } from 'react';
 import {
   Box,
@@ -86,7 +87,7 @@ export const ModelPreferences = () => {
         })(),
       });
     } catch (err) {
-      console.error('Failed to load model preferences:', err);
+      logger.error('Failed to load model preferences:', err);
       setError(`Failed to load settings: ${err.message}`);
     } finally {
       setLoading(false);

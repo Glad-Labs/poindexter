@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * capabilityService.js (Phase 3.1)
  *
@@ -25,7 +26,7 @@ export const getServiceRegistry = async () => {
     }
     return response;
   } catch (error) {
-    console.error('Failed to fetch service registry:', error);
+    logger.error('Failed to fetch service registry:', error);
     throw error;
   }
 };
@@ -49,7 +50,7 @@ export const listServices = async () => {
     }
     return response.services || [];
   } catch (error) {
-    console.error('Failed to list services:', error);
+    logger.error('Failed to list services:', error);
     throw error;
   }
 };
@@ -74,7 +75,7 @@ export const getServiceMetadata = async (serviceName) => {
     }
     return response;
   } catch (error) {
-    console.error(
+    logger.error(
       `Failed to fetch metadata for service ${serviceName}:`,
       error
     );

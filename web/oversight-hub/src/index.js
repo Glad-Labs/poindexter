@@ -2,6 +2,9 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
+// Eagerly validate API URL config at startup — throws before any component renders
+import { getApiUrl } from './config/apiConfig';
+getApiUrl();
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 

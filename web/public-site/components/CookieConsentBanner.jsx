@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * Cookie Consent Banner
  * Lightweight GDPR/CCPA compliant cookie consent implementation
@@ -36,7 +37,7 @@ export default function CookieConsentBanner() {
         setTempConsent(parsed);
         setIsVisible(false);
       } catch (_e) {
-        console.error('Error parsing saved consent');
+        logger.error('Error parsing saved consent');
         setIsVisible(true);
       }
     } else {
@@ -111,7 +112,7 @@ export default function CookieConsentBanner() {
       window.__cookieConsent = newConsent;
 
       // Log consent choice
-      console.log('🍪 Cookie consent saved:', newConsent);
+      logger.log('🍪 Cookie consent saved:', newConsent);
 
       // If analytics enabled, load Google Analytics
       if (newConsent.analytics) {
@@ -123,7 +124,7 @@ export default function CookieConsentBanner() {
         try {
           window.adsbygoogle.push({});
         } catch {
-          console.log('AdSense not yet loaded');
+          logger.log('AdSense not yet loaded');
         }
       }
     }
@@ -304,11 +305,11 @@ function loadGoogleAnalytics() {
 
   const gaId = process.env.NEXT_PUBLIC_GA_ID || process.env.NEXT_PUBLIC_GA4_ID;
   if (!gaId) {
-    console.log('No GA ID found');
+    logger.log('No GA ID found');
     return;
   }
 
-  console.log('📊 Loading Google Analytics:', gaId);
+  logger.log('📊 Loading Google Analytics:', gaId);
 
   const script = document.createElement('script');
   script.src = `https://www.googletagmanager.com/gtag/js?id=${gaId}`;
@@ -321,7 +322,7 @@ function loadGoogleAnalytics() {
     window.gtag = gtag;
     gtag('js', new Date());
     gtag('config', gaId);
-    console.log('✅ Google Analytics loaded');
+    logger.log('✅ Google Analytics loaded');
   };
   document.head.appendChild(script);
 }

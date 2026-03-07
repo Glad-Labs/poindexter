@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * mediaService.js (Phase 2.2)
  *
@@ -31,7 +32,7 @@ export const generateImages = async (params) => {
     }
     return response;
   } catch (error) {
-    console.error('Failed to generate image:', error);
+    logger.error('Failed to generate image:', error);
     throw error;
   }
 };
@@ -65,7 +66,7 @@ export const listMedia = async (options = {}) => {
     }
     return response;
   } catch (error) {
-    console.error('Failed to list media:', error);
+    logger.error('Failed to list media:', error);
     throw error;
   }
 };
@@ -89,7 +90,7 @@ export const getMediaHealth = async () => {
     }
     return response;
   } catch (error) {
-    console.error('Failed to check media health:', error);
+    logger.error('Failed to check media health:', error);
     throw error;
   }
 };
@@ -114,7 +115,7 @@ export const deleteMedia = async (mediaId) => {
     }
     return response;
   } catch (error) {
-    console.error('Failed to delete media:', error);
+    logger.error('Failed to delete media:', error);
     throw error;
   }
 };
@@ -139,7 +140,7 @@ export const getMediaMetrics = async (range = '30d') => {
     }
     return response;
   } catch (error) {
-    console.error('Failed to fetch media metrics:', error);
+    logger.error('Failed to fetch media metrics:', error);
     throw error;
   }
 };

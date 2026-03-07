@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import React, { useEffect } from 'react';
 import { BrowserRouter as Router, useLocation } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
@@ -58,7 +59,7 @@ const App = () => {
   useEffect(() => {
     // Handle unhandled promise rejections
     const handleUnhandledRejection = (event) => {
-      console.error('Unhandled promise rejection:', event.reason);
+      logger.error('Unhandled promise rejection:', event.reason);
       // You can optionally send to error tracking service here (e.g., Sentry)
     };
 

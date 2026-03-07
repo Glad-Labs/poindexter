@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import React, { useState, useEffect } from 'react';
 import {
   Container,
@@ -58,7 +59,7 @@ function Settings() {
         });
       }
     } catch (err) {
-      console.error('Failed to load settings:', err);
+      logger.error('Failed to load settings:', err);
       setError(`Failed to load settings: ${err.message}`);
     } finally {
       setLoading(false);

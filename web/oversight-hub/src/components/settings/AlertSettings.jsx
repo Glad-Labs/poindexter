@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import React, { useState, useEffect } from 'react';
 import {
   Box,
@@ -85,7 +86,7 @@ export const AlertSettings = () => {
         notificationThreshold: parseFloat(notifThreshold?.value || '5') || 5,
       });
     } catch (err) {
-      console.error('Failed to load alert settings:', err);
+      logger.error('Failed to load alert settings:', err);
       setError(`Failed to load settings: ${err.message}`);
     } finally {
       setLoading(false);

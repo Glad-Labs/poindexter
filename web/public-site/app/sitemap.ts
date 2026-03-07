@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import type { MetadataRoute } from 'next';
 
 /**
@@ -39,14 +40,14 @@ async function fetchPublishedContent() {
     new URL(FASTAPI_URL);
     isValidUrl = true;
   } catch {
-    console.warn(
+    logger.warn(
       'Invalid NEXT_PUBLIC_FASTAPI_URL during build. Using static fallback.'
     );
   }
 
   // If URL is invalid or not set, return empty results (use static pages only)
   if (!isValidUrl || FASTAPI_URL === 'http://localhost:8000') {
-    console.log(
+    logger.log(
       'NEXT_PUBLIC_FASTAPI_URL not properly configured for Vercel build. Skipping dynamic content fetch.'
     );
     return { allPosts: [], allCategories: [], allTags: [] };
@@ -104,7 +105,7 @@ async function fetchPublishedContent() {
 
     return { allPosts, allCategories, allTags };
   } catch (error) {
-    console.error('Error fetching content for sitemap:', error);
+    logger.error('Error fetching content for sitemap:', error);
     return { allPosts: [], allCategories: [], allTags: [] };
   }
 }

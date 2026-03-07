@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import Link from 'next/link';
 import Image from 'next/image';
 
@@ -27,12 +28,12 @@ async function getPosts() {
       !FASTAPI_URL.startsWith('http://') &&
       !FASTAPI_URL.startsWith('https://')
     ) {
-      console.warn('Invalid NEXT_PUBLIC_API_BASE_URL, using static fallback');
+      logger.warn('Invalid NEXT_PUBLIC_API_BASE_URL, using static fallback');
       return [];
     }
 
     const url = `${FASTAPI_URL}/api/posts?skip=0&limit=20&published_only=true`;
-    console.log('📡 Fetching posts from:', url);
+    logger.log('📡 Fetching posts from:', url);
 
     const response = await fetch(url, {
       // ISR: Revalidate every 1 hour (3600 seconds) - much faster than 24 hours for development
@@ -44,21 +45,21 @@ async function getPosts() {
     });
 
     if (!response.ok) {
-      console.error(
+      logger.error(
         `❌ Failed to fetch posts: ${response.status} ${response.statusText}`
       );
       return [];
     }
 
     const data = await response.json();
-    console.log(
+    logger.log(
       '✅ Posts fetched successfully, got',
       data.data?.length || 0,
       'posts'
     );
     return data.data || [];
   } catch (error) {
-    console.error('❌ Error fetching posts for homepage:', error.message);
+    logger.error('❌ Error fetching posts for homepage:', error.message);
     return [];
   }
 }

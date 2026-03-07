@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * Refactored API Client for Oversight Hub
  * Matches new FastAPI endpoint structure
@@ -86,7 +87,7 @@ export const listTasks = async (skip = 0, limit = 20, status = null) => {
     const response = await apiClient.get(`/api/tasks?${params.toString()}`);
     return response.data;
   } catch (error) {
-    console.error('Error listing tasks:', error);
+    logger.error('Error listing tasks:', error);
     throw error;
   }
 };
@@ -105,7 +106,7 @@ export const createTask = async (taskData) => {
     const response = await apiClient.post('/api/tasks', taskData);
     return response.data;
   } catch (error) {
-    console.error('Error creating task:', error);
+    logger.error('Error creating task:', error);
     throw error;
   }
 };
@@ -120,7 +121,7 @@ export const getTask = async (taskId) => {
     const response = await apiClient.get(`/api/tasks/${taskId}`);
     return response.data;
   } catch (error) {
-    console.error(`Error getting task ${taskId}:`, error);
+    logger.error(`Error getting task ${taskId}:`, error);
     throw error;
   }
 };
@@ -138,7 +139,7 @@ export const updateTask = async (taskId, updates) => {
     const response = await apiClient.patch(`/api/tasks/${taskId}`, updates);
     return response.data;
   } catch (error) {
-    console.error(`Error updating task ${taskId}:`, error);
+    logger.error(`Error updating task ${taskId}:`, error);
     throw error;
   }
 };
@@ -192,7 +193,7 @@ export const listPosts = async (
     });
     return response.data;
   } catch (error) {
-    console.error('Error listing posts:', error);
+    logger.error('Error listing posts:', error);
     throw error;
   }
 };
@@ -218,7 +219,7 @@ export const createPost = async (postData) => {
     const response = await apiClient.post('/api/posts', postData);
     return response.data;
   } catch (error) {
-    console.error('Error creating post:', error);
+    logger.error('Error creating post:', error);
     throw error;
   }
 };
@@ -233,7 +234,7 @@ export const getPost = async (postId) => {
     const response = await apiClient.get(`/api/posts/${postId}`);
     return response.data;
   } catch (error) {
-    console.error(`Error getting post ${postId}:`, error);
+    logger.error(`Error getting post ${postId}:`, error);
     throw error;
   }
 };
@@ -250,7 +251,7 @@ export const getPostBySlug = async (slug) => {
     });
     return response.data?.data?.[0] || null;
   } catch (error) {
-    console.error(`Error getting post by slug ${slug}:`, error);
+    logger.error(`Error getting post by slug ${slug}:`, error);
     throw error;
   }
 };
@@ -266,7 +267,7 @@ export const updatePost = async (postId, updates) => {
     const response = await apiClient.patch(`/api/posts/${postId}`, updates);
     return response.data;
   } catch (error) {
-    console.error(`Error updating post ${postId}:`, error);
+    logger.error(`Error updating post ${postId}:`, error);
     throw error;
   }
 };
@@ -302,7 +303,7 @@ export const deletePost = async (postId) => {
     const response = await apiClient.delete(`/api/posts/${postId}`);
     return response.data;
   } catch (error) {
-    console.error(`Error deleting post ${postId}:`, error);
+    logger.error(`Error deleting post ${postId}:`, error);
     throw error;
   }
 };
@@ -320,7 +321,7 @@ export const listCategories = async () => {
     const response = await apiClient.get('/api/categories');
     return response.data;
   } catch (error) {
-    console.error('Error listing categories:', error);
+    logger.error('Error listing categories:', error);
     throw error;
   }
 };
@@ -334,7 +335,7 @@ export const listTags = async () => {
     const response = await apiClient.get('/api/tags');
     return response.data;
   } catch (error) {
-    console.error('Error listing tags:', error);
+    logger.error('Error listing tags:', error);
     throw error;
   }
 };
@@ -352,7 +353,7 @@ export const getHealth = async () => {
     const response = await apiClient.get('/api/health');
     return response.data;
   } catch (error) {
-    console.error('Error getting health status:', error);
+    logger.error('Error getting health status:', error);
     throw error;
   }
 };
@@ -366,7 +367,7 @@ export const getMetrics = async () => {
     const response = await apiClient.get('/api/metrics');
     return response.data;
   } catch (error) {
-    console.error('Error getting metrics:', error);
+    logger.error('Error getting metrics:', error);
     throw error;
   }
 };
@@ -380,7 +381,7 @@ export const getTaskMetrics = async () => {
     const response = await apiClient.get('/api/tasks/metrics');
     return response.data;
   } catch (error) {
-    console.error('Error getting task metrics:', error);
+    logger.error('Error getting task metrics:', error);
     throw error;
   }
 };
@@ -394,7 +395,7 @@ export const getContentMetrics = async () => {
     const response = await apiClient.get('/api/metrics');
     return response.data;
   } catch (error) {
-    console.error('Error getting metrics:', error);
+    logger.error('Error getting metrics:', error);
     throw error;
   }
 };
@@ -412,7 +413,7 @@ export const listModels = async () => {
     const response = await apiClient.get('/api/models');
     return response.data;
   } catch (error) {
-    console.error('Error listing models:', error);
+    logger.error('Error listing models:', error);
     throw error;
   }
 };
@@ -431,7 +432,7 @@ export const testModel = async (provider, model) => {
     });
     return response.data;
   } catch (error) {
-    console.error(`Error testing model ${provider}/${model}:`, error);
+    logger.error(`Error testing model ${provider}/${model}:`, error);
     throw error;
   }
 };
@@ -445,7 +446,7 @@ export const getModelStatus = async () => {
     const response = await apiClient.get('/api/models/status');
     return response.data;
   } catch (error) {
-    console.error('Error getting model status:', error);
+    logger.error('Error getting model status:', error);
     throw error;
   }
 };
@@ -464,7 +465,7 @@ export const generateContent = async (taskId) => {
     const response = await apiClient.post(`/api/tasks/${taskId}/generate`);
     return response.data;
   } catch (error) {
-    console.error(`Error generating content for task ${taskId}:`, error);
+    logger.error(`Error generating content for task ${taskId}:`, error);
     throw error;
   }
 };
@@ -479,7 +480,7 @@ export const getTaskResult = async (taskId) => {
     const response = await apiClient.get(`/api/tasks/${taskId}/result`);
     return response.data;
   } catch (error) {
-    console.error(`Error getting task result ${taskId}:`, error);
+    logger.error(`Error getting task result ${taskId}:`, error);
     throw error;
   }
 };
@@ -494,7 +495,7 @@ export const previewContent = async (taskId) => {
     const response = await apiClient.get(`/api/tasks/${taskId}/preview`);
     return response.data;
   } catch (error) {
-    console.error(`Error previewing content for task ${taskId}:`, error);
+    logger.error(`Error previewing content for task ${taskId}:`, error);
     throw error;
   }
 };
@@ -513,7 +514,7 @@ export const publishTaskAsPost = async (taskId, postData = {}) => {
     );
     return response.data;
   } catch (error) {
-    console.error(`Error publishing task ${taskId} as post:`, error);
+    logger.error(`Error publishing task ${taskId} as post:`, error);
     throw error;
   }
 };
@@ -532,7 +533,7 @@ export const getTasksBatch = async (taskIds) => {
     const response = await apiClient.post('/api/tasks/batch', { ids: taskIds });
     return response.data;
   } catch (error) {
-    console.error('Error getting tasks batch:', error);
+    logger.error('Error getting tasks batch:', error);
     throw error;
   }
 };
@@ -551,7 +552,7 @@ export const exportTasks = async (filters = {}, format = 'csv') => {
     });
     return response.data;
   } catch (error) {
-    console.error('Error exporting tasks:', error);
+    logger.error('Error exporting tasks:', error);
     throw error;
   }
 };

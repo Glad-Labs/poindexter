@@ -1,3 +1,4 @@
+import logger from './logger';
 import matter from 'gray-matter';
 
 /**
@@ -38,7 +39,7 @@ export function formatDate(dateString) {
     });
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error('Date formatting error:', error);
+      logger.error('Date formatting error:', error);
     }
     return '';
   }
@@ -62,7 +63,7 @@ export function formatDateISO(dateString) {
     return date.toISOString().split('T')[0];
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error('ISO date formatting error:', error);
+      logger.error('ISO date formatting error:', error);
     }
     return '';
   }
@@ -126,7 +127,7 @@ export function formatDateRelative(dateString) {
     return `${years} year${years > 1 ? 's' : ''} ago`;
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error('Relative date formatting error:', error);
+      logger.error('Relative date formatting error:', error);
     }
     return '';
   }
@@ -251,7 +252,7 @@ export function parseFrontmatter(markdownContent) {
     return { frontmatter: data, content };
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error('Frontmatter parsing error:', error);
+      logger.error('Frontmatter parsing error:', error);
     }
     return { frontmatter: {}, content: markdownContent };
   }

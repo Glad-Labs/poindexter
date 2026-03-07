@@ -8,7 +8,10 @@ Workflow: [blog_generate_content] → [blog_quality_evaluation] → [blog_search
 
 import asyncio
 import logging
+import pytest
 from typing import Dict, Any
+
+pytestmark = pytest.mark.unit
 
 # Setup logging
 logging.basicConfig(

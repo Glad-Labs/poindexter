@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * Phase 2: AdSense Component
  *
@@ -31,14 +32,14 @@ export default function AdSenseScript() {
       src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${adSenseId}`}
       strategy="afterInteractive"
       onLoad={() => {
-        console.log('[AdSense] Script loaded successfully');
+        logger.log('[AdSense] Script loaded successfully');
         // Push any queued ads
         if (window.adsbygoogle) {
           window.adsbygoogle.push({});
         }
       }}
       onError={() => {
-        console.error('[AdSense] Failed to load script');
+        logger.error('[AdSense] Failed to load script');
       }}
     />
   );

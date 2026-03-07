@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import React, { useState, useEffect } from 'react';
 import {
   Box,
@@ -80,7 +81,7 @@ const CostMetricsDashboard = () => {
       setLastUpdated(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch metrics');
-      console.error('Error fetching cost metrics:', err);
+      logger.error('Error fetching cost metrics:', err);
     } finally {
       setLoading(false);
     }

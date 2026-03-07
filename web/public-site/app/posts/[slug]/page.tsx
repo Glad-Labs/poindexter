@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -62,7 +63,7 @@ async function getPost(slug: string): Promise<Post | null> {
       if (response.status === 404) {
         return null;
       }
-      console.error(`Failed to fetch post: ${response.status}`);
+      logger.error(`Failed to fetch post: ${response.status}`);
       return null;
     }
 
@@ -71,7 +72,7 @@ async function getPost(slug: string): Promise<Post | null> {
 
     return post || null;
   } catch (error) {
-    console.error(`Error fetching post "${slug}":`, error);
+    logger.error(`Error fetching post "${slug}":`, error);
     return null;
   }
 }

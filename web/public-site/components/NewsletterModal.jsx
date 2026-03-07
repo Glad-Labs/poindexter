@@ -1,4 +1,5 @@
 'use client';
+import logger from '@/lib/logger';
 
 import { useState, useRef, useEffect } from 'react';
 import { subscribeToNewsletter } from '../lib/api-fastapi';
@@ -101,7 +102,7 @@ const NewsletterModal = ({ isOpen, onClose }) => {
         onClose();
       }, 2000);
     } catch (error) {
-      console.error('Newsletter signup error:', error);
+      logger.error('Newsletter signup error:', error);
       setMessage({
         type: 'error',
         text: error.message || 'Failed to subscribe. Please try again.',

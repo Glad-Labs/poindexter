@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
@@ -39,7 +40,7 @@ async function getCategory(slug: string): Promise<Category | null> {
     const data = await response.json();
     return data.data || data;
   } catch (error) {
-    console.error(`Error fetching category "${slug}":`, error);
+    logger.error(`Error fetching category "${slug}":`, error);
     return null;
   }
 }
@@ -60,7 +61,7 @@ async function getCategoryPosts(categoryId: string): Promise<Post[]> {
     const data = await response.json();
     return data.items || data.data || [];
   } catch (error) {
-    console.error(`Error fetching posts for category "${categoryId}":`, error);
+    logger.error(`Error fetching posts for category "${categoryId}":`, error);
     return [];
   }
 }

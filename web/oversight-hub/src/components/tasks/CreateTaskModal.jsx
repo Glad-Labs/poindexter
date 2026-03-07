@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import React, { useState, useCallback } from 'react';
 import { createTask, makeRequest } from '../../services/cofounderAgentClient';
 import ModelSelectionPanel from '../ModelSelectionPanel';
@@ -234,8 +235,8 @@ const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
       }
     });
     
-    console.log('📝 [CreateTaskModal] Task type selected:', type);
-    console.log('📝 [CreateTaskModal] Default data initialized:', defaultData);
+    logger.log('📝 [CreateTaskModal] Task type selected:', type);
+    logger.log('📝 [CreateTaskModal] Default data initialized:', defaultData);
     
     setFormData(defaultData);
     setSelectedWritingStyleId(null); // Reset writing style when changing task type
@@ -291,7 +292,7 @@ const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
 
       if (taskType === 'image_generation') {
         // 🖼️ Handle image generation task
-        console.log('🖼️ Generating images with:', formData);
+        logger.log('🖼️ Generating images with:', formData);
 
         // Determine which image sources to try based on user selection
         const usePexels =
@@ -332,7 +333,7 @@ const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
           throw new Error(imageResult.message || 'Image generation failed');
         }
 
-        console.log('✅ Image generated:', imageResult);
+        logger.log('✅ Image generated:', imageResult);
 
         // Create task record with image results
         taskPayload = {
@@ -365,8 +366,8 @@ const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
 
         // 🔍 CRITICAL: Don't use fallback defaults - let Pydantic schema handle defaults
         // If user didn't select style/tone, form validation should have caught it
-        console.log('📤 [CreateTaskModal] Form data before payload:', formData);
-        console.log('📤 [CreateTaskModal] Model selections:', modelSelection);
+        logger.log('📤 [CreateTaskModal] Form data before payload:', formData);
+        logger.log('📤 [CreateTaskModal] Model selections:', modelSelection);
 
         taskPayload = {
           task_type: 'blog_post',
@@ -400,11 +401,11 @@ const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
           },
         };
 
-        console.log('📤 [CreateTaskModal] Final payload:', taskPayload);
+        logger.log('📤 [CreateTaskModal] Final payload:', taskPayload);
       } else {
         // Use generic task endpoint for other types
         // Generic task payload - also remove hardcoded fallbacks
-        console.log('📤 [CreateTaskModal] Generic task - Form data:', formData);
+        logger.log('📤 [CreateTaskModal] Generic task - Form data:', formData);
 
         taskPayload = {
           task_type: taskType || 'blog_post',
@@ -424,14 +425,14 @@ const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
           },
         };
 
-        console.log('📤 [CreateTaskModal] Generic task payload:', taskPayload);
+        logger.log('📤 [CreateTaskModal] Generic task payload:', taskPayload);
       }
 
-      console.log('📤 Creating task:', taskPayload);
+      logger.log('📤 Creating task:', taskPayload);
 
       // ✅ Use API client instead of hardcoded fetch
       const result = await createTask(taskPayload);
-      console.log('✅ Task created successfully:', result);
+      logger.log('✅ Task created successfully:', result);
 
       // ✅ Validate response has required fields
       if (!result || !result.id) {
@@ -472,7 +473,7 @@ const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
       }
 
       setError(`Failed to create task: ${errorMessage}`);
-      console.error('Task creation error:', {
+      logger.error('Task creation error:', {
         message: errorMessage,
         status: err?.status,
         response: err?.response,

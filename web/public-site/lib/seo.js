@@ -1,3 +1,4 @@
+import logger from './logger';
 /**
  * SEO Utilities for Glad Labs
  * Helpers for meta tags, Open Graph, Twitter Cards, and more
@@ -265,7 +266,7 @@ export function isValidURL(url) {
     return true;
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error('Invalid URL:', url, error);
+      logger.error('Invalid URL:', url, error);
     }
     return false;
   }

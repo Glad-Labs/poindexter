@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
@@ -35,7 +36,7 @@ async function getTagPosts(tag: string): Promise<Post[]> {
     const data = await response.json();
     return data.items || data.data || [];
   } catch (error) {
-    console.error(`Error fetching posts for tag "${tag}":`, error);
+    logger.error(`Error fetching posts for tag "${tag}":`, error);
     return [];
   }
 }

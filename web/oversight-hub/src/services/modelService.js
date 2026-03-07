@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * Model Management Service
  *
@@ -27,7 +28,7 @@ class ModelService {
 
       if (!response.ok) {
         if (process.env.NODE_ENV !== 'production') {
-          console.warn('Could not fetch available models, using defaults');
+          logger.warn('Could not fetch available models, using defaults');
         }
         return this.getDefaultModels();
       }
@@ -37,7 +38,7 @@ class ModelService {
       return this.models;
     } catch (error) {
       if (process.env.NODE_ENV !== 'production') {
-        console.warn('Error fetching models:', error);
+        logger.warn('Error fetching models:', error);
       }
       return this.getDefaultModels();
     }
@@ -108,7 +109,7 @@ class ModelService {
       return await response.json();
     } catch (error) {
       if (process.env.NODE_ENV !== 'production') {
-        console.warn('Error fetching provider status:', error);
+        logger.warn('Error fetching provider status:', error);
       }
       return this.getDefaultStatus();
     }

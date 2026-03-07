@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * Cofounder Agent API Client - Cookie Session Auth
  *
@@ -101,7 +102,7 @@ export async function makeRequest(
   try {
     const url = `${API_BASE_URL}${endpoint}`;
     if (process.env.NODE_ENV === 'development') {
-      console.debug(
+      logger.debug(
         `[cofounderAgentClient] ${method} ${endpoint} (timeout: ${timeout}ms)`
       );
     }
@@ -126,7 +127,7 @@ export async function makeRequest(
       clearTimeout(timeoutId);
       const duration_ms = Math.round(performance.now() - startTime);
       if (process.env.NODE_ENV === 'development') {
-        console.debug(
+        logger.debug(
           `[cofounderAgentClient] ${method} ${endpoint} completed in ${duration_ms}ms, status: ${response.status}`
         );
       }
@@ -169,7 +170,7 @@ export async function makeRequest(
         collectMetric(endpoint, method, response.status, duration_ms, false);
 
         if (!suppressErrorLog && process.env.NODE_ENV === 'development') {
-          console.error('API error response:', {
+          logger.error('API error response:', {
             status: response.status,
             message: errorMessage,
           });
@@ -189,7 +190,7 @@ export async function makeRequest(
       if (fetchError.name === 'AbortError') {
         collectMetric(endpoint, method, 0, duration_ms, false); // 0 for timeout
         if (process.env.NODE_ENV === 'development') {
-          console.error(
+          logger.error(
             `[cofounderAgentClient] TIMEOUT: ${method} ${endpoint} - exceeded ${timeout}ms limit after ${duration_ms}ms`
           );
         }
@@ -198,7 +199,7 @@ export async function makeRequest(
         );
       }
       if (process.env.NODE_ENV === 'development') {
-        console.error(
+        logger.error(
           `[cofounderAgentClient] FETCH ERROR: ${method} ${endpoint}`,
           fetchError
         );
@@ -222,7 +223,7 @@ export async function makeRequest(
     collectMetric(endpoint, method, status, duration_ms, false);
 
     if (!suppressErrorLog && process.env.NODE_ENV === 'development') {
-      console.error(`API request failed: ${endpoint}`, error);
+      logger.error(`API request failed: ${endpoint}`, error);
     }
     throw error;
   }
@@ -252,7 +253,7 @@ export async function refreshAccessToken() {
     return true;
   } catch (error) {
     if (process.env.NODE_ENV === 'development') {
-      console.error('Token refresh failed:', error);
+      logger.error('Token refresh failed:', error);
     }
     return false;
   }

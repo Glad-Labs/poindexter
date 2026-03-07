@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * TaskContentPreview - Content display section
  *
@@ -51,7 +52,7 @@ const TaskContentPreview = ({ task, onTaskUpdate }) => {
               try {
                 return JSON.parse(task.result);
               } catch (error) {
-                console.error('Failed to parse task result:', error);
+                logger.error('Failed to parse task result:', error);
                 return {};
               }
             })()
@@ -143,7 +144,7 @@ const TaskContentPreview = ({ task, onTaskUpdate }) => {
       if (onTaskUpdate) onTaskUpdate(updatedTask);
       alert('✅ Changes saved successfully!');
     } catch (error) {
-      console.error('Failed to save changes:', error);
+      logger.error('Failed to save changes:', error);
       alert('❌ Failed to save changes');
     } finally {
       setSaving(false);

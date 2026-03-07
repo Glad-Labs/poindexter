@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import React, { useState, useRef, useCallback } from 'react';
 import {
   MainContainer,
@@ -282,7 +283,7 @@ const CommandPane = () => {
         addMessage(resultMessage);
         completeExecution(resultMessage);
       } catch (error) {
-        console.error('Error executing command:', error);
+        logger.error('Error executing command:', error);
         const errorMessage = {
           type: 'error',
           direction: 'incoming',
@@ -373,7 +374,7 @@ const CommandPane = () => {
             return <Message key={message.id || index} model={message} />;
         }
       } catch (error) {
-        console.error('Error rendering message:', error);
+        logger.error('Error rendering message:', error);
         return null;
       }
     },

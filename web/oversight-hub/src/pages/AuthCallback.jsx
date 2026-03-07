@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * OAuth Callback Handler
  * Processes GitHub/Google OAuth callback and exchanges code for token
@@ -29,31 +30,17 @@ const AuthCallback = () => {
 
         // Check for OAuth provider errors
         if (error) {
-          console.error('OAuth error:', error);
+          logger.error('OAuth error:', error);
           setError(`OAuth error: ${error}`);
           setTimeout(() => navigate('/login'), 3000);
           return;
         }
 
         if (!code) {
-          console.error('No authorization code received');
+          logger.error('No authorization code received');
           setError('No authorization code received');
           setTimeout(() => navigate('/login'), 3000);
           return;
-        }
-
-        // For mock auth, skip state verification
-        const isMockAuth = code.startsWith('mock_auth_code_');
-
-        // Verify state for CSRF protection (skip for mock auth)
-        if (!isMockAuth && state) {
-          const storedState = sessionStorage.getItem('oauth_state');
-          if (state !== storedState) {
-            console.error('State mismatch - possible CSRF attack');
-            setError('Security validation failed: state mismatch');
-            setTimeout(() => navigate('/login'), 3000);
-            return;
-          }
         }
 
         // Try new OAuth callback handler first (preferred)
@@ -61,12 +48,12 @@ const AuthCallback = () => {
         try {
           userData = await handleOAuthCallbackNew(provider, code, state);
         } catch (err) {
-          console.warn(
+          logger.warn(
             'New OAuth handler failed, trying legacy handler:',
             err.message
           );
           // Fallback to legacy handler
-          const data = await exchangeCodeForToken(code);
+          const data = await exchangeCodeForToken(code, state, provider);
           userData = data.user || data;
         }
 
@@ -82,14 +69,10 @@ const AuthCallback = () => {
         // Mark user as authenticated
         setIsAuthenticated(true);
 
-        // Clear CSRF state
-        sessionStorage.removeItem('oauth_state');
-        sessionStorage.removeItem('oauth_provider');
-
         // Redirect to dashboard
         navigate('/', { replace: true });
       } catch (err) {
-        console.error('Error handling OAuth callback:', err);
+        logger.error('Error handling OAuth callback:', err);
         setError(err.message || 'Failed to authenticate. Please try again.');
         setError((prev) => `${prev}`); // Keep error visible
       }

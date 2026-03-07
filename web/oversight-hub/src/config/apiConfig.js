@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * Centralized API Configuration with Strict Validation
  *
@@ -105,7 +106,7 @@ export function getApiUrl() {
   } catch (error) {
     // In development, provide helpful error message
     if (getRuntimeMode() === 'development') {
-      console.error(
+      logger.error(
         '\n❌ Missing API Configuration!\n\n' +
           'To fix this:\n' +
           '1. Copy .env.example to .env.local\n' +
@@ -143,7 +144,7 @@ export function getOllamaUrl(required = false) {
     );
   } catch (error) {
     if (required) {
-      console.error(
+      logger.error(
         '\n❌ Ollama Configuration Error!\n\n' +
           'To use local Ollama models:\n' +
           '1. Install Ollama: https://ollama.ai\n' +
@@ -181,7 +182,7 @@ export function getPublicSiteUrl() {
   } catch (error) {
     // Fallback to localhost in development only
     if (getRuntimeMode() === 'development') {
-      console.warn(
+      logger.warn(
         '⚠️  REACT_APP_PUBLIC_SITE_URL not set, using localhost:3000'
       );
       return 'http://localhost:3000';

@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * Capability Composer Component
  *
@@ -723,10 +724,10 @@ export default function CapabilityComposer() {
       {currentTab === 1 && (
         <NaturalLanguageTaskComposer
           onTaskComposed={(task) => {
-            console.log('Task composed from NL:', task);
+            logger.log('Task composed from NL:', task);
           }}
           onTaskExecuted={(result) => {
-            console.log('Task executed from NL:', result);
+            logger.log('Task executed from NL:', result);
           }}
         />
       )}

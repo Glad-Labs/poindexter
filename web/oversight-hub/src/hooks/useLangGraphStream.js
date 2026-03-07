@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import { useState, useEffect } from 'react';
 import { getWebSocketUrl } from '../config/apiConfig';
 
@@ -39,7 +40,7 @@ export function useLangGraphStream(requestId) {
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
-      console.log('LangGraph WebSocket connected:', requestId);
+      logger.log('LangGraph WebSocket connected:', requestId);
     };
 
     ws.onmessage = (event) => {
@@ -77,7 +78,7 @@ export function useLangGraphStream(requestId) {
           }));
         }
       } catch (parseError) {
-        console.error('Failed to parse LangGraph message:', parseError);
+        logger.error('Failed to parse LangGraph message:', parseError);
         setProgress((prev) => ({
           ...prev,
           status: 'error',
@@ -87,7 +88,7 @@ export function useLangGraphStream(requestId) {
     };
 
     ws.onerror = (error) => {
-      console.error('LangGraph WebSocket error:', error);
+      logger.error('LangGraph WebSocket error:', error);
       setProgress((prev) => ({
         ...prev,
         status: 'error',
@@ -96,7 +97,7 @@ export function useLangGraphStream(requestId) {
     };
 
     ws.onclose = () => {
-      console.log('LangGraph WebSocket disconnected');
+      logger.log('LangGraph WebSocket disconnected');
     };
 
     return () => {

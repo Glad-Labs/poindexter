@@ -24,6 +24,8 @@ from utils.constraint_utils import (
     format_compliance_report
 )
 
+pytestmark = pytest.mark.unit
+
 
 # ============================================================================
 # TIER 1 TESTS

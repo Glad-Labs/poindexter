@@ -58,7 +58,7 @@ export default [
 
       // Code quality
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
-      'no-console': 'off', // Allow console for debugging
+      'no-console': ['error', { allow: [] }],
       'no-var': 'error',
       'eqeqeq': ['warn', 'always'],
       'semi': ['warn', 'always'],

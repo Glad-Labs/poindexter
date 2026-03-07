@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * LayoutWrapper.jsx
  *
@@ -122,7 +123,7 @@ const LayoutWrapper = ({ children }) => {
         const available = await isOllamaAvailable();
         setOllamaConnected(available);
       } catch (error) {
-        console.debug('Error checking Ollama:', error.message);
+        logger.debug('Error checking Ollama:', error.message);
         setOllamaConnected(false);
       }
     };
@@ -172,12 +173,12 @@ const LayoutWrapper = ({ children }) => {
         const grouped = modelService.groupModelsByProvider(models);
         setModelsByProvider(grouped);
 
-        console.log('✅ Loaded models from API:', {
+        logger.log('✅ Loaded models from API:', {
           total: models.length,
           grouped,
         });
       } catch (error) {
-        console.warn('Error loading models from API:', error);
+        logger.warn('Error loading models from API:', error);
         // Fall back to default models
         const defaults = modelService.getDefaultModels();
         setAvailableModels(defaults);
@@ -231,7 +232,7 @@ const LayoutWrapper = ({ children }) => {
         );
       }
     } catch (error) {
-      console.error('Chat error:', error);
+      logger.error('Chat error:', error);
       setChatMessages((prev) => [
         ...prev,
         {

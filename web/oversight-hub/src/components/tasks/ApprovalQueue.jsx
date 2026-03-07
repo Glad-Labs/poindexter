@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * ApprovalQueue Component
  *
@@ -156,7 +157,7 @@ const ApprovalQueue = () => {
       const data = await response.json();
       setTasks(data.tasks || []);
     } catch (err) {
-      console.error('❌ [APPROVAL_QUEUE] Failed to fetch:', err);
+      logger.error('❌ [APPROVAL_QUEUE] Failed to fetch:', err);
       setError(err.message);
       setTasks([]);
     } finally {
@@ -195,7 +196,7 @@ const ApprovalQueue = () => {
             ws.onopen = () => {
               // Connection established
               if (process.env.NODE_ENV === 'development') {
-                console.log(`📡 WebSocket connected for task: ${task.task_id}`);
+                logger.log(`📡 WebSocket connected for task: ${task.task_id}`);
               }
             };
 
@@ -206,7 +207,7 @@ const ApprovalQueue = () => {
                 // Handle approval status updates
                 if (message.type === 'approval_status') {
                   if (process.env.NODE_ENV === 'development') {
-                    console.log(
+                    logger.log(
                       `✅ Approval update for ${task.task_id}: ${message.status}`
                     );
                   }
@@ -233,14 +234,14 @@ const ApprovalQueue = () => {
                 }
               } catch (err) {
                 if (process.env.NODE_ENV === 'development') {
-                  console.error('Failed to parse WebSocket message:', err);
+                  logger.error('Failed to parse WebSocket message:', err);
                 }
               }
             };
 
             ws.onerror = (error) => {
               if (process.env.NODE_ENV === 'development') {
-                console.error(
+                logger.error(
                   `❌ WebSocket error for task ${task.task_id}:`,
                   error
                 );
@@ -249,7 +250,7 @@ const ApprovalQueue = () => {
 
             ws.onclose = () => {
               if (process.env.NODE_ENV === 'development') {
-                console.log(
+                logger.log(
                   `🔌 WebSocket disconnected for task: ${task.task_id}`
                 );
               }
@@ -259,7 +260,7 @@ const ApprovalQueue = () => {
             wsConnections.set(task.task_id, ws);
           } catch (err) {
             if (process.env.NODE_ENV === 'development') {
-              console.error(
+              logger.error(
                 `Failed to connect WebSocket for ${task.task_id}:`,
                 err
               );

@@ -1,3 +1,4 @@
+import logger from './logger';
 import { getPostsByCategory, getPostsByTag } from './search';
 
 /**
@@ -57,7 +58,7 @@ export async function getRelatedPosts(currentPost, limit = 3) {
     return relatedPosts;
   } catch (_error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error('Error getting related posts:', _error);
+      logger.error('Error getting related posts:', _error);
     }
     return [];
   }
@@ -101,7 +102,7 @@ export async function getPostsByMultipleCriteria(
       .slice(0, _limit);
   } catch (error) {
     if (process.env.NODE_ENV !== 'production') {
-      console.error('Error getting posts by multiple criteria:', error);
+      logger.error('Error getting posts by multiple criteria:', error);
     }
     return [];
   }

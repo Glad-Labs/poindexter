@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * Mock GitHub OAuth Authentication Service
  * ⚠️ DEVELOPMENT ONLY - For local testing without GitHub credentials
@@ -16,7 +17,7 @@
 
 // Safety check - warn if accidentally enabled in non-dev
 if (process.env.NODE_ENV !== 'development') {
-  console.error(
+  logger.error(
     '❌ SECURITY WARNING: Mock auth service is being used in non-development mode! ' +
       'This is a security risk. Ensure REACT_APP_USE_MOCK_AUTH is not set in production.'
   );
@@ -88,7 +89,7 @@ export const exchangeCodeForToken = async (code) => {
       user: mockUser,
     };
   } catch (error) {
-    console.error('Error in mock token exchange:', error);
+    logger.error('Error in mock token exchange:', error);
     throw error;
   }
 };
@@ -102,7 +103,7 @@ export const verifySession = async () => {
     const user = localStorage.getItem('user');
     return user ? JSON.parse(user) : null;
   } catch (error) {
-    console.error('Error verifying mock session:', error);
+    logger.error('Error verifying mock session:', error);
     return null;
   }
 };

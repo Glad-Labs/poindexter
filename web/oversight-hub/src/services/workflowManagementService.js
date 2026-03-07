@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * workflowManagementService.js (Phase 3.3)
  *
@@ -35,7 +36,7 @@ export const getWorkflowHistory = async (options = {}) => {
     }
     return response;
   } catch (error) {
-    console.error('Failed to fetch workflow history:', error);
+    logger.error('Failed to fetch workflow history:', error);
     throw error;
   }
 };
@@ -60,7 +61,7 @@ export const getExecutionDetails = async (executionId) => {
     }
     return response;
   } catch (error) {
-    console.error(
+    logger.error(
       `Failed to fetch execution details for ${executionId}:`,
       error
     );
@@ -87,7 +88,7 @@ export const getWorkflowStatistics = async () => {
     }
     return response;
   } catch (error) {
-    console.error('Failed to fetch workflow statistics:', error);
+    logger.error('Failed to fetch workflow statistics:', error);
     throw error;
   }
 };
@@ -112,7 +113,7 @@ export const getPerformanceMetrics = async (range = '30d') => {
     }
     return response;
   } catch (error) {
-    console.error('Failed to fetch performance metrics:', error);
+    logger.error('Failed to fetch performance metrics:', error);
     throw error;
   }
 };
@@ -143,7 +144,7 @@ export const getWorkflowExecutionHistory = async (workflowId, options = {}) => {
     }
     return response;
   } catch (error) {
-    console.error(`Failed to fetch history for workflow ${workflowId}:`, error);
+    logger.error(`Failed to fetch history for workflow ${workflowId}:`, error);
     throw error;
   }
 };

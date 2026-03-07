@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * Form Validation Utilities
  *
@@ -236,7 +237,7 @@ export const getValidationError = (fieldName, fieldType, options = {}) => {
  *   // Proceed with login
  * } else {
  *   // Show errors
- *   console.log(result.errors);
+ *   logger.log(result.errors);
  * }
  */
 export const validateLoginForm = (formData) => {

@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * ExecutiveDashboard.jsx
  *
@@ -54,7 +55,7 @@ const ExecutiveDashboard = () => {
         setDashboardData(transformedData);
         setError(null);
       } catch (err) {
-        console.error('Dashboard data fetch error:', err);
+        logger.error('Dashboard data fetch error:', err);
         setError(err.message);
         // Set mock data for development/fallback
         setDashboardData(getMockDashboardData());
@@ -860,7 +861,7 @@ const ExecutiveDashboard = () => {
         onTaskCreated={(task) => {
           setTaskModalOpen(false);
           // Optionally refresh dashboard data
-          console.log('Task created:', task);
+          logger.log('Task created:', task);
         }}
       />
     </div>

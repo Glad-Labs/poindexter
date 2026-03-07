@@ -1,3 +1,4 @@
+import logger from './logger';
 /**
  * Google Analytics 4 Event Tracking Utilities
  *
@@ -38,7 +39,7 @@ export const trackPageView = (path, title, type = 'page', metadata = {}) => {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Analytics: trackPageView error', error);
+    logger.error('Analytics: trackPageView error', error);
   }
 };
 
@@ -65,7 +66,7 @@ export const trackEvent = (eventName, eventParams = {}) => {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Analytics: trackEvent error', error);
+    logger.error('Analytics: trackEvent error', error);
   }
 };
 
@@ -88,7 +89,7 @@ export const trackTiming = (metricName, duration, metadata = {}) => {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Analytics: trackTiming error', error);
+    logger.error('Analytics: trackTiming error', error);
   }
 };
 
@@ -110,7 +111,7 @@ export const trackException = (description, fatal = false, metadata = {}) => {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Analytics: trackException error', error);
+    logger.error('Analytics: trackException error', error);
   }
 };
 
@@ -139,7 +140,7 @@ export const trackArticleView = (
       reading_time_minutes: readingTime,
     });
   } catch (error) {
-    console.error('Analytics: trackArticleView error', error);
+    logger.error('Analytics: trackArticleView error', error);
   }
 };
 
@@ -166,7 +167,7 @@ export const trackSearch = (
       search_source: source,
     });
   } catch (error) {
-    console.error('Analytics: trackSearch error', error);
+    logger.error('Analytics: trackSearch error', error);
   }
 };
 
@@ -202,7 +203,7 @@ export const trackReadingDepth = (percentRead, postId = '') => {
       post_id: postId,
     });
   } catch (error) {
-    console.error('Analytics: trackReadingDepth error', error);
+    logger.error('Analytics: trackReadingDepth error', error);
   }
 };
 
@@ -224,7 +225,7 @@ export const trackTimeOnPage = (timeSpentSeconds, pageType = 'page') => {
       page_type: pageType,
     });
   } catch (error) {
-    console.error('Analytics: trackTimeOnPage error', error);
+    logger.error('Analytics: trackTimeOnPage error', error);
   }
 };
 
@@ -251,7 +252,7 @@ export const trackRelatedPostClick = (
       source_post_id: sourcePostId,
     });
   } catch (error) {
-    console.error('Analytics: trackRelatedPostClick error', error);
+    logger.error('Analytics: trackRelatedPostClick error', error);
   }
 };
 
@@ -274,7 +275,7 @@ export const trackFilterClick = (filterType, filterValue, resultsCount = 0) => {
       results_count: resultsCount,
     });
   } catch (error) {
-    console.error('Analytics: trackFilterClick error', error);
+    logger.error('Analytics: trackFilterClick error', error);
   }
 };
 
@@ -300,7 +301,7 @@ export const trackNavigation = (
       nav_type: navType,
     });
   } catch (error) {
-    console.error('Analytics: trackNavigation error', error);
+    logger.error('Analytics: trackNavigation error', error);
   }
 };
 
@@ -321,7 +322,7 @@ export const track404 = (requestedPath, referrer = '') => {
       referrer: referrer || document.referrer,
     });
   } catch (error) {
-    console.error('Analytics: track404 error', error);
+    logger.error('Analytics: track404 error', error);
   }
 };
 
@@ -409,7 +410,7 @@ export const setupTimeOnPageTracking = (pageType = 'page') => {
       try {
         trackTimeOnPage(timeSpentSeconds, pageType);
       } catch (error) {
-        console.error('Analytics: setupTimeOnPageTracking error', error);
+        logger.error('Analytics: setupTimeOnPageTracking error', error);
       }
     }
   };

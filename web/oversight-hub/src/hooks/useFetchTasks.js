@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * useFetchTasks - Custom hook for task fetching with auto-refresh
  *
@@ -42,12 +43,12 @@ export const useFetchTasks = (
       setLoading(true);
       setError(null);
 
-      console.log('🔵 useFetchTasks: Fetching tasks...');
+      logger.log('🔵 useFetchTasks: Fetching tasks...');
       const offset = (page - 1) * limit;
 
       try {
         const response = await getTasks(limit, offset);
-        console.log('🟢 useFetchTasks: Response received:', response);
+        logger.log('🟢 useFetchTasks: Response received:', response);
 
         // Handle success
         if (response && response.success !== false) {
@@ -55,7 +56,7 @@ export const useFetchTasks = (
           const tasksData = response.tasks || response.data || [];
           const totalCount = response.total || response.pagination?.total || 0;
 
-          console.log(
+          logger.log(
             `✅ useFetchTasks: Parsed ${tasksData.length} tasks out of ${totalCount} total`
           );
           setTasks(tasksData);
@@ -64,7 +65,7 @@ export const useFetchTasks = (
           return;
         }
       } catch (apiError) {
-        console.error(
+        logger.error(
           '🔴 useFetchTasks: API error - displaying error to user',
           apiError.message
         );
@@ -75,7 +76,7 @@ export const useFetchTasks = (
         return;
       }
     } catch (err) {
-      console.error('🔴 useFetchTasks: Unexpected error:', err);
+      logger.error('🔴 useFetchTasks: Unexpected error:', err);
       setError(err.message || 'Failed to fetch tasks');
       setTasks([]);
       setTotal(0);

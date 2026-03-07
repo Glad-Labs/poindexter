@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * messageTypes.js
  *
@@ -227,14 +228,14 @@ export const MESSAGE_RENDERERS = {
  */
 export const MessageRouter = ({ message, onAction }) => {
   if (!message || !message.type) {
-    console.warn('MessageRouter: Invalid message object', message);
+    logger.warn('MessageRouter: Invalid message object', message);
     return null;
   }
 
   const rendererName = MESSAGE_RENDERERS[message.type];
 
   if (!rendererName) {
-    console.warn(`MessageRouter: Unknown message type "${message.type}"`);
+    logger.warn(`MessageRouter: Unknown message type "${message.type}"`);
     return null;
   }
 

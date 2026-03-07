@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { generateGitHubAuthURL } from '../services/authService';
@@ -48,7 +49,7 @@ const Login = () => {
       !isDevelopment &&
       getEnv('VITE_USE_MOCK_AUTH', 'REACT_APP_USE_MOCK_AUTH') === 'true'
     ) {
-      console.error('❌ SECURITY: Mock auth enabled in non-development mode!');
+      logger.error('❌ SECURITY: Mock auth enabled in non-development mode!');
     }
   }, [clientId, useMockAuth, isDevelopment, mode]);
 

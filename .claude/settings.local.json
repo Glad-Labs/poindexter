@@ -12,7 +12,8 @@
       "Bash(\"$GH\" issue:*)",
       "Bash(poetry run:*)",
       "Bash(npm run:*)",
-      "Bash(do:*)"
+      "Bash(do:*)",
+      "Bash(git stash:*)"
     ]
   }
 }

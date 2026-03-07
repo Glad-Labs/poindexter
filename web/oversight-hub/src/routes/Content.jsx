@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import React, { useState, useEffect } from 'react';
 import { getPosts, updatePost, deletePost } from '../lib/apiClient';
 import PostEditor from '../components/modals/PostEditor';
@@ -35,7 +36,7 @@ function Content() {
       setContentItems(Array.isArray(posts) ? posts : []);
       setError(null);
     } catch (err) {
-      console.error('Failed to fetch posts:', err);
+      logger.error('Failed to fetch posts:', err);
       setError('Failed to load content. Please try again.');
       setContentItems([]);
     } finally {
@@ -58,7 +59,7 @@ function Content() {
       setEditingPost(null);
       alert('Post updated successfully!');
     } catch (err) {
-      console.error('Failed to update post:', err);
+      logger.error('Failed to update post:', err);
       alert('Failed to update post. Please try again.');
     }
   };
@@ -72,7 +73,7 @@ function Content() {
       await fetchPosts(); // Refresh list
       alert('Post deleted successfully!');
     } catch (err) {
-      console.error('Failed to delete post:', err);
+      logger.error('Failed to delete post:', err);
       alert('Failed to delete post. Please try again.');
     }
   };
@@ -355,7 +356,7 @@ function Content() {
         onClose={() => setCreateTaskModalOpen(false)}
         onTaskCreated={(task) => {
           setCreateTaskModalOpen(false);
-          console.log('Task created from Content page:', task);
+          logger.log('Task created from Content page:', task);
         }}
       />
     </div>

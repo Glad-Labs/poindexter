@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * WebSocketContext.jsx (Phase 4)
  *
@@ -26,7 +27,7 @@ export function WebSocketProvider({ children }) {
         setIsConnected(true);
         setConnectionError(null);
       } catch (error) {
-        console.error('Failed to connect WebSocket:', error);
+        logger.error('Failed to connect WebSocket:', error);
         setConnectionError(error.message);
       }
     };

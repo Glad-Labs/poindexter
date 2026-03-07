@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 /**
  * useFeedbackDialog Hook
  *
@@ -32,8 +33,8 @@ import { useState, useCallback } from 'react';
  *
  * @example
  * const { isOpen, open, close, approve, reject, isSubmitting, error } = useFeedbackDialog(
- *   (feedback) => console.log('Approved:', feedback),
- *   (feedback) => console.log('Rejected:', feedback)
+ *   (feedback) => logger.log('Approved:', feedback),
+ *   (feedback) => logger.log('Rejected:', feedback)
  * );
  *
  * return (

@@ -1,3 +1,4 @@
+import logger from '@/lib/logger';
 import React from 'react';
 import { logError } from '../services/errorLoggingService';
 import { Box, Typography, Button, Container } from '@mui/material';
@@ -25,11 +26,10 @@ class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    // Log error to console for debugging
-    console.error('🔴 Error Boundary caught an error:', error);
-    console.error('📋 Error Info:', errorInfo);
+    const name = this.props.name || 'Unknown';
+    logger.error(`Error Boundary [${name}] caught:`, error);
+    logger.error(`Error Boundary [${name}] component stack:`, errorInfo.componentStack);
 
-    // Update state with error details
     this.setState((prevState) => ({
       error,
       errorInfo,
@@ -55,7 +55,7 @@ class ErrorBoundary extends React.Component {
       },
     }).catch((err) => {
       // Silently fail - error logging should never break the app
-      console.error('Error logging failed:', err);
+      logger.error('Error logging failed:', err);
     });
   };
 

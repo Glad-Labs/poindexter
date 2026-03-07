@@ -1,5 +1,52 @@
 /** @type {import('next').NextConfig} */
 
+// ── Build-time environment validation ──────────────────────────────────────
+// Runs when Next.js boots (`next build` and `next dev`).
+// Production builds fail fast if the API URL is missing or invalid.
+(function validateEnv() {
+  const IS_PROD = process.env.NODE_ENV === 'production';
+  const raw =
+    process.env.NEXT_PUBLIC_API_BASE_URL ||
+    process.env.NEXT_PUBLIC_FASTAPI_URL;
+
+  if (!raw) {
+    if (IS_PROD) {
+      throw new Error(
+        '\n[next.config] NEXT_PUBLIC_API_BASE_URL is required for production builds.\n' +
+          'Set it in your Vercel/Railway environment config or .env.local.\n'
+      );
+    }
+    return; // dev: runtime url.js will use localhost fallback
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error(
+      `\n[next.config] NEXT_PUBLIC_API_BASE_URL="${raw}" is not a valid URL.\n`
+    );
+  }
+
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error(
+      `\n[next.config] NEXT_PUBLIC_API_BASE_URL="${raw}" must use http or https (got ${parsed.protocol}).\n`
+    );
+  }
+
+  const isLocalhost =
+    parsed.hostname === 'localhost' ||
+    parsed.hostname === '127.0.0.1' ||
+    parsed.hostname === '0.0.0.0';
+
+  if (IS_PROD && isLocalhost) {
+    throw new Error(
+      `\n[next.config] NEXT_PUBLIC_API_BASE_URL="${raw}" points to localhost in production.\n` +
+        'Set a real backend URL in your environment config.\n'
+    );
+  }
+})();
+
 const nextConfig = {
   // Image Optimization Configuration
   images: {

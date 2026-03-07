@@ -9,7 +9,7 @@ import hashlib
 import hmac
 import logging
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -135,10 +135,9 @@ class WebhookSecurity:
     @classmethod
     def _calculate_signature(cls, content: bytes, secret: str) -> str:
         """Internal method to calculate HMAC-SHA256 signature"""
-        if isinstance(secret, str):
-            secret = secret.encode()
+        secret_bytes = secret.encode() if isinstance(secret, str) else secret
 
-        signature = hmac.new(secret, content, hashlib.sha256).hexdigest()
+        signature = hmac.new(secret_bytes, content, hashlib.sha256).hexdigest()
 
         return signature
 
@@ -175,7 +174,7 @@ class WebhookRateLimiter:
             max_requests_per_minute: Maximum webhook requests per minute per source
         """
         self.max_requests = max_requests_per_minute
-        self.requests = {}  # source_id -> [(timestamp, ...)]
+        self.requests: Dict[str, List[datetime]] = {}  # source_id -> [request timestamps]
 
     def is_allowed(self, source_id: str) -> bool:
         """
@@ -232,7 +231,9 @@ class WebhookValidator:
         return True
 
     @staticmethod
-    def validate_content_type(content_type: str, allowed_types: Optional[list] = None) -> bool:
+    def validate_content_type(
+        content_type: str, allowed_types: Optional[List[str]] = None
+    ) -> bool:
         """
         Validate webhook content type.
 
