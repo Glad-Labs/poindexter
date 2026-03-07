@@ -30,7 +30,8 @@ psycopg2-binary = "^2.9"
 anthropic = "^0.7"
 openai = "^1.0"
 requests = "^2.30"
-google-generativeai = "^0.8"
+google-genai = ">=1.0"          # New official SDK (replaces google-generativeai)
+google-generativeai = "^0.8"   # Legacy fallback — kept until all call-sites are migrated
 
 # Async/Concurrency
 aiohttp = "^3.9"

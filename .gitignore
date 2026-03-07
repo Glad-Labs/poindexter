@@ -49,4 +49,5 @@ nul
 test-results/
 screenshots/
 .playwright-mcp/
+playwright/.auth/
 .env.local.mstr

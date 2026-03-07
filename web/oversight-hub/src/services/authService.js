@@ -396,6 +396,15 @@ export async function handleOAuthCallbackNew(provider, code, state) {
  */
 export async function validateAndGetCurrentUser() {
   try {
+    // For dev-token, skip API validation and return cached user immediately
+    const storedToken = authClient.getToken();
+    const storedUser = authClient.getUser();
+
+    if (storedToken === 'dev-token' && storedUser) {
+      logger.log('[authService] Dev-token detected, using cached user');
+      return storedUser;
+    }
+
     const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
       method: 'GET',
       headers: {

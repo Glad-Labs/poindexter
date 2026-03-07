@@ -2,9 +2,9 @@
  * Oversight Hub — Functional Evaluation Suite
  *
  * Evaluates all major routes and UI interactions against the live dev server
- * (http://localhost:3001). Dev-mode auto-auth is used (initializeDevToken).
+ * (http://localhost:3001). Dev-mode auth is pre-loaded via global-setup.ts.
  *
- * Run: SKIP_SERVER_START=true npx playwright test --config playwright.oversight.config.ts
+ * Run: npx playwright test --config playwright.oversight.config.ts
  */
 
 import { test, expect, Page } from '@playwright/test';
@@ -13,10 +13,15 @@ import { test, expect, Page } from '@playwright/test';
 
 /** Wait for dev-mode auth and the layout to settle */
 async function waitForAuth(page: Page) {
-  // Dev auth writes to localStorage then the React app renders protected content
+  // Dev auth is pre-loaded via global-setup.ts (localStorage already set)
+  // Wait for React to render the protected content
   await page.waitForLoadState('networkidle');
-  // If redirected to login, something is wrong with dev auth
+  // Verify we're not on login page
   await expect(page).not.toHaveURL(/\/login/, { timeout: 8000 });
+  // Wait for main content to be visible
+  await page.waitForSelector('h1, [role="main"], .dashboard-container', {
+    timeout: 5000,
+  });
 }
 
 /** Navigate to a route via the hamburger nav menu */
@@ -32,7 +37,7 @@ async function navTo(page: Page, label: string) {
 // ─── Shared setup ────────────────────────────────────────────────────────────
 
 test.beforeEach(async ({ page }) => {
-  // Navigate to root; dev mode triggers initializeDevToken() on load
+  // Navigate to root; auth token is already in localStorage from global-setup.ts
   await page.goto('/');
   await waitForAuth(page);
 });
