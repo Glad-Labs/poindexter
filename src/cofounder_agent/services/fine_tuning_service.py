@@ -214,7 +214,7 @@ PARAMETER learning_rate {learning_rate}
             return {
                 "job_id": job_id,
                 "status": "failed",
-                "error": "google-generativeai not installed. Run: pip install google-generativeai",
+                "error": "Gemini SDK not installed. Run: pip install google-genai",
             }
         except Exception as e:
             logger.error(

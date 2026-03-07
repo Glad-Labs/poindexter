@@ -1,6 +1,10 @@
 """
 Google Gemini Client
 Provides interface to Google's Gemini AI models
+
+SDK priority:
+  1. google-genai   (official new SDK — google.genai)
+  2. google-generativeai (legacy, kept as fallback)
 """
 
 import asyncio
@@ -10,6 +14,27 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+# Resolve which SDK is available once at import time
+_GENAI_SDK: str = "none"
+try:
+    import google.genai as _genai_module  # noqa: F401
+    _GENAI_SDK = "new"
+    logger.debug("google.genai (new SDK) loaded for GeminiClient")
+except ImportError:
+    try:
+        import google.generativeai as _genai_module  # noqa: F401
+        _GENAI_SDK = "legacy"
+        logger.warning(
+            "GeminiClient: google.genai not found, falling back to deprecated "
+            "google.generativeai. Install google-genai to remove this warning."
+        )
+    except ImportError:
+        _genai_module = None  # type: ignore[assignment]
+        logger.warning(
+            "GeminiClient: neither google.genai nor google.generativeai is installed. "
+            "Gemini calls will raise ImportError at runtime."
+        )
 
 
 class GeminiClient:
@@ -83,28 +108,35 @@ class GeminiClient:
         if not self.is_configured():
             raise Exception("Gemini API key not configured")
 
-        try:
-            # Use google.generativeai SDK (stable, widely supported)
-            import google.generativeai as genai
-
-            genai.configure(api_key=self.api_key)
-            gemini_model = genai.GenerativeModel(model)
-
-            # Generate content using stable SDK
-            response = await gemini_model.generate_content_async(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
-                    max_output_tokens=max_tokens, temperature=temperature, **kwargs
-                ),
-            )
-
-            return response.text
-
-        except ImportError:
+        if _GENAI_SDK == "none":
             raise Exception(
-                "google-generativeai library not installed. "
-                "Install with: pip install google-generativeai"
+                "No Gemini SDK installed. Run: pip install google-genai"
             )
+
+        try:
+            if _GENAI_SDK == "new":
+                import google.genai as genai
+
+                client = genai.Client(api_key=self.api_key)
+                response = await client.aio.models.generate_content(
+                    model=f"models/{model}",
+                    contents=prompt,
+                    config={"max_output_tokens": max_tokens, "temperature": temperature, **kwargs},
+                )
+            else:
+                import google.generativeai as genai
+
+                genai.configure(api_key=self.api_key)
+                gemini_model = genai.GenerativeModel(model)
+                response = await gemini_model.generate_content_async(
+                    prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        max_output_tokens=max_tokens, temperature=temperature, **kwargs
+                    ),
+                )
+
+            return response.text or ""
+
         except Exception as e:
             logger.error(f"[_generate] Gemini generation failed: {e}", exc_info=True)
             raise Exception(f"Gemini generation error: {str(e)}")
@@ -133,36 +165,48 @@ class GeminiClient:
         if not self.is_configured():
             raise Exception("Gemini API key not configured")
 
-        try:
-            # Use google.generativeai SDK (stable, widely supported)
-            import google.generativeai as genai
-
-            genai.configure(api_key=self.api_key)
-            gemini_model = genai.GenerativeModel(model)
-
-            # Start chat session
-            chat = gemini_model.start_chat(history=[])
-
-            # Add previous messages to context
-            for msg in messages[:-1]:
-                if msg["role"] == "user":
-                    chat.send_message(msg["content"])
-
-            # Send final message and get response
-            response = await chat.send_message_async(
-                messages[-1]["content"],
-                generation_config=genai.types.GenerationConfig(
-                    max_output_tokens=max_tokens, temperature=temperature, **kwargs
-                ),
-            )
-
-            return response.text
-
-        except ImportError:
+        if _GENAI_SDK == "none":
             raise Exception(
-                "google-generativeai library not installed. "
-                "Install with: pip install google-generativeai"
+                "No Gemini SDK installed. Run: pip install google-genai"
             )
+
+        try:
+            if _GENAI_SDK == "new":
+                import google.genai as genai
+                import google.genai.types as genai_types
+
+                client = genai.Client(api_key=self.api_key)
+                # Format conversation as alternating user/model turns
+                contents = [
+                    genai_types.Content(
+                        role="user" if msg["role"] == "user" else "model",
+                        parts=[genai_types.Part.from_text(text=msg["content"])],
+                    )
+                    for msg in messages
+                ]
+                response = await client.aio.models.generate_content(
+                    model=f"models/{model}",
+                    contents=contents,
+                    config={"max_output_tokens": max_tokens, "temperature": temperature, **kwargs},
+                )
+            else:
+                import google.generativeai as genai
+
+                genai.configure(api_key=self.api_key)
+                gemini_model = genai.GenerativeModel(model)
+                chat_session = gemini_model.start_chat(history=[])
+                for msg in messages[:-1]:
+                    if msg["role"] == "user":
+                        chat_session.send_message(msg["content"])
+                response = await chat_session.send_message_async(
+                    messages[-1]["content"],
+                    generation_config=genai.types.GenerationConfig(
+                        max_output_tokens=max_tokens, temperature=temperature, **kwargs
+                    ),
+                )
+
+            return response.text or ""
+
         except Exception as e:
             logger.error(f"[_chat] Gemini chat failed: {e}", exc_info=True)
             raise Exception(f"Gemini chat error: {str(e)}")
