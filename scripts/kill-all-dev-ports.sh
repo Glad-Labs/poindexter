@@ -5,7 +5,7 @@
 echo "Finding and killing all development processes..."
 
 # List all PIDs
-PIDS=$(netstat -ano | grep LISTENING | grep -E ":(1337|3000|3001|8000)" | awk '{print $NF}' | sort -u)
+PIDS=$(netstat -ano | grep LISTENING | grep -E ":(1337|3000|3001|8000|3010|3002)" | awk '{print $NF}' | sort -u)
 
 echo "Found processes: $PIDS"
 echo ""
@@ -24,7 +24,7 @@ echo "Waiting 3 seconds for cleanup..."
 sleep 3
 
 echo "Checking remaining processes..."
-netstat -ano | grep LISTENING | grep -E ":(1337|3000|3001|8000)" || echo "✓ All ports are now free!"
+netstat -ano | grep LISTENING | grep -E ":(1337|3000|3001|80003010|3002)" || echo "✓ All ports are now free!"
 
 echo ""
 echo "Done!"

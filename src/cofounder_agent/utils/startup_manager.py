@@ -99,23 +99,10 @@ class StartupManager:
             # Step 13: Initialize template execution service (depends on custom workflows service)
             await self._initialize_template_execution_service()
 
-            # Step 14: Warmup SDXL models (async, non-blocking)
-            # Only if GPU is available - this prevents timeout issues when users first request SDXL
-            # Skip in development mode for faster startup
-            is_dev_mode = os.getenv("DEVELOPMENT_MODE", "").lower() == "true"
-            if is_dev_mode:
-                logger.info("  ⏭️  Skipping SDXL warmup (DEVELOPMENT_MODE enabled)")
-            else:
-                try:
-                    await self._warmup_sdxl_models()
-                except Exception as e:
-                    import traceback
-
-                    logger.warning(
-                        f"[WARNING] SDXL warmup failed (non-critical): {type(e).__name__}: {e}"
-                    )
-                    logger.debug(f"    Traceback: {traceback.format_exc()}")
-                    # Continue anyway - SDXL will load lazily when first used
+            # Step 14: SDXL models are lazy-loaded on first use — no warmup at startup.
+            # ImageService._initialize_sdxl() is called automatically inside generate_image()
+            # the first time image generation is requested.
+            logger.info("  ⏭️  SDXL models will load lazily on first image generation request")
 
             logger.info(" Application started successfully!")
             self._log_startup_summary()
@@ -425,78 +412,6 @@ class StartupManager:
                 f"   Template execution service initialization failed (non-critical): {type(e).__name__}: {e}"
             )
             self.template_execution_service = None
-
-    async def _warmup_sdxl_models(self) -> None:
-        """Warmup SDXL models to avoid timeout on first request"""
-        import os
-
-        # Skip warmup if explicitly disabled
-        if os.getenv("DISABLE_SDXL_WARMUP", "").lower() == "true":
-            logger.info("  SDXL warmup: Disabled via DISABLE_SDXL_WARMUP environment variable")
-            return
-
-        # Check if torch is even available (optional dependency for SDXL)
-        try:
-            import torch
-        except ModuleNotFoundError:
-            logger.info("  SDXL warmup: torch not installed - SDXL disabled")
-            logger.info("     To enable SDXL: pip install -r scripts/requirements-ml.txt")
-            return
-
-        # Skip warmup if GPU is not available (SDXL only works on GPU)
-        if not torch.cuda.is_available():
-            logger.debug(
-                "  SDXL warmup: GPU not available, skipping model warmup (lazy loading enabled)"
-            )
-            return
-
-        try:
-            logger.info("  🎨 Warming up SDXL models (this may take 20-30 seconds)...")
-            import tempfile
-
-            from services.image_service import ImageService
-
-            # Create image service
-            image_service = ImageService()
-
-            # Generate a minimal test image just to load the models
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-                output_path = tmp.name
-
-            try:
-                # Single-step generation just to load models
-                success = await image_service.generate_image(
-                    prompt="warmup",
-                    output_path=output_path,
-                    num_inference_steps=1,
-                    guidance_scale=7.5,
-                    use_refinement=False,
-                    high_quality=False,
-                )
-
-                if success:
-                    logger.info(
-                        "  [OK] SDXL models loaded successfully! First requests will be fast."
-                    )
-                else:
-                    logger.warning(
-                        "  [WARNING] SDXL warmup generation failed (will initialize lazily)"
-                    )
-
-            finally:
-                # Clean up temp file
-                try:
-                    if os.path.exists(output_path):
-                        os.remove(output_path)
-                except (OSError, IOError) as e:
-                    logger.debug(f"  [DEBUG] Temp file cleanup failed (non-critical): {str(e)}")
-
-        except Exception as e:
-            import traceback
-
-            logger.warning(f"  [WARNING] SDXL warmup error (non-critical): {type(e).__name__}: {e}")
-            logger.warning(f"     Full traceback:\n{traceback.format_exc()}")
-            logger.info("     SDXL will initialize on first request")
 
     def _log_startup_summary(self) -> None:
         """Log summary of startup state"""

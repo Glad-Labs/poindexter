@@ -99,11 +99,11 @@ class Config:
 
         # --- Model Selection per Task Type --
         # Allows configuration of which model to use for different task stages
-        self.MODEL_FOR_RESEARCH = os.getenv("MODEL_FOR_RESEARCH", "ollama/mistral")
-        self.MODEL_FOR_CREATIVE = os.getenv("MODEL_FOR_CREATIVE", "ollama/mistral")
-        self.MODEL_FOR_QA = os.getenv("MODEL_FOR_QA", "ollama/mistral")
-        self.MODEL_FOR_IMAGE = os.getenv("MODEL_FOR_IMAGE", "ollama/mistral")
-        self.MODEL_FOR_PUBLISHING = os.getenv("MODEL_FOR_PUBLISHING", "ollama/phi")
+        self.MODEL_FOR_RESEARCH = os.getenv("MODEL_FOR_RESEARCH", "ollama/gpt-oss:20b")
+        self.MODEL_FOR_CREATIVE = os.getenv("MODEL_FOR_CREATIVE", "ollama/gpt-oss:20b")
+        self.MODEL_FOR_QA = os.getenv("MODEL_FOR_QA", "ollama/gpt-oss:20b")
+        self.MODEL_FOR_IMAGE = os.getenv("MODEL_FOR_IMAGE", "ollama/gpt-oss:20b")
+        self.MODEL_FOR_PUBLISHING = os.getenv("MODEL_FOR_PUBLISHING", "ollama/gpt-oss:20b")
 
         # --- API Keys for LLM Providers ---
         # These are read from environment variables and used by the LLM client
@@ -120,7 +120,7 @@ class Config:
         # --- Local LLM (Ollama) Configuration --
         # For running a local quality assurance model if available.
         self.LOCAL_LLM_API_URL = os.getenv("LOCAL_LLM_API_URL", "http://localhost:11434")
-        self.LOCAL_LLM_MODEL_NAME = os.getenv("LOCAL_LLM_MODEL_NAME", "llava:13b")
+        self.LOCAL_LLM_MODEL_NAME = os.getenv("LOCAL_LLM_MODEL_NAME", "gpt-oss:20b")
 
         # --- Logging Configuration ---
         self.LOG_DIR = os.path.join(self.BASE_DIR, "content-agent", "logs")

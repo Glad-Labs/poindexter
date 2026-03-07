@@ -201,8 +201,10 @@ class TasksDatabase(DatabaseServiceMixin):
                 "topic": task_data.get("topic", ""),
                 "title": task_data.get("title")
                 or task_data.get("task_name"),  # Support both title and task_name
-                "style": task_data.get("style", "technical"),
-                "tone": task_data.get("tone", "professional"),
+                # CRITICAL: Don't override user selections - trust Pydantic schema defaults
+                # or explicit user choices from UI. Only set if explicitly None/missing.
+                "style": task_data.get("style"),  # Let Pydantic/UI set defaults
+                "tone": task_data.get("tone"),    # Let Pydantic/UI set defaults
                 "target_length": task_data.get("target_length", 1500),
                 "agent_id": task_data.get("agent_id", "content-agent"),
                 "primary_keyword": task_data.get("primary_keyword"),
@@ -254,6 +256,14 @@ class TasksDatabase(DatabaseServiceMixin):
             for key, value in insert_data.items():
                 serialized = serialize_value_for_postgres(value)
                 serialized_data[key] = serialized
+
+            # 🔍 DEBUG: Log critical fields before DB insert
+            logger.info(f"📊 [add_task] Critical fields being inserted:")
+            logger.info(f"   task_id: {serialized_data.get('task_id')}")
+            logger.info(f"   style: {serialized_data.get('style')} (original: {task_data.get('style')})")
+            logger.info(f"   tone: {serialized_data.get('tone')} (original: {task_data.get('tone')})")
+            logger.info(f"   model_selections: {serialized_data.get('model_selections')} (original: {task_data.get('model_selections')})")
+            logger.info(f"   quality_preference: {serialized_data.get('quality_preference')}")
 
             builder = ParameterizedQueryBuilder()
             sql, params = builder.insert(

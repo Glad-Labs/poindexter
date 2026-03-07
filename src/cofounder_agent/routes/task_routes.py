@@ -345,6 +345,14 @@ async def _handle_blog_post_creation(
 
     task_id = str(uuid_lib.uuid4())
 
+    # 🔍 DEBUG: Log incoming request to diagnose metadata loss
+    logger.info(f"📥 [BLOG_POST] Incoming request:")
+    logger.info(f"   topic: {request.topic}")
+    logger.info(f"   style: {request.style} (type: {type(request.style)})")
+    logger.info(f"   tone: {request.tone} (type: {type(request.tone)})")
+    logger.info(f"   models_by_phase: {request.models_by_phase}")
+    logger.info(f"   quality_preference: {request.quality_preference}")
+
     task_data = {
         "id": task_id,
         "task_name": f"Blog Post: {request.topic}",
@@ -367,6 +375,13 @@ async def _handle_blog_post_creation(
         },
         "created_at": datetime.now(timezone.utc),
     }
+
+    # 🔍 DEBUG: Log task_data before DB insert to see if values are preserved
+    logger.info(f"📦 [BLOG_POST] Task data before DB insert:")
+    logger.info(f"   style: {task_data.get('style')}")
+    logger.info(f"   tone: {task_data.get('tone')}")
+    logger.info(f"   model_selections: {task_data.get('model_selections')}")
+
 
     # Store in database
     returned_task_id = await db_service.add_task(task_data)
@@ -1634,30 +1649,30 @@ def get_model_for_phase(
     defaults_by_phase = {
         # FAST (cheapest options)
         "fast": {
-            "research": "ollama/phi",
-            "outline": "ollama/phi",
-            "draft": "ollama/mistral",
-            "assess": "ollama/mistral",
-            "refine": "ollama/mistral",
-            "finalize": "ollama/phi",
+            "research": "ollama/gpt-oss:20b",
+            "outline": "ollama/gpt-oss:20b",
+            "draft": "ollama/gpt-oss:20b",
+            "assess": "ollama/gpt-oss:20b",
+            "refine": "ollama/gpt-oss:20b",
+            "finalize": "ollama/gpt-oss:20b",
         },
         # BALANCED (mix of cost and quality)
         "balanced": {
-            "research": "ollama/mistral",
-            "outline": "ollama/mistral",
-            "draft": "ollama/mistral",
-            "assess": "ollama/mistral",
-            "refine": "ollama/mistral",
-            "finalize": "ollama/mistral",
+            "research": "ollama/gpt-oss:20b",
+            "outline": "ollama/gpt-oss:20b",
+            "draft": "ollama/gpt-oss:20b",
+            "assess": "ollama/gpt-oss:20b",
+            "refine": "ollama/gpt-oss:20b",
+            "finalize": "ollama/gpt-oss:20b",
         },
         # QUALITY (best models)
         "quality": {
-            "research": "gpt-3.5-turbo",
-            "outline": "gpt-3.5-turbo",
-            "draft": "gpt-4",
-            "assess": "gpt-4",
-            "refine": "gpt-4",
-            "finalize": "gpt-4",
+            "research": "ollama/gpt-oss:120b",
+            "outline": "ollama/gpt-oss:120b",
+            "draft": "ollama/gpt-oss:120b",
+            "assess": "ollama/gpt-oss:120b",
+            "refine": "ollama/gpt-oss:120b",
+            "finalize": "ollama/gpt-oss:120b",
         },
     }
 
@@ -1674,7 +1689,7 @@ def get_model_for_phase(
     if quality not in defaults_by_phase:
         quality = "balanced"
 
-    model = defaults_by_phase[quality].get(phase, "ollama/mistral")
+    model = defaults_by_phase[quality].get(phase, "ollama/gpt-oss:20b")
     logger.info(f"[BG_TASK] Using {quality} quality model for {phase}: {model}")
     return model
 

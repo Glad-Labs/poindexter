@@ -162,12 +162,25 @@ class LLMClient:
             logging.error(f"Error generating JSON content from Gemini: {e}")
             return {}
 
+    def _resolve_local_model_name(self) -> str:
+        """Get the model name to use for Ollama API calls.
+
+        Prefers model_name_override (passed at init) over the config default.
+        Strips the 'ollama/' provider prefix if present, since Ollama's own
+        API only wants the bare model name (e.g. 'gpt-oss:20b', not
+        'ollama/gpt-oss:20b').
+        """
+        model = self.model_name_override or config.LOCAL_LLM_MODEL_NAME
+        if model and model.startswith("ollama/"):
+            model = model[len("ollama/"):]
+        return model
+
     async def _generate_json_local(self, prompt: str) -> dict:
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 response = await client.post(
                     f"{config.LOCAL_LLM_API_URL}/api/generate",
-                    json={"model": config.LOCAL_LLM_MODEL_NAME, "prompt": prompt, "stream": False},
+                    json={"model": self._resolve_local_model_name(), "prompt": prompt, "stream": False},
                 )
                 response.raise_for_status()
             response_json = response.json()
@@ -232,7 +245,7 @@ class LLMClient:
                 response = await client.post(
                     f"{config.LOCAL_LLM_API_URL}/api/generate",
                     json={
-                        "model": config.LOCAL_LLM_MODEL_NAME,
+                        "model": self._resolve_local_model_name(),
                         "prompt": prompt,
                         "stream": False,
                         "num_predict": 4096,  # Allow up to 4096 tokens (blog posts can be long)
