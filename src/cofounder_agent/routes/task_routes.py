@@ -371,7 +371,9 @@ async def _handle_blog_post_creation(
     # Store in database
     returned_task_id = await db_service.add_task(task_data)
     logger.info(f"✅ [BLOG_TASK] Created: {returned_task_id}")
-    logger.info(f"ℹ️  [SINGLE_WRITER_RULE] Task will be picked up by background executor in ~5 seconds")
+    logger.info(
+        f"ℹ️  [SINGLE_WRITER_RULE] Task will be picked up by background executor in ~5 seconds"
+    )
 
     return {
         "id": returned_task_id,

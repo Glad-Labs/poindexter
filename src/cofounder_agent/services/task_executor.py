@@ -49,7 +49,7 @@ from .qa_style_evaluator import StyleConsistencyValidator
 from .seo_validator import SEOValidator
 
 # Import constraint utilities (Task 3 - Unified constraint gating)
-from ..utils.constraint_utils import validate_constraints, ContentConstraints
+from utils.constraint_utils import validate_constraints, ContentConstraints
 
 # Import usage tracking
 from .usage_tracker import get_usage_tracker
@@ -167,7 +167,7 @@ class TaskExecutor:
                 pending_tasks = await self.database_service.get_pending_tasks(limit=10)
 
                 if pending_tasks:
-                    logger.info(f"� [TASK_EXEC_LOOP] Found {len(pending_tasks)} pending task(s)")
+                    logger.info(f"📋 [TASK_EXEC_LOOP] Found {len(pending_tasks)} pending task(s)")
                     for idx, task in enumerate(pending_tasks, 1):
                         logger.info(
                             f"   [{idx}] Task ID: {task.get('id')}, Name: {task.get('task_name')}, Status: {task.get('status')}"
@@ -194,15 +194,34 @@ class TaskExecutor:
                                 f"Service error processing task {task_id}",
                                 exc_info=True,
                             )
+                            # Ensure errored tasks do not remain pending forever.
+                            try:
+                                await self.database_service.update_task(
+                                    task_id,
+                                    {
+                                        "status": "failed",
+                                        "error_message": str(e),
+                                        "task_metadata": {
+                                            "error": str(e),
+                                            "error_type": "ServiceError",
+                                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                                        },
+                                    },
+                                )
+                            except Exception:
+                                logger.error(
+                                    f"[TASK_EXEC_LOOP] Failed to mark task {task_id} as failed after ServiceError",
+                                    exc_info=True,
+                                )
+                            self.error_count += 1
+                            logger.info(
+                                f"❌ [TASK_EXEC_LOOP] Task failed (total errors: {self.error_count})"
+                            )
+                            continue
                         except Exception as e:
                             logger.error(
                                 f"[run] Unexpected error processing task {task_id}: {str(e)}",
                                 exc_info=True,
-                            )
-                            raise ServiceError(
-                                message=f"Failed to process task {task_id}",
-                                details={"task_id": str(task_id), "error_type": type(e).__name__},
-                                cause=e,
                             )
                             # Update task as failed
                             try:
@@ -233,6 +252,7 @@ class TaskExecutor:
                             logger.info(
                                 f"❌ [TASK_EXEC_LOOP] Task failed (total errors: {self.error_count})"
                             )
+                            continue
                         finally:
                             self.task_count += 1
                 else:
@@ -254,11 +274,9 @@ class TaskExecutor:
                 logger.info(
                     f"⏳ [TASK_EXEC_LOOP] Sleeping for {self.poll_interval}s before retry..."
                 )
-                raise ServiceError(
-                    message="Task executor polling loop encountered an error",
-                    details={"error_type": type(e).__name__, "poll_interval": self.poll_interval},
-                    cause=e,
-                )
+                # Keep the executor alive; transient errors should not kill polling.
+                await asyncio.sleep(self.poll_interval)
+                continue
                 await asyncio.sleep(self.poll_interval)
 
         logger.info("📋 [TASK_EXEC_LOOP] Task executor processor loop stopped")
