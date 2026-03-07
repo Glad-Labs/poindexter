@@ -14,10 +14,13 @@ Usage:
 import asyncio
 import httpx
 import json
+import pytest
 from typing import Optional
 
 BASE_URL = "http://localhost:8000"
 API_TIMEOUT = 30
+
+pytestmark = [pytest.mark.integration, pytest.mark.api]
 
 
 async def test_health_check():

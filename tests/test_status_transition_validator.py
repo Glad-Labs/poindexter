@@ -9,6 +9,8 @@ from src.cofounder_agent.utils.task_status import (
     is_valid_transition
 )
 
+pytestmark = pytest.mark.unit
+
 
 class TestStatusTransitionValidator:
     """Test suite for StatusTransitionValidator."""

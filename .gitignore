@@ -21,6 +21,9 @@ __pycache__/
 *.egg-info/
 *.egg
 
+# Log files
+logs/
+
 # Temporary files
 .tmp/
 

@@ -1,5 +1,6 @@
 """Tests for GDPR privacy routes."""
 
+import pytest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
@@ -8,6 +9,8 @@ from fastapi.testclient import TestClient
 
 from routes.privacy_routes import router
 from utils.route_utils import get_database_dependency
+
+pytestmark = [pytest.mark.unit, pytest.mark.api]
 
 
 class _FakeGDPRService:

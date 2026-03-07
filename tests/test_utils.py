@@ -1,6 +1,7 @@
 """
 Shared test utilities and fixtures for all tests.
 """
+import pytest
 import os
 import sys
 from pathlib import Path
@@ -12,6 +13,8 @@ import shutil
 import asyncio
 import json
 from dataclasses import dataclass
+
+pytestmark = pytest.mark.unit
 
 
 @dataclass

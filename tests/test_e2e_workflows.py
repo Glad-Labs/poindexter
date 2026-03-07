@@ -12,6 +12,7 @@ FIXES in this version:
 import requests
 import json
 import os
+import pytest
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Any
 from dataclasses import dataclass
@@ -23,6 +24,8 @@ except ImportError:
     JWT_AVAILABLE = False
     jwt = None  # type: ignore
     print("[WARNING] PyJWT not installed. Installing might help with auth tests.")
+
+pytestmark = pytest.mark.e2e
 
 @dataclass
 class TestResult:

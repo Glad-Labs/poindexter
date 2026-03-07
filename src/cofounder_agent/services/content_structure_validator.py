@@ -92,7 +92,7 @@ class ContentStructureValidator:
         "what's next",
     }
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.logger = logger
 
     def validate(self, content: str) -> ContentStructureResult:
@@ -105,9 +105,9 @@ class ContentStructureValidator:
         Returns:
             ContentStructureResult with validation status and details
         """
-        errors = []
-        warnings = []
-        suggestions = []
+        errors: List[str] = []
+        warnings: List[str] = []
+        suggestions: List[str] = []
 
         # Extract headings and sections
         sections = self._extract_sections(content)

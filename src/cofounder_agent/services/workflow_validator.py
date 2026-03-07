@@ -49,8 +49,8 @@ class WorkflowValidator:
             - errors: Critical issues that prevent execution
             - warnings: Non-critical issues or suggestions
         """
-        errors = []
-        warnings = []
+        errors: List[str] = []
+        warnings: List[str] = []
 
         if not workflow.phases:
             errors.append("Workflow must have at least one phase")
