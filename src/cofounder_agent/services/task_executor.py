@@ -1073,14 +1073,31 @@ class TaskExecutor:
         seo_feedback = ""
         try:
             if generated_content and task.get("primary_keyword"):
+                # Normalize optional SEO fields to avoid NoneType len() errors inside validator.
+                seo_title = (task.get("seo_title") or task.get("topic") or "Untitled").strip()
+                seo_description = (task.get("seo_description") or "").strip()
+                raw_keywords = task.get("seo_keywords")
+                if isinstance(raw_keywords, str):
+                    seo_keywords = [k.strip() for k in raw_keywords.split(",") if k.strip()]
+                elif isinstance(raw_keywords, list):
+                    seo_keywords = [str(k).strip() for k in raw_keywords if str(k).strip()]
+                else:
+                    seo_keywords = []
+
+                primary_kw = str(task.get("primary_keyword") or "").strip()
+                if primary_kw and primary_kw not in seo_keywords:
+                    seo_keywords.append(primary_kw)
+
+                seo_slug = (task.get("slug") or "").strip()
+
                 seo_validator = SEOValidator()
                 seo_result = seo_validator.validate(
                     content=generated_content,
-                    title=task.get("seo_title", task.get("topic", "Untitled")),
-                    meta_description=task.get("seo_description", ""),
-                    keywords=task.get("seo_keywords", [task.get("primary_keyword", "")]),
-                    primary_keyword=task.get("primary_keyword"),
-                    slug=task.get("slug", "")
+                    title=seo_title,
+                    meta_description=seo_description,
+                    keywords=seo_keywords,
+                    primary_keyword=primary_kw,
+                    slug=seo_slug,
                 )
                 seo_gate_passes = seo_result.is_valid
                 seo_feedback = "; ".join(seo_result.errors) if seo_result.errors else "SEO compliant"

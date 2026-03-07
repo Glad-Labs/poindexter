@@ -117,6 +117,7 @@ class CreativeAgent:
                 topic=post.topic,
                 target_audience=post.target_audience or "General",
                 primary_keyword=post.primary_keyword or "topic",
+                word_count=word_count_target or 1500,
                 research_context=post.research_data or "No research data provided",
                 internal_link_titles=(
                     list(post.published_posts_map.keys()) if post.published_posts_map else []
@@ -199,8 +200,9 @@ class CreativeAgent:
 
     async def _generate_seo_assets(self, post: BlogPost) -> BlogPost:
         """Generates and assigns SEO assets (title, meta description, slug) for the post."""
-        seo_prompt = self.prompts["seo_and_social_media"].format(
-            draft=post.raw_content,
+        seo_prompt = self.pm.get_prompt(
+            "blog_generation.seo_and_social",
+            draft=post.raw_content or "",
         )
         logger.info(f"CreativeAgent: Generating SEO assets for '{post.topic}'.")
         seo_assets_text = await self.llm_client.generate_text(seo_prompt)
@@ -210,13 +212,21 @@ class CreativeAgent:
         if seo_assets_json:
             try:
                 seo_assets = json.loads(seo_assets_json)
-                post.title = seo_assets.get("title", "")
-                post.meta_description = seo_assets.get("meta_description", "")
-                post.slug = slugify(post.title)  # Generate slug from title
             except json.JSONDecodeError:
-                logger.error(
-                    f"CreativeAgent: Failed to decode JSON from SEO assets response: {seo_assets_json}"
-                )
+                # Some model outputs escape markdown underscores in JSON keys
+                # (e.g., meta\_description). Normalize and retry once.
+                try:
+                    normalized_json = seo_assets_json.replace("\\_", "_")
+                    seo_assets = json.loads(normalized_json)
+                except json.JSONDecodeError:
+                    logger.error(
+                        f"CreativeAgent: Failed to decode JSON from SEO assets response: {seo_assets_json}"
+                    )
+                    return post
+
+            post.title = seo_assets.get("title", "")
+            post.meta_description = seo_assets.get("meta_description", "")
+            post.slug = slugify(post.title)  # Generate slug from title
         else:
             logger.error(
                 f"CreativeAgent: Could not extract JSON from SEO assets response: {seo_assets_text}"
