@@ -7,6 +7,7 @@ Using pure asyncpg for non-blocking database access.
 
 import logging
 import os
+import asyncio
 from datetime import datetime
 from typing import Any, Optional
 
@@ -198,14 +199,26 @@ def map_featured_image_to_coverimage(post: dict) -> dict:
 
 # Global database service instance
 _db_service: Optional[DatabaseService] = None
+_db_service_init_lock = asyncio.Lock()
 
 
 async def get_db_pool():
     """Get database pool from service"""
     global _db_service
-    if _db_service is None:
-        _db_service = DatabaseService()
-        await _db_service.initialize()
+    if _db_service is not None and _db_service.pool is not None:
+        return _db_service.pool
+
+    # Guard initialization so concurrent requests cannot observe _db_service.pool as None.
+    async with _db_service_init_lock:
+        if _db_service is None:
+            _db_service = DatabaseService()
+
+        if _db_service.pool is None:
+            await _db_service.initialize()
+
+        if _db_service.pool is None:
+            raise RuntimeError("Database pool initialization failed")
+
     return _db_service.pool
 
 

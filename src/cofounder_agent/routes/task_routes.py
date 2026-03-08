@@ -2025,34 +2025,10 @@ async def approve_task(
         if approved and auto_publish:
             logger.info(f"Auto-publishing approved task {task_id}")
             try:
-                # IMPORTANT: Update task status to published FIRST, before creating post
-                # This ensures task state is consistent even if post creation fails
                 publish_metadata = {
                     "published_at": datetime.now(timezone.utc).isoformat(),
                     "published_by": current_user.get("id"),
                 }
-
-                # Convert Decimals before serialization
-                safe_publish_result = convert_decimals(
-                    {"metadata": {**approval_metadata, **publish_metadata}, **merged_result}
-                )
-
-                try:
-                    publish_update_result = await db_service.update_task_status(
-                        task_id, "published", result=safe_json_dumps(safe_publish_result)
-                    )
-                    if publish_update_result:
-                        logger.info(f"Task {task_id} status updated to 'published'")
-                    else:
-                        logger.warning(
-                            f"Auto-publish: update_task_status returned None for task {task_id}"
-                        )
-                except Exception as e:
-                    logger.error(
-                        f"Failed to update task status to published: {str(e)}", exc_info=True
-                    )
-                    # Still continue with post creation if status update fails
-                    # The task will be in 'approved' state but post may be created
 
                 # Create post in posts table when publishing (not before)
                 logger.info(f"Creating posts table entry for published task {task_id}")
@@ -2132,27 +2108,24 @@ async def approve_task(
                             f"/posts/{slug}"  # Relative URL for public site
                         )
 
-                        # [CRITICAL FIX] Save post_id and post_slug to DB
-                        # The post was just created, so we need to persist this relationship
-                        try:
-                            final_result = convert_decimals(
-                                {
-                                    **safe_publish_result,
-                                    "post_id": post_id,
-                                    "post_slug": slug,
-                                    "published_url": f"/posts/{slug}",
-                                }
+                        # Strict atomic publish: only mark task as published after post creation succeeds.
+                        safe_publish_result = convert_decimals(
+                            {
+                                "metadata": {**approval_metadata, **publish_metadata},
+                                **merged_result,
+                                "post_id": post_id,
+                                "post_slug": slug,
+                                "published_url": f"/posts/{slug}",
+                            }
+                        )
+                        publish_update_result = await db_service.update_task_status(
+                            task_id, "published", result=safe_json_dumps(safe_publish_result)
+                        )
+                        if not publish_update_result:
+                            raise RuntimeError(
+                                f"Failed to update task {task_id} status to published"
                             )
-                            await db_service.update_task_status(
-                                task_id, "published", result=safe_json_dumps(final_result)
-                            )
-                            logger.info(f"[OK] Saved post_id to database: {post_id}")
-                        except Exception as e:
-                            logger.warning(
-                                f"[WARNING] Failed to save post_id to database: {str(e)}"
-                            )
-                            # Don't fail the entire operation if saving post_id fails
-                            # The post was created, just the DB link is missing
+                        logger.info(f"Task {task_id} status updated to 'published'")
                     else:
                         logger.warning(f"⚠️  Skipping post creation: missing content or topic")
                 except (ValueError, KeyError, TypeError) as e:
@@ -2161,14 +2134,13 @@ async def approve_task(
                         f"Failed to create post for published task: {type(e).__name__}: {str(e)}",
                         exc_info=True,
                     )
-                    # Don't fail the publish operation if post creation fails
-                    # Post table may have constraints or data issues, but task should stay published
+                    raise
                 except Exception as e:
                     logger.critical(
                         f"Unexpected error creating post for published task: {type(e).__name__}: {str(e)}",
                         exc_info=True,
                     )
-                    # Don't fail the publish operation if post creation fails
+                    raise
 
             except (ValueError, KeyError, TypeError) as e:
                 logger.error(
@@ -2274,22 +2246,14 @@ async def publish_task(
                 detail=f"Cannot publish task with status '{current_status}'. Must be 'approved'.",
             )
 
-        # Update task status to published
         logger.info(f"Publishing task {task_id}")
         publish_metadata = {
             "published_at": datetime.now(timezone.utc).isoformat(),
             "published_by": current_user.get("id"),
         }
-        publish_update_result = await db_service.update_task_status(
-            task_id, "published", result=json.dumps({"metadata": publish_metadata})
-        )
-
-        if not publish_update_result:
-            logger.error(f"Failed to update task {task_id} status to published")
-            raise HTTPException(status_code=500, detail="Failed to update task status to published")
 
         # Create post in posts table when publishing (not before)
-        # This ensures posts only exist for published content
+        # Strict atomic publish: task is marked published only after post is created.
         logger.info(f"Creating posts table entry for published task {task_id}")
         try:
             # Get task result which contains generated content
@@ -2364,30 +2328,33 @@ async def publish_task(
                 logger.info(f"     Slug: {slug}")
 
                 # [CRITICAL FIX] Save post_id and post_slug to DB
-                # The post was just created, so we need to persist this relationship
-                try:
-                    post_id = str(post.id) if hasattr(post, "id") else str(post.get("id"))
-                    final_result = convert_decimals(
-                        {
-                            "post_id": post_id,
-                            "post_slug": slug,
-                            "published_url": f"/posts/{slug}",
-                        }
+                # The post was just created, so persist publish metadata and post linkage in one write.
+                post_id = str(post.id) if hasattr(post, "id") else str(post.get("id"))
+                final_result = convert_decimals(
+                    {
+                        "metadata": publish_metadata,
+                        "post_id": post_id,
+                        "post_slug": slug,
+                        "published_url": f"/posts/{slug}",
+                    }
+                )
+                publish_update_result = await db_service.update_task_status(
+                    task_id, "published", result=safe_json_dumps(final_result)
+                )
+                if not publish_update_result:
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Post created but failed to update task status to published",
                     )
-                    await db_service.update_task_status(
-                        task_id, "published", result=safe_json_dumps(final_result)
-                    )
-                    logger.info(f"[OK] Saved post_id to database: {post_id}")
-                except Exception as e:
-                    logger.warning(f"[WARNING] Failed to save post_id to database: {str(e)}")
-                    # Don't fail the entire operation if saving post_id fails
-                    # The post was created, just the DB link is missing
+                logger.info(f"[OK] Saved post_id to database: {post_id}")
             else:
-                logger.warning(f"[WARNING] Skipping post creation: missing content or topic")
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot publish task: missing content or topic",
+                )
         except Exception as e:
             logger.error(f"Failed to create post for published task: {str(e)}", exc_info=True)
-            # Don't fail the publish operation if post creation fails
-            # The task is still published, just warn about the post creation issue
+            raise HTTPException(status_code=500, detail=f"Failed to publish task: {str(e)}")
 
         # Fetch updated task
         updated_task = await db_service.get_task(task_id)
