@@ -298,7 +298,7 @@ class StyleConsistencyValidator:
             count = sum(1 for marker in markers if marker in text_lower)
             tone_scores[tone] = count
 
-        return max(tone_scores, key=tone_scores.get) if max(tone_scores.values()) > 0 else "neutral"
+        return max(tone_scores, key=lambda k: tone_scores[k]) if max(tone_scores.values()) > 0 else "neutral"
 
     def _detect_style(self, content: str) -> str:
         """Detect primary style of content using structural analysis."""
@@ -307,8 +307,12 @@ class StyleConsistencyValidator:
 
         # Structural counts
         heading_count = sum(1 for l in lines if l.strip().startswith("#"))
-        list_item_count = sum(1 for l in lines if l.strip().startswith(("- ", "* ", "+ ")) or
-                              (len(l.strip()) > 2 and l.strip()[0].isdigit() and l.strip()[1] in ".):"))
+        list_item_count = sum(
+            1
+            for l in lines
+            if l.strip().startswith(("- ", "* ", "+ "))
+            or (len(l.strip()) > 2 and l.strip()[0].isdigit() and l.strip()[1] in ".):")
+        )
         paragraph_count = len([p for p in content.split("\n\n") if len(p.strip()) > 80])
         has_code = "```" in content
 
@@ -337,7 +341,9 @@ class StyleConsistencyValidator:
             style_scores["educational"] += 2
 
         return (
-            max(style_scores, key=style_scores.get) if any(v > 0 for v in style_scores.values()) else "general"
+            max(style_scores, key=lambda k: style_scores[k])
+            if any(v > 0 for v in style_scores.values())
+            else "general"
         )
 
     def _calculate_tone_consistency(
@@ -364,7 +370,9 @@ class StyleConsistencyValidator:
             "neutral": ["formal", "professional", "authoritative"],
         }
 
-        if reference_tone in related_tones and detected_tone in related_tones.get(reference_tone, []):
+        if reference_tone in related_tones and detected_tone in related_tones.get(
+            reference_tone, []
+        ):
             return 0.78  # Related tone — partial credit
 
         return 0.45  # Mismatched tone

@@ -33,7 +33,7 @@ from typing import Optional
 
 # Try to import structlog for structured logging support
 try:
-    import structlog
+    import structlog  # type: ignore[import-untyped]
 except ImportError:
     structlog = None  # type: ignore[assignment]
 
@@ -268,7 +268,7 @@ def set_log_level(level: str) -> None:
 if __name__ == "__main__":
     # Show configuration when module is run directly
     logger = get_logger("logger_config")
-    logger.info(
+    logger.info(  # type: ignore[call-arg]
         "Logger configuration initialized",
         environment=ENVIRONMENT,
         log_level=LOG_LEVEL,

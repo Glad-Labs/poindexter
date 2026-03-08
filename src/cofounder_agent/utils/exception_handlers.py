@@ -28,6 +28,7 @@ try:
 
     SENTRY_AVAILABLE = True
 except ImportError:
+    sentry_sdk = None  # type: ignore[assignment]
     SENTRY_AVAILABLE = False
 
 from services.error_handler import AppError, NotFoundError, ValidationError, create_error_response
@@ -144,7 +145,7 @@ async def generic_exception_handler(request, exc: Exception):
     )
 
     # Send to Sentry if available
-    if SENTRY_AVAILABLE:
+    if SENTRY_AVAILABLE and sentry_sdk is not None:
         with sentry_sdk.push_scope() as scope:
             scope.set_tag("request_id", request_id)
             scope.set_context(

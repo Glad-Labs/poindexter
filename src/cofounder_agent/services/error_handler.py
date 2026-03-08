@@ -137,7 +137,9 @@ class ErrorContext:
             "attempt": self.attempt,
             "request_id": self.request_id,
             "user_id": self.user_id,
-            "timestamp": self.timestamp.isoformat() if self.timestamp else datetime.utcnow().isoformat(),
+            "timestamp": (
+                self.timestamp.isoformat() if self.timestamp else datetime.utcnow().isoformat()
+            ),
             "error_type": type(self.error).__name__ if self.error else None,
             "error_message": str(self.error) if self.error else None,
             **self.metadata,

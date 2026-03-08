@@ -84,9 +84,7 @@ class ContentDatabase(DatabaseServiceMixin):
         # ✅ Log all values being inserted for debugging
         logger.info(f"🔍 INSERTING POST WITH THESE VALUES:")
         logger.info(f"   - id: {post_id}")
-        logger.info(
-            f"   - title: {str(post_data.get('title') or 'EMPTY')[:50]}"
-        )
+        logger.info(f"   - title: {str(post_data.get('title') or 'EMPTY')[:50]}")
         logger.info(f"   - slug: {post_data.get('slug')}")
         logger.info(f"   - featured_image_url: {post_data.get('featured_image_url')}")
         logger.info(f"   - seo_title: {post_data.get('seo_title')}")
@@ -161,7 +159,9 @@ class ContentDatabase(DatabaseServiceMixin):
                 logger.error(f"❌ DATABASE ERROR while creating post: {db_error}", exc_info=True)
                 raise DatabaseError(f"Failed to create post in database: {str(db_error)}")
 
-    @log_query_performance(operation="get_post_by_slug", category="content_retrieval", slow_threshold_ms=50)
+    @log_query_performance(
+        operation="get_post_by_slug", category="content_retrieval", slow_threshold_ms=50
+    )
     async def get_post_by_slug(self, slug: str) -> Optional[PostResponse]:
         """
         Get post by slug - used to check for existing posts before creation.

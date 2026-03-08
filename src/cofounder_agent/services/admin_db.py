@@ -141,7 +141,7 @@ class AdminDatabase(DatabaseServiceMixin):
                 )
 
                 if not rows:
-                    return TaskCostBreakdownResponse(total=0.0, entries=[])
+                    return TaskCostBreakdownResponse(total=0.0, entries=[])  # type: ignore[call-arg]
 
                 # Group by phase
                 breakdown = {}
@@ -181,7 +181,7 @@ class AdminDatabase(DatabaseServiceMixin):
                 f"[get_task_costs] Error getting task costs for task_id={task_id}: {str(e)}",
                 exc_info=True,
             )
-            return TaskCostBreakdownResponse(total=0.0, entries=[])
+            return TaskCostBreakdownResponse(total=0.0, entries=[])  # type: ignore[call-arg]
 
     # ========================================================================
     # HEALTH CHECK
@@ -362,11 +362,11 @@ class AdminDatabase(DatabaseServiceMixin):
             Setting value or default
         """
         setting = await self.get_setting(key)
-        if not setting or not setting.get("value"):
+        if not setting or not setting.value:
             return default
 
         # Try to parse as JSON if it looks like JSON
-        value_str = setting["value"]
+        value_str = setting.value
         try:
             return json.loads(value_str)
         except (json.JSONDecodeError, ValueError, TypeError):

@@ -474,13 +474,15 @@ def auto_expand_content(
     Tier: 3 (Advanced) - NOW IMPLEMENTED
     """
     import asyncio
-    
+
     current_words = count_words_in_content(content)
     tolerance_words = int(target_words * tolerance_percent / 100)
     min_words = target_words - tolerance_words
 
     if current_words >= min_words:
-        logger.info(f"✅ [AUTO_EXPAND] Content already meets target: {current_words} >= {min_words}")
+        logger.info(
+            f"✅ [AUTO_EXPAND] Content already meets target: {current_words} >= {min_words}"
+        )
         return content  # Already within tolerance
 
     deficit_words = min_words - current_words
@@ -503,7 +505,7 @@ def auto_expand_content(
         else:
             style_instruction = f"Maintain {style} style. " if style else ""
             topic_context = f"Topic: {topic}. " if topic else ""
-            
+
             expansion_prompt = (
                 f"{topic_context}"
                 f"The following content needs to be expanded from {current_words} words to approximately {target_words} words.\n"
@@ -520,7 +522,9 @@ def auto_expand_content(
             loop = asyncio.new_event_loop()
             try:
                 expanded_content = loop.run_until_complete(
-                    model_router.generate_with_fallback(expansion_prompt, max_tokens=target_words + 500)
+                    model_router.generate_with_fallback(
+                        expansion_prompt, max_tokens=target_words + 500
+                    )
                 )
             finally:
                 loop.close()
@@ -535,7 +539,7 @@ def auto_expand_content(
             return content
 
         expanded_words = count_words_in_content(expanded_content)
-        
+
         if expanded_words < min_words:
             logger.warning(
                 f"⚠️  [AUTO_EXPAND] Expansion result insufficient: {expanded_words} < {min_words}. "
@@ -546,12 +550,14 @@ def auto_expand_content(
                 f"✅ [AUTO_EXPAND] Successfully expanded: {current_words} → {expanded_words} words "
                 f"(target: {target_words}, min: {min_words})"
             )
-            
+
         return expanded_content
 
     except ImportError as e:
         logger.warning(f"[AUTO_EXPAND] Failed to load dependencies: {e}", exc_info=True)
-        logger.warning("Using original content. Ensure model_router and prompt_manager are available.")
+        logger.warning(
+            "Using original content. Ensure model_router and prompt_manager are available."
+        )
         return content
     except Exception as e:
         logger.error(f"[AUTO_EXPAND] LLM expansion failed: {e}", exc_info=True)

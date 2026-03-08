@@ -66,7 +66,9 @@ class TokenValidationMiddleware(BaseHTTPMiddleware):
         try:
             # Development mode: Allow bypassing authentication for testing
             if os.getenv("DISABLE_AUTH_FOR_DEV", "false").lower() == "true":
-                logger.info(f"[TokenValidation] DISABLE_AUTH_FOR_DEV=true, bypassing auth for {request.url.path}")
+                logger.info(
+                    f"[TokenValidation] DISABLE_AUTH_FOR_DEV=true, bypassing auth for {request.url.path}"
+                )
                 return await call_next(request)
 
             # Skip validation for WebSocket connections

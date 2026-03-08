@@ -22,8 +22,10 @@ import numpy as np
 
 from services.logger_config import get_logger
 
+logger = get_logger(__name__)
+
 try:
-    from sentence_transformers import SentenceTransformer
+    from sentence_transformers import SentenceTransformer  # type: ignore[import-untyped]
 
     SENTENCE_TRANSFORMERS_AVAILABLE = True
 except ImportError:

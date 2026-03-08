@@ -3,12 +3,12 @@ import os
 
 # Try to import OpenTelemetry - it's optional for development
 try:
-    from opentelemetry import trace
-    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-    from opentelemetry.sdk.resources import Resource
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    from opentelemetry import trace  # type: ignore[import-untyped]
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter  # type: ignore[import-untyped]
+    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor  # type: ignore[import-untyped]
+    from opentelemetry.sdk.resources import Resource  # type: ignore[import-untyped]
+    from opentelemetry.sdk.trace import TracerProvider  # type: ignore[import-untyped]
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor  # type: ignore[import-untyped]
 
     OPENTELEMETRY_AVAILABLE = True
 except (ImportError, AttributeError) as e:
@@ -51,7 +51,15 @@ def setup_telemetry(app, service_name="cofounder-agent"):
         service_name: The name of the service to appear in traces.
     """
     # Skip if OpenTelemetry is not available
-    if not OPENTELEMETRY_AVAILABLE or Resource is None or TracerProvider is None or OTLPSpanExporter is None or BatchSpanProcessor is None or trace is None or FastAPIInstrumentor is None:
+    if (
+        not OPENTELEMETRY_AVAILABLE
+        or Resource is None
+        or TracerProvider is None
+        or OTLPSpanExporter is None
+        or BatchSpanProcessor is None
+        or trace is None
+        or FastAPIInstrumentor is None
+    ):
         logging.warning(
             f"[TELEMETRY] OpenTelemetry not available - tracing disabled for {service_name}"
         )

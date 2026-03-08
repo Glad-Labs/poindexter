@@ -8,7 +8,7 @@ in real-time with live progress bars and status updates.
 import asyncio
 import json
 import logging
-from typing import Dict, Set
+from typing import Dict, Optional, Set
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 
@@ -128,7 +128,7 @@ async def websocket_image_progress(websocket: WebSocket, task_id: str):
                 # Send keep-alive every 30 seconds
                 await websocket.send_json({"type": "keep-alive"})
             except json.JSONDecodeError:
-                logger.warning(f"Invalid JSON received on WebSocket: {data}")
+                logger.warning(f"Invalid JSON received on WebSocket: {data}")  # type: ignore[possibly-undefined]
 
     except WebSocketDisconnect:
         await connection_manager.disconnect(task_id, websocket)
@@ -143,7 +143,9 @@ async def broadcast_progress(task_id: str, progress) -> None:
     await connection_manager.broadcast(task_id, {"type": "progress", **progress.to_dict()})
 
 
-async def broadcast_approval_status(task_id: str, status: str, details: Dict = None) -> None:
+async def broadcast_approval_status(
+    task_id: str, status: str, details: Optional[Dict] = None
+) -> None:
     """Broadcast approval status change to all connected clients"""
     message = {
         "type": "approval_status",
@@ -229,7 +231,7 @@ async def websocket_workflow_progress(websocket: WebSocket, execution_id: str):
                 # Send keep-alive every 30 seconds
                 await websocket.send_json({"type": "keep-alive"})
             except json.JSONDecodeError:
-                logger.warning(f"Invalid JSON received on WebSocket: {data}")
+                logger.warning(f"Invalid JSON received on WebSocket: {data}")  # type: ignore[possibly-undefined]
 
     except WebSocketDisconnect:
         await connection_manager.disconnect(execution_id, websocket)
@@ -340,7 +342,9 @@ async def websocket_endpoint(websocket: WebSocket):
             try:
                 await websocket_manager.disconnect(websocket, ns)
             except Exception as disconnect_error:
-                logger.debug(f"[websocket_cleanup] Error disconnecting from namespace {ns}: {disconnect_error}")
+                logger.debug(
+                    f"[websocket_cleanup] Error disconnecting from namespace {ns}: {disconnect_error}"
+                )
         try:
             await websocket.close(code=1011, reason=str(e))
         except Exception as close_error:

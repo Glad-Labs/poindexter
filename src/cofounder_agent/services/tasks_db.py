@@ -204,7 +204,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 # CRITICAL: Don't override user selections - trust Pydantic schema defaults
                 # or explicit user choices from UI. Only set if explicitly None/missing.
                 "style": task_data.get("style"),  # Let Pydantic/UI set defaults
-                "tone": task_data.get("tone"),    # Let Pydantic/UI set defaults
+                "tone": task_data.get("tone"),  # Let Pydantic/UI set defaults
                 "target_length": task_data.get("target_length", 1500),
                 "agent_id": task_data.get("agent_id", "content-agent"),
                 "primary_keyword": task_data.get("primary_keyword"),
@@ -260,9 +260,15 @@ class TasksDatabase(DatabaseServiceMixin):
             # 🔍 DEBUG: Log critical fields before DB insert
             logger.info(f"📊 [add_task] Critical fields being inserted:")
             logger.info(f"   task_id: {serialized_data.get('task_id')}")
-            logger.info(f"   style: {serialized_data.get('style')} (original: {task_data.get('style')})")
-            logger.info(f"   tone: {serialized_data.get('tone')} (original: {task_data.get('tone')})")
-            logger.info(f"   model_selections: {serialized_data.get('model_selections')} (original: {task_data.get('model_selections')})")
+            logger.info(
+                f"   style: {serialized_data.get('style')} (original: {task_data.get('style')})"
+            )
+            logger.info(
+                f"   tone: {serialized_data.get('tone')} (original: {task_data.get('tone')})"
+            )
+            logger.info(
+                f"   model_selections: {serialized_data.get('model_selections')} (original: {task_data.get('model_selections')})"
+            )
             logger.info(f"   quality_preference: {serialized_data.get('quality_preference')}")
 
             builder = ParameterizedQueryBuilder()
@@ -384,11 +390,11 @@ class TasksDatabase(DatabaseServiceMixin):
                 row = await conn.fetchrow(sql, *params)
                 if row:
                     logger.info(f"Task status updated: {task_id} → {status}")
-                    result = self._convert_row_to_dict(row)
+                    task_dict = self._convert_row_to_dict(row)
                     logger.debug(
-                        f"[update_task_status] Returned task status: {result.get('status')}"
+                        f"[update_task_status] Returned task status: {task_dict.get('status')}"
                     )
-                    return result
+                    return task_dict
 
                 # If not found with primary approach, try alternate column
                 logger.warning(
@@ -578,7 +584,9 @@ class TasksDatabase(DatabaseServiceMixin):
             logger.error(f"[update_task] Failed to update task {task_id}: {e}", exc_info=True)
             return None
 
-    @log_query_performance(operation="get_tasks_paginated", category="task_retrieval", slow_threshold_ms=50)
+    @log_query_performance(
+        operation="get_tasks_paginated", category="task_retrieval", slow_threshold_ms=50
+    )
     async def get_tasks_paginated(
         self,
         offset: int = 0,
@@ -705,7 +713,9 @@ class TasksDatabase(DatabaseServiceMixin):
             logger.error(f"[get_queued_tasks] Failed to get queued tasks: {e}", exc_info=True)
             return []
 
-    @log_query_performance(operation="get_tasks_by_date_range", category="analytics", slow_threshold_ms=200)
+    @log_query_performance(
+        operation="get_tasks_by_date_range", category="analytics", slow_threshold_ms=200
+    )
     async def get_tasks_by_date_range(
         self,
         start_date: Optional[datetime] = None,
@@ -741,7 +751,7 @@ class TasksDatabase(DatabaseServiceMixin):
             ]
 
             if status:
-                where_clauses.append(("status", SQLOperator.EQ, status))
+                where_clauses.append(("status", SQLOperator.EQ, status))  # type: ignore[arg-type]
 
             sql, params = builder.select(
                 columns=["*"],

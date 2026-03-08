@@ -438,7 +438,7 @@ class TaskExecutor:
             # Failed validation ≠ incomplete content; content is complete but didn't meet quality thresholds
             # Keeping all metadata enables:
             # 1. User visibility into what was generated
-            # 2. Analysis of why validation failed  
+            # 2. Analysis of why validation failed
             # 3. Potential for refinement/resubmission workflows
             if final_status == "failed" or final_status == "rejected":
                 logger.warning(
@@ -466,7 +466,9 @@ class TaskExecutor:
                     if isinstance(task_metadata_updates, dict)
                     else None
                 )
-                error_msg_for_db = raw_orch_error or "Task failed during processing (see logs for details)"
+                error_msg_for_db = (
+                    raw_orch_error or "Task failed during processing (see logs for details)"
+                )
                 update_payload["error_message"] = error_msg_for_db
 
             await self.database_service.update_task(task_id, update_payload)
@@ -1061,16 +1063,16 @@ class TaskExecutor:
                 word_count=effective_target_length or 1500,
                 writing_style=style or "educational",
                 word_count_tolerance=15,  # Allow 85-115% of target (was 90-110%)
-                strict_mode=True  # Enforce strictly for lazy-AI-proof
+                strict_mode=True,  # Enforce strictly for lazy-AI-proof
             )
             constraint_result = validate_constraints(
                 content=generated_content,
                 constraints=constraints,
                 phase_name="finalization",
-                word_count_target=effective_target_length
+                word_count_target=effective_target_length,
             )
             length_gate_passes = constraint_result.word_count_within_tolerance
-            
+
             logger.info(
                 f"🔍 [LENGTH_GATE] words={word_count}, target={effective_target_length}, "
                 f"tolerance=15%, required={int(effective_target_length*0.85) if effective_target_length else 0}, "
@@ -1090,11 +1092,13 @@ class TaskExecutor:
                 style_result = await style_validator.validate_style_consistency(
                     generated_content=generated_content,
                     reference_style=style,
-                    reference_tone=tone or "professional"
+                    reference_tone=tone or "professional",
                 )
                 style_gate_passes = style_result.passing
-                style_feedback = "; ".join(style_result.issues) if style_result.issues else "style consistent"
-                
+                style_feedback = (
+                    "; ".join(style_result.issues) if style_result.issues else "style consistent"
+                )
+
                 logger.info(
                     f"🎨 [STYLE_GATE] style={style}, tone={tone}, "
                     f"score={style_result.style_consistency_score:.2f}, pass={style_gate_passes}"
@@ -1127,7 +1131,9 @@ class TaskExecutor:
                     topic_words = str(task.get("topic") or "").split()
                     primary_kw = " ".join(topic_words[:3]).lower().strip()
                     if primary_kw:
-                        logger.info(f"[SEO_GATE] primary_keyword not set; derived '{primary_kw}' from topic")
+                        logger.info(
+                            f"[SEO_GATE] primary_keyword not set; derived '{primary_kw}' from topic"
+                        )
                 if primary_kw and primary_kw not in seo_keywords:
                     seo_keywords.append(primary_kw)
 
@@ -1143,8 +1149,10 @@ class TaskExecutor:
                     slug=seo_slug,
                 )
                 seo_gate_passes = seo_result.is_valid
-                seo_feedback = "; ".join(seo_result.errors) if seo_result.errors else "SEO compliant"
-                
+                seo_feedback = (
+                    "; ".join(seo_result.errors) if seo_result.errors else "SEO compliant"
+                )
+
                 logger.info(
                     f"🔎 [SEO_GATE] valid={seo_gate_passes}, "
                     f"errors={len(seo_result.errors)}, warnings={len(seo_result.warnings)}"
@@ -1157,25 +1165,26 @@ class TaskExecutor:
 
         # Consolidated gating logic: LAZY-AI-PROOF requires ALL gates to pass
         content_is_valid = (
-            base_content_valid 
-            and length_gate_passes 
-            and style_gate_passes 
-            and seo_gate_passes
+            base_content_valid and length_gate_passes and style_gate_passes and seo_gate_passes
         )
-        
+
         final_status = "awaiting_approval" if content_is_valid else "failed"
-        
+
         if not content_is_valid:
             failure_reasons = []
             if not base_content_valid:
-                failure_reasons.append(f"content too short or empty ({len(generated_content) if generated_content else 0} chars)")
+                failure_reasons.append(
+                    f"content too short or empty ({len(generated_content) if generated_content else 0} chars)"
+                )
             if not length_gate_passes:
-                failure_reasons.append(f"word count insufficient ({word_count} < {int(effective_target_length*0.85) if effective_target_length else 0})")
+                failure_reasons.append(
+                    f"word count insufficient ({word_count} < {int(effective_target_length*0.85) if effective_target_length else 0})"
+                )
             if not style_gate_passes:
                 failure_reasons.append(f"style inconsistent ({style_feedback})")
             if not seo_gate_passes:
                 failure_reasons.append(f"SEO issues ({seo_feedback})")
-            
+
             error_msg = f"Content validation failed: {'; '.join(failure_reasons)}"
             logger.error(f"❌ [LAZY_AI_PROOF_GATE] {error_msg}")
             if not orchestrator_error:

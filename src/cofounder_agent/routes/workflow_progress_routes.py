@@ -81,9 +81,9 @@ async def start_execution(
     """
     try:
         progress = progress_service.start_execution(execution_id, message=message)
-        await broadcast_workflow_progress(execution_id, progress.to_dict())
+        await broadcast_workflow_progress(execution_id, progress.to_dict())  # type: ignore[union-attr]
         logger.info(f"Started execution {execution_id}")
-        return {"success": True, "progress": progress.to_dict()}
+        return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
     except Exception as e:
         logger.error(f"Failed to start execution: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -117,9 +117,9 @@ async def start_phase(
             phase_name=phase_name,
             message=message,
         )
-        await broadcast_workflow_progress(execution_id, progress.to_dict())
+        await broadcast_workflow_progress(execution_id, progress.to_dict())  # type: ignore[union-attr]
         logger.debug(f"Started phase {phase_index} for execution {execution_id}")
-        return {"success": True, "progress": progress.to_dict()}
+        return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
     except Exception as e:
         logger.error(f"Failed to start phase: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -153,9 +153,9 @@ async def complete_phase(
             phase_output=phase_output,
             duration_ms=duration_ms,
         )
-        await broadcast_workflow_progress(execution_id, progress.to_dict())
+        await broadcast_workflow_progress(execution_id, progress.to_dict())  # type: ignore[union-attr]
         logger.debug(f"Completed phase {phase_name} for execution {execution_id}")
-        return {"success": True, "progress": progress.to_dict()}
+        return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
     except Exception as e:
         logger.error(f"Failed to complete phase: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -186,9 +186,9 @@ async def fail_phase(
             phase_name=phase_name,
             error=error,
         )
-        await broadcast_workflow_progress(execution_id, progress.to_dict())
+        await broadcast_workflow_progress(execution_id, progress.to_dict())  # type: ignore[union-attr]
         logger.warning(f"Phase {phase_name} failed for execution {execution_id}: {error}")
-        return {"success": True, "progress": progress.to_dict()}
+        return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
     except Exception as e:
         logger.error(f"Failed to mark phase as failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -222,9 +222,9 @@ async def mark_complete(
             duration_ms=duration_ms,
             message=message,
         )
-        await broadcast_workflow_progress(execution_id, progress.to_dict())
+        await broadcast_workflow_progress(execution_id, progress.to_dict())  # type: ignore[union-attr]
         logger.info(f"Completed execution {execution_id}")
-        return {"success": True, "progress": progress.to_dict()}
+        return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
     except Exception as e:
         logger.error(f"Failed to mark execution as complete: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -255,9 +255,9 @@ async def mark_failed(
             error=error,
             failed_phase=failed_phase,
         )
-        await broadcast_workflow_progress(execution_id, progress.to_dict())
+        await broadcast_workflow_progress(execution_id, progress.to_dict())  # type: ignore[union-attr]
         logger.error(f"Execution {execution_id} failed: {error}")
-        return {"success": True, "progress": progress.to_dict()}
+        return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
     except Exception as e:
         logger.error(f"Failed to mark execution as failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))

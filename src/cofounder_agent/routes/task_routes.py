@@ -189,7 +189,7 @@ async def create_task(
     request: UnifiedTaskRequest,
     current_user: dict = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
-    background_tasks: BackgroundTasks = None,
+    background_tasks: Optional[BackgroundTasks] = None,
 ):
     """
     Unified task creation endpoint - routes to appropriate handler based on task_type.
@@ -340,9 +340,9 @@ async def _handle_blog_post_creation(
 ) -> Dict[str, Any]:
     """
     Handle blog post task creation.
-    
-    SINGLE WRITER RULE: Task is stored as 'pending' and will be picked up by the 
-    background task_executor.py polling loop (every 5 seconds). No asyncio.create_task() 
+
+    SINGLE WRITER RULE: Task is stored as 'pending' and will be picked up by the
+    background task_executor.py polling loop (every 5 seconds). No asyncio.create_task()
     to avoid race conditions where two writers process the same task simultaneously.
     """
 
@@ -384,7 +384,6 @@ async def _handle_blog_post_creation(
     logger.info(f"   style: {task_data.get('style')}")
     logger.info(f"   tone: {task_data.get('tone')}")
     logger.info(f"   model_selections: {task_data.get('model_selections')}")
-
 
     # Store in database
     returned_task_id = await db_service.add_task(task_data)
@@ -1141,7 +1140,7 @@ async def update_task_status_enterprise(
 
         # Log status change to audit table
         try:
-            await db_service.log_status_change(
+            await db_service.log_status_change(  # type: ignore[attr-defined]
                 task_id=task_id,
                 old_status=current_status.value,
                 new_status=target_status.value,
@@ -1535,8 +1534,8 @@ async def update_task(
 
         # Merge metadata if provided
         if update_data.metadata:
-            task["metadata"] = {**(task.get("metadata") or {}), **update_data.metadata}
-            update_dict["metadata"] = task["metadata"]
+            task["metadata"] = {**(task.get("metadata") or {}), **update_data.metadata}  # type: ignore[index]
+            update_dict["metadata"] = task["metadata"]  # type: ignore[index]
 
         # Update task status - pass result dict (asyncpg handles JSONB conversion)
         await db_service.update_task_status(
@@ -1566,7 +1565,7 @@ async def update_task(
 # ============================================================================
 
 
-def extract_title_from_content(content: str) -> tuple[str, str]:
+def extract_title_from_content(content: str) -> tuple[Optional[str], str]:
     """
     Extract title from markdown content if present at the start.
 
@@ -1867,7 +1866,7 @@ async def confirm_and_execute_task(
         logger.info(f"[CONFIRM] Created task {task_id} from intent plan")
 
         # Queue background execution
-        background_tasks.add_task(execute_task_background, task_id, current_user)
+        background_tasks.add_task(execute_task_background, task_id, current_user)  # type: ignore[name-defined]
 
         return TaskConfirmResponse(
             task_id=task_id,
@@ -2228,7 +2227,7 @@ async def publish_task(
     task_id: str,
     current_user: dict = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
-    background_tasks: BackgroundTasks = None,
+    background_tasks: Optional[BackgroundTasks] = None,
 ):
     """
     Publish an approved task to specified channels.
@@ -2536,6 +2535,7 @@ async def generate_task_image(
 
         if source == "pexels":
             # Use Pexels API to search for images
+            search_query = ""
             try:
                 import aiohttp
 
@@ -2567,7 +2567,7 @@ async def generate_task_image(
                             "orientation": "landscape",
                         },
                         headers={"Authorization": pexels_key},
-                        timeout=10.0,
+                        timeout=aiohttp.ClientTimeout(total=10.0),
                     ) as resp:
                         if resp.status == 200:
                             try:

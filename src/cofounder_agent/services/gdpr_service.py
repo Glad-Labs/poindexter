@@ -80,7 +80,9 @@ class GDPRService:
                 await conn.execute(create_indexes)
             self._schema_ready = True
         except Exception as e:
-            logger.error(f"[gdpr_ensure_schema] Failed to initialize GDPR schema: {e}", exc_info=True)
+            logger.error(
+                f"[gdpr_ensure_schema] Failed to initialize GDPR schema: {e}", exc_info=True
+            )
             raise
 
     async def create_request(
@@ -145,7 +147,10 @@ class GDPRService:
             request_data["verification_token"] = token
             return request_data
         except Exception as e:
-            logger.error(f"[gdpr_create_request] Failed to create GDPR request for {email}: {e}", exc_info=True)
+            logger.error(
+                f"[gdpr_create_request] Failed to create GDPR request for {email}: {e}",
+                exc_info=True,
+            )
             raise
 
     async def mark_verification_sent(self, request_id: str) -> None:
@@ -164,7 +169,9 @@ class GDPRService:
                 )
             await self.audit(request_id, "verification_sent", "success", {})
         except Exception as e:
-            logger.error(f"[gdpr_mark_verification_sent] Failed for request {request_id}: {e}", exc_info=True)
+            logger.error(
+                f"[gdpr_mark_verification_sent] Failed for request {request_id}: {e}", exc_info=True
+            )
             raise
 
     async def verify_request(self, token: str) -> Optional[Dict[str, Any]]:
@@ -211,7 +218,9 @@ class GDPRService:
                 )
             return dict(row) if row else None
         except Exception as e:
-            logger.error(f"[gdpr_get_request] Failed to fetch request {request_id}: {e}", exc_info=True)
+            logger.error(
+                f"[gdpr_get_request] Failed to fetch request {request_id}: {e}", exc_info=True
+            )
             raise
 
     async def export_user_data(self, request_id: str, fmt: str = "json") -> Dict[str, Any]:
@@ -321,7 +330,10 @@ class GDPRService:
                 raise RuntimeError("Failed to load updated request")
             return updated
         except Exception as e:
-            logger.error(f"[gdpr_record_deletion_processing] Failed for request {request_id}: {e}", exc_info=True)
+            logger.error(
+                f"[gdpr_record_deletion_processing] Failed for request {request_id}: {e}",
+                exc_info=True,
+            )
             raise
 
     async def audit(

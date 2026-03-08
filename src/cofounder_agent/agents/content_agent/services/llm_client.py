@@ -172,7 +172,7 @@ class LLMClient:
         """
         model = self.model_name_override or config.LOCAL_LLM_MODEL_NAME
         if model and model.startswith("ollama/"):
-            model = model[len("ollama/"):]
+            model = model[len("ollama/") :]
         return model
 
     async def _generate_json_local(self, prompt: str) -> dict:
@@ -180,7 +180,11 @@ class LLMClient:
             async with httpx.AsyncClient(timeout=30) as client:
                 response = await client.post(
                     f"{config.LOCAL_LLM_API_URL}/api/generate",
-                    json={"model": self._resolve_local_model_name(), "prompt": prompt, "stream": False},
+                    json={
+                        "model": self._resolve_local_model_name(),
+                        "prompt": prompt,
+                        "stream": False,
+                    },
                 )
                 response.raise_for_status()
             response_json = response.json()
