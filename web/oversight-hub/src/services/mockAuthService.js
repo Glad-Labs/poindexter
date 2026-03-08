@@ -1,4 +1,5 @@
 import logger from '@/lib/logger';
+import { authClient } from '../lib/authClient';
 /**
  * Mock GitHub OAuth Authentication Service
  * ⚠️ DEVELOPMENT ONLY - For local testing without GitHub credentials
@@ -80,9 +81,9 @@ export const exchangeCodeForToken = async (code) => {
     // Backend auth_unified.py accepts tokens starting with "dev-" or equal to "dev-token"
     const mockToken = 'dev-token';
 
-    // Store both user profile and auth token
-    localStorage.setItem('user', JSON.stringify(mockUser));
-    localStorage.setItem('auth_token', mockToken);
+    // Store both user profile and auth token via centralized auth client
+    authClient.setUser(mockUser);
+    authClient.setToken(mockToken);
 
     return {
       token: mockToken,
@@ -100,8 +101,7 @@ export const exchangeCodeForToken = async (code) => {
 export const verifySession = async () => {
   try {
     // In mock mode we only rely on a cached local profile.
-    const user = localStorage.getItem('user');
-    return user ? JSON.parse(user) : null;
+    return authClient.getUser();
   } catch (error) {
     logger.error('Error verifying mock session:', error);
     return null;
@@ -112,7 +112,6 @@ export const verifySession = async () => {
  * Logout - removes stored credentials
  */
 export const logout = async () => {
-  localStorage.removeItem('user');
-  localStorage.removeItem('auth_token');
+  authClient.logout();
   sessionStorage.removeItem('mock_auth_code');
 };

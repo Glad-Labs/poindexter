@@ -213,8 +213,8 @@ export const initializeDevToken = async () => {
     // Backend auth_unified.py accepts tokens starting with "dev-" or equal to "dev-token"
     const mockToken = 'dev-token';
 
-    localStorage.setItem('user', JSON.stringify(mockUser));
-    localStorage.setItem('auth_token', mockToken);
+    authClient.setUser(mockUser);
+    authClient.setToken(mockToken);
     logger.log('[authService] Development profile initialized');
     return null;
   } catch (error) {
