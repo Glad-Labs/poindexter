@@ -17,7 +17,8 @@
       "Bash(python:*)",
       "Read(//c/Users/mattm/glad-labs-website/web/oversight-hub/**)",
       "Bash(npx vitest run)",
-      "Bash(npx vitest:*)"
+      "Bash(npx vitest:*)",
+      "Bash(poetry:*)"
     ]
   }
 }

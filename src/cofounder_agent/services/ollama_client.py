@@ -577,6 +577,7 @@ class OllamaClient:
                                 if "response" in data:
                                     yield data["response"]
                             except json.JSONDecodeError:
+                                logger.debug(f"[stream_generate] Skipping malformed JSON line: {line[:80]!r}")
                                 continue
 
         except httpx.HTTPError as e:

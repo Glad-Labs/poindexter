@@ -20,6 +20,8 @@ __pycache__/
 .eggs/
 *.egg-info/
 *.egg
+.mypy_cache/
+.pytest_cache/
 
 # Log files
 logs/
@@ -44,6 +46,7 @@ token.json
 .env.old
 nul
 
+# AI/ML libraries and tools
 .agents/
 .continue/skills
 test-results/
@@ -51,3 +54,8 @@ screenshots/
 .playwright-mcp/
 playwright/.auth/
 .env.local.mstr
+.continue/
+.playwright-mcp/
+.claude/
+.roo/
+.vscode/

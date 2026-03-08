@@ -23,7 +23,7 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 
 # Import tools
 try:
-    from src.agents.content_agent.utils.tools import (
+    from src.cofounder_agent.agents.content_agent.utils.tools import (
         WebSearchTool,
         CompetitorContentSearchTool,
         DocumentAccessTool,

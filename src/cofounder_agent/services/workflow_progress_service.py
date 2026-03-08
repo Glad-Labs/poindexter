@@ -277,7 +277,7 @@ class WorkflowProgressService:
                 self._callbacks[execution_id].remove(callback)
                 logger.debug(f"Unregistered progress callback for execution {execution_id}")
             except ValueError:
-                pass
+                logger.debug(f"[unregister_callback] Callback not found for execution {execution_id}, already removed")
 
     def _notify_callbacks(
         self,

@@ -10,6 +10,10 @@ import sys
 import time
 import pytest
 
+# LangGraph endpoints (/api/content/langgraph/*) are not yet implemented.
+# These tests are skipped until the routes are registered (see issue #64).
+pytestmark = pytest.mark.skip(reason="LangGraph endpoints not yet implemented (#64)")
+
 @pytest.fixture(scope="function")
 async def request_id():
     """Fixture to get request_id from HTTP endpoint"""

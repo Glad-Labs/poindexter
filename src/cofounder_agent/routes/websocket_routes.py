@@ -339,8 +339,8 @@ async def websocket_endpoint(websocket: WebSocket):
         for ns in list(active_namespaces):
             try:
                 await websocket_manager.disconnect(websocket, ns)
-            except Exception:
-                pass
+            except Exception as disconnect_error:
+                logger.debug(f"[websocket_cleanup] Error disconnecting from namespace {ns}: {disconnect_error}")
         try:
             await websocket.close(code=1011, reason=str(e))
         except Exception as close_error:
