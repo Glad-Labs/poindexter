@@ -543,7 +543,7 @@ DEFAULT_WRITING_STYLE_ID=...         # Default style for content
 - **CI/CD and branching:** → `docs/04-DEVELOPMENT_WORKFLOW.md`
 - **Agent capabilities:** → `docs/05-AI_AGENTS_AND_INTEGRATION.md`
 - **Operations/monitoring:** → `docs/06-OPERATIONS_AND_MAINTENANCE.md`
-- **Recent implementations:** → `SPRINT4_COMPLETION_REPORT.md` (image generation), `SPRINT5_IMPLEMENTATION_PLAN.md` (capability system)
+- **Recent implementations:** → `VERSION_HISTORY.md` (all phases and implementation milestones)
 - **Troubleshooting:** → `docs/troubleshooting/` folder
 
 ---

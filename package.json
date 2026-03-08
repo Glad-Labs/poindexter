@@ -61,7 +61,10 @@
     "bump-version:auto": "node scripts/bump-version.js",
     "bump-version:patch": "node scripts/bump-version.js -- --patch",
     "bump-version:minor": "node scripts/bump-version.js -- --minor",
-    "bump-version:major": "node scripts/bump-version.js -- --major"
+    "bump-version:major": "node scripts/bump-version.js -- --major",
+    "docs:cleanup": "bash scripts/cleanup-docs.sh || powershell -ExecutionPolicy Bypass -File cleanup-docs.ps1",
+    "docs:cleanup:ps": "powershell -ExecutionPolicy Bypass -File cleanup-docs.ps1",
+    "docs:cleanup:sh": "bash scripts/cleanup-docs.sh"
   },
   "devDependencies": {
     "@types/node": "^25.3.0",

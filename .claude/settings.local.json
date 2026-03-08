@@ -19,7 +19,8 @@
       "Bash(npx vitest run)",
       "Bash(npx vitest:*)",
       "Bash(poetry:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(gh label:*)"
     ]
   }
 }

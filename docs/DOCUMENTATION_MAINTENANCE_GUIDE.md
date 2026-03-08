@@ -235,6 +235,98 @@ Rationale: count_services.py showed actual count is 87
 
 ---
 
+### Workflow 5: Automated Documentation Cleanup
+
+**Trigger:** After completing a phase/sprint or monthly maintenance
+
+**Purpose:** Intelligently organize stray documentation files into proper archive and docs structure
+
+**Tool:** `npm run docs:cleanup` (or `docs:cleanup:ps`/`docs:cleanup:sh`)
+
+**What It Does:**
+
+1. **Creates organized structure**:
+   - `archive/sessions/` → Session summaries, implementation reports
+   - `archive/phase1/`, `phase2/`, `phase3/` → Phase-specific documentation
+   - `archive/testing/` → Testing documentation
+   - `archive/sprints/` → Sprint reports
+   - `docs/reference/`, `troubleshooting/`, `decisions/`, `components/` → Categorized docs
+
+2. **Moves files automatically** based on naming patterns:
+   - `PHASE*.md` → `archive/phase*/` (by number)
+   - `SESSION*.md`, `CONSOLIDATION*.md`, `*_SUMMARY.md`, `*_FIX.md` → `archive/sessions/`
+   - `TESTING*.md`, `TEST_*.md`, `USER_TESTING*.md` → `archive/testing/`
+   - `SPRINT*.md` → `archive/sprints/`
+   - `IMPLEMENTATION*.md`, `*_STATUS.md`, `*_REPORT.md` → `archive/sessions/`
+   - Other `.md` files categorized by content keywords
+
+3. **Protects essential files** (never moved):
+   - README.md, CLAUDE.md, VERSION_HISTORY.md
+   - SECURITY.md, VERSIONING_GUIDE.md, DEBUG_GUIDE.md
+   - DEPLOYMENT_CHECKLIST.md, LICENSE
+
+**Usage:**
+
+**After Phase/Sprint Completion:**
+
+```bash
+# 1. Commit all work
+git add .
+git commit -m "feat: complete Phase X implementation"
+
+# 2. Run cleanup
+npm run docs:cleanup
+
+# 3. Review what was moved
+git status
+
+# 4. Commit organized structure
+git add .
+git commit -m "docs: archive Phase X documentation"
+```
+
+**Monthly Maintenance:**
+
+```bash
+# Run cleanup to catch stray docs
+npm run docs:cleanup
+
+# Optional: Update VERSION_HISTORY.md to reference archive
+```
+
+**Platform-Specific:**
+
+```bash
+# Windows PowerShell
+npm run docs:cleanup:ps
+
+# Unix/Linux/Mac Bash
+npm run docs:cleanup:sh
+
+# Auto-detects platform
+npm run docs:cleanup
+```
+
+**Safety Features:**
+
+- ✅ Git-aware (uses `git mv` to preserve history)
+- ✅ Non-destructive (moves, never deletes)
+- ✅ Idempotent (safe to run multiple times)
+- ✅ Protected files never moved
+- ✅ Reports what was moved
+
+**For Details:** See [archive/README.md](../archive/README.md)
+
+**Checklist:**
+
+- [ ] Run `npm run docs:cleanup` after phase completion
+- [ ] Review moved files with `git status`
+- [ ] Update VERSION_HISTORY.md if needed
+- [ ] Commit with descriptive message
+- [ ] Check GitHub Action runs monthly (optional)
+
+---
+
 ## Consistency Checks
 
 ### Before Every Commit

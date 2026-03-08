@@ -521,7 +521,7 @@ curl -X POST http://localhost:8000/api/tasks \
 
 ## Additional Resources
 
-- [Analytics API Reference](ANALYTICS_AND_PROFILING_API.md)
-- [Sprint 5 Implementation Summary](SPRINT_5_IMPLEMENTATION_SUMMARY.md)
+- [Analytics Quick Start](ANALYTICS_QUICK_START.md)
+- [Capability-Based Task System](CAPABILITY_BASED_TASK_SYSTEM.md)
 - [Architecture & Design](02-ARCHITECTURE_AND_DESIGN.md)
 - [Operations & Maintenance](06-OPERATIONS_AND_MAINTENANCE.md)

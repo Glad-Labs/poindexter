@@ -393,8 +393,7 @@ web/oversight-hub/
 
 ## Support Resources
 
-- **Metrics Collection Details:** See [SPRINT_5_IMPLEMENTATION_SUMMARY.md](SPRINT_5_IMPLEMENTATION_SUMMARY.md)
-- **API Documentation:** See [ANALYTICS_AND_PROFILING_API.md](ANALYTICS_AND_PROFILING_API.md)
+- **Metrics Collection Details:** See [CAPABILITY_BASED_TASK_SYSTEM.md](CAPABILITY_BASED_TASK_SYSTEM.md)
 - **Production Monitoring:** See [MONITORING_AND_DIAGNOSTICS.md](MONITORING_AND_DIAGNOSTICS.md)
 - **Architecture:** See [02-ARCHITECTURE_AND_DESIGN.md](02-ARCHITECTURE_AND_DESIGN.md)
 
