@@ -160,7 +160,7 @@ class UsersDatabase(DatabaseServiceMixin):
                 logger.info("✅ OAuth account found, getting user: %s", user_id)
 
                 user = await conn.fetchrow(
-                    "SELECT * FROM users WHERE id = $1",
+                    "SELECT id, email, username, is_active, created_at, updated_at FROM users WHERE id = $1",
                     user_id,
                 )
                 return ModelConverter.to_user_response(user) if user else None
@@ -171,7 +171,7 @@ class UsersDatabase(DatabaseServiceMixin):
 
             if email:
                 existing_user = await conn.fetchrow(
-                    "SELECT * FROM users WHERE email = $1",
+                    "SELECT id, email, username, is_active, created_at, updated_at FROM users WHERE email = $1",
                     email,
                 )
 
