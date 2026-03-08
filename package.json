@@ -56,7 +56,13 @@
     "type:check:strict": "cd src/cofounder_agent && python -m mypy --config-file=../../pyproject.toml --strict",
     "lint:python": "cd src/cofounder_agent && python -m pylint src/ --disable=C0111,C0103,W0612",
     "lint:python:sql": "cd src/cofounder_agent && python -m pylint src/ --disable=all --enable=E0001,E0101,E0203,E0211,E0213,E1121,E1123,E1136,E1200,E1201,E1205,E1206,E1300,E1301,E1302,E1303,E1304,E1305,E1306,E1307,E1401,E1999",
-    "env:select": "node scripts/select-env.js"
+    "env:select": "node scripts/select-env.js",
+    "//": "=== VERSIONING (Branch-tier automatic) ===",
+    "bump-version": "node scripts/bump-version.js",
+    "bump-version:auto": "node scripts/bump-version.js",
+    "bump-version:patch": "node scripts/bump-version.js -- --patch",
+    "bump-version:minor": "node scripts/bump-version.js -- --minor",
+    "bump-version:major": "node scripts/bump-version.js -- --major"
   },
   "devDependencies": {
     "@types/node": "^25.3.0",
