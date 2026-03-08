@@ -56,26 +56,26 @@ The cleanup system uses **intelligent pattern matching** to determine where file
 
 ### Archive Rules
 
-| Pattern | Destination | Examples |
-|---------|------------|----------|
-| `PHASE_?1*`, `PHASE1_*` | `archive/phase1/` | PHASE_1_COMPLETION_REPORT.md |
-| `PHASE_?2*`, `PHASE2_*` | `archive/phase2/` | PHASE2_TEST_STATUS.md |
-| `PHASE_?3*`, `PHASE3_*` | `archive/phase3/` | PHASE_3_SECURITY.md |
-| `SESSION*`, `CONSOLIDATION*` | `archive/sessions/` | SESSION_SUMMARY_PHASE1.md |
-| `*_SUMMARY`, `*_FIX`, `*_STATUS` | `archive/sessions/` | IMPLEMENTATION_SUMMARY.md |
-| `TESTING*`, `TEST_*`, `USER_TESTING*` | `archive/testing/` | TESTING_GUIDE.md |
-| `SPRINT*` | `archive/sprints/` | SPRINT_4_COMPLETION.md |
+| Pattern                                     | Destination         | Examples                     |
+| ------------------------------------------- | ------------------- | ---------------------------- |
+| `PHASE_?1*`, `PHASE1_*`                     | `archive/phase1/`   | PHASE_1_COMPLETION_REPORT.md |
+| `PHASE_?2*`, `PHASE2_*`                     | `archive/phase2/`   | PHASE2_TEST_STATUS.md        |
+| `PHASE_?3*`, `PHASE3_*`                     | `archive/phase3/`   | PHASE_3_SECURITY.md          |
+| `SESSION*`, `CONSOLIDATION*`                | `archive/sessions/` | SESSION_SUMMARY_PHASE1.md    |
+| `*_SUMMARY`, `*_FIX`, `*_STATUS`            | `archive/sessions/` | IMPLEMENTATION_SUMMARY.md    |
+| `TESTING*`, `TEST_*`, `USER_TESTING*`       | `archive/testing/`  | TESTING_GUIDE.md             |
+| `SPRINT*`                                   | `archive/sprints/`  | SPRINT_4_COMPLETION.md       |
 | `IMPLEMENTATION*`, `*_REPORT`, `*_COMPLETE` | `archive/sessions/` | PHASE_1_COMPLETION_REPORT.md |
 
 ### Docs Rules
 
-| Pattern | Destination | Examples |
-|---------|------------|----------|
-| `*GUIDE*` | `docs/reference/` | DEPLOYMENT_GUIDE.md |
-| `*TROUBLESHOOT*`, `*DEBUG*`, `*ERROR*` | `docs/troubleshooting/` | ERROR_HANDLING_DEBUG.md |
-| `*ADR*`, `*DECISION*` | `docs/decisions/` | ADR_001_ARCHITECTURE.md |
-| `*COMPONENT*`, `*MODULE*` | `docs/components/` | AUTHENTICATION_MODULE.md |
-| All other `.md` files | `docs/reference/` | DEVELOPER_ONBOARDING.md |
+| Pattern                                | Destination             | Examples                 |
+| -------------------------------------- | ----------------------- | ------------------------ |
+| `*GUIDE*`                              | `docs/reference/`       | DEPLOYMENT_GUIDE.md      |
+| `*TROUBLESHOOT*`, `*DEBUG*`, `*ERROR*` | `docs/troubleshooting/` | ERROR_HANDLING_DEBUG.md  |
+| `*ADR*`, `*DECISION*`                  | `docs/decisions/`       | ADR_001_ARCHITECTURE.md  |
+| `*COMPONENT*`, `*MODULE*`              | `docs/components/`      | AUTHENTICATION_MODULE.md |
+| All other `.md` files                  | `docs/reference/`       | DEVELOPER_ONBOARDING.md  |
 
 ## Git Integration
 
@@ -97,6 +97,7 @@ The cleanup system is **git-aware**:
 ## Usage Examples
 
 ### Run cleanup after completing work
+
 ```bash
 # After finishing a phase/sprint
 git add .
@@ -106,12 +107,14 @@ git commit -m "docs: archive completed phase documentation"
 ```
 
 ### Check what would be moved (dry-run)
+
 ```bash
 # See what files exist that match patterns
 ls -la PHASE*.md SESSION*.md TESTING*.md SPRINT*.md
 ```
 
 ### Manual cleanup
+
 ```bash
 # Windows
 powershell -ExecutionPolicy Bypass -File cleanup-docs.ps1
@@ -162,23 +165,27 @@ done
 ## Troubleshooting
 
 ### Script won't run on Windows
+
 ```powershell
 # Enable script execution
 Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 ```
 
 ### Script won't run on Unix
+
 ```bash
 # Make executable
 chmod +x scripts/cleanup-docs.sh
 ```
 
 ### Files not moving
+
 - Check file isn't in protected list
 - Verify archive directories exist
 - Check git status (conflicts block moves)
 
 ### Cleanup moved wrong file
+
 ```bash
 # Undo with git (if file was tracked)
 git log --all --full-history -- "path/to/file"

@@ -67,7 +67,9 @@ class MarketService:
             Dictionary with trend analysis and insights
         """
         try:
-            from agents.market_insight_agent.agents.market_insight_agent import MarketInsightAgent  # type: ignore[import]
+            from agents.market_insight_agent.agents.market_insight_agent import (
+                MarketInsightAgent,  # type: ignore[import]
+            )
 
             market_agent = MarketInsightAgent()
             analysis = await market_agent.run(

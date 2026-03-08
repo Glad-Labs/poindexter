@@ -131,12 +131,12 @@ graph TD
 
 ## Estimated Time to Productive
 
-| Path | Time |
-| --- | --- |
+| Path                          | Time   |
+| ----------------------------- | ------ |
 | New Developer all 4 tutorials | 75 min |
-| Integrating OAuth Only | 20 min |
-| Building Custom Workflows | 25 min |
-| Operator Setup | 30 min |
+| Integrating OAuth Only        | 20 min |
+| Building Custom Workflows     | 25 min |
+| Operator Setup                | 30 min |
 
 ---
 

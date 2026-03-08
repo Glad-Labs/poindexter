@@ -14,11 +14,23 @@ This document catalogs all registered capabilities available for task compositio
 
 ```json
 {
-  "topic": {"type": "string", "required": true, "description": "Content topic"},
-  "length": {"type": "enum", "values": ["short", "medium", "long"], "required": false},
-  "style": {"type": "string", "required": false, "description": "Writing style"},
-  "target_audience": {"type": "string", "required": false},
-  "tone": {"type": "string", "required": false}
+  "topic": {
+    "type": "string",
+    "required": true,
+    "description": "Content topic"
+  },
+  "length": {
+    "type": "enum",
+    "values": ["short", "medium", "long"],
+    "required": false
+  },
+  "style": {
+    "type": "string",
+    "required": false,
+    "description": "Writing style"
+  },
+  "target_audience": { "type": "string", "required": false },
+  "tone": { "type": "string", "required": false }
 }
 ```
 
@@ -26,7 +38,7 @@ This document catalogs all registered capabilities available for task compositio
 
 ```json
 {
-  "content": {"type": "string"},
+  "content": { "type": "string" },
   "metadata": {
     "word_count": "integer",
     "estimated_read_time_minutes": "integer",
@@ -54,10 +66,26 @@ This document catalogs all registered capabilities available for task compositio
 
 ```json
 {
-  "description": {"type": "string", "required": true, "description": "Image description"},
-  "style": {"type": "enum", "values": ["photorealistic", "illustration", "abstract", "sketch"], "required": false},
-  "size": {"type": "enum", "values": ["small", "medium", "large"], "required": false},
-  "provider": {"type": "enum", "values": ["pexels", "dalle", "midjourney"], "required": false}
+  "description": {
+    "type": "string",
+    "required": true,
+    "description": "Image description"
+  },
+  "style": {
+    "type": "enum",
+    "values": ["photorealistic", "illustration", "abstract", "sketch"],
+    "required": false
+  },
+  "size": {
+    "type": "enum",
+    "values": ["small", "medium", "large"],
+    "required": false
+  },
+  "provider": {
+    "type": "enum",
+    "values": ["pexels", "dalle", "midjourney"],
+    "required": false
+  }
 }
 ```
 
@@ -65,7 +93,7 @@ This document catalogs all registered capabilities available for task compositio
 
 ```json
 {
-  "image_urls": {"type": "array", "items": "string"},
+  "image_urls": { "type": "array", "items": "string" },
   "metadata": {
     "selected_url": "string",
     "alt_text": "string",
@@ -93,8 +121,17 @@ This document catalogs all registered capabilities available for task compositio
 
 ```json
 {
-  "query": {"type": "string", "required": true, "description": "Research query"},
-  "depth": {"type": "enum", "values": ["shallow", "moderate", "deep"], "required": false, "default": "moderate"},
+  "query": {
+    "type": "string",
+    "required": true,
+    "description": "Research query"
+  },
+  "depth": {
+    "type": "enum",
+    "values": ["shallow", "moderate", "deep"],
+    "required": false,
+    "default": "moderate"
+  },
   "source_types": {
     "type": "array",
     "items": "string",
@@ -109,7 +146,7 @@ This document catalogs all registered capabilities available for task compositio
 ```json
 {
   "summary": "string",
-  "key_points": {"type": "array", "items": "string"},
+  "key_points": { "type": "array", "items": "string" },
   "sources": {
     "type": "array",
     "items": {
@@ -140,14 +177,31 @@ This document catalogs all registered capabilities available for task compositio
 
 ```json
 {
-  "content": {"type": "string", "required": true, "description": "Content to evaluate"},
+  "content": {
+    "type": "string",
+    "required": true,
+    "description": "Content to evaluate"
+  },
   "criteria": {
     "type": "array",
     "items": "string",
-    "values": ["grammar", "factuality", "tone", "engagement", "seo", "compliance"],
+    "values": [
+      "grammar",
+      "factuality",
+      "tone",
+      "engagement",
+      "seo",
+      "compliance"
+    ],
     "required": false
   },
-  "threshold": {"type": "float", "minimum": 0, "maximum": 1, "required": false, "default": 0.8}
+  "threshold": {
+    "type": "float",
+    "minimum": 0,
+    "maximum": 1,
+    "required": false,
+    "default": 0.8
+  }
 }
 ```
 
@@ -157,15 +211,15 @@ This document catalogs all registered capabilities available for task compositio
 {
   "overall_score": "float",
   "assessment": {
-    "grammar": {"score": "float", "feedback": "string"},
-    "factuality": {"score": "float", "feedback": "string"},
-    "tone": {"score": "float", "feedback": "string"},
-    "engagement": {"score": "float", "feedback": "string"},
-    "seo": {"score": "float", "feedback": "string"},
-    "compliance": {"score": "float", "feedback": "string"}
+    "grammar": { "score": "float", "feedback": "string" },
+    "factuality": { "score": "float", "feedback": "string" },
+    "tone": { "score": "float", "feedback": "string" },
+    "engagement": { "score": "float", "feedback": "string" },
+    "seo": { "score": "float", "feedback": "string" },
+    "compliance": { "score": "float", "feedback": "string" }
   },
   "pass": "boolean",
-  "improvements": {"type": "array", "items": "string"}
+  "improvements": { "type": "array", "items": "string" }
 }
 ```
 
@@ -188,8 +242,12 @@ This document catalogs all registered capabilities available for task compositio
 
 ```json
 {
-  "content": {"type": "string", "required": true, "description": "Content to publish"},
-  "title": {"type": "string", "required": true},
+  "content": {
+    "type": "string",
+    "required": true,
+    "description": "Content to publish"
+  },
+  "title": { "type": "string", "required": true },
   "channels": {
     "type": "array",
     "items": "string",
@@ -197,7 +255,7 @@ This document catalogs all registered capabilities available for task compositio
     "required": true
   },
   "metadata": {
-    "keywords": {"type": "array", "items": "string"},
+    "keywords": { "type": "array", "items": "string" },
     "featured_image": "string",
     "publish_date": "string"
   }
@@ -212,11 +270,11 @@ This document catalogs all registered capabilities available for task compositio
     "type": "object",
     "properties": {
       "blog": "string",
-      "social_media": {"type": "array", "items": "string"},
+      "social_media": { "type": "array", "items": "string" },
       "email": "string"
     }
   },
-  "urls": {"type": "array", "items": "string"},
+  "urls": { "type": "array", "items": "string" },
   "published_at": "string",
   "status": "string"
 }
@@ -241,7 +299,11 @@ This document catalogs all registered capabilities available for task compositio
 
 ```json
 {
-  "market": {"type": "string", "required": true, "description": "Market/industry name"},
+  "market": {
+    "type": "string",
+    "required": true,
+    "description": "Market/industry name"
+  },
   "focus": {
     "type": "array",
     "items": "string",
@@ -256,11 +318,11 @@ This document catalogs all registered capabilities available for task compositio
 ```json
 {
   "market_overview": "string",
-  "key_players": {"type": "array", "items": "string"},
-  "trends": {"type": "array", "items": "string"},
-  "opportunities": {"type": "array", "items": "string"},
-  "threats": {"type": "array", "items": "string"},
-  "recommendations": {"type": "array", "items": "string"}
+  "key_players": { "type": "array", "items": "string" },
+  "trends": { "type": "array", "items": "string" },
+  "opportunities": { "type": "array", "items": "string" },
+  "threats": { "type": "array", "items": "string" },
+  "recommendations": { "type": "array", "items": "string" }
 }
 ```
 
@@ -274,14 +336,14 @@ This document catalogs all registered capabilities available for task compositio
 
 ## Capability-to-Service Mapping
 
-| Capability | Primary Services | Models |
-|-----------|-----------------|--------|
-| `content_generation` | research, draft, assess, refine | Claude 3.5, GPT-4 |
-| `image_generation` | search_stock, generate_custom, optimize | Pexels, DALL-E, Midjourney |
-| `research` | web_search, academic, news | Claude, GPT-4 |
-| `quality_evaluation` | grammar, factuality, tone, seo | Claude 3.5 |
-| `publishing` | cms_publish, social_schedule, email | Native implementations |
-| `market_analysis` | competitor, trends, opportunities | Claude, GPT-4 |
+| Capability           | Primary Services                        | Models                     |
+| -------------------- | --------------------------------------- | -------------------------- |
+| `content_generation` | research, draft, assess, refine         | Claude 3.5, GPT-4          |
+| `image_generation`   | search_stock, generate_custom, optimize | Pexels, DALL-E, Midjourney |
+| `research`           | web_search, academic, news              | Claude, GPT-4              |
+| `quality_evaluation` | grammar, factuality, tone, seo          | Claude 3.5                 |
+| `publishing`         | cms_publish, social_schedule, email     | Native implementations     |
+| `market_analysis`    | competitor, trends, opportunities       | Claude, GPT-4              |
 
 ## Capability Discovery via API
 

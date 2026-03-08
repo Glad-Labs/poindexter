@@ -19,8 +19,6 @@ from uuid import uuid4
 import asyncpg
 from asyncpg import Pool
 
-from .error_handler import DatabaseError
-
 from schemas.database_response_models import (
     AuthorResponse,
     CategoryResponse,
@@ -36,6 +34,7 @@ from utils.sql_safety import ParameterizedQueryBuilder, SQLOperator
 
 from .database_mixin import DatabaseServiceMixin
 from .decorators import log_query_performance
+from .error_handler import DatabaseError
 
 logger = logging.getLogger(__name__)
 

@@ -4,8 +4,12 @@ import os
 # Try to import OpenTelemetry - it's optional for development
 try:
     from opentelemetry import trace  # type: ignore[import-untyped]
-    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter  # type: ignore[import-untyped]
-    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor  # type: ignore[import-untyped]
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+        OTLPSpanExporter,  # type: ignore[import-untyped]
+    )
+    from opentelemetry.instrumentation.fastapi import (
+        FastAPIInstrumentor,  # type: ignore[import-untyped]
+    )
     from opentelemetry.sdk.resources import Resource  # type: ignore[import-untyped]
     from opentelemetry.sdk.trace import TracerProvider  # type: ignore[import-untyped]
     from opentelemetry.sdk.trace.export import BatchSpanProcessor  # type: ignore[import-untyped]
@@ -33,10 +37,14 @@ logging.getLogger("urllib3.connectionpool").setLevel(logging.CRITICAL)
 
 # Try to import OpenAI instrumentation if available
 try:
-    from opentelemetry.instrumentation.openai import OpenAIInstrumentor  # type: ignore[import-untyped]
+    from opentelemetry.instrumentation.openai import (
+        OpenAIInstrumentor,  # type: ignore[import-untyped]
+    )
 except ImportError:
     try:
-        from opentelemetry.instrumentation.openai_v2 import OpenAIInstrumentor  # type: ignore[import-untyped]
+        from opentelemetry.instrumentation.openai_v2 import (
+            OpenAIInstrumentor,  # type: ignore[import-untyped]
+        )
     except ImportError:
         OpenAIInstrumentor = None  # type: ignore[assignment,misc]
 

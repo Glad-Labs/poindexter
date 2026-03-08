@@ -34,7 +34,8 @@ import { defineConfig, devices } from '@playwright/test';
 
 const isCI = !!process.env.CI;
 const isMockDelay = !!process.env.MOCK_NETWORK_DELAY;
-const outputDir = process.env.PLAYWRIGHT_OUTPUT_DIR || 'test-results/playwright';
+const outputDir =
+  process.env.PLAYWRIGHT_OUTPUT_DIR || 'test-results/playwright';
 
 const baseURL = process.env.PLAYWRIGHT_TEST_BASE_URL || 'http://localhost:3000';
 const apiURL = process.env.PLAYWRIGHT_API_URL || 'http://localhost:8000';
@@ -70,19 +71,31 @@ export default defineConfig({
   // ========================
 
   reporter: [
-    ['html', {
-      outputFolder: `${outputDir}/html-report`,
-      open: isCI ? 'never' : 'on-failure',
-    }],
-    ['json', {
-      outputFile: `${outputDir}/results.json`,
-    }],
-    ['junit', {
-      outputFile: `${outputDir}/junit.xml`,
-    }],
-    ['markdown', {
-      outputFile: `${outputDir}/results.md`,
-    }],
+    [
+      'html',
+      {
+        outputFolder: `${outputDir}/html-report`,
+        open: isCI ? 'never' : 'on-failure',
+      },
+    ],
+    [
+      'json',
+      {
+        outputFile: `${outputDir}/results.json`,
+      },
+    ],
+    [
+      'junit',
+      {
+        outputFile: `${outputDir}/junit.xml`,
+      },
+    ],
+    [
+      'markdown',
+      {
+        outputFile: `${outputDir}/results.md`,
+      },
+    ],
     ['list'],
     // GitHub integration for CI
     ...(isCI ? [['github']] : ([] as any)),
@@ -93,7 +106,9 @@ export default defineConfig({
   // ========================
 
   // Individual test timeout
-  timeout: process.env.PLAYWRIGHT_TIMEOUT ? parseInt(process.env.PLAYWRIGHT_TIMEOUT) : 30000,
+  timeout: process.env.PLAYWRIGHT_TIMEOUT
+    ? parseInt(process.env.PLAYWRIGHT_TIMEOUT)
+    : 30000,
 
   // Expectation timeout
   expect: {
@@ -267,7 +282,8 @@ export default defineConfig({
 
   outputDir: `${outputDir}/traces`,
   snapshotDir: './web/public-site/e2e/snapshots',
-  snapshotPathTemplate: '{snapshotDir}/{testFileDir}/{testFileName}-{platform}{ext}',
+  snapshotPathTemplate:
+    '{snapshotDir}/{testFileDir}/{testFileName}-{platform}{ext}',
 });
 
 // ========================

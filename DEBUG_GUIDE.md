@@ -21,6 +21,7 @@ Quick guide for debugging model_used and content length issues.
    - `parsedResult.content`: Should have the full blog post text
 
 **What to look for:**
+
 - ✅ If data is present: Frontend parsing issue (check display logic)
 - ❌ If data is missing: Backend or database issue (continue to Step 2)
 
@@ -36,17 +37,20 @@ python scripts/test-api-response.py <task_id>
 ```
 
 **Example:**
+
 ```bash
 python scripts/test-api-response.py 550e8400-e29b-41d4-a716-446655440000
 ```
 
 **What to look for:**
+
 - Check if `model_used` is present in API response
 - Check if `target_length` is present
 - Compare actual vs target word count
 - Full response saved to `scripts/api_response_<id>.json`
 
 **Diagnosis:**
+
 - ✅ If present in API but not frontend: Data serialization issue
 - ❌ If missing from API: Database or query issue (continue to Step 3)
 
@@ -62,17 +66,20 @@ python scripts/debug-task-data.py <task_id>
 ```
 
 **Example:**
+
 ```bash
 python scripts/debug-task-data.py 550e8400-e29b-41d4-a716-446655440000
 ```
 
 **What to look for:**
+
 - Is `model_used` NULL in database?
 - Is `target_length` stored correctly?
 - Compare database stored content length vs target
 - Check `models_used_by_phase` and `model_selection_log`
 
 **Diagnosis:**
+
 - ❌ If `model_used` is NULL: Generation pipeline isn't storing the model
 - ⚠️ If content length < 90% of target: Generation pipeline not respecting target_length
 
@@ -93,24 +100,29 @@ To get a task ID for testing:
 ## Expected Outcomes
 
 ### Scenario A: model_used is NULL in database
+
 **Root Cause:** Content generation in `content_router_service.py` isn't storing model_used  
 **Fix Location:** `src/cofounder_agent/services/content_router_service.py` ~line 630-640  
 **Action:** Check database update call includes `model_used` parameter
 
 ### Scenario B: model_used in DB but not in API response
+
 **Root Cause:** `db_service.get_task()` or serialization not including field  
 **Fix Location:** `src/cofounder_agent/services/tasks_db.py` or `schemas/unified_task_response.py`  
 **Action:** Verify query includes model_used column
 
 ### Scenario C: model_used in API but not in frontend
+
 **Root Cause:** Frontend parsing logic issue  
 **Fix Location:** `web/oversight-hub/src/components/tasks/TaskMetadataDisplay.jsx`  
 **Action:** Check parsing order (already fixed - should show data if present)
 
 ### Scenario D: Content shorter than target
+
 **Root Cause:** AI model not respecting word count in prompts  
 **Fix Location:** `src/cofounder_agent/services/ai_content_generator.py` or prompt templates  
 **Potential Issues:**
+
 - Max tokens too low for target length
 - Prompt doesn't emphasize word count requirement
 - Model validation passes even when content is short
@@ -121,16 +133,19 @@ To get a task ID for testing:
 ## Quick Checks
 
 ### Check if backend is running:
+
 ```bash
 curl http://localhost:8000/health
 ```
 
 ### Check if you can access tasks API:
+
 ```bash
 curl -H "Authorization: Bearer dev-token" http://localhost:8000/api/tasks
 ```
 
 ### Check database connection:
+
 ```bash
 # From project root
 python -c "import asyncpg; import asyncio; import os; from dotenv import load_dotenv; load_dotenv('.env.local'); asyncio.run(asyncpg.connect(os.getenv('DATABASE_URL'))); print('✅ Database connected')"
@@ -141,6 +156,7 @@ python -c "import asyncpg; import asyncio; import os; from dotenv import load_do
 ## Need More Help?
 
 If debugging scripts show unexpected results or errors, share:
+
 1. Console output from frontend (with screenshots)
 2. Output from `test-api-response.py` script
 3. Output from `debug-task-data.py` script

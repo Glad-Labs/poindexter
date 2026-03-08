@@ -480,6 +480,6 @@ All requirements met if:
 
 ---
 
-**Testing completed by:** ************\_\_************
-**Date:** ********\_********
+**Testing completed by:** \***\*\*\*\*\*\*\***\_\_\***\*\*\*\*\*\*\***
+**Date:** **\*\*\*\***\_**\*\*\*\***
 **Result:** [ ] SUCCESS [ ] NEEDS INVESTIGATION

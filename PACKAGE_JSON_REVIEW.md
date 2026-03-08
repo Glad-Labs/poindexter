@@ -412,7 +412,7 @@ When adding new scripts:
 
 - Removed 8 duplicate test:python scripts
 - Removed 4 old test:playwright scripts
-- Removed 1 redundant test:e2e:all script  
+- Removed 1 redundant test:e2e:all script
 - Reorganized 55+ scripts into logical sections
 - Added clear category headers
 

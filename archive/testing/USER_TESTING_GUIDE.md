@@ -288,22 +288,22 @@ npx playwright test --config playwright.oversight.config.ts --headed --debug
 
 ### API Endpoints (Backend)
 
-| Endpoint | Target | Acceptable | Critical |
-|----------|--------|------------|----------|
-| GET /health | < 50ms | < 100ms | < 200ms |
-| GET /api/tasks | < 500ms | < 1s | < 2s |
-| POST /api/tasks | < 1s | < 2s | < 5s |
-| GET /api/analytics | < 800ms | < 1.5s | < 3s |
-| WebSocket connect | < 200ms | < 500ms | < 1s |
+| Endpoint           | Target  | Acceptable | Critical |
+| ------------------ | ------- | ---------- | -------- |
+| GET /health        | < 50ms  | < 100ms    | < 200ms  |
+| GET /api/tasks     | < 500ms | < 1s       | < 2s     |
+| POST /api/tasks    | < 1s    | < 2s       | < 5s     |
+| GET /api/analytics | < 800ms | < 1.5s     | < 3s     |
+| WebSocket connect  | < 200ms | < 500ms    | < 1s     |
 
 ### Frontend Metrics
 
-| Metric | Target | Acceptable | Critical |
-|--------|--------|------------|----------|
-| First Contentful Paint | < 1s | < 2s | < 3s |
-| Largest Contentful Paint | < 1.5s | < 2.5s | < 4s |
-| Time to Interactive | < 2s | < 3.5s | < 5s |
-| Cumulative Layout Shift | < 0.1 | < 0.25 | < 0.5 |
+| Metric                   | Target | Acceptable | Critical |
+| ------------------------ | ------ | ---------- | -------- |
+| First Contentful Paint   | < 1s   | < 2s       | < 3s     |
+| Largest Contentful Paint | < 1.5s | < 2.5s     | < 4s     |
+| Time to Interactive      | < 2s   | < 3.5s     | < 5s     |
+| Cumulative Layout Shift  | < 0.1  | < 0.25     | < 0.5    |
 
 ---
 
@@ -459,10 +459,10 @@ npx playwright show-trace test-results/trace.zip
 #### Issues Found
 
 | Severity | Description | Steps to Reproduce | Screenshot |
-|----------|-------------|-------------------|------------|
-| High | [example] | [steps] | [path] |
-| Medium | [example] | [steps] | [path] |
-| Low | [example] | [steps] | [path] |
+| -------- | ----------- | ------------------ | ---------- |
+| High     | [example]   | [steps]            | [path]     |
+| Medium   | [example]   | [steps]            | [path]     |
+| Low      | [example]   | [steps]            | [path]     |
 
 #### Performance Metrics Observed
 

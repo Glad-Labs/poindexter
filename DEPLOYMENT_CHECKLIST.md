@@ -205,25 +205,25 @@ git tag -l | tail -3
 
 ## 🛡️ Safety Measures in Place
 
-| Measure | Prevents | How |
-| --- | --- | --- |
-| `[skip ci]` tag | Infinite loops | Version bump commits skip CI |
-| Tier restriction | Accidental major bumps | Script enforces patch-only on dev |
-| Atomic updates | Partial failures | All files updated together or none |
-| Verification step | Silent failures | All 6 files checked after update |
-| Dry-run mode | Mistakes | Test before committing |
-| Manual override | Branch mismatch | Force specific bump if needed |
+| Measure           | Prevents               | How                                |
+| ----------------- | ---------------------- | ---------------------------------- |
+| `[skip ci]` tag   | Infinite loops         | Version bump commits skip CI       |
+| Tier restriction  | Accidental major bumps | Script enforces patch-only on dev  |
+| Atomic updates    | Partial failures       | All files updated together or none |
+| Verification step | Silent failures        | All 6 files checked after update   |
+| Dry-run mode      | Mistakes               | Test before committing             |
+| Manual override   | Branch mismatch        | Force specific bump if needed      |
 
 ---
 
 ## 📞 Support Resources
 
-| Resource | Purpose |
-| --- | --- |
-| `VERSIONING_GUIDE.md` | User guide with examples |
-| `IMPLEMENTATION_SUMMARY.md` | Technical details & workflow |
-| `scripts/bump-version.js` | Source code (inline comments) |
-| `.github/workflows/*.yml` | Workflow definitions |
+| Resource                    | Purpose                       |
+| --------------------------- | ----------------------------- |
+| `VERSIONING_GUIDE.md`       | User guide with examples      |
+| `IMPLEMENTATION_SUMMARY.md` | Technical details & workflow  |
+| `scripts/bump-version.js`   | Source code (inline comments) |
+| `.github/workflows/*.yml`   | Workflow definitions          |
 
 ---
 

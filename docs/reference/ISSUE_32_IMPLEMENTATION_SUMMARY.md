@@ -16,6 +16,7 @@ Implemented comprehensive database query performance monitoring across all key d
 Created `@log_query_performance()` decorator with the following features:
 
 **Core Functionality:**
+
 - Automatic query timing capture (using `time.perf_counter()`)
 - Slow query detection with configurable thresholds
 - Result count extraction from various response types
@@ -23,17 +24,20 @@ Created `@log_query_performance()` decorator with the following features:
 - Parameter sanitization (filters out sensitive fields: password, token, secret, api_key)
 
 **Configuration (via environment variables):**
+
 - `ENABLE_QUERY_MONITORING` - Enable/disable monitoring (default: `true`)
 - `SLOW_QUERY_THRESHOLD_MS` - Global slow query threshold in milliseconds (default: `100`)
 - `LOG_ALL_QUERIES` - Log all queries regardless of performance (default: `false`)
 
 **Logging Levels:**
+
 - **ERROR** - Query failures with stack trace
 - **WARNING** - Slow queries exceeding threshold
 - **INFO** - All queries when `LOG_ALL_QUERIES=true`
 - **DEBUG** - Fast queries when not logging all
 
 **Context Captured:**
+
 - Operation name and category
 - Execution duration (milliseconds)
 - Result count (when available)
@@ -46,6 +50,7 @@ Created `@log_query_performance()` decorator with the following features:
 **Total Methods Instrumented:** 7 key database operations
 
 #### TasksDatabase (`services/tasks_db.py`)
+
 1. ✅ **`get_tasks_paginated()`** - Task retrieval with pagination
    - Threshold: 50ms (fast SELECT expected)
    - Category: `task_retrieval`
@@ -57,6 +62,7 @@ Created `@log_query_performance()` decorator with the following features:
    - Tracks: date range, status filter, result count
 
 #### ContentDatabase (`services/content_db.py`)
+
 3. ✅ **`get_metrics()`** - System-wide metrics aggregation
    - Threshold: 200ms (complex aggregates expected)
    - Category: `analytics`
@@ -68,12 +74,14 @@ Created `@log_query_performance()` decorator with the following features:
    - Tracks: slug lookup performance
 
 #### UsersDatabase (`services/users_db.py`)
+
 5. ✅ **`get_oauth_accounts()`** - OAuth relationship loading
    - Threshold: 50ms (JOIN query expected to be fast)
    - Category: `user_relationships`
    - Tracks: user_id, linked accounts count
 
 #### WritingStyleDatabase (`services/writing_style_db.py`)
+
 6. ✅ **`get_active_writing_sample()`** - Style matching retrieval
    - Threshold: 50ms (indexed SELECT with boolean filter)
    - Category: `writing_style`
@@ -97,6 +105,7 @@ LOG_ALL_QUERIES=false              # Log all queries regardless of performance (
 Created comprehensive unit tests (`tests/test_decorators.py`):
 
 **Test Coverage:**
+
 - ✅ Basic timing functionality
 - ✅ List result count extraction
 - ✅ Dict result count extraction
@@ -107,6 +116,7 @@ Created comprehensive unit tests (`tests/test_decorators.py`):
 - ✅ Tuple result handling (paginated queries)
 
 **Run Tests:**
+
 ```bash
 cd src/cofounder_agent
 poetry run pytest tests/test_decorators.py -v
@@ -114,12 +124,12 @@ poetry run pytest tests/test_decorators.py -v
 
 ## Performance Targets (from Issue #32)
 
-| Operation Type | Target | Actual Threshold |
-|---|---|---|
-| Simple SELECT | 5ms | 50ms (conservative) |
-| JOIN query | 50ms | 50ms ✅ |
-| Full-text search | 100ms | 100ms (default) ✅ |
-| Aggregate functions | 200ms | 200ms ✅ |
+| Operation Type      | Target | Actual Threshold    |
+| ------------------- | ------ | ------------------- |
+| Simple SELECT       | 5ms    | 50ms (conservative) |
+| JOIN query          | 50ms   | 50ms ✅             |
+| Full-text search    | 100ms  | 100ms (default) ✅  |
+| Aggregate functions | 200ms  | 200ms ✅            |
 
 **Note:** Thresholds set conservatively to avoid false positives. Can be tuned per-environment using `SLOW_QUERY_THRESHOLD_MS` or per-method using `slow_threshold_ms` parameter.
 
@@ -175,18 +185,13 @@ LOG_LEVEL=DEBUG
 ## Files Modified
 
 **Created:**
+
 1. `src/cofounder_agent/services/decorators.py` (215 lines) - Performance decorator implementation
 2. `src/cofounder_agent/tests/test_decorators.py` (158 lines) - Unit tests
 
-**Modified:**
-3. `src/cofounder_agent/services/tasks_db.py` - Added decorator to 2 methods
-4. `src/cofounder_agent/services/content_db.py` - Added decorator to 2 methods
-5. `src/cofounder_agent/services/users_db.py` - Added decorator to 1 method
-6. `src/cofounder_agent/services/writing_style_db.py` - Added decorator to 1 method
-7. `.env.example` - Added query monitoring configuration section
+**Modified:** 3. `src/cofounder_agent/services/tasks_db.py` - Added decorator to 2 methods 4. `src/cofounder_agent/services/content_db.py` - Added decorator to 2 methods 5. `src/cofounder_agent/services/users_db.py` - Added decorator to 1 method 6. `src/cofounder_agent/services/writing_style_db.py` - Added decorator to 1 method 7. `.env.example` - Added query monitoring configuration section
 
-**Documentation:**
-8. `docs/07-Appendices/Technical-Debt-Tracker.md` - Marked issue #32 as completed
+**Documentation:** 8. `docs/07-Appendices/Technical-Debt-Tracker.md` - Marked issue #32 as completed
 
 ## Benefits
 
@@ -232,6 +237,7 @@ LOG_LEVEL=DEBUG
 
 **Estimated:** 2-3 hours  
 **Actual:** ~2.5 hours
+
 - Decorator implementation: 1 hour
 - Method instrumentation: 45 minutes
 - Testing: 30 minutes

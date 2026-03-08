@@ -68,7 +68,7 @@ Use this checklist to verify all 6 improvements are working:
 **Assessment**:
 
 - [ ] All 3 checks passed → **SEO Improvement WORKING ✓**
-- [ ] Any check failed → Note issue: **********\_\_\_**********
+- [ ] Any check failed → Note issue: \***\*\*\*\*\***\_\_\_\***\*\*\*\*\***
 
 ---
 
@@ -106,7 +106,7 @@ Use this checklist to verify all 6 improvements are working:
 **Assessment**:
 
 - [ ] All 4 checks passed → **Structure Improvement WORKING ✓**
-- [ ] Any check failed → Note issue: **********\_\_\_**********
+- [ ] Any check failed → Note issue: \***\*\*\*\*\***\_\_\_\***\*\*\*\*\***
 
 ---
 
@@ -131,7 +131,7 @@ Use this checklist to verify all 6 improvements are working:
 **Assessment**:
 
 - [ ] All 3 checks passed → **Readability Improvement WORKING ✓**
-- [ ] Any check failed → Note issue: **********\_\_\_**********
+- [ ] Any check failed → Note issue: \***\*\*\*\*\***\_\_\_\***\*\*\*\*\***
 
 ---
 
@@ -159,7 +159,7 @@ Use this checklist to verify all 6 improvements are working:
 **Assessment**:
 
 - [ ] All 3 checks passed → **Research Improvement WORKING ✓**
-- [ ] Any check failed → Note issue: **********\_\_\_**********
+- [ ] Any check failed → Note issue: \***\*\*\*\*\***\_\_\_\***\*\*\*\*\***
 
 ---
 
@@ -189,7 +189,7 @@ Use this checklist to verify all 6 improvements are working:
 
 - [ ] Quality score ≥75 → **Quality Score WORKING ✓**
 - [ ] Score improvement visible → **Feedback Accumulation WORKING ✓**
-- [ ] Any check failed → Note issue: **********\_\_\_**********
+- [ ] Any check failed → Note issue: \***\*\*\*\*\***\_\_\_\***\*\*\*\*\***
 
 ---
 

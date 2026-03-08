@@ -5,9 +5,9 @@ ASYNC REST endpoints for blog content, categories, and tags.
 Using pure asyncpg for non-blocking database access.
 """
 
+import asyncio
 import logging
 import os
-import asyncio
 from datetime import datetime
 from typing import Any, Optional
 

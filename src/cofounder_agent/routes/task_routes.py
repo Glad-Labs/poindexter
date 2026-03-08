@@ -32,7 +32,6 @@ from uuid import UUID
 
 import aiohttp
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from services.error_handler import AppError
 from pydantic import BaseModel, Field
 
 from routes.auth_unified import get_current_user, get_current_user_optional
@@ -61,6 +60,7 @@ from schemas.unified_task_response import UnifiedTaskResponse
 # Import async database service
 from services.database_service import DatabaseService
 from services.enhanced_status_change_service import EnhancedStatusChangeService
+from services.error_handler import AppError
 from utils.error_responses import ErrorResponseBuilder
 from utils.json_encoder import convert_decimals, safe_json_dumps
 from utils.route_utils import get_database_dependency

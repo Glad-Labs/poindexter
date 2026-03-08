@@ -20,8 +20,8 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-# Import model selection helper (lives in services to avoid service→route circular dep)
-from .model_router import get_model_for_phase
+# Import constraint utilities (Task 3 - Unified constraint gating)
+from utils.constraint_utils import ContentConstraints, validate_constraints
 from utils.error_handler import handle_service_error
 
 # Import AI content generator for fallback
@@ -36,20 +36,20 @@ from .error_handler import (
 # Import metrics service (Sprint 5)
 from .metrics_service import TaskMetrics, get_metrics_service
 
+# Import model selection helper (lives in services to avoid service→route circular dep)
+from .model_router import get_model_for_phase
+
 # Import prompt manager for centralized prompts
 from .prompt_manager import get_prompt_manager
-
-# Import unified quality service for content validation
-from .quality_service import QualityAssessment, UnifiedQualityService
 
 # Import style consistency validator (Task 2 - Style gate)
 from .qa_style_evaluator import StyleConsistencyValidator
 
+# Import unified quality service for content validation
+from .quality_service import QualityAssessment, UnifiedQualityService
+
 # Import SEO validator (Task 5 - SEO gating)
 from .seo_validator import SEOValidator
-
-# Import constraint utilities (Task 3 - Unified constraint gating)
-from utils.constraint_utils import validate_constraints, ContentConstraints
 
 # Import usage tracking
 from .usage_tracker import get_usage_tracker

@@ -12,30 +12,30 @@
 
 **Status:** All 7 files exist and are correctly referenced.
 
-| File | Reference | Full Path | Status |
-|------|-----------|-----------|--------|
-| Setup & Overview | `01-SETUP_AND_OVERVIEW.md` | `docs/01-SETUP_AND_OVERVIEW.md` | ✅ Valid |
-| Architecture & Design | `02-ARCHITECTURE_AND_DESIGN.md` | `docs/02-ARCHITECTURE_AND_DESIGN.md` | ✅ Valid |
+| File                        | Reference                             | Full Path                                  | Status   |
+| --------------------------- | ------------------------------------- | ------------------------------------------ | -------- |
+| Setup & Overview            | `01-SETUP_AND_OVERVIEW.md`            | `docs/01-SETUP_AND_OVERVIEW.md`            | ✅ Valid |
+| Architecture & Design       | `02-ARCHITECTURE_AND_DESIGN.md`       | `docs/02-ARCHITECTURE_AND_DESIGN.md`       | ✅ Valid |
 | Deployment & Infrastructure | `03-DEPLOYMENT_AND_INFRASTRUCTURE.md` | `docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md` | ✅ Valid |
-| Development Workflow | `04-DEVELOPMENT_WORKFLOW.md` | `docs/04-DEVELOPMENT_WORKFLOW.md` | ✅ Valid |
-| AI Agents & Integration | `05-AI_AGENTS_AND_INTEGRATION.md` | `docs/05-AI_AGENTS_AND_INTEGRATION.md` | ✅ Valid |
-| Operations & Maintenance | `06-OPERATIONS_AND_MAINTENANCE.md` | `docs/06-OPERATIONS_AND_MAINTENANCE.md` | ✅ Valid |
-| Branch-Specific Variables | `07-BRANCH_SPECIFIC_VARIABLES.md` | `docs/07-BRANCH_SPECIFIC_VARIABLES.md` | ✅ Valid |
+| Development Workflow        | `04-DEVELOPMENT_WORKFLOW.md`          | `docs/04-DEVELOPMENT_WORKFLOW.md`          | ✅ Valid |
+| AI Agents & Integration     | `05-AI_AGENTS_AND_INTEGRATION.md`     | `docs/05-AI_AGENTS_AND_INTEGRATION.md`     | ✅ Valid |
+| Operations & Maintenance    | `06-OPERATIONS_AND_MAINTENANCE.md`    | `docs/06-OPERATIONS_AND_MAINTENANCE.md`    | ✅ Valid |
+| Branch-Specific Variables   | `07-BRANCH_SPECIFIC_VARIABLES.md`     | `docs/07-BRANCH_SPECIFIC_VARIABLES.md`     | ✅ Valid |
 
 ### 1.2 Maintenance & Operations (2 Files) ✅ ALL VALID
 
-| File | Reference | Status |
-|------|-----------|--------|
+| File                            | Reference                            | Status   |
+| ------------------------------- | ------------------------------------ | -------- |
 | Documentation Maintenance Guide | `DOCUMENTATION_MAINTENANCE_GUIDE.md` | ✅ Valid |
-| Technical Debt Tracker | `TECHNICAL_DEBT_TRACKER.md` | ✅ Valid |
+| Technical Debt Tracker          | `TECHNICAL_DEBT_TRACKER.md`          | ✅ Valid |
 
 ### 1.3 Decision Records (3 Files) ✅ ALL VALID
 
-| File | Reference | Status |
-|------|-----------|--------|
-| Master Decisions Index | `decisions/DECISIONS.md` | ✅ Valid |
-| Why FastAPI | `decisions/WHY_FASTAPI.md` | ✅ Valid |
-| Why PostgreSQL | `decisions/WHY_POSTGRESQL.md` | ✅ Valid |
+| File                   | Reference                     | Status   |
+| ---------------------- | ----------------------------- | -------- |
+| Master Decisions Index | `decisions/DECISIONS.md`      | ✅ Valid |
+| Why FastAPI            | `decisions/WHY_FASTAPI.md`    | ✅ Valid |
+| Why PostgreSQL         | `decisions/WHY_POSTGRESQL.md` | ✅ Valid |
 
 ### 1.4 Reference Documentation (10 Files) ✅ ALL VALID
 
@@ -83,10 +83,10 @@
 
 ### 1.7 Archive Navigation ✅ VALID
 
-| Reference | Actual Path | Status |
-|-----------|-------------|--------|
-| `ARCHIVE_NAVIGATION.md` (referenced) | `docs/ARCHIVE_NAVIGATION.md` | ✅ Valid |
-| `archive-active/` (referenced in README) | `archive/` | ⚠️ Path mismatch |
+| Reference                                | Actual Path                  | Status           |
+| ---------------------------------------- | ---------------------------- | ---------------- |
+| `ARCHIVE_NAVIGATION.md` (referenced)     | `docs/ARCHIVE_NAVIGATION.md` | ✅ Valid         |
+| `archive-active/` (referenced in README) | `archive/`                   | ⚠️ Path mismatch |
 
 **Issue Found:** README references `archive-active/` but the actual directory is `archive/`
 
@@ -134,17 +134,17 @@
 
 ### 2.2 Violation Summary by Type
 
-| Error Code | Error Type | Count | Severity |
-|------------|-----------|-------|----------|
-| MD024 | Duplicate headings | 10-12 | Medium |
-| MD032 | List spacing | 20-25 | Low |
-| MD036 | Emphasis instead of heading | 6-8 | Low |
-| MD040 | No language in code fence | 4-6 | Low |
-| MD022 | Heading spacing | 6-8 | Low |
-| MD060 | Table formatting | 6-8 | Low |
-| MD034 | Bare URLs | 8-12 | Low |
-| MD051 | Invalid fragments | 6 | Low |
-| MD009 | Trailing spaces | 2-3 | Trivial |
+| Error Code | Error Type                  | Count | Severity |
+| ---------- | --------------------------- | ----- | -------- |
+| MD024      | Duplicate headings          | 10-12 | Medium   |
+| MD032      | List spacing                | 20-25 | Low      |
+| MD036      | Emphasis instead of heading | 6-8   | Low      |
+| MD040      | No language in code fence   | 4-6   | Low      |
+| MD022      | Heading spacing             | 6-8   | Low      |
+| MD060      | Table formatting            | 6-8   | Low      |
+| MD034      | Bare URLs                   | 8-12  | Low      |
+| MD051      | Invalid fragments           | 6     | Low      |
+| MD009      | Trailing spaces             | 2-3   | Trivial  |
 
 **Total Pre-Existing Violations:** ~70-75
 
@@ -233,13 +233,13 @@
 
 #### Core Documentation Versions
 
-| Version | Date | Major Changes |
-|---------|------|----------------|
-| v2.0 | Feb 2026 | Root consolidation; archive structure |
-| v2.1 | Feb 23, 2026 | 54 files archived; cleaned root |
-| v3.0.0 | Mar 1, 2026 | Section-based structure introduced |
-| v3.0.2 | Mar 5, 2026 | Phase 2B database tests complete |
-| v3.1.0 | Mar 8, 2026 | Phase 3A retry/visibility integration |
+| Version | Date         | Major Changes                         |
+| ------- | ------------ | ------------------------------------- |
+| v2.0    | Feb 2026     | Root consolidation; archive structure |
+| v2.1    | Feb 23, 2026 | 54 files archived; cleaned root       |
+| v3.0.0  | Mar 1, 2026  | Section-based structure introduced    |
+| v3.0.2  | Mar 5, 2026  | Phase 2B database tests complete      |
+| v3.1.0  | Mar 8, 2026  | Phase 3A retry/visibility integration |
 
 #### Archive Structure Evolution
 
@@ -288,27 +288,27 @@ Mar 2026:
 
 ### 4.1 Critical Fixes (High Priority)
 
-| Item | Issue | Impact | Effort |
-|------|-------|--------|--------|
-| Fix archive path reference in 00-README.md | References `archive-active/` but actual path is `archive/` | Broken link in documentation hub | 2 min |
-| Add 5 missing reference docs to index | Issue summaries are orphaned (not indexed) | Discoverability problem | 5 min |
-| Add orphaned component docs to index | Troubleshooting guides exist but aren't findable | Reduced usability | 3 min |
+| Item                                       | Issue                                                      | Impact                           | Effort |
+| ------------------------------------------ | ---------------------------------------------------------- | -------------------------------- | ------ |
+| Fix archive path reference in 00-README.md | References `archive-active/` but actual path is `archive/` | Broken link in documentation hub | 2 min  |
+| Add 5 missing reference docs to index      | Issue summaries are orphaned (not indexed)                 | Discoverability problem          | 5 min  |
+| Add orphaned component docs to index       | Troubleshooting guides exist but aren't findable           | Reduced usability                | 3 min  |
 
 ### 4.2 Medium Priority Improvements
 
-| Item | Issue | Impact | Effort |
-|------|-------|--------|--------|
-| Normalize VERSION_HISTORY.md | 32 markdownlint violations | Inconsistent style; hard to maintain | 30 min |
-| Fix bare URLs in setup docs | 3 markdown violations | Minor style inconsistency | 5 min |
-| Add language specs to code fences | 4-6 violations | Better syntax highlighting | 10 min |
+| Item                              | Issue                      | Impact                               | Effort |
+| --------------------------------- | -------------------------- | ------------------------------------ | ------ |
+| Normalize VERSION_HISTORY.md      | 32 markdownlint violations | Inconsistent style; hard to maintain | 30 min |
+| Fix bare URLs in setup docs       | 3 markdown violations      | Minor style inconsistency            | 5 min  |
+| Add language specs to code fences | 4-6 violations             | Better syntax highlighting           | 10 min |
 
 ### 4.3 Low Priority Enhancements
 
-| Item | Issue | Impact | Effort |
-|------|-------|--------|--------|
-| Standardize list spacing across docs | 20-25 violations | Cosmetic consistency | 20 min |
-| Rename bold-emphasis headings to proper headings | 6-8 violations | Better semantic structure | 15 min |
-| Create cross-reference validation script | Manual link checking required | Prevent future breakage | 60 min |
+| Item                                             | Issue                         | Impact                    | Effort |
+| ------------------------------------------------ | ----------------------------- | ------------------------- | ------ |
+| Standardize list spacing across docs             | 20-25 violations              | Cosmetic consistency      | 20 min |
+| Rename bold-emphasis headings to proper headings | 6-8 violations                | Better semantic structure | 15 min |
+| Create cross-reference validation script         | Manual link checking required | Prevent future breakage   | 60 min |
 
 ---
 
@@ -316,15 +316,15 @@ Mar 2026:
 
 ### Overall Statistics
 
-| Category | Total | Valid | Invalid | Orphaned | Coverage |
-|----------|-------|-------|---------|----------|----------|
-| Core Docs | 7 | 7 | 0 | 0 | 100% |
-| Maintenance | 2 | 2 | 0 | 0 | 100% |
-| Decisions | 3 | 3 | 0 | 0 | 100% |
-| Reference | 14 | 8 | 0 | 6 | 57% |
-| Troubleshooting | 4 | 4 | 0 | 0 | 100% |
-| Components | 5 | 3 | 0 | 2 | 60% |
-| **Total** | **35** | **27** | **0** | **8** | **77%** |
+| Category        | Total  | Valid  | Invalid | Orphaned | Coverage |
+| --------------- | ------ | ------ | ------- | -------- | -------- |
+| Core Docs       | 7      | 7      | 0       | 0        | 100%     |
+| Maintenance     | 2      | 2      | 0       | 0        | 100%     |
+| Decisions       | 3      | 3      | 0       | 0        | 100%     |
+| Reference       | 14     | 8      | 0       | 6        | 57%      |
+| Troubleshooting | 4      | 4      | 0       | 0        | 100%     |
+| Components      | 5      | 3      | 0       | 2        | 60%      |
+| **Total**       | **35** | **27** | **0**   | **8**    | **77%**  |
 
 ### Conclusions
 

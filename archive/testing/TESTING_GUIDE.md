@@ -39,14 +39,14 @@ npm run dev:oversight
 
 **Click "Create Task"** and fill in:
 
-| Field | Value | Why This Matters |
-|-------|-------|------------------|
-| Task Type | Blog Post | Testing blog post creation |
-| Topic | "Testing Metadata Fix - March 7" | Unique identifier |
-| Word Count | 1500 | Standard length |
-| **Writing Style** | **"narrative"** | ⚠️ NOT "technical" (old default) |
-| **Tone** | **"casual"** | ⚠️ NOT "professional" (old default) |
-| Keywords | "testing, metadata" | Optional |
+| Field             | Value                            | Why This Matters                    |
+| ----------------- | -------------------------------- | ----------------------------------- |
+| Task Type         | Blog Post                        | Testing blog post creation          |
+| Topic             | "Testing Metadata Fix - March 7" | Unique identifier                   |
+| Word Count        | 1500                             | Standard length                     |
+| **Writing Style** | **"narrative"**                  | ⚠️ NOT "technical" (old default)    |
+| **Tone**          | **"casual"**                     | ⚠️ NOT "professional" (old default) |
+| Keywords          | "testing, metadata"              | Optional                            |
 
 **In Model Selection Panel:**
 
