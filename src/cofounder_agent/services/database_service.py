@@ -168,11 +168,11 @@ class DatabaseService:
 
     async def update_task_status(
         self, task_id: str, status: str, result: Optional[str] = None
-    ) -> bool:
+    ) -> Any:
         """Delegate to tasks module."""
         return await self.tasks.update_task_status(task_id, status, result)
 
-    async def update_task(self, task_id: str, updates: dict) -> bool:
+    async def update_task(self, task_id: str, updates: dict) -> Any:
         """Delegate to tasks module."""
         return await self.tasks.update_task(task_id, updates)
 
@@ -213,7 +213,7 @@ class DatabaseService:
         """Delegate to tasks module."""
         return await self.tasks.delete_task(task_id)
 
-    async def get_drafts(self, limit: int = 20, offset: int = 0) -> List[Any]:
+    async def get_drafts(self, limit: int = 20, offset: int = 0) -> Any:
         """Delegate to tasks module."""
         return await self.tasks.get_drafts(limit, offset)
 
@@ -263,21 +263,21 @@ class DatabaseService:
         self, agent_name: str, level: str, message: str, context: Optional[dict] = None
     ) -> Any:
         """Delegate to admin module."""
-        return await self.admin.add_log_entry(agent_name, level, message, context)
+        return await self.admin.add_log_entry(agent_name, level, message, context)  # type: ignore[attr-defined]
 
     async def get_logs(
         self, agent_name: Optional[str] = None, level: Optional[str] = None, limit: int = 100
     ) -> List[Any]:
         """Delegate to admin module."""
-        return await self.admin.get_logs(agent_name, level, limit)
+        return await self.admin.get_logs(agent_name, level, limit)  # type: ignore[attr-defined]
 
     async def add_financial_entry(self, entry_data: dict) -> Any:
         """Delegate to admin module."""
-        return await self.admin.add_financial_entry(entry_data)
+        return await self.admin.add_financial_entry(entry_data)  # type: ignore[attr-defined]
 
     async def get_financial_summary(self, days: int = 30) -> Any:
         """Delegate to admin module."""
-        return await self.admin.get_financial_summary(days)
+        return await self.admin.get_financial_summary(days)  # type: ignore[attr-defined]
 
     async def log_cost(self, cost_log: dict) -> Any:
         """Delegate to admin module."""
@@ -291,11 +291,11 @@ class DatabaseService:
         self, agent_name: str, status: str, last_run=None, metadata: Optional[dict] = None
     ) -> bool:
         """Delegate to admin module."""
-        return await self.admin.update_agent_status(agent_name, status, last_run, metadata)
+        return await self.admin.update_agent_status(agent_name, status, last_run, metadata)  # type: ignore[attr-defined]
 
     async def get_agent_status(self, agent_name: str) -> Any:
         """Delegate to admin module."""
-        return await self.admin.get_agent_status(agent_name)
+        return await self.admin.get_agent_status(agent_name)  # type: ignore[attr-defined]
 
     async def health_check(self, service: str = "cofounder") -> Any:
         """Delegate to admin module."""

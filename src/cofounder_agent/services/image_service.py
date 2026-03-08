@@ -33,6 +33,7 @@ try:
 
     HTTPX_AVAILABLE = True
 except ImportError:
+    httpx = None  # type: ignore[assignment]
     HTTPX_AVAILABLE = False
 
 try:
@@ -40,6 +41,7 @@ try:
 
     TORCH_AVAILABLE = True
 except ImportError:
+    torch = None  # type: ignore[assignment]
     TORCH_AVAILABLE = False
 
 import numpy as np
@@ -61,6 +63,7 @@ try:
 
     XFORMERS_AVAILABLE = True
 except ImportError:
+    xformers = None  # type: ignore[assignment]
     XFORMERS_AVAILABLE = False
 
 try:
@@ -68,6 +71,7 @@ try:
 
     OPTIMUM_AVAILABLE = True
 except ImportError:
+    OVModelForFeatureExtraction = None  # type: ignore[assignment,misc]
     OPTIMUM_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
@@ -172,8 +176,8 @@ class ImageService:
 
     def _initialize_sdxl(self) -> None:
         """Initialize Stable Diffusion XL model with optimization and refinement if GPU available"""
-        # Check if diffusers is available first
-        if not DIFFUSERS_AVAILABLE:
+        # Check if diffusers and torch are available first
+        if not DIFFUSERS_AVAILABLE or torch is None or StableDiffusionXLPipeline is None:
             logger.warning(
                 "Diffusers library not installed - SDXL image generation will be unavailable"
             )
