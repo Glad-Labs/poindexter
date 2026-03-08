@@ -344,7 +344,7 @@ async def get_workflow_status(
     """
     try:
         # Retrieve workflow execution status from database
-        pool = await db_service.get_connection_pool()  # type: ignore[attr-defined]
+        pool = db_service.pool
         history_service = WorkflowHistoryService(pool)
 
         execution_data = await history_service.get_workflow_execution(workflow_id)
@@ -403,7 +403,7 @@ async def pause_workflow(
     """
     try:
         # Get current workflow status from database
-        pool = await db_service.get_connection_pool()  # type: ignore[attr-defined]
+        pool = db_service.pool
         history_service = WorkflowHistoryService(pool)
 
         execution_data = await history_service.get_workflow_execution(workflow_id)
@@ -427,7 +427,7 @@ async def pause_workflow(
             )
 
         # Also update database for persistence
-        await history_service.update_workflow_status(workflow_id, "paused")  # type: ignore[attr-defined]
+        await history_service.update_workflow_execution(workflow_id, status="paused")
 
         return {"success": True, "workflow_id": workflow_id, "status": "paused"}
     except HTTPException:
@@ -469,7 +469,7 @@ async def resume_workflow(
     """
     try:
         # Get current workflow status from database
-        pool = await db_service.get_connection_pool()  # type: ignore[attr-defined]
+        pool = db_service.pool
         history_service = WorkflowHistoryService(pool)
 
         execution_data = await history_service.get_workflow_execution(workflow_id)
@@ -493,7 +493,7 @@ async def resume_workflow(
             )
 
         # Also update database for persistence
-        await history_service.update_workflow_status(workflow_id, "running")  # type: ignore[attr-defined]
+        await history_service.update_workflow_execution(workflow_id, status="running")
 
         return {"success": True, "workflow_id": workflow_id, "status": "running"}
     except HTTPException:
@@ -535,7 +535,7 @@ async def cancel_workflow(
     """
     try:
         # Get current workflow status from database
-        pool = await db_service.get_connection_pool()  # type: ignore[attr-defined]
+        pool = db_service.pool
         history_service = WorkflowHistoryService(pool)
 
         execution_data = await history_service.get_workflow_execution(workflow_id)
@@ -560,7 +560,7 @@ async def cancel_workflow(
             )
 
         # Also update database for persistence
-        await history_service.update_workflow_status(workflow_id, "cancelled")  # type: ignore[attr-defined]
+        await history_service.update_workflow_execution(workflow_id, status="cancelled")
 
         return {"success": True, "workflow_id": workflow_id, "status": "cancelled"}
     except HTTPException:
@@ -667,7 +667,7 @@ async def execute_workflow_template(
         raise HTTPException(status_code=500, detail=f"Failed to execute workflow: {str(e)}")
 
 
-@router.get("/status/{execution_id}", name="Get Workflow Execution Status")
+@router.get("/templates/status/{execution_id}", name="Get Workflow Execution Status")
 async def get_workflow_execution_status(
     execution_id: str,
     template_service=Depends(get_template_execution_service_dependency),
