@@ -19,6 +19,8 @@ from uuid import uuid4
 import asyncpg
 from asyncpg import Pool
 
+from .error_handler import DatabaseError
+
 from schemas.database_response_models import (
     AuthorResponse,
     CategoryResponse,
@@ -149,7 +151,7 @@ class ContentDatabase(DatabaseServiceMixin):
                     post_data.get("updated_by"),
                 )
                 if not row:
-                    raise Exception("Insert query returned no row - post creation failed")
+                    raise DatabaseError("Insert query returned no row - post creation failed")
 
                 logger.info(f"✅ POST CREATED SUCCESSFULLY in database with ID: {post_id}")
                 logger.info(f"   - Status: {post_data.get('status', 'draft')}")
@@ -157,7 +159,7 @@ class ContentDatabase(DatabaseServiceMixin):
                 return ModelConverter.to_post_response(row)
             except Exception as db_error:
                 logger.error(f"❌ DATABASE ERROR while creating post: {db_error}", exc_info=True)
-                raise Exception(f"Failed to create post in database: {str(db_error)}")
+                raise DatabaseError(f"Failed to create post in database: {str(db_error)}")
 
     @log_query_performance(operation="get_post_by_slug", category="content_retrieval", slow_threshold_ms=50)
     async def get_post_by_slug(self, slug: str) -> Optional[PostResponse]:
