@@ -126,7 +126,7 @@ curl -X GET "http://localhost:8000/api/analytics/model-usage?range=7d" \
     "claude-3-5-sonnet": {
       "count": 150,
       "percentage": 60.7,
-      "total_cost": 7.50,
+      "total_cost": 7.5,
       "avg_execution_time_ms": 4234
     },
     "gpt-4-turbo": {
@@ -138,7 +138,7 @@ curl -X GET "http://localhost:8000/api/analytics/model-usage?range=7d" \
     "ollama/mistral": {
       "count": 22,
       "percentage": 8.9,
-      "total_cost": 0.00,
+      "total_cost": 0.0,
       "avg_execution_time_ms": 2156
     }
   },

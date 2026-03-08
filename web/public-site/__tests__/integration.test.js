@@ -236,7 +236,9 @@ describe('Blog API + Frontend Integration', () => {
         json: async () => postWithRelated,
       });
 
-      const response = await fetch('/api/posts/integration-test?includeRelated=true');
+      const response = await fetch(
+        '/api/posts/integration-test?includeRelated=true'
+      );
       const data = await response.json();
 
       expect(data.relatedPosts).toHaveLength(2);
@@ -257,7 +259,9 @@ describe('Blog API + Frontend Integration', () => {
         json: async () => postWithAuthor,
       });
 
-      const response = await fetch('/api/posts/integration-test?includeAuthor=true');
+      const response = await fetch(
+        '/api/posts/integration-test?includeAuthor=true'
+      );
       const data = await response.json();
 
       expect(data.author.bio).toBe('Author bio');
@@ -279,7 +283,9 @@ describe('Blog API + Frontend Integration', () => {
         json: async () => postWithSEO,
       });
 
-      const response = await fetch('/api/posts/integration-test?includeSEO=true');
+      const response = await fetch(
+        '/api/posts/integration-test?includeSEO=true'
+      );
       const data = await response.json();
 
       expect(data.metaDescription).toBeDefined();
@@ -368,8 +374,8 @@ describe('Blog API + Frontend Integration', () => {
         });
 
       const responses = await Promise.all([
-        fetch('/api/posts/1').then(r => r.json()),
-        fetch('/api/posts').then(r => r.json()),
+        fetch('/api/posts/1').then((r) => r.json()),
+        fetch('/api/posts').then((r) => r.json()),
       ]);
 
       expect(responses).toHaveLength(2);

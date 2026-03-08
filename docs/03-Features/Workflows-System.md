@@ -46,7 +46,15 @@ curl -X POST http://localhost:8000/api/workflows/execute/blog_post \
   "workflow_id": "550e8400-e29b-41d4-a716-446655440001",
   "template": "blog_post",
   "status": "running",
-  "phases": ["research", "draft", "assess", "refine", "finalize", "image_selection", "publish"],
+  "phases": [
+    "research",
+    "draft",
+    "assess",
+    "refine",
+    "finalize",
+    "image_selection",
+    "publish"
+  ],
   "phase_results": {
     "research": {
       "status": "completed",

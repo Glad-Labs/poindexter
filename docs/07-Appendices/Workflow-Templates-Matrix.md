@@ -4,13 +4,13 @@ This matrix summarizes currently available workflow templates and their phase co
 
 ## Template Matrix
 
-| Template | Primary Goal | Typical Phase Flow |
-| --- | --- | --- |
-| `blog_post` | Generate publication-ready blog content | `research -> draft -> assess -> refine -> finalize -> image_selection -> publish` |
-| `social_media` | Create social-ready post content | `research -> draft -> assess -> finalize -> publish` |
-| `email` | Create campaign email content | `draft -> assess -> finalize -> publish` |
-| `newsletter` | Build newsletter content package | `research -> draft -> assess -> refine -> finalize -> image_selection -> publish` |
-| `market_analysis` | Produce market analysis report | `research -> assess -> analyze -> report -> publish` |
+| Template          | Primary Goal                            | Typical Phase Flow                                                                |
+| ----------------- | --------------------------------------- | --------------------------------------------------------------------------------- |
+| `blog_post`       | Generate publication-ready blog content | `research -> draft -> assess -> refine -> finalize -> image_selection -> publish` |
+| `social_media`    | Create social-ready post content        | `research -> draft -> assess -> finalize -> publish`                              |
+| `email`           | Create campaign email content           | `draft -> assess -> finalize -> publish`                                          |
+| `newsletter`      | Build newsletter content package        | `research -> draft -> assess -> refine -> finalize -> image_selection -> publish` |
+| `market_analysis` | Produce market analysis report          | `research -> assess -> analyze -> report -> publish`                              |
 
 ## Notes
 

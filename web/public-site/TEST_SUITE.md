@@ -32,14 +32,14 @@ This is a comprehensive test suite covering two major applications:
 
 Located: `web/oversight-hub/src/__tests__/`
 
-| File | Tests | Purpose |
-|------|-------|---------|
-| **ModelSelectionPanel.test.jsx** | 14 | Model selection dropdown, workflow customization |
-| **WorkflowProgressBar.test.jsx** | 13 | Real-time progress display, phase tracking |
-| **TaskStatusBadge.test.jsx** | 15 | Task status visualization, color coding |
-| **AuthCallback.test.jsx** | 14 | OAuth callback handling, state validation |
-| **useWebSocket.test.js** | 15 | WebSocket connection, real-time updates |
-| **workflowApi.test.js** | 19 | API integration, workflow execution |
+| File                             | Tests | Purpose                                          |
+| -------------------------------- | ----- | ------------------------------------------------ |
+| **ModelSelectionPanel.test.jsx** | 14    | Model selection dropdown, workflow customization |
+| **WorkflowProgressBar.test.jsx** | 13    | Real-time progress display, phase tracking       |
+| **TaskStatusBadge.test.jsx**     | 15    | Task status visualization, color coding          |
+| **AuthCallback.test.jsx**        | 14    | OAuth callback handling, state validation        |
+| **useWebSocket.test.js**         | 15    | WebSocket connection, real-time updates          |
+| **workflowApi.test.js**          | 19    | API integration, workflow execution              |
 
 **Key Features Tested:**
 
@@ -55,17 +55,17 @@ Located: `web/oversight-hub/src/__tests__/`
 
 Located: `web/public-site/components/__tests__/`
 
-| File | Tests | Purpose |
-|------|-------|---------|
-| **PostCard.test.js** | 14 | Blog post card component, post preview |
-| **Pagination.test.js** | 15 | Pagination controls, navigation links |
-| **ErrorBoundary.test.js** | 11 | Error boundary, fallback UI |
-| **CookieConsentBanner.test.js** | 17 | Cookie consent, GDPR compliance |
-| **TopNav.test.js** | 15 | Navigation header, mobile menu |
-| **Footer.test.js** | 20 | Footer links, copyright, responsive layout |
-| **ShareButtons.test.js** | 13 | Social sharing buttons, URL encoding |
-| **TableOfContents.test.js** | 21 | Dynamic heading navigation, expand/collapse |
-| **GiscusComments.test.js** | 19 | Comment section placeholder |
+| File                            | Tests | Purpose                                     |
+| ------------------------------- | ----- | ------------------------------------------- |
+| **PostCard.test.js**            | 14    | Blog post card component, post preview      |
+| **Pagination.test.js**          | 15    | Pagination controls, navigation links       |
+| **ErrorBoundary.test.js**       | 11    | Error boundary, fallback UI                 |
+| **CookieConsentBanner.test.js** | 17    | Cookie consent, GDPR compliance             |
+| **TopNav.test.js**              | 15    | Navigation header, mobile menu              |
+| **Footer.test.js**              | 20    | Footer links, copyright, responsive layout  |
+| **ShareButtons.test.js**        | 13    | Social sharing buttons, URL encoding        |
+| **TableOfContents.test.js**     | 21    | Dynamic heading navigation, expand/collapse |
+| **GiscusComments.test.js**      | 19    | Comment section placeholder                 |
 
 **Key Features Tested:**
 
@@ -82,13 +82,13 @@ Located: `web/public-site/components/__tests__/`
 
 Located: `web/public-site/lib/__tests__/` and `web/public-site/__tests__/`
 
-| File | Tests | Purpose |
-|------|-------|---------|
-| **posts.test.ts** | 27 | Post data fetching, filtering, caching |
-| **search.test.js** | 21 | Search functionality, ranking, performance |
-| **seo.test.js** | 27 | Meta tags, structured data, Open Graph |
-| **content-utils.test.js** | 40 | Text utilities, formatting, sanitization |
-| **analytics.test.js** | 42 | Event tracking, Google Analytics integration |
+| File                      | Tests | Purpose                                      |
+| ------------------------- | ----- | -------------------------------------------- |
+| **posts.test.ts**         | 27    | Post data fetching, filtering, caching       |
+| **search.test.js**        | 21    | Search functionality, ranking, performance   |
+| **seo.test.js**           | 27    | Meta tags, structured data, Open Graph       |
+| **content-utils.test.js** | 40    | Text utilities, formatting, sanitization     |
+| **analytics.test.js**     | 42    | Event tracking, Google Analytics integration |
 
 **Key Functions Tested:**
 
@@ -107,13 +107,13 @@ Located: `web/public-site/lib/__tests__/` and `web/public-site/__tests__/`
 
 Located: `web/public-site/app/__tests__/`
 
-| File | Tests | Purpose |
-|------|-------|---------|
-| **page.test.js** | 12 | Home page, featured posts, hero section |
-| **blog/[slug]/page.test.js** | 16 | Blog post detail, content display |
-| **category/[slug]/page.test.js** | 18 | Category/archive page, post listing |
-| **not-found.test.js** | 12 | 404 error page |
-| **error.test.js** | 17 | Server error boundary page |
+| File                             | Tests | Purpose                                 |
+| -------------------------------- | ----- | --------------------------------------- |
+| **page.test.js**                 | 12    | Home page, featured posts, hero section |
+| **blog/[slug]/page.test.js**     | 16    | Blog post detail, content display       |
+| **category/[slug]/page.test.js** | 18    | Category/archive page, post listing     |
+| **not-found.test.js**            | 12    | 404 error page                          |
+| **error.test.js**                | 17    | Server error boundary page              |
 
 **Key Features Tested:**
 
@@ -130,9 +130,9 @@ Located: `web/public-site/app/__tests__/`
 
 Located: `web/public-site/__tests__/`
 
-| File | Tests | Purpose |
-|------|-------|---------|
-| **integration.test.js** | 46 | API + Frontend flows, complete user journeys |
+| File                    | Tests | Purpose                                      |
+| ----------------------- | ----- | -------------------------------------------- |
+| **integration.test.js** | 46    | API + Frontend flows, complete user journeys |
 
 **Key Flows Tested:**
 
@@ -463,15 +463,18 @@ window.gtag = jest.fn();
 ```javascript
 it('should submit form with values', async () => {
   global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
-  
+
   const { getByRole } = render(<ContactForm />);
   fireEvent.change(getByRole('textbox', { name: /email/ }), {
     target: { value: 'test@example.com' },
   });
   fireEvent.click(getByRole('button', { name: /submit/ }));
-  
+
   await waitFor(() => {
-    expect(global.fetch).toHaveBeenCalledWith('/api/contact', expect.any(Object));
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/contact',
+      expect.any(Object)
+    );
   });
 });
 ```
@@ -489,9 +492,9 @@ it('should show posts after loading', async () => {
     ok: true,
     json: async () => ({ posts: [mockPost] }),
   });
-  
+
   render(<PostList />);
-  
+
   await waitFor(() => {
     expect(screen.getByText(mockPost.title)).toBeInTheDocument();
   });
@@ -505,13 +508,13 @@ it('should catch and display errors', () => {
   const ThrowError = () => {
     throw new Error('Test error');
   };
-  
+
   render(
     <ErrorBoundary>
       <ThrowError />
     </ErrorBoundary>
   );
-  
+
   expect(screen.getByText(/something went wrong/i)).toBeInTheDocument();
 });
 ```
@@ -621,21 +624,21 @@ npm test -- FileName.test.js
 
 ### By File Type
 
-| Type | Target | Current |
-|------|--------|---------|
-| Components | 80%+ | ✅ 85% |
-| Pages | 75%+ | ✅ 82% |
-| Utilities | 90%+ | ✅ 92% |
-| Overall | 80%+ | ✅ 86% |
+| Type       | Target | Current |
+| ---------- | ------ | ------- |
+| Components | 80%+   | ✅ 85%  |
+| Pages      | 75%+   | ✅ 82%  |
+| Utilities  | 90%+   | ✅ 92%  |
+| Overall    | 80%+   | ✅ 86%  |
 
 ### By Category
 
-| Feature | Tests | Coverage |
-|---------|-------|----------|
-| Core functionality | 285 | ✅ 95% |
-| Error handling | 45 | ✅ 88% |
-| Edge cases | 35 | ✅ 82% |
-| Integration | 46 | ✅ 92% |
+| Feature            | Tests | Coverage |
+| ------------------ | ----- | -------- |
+| Core functionality | 285   | ✅ 95%   |
+| Error handling     | 45    | ✅ 88%   |
+| Edge cases         | 35    | ✅ 82%   |
+| Integration        | 46    | ✅ 92%   |
 
 ---
 
@@ -741,7 +744,7 @@ This comprehensive test suite provides **confidence in code quality** across the
 **The test suite is designed to:**
 
 - ✅ Catch regressions early
-- ✅ Document expected behavior  
+- ✅ Document expected behavior
 - ✅ Enable safe refactoring
 - ✅ Support continuous integration
 - ✅ Improve code quality

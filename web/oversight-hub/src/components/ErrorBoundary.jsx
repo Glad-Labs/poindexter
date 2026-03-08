@@ -28,7 +28,10 @@ class ErrorBoundary extends React.Component {
   componentDidCatch(error, errorInfo) {
     const name = this.props.name || 'Unknown';
     logger.error(`Error Boundary [${name}] caught:`, error);
-    logger.error(`Error Boundary [${name}] component stack:`, errorInfo.componentStack);
+    logger.error(
+      `Error Boundary [${name}] component stack:`,
+      errorInfo.componentStack
+    );
 
     this.setState((prevState) => ({
       error,

@@ -30,35 +30,26 @@ curl -X GET "http://localhost:8000/api/services/registry" \
     {
       "name": "content_generation",
       "description": "Content generation and refinement",
-      "actions": [
-        "research",
-        "draft",
-        "assess",
-        "refine"
-      ],
+      "actions": ["research", "draft", "assess", "refine"],
       "input_schema": {
-        "topic": {"type": "string", "required": true},
-        "style": {"type": "string", "required": false}
+        "topic": { "type": "string", "required": true },
+        "style": { "type": "string", "required": false }
       },
       "output_schema": {
-        "content": {"type": "string"},
-        "metadata": {"type": "object"}
+        "content": { "type": "string" },
+        "metadata": { "type": "object" }
       }
     },
     {
       "name": "market_analysis",
       "description": "Market research and trend analysis",
-      "actions": [
-        "research",
-        "analyze",
-        "forecast"
-      ],
+      "actions": ["research", "analyze", "forecast"],
       "input_schema": {
-        "market": {"type": "string", "required": true}
+        "market": { "type": "string", "required": true }
       },
       "output_schema": {
-        "analysis": {"type": "object"},
-        "trends": {"type": "array"}
+        "analysis": { "type": "object" },
+        "trends": { "type": "array" }
       }
     }
   ],
@@ -85,24 +76,24 @@ curl -X GET "http://localhost:8000/api/services/content_generation/actions" \
       "name": "research",
       "description": "Gather research on topic",
       "parameters": {
-        "topic": {"type": "string", "required": true},
-        "depth": {"type": "enum", "values": ["shallow", "deep"]}
+        "topic": { "type": "string", "required": true },
+        "depth": { "type": "enum", "values": ["shallow", "deep"] }
       },
       "returns": {
-        "summary": {"type": "string"},
-        "sources": {"type": "array"}
+        "summary": { "type": "string" },
+        "sources": { "type": "array" }
       }
     },
     {
       "name": "draft",
       "description": "Create content draft",
       "parameters": {
-        "research": {"type": "object", "required": true},
-        "tone": {"type": "string"}
+        "research": { "type": "object", "required": true },
+        "tone": { "type": "string" }
       },
       "returns": {
-        "content": {"type": "string"},
-        "word_count": {"type": "integer"}
+        "content": { "type": "string" },
+        "word_count": { "type": "integer" }
       }
     }
   ]
@@ -150,7 +141,7 @@ curl -X GET "http://localhost:8000/api/services/content_generation/actions/resea
     },
     "sources": {
       "type": "array",
-      "items": {"url": "string", "title": "string"}
+      "items": { "url": "string", "title": "string" }
     },
     "key_points": {
       "type": "array",

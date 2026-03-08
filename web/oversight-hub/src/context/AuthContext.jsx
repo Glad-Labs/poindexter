@@ -102,16 +102,12 @@ export const AuthProvider = ({ children }) => {
   const handleOAuthCallback = useCallback(
     async (provider, code, state) => {
       try {
-        logger.log(
-          `🔐 [AuthContext] Processing ${provider} OAuth callback...`
-        );
+        logger.log(`🔐 [AuthContext] Processing ${provider} OAuth callback...`);
         setLoading(true);
         const result = await handleOAuthCallbackNew(provider, code, state);
 
         if (result.user) {
-          logger.log(
-            `✅ [AuthContext] OAuth login successful for ${provider}`
-          );
+          logger.log(`✅ [AuthContext] OAuth login successful for ${provider}`);
           setAuthUser(result.user);
           setError(null);
           return result.user;

@@ -30,6 +30,7 @@ Comprehensive task retry and status visibility system providing visual feedback 
 ### Frontend Components
 
 #### TaskManagement.jsx
+
 - Main task list with status badges, retry counters, and step labels
 - Bulk actions routed through `unifiedStatusService`
 - Status normalization (in_progress → in-progress for CSS)
@@ -42,6 +43,7 @@ Comprehensive task retry and status visibility system providing visual feedback 
   - `getRetryCount()` - Extract retry attempts
 
 #### TaskDetailModal.jsx
+
 - Progress bar in dialog header with percentage and stage message
 - Retry badge display in title
 - Enhanced Timeline tab with "Current Execution Stage" card
@@ -49,6 +51,7 @@ Comprehensive task retry and status visibility system providing visual feedback 
 - Live metadata display
 
 #### TaskManagement.css
+
 - Status-specific badge styling (9 states)
 - Animated progress bars with shimmer effect
 - Stage-based progress colors:
@@ -62,6 +65,7 @@ Comprehensive task retry and status visibility system providing visual feedback 
 ### Backend Components
 
 #### enhanced_status_change_service.py
+
 - `validate_and_change_status()` - Enforces status transition rules
 - Metadata merge logic preserves existing fields
 - Retry counter increment when `action="retry"`:
@@ -71,6 +75,7 @@ Comprehensive task retry and status visibility system providing visual feedback 
 - Audit trail logging for all status changes
 
 #### task_executor.py
+
 - `update_processing_stage()` - Writes stage progression to task_metadata
 - Stage flow:
   1. **queued** (5%) - Task accepted by executor
@@ -81,6 +86,7 @@ Comprehensive task retry and status visibility system providing visual feedback 
 - Final result includes stage, percentage, and message fields
 
 #### bulk_task_routes.py
+
 - Resume action sets `status="pending"` (not `in_progress`)
 - Ensures executor polling picks up resumed tasks
 - Consistent with queue mechanics (executor polls WHERE status='pending')
@@ -160,8 +166,12 @@ Comprehensive task retry and status visibility system providing visual feedback 
   "started_at": "2026-03-08T15:30:00.000Z",
   "validation_details": {
     "gates": [
-      {"name": "length", "passed": true, "message": "Content meets length requirements"},
-      {"name": "style", "passed": true, "message": "Style analysis passed"}
+      {
+        "name": "length",
+        "passed": true,
+        "message": "Content meets length requirements"
+      },
+      { "name": "style", "passed": true, "message": "Style analysis passed" }
     ]
   }
 }
@@ -208,6 +218,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -236,6 +247,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "updated": 3,
@@ -250,33 +262,36 @@ Content-Type: application/json
 
 ### Status Badge Colors
 
-| Status | Color | Background | Use Case |
-|--------|-------|------------|----------|
-| Pending | Yellow (#ffa726) | rgba(255, 167, 38, 0.15) | Queued for execution |
-| In Progress | Cyan (#00d9ff) | rgba(0, 217, 255, 0.15) | Active processing |
-| Completed | Green (#66bb6a) | rgba(102, 187, 106, 0.15) | Success |
-| Failed | Red (#f44336) | rgba(244, 67, 54, 0.15) | Error/validation failure |
-| On Hold | Gray (#9e9e9e) | rgba(158, 158, 158, 0.15) | Paused |
-| Awaiting Approval | Blue (#42a5f5) | rgba(66, 165, 245, 0.15) | Human review required |
-| Approved | Teal (#26a69a) | rgba(38, 166, 154, 0.15) | Approved, ready to publish |
-| Published | Purple (#ab47bc) | rgba(171, 71, 188, 0.15) | Live on website |
-| Cancelled | Dark Gray (#616161) | rgba(97, 97, 97, 0.15) | User cancelled |
+| Status            | Color               | Background                | Use Case                   |
+| ----------------- | ------------------- | ------------------------- | -------------------------- |
+| Pending           | Yellow (#ffa726)    | rgba(255, 167, 38, 0.15)  | Queued for execution       |
+| In Progress       | Cyan (#00d9ff)      | rgba(0, 217, 255, 0.15)   | Active processing          |
+| Completed         | Green (#66bb6a)     | rgba(102, 187, 106, 0.15) | Success                    |
+| Failed            | Red (#f44336)       | rgba(244, 67, 54, 0.15)   | Error/validation failure   |
+| On Hold           | Gray (#9e9e9e)      | rgba(158, 158, 158, 0.15) | Paused                     |
+| Awaiting Approval | Blue (#42a5f5)      | rgba(66, 165, 245, 0.15)  | Human review required      |
+| Approved          | Teal (#26a69a)      | rgba(38, 166, 154, 0.15)  | Approved, ready to publish |
+| Published         | Purple (#ab47bc)    | rgba(171, 71, 188, 0.15)  | Live on website            |
+| Cancelled         | Dark Gray (#616161) | rgba(97, 97, 97, 0.15)    | User cancelled             |
 
 ### Progress Bar States
 
 **Queued** (Orange gradient):
+
 ```css
 background: linear-gradient(90deg, #ffa726, #ffb74d);
 box-shadow: 0 0 8px rgba(255, 167, 38, 0.4);
 ```
 
 **Content Generation** (Blue gradient):
+
 ```css
 background: linear-gradient(90deg, #42a5f5, #64b5f6);
 box-shadow: 0 0 8px rgba(66, 165, 245, 0.4);
 ```
 
 **Finalizing** (Green gradient):
+
 ```css
 background: linear-gradient(90deg, #66bb6a, #81c784);
 box-shadow: 0 0 8px rgba(102, 187, 106, 0.4);
@@ -285,18 +300,29 @@ box-shadow: 0 0 8px rgba(102, 187, 106, 0.4);
 ### Animations
 
 **Shimmer Effect** (active progress bars):
+
 ```css
 @keyframes shimmer {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
 }
 ```
 
 **Pulse Effect** (Timeline tab indicator):
+
 ```css
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
 }
 ```
 
@@ -320,11 +346,13 @@ box-shadow: 0 0 8px rgba(102, 187, 106, 0.4);
 ### Automated Test Coverage
 
 **Backend Tests:**
+
 - `test_enhanced_status_change_service.py` - Status transitions and metadata merge
 - `test_task_executor.py` - Stage progression and progress updates
 - `test_bulk_task_routes.py` - Bulk action handlers
 
 **Frontend Tests (Planned):**
+
 - TaskManagement component - Metadata extraction and display
 - TaskDetailModal component - Progress bar rendering
 - Status badge rendering - All 9 status states
@@ -384,11 +412,13 @@ All retry and status visibility features are enabled by default. No feature flag
 **Symptom**: Retry button works but retry_count stays 0
 
 **Diagnosis**:
+
 ```sql
 SELECT task_metadata FROM content_tasks WHERE id = 'task-id';
 ```
 
 **Solution**:
+
 - Ensure `action="retry"` parameter in status change request
 - Verify enhanced_status_change_service merges metadata (not replaces)
 - Check audit logs for status change confirmation
@@ -398,13 +428,15 @@ SELECT task_metadata FROM content_tasks WHERE id = 'task-id';
 **Symptom**: Progress bar stuck at 0% or old value
 
 **Diagnosis**:
+
 ```sql
-SELECT task_metadata->>'percentage' as percentage, 
+SELECT task_metadata->>'percentage' as percentage,
        task_metadata->>'stage' as stage
 FROM content_tasks WHERE id = 'task-id';
 ```
 
 **Solution**:
+
 - Verify task_executor calls update_processing_stage()
 - Check WebSocket connection status in browser console
 - Confirm ENABLE_TASK_PROGRESS_TRACKING=true in .env.local
@@ -414,12 +446,14 @@ FROM content_tasks WHERE id = 'task-id';
 **Symptom**: Resumed task stays on_hold, executor doesn't pick up
 
 **Diagnosis**:
+
 ```sql
 SELECT status FROM content_tasks WHERE id = 'task-id';
 -- Should be 'pending' after resume, not 'in_progress'
 ```
 
 **Solution**:
+
 - Check bulk_task_routes.py status_map["resume"] = "pending"
 - Verify executor polling query: WHERE status='pending'
 - Restart executor if stuck: npm run dev:cofounder
@@ -429,11 +463,13 @@ SELECT status FROM content_tasks WHERE id = 'task-id';
 **Symptom**: Status badge visible but no step text below
 
 **Diagnosis**:
+
 - Check task status is pending/in_progress/running
 - Verify task_metadata.message or task_metadata.stage exists
 - Inspect browser console for parsing errors
 
 **Solution**:
+
 - Task must be in active state for step text
 - Backend must write stage/message to metadata
 - Check getTaskStepLabel() logic in TaskManagement.jsx
@@ -472,12 +508,14 @@ SELECT status FROM content_tasks WHERE id = 'task-id';
 ### Implementation Files
 
 **Frontend:**
+
 - `web/oversight-hub/src/routes/TaskManagement.jsx`
 - `web/oversight-hub/src/routes/TaskManagement.css`
 - `web/oversight-hub/src/components/tasks/TaskDetailModal.jsx`
 - `web/oversight-hub/src/components/tasks/StatusComponents.jsx`
 
 **Backend:**
+
 - `src/cofounder_agent/services/enhanced_status_change_service.py`
 - `src/cofounder_agent/services/task_executor.py`
 - `src/cofounder_agent/routes/bulk_task_routes.py`
@@ -493,6 +531,7 @@ SELECT status FROM content_tasks WHERE id = 'task-id';
 ## Support
 
 For issues or questions:
+
 - Check [Troubleshooting Guide](../06-Troubleshooting/README.md)
 - Review [GitHub Issues](https://github.com/Glad-Labs/glad-labs-codebase/issues)
 - Contact: developers@glad-labs.com

@@ -29,17 +29,21 @@ function emit(level, message, args) {
   const prefix = `[${ts}] [${level.padEnd(5)}] ${message}`;
   const fn = LEVEL_FN[level] || 'log';
   if (args.length) {
-    console[fn](prefix, ...args);  
+    console[fn](prefix, ...args);
   } else {
-    console[fn](prefix);  
+    console[fn](prefix);
   }
 }
 
 const logger = {
-  debug: (message, ...args) => { if (IS_DEV) emit('DEBUG', message, args); },
-  info:  (message, ...args) => emit('INFO',  message, args),
-  log:   (message, ...args) => { if (IS_DEV) emit('LOG',   message, args); },
-  warn:  (message, ...args) => emit('WARN',  message, args),
+  debug: (message, ...args) => {
+    if (IS_DEV) emit('DEBUG', message, args);
+  },
+  info: (message, ...args) => emit('INFO', message, args),
+  log: (message, ...args) => {
+    if (IS_DEV) emit('LOG', message, args);
+  },
+  warn: (message, ...args) => emit('WARN', message, args),
   error: (message, ...args) => emit('ERROR', message, args),
 };
 

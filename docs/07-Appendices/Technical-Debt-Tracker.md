@@ -10,19 +10,19 @@ This tracker is aligned to:
 
 ## Current Snapshot
 
-| Priority | Open Issues | Notes |
-| --- | --- | --- |
-| P1-Critical | 0 | All critical issues resolved |
-| P2-High | 0 | All high-priority workflow/security/debt items completed |
-| P3-Medium | 10 | Includes OAuth/state consistency + auth centralization issues (plus 1 legacy open item not normalized to current labels) |
-| P4-Low | 2 | Newly added performance/security ops items |
-| Total | 12 | Canonical active debt set in this tracker |
+| Priority    | Open Issues | Notes                                                                                                                    |
+| ----------- | ----------- | ------------------------------------------------------------------------------------------------------------------------ |
+| P1-Critical | 0           | All critical issues resolved                                                                                             |
+| P2-High     | 0           | All high-priority workflow/security/debt items completed                                                                 |
+| P3-Medium   | 10          | Includes OAuth/state consistency + auth centralization issues (plus 1 legacy open item not normalized to current labels) |
+| P4-Low      | 2           | Newly added performance/security ops items                                                                               |
+| Total       | 12          | Canonical active debt set in this tracker                                                                                |
 
 ## Canonical Open Debt Issues
 
 ### P1-Critical
 
-*No open critical issues* ✅
+_No open critical issues_ ✅
 
 ## Recently Closed (Completed)
 
@@ -41,7 +41,7 @@ This tracker is aligned to:
 
 ### P2-High
 
-*No open high-priority issues* ✅
+_No open high-priority issues_ ✅
 
 ### P3-Medium
 

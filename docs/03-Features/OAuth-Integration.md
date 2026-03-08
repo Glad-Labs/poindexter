@@ -30,7 +30,7 @@ localStorage.setItem('oauth_state', state);
 // Redirect to GitHub
 const clientId = 'YOUR_GITHUB_CLIENT_ID';
 const redirectUri = encodeURIComponent('http://localhost:3001/auth/callback');
-window.location.href = 
+window.location.href =
   `https://github.com/login/oauth/authorize?` +
   `client_id=${clientId}&` +
   `redirect_uri=${redirectUri}&` +

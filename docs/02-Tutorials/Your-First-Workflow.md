@@ -45,7 +45,7 @@ graph TD
     C -->|No| B
     C -->|Yes| D["3. Retrieve Results"]
     D --> E["4. Use Generated Content"]
-    
+
     style A fill:#e1f5ff
     style D fill:#c8e6c9
     style E fill:#fff9c4
@@ -77,11 +77,11 @@ curl -X GET http://localhost:8000/api/auth/user \
 
 **What if it fails?**
 
-| Error | Cause | Solution |
-| --- | --- | --- |
-| `401 Unauthorized` | Missing/invalid token | Check `Authorization` header starts with `Bearer` |
-| `Connection refused` | Backend not running | Run `npm run dev:cofounder` or `npm run dev` |
-| `Invalid attribute` error | Setup issue | Check `.env.local` DATABASE_URL and LLM keys |
+| Error                     | Cause                 | Solution                                          |
+| ------------------------- | --------------------- | ------------------------------------------------- |
+| `401 Unauthorized`        | Missing/invalid token | Check `Authorization` header starts with `Bearer` |
+| `Connection refused`      | Backend not running   | Run `npm run dev:cofounder` or `npm run dev`      |
+| `Invalid attribute` error | Setup issue           | Check `.env.local` DATABASE_URL and LLM keys      |
 
 ---
 
@@ -173,7 +173,7 @@ curl -X GET http://localhost:8000/api/workflows/exec-xyz789 \
         "summary": "AI is transforming web development through automation...",
         "key_points": ["AI copilots", "code generation", "testing automation"],
         "sources": [
-          {"url": "https://example.com/ai-dev", "title": "AI in Dev"}
+          { "url": "https://example.com/ai-dev", "title": "AI in Dev" }
         ]
       },
       "duration_ms": 12500,
@@ -276,7 +276,9 @@ const ws = new WebSocket('ws://localhost:8000/api/ws/workflow/exec-xyz789');
 
 ws.onmessage = (event) => {
   const message = JSON.parse(event.data);
-  console.log(`Status: ${message.status}, Progress: ${message.progress_percent}%`);
+  console.log(
+    `Status: ${message.status}, Progress: ${message.progress_percent}%`
+  );
 };
 ```
 
@@ -361,7 +363,7 @@ You've successfully:
 ✅ Authenticated to Glad Labs  
 ✅ Submitted a blog post generation request  
 ✅ Monitored workflow execution  
-✅ Retrieved generated content ready to publish  
+✅ Retrieved generated content ready to publish
 
 **Total workflow time:** ~2 minutes
 

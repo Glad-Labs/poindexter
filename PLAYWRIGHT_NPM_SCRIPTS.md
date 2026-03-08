@@ -6,49 +6,49 @@ Add these scripts to your `package.json` for easy test execution:
 {
   "scripts": {
     "comments": "=== PLAYWRIGHT E2E TESTS ===",
-    
+
     "test:e2e": "npx playwright test",
     "test:e2e:ui": "npx playwright test --ui",
     "test:e2e:debug": "npx playwright test --debug",
     "test:e2e:headed": "npx playwright test --headed",
     "test:e2e:report": "npx playwright show-report test-results/playwright",
-    
+
     "comments2": "=== PUBLIC SITE TESTS (Port 3000) ===",
-    
+
     "test:public": "npx playwright test",
     "test:public:chrome": "npx playwright test --project=chromium",
     "test:public:mobile": "npx playwright test --project='Pixel 5' --project='iPhone 12'",
     "test:public:a11y": "npx playwright test --project=chromium-axe",
     "test:public:visual": "npx playwright test --project=chromium-visual",
-    
+
     "comments3": "=== ADMIN DASHBOARD TESTS (Port 3001) ===",
-    
+
     "test:admin": "npx playwright test -c playwright.oversight.config.ts",
     "test:admin:ui": "npx playwright test -c playwright.oversight.config.ts --ui",
     "test:admin:debug": "npx playwright test -c playwright.oversight.config.ts --debug",
     "test:admin:report": "npx playwright show-report test-results/oversight",
-    
+
     "comments4": "=== API TESTS (Port 8000) ===",
-    
+
     "test:api": "npx playwright test -c playwright.api.config.ts",
     "test:api:smoke": "npx playwright test -c playwright.api.config.ts --project=api-smoke",
     "test:api:perf": "npx playwright test -c playwright.api.config.ts --project=api-performance",
     "test:api:security": "npx playwright test -c playwright.api.config.ts --project=api-security",
     "test:api:report": "npx playwright show-report test-results/api",
-    
+
     "comments5": "=== ALL TESTS ===",
-    
+
     "test:all": "npm run test:public && npm run test:admin && npm run test:api",
     "test:all:ci": "CI=1 npm run test:all",
-    
+
     "comments6": "=== QUICK / SMOKE TESTS ===",
-    
+
     "test:smoke": "npx playwright test --grep @smoke",
     "test:critical": "npx playwright test --grep @critical",
     "test:quick": "npx playwright test --project=chromium -c playwright.config.ts && npx playwright test -c playwright.oversight.config.ts && npx playwright test --project=api-smoke -c playwright.api.config.ts",
-    
+
     "comments7": "=== TEST WITH OPTIONS ===",
-    
+
     "test:watch": "npx playwright test --watch",
     "test:last-failed": "npx playwright test --last-failed",
     "test:verbose": "npx playwright test --reporter=verbose",

@@ -298,7 +298,11 @@ class StyleConsistencyValidator:
             count = sum(1 for marker in markers if marker in text_lower)
             tone_scores[tone] = count
 
-        return max(tone_scores, key=lambda k: tone_scores[k]) if max(tone_scores.values()) > 0 else "neutral"
+        return (
+            max(tone_scores, key=lambda k: tone_scores[k])
+            if max(tone_scores.values()) > 0
+            else "neutral"
+        )
 
     def _detect_style(self, content: str) -> str:
         """Detect primary style of content using structural analysis."""

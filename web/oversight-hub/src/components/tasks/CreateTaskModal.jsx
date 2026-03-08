@@ -234,10 +234,10 @@ const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
         defaultData[field.name] = field.defaultValue;
       }
     });
-    
+
     logger.log('📝 [CreateTaskModal] Task type selected:', type);
     logger.log('📝 [CreateTaskModal] Default data initialized:', defaultData);
-    
+
     setFormData(defaultData);
     setSelectedWritingStyleId(null); // Reset writing style when changing task type
     setError(null);

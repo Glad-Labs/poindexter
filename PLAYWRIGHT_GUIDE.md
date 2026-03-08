@@ -9,11 +9,11 @@
 
 Three dedicated Playwright configurations provide complete test coverage:
 
-| Config | Purpose | Tests | Port | Focus |
-|--------|---------|-------|------|-------|
-| **playwright.config.ts** | Public Website | Content & SEO | 3000 | User experience |
-| **playwright.oversight.config.ts** | Admin Dashboard | Workflows & Auth | 3001 | Admin features |
-| **playwright.api.config.ts** | Backend API | Endpoints & Validation | 8000 | API reliability |
+| Config                             | Purpose         | Tests                  | Port | Focus           |
+| ---------------------------------- | --------------- | ---------------------- | ---- | --------------- |
+| **playwright.config.ts**           | Public Website  | Content & SEO          | 3000 | User experience |
+| **playwright.oversight.config.ts** | Admin Dashboard | Workflows & Auth       | 3001 | Admin features  |
+| **playwright.api.config.ts**       | Backend API     | Endpoints & Validation | 8000 | API reliability |
 
 ---
 
@@ -280,34 +280,34 @@ on: [push, pull_request]
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - uses: actions/setup-node@v4
         with:
           node-version: '18'
-      
+
       - name: Install dependencies
         run: npm ci
-      
+
       - name: Install Playwright
         run: npx playwright install --with-deps
-      
+
       - name: Start services
         run: npm run dev &
         env:
           CI: 1
-      
+
       - name: Run public site tests
         run: npx playwright test
-      
+
       - name: Run admin tests
         run: npx playwright test -c playwright.oversight.config.ts
-      
+
       - name: Run API tests
         run: npx playwright test -c playwright.api.config.ts
-      
+
       - name: Upload report
         if: always()
         uses: actions/upload-artifact@v3
@@ -564,16 +564,16 @@ npx playwright install
 
 ## Troubleshooting Matrix
 
-| Issue | Solution |
-|-------|----------|
-| Tests timeout | Increase `timeout` in config or `PLAYWRIGHT_TIMEOUT` env var |
-| Port already in use | Set `SKIP_SERVER_START=1` or kill process on port |
-| Auth state expired | Delete `playwright/.auth/` and regenerate |
-| Screenshots not captured | Ensure `screenshot: 'only-on-failure'` in use config |
-| Flaky mobile tests | Use `--workers=1` for sequential execution |
-| Tests pass locally but fail in CI | Check CI env vars, check timezone issues |
-| Video not recording | Ensure `video: 'retain-on-failure'` and not headless |
-| Trace collection failing | Check disk space, ensure outputDir writable |
+| Issue                             | Solution                                                     |
+| --------------------------------- | ------------------------------------------------------------ |
+| Tests timeout                     | Increase `timeout` in config or `PLAYWRIGHT_TIMEOUT` env var |
+| Port already in use               | Set `SKIP_SERVER_START=1` or kill process on port            |
+| Auth state expired                | Delete `playwright/.auth/` and regenerate                    |
+| Screenshots not captured          | Ensure `screenshot: 'only-on-failure'` in use config         |
+| Flaky mobile tests                | Use `--workers=1` for sequential execution                   |
+| Tests pass locally but fail in CI | Check CI env vars, check timezone issues                     |
+| Video not recording               | Ensure `video: 'retain-on-failure'` and not headless         |
+| Trace collection failing          | Check disk space, ensure outputDir writable                  |
 
 ---
 
@@ -604,7 +604,7 @@ npx playwright install
    ```typescript
    // ✅ Good: What user sees
    await page.click('text=Share Post');
-   
+
    // ❌ Avoid: Implementation details
    await page.evaluate(() => document.querySelector('.share-btn').click());
    ```
@@ -678,14 +678,14 @@ npx playwright test --reporter=verbose
 
 These three configurations provide **complete test coverage**:
 
-| Aspect | Coverage |
-|--------|----------|
-| **Browsers** | Chrome, Firefox, WebKit ✅ |
-| **Devices** | Desktop, Tablet, Mobile ✅ |
-| **Features** | Content, Admin, API ✅ |
+| Aspect         | Coverage                                |
+| -------------- | --------------------------------------- |
+| **Browsers**   | Chrome, Firefox, WebKit ✅              |
+| **Devices**    | Desktop, Tablet, Mobile ✅              |
+| **Features**   | Content, Admin, API ✅                  |
 | **Test Types** | Unit, Integration, E2E, A11y, Visual ✅ |
-| **Reporting** | HTML, JSON, JUnit, Markdown ✅ |
-| **CI/CD** | GitHub Actions, Jenkins, GitLab ✅ |
-| **Debugging** | Traces, Videos, Screenshots ✅ |
+| **Reporting**  | HTML, JSON, JUnit, Markdown ✅          |
+| **CI/CD**      | GitHub Actions, Jenkins, GitLab ✅      |
+| **Debugging**  | Traces, Videos, Screenshots ✅          |
 
 **Status: Production-Ready** ✅

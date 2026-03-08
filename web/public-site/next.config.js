@@ -6,8 +6,7 @@
 (function validateEnv() {
   const IS_PROD = process.env.NODE_ENV === 'production';
   const raw =
-    process.env.NEXT_PUBLIC_API_BASE_URL ||
-    process.env.NEXT_PUBLIC_FASTAPI_URL;
+    process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_FASTAPI_URL;
 
   if (!raw) {
     if (IS_PROD) {

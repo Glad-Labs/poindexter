@@ -159,7 +159,7 @@ Comprehensive guide including:
 
 ### Local Development
 
-1. **Push to dev branch** (any dev/*, feature/* branch):
+1. **Push to dev branch** (any dev/_, feature/_ branch):
 
    ```bash
    git push origin feature/my-cool-feature
@@ -203,16 +203,16 @@ Each push triggers the auto-bump workflow:
 
 ## ✅ Safety Features
 
-| Feature | Benefit |
-| --- | --- |
-| **[skip ci] Tag** | Prevents infinite version bump loops |
-| **Tier Restriction** | Can't accidentally major bump from dev |
-| **Atomic Updates** | All 6 files synced or none |
-| **Full Verification** | Script verifies all files after update |
-| **Dry-Run Mode** | Test without committing |
-| **Automatic Tags** | Version tracking via git tags |
-| **Concurrent Safety** | Serializes per-branch to prevent race conditions |
-| **Emergency Rollback** | Manual workflow to undo version bumps |
+| Feature                | Benefit                                          |
+| ---------------------- | ------------------------------------------------ |
+| **[skip ci] Tag**      | Prevents infinite version bump loops             |
+| **Tier Restriction**   | Can't accidentally major bump from dev           |
+| **Atomic Updates**     | All 6 files synced or none                       |
+| **Full Verification**  | Script verifies all files after update           |
+| **Dry-Run Mode**       | Test without committing                          |
+| **Automatic Tags**     | Version tracking via git tags                    |
+| **Concurrent Safety**  | Serializes per-branch to prevent race conditions |
+| **Emergency Rollback** | Manual workflow to undo version bumps            |
 
 ---
 

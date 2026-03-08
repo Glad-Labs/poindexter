@@ -30,7 +30,7 @@ Open `package.json` and find the `"scripts"` section:
   "name": "glad-labs-website",
   "version": "1.0.0",
   "scripts": {
-    "dev": "...",
+    "dev": "..."
     // ADD NEW SCRIPTS HERE
   }
 }
@@ -50,39 +50,39 @@ Add all scripts from `PLAYWRIGHT_NPM_SCRIPTS.md` to the `"scripts"` section.
   "test:watch": "jest --watch",
   "test:coverage": "jest --coverage",
   "test:ci": "jest --ci --coverage --maxWorkers=2",
-  
+
   "test:e2e": "playwright test",
   "test:e2e:ui": "playwright test --ui",
   "test:e2e:debug": "playwright test --debug",
   "test:e2e:headed": "playwright test --headed",
   "test:e2e:report": "playwright show-report",
   "test:e2e:codegen": "playwright codegen http://localhost:3000",
-  
+
   "test:public": "playwright test --config=playwright.config.ts",
   "test:public:chrome": "playwright test --config=playwright.config.ts --project=chromium",
   "test:public:mobile": "playwright test --config=playwright.config.ts --project='Pixel 5'",
   "test:public:headed": "playwright test --config=playwright.config.ts --headed",
   "test:public:debug": "playwright test --config=playwright.config.ts --debug",
-  
+
   "test:admin": "playwright test --config=playwright.oversight.config.ts",
   "test:admin:headed": "playwright test --config=playwright.oversight.config.ts --headed",
   "test:admin:debug": "playwright test --config=playwright.oversight.config.ts --debug",
   "test:admin:auth-debug": "playwright test --config=playwright.oversight.config.ts --project=chromium --debug",
-  
+
   "test:api": "playwright test --config=playwright.api.config.ts",
   "test:api:perf": "playwright test --config=playwright.api.config.ts --project=api-performance",
   "test:api:security": "playwright test --config=playwright.api.config.ts --project=api-security",
   "test:api:smoke": "playwright test --config=playwright.api.config.ts --project=api-smoke",
-  
+
   "test:smoke": "playwright test -g @smoke",
   "test:critical": "playwright test -g @critical",
   "test:a11y": "playwright test --project='*-a11y'",
   "test:visual": "playwright test --project='*-visual'",
-  
+
   "test:quick": "npm test && npm run test:smoke",
   "test:all": "npm test && npm run test:e2e",
   "test:all:ci": "npm run test:ci && npm run test:e2e",
-  
+
   "test:results": "playwright show-report"
 }
 ```
@@ -228,45 +228,45 @@ Here's the complete scripts section you should have:
     "dev:cofounder": "...",
     "dev:public": "...",
     "dev:oversight": "...",
-    
+
     "test": "jest --passWithNoTests",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:ci": "jest --ci --coverage --maxWorkers=2",
-    
+
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:report": "playwright show-report",
     "test:e2e:codegen": "playwright codegen http://localhost:3000",
-    
+
     "test:public": "playwright test --config=playwright.config.ts",
     "test:public:chrome": "playwright test --config=playwright.config.ts --project=chromium",
     "test:public:mobile": "playwright test --config=playwright.config.ts --project='Pixel 5'",
     "test:public:headed": "playwright test --config=playwright.config.ts --headed",
     "test:public:debug": "playwright test --config=playwright.config.ts --debug",
-    
+
     "test:admin": "playwright test --config=playwright.oversight.config.ts",
     "test:admin:headed": "playwright test --config=playwright.oversight.config.ts --headed",
     "test:admin:debug": "playwright test --config=playwright.oversight.config.ts --debug",
-    
+
     "test:api": "playwright test --config=playwright.api.config.ts",
     "test:api:perf": "playwright test --config=playwright.api.config.ts --project=api-performance",
     "test:api:security": "playwright test --config=playwright.api.config.ts --project=api-security",
     "test:api:smoke": "playwright test --config=playwright.api.config.ts --project=api-smoke",
-    
+
     "test:smoke": "playwright test -g @smoke",
     "test:critical": "playwright test -g @critical",
     "test:a11y": "playwright test --project='*-a11y'",
     "test:visual": "playwright test --project='*-visual'",
-    
+
     "test:quick": "npm test && npm run test:smoke",
     "test:all": "npm test && npm run test:e2e",
     "test:all:ci": "npm run test:ci && npm run test:e2e",
-    
+
     "test:results": "playwright show-report",
-    
+
     "build": "...",
     "format": "..."
   }
@@ -277,17 +277,17 @@ Here's the complete scripts section you should have:
 
 ## Quick Reference After Integration
 
-| Command | Purpose | Time |
-|---------|---------|------|
-| `npm test` | All Jest tests | 2 min |
-| `npm run test:quick` | Jest + smoke tests | 3 min |
-| `npm run test:public` | Public site E2E | 3 min |
-| `npm run test:admin` | Admin E2E | 2 min |
-| `npm run test:api` | API E2E | 1 min |
-| `npm run test:e2e` | All E2E | 6 min |
-| `npm run test:all` | Full suite | 8 min |
-| `npm run test:e2e:ui` | Visual runner | Interactive |
-| `npm run test:results` | View HTML report | Browser |
+| Command                | Purpose            | Time        |
+| ---------------------- | ------------------ | ----------- |
+| `npm test`             | All Jest tests     | 2 min       |
+| `npm run test:quick`   | Jest + smoke tests | 3 min       |
+| `npm run test:public`  | Public site E2E    | 3 min       |
+| `npm run test:admin`   | Admin E2E          | 2 min       |
+| `npm run test:api`     | API E2E            | 1 min       |
+| `npm run test:e2e`     | All E2E            | 6 min       |
+| `npm run test:all`     | Full suite         | 8 min       |
+| `npm run test:e2e:ui`  | Visual runner      | Interactive |
+| `npm run test:results` | View HTML report   | Browser     |
 
 ---
 

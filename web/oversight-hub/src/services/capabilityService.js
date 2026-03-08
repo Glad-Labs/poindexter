@@ -75,10 +75,7 @@ export const getServiceMetadata = async (serviceName) => {
     }
     return response;
   } catch (error) {
-    logger.error(
-      `Failed to fetch metadata for service ${serviceName}:`,
-      error
-    );
+    logger.error(`Failed to fetch metadata for service ${serviceName}:`, error);
     throw error;
   }
 };

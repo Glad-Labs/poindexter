@@ -59,15 +59,15 @@ Your testing stack now provides **complete end-to-end coverage** across all thre
 
 ### Layer Breakdown
 
-| Layer | Count | Focus | Tools |
-|-------|-------|-------|-------|
+| Layer              | Count     | Focus                            | Tools                        |
+| ------------------ | --------- | -------------------------------- | ---------------------------- |
 | **Unit/Component** | 378 tests | Functions, components, rendering | Jest + React Testing Library |
-| **Integration** | 40+ tests | Features, workflows, auth | Playwright + API calls |
-| **E2E** | 50+ tests | Complete user journeys | Playwright + real browsers |
-| **Visual** | 20+ tests | Layout, responsive, regression | Playwright visual checks |
-| **A11y** | 15+ tests | Accessibility, ARIA | Playwright a11y checks |
-| **Performance** | 10+ tests | Load times, metrics | Playwright perf tests |
-| **Security** | 10+ tests | Auth, input validation | Playwright security tests |
+| **Integration**    | 40+ tests | Features, workflows, auth        | Playwright + API calls       |
+| **E2E**            | 50+ tests | Complete user journeys           | Playwright + real browsers   |
+| **Visual**         | 20+ tests | Layout, responsive, regression   | Playwright visual checks     |
+| **A11y**           | 15+ tests | Accessibility, ARIA              | Playwright a11y checks       |
+| **Performance**    | 10+ tests | Load times, metrics              | Playwright perf tests        |
+| **Security**       | 10+ tests | Auth, input validation           | Playwright security tests    |
 
 **Total: 500+ automated tests across all layers**
 
@@ -217,7 +217,7 @@ npm run test:all:ci
 ```javascript
 {
   testDir: './web/public-site/e2e',
-  
+
   // Browsers & Devices
   projects: [
     'chromium',              // Desktop Chrome
@@ -232,13 +232,13 @@ npm run test:all:ci
     'chromium-axe',          // Accessibility testing
     'chromium-visual',       // Visual regression
   ],
-  
+
   // Execution
   fullyParallel: true,       // Run browser tests in parallel
   workers: 4,                // 4 concurrent workers
   timeout: 30000,            // 30 second test timeout
   retries: isCI ? 2 : 0,     // Retry on CI failures
-  
+
   // Output
   reporter: ['html', 'json', 'junit', 'markdown', 'github'],
   outputDir: 'test-results/playwright',
@@ -250,7 +250,7 @@ npm run test:all:ci
 ```javascript
 {
   testDir: './web/oversight-hub/e2e',
-  
+
   // Browsers
   projects: [
     'chromium',              // Primary
@@ -259,19 +259,19 @@ npm run test:all:ci
     'iPad-admin',            // Tablet
     'chromium-a11y',         // Accessibility
   ],
-  
+
   // Execution (Sequential for stability)
   fullyParallel: false,      // Run tests one at a time
   workers: 1,                // Single worker
   timeout: 45000,            // 45 seconds (longer for admin)
   retries: isCI ? 2 : 0,
-  
+
   // Authentication
   use: {
     storageState: 'playwright/.auth/admin-user.json',
     actionTimeout: 15000,    // Longer for complex interactions
   },
-  
+
   // Output
   reporter: ['html', 'json', 'junit', 'list', 'github'],
   outputDir: 'test-results/oversight',
@@ -283,7 +283,7 @@ npm run test:all:ci
 ```javascript
 {
   testDir: './playwright/api',
-  
+
   // Projects
   projects: [
     'api',                   // General API tests
@@ -291,13 +291,13 @@ npm run test:all:ci
     'api-security',          // Security checks
     'api-smoke',             // Quick health checks
   ],
-  
+
   // Execution (Parallel - can be fast)
   fullyParallel: true,
   workers: 4,
   timeout: 20000,            // API calls are faster
   retries: isCI ? 3 : 1,     // Retry network errors
-  
+
   // Output
   reporter: ['html', 'json', 'junit', 'list'],
   outputDir: 'test-results/api',
@@ -369,29 +369,29 @@ Error Handling              10%    - Failures, edge cases
 # Your CI pipeline runs:
 
 1. Install dependencies
-   npm ci
+npm ci
 
 2. Install Playwright browsers
-   npx playwright install
+npx playwright install
 
 3. Start services
-   npm run dev &
+npm run dev &
 
 4. Run Jest tests (378 tests)
-   npm test -- --ci --coverage
+npm test -- --ci --coverage
 
 5. Run Playwright public site tests
-   npx playwright test
+npx playwright test
 
 6. Run Playwright admin tests
-   npx playwright test -c playwright.oversight.config.ts
+npx playwright test -c playwright.oversight.config.ts
 
 7. Run Playwright API tests
-   npx playwright test -c playwright.api.config.ts
+npx playwright test -c playwright.api.config.ts
 
 8. Upload reports
-   - test-results/
-   - coverage/
+- test-results/
+- coverage/
 ```
 
 **Total time: ~3-5 minutes for full suite**
@@ -491,13 +491,13 @@ npx playwright test --reporter=verbose
 
 ### Expected Execution Times
 
-| Suite | Files | Tests | Time | Mode |
-|-------|-------|-------|------|------|
-| Jest | 20 | 378 | 2 min | Sequential |
-| Public Site | 10 | 50+ | 3 min | Parallel (4 workers) |
-| Admin | 5 | 30+ | 2 min | Sequential (1 worker) |
-| API | 8 | 40+ | 1 min | Parallel |
-| **Total** | **43** | **500+** | **8 min** | **Mixed** |
+| Suite       | Files  | Tests    | Time      | Mode                  |
+| ----------- | ------ | -------- | --------- | --------------------- |
+| Jest        | 20     | 378      | 2 min     | Sequential            |
+| Public Site | 10     | 50+      | 3 min     | Parallel (4 workers)  |
+| Admin       | 5      | 30+      | 2 min     | Sequential (1 worker) |
+| API         | 8      | 40+      | 1 min     | Parallel              |
+| **Total**   | **43** | **500+** | **8 min** | **Mixed**             |
 
 **In CI/CD (1 worker):** ~15 minutes total  
 **Local (4 workers):** ~8 minutes total
@@ -552,14 +552,14 @@ npx playwright test --reporter=verbose
 
 ## Summary Table
 
-| Aspect | Public Site | Admin | API | Total |
-|--------|-------------|-------|-----|-------|
-| **Jest Tests** | 288 | 90 | 0 | 378 |
-| **Playwright Configs** | ✅ | ✅ | ✅ | 3 |
-| **Browsers** | 8+ | 5 | N/A | 13+ |
-| **Test Projects** | 11 | 5 | 4 | 20 |
-| **Coverage** | 86% | 90% | 80% | **86%** |
-| **Status** | Production Ready | Production Ready | Ready to Implement | ✅ Complete |
+| Aspect                 | Public Site      | Admin            | API                | Total       |
+| ---------------------- | ---------------- | ---------------- | ------------------ | ----------- |
+| **Jest Tests**         | 288              | 90               | 0                  | 378         |
+| **Playwright Configs** | ✅               | ✅               | ✅                 | 3           |
+| **Browsers**           | 8+               | 5                | N/A                | 13+         |
+| **Test Projects**      | 11               | 5                | 4                  | 20          |
+| **Coverage**           | 86%              | 90%              | 80%                | **86%**     |
+| **Status**             | Production Ready | Production Ready | Ready to Implement | ✅ Complete |
 
 ---
 

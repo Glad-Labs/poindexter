@@ -147,8 +147,10 @@ describe('Home Page', () => {
 
   it('should display contact/inquiry CTA', () => {
     render(<HomePage />);
-    const contactButton = screen.queryByRole('link', { name: /contact|get in touch|reach out/i });
-    
+    const contactButton = screen.queryByRole('link', {
+      name: /contact|get in touch|reach out/i,
+    });
+
     if (contactButton) {
       expect(contactButton).toBeInTheDocument();
     }
@@ -157,13 +159,14 @@ describe('Home Page', () => {
   it('should have footer', () => {
     render(<HomePage />);
     const footer = document.querySelector('footer');
-    expect(footer).toBeInTheDocument() || expect(document.body).toBeInTheDocument();
+    expect(footer).toBeInTheDocument() ||
+      expect(document.body).toBeInTheDocument();
   });
 
   it('should display categories or tags section', () => {
     render(<HomePage />);
     const categoriesSection = screen.queryByText(/categories|topics|tags/i);
-    
+
     if (categoriesSection) {
       expect(categoriesSection).toBeInTheDocument();
     }

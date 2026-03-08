@@ -160,14 +160,14 @@ curl -X GET "http://localhost:8000/api/workflows/available-phases" \
     {
       "name": "research",
       "description": "Gather background research",
-      "input_schema": {"topic": "string"},
-      "output_schema": {"summary": "string", "sources": ["string"]}
+      "input_schema": { "topic": "string" },
+      "output_schema": { "summary": "string", "sources": ["string"] }
     },
     {
       "name": "draft",
       "description": "Generate content draft",
-      "input_schema": {"research_summary": "string"},
-      "output_schema": {"content": "string", "word_count": "integer"}
+      "input_schema": { "research_summary": "string" },
+      "output_schema": { "content": "string", "word_count": "integer" }
     }
   ],
   "total_count": 12

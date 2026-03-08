@@ -13,13 +13,13 @@
 
 ### Issues Created ✅
 
-- **#72** - [P3-MEDIUM] Optimize database queries (SELECT * → specific columns)
+- **#72** - [P3-MEDIUM] Optimize database queries (SELECT \* → specific columns)
 
 ### Issues Updated with Implementation Details ✅
 
 - **#20** - [P3-Medium] Add test coverage (CRITICAL - Frontend tests)
 - **#36** - Add comprehensive type hints to service layer
-- **#37** - Standardize exception handling  
+- **#37** - Standardize exception handling
 - **#38** - Add rate limiting middleware for DoS protection
 - **#40** - Tune database connection pool for production
 - **#43** - Implement training data capture in content phases
@@ -95,13 +95,13 @@
 
 ## 📈 Cumulative Effort Summary
 
-| Priority | Issues | Effort | Team Capacity |
-|----------|--------|--------|---|
-| **Quick Wins (4-10h)** | #72, #38, #40 | 11-16h | 1 week, 1 person |
-| **Medium (8-10h)** | #37, #43 | 14-18h | 1-2 weeks, 1 person |
-| **Large (12-16h)** | #45 | 12-16h | 1-2 weeks, 1 person |
-| **Major (20h+)** | #36, #20 | 50-70h | 2-3 weeks, 1-2 people |
-| **TOTAL** | 8 issues | **87-120h** | **2-3 weeks** |
+| Priority               | Issues        | Effort      | Team Capacity         |
+| ---------------------- | ------------- | ----------- | --------------------- |
+| **Quick Wins (4-10h)** | #72, #38, #40 | 11-16h      | 1 week, 1 person      |
+| **Medium (8-10h)**     | #37, #43      | 14-18h      | 1-2 weeks, 1 person   |
+| **Large (12-16h)**     | #45           | 12-16h      | 1-2 weeks, 1 person   |
+| **Major (20h+)**       | #36, #20      | 50-70h      | 2-3 weeks, 1-2 people |
+| **TOTAL**              | 8 issues      | **87-120h** | **2-3 weeks**         |
 
 ---
 

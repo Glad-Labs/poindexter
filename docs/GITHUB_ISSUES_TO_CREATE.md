@@ -8,7 +8,7 @@
 
 ## New Issues to Create
 
-### Issue #51: [P3-MEDIUM] Optimize database queries (SELECT * to specific columns)
+### Issue #51: [P3-MEDIUM] Optimize database queries (SELECT \* to specific columns)
 
 **Title:** `[P3-MEDIUM] Optimize database queries - replace SELECT * with specific columns`
 
@@ -18,11 +18,12 @@
 
 **Description:**
 
-```markdown
+````markdown
 ## Problem
 
-Database queries using SELECT * are inefficient and should specify exact columns needed. 
+Database queries using SELECT \* are inefficient and should specify exact columns needed.
 This improves:
+
 - Network bandwidth (smaller result sets)
 - Query execution (database doesn't load unnecessary columns)
 - Memory usage (application)
@@ -30,7 +31,7 @@ This improves:
 
 ## Current Findings
 
-10+ instances of SELECT * found in codebase:
+10+ instances of SELECT \* found in codebase:
 
 ### Files Identified
 
@@ -51,21 +52,22 @@ This improves:
 
 ## Solution
 
-Replace all SELECT * with explicit column lists based on actual usage:
+Replace all SELECT \* with explicit column lists based on actual usage:
 
 ```python
 # Before
 sql = "SELECT * FROM settings WHERE key = $1 AND is_active = true"
 row = await conn.fetchrow(sql, key)
 
-# After  
+# After
 sql = "SELECT id, key, value, category, updated_at FROM settings WHERE key = $1 AND is_active = true"
 row = await conn.fetchrow(sql, key)
 ```
+````
 
 ## Acceptance Criteria
 
-- [ ] All 10+ SELECT * statements audited
+- [ ] All 10+ SELECT \* statements audited
 - [ ] Columns needed for each query documented
 - [ ] Queries updated with explicit column lists
 - [ ] No functional regressions
@@ -83,7 +85,7 @@ None
 
 Improves query performance and reduces database load before production scaling.
 
-```
+````
 
 ---
 
@@ -122,7 +124,7 @@ Improves query performance and reduces database load before production scaling.
 - Better IDE autocomplete and error detection
 - Improved code maintainability
 - Easier onboarding for new developers
-```
+````
 
 ---
 
@@ -136,12 +138,13 @@ Improves query performance and reduces database load before production scaling.
 
 **New Content to Add:**
 
-```markdown
+````markdown
 ## Codebase Findings (March 8, 2026 Scan)
 
 ### Generic Exception Handlers Found: 30+ instances
 
 Routes affected:
+
 - routes/analytics_routes.py (3 instances: lines 372, 406, 500)
 - routes/agent_registry_routes.py (8 instances: lines 117, 150, 199, 235, 271, 320, 368, 417, 476)
 - routes/agents_routes.py (8 instances: lines 127, 152, 193, 258, 322, 394, 478, ...)
@@ -156,6 +159,7 @@ except Exception as e:
     logger.error(f"[operation_name] message", exc_info=True)
     # Fallback or error response
 ```
+````
 
 ### Recommended Pattern
 
@@ -185,7 +189,7 @@ except Exception as e:
 - Phase 1C completion
 - Issue #6 (closed) - Similar pattern standardization
 
-```
+````
 
 ---
 
@@ -227,7 +231,7 @@ Use **Vitest** + React Testing Library:
 
 ```bash
 npm install -D vitest @vitest/ui @testing-library/react @testing-library/jest-dom
-```
+````
 
 **Priority Components to Test:**
 
@@ -280,7 +284,7 @@ This is **BLOCKING** for Phase 4 release candidates.
 
 - None directly, but blocks downstream release testing
 
-```
+````
 
 ---
 
@@ -325,7 +329,7 @@ app.state.limiter = limiter
 @limiter.limit("100/minute")
 async def get_tasks(request: Request):
     # ... endpoint logic
-```
+````
 
 ## Rate Limiting Strategy
 
@@ -355,7 +359,7 @@ Global: 100 requests/minute per IP
 - Issue #39 (webhook validation)
 - Issue #41 (HTTP caching)
 
-```
+````
 
 ---
 
@@ -375,7 +379,7 @@ Located in `database_service.py` and `.env.local`:
 ```python
 DATABASE_POOL_MIN_SIZE=5      # Minimum connections
 DATABASE_POOL_MAX_SIZE=20     # Maximum connections
-```
+````
 
 ## Problem
 
@@ -430,7 +434,7 @@ PostgreSQL default max connections: 100
 
 - Issue #32 (performance monitoring) - related
 
-```
+````
 
 ---
 
@@ -461,7 +465,7 @@ File: `src/cofounder_agent/services/phases/content_phases.py` (line 547)
 
 ```python
 # TODO: Capture training data (inputs, outputs, quality scores) for fine-tuning
-```
+````
 
 ## Implementation Plan
 
@@ -520,7 +524,7 @@ training_record = {
 
 - Issue #31 (GDPR) - ensure compliance with data retention
 
-```
+````
 
 ---
 
@@ -567,7 +571,7 @@ Migrate to **Celery** with Redis broker:
 
 ```bash
 poetry add celery redis flower
-```
+````
 
 #### Step 2: Create celery_app.py
 
@@ -706,6 +710,7 @@ uvicorn main:app --reload
 
 ---
 
-**Created:** March 8, 2026  
-**Repository:** Glad-Labs/glad-labs-codebase  
+**Created:** March 8, 2026
+**Repository:** Glad-Labs/glad-labs-codebase
 **Branch:** dev
+```

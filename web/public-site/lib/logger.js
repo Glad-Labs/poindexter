@@ -34,7 +34,11 @@ function initLogDir() {
 function serializeArg(arg) {
   if (arg instanceof Error) return arg.stack || arg.message;
   if (typeof arg === 'object' && arg !== null) {
-    try { return JSON.stringify(arg); } catch (_) { return String(arg); }
+    try {
+      return JSON.stringify(arg);
+    } catch (_) {
+      return String(arg);
+    }
   }
   return String(arg);
 }
@@ -63,14 +67,18 @@ function serverLog(level, line) {
     writeToFile('app.log', line);
     if (level === 'WARN' || level === 'ERROR') writeToFile('error.log', line);
   } else {
-    const out = level === 'ERROR' || level === 'WARN' ? process.stderr : process.stdout;
+    const out =
+      level === 'ERROR' || level === 'WARN' ? process.stderr : process.stdout;
     out && out.write(line + '\n');
   }
 }
 
 function clientLog(level, line, rawArgs) {
   if (!IS_DEV && level !== 'WARN' && level !== 'ERROR') return;
-  const fn = { ERROR: 'error', WARN: 'warn', INFO: 'info', DEBUG: 'debug', LOG: 'log' }[level] || 'log';
+  const fn =
+    { ERROR: 'error', WARN: 'warn', INFO: 'info', DEBUG: 'debug', LOG: 'log' }[
+      level
+    ] || 'log';
   console[fn](line, ...rawArgs); // eslint-disable-line no-console
 }
 
@@ -84,10 +92,14 @@ function emit(level, message, args) {
 }
 
 const logger = {
-  debug: (message, ...args) => { if (IS_DEV) emit('DEBUG', message, args); },
-  info:  (message, ...args) => emit('INFO',  message, args),
-  log:   (message, ...args) => { if (IS_DEV) emit('LOG',   message, args); },
-  warn:  (message, ...args) => emit('WARN',  message, args),
+  debug: (message, ...args) => {
+    if (IS_DEV) emit('DEBUG', message, args);
+  },
+  info: (message, ...args) => emit('INFO', message, args),
+  log: (message, ...args) => {
+    if (IS_DEV) emit('LOG', message, args);
+  },
+  warn: (message, ...args) => emit('WARN', message, args),
   error: (message, ...args) => emit('ERROR', message, args),
 };
 

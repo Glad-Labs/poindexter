@@ -18,8 +18,22 @@ function AppRoutes() {
   return (
     <Routes>
       {/* Public Routes */}
-      <Route path="/login" element={<ErrorBoundary name="Login"><Login /></ErrorBoundary>} />
-      <Route path="/auth/callback" element={<ErrorBoundary name="AuthCallback"><AuthCallback /></ErrorBoundary>} />
+      <Route
+        path="/login"
+        element={
+          <ErrorBoundary name="Login">
+            <Login />
+          </ErrorBoundary>
+        }
+      />
+      <Route
+        path="/auth/callback"
+        element={
+          <ErrorBoundary name="AuthCallback">
+            <AuthCallback />
+          </ErrorBoundary>
+        }
+      />
 
       {/* Protected Routes with Layout */}
       <Route

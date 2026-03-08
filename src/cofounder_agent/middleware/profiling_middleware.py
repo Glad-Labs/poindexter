@@ -177,7 +177,12 @@ class ProfilingMiddleware(BaseHTTPMiddleware):
                 ),
                 "error_count": sum(1 for s in status_codes if s is not None and s >= 400),
                 "success_rate": (
-                    round(sum(1 for s in status_codes if s is not None and s < 400) / len(status_codes) * 100, 2)
+                    round(
+                        sum(1 for s in status_codes if s is not None and s < 400)
+                        / len(status_codes)
+                        * 100,
+                        2,
+                    )
                     if status_codes
                     else 0
                 ),

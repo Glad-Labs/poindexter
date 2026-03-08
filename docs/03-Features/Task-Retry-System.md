@@ -25,6 +25,7 @@ Task retry functionality routes through the enhanced status change service, ensu
 - ✅ Human approval integration when required
 
 **API Endpoint:**
+
 ```
 POST /api/tasks/{task_id}/status/validated
 Body: {
@@ -39,16 +40,19 @@ Body: {
 Visual indicators show retry attempts throughout the UI:
 
 **Task List View:**
+
 - Retry badge displays next to status badge
 - Format: "Retry #3" in cyan with border
 - Tooltip shows full count on hover
 
 **Task Detail Modal:**
+
 - Retry badge in dialog title header
 - Persists across tab navigation
 - Updates in real-time via WebSocket
 
 **Metadata Fields:**
+
 - `retry_count` - Total number of retry attempts
 - `last_retry_at` - Timestamp of most recent retry
 - `last_retry_by` - User who initiated retry
@@ -58,6 +62,7 @@ Visual indicators show retry attempts throughout the UI:
 Real-time visibility into task execution stages:
 
 **Status Badge with Step Label:**
+
 ```
 ┌─────────────────────┐
 │ In Progress         │  ← Status badge
@@ -68,14 +73,15 @@ Real-time visibility into task execution stages:
 **Backend Stage Updates:**
 The task executor writes stage progression to `task_metadata`:
 
-| Stage | Percentage | Message |
-|-------|------------|---------|
-| `queued` | 5% | "Task queued for processing" |
-| `content_generation` | 20% | "Generating content" |
-| `finalizing` | 90% | "Finalizing task output" |
-| `complete` | 100% | "Task completed successfully" |
+| Stage                | Percentage | Message                       |
+| -------------------- | ---------- | ----------------------------- |
+| `queued`             | 5%         | "Task queued for processing"  |
+| `content_generation` | 20%        | "Generating content"          |
+| `finalizing`         | 90%        | "Finalizing task output"      |
+| `complete`           | 100%       | "Task completed successfully" |
 
 **Frontend Extraction:**
+
 ```javascript
 const metadata = getTaskMetadata(task);
 const currentStep = metadata.message || metadata.stage;
@@ -95,6 +101,7 @@ Progress bars change color based on execution stage:
 #### Animated Indicators
 
 Active tasks display visual feedback:
+
 - Shimmer animation on progress bars
 - Glowing shadow effects
 - Smooth transitions with cubic-bezier easing
@@ -103,11 +110,12 @@ Active tasks display visual feedback:
 #### Progress Bar in Modal Header
 
 Detail modal shows real-time execution progress:
+
 ```
 Task Details: Blog Post Title          Retry #2
 ─────────────────────────────────────────────────
 Generating content                           35%
-████████████░░░░░░░░░░░░░░░░░░░░░░░░  
+████████████░░░░░░░░░░░░░░░░░░░░░░░░
 ```
 
 ### 5. **Queue Mechanics Fix**
@@ -127,6 +135,7 @@ status_map = {
 ```
 
 **Impact:**
+
 - ✅ Resumed tasks picked up by executor immediately
 - ✅ Consistent with pending task queue pattern
 - ✅ No manual intervention required
@@ -142,12 +151,14 @@ status_map = {
 **File:** `src/cofounder_agent/services/enhanced_status_change_service.py`
 
 **Key Features:**
+
 - Metadata merge (preserves existing fields)
 - Retry counter increment on `action="retry"`
 - Audit trail logging
 - Status transition validation
 
 **Retry Increment Logic:**
+
 ```python
 if action == "retry" and existing_metadata:
     retry_count = existing_metadata.get("retry_count", 0) + 1
@@ -165,6 +176,7 @@ if action == "retry" and existing_metadata:
 **File:** `src/cofounder_agent/services/task_executor.py`
 
 **Helper Function:**
+
 ```python
 async def update_processing_stage(
     task_id: str,
@@ -184,6 +196,7 @@ async def update_processing_stage(
 ```
 
 **Stage Progression:**
+
 ```python
 # Stage 1: Queued
 await update_processing_stage(task_id, "queued", "Task queued for processing", 5)
@@ -205,6 +218,7 @@ await update_processing_stage(task_id, "complete", "Task completed successfully"
 **File:** `web/oversight-hub/src/routes/TaskManagement.jsx`
 
 **Key Helpers:**
+
 ```javascript
 // Safe metadata extraction
 const getTaskMetadata = (task) => {
@@ -232,12 +246,12 @@ const getTaskStepLabel = (task) => {
   const metadata = getTaskMetadata(task);
   const rawStep = metadata.message || metadata.stage;
   if (!rawStep) return '';
-  
+
   const status = String(task?.status || '').toLowerCase();
   if (!['pending', 'in_progress', 'running'].includes(status)) {
     return '';
   }
-  
+
   return formatStepLabel(rawStep);
 };
 
@@ -253,25 +267,37 @@ const getRetryCount = (task) => {
 **File:** `web/oversight-hub/src/components/tasks/TaskDetailModal.jsx`
 
 **Progress Header:**
+
 ```jsx
-{isActiveTask && taskPercentage > 0 && (
-  <Box sx={{ width: '100%' }}>
-    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-      <span>{taskMessage || taskStage || 'Processing...'}</span>
-      <span>{taskPercentage}%</span>
+{
+  isActiveTask && taskPercentage > 0 && (
+    <Box sx={{ width: '100%' }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+        <span>{taskMessage || taskStage || 'Processing...'}</span>
+        <span>{taskPercentage}%</span>
+      </Box>
+      <Box
+        sx={
+          {
+            /* Progress bar container */
+          }
+        }
+      >
+        <Box
+          sx={{
+            width: `${taskPercentage}%`,
+            backgroundColor: '#00d9ff',
+            boxShadow: '0 0 10px rgba(0, 217, 255, 0.5)',
+          }}
+        />
+      </Box>
     </Box>
-    <Box sx={{ /* Progress bar container */ }}>
-      <Box sx={{ 
-        width: `${taskPercentage}%`,
-        backgroundColor: '#00d9ff',
-        boxShadow: '0 0 10px rgba(0, 217, 255, 0.5)'
-      }} />
-    </Box>
-  </Box>
-)}
+  );
+}
 ```
 
 **Timeline Tab Enhancement:**
+
 ```jsx
 <TabPanel value={tabValue} index={1}>
   {isActiveTask && (taskStage || taskMessage) && (
@@ -290,6 +316,7 @@ const getRetryCount = (task) => {
 **File:** `web/oversight-hub/src/routes/TaskManagement.css`
 
 **Progress Bar with Stage Colors:**
+
 ```css
 .progress-fill {
   transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
@@ -297,24 +324,25 @@ const getRetryCount = (task) => {
 }
 
 /* Stage-specific colors */
-.progress-fill[data-stage="queued"] {
+.progress-fill[data-stage='queued'] {
   background: linear-gradient(90deg, #ffa726, #ffb74d);
 }
 
-.progress-fill[data-stage="content_generation"] {
+.progress-fill[data-stage='content_generation'] {
   background: linear-gradient(90deg, #42a5f5, #64b5f6);
 }
 
-.progress-fill[data-stage="finalizing"] {
+.progress-fill[data-stage='finalizing'] {
   background: linear-gradient(90deg, #66bb6a, #81c784);
 }
 
 /* Animated shimmer */
 .progress-fill.active::after {
   content: '';
-  background: linear-gradient(90deg, 
-    transparent 0%, 
-    rgba(255,255,255,0.3) 50%, 
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.3) 50%,
     transparent 100%
   );
   animation: shimmer 2s infinite;
@@ -328,6 +356,7 @@ const getRetryCount = (task) => {
 ### Retrying a Failed Task
 
 **From Task List:**
+
 1. Locate failed task (red status badge)
 2. Click task row to open detail modal
 3. Navigate to "Content & Approval" tab
@@ -337,6 +366,7 @@ const getRetryCount = (task) => {
 7. Retry badge appears showing attempt count
 
 **From Bulk Actions:**
+
 1. Select multiple failed tasks (checkboxes)
 2. Click "Resume" button in bulk actions toolbar
 3. Confirm bulk retry
@@ -346,17 +376,20 @@ const getRetryCount = (task) => {
 ### Monitoring Task Progress
 
 **Real-Time Updates:**
+
 - Watch progress bar fill as task executes
 - Color changes indicate stage transitions
 - Step label shows current execution phase
 - Percentage updates every few seconds
 
 **Timeline Tab:**
+
 - Shows "Current Execution Stage" card for active tasks
 - Displays percentage complete badge
 - Lists historical status transitions below
 
 **WebSocket Integration:**
+
 - Frontend auto-refreshes when task status changes
 - Progress updates arrive via `/api/workflow-progress/{id}`
 - No manual refresh needed
@@ -382,6 +415,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -415,6 +449,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -435,6 +470,7 @@ Content-Type: application/json
 ### Enable/Disable Features
 
 **Environment Variables:**
+
 ```env
 # Retry system
 ENABLE_TASK_RETRY=true
@@ -470,6 +506,7 @@ async def can_retry_task(task_id: str) -> bool:
 ### Manual Testing Checklist
 
 **Retry Flow:**
+
 - [ ] Retry failed task from detail modal
 - [ ] Verify retry badge appears with count
 - [ ] Confirm metadata persists retry info
@@ -477,18 +514,21 @@ async def can_retry_task(task_id: str) -> bool:
 - [ ] Validate task picked up by executor
 
 **Progress Visualization:**
+
 - [ ] Verify progress bar appears for active tasks
 - [ ] Check color changes match stage
 - [ ] Confirm shimmer animation on active bars
 - [ ] Test progress updates in real-time
 
 **Status Display:**
+
 - [ ] Check step labels show for pending/in_progress
 - [ ] Verify step labels hidden for completed/failed
 - [ ] Confirm CSS classes normalized correctly
 - [ ] Test status formatting (title case)
 
 **Detail Modal:**
+
 - [ ] Progress bar visible in header for active tasks
 - [ ] Timeline tab shows Current Execution Stage card
 - [ ] Pulsing indicator appears on Timeline tab
@@ -497,6 +537,7 @@ async def can_retry_task(task_id: str) -> bool:
 ### Automated Tests
 
 **Backend Tests:**
+
 ```bash
 # Test retry metadata increment
 pytest tests/unit/backend/services/test_enhanced_status_change.py::test_retry_increments_counter -v
@@ -509,6 +550,7 @@ pytest tests/integration/test_resume_to_pending.py -v
 ```
 
 **Frontend Tests:**
+
 ```bash
 # Run oversight hub tests
 cd web/oversight-hub
@@ -525,6 +567,7 @@ npm test -- --testPathPattern=TaskDetailModal
 **Symptom:** Clicking retry does nothing or shows error
 
 **Solutions:**
+
 1. Check browser console for JS errors
 2. Verify task status is `failed` or `rejected`
 3. Confirm user has retry permissions
@@ -535,6 +578,7 @@ npm test -- --testPathPattern=TaskDetailModal
 **Symptom:** Task was retried but badge not visible
 
 **Solutions:**
+
 1. Verify `task_metadata.retry_count` field exists
 2. Check task list refreshed after retry
 3. Inspect metadata JSON in task detail
@@ -545,6 +589,7 @@ npm test -- --testPathPattern=TaskDetailModal
 **Symptom:** Progress stuck at 0% or not moving
 
 **Solutions:**
+
 1. Check WebSocket connection status
 2. Verify backend is writing to `task_metadata.percentage`
 3. Confirm task status is `pending` or `in_progress`
@@ -555,6 +600,7 @@ npm test -- --testPathPattern=TaskDetailModal
 **Symptom:** Status badge displays but no step text
 
 **Solutions:**
+
 1. Verify `task_metadata.message` or `task_metadata.stage` populated
 2. Check task status is pending/in_progress/running
 3. Inspect CSS for `.status-step-text` visibility
@@ -565,6 +611,7 @@ npm test -- --testPathPattern=TaskDetailModal
 **Symptom:** Resumed task stays `pending` indefinitely
 
 **Solutions:**
+
 1. Check executor is running: `curl http://localhost:8000/health`
 2. Verify database connection: Check PostgreSQL logs
 3. Query pending tasks: `SELECT * FROM content_tasks WHERE status='pending'`
@@ -577,11 +624,13 @@ npm test -- --testPathPattern=TaskDetailModal
 ### Database Impact
 
 **Metadata Updates:**
+
 - Each stage update writes to `task_metadata` JSON field
 - Uses partial updates (JSONB merge in PostgreSQL)
 - Minimal impact: ~5ms per update
 
 **Retry Counter:**
+
 - Single field increment on retry action
 - No additional queries required
 - Batched with status transition
@@ -589,11 +638,13 @@ npm test -- --testPathPattern=TaskDetailModal
 ### Frontend Optimization
 
 **Progress Polling:**
+
 - WebSocket preferred over polling
 - Falls back to 30-second interval if WS unavailable
 - Debounced metadata parsing (100ms)
 
 **CSS Animations:**
+
 - GPU-accelerated transforms only
 - Shimmer effect uses `transform: translateX`
 - No layout thrashing
@@ -603,6 +654,7 @@ npm test -- --testPathPattern=TaskDetailModal
 ## Future Enhancements
 
 ### Planned Features
+
 - [ ] Retry scheduling with exponential backoff
 - [ ] Bulk retry with filters (e.g., "retry all failed today")
 - [ ] Retry history timeline (show all attempts)
@@ -611,6 +663,7 @@ npm test -- --testPathPattern=TaskDetailModal
 - [ ] Retry analytics dashboard
 
 ### Extension Points
+
 - Custom retry validators (`IRetryValidator` interface)
 - Configurable stage definitions per workflow
 - Plugin system for progress bar themes

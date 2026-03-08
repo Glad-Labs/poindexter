@@ -353,9 +353,9 @@ Browser: [ ] Chrome [ ] Firefox [ ] Safari [ ] Edge
 
 **Blog Title:** `________________________________________________________________`
 
-**Generation Time:** ****\_**** minutes
+**Generation Time:** \***\*\_\*\*** minutes
 
-**Final Quality Score:** ****\_**** /100
+**Final Quality Score:** \***\*\_\*\*** /100
 
 **All 6 Improvements Assessment:**
 

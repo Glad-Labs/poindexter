@@ -12,32 +12,32 @@ This tracker is aligned to:
 
 ## Current Snapshot (March 8, 2026 Scan)
 
-| Priority | Open Issues | Notes |
-| --- | --- | --- |
-| P1-Critical | 0 | All critical issues resolved |
-| P2-High | 0 | All high-priority workflow/security/debt items completed |
-| P3-Medium | 12 | Includes frontend tests, database optimization, exception types standardization |
-| P4-Low | 3 | Performance ops and optional enhancements |
-| Total | 15 | Canonical active debt set in this tracker |
+| Priority    | Open Issues | Notes                                                                           |
+| ----------- | ----------- | ------------------------------------------------------------------------------- |
+| P1-Critical | 0           | All critical issues resolved                                                    |
+| P2-High     | 0           | All high-priority workflow/security/debt items completed                        |
+| P3-Medium   | 12          | Includes frontend tests, database optimization, exception types standardization |
+| P4-Low      | 3           | Performance ops and optional enhancements                                       |
+| Total       | 15          | Canonical active debt set in this tracker                                       |
 
 ### Codebase Metric Snapshot
 
-| Metric | Value | Status | Notes |
-|--------|-------|--------|-------|
-| Backend Service Modules | 116 | ✅ Healthy | Well-organized services layer |
-| Backend Test Files | 56 | ✅ Good | 57/57 tests passing (Phase 2B complete) |
-| Frontend Test Files (Oversight Hub) | 0 | ⚠️ Missing | React admin dashboard needs test coverage |
-| Frontend Test Files (Public Site) | 0 | ⚠️ Missing | Next.js website needs test coverage |
-| TODO Markers in Code | 1 | ✅ Low | Async queue implementation (workflow_execution_adapter.py:730) |
-| Generic "except Exception" Handlers | 30+ | ⚠️ Medium | Need specific exception types per Python standards |
-| SELECT * FROM Statements | 10+ | ⚠️ Medium | Should select specific columns for performance |
-| localStorage Usage in Oversight Hub | 2 instances | ℹ️ Info | LayoutWrapper.jsx (legacy use for chat height; archive files archived) |
+| Metric                              | Value       | Status     | Notes                                                                  |
+| ----------------------------------- | ----------- | ---------- | ---------------------------------------------------------------------- |
+| Backend Service Modules             | 116         | ✅ Healthy | Well-organized services layer                                          |
+| Backend Test Files                  | 56          | ✅ Good    | 57/57 tests passing (Phase 2B complete)                                |
+| Frontend Test Files (Oversight Hub) | 0           | ⚠️ Missing | React admin dashboard needs test coverage                              |
+| Frontend Test Files (Public Site)   | 0           | ⚠️ Missing | Next.js website needs test coverage                                    |
+| TODO Markers in Code                | 1           | ✅ Low     | Async queue implementation (workflow_execution_adapter.py:730)         |
+| Generic "except Exception" Handlers | 30+         | ⚠️ Medium  | Need specific exception types per Python standards                     |
+| SELECT \* FROM Statements           | 10+         | ⚠️ Medium  | Should select specific columns for performance                         |
+| localStorage Usage in Oversight Hub | 2 instances | ℹ️ Info    | LayoutWrapper.jsx (legacy use for chat height; archive files archived) |
 
 ## Canonical Open Debt Issues
 
 ### P1-Critical
 
-*No open critical issues* ✅
+_No open critical issues_ ✅
 
 ## Recently Closed (Completed)
 
@@ -56,7 +56,7 @@ This tracker is aligned to:
 
 ### P2-High
 
-*No open high-priority issues* ✅
+_No open high-priority issues_ ✅
 
 ### P3-Medium
 
@@ -64,44 +64,37 @@ This tracker is aligned to:
   - **Scope:** Services layer (116 modules)
   - **Effort:** 20-30 hours
   - **Benefit:** Improved IDE support, better error detection
-  
 - [#37](https://github.com/Glad-Labs/glad-labs-codebase/issues/37) Standardize exception handling (specific exception types)
   - **Scope:** 30+ routes with generic `except Exception` handlers
   - **Effort:** 8-10 hours
   - **Files:** analytics_routes.py, agent_registry_routes.py, agents_routes.py, chat_routes.py, auth_unified.py, migrations/
   - **Note:** Phase 1C partial completion; need specific exception types instead of generic Exception
   - **Status:** In Progress
-  
 - [#38](https://github.com/Glad-Labs/glad-labs-codebase/issues/38) Add rate limiting middleware for DoS protection
   - **Scope:** FastAPI middleware layer
   - **Effort:** 4-6 hours
   - **Risk:** High (security)
   - **Recommendation:** Implement before production deployment
-  
 - [#39](https://github.com/Glad-Labs/glad-labs-codebase/issues/39) Integrate webhook signature validation
   - **Scope:** webhooks.py route
   - **Effort:** 3-4 hours
   - **Risk:** High (security)
   - **Recommendation:** Validate HMAC signatures from external services
-  
 - [#40](https://github.com/Glad-Labs/glad-labs-codebase/issues/40) Optimize database connection pool for production
   - **Current:** Small pool for dev; needs tuning for load
   - **Effort:** 3-5 hours
   - **Scope:** database_service.py, .env.local configuration
   - **Recommendation:** Test with production-like loads; adjust min/max pool size
-  
 - [#43](https://github.com/Glad-Labs/glad-labs-codebase/issues/43) Implement training data capture in content phases
   - **Location:** src/cofounder_agent/services/phases/content_phases.py:547
   - **Effort:** 6-8 hours
   - **Benefit:** Enables fine-tuning and quality analysis
-  
 - [#45](https://github.com/Glad-Labs/glad-labs-codebase/issues/45) Replace in-process workflow task queue with robust async queue
   - **TODO Location:** workflow_execution_adapter.py:730
   - **Current:** Uses asyncio.create_task() for in-process queuing
   - **Recommendation:** Migrate to Celery/RQ/Arq for distributed execution
   - **Effort:** 12-16 hours
   - **Migration Path:** Install Celery → Create Redis broker → Wire task wrappers
-  
 - [#20](https://github.com/Glad-Labs/glad-labs-codebase/issues/20) Add test coverage for frontend applications
   - **Scope:** 2 applications
     - Oversight Hub (React 18, Material-UI admin dashboard) — 0 tests
@@ -110,19 +103,16 @@ This tracker is aligned to:
   - **Effort:** 25-35 hours (full coverage)
   - **Recommendation:** Start with Vitest for oversight-hub, Jest for public-site
   - **Priority:** Critical for release cycle (testing, CI/CD integration)
-  
 - [#48](https://github.com/Glad-Labs/glad-labs-codebase/issues/48) Standardize OAuth state validation across all callback handlers
   - **Status:** Partially complete (authClient.validateAndConsumeOAuthState is centralized)
   - **Effort:** 2-3 hours to complete remaining callback paths
   - **Scope:** GitHub OAuth callback validation uniformity
-  
-- [#51](https://github.com/Glad-Labs/glad-labs-codebase/issues/51) Optimize database queries (SELECT * → specific columns)
-  - **Scope:** 10+ SELECT * FROM statements across codebase
+- [#51](https://github.com/Glad-Labs/glad-labs-codebase/issues/51) Optimize database queries (SELECT \* → specific columns)
+  - **Scope:** 10+ SELECT \* FROM statements across codebase
   - **Files:** admin_db.py, custom_workflows_service.py, route_utils.py, postgres_cms_client.py
   - **Effort:** 4-6 hours
   - **Benefit:** Reduced bandwidth, faster network round-trips, smaller memory footprint
-  - **Recommendation:** Audit queries; replace * with explicit column lists
-  
+  - **Recommendation:** Audit queries; replace \* with explicit column lists
 - [#49](https://github.com/Glad-Labs/glad-labs-codebase/issues/49) Centralize frontend token access through a single auth client
   - **Status:** Partially complete (authClient.js exists)
   - **Effort:** 2-3 hours to fully route all token access through auth client
@@ -135,7 +125,6 @@ This tracker is aligned to:
   - **Effort:** 2-3 hours
   - **Benefit:** Reduced server load, faster client response times
   - **Recommendation:** Cache static assets, workflow templates, reference data
-  
 - [#42](https://github.com/Glad-Labs/glad-labs-codebase/issues/42) Implement API rate limiting for abuse prevention
   - **Scope:** Global rate limiting middleware (per-IP or per-user)
   - **Effort:** 3-4 hours
@@ -184,7 +173,7 @@ Only **1 verified TODO** in production code:
    - **Status:** Partially standardized in Phase 1C; need to complete remaining handlers
    - **Mapped to:** [#37](https://github.com/Glad-Labs/glad-labs-codebase/issues/37)
 
-2. **SELECT * FROM Statements** (10+ instances)
+2. **SELECT \* FROM Statements** (10+ instances)
    - **Files:** admin_db.py, custom_workflows_service.py, route_utils.py, postgres_cms_client.py
    - **Issue:** Inefficient database queries; should select specific columns
    - **Mapped to:** [#51](https://github.com/Glad-Labs/glad-labs-codebase/issues/51) (NEW)

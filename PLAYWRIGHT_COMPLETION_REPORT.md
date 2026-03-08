@@ -217,29 +217,29 @@ Your testing infrastructure is **fully configured and production-ready**. You no
 
 ### Playwright Configurations (3 files)
 
-| File | Purpose | Status | Size |
-|------|---------|--------|------|
-| playwright.config.ts | Public site E2E | ✅ Done | 280 lines |
+| File                           | Purpose             | Status  | Size      |
+| ------------------------------ | ------------------- | ------- | --------- |
+| playwright.config.ts           | Public site E2E     | ✅ Done | 280 lines |
 | playwright.oversight.config.ts | Admin dashboard E2E | ✅ Done | 200 lines |
-| playwright.api.config.ts | API testing | ✅ Done | 160 lines |
+| playwright.api.config.ts       | API testing         | ✅ Done | 160 lines |
 
 ### Documentation (5 files)
 
-| File | Purpose | Status | Size |
-|------|---------|--------|------|
-| PLAYWRIGHT_GUIDE.md | Complete reference | ✅ Done | 600 lines |
-| PLAYWRIGHT_NPM_SCRIPTS.md | npm commands | ✅ Done | 195 lines |
-| TESTING_ARCHITECTURE.md | Architecture overview | ✅ Done | 350 lines |
-| TESTING_QUICK_START.md | Team quick start | ✅ Done | 300 lines |
-| INTEGRATION_GUIDE_PACKAGE_JSON.md | Integration steps | ✅ Done | 250 lines |
+| File                              | Purpose               | Status  | Size      |
+| --------------------------------- | --------------------- | ------- | --------- |
+| PLAYWRIGHT_GUIDE.md               | Complete reference    | ✅ Done | 600 lines |
+| PLAYWRIGHT_NPM_SCRIPTS.md         | npm commands          | ✅ Done | 195 lines |
+| TESTING_ARCHITECTURE.md           | Architecture overview | ✅ Done | 350 lines |
+| TESTING_QUICK_START.md            | Team quick start      | ✅ Done | 300 lines |
+| INTEGRATION_GUIDE_PACKAGE_JSON.md | Integration steps     | ✅ Done | 250 lines |
 
 ### Test Files Already Created
 
-| File | Tests | Status |
-|------|-------|--------|
-| web/public-site/**tests**/ | 288 | ✅ Passing |
-| web/oversight-hub/**tests**/ | 90 | ✅ Passing |
-| **Total Jest** | **378** | **✅ 100% Pass** |
+| File                         | Tests   | Status           |
+| ---------------------------- | ------- | ---------------- |
+| web/public-site/**tests**/   | 288     | ✅ Passing       |
+| web/oversight-hub/**tests**/ | 90      | ✅ Passing       |
+| **Total Jest**               | **378** | **✅ 100% Pass** |
 
 ---
 
@@ -247,22 +247,22 @@ Your testing infrastructure is **fully configured and production-ready**. You no
 
 ### By Type
 
-| Test Type | Count | Framework | Status |
-|-----------|-------|-----------|--------|
-| Unit | 157 | Jest | ✅ 100% |
-| Component | 145 | Jest + RTL | ✅ 100% |
-| Page/View | 75 | Jest | ✅ 100% |
-| Integration | 46 | Jest + API | ✅ 100% |
-| Admin UI | 90 | Jest | ✅ 100% |
-| **Total Existing** | **378** | **Jest** | **✅ 100%** |
+| Test Type          | Count   | Framework  | Status      |
+| ------------------ | ------- | ---------- | ----------- |
+| Unit               | 157     | Jest       | ✅ 100%     |
+| Component          | 145     | Jest + RTL | ✅ 100%     |
+| Page/View          | 75      | Jest       | ✅ 100%     |
+| Integration        | 46      | Jest + API | ✅ 100%     |
+| Admin UI           | 90      | Jest       | ✅ 100%     |
+| **Total Existing** | **378** | **Jest**   | **✅ 100%** |
 
 ### By Configuration (Ready to Implement)
 
-| Framework | Config | Projects | Status |
-|-----------|--------|----------|--------|
-| Playwright | playwright.config.ts | 11 | ✅ Ready |
-| Playwright | playwright.oversight.config.ts | 5 | ✅ Ready |
-| Playwright | playwright.api.config.ts | 4 | ✅ Ready |
+| Framework  | Config                         | Projects | Status   |
+| ---------- | ------------------------------ | -------- | -------- |
+| Playwright | playwright.config.ts           | 11       | ✅ Ready |
+| Playwright | playwright.oversight.config.ts | 5        | ✅ Ready |
+| Playwright | playwright.api.config.ts       | 4        | ✅ Ready |
 
 ---
 
@@ -350,7 +350,7 @@ npx playwright codegen http://localhost:3000
 # Public site: 5-10 test files
 npm run test:public
 
-# Admin: 3-5 test files  
+# Admin: 3-5 test files
 npm run test:admin
 
 # API: 5-8 test files
@@ -424,17 +424,17 @@ playwright/api/                                 ⏳ Ready for spec files
 
 ## Success Criteria - All Met ✅
 
-| Criterion | Target | Actual | Status |
-|-----------|--------|--------|--------|
-| Jest tests | 300+ | 378 | ✅ Exceeded |
-| Pass rate | 95%+ | 100% | ✅ Perfect |
-| Playwright configs | 3 | 3 | ✅ Complete |
-| Device profiles | 8+ | 9+ | ✅ Exceeded |
-| Test projects | 10+ | 20 | ✅ Exceeded |
-| Browser coverage | 3+ | 3 | ✅ Complete |
-| Documentation | Comprehensive | 1,700+ lines | ✅ Exceeded |
-| npm scripts | 20+ | 40+ | ✅ Exceeded |
-| CI/CD ready | Yes | Yes | ✅ Complete |
+| Criterion          | Target        | Actual       | Status      |
+| ------------------ | ------------- | ------------ | ----------- |
+| Jest tests         | 300+          | 378          | ✅ Exceeded |
+| Pass rate          | 95%+          | 100%         | ✅ Perfect  |
+| Playwright configs | 3             | 3            | ✅ Complete |
+| Device profiles    | 8+            | 9+           | ✅ Exceeded |
+| Test projects      | 10+           | 20           | ✅ Exceeded |
+| Browser coverage   | 3+            | 3            | ✅ Complete |
+| Documentation      | Comprehensive | 1,700+ lines | ✅ Exceeded |
+| npm scripts        | 20+           | 40+          | ✅ Exceeded |
+| CI/CD ready        | Yes           | Yes          | ✅ Complete |
 
 ---
 
@@ -478,13 +478,13 @@ playwright/api/                                 ⏳ Ready for spec files
 
 ### Execution Times (Baseline)
 
-| Suite | Count | Serial | Parallel | CI |
-|-------|-------|--------|----------|-----|
-| Jest | 378 | 2 min | 2 min | 3 min |
-| Public E2E | 50+ | 5 min | 3 min | 4 min |
-| Admin E2E | 30+ | 3 min | 3 min | 3 min |
-| API E2E | 40+ | 2 min | 1 min | 2 min |
-| **Total** | **500+** | **12 min** | **9 min** | **12 min** |
+| Suite      | Count    | Serial     | Parallel  | CI         |
+| ---------- | -------- | ---------- | --------- | ---------- |
+| Jest       | 378      | 2 min      | 2 min     | 3 min      |
+| Public E2E | 50+      | 5 min      | 3 min     | 4 min      |
+| Admin E2E  | 30+      | 3 min      | 3 min     | 3 min      |
+| API E2E    | 40+      | 2 min      | 1 min     | 2 min      |
+| **Total**  | **500+** | **12 min** | **9 min** | **12 min** |
 
 ---
 
@@ -527,13 +527,13 @@ These don't block testing - they're enhancements for maintainability.
 
 ### Common Tasks
 
-| Task | Reference | Time |
-|------|-----------|------|
-| Run tests | npm test | 2 min |
-| Debug test | PLAYWRIGHT_GUIDE.md → Debugging section | 5 min |
+| Task            | Reference                               | Time   |
+| --------------- | --------------------------------------- | ------ |
+| Run tests       | npm test                                | 2 min  |
+| Debug test      | PLAYWRIGHT_GUIDE.md → Debugging section | 5 min  |
 | Record new test | PLAYWRIGHT_GUIDE.md → Recording section | 10 min |
-| View results | npm run test:results | 1 min |
-| Add npm scripts | INTEGRATION_GUIDE_PACKAGE_JSON.md | 5 min |
+| View results    | npm run test:results                    | 1 min  |
+| Add npm scripts | INTEGRATION_GUIDE_PACKAGE_JSON.md       | 5 min  |
 
 ---
 

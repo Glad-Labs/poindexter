@@ -431,7 +431,7 @@ const TaskMetadataDisplay = ({ task }) => {
       )}
     </Box>
   );
-};;
+};
 
 TaskMetadataDisplay.propTypes = {
   task: PropTypes.shape({

@@ -13,21 +13,21 @@
 
 ### Issues Created
 
-| # | Title | Status | Link |
-|---|-------|--------|------|
-| **#72** | [P3-MEDIUM] Optimize database queries - replace SELECT * with specific columns | ✅ CREATED | [GitHub #72](https://github.com/Glad-Labs/glad-labs-codebase/issues/72) |
+| #       | Title                                                                           | Status     | Link                                                                    |
+| ------- | ------------------------------------------------------------------------------- | ---------- | ----------------------------------------------------------------------- |
+| **#72** | [P3-MEDIUM] Optimize database queries - replace SELECT \* with specific columns | ✅ CREATED | [GitHub #72](https://github.com/Glad-Labs/glad-labs-codebase/issues/72) |
 
 ### Issues Updated with Implementation Details
 
-| # | Title | Status | Comments Added | Link |
-|---|-------|--------|-----------------|------|
-| **#20** | [P3-Medium] Add test coverage for public-site and oversight-hub | ✅ UPDATED | CRITICAL frontend test audit with framework recommendations (Vitest + Jest) | [GitHub #20](https://github.com/Glad-Labs/glad-labs-codebase/issues/20) |
-| **#36** | Add comprehensive type hints to service layer | ✅ UPDATED | March 8 codebase metrics: 116 service modules, recommended approach, 20-30 hour estimate | [GitHub #36](https://github.com/Glad-Labs/glad-labs-codebase/issues/36) |
-| **#37** | Standardize exception handling | ✅ UPDATED | Audit findings: 30+ generic handlers across routes, Phase 1C pattern, 8-10 hour estimate | [GitHub #37](https://github.com/Glad-Labs/glad-labs-codebase/issues/37) |
-| **#38** | Add rate limiting middleware for DoS protection | ✅ UPDATED | Implementation guidance using slowapi, tiered rate limiting strategy, security risk assessment | [GitHub #38](https://github.com/Glad-Labs/glad-labs-codebase/issues/38) |
-| **#40** | Tune database connection pool for production | ✅ UPDATED | Conservative/moderate/high load tuning parameters, testing approach, PostgreSQL defaults | [GitHub #40](https://github.com/Glad-Labs/glad-labs-codebase/issues/40) |
-| **#43** | Implement training data capture in content phases | ✅ UPDATED | Detailed implementation plan with data capture schema, storage strategy, GDPR compliance note | [GitHub #43](https://github.com/Glad-Labs/glad-labs-codebase/issues/43) |
-| **#45** | Replace in-process workflow task queue with Celery/RQ/Arq | ✅ UPDATED | Comprehensive Celery + Redis migration plan with step-by-step configuration and testing setup | [GitHub #45](https://github.com/Glad-Labs/glad-labs-codebase/issues/45) |
+| #       | Title                                                           | Status     | Comments Added                                                                                 | Link                                                                    |
+| ------- | --------------------------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| **#20** | [P3-Medium] Add test coverage for public-site and oversight-hub | ✅ UPDATED | CRITICAL frontend test audit with framework recommendations (Vitest + Jest)                    | [GitHub #20](https://github.com/Glad-Labs/glad-labs-codebase/issues/20) |
+| **#36** | Add comprehensive type hints to service layer                   | ✅ UPDATED | March 8 codebase metrics: 116 service modules, recommended approach, 20-30 hour estimate       | [GitHub #36](https://github.com/Glad-Labs/glad-labs-codebase/issues/36) |
+| **#37** | Standardize exception handling                                  | ✅ UPDATED | Audit findings: 30+ generic handlers across routes, Phase 1C pattern, 8-10 hour estimate       | [GitHub #37](https://github.com/Glad-Labs/glad-labs-codebase/issues/37) |
+| **#38** | Add rate limiting middleware for DoS protection                 | ✅ UPDATED | Implementation guidance using slowapi, tiered rate limiting strategy, security risk assessment | [GitHub #38](https://github.com/Glad-Labs/glad-labs-codebase/issues/38) |
+| **#40** | Tune database connection pool for production                    | ✅ UPDATED | Conservative/moderate/high load tuning parameters, testing approach, PostgreSQL defaults       | [GitHub #40](https://github.com/Glad-Labs/glad-labs-codebase/issues/40) |
+| **#43** | Implement training data capture in content phases               | ✅ UPDATED | Detailed implementation plan with data capture schema, storage strategy, GDPR compliance note  | [GitHub #43](https://github.com/Glad-Labs/glad-labs-codebase/issues/43) |
+| **#45** | Replace in-process workflow task queue with Celery/RQ/Arq       | ✅ UPDATED | Comprehensive Celery + Redis migration plan with step-by-step configuration and testing setup  | [GitHub #45](https://github.com/Glad-Labs/glad-labs-codebase/issues/45) |
 
 ---
 
@@ -240,16 +240,16 @@ Production Considerations: Containers, Redis Sentinel HA, monitoring alerts
 
 ## Effort Summary
 
-| Category | Effort | Issues |
-|----------|--------|--------|
-| **Immediate (0-10h)** | 4-6h | #72 Database optimization |
-| **Quick Wins (4-6h)** | 4-6h | #38 Rate limiting |
-| **Medium (6-10h)** | 8-10h | #37 Exception handling |
-| | 6-8h | #43 Training data |
-| **Large (10-20h)** | 3-5h | #40 Connection pool |
-| | 12-16h | #45 Async queue (Celery) |
-| **Major (20h+)** | 20-30h | #36 Type hints |
-| | 30-40h | #20 Frontend tests (CRITICAL) |
+| Category              | Effort | Issues                        |
+| --------------------- | ------ | ----------------------------- |
+| **Immediate (0-10h)** | 4-6h   | #72 Database optimization     |
+| **Quick Wins (4-6h)** | 4-6h   | #38 Rate limiting             |
+| **Medium (6-10h)**    | 8-10h  | #37 Exception handling        |
+|                       | 6-8h   | #43 Training data             |
+| **Large (10-20h)**    | 3-5h   | #40 Connection pool           |
+|                       | 12-16h | #45 Async queue (Celery)      |
+| **Major (20h+)**      | 20-30h | #36 Type hints                |
+|                       | 30-40h | #20 Frontend tests (CRITICAL) |
 
 **Total: 87-115 hours (2-3 person-weeks)**
 

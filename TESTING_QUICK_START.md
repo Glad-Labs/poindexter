@@ -89,7 +89,7 @@ Jest Tests:
     ├── __tests__/components/          # 145 component tests
     ├── __tests__/lib/                 # 157 utility tests
     └── __tests__/app/                 # 75 page tests
-    
+
   web/oversight-hub/
     └── src/__tests__/                 # 90 UI tests
 
@@ -149,13 +149,13 @@ TEST_SUITE_COMPLETION_REPORT.md # Phase 1 report
 
 ## 📊 Test Coverage
 
-| Layer | Count | Status | Run Time |
-|-------|-------|--------|----------|
-| Unit Tests | 378 | ✅ 100% done | 2 min |
-| Playwright Config | 3 | ✅ 100% done | - |
-| Browsers | 13+ | ✅ Configured | - |
-| Test Projects | 20 | ✅ Configured | - |
-| **Total** | **500+** | **Ready** | **~8 min** |
+| Layer             | Count    | Status        | Run Time   |
+| ----------------- | -------- | ------------- | ---------- |
+| Unit Tests        | 378      | ✅ 100% done  | 2 min      |
+| Playwright Config | 3        | ✅ 100% done  | -          |
+| Browsers          | 13+      | ✅ Configured | -          |
+| Test Projects     | 20       | ✅ Configured | -          |
+| **Total**         | **500+** | **Ready**     | **~8 min** |
 
 ---
 
@@ -177,12 +177,12 @@ npx playwright codegen http://localhost:3000
 
 test('should find and view published post', async ({ page }) => {
   await page.goto('/');
-  
+
   // Find post by title
-  const post = page.locator('[role="article"]', { 
-    has: page.locator('text=My Post Title')
+  const post = page.locator('[role="article"]', {
+    has: page.locator('text=My Post Title'),
   });
-  
+
   // Click and verify
   await post.click();
   await expect(page).toHaveURL(/\/posts\/.*/);
@@ -328,13 +328,13 @@ jobs:
 
 ## 📚 Documentation Files
 
-| File | Purpose | Read Time |
-|------|---------|-----------|
-| **PLAYWRIGHT_GUIDE.md** | Complete reference (600+ lines) | 15 min |
-| **PLAYWRIGHT_NPM_SCRIPTS.md** | npm commands reference | 5 min |
-| **TESTING_ARCHITECTURE.md** | Overall architecture | 10 min |
-| **TEST_SUITE.md** | Jest tests documentation | 20 min |
-| **This file** | Quick start | 5 min |
+| File                          | Purpose                         | Read Time |
+| ----------------------------- | ------------------------------- | --------- |
+| **PLAYWRIGHT_GUIDE.md**       | Complete reference (600+ lines) | 15 min    |
+| **PLAYWRIGHT_NPM_SCRIPTS.md** | npm commands reference          | 5 min     |
+| **TESTING_ARCHITECTURE.md**   | Overall architecture            | 10 min    |
+| **TEST_SUITE.md**             | Jest tests documentation        | 20 min    |
+| **This file**                 | Quick start                     | 5 min     |
 
 ---
 
@@ -374,7 +374,7 @@ jobs:
 
 **Playwright documentation:** <https://playwright.dev/docs/intro>  
 **Jest documentation:** <https://jestjs.io/docs/getting-started>  
-**React Testing Library:** <https://testing-library.com/react>  
+**React Testing Library:** <https://testing-library.com/react>
 
 **In this repo:**
 
@@ -392,7 +392,7 @@ jobs:
 ✅ **4 report formats** - HTML, JSON, JUnit, Markdown  
 ✅ **40+ npm scripts** - Easy commands for all scenarios  
 ✅ **600+ line guide** - Complete reference documentation  
-✅ **CI/CD ready** - GitHub Actions integration examples  
+✅ **CI/CD ready** - GitHub Actions integration examples
 
 **Total test coverage: 500+ tests across all layers** 🎉
 

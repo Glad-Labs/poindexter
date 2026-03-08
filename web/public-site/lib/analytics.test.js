@@ -24,7 +24,11 @@ describe('Analytics Utils (lib/analytics.js)', () => {
   describe('trackEvent', () => {
     it('should track event with event name', () => {
       trackEvent('post_viewed', { post_id: '123' });
-      expect(mockGtag).toHaveBeenCalledWith('event', 'post_viewed', expect.any(Object));
+      expect(mockGtag).toHaveBeenCalledWith(
+        'event',
+        'post_viewed',
+        expect.any(Object)
+      );
     });
 
     it('should include event parameters', () => {
@@ -77,7 +81,11 @@ describe('Analytics Utils (lib/analytics.js)', () => {
 
     it('should track pageview with title', () => {
       trackPageview('/blog/post-1', 'Getting Started with React');
-      expect(mockGtag).toHaveBeenCalledWith('config', expect.any(String), expect.any(Object));
+      expect(mockGtag).toHaveBeenCalledWith(
+        'config',
+        expect.any(String),
+        expect.any(Object)
+      );
     });
 
     it('should use current page path if not provided', () => {
@@ -113,21 +121,33 @@ describe('Analytics Utils (lib/analytics.js)', () => {
   describe('trackConversion', () => {
     it('should track conversion goal', () => {
       trackConversion('subscribe', 'newsletter');
-      expect(mockGtag).toHaveBeenCalledWith('event', 'conversion', expect.any(Object));
+      expect(mockGtag).toHaveBeenCalledWith(
+        'event',
+        'conversion',
+        expect.any(Object)
+      );
     });
 
     it('should include conversion value', () => {
       trackConversion('subscribe', 'newsletter', 10);
-      expect(mockGtag).toHaveBeenCalledWith('event', 'conversion', expect.objectContaining({
-        value: 10,
-      }));
+      expect(mockGtag).toHaveBeenCalledWith(
+        'event',
+        'conversion',
+        expect.objectContaining({
+          value: 10,
+        })
+      );
     });
 
     it('should include conversion currency', () => {
       trackConversion('purchase', 'premium_content', 99, 'USD');
-      expect(mockGtag).toHaveBeenCalledWith('event', 'conversion', expect.objectContaining({
-        currency: 'USD',
-      }));
+      expect(mockGtag).toHaveBeenCalledWith(
+        'event',
+        'conversion',
+        expect.objectContaining({
+          currency: 'USD',
+        })
+      );
     });
 
     it('should track newsletter signup', () => {
@@ -141,7 +161,9 @@ describe('Analytics Utils (lib/analytics.js)', () => {
     });
 
     it('should handle null value gracefully', () => {
-      expect(() => trackConversion('subscribe', 'newsletter', null)).not.toThrow();
+      expect(() =>
+        trackConversion('subscribe', 'newsletter', null)
+      ).not.toThrow();
     });
   });
 
@@ -175,9 +197,12 @@ describe('Analytics Utils (lib/analytics.js)', () => {
   describe('identifyUser', () => {
     it('should identify user by ID', () => {
       identifyUser('user-123');
-      expect(mockGtag).toHaveBeenCalledWith('set', expect.objectContaining({
-        user_id: 'user-123',
-      }));
+      expect(mockGtag).toHaveBeenCalledWith(
+        'set',
+        expect.objectContaining({
+          user_id: 'user-123',
+        })
+      );
     });
 
     it('should identify user with email', () => {
@@ -208,7 +233,7 @@ describe('Analytics Utils (lib/analytics.js)', () => {
       trackEvent('post_viewed', { post_id: '123' });
       trackConversion('newsletter_signup', 'email');
       identifyUser('user-123');
-      
+
       expect(mockGtag).toHaveBeenCalledTimes(4);
     });
 
@@ -218,24 +243,24 @@ describe('Analytics Utils (lib/analytics.js)', () => {
         { name: 'event2', params: {} },
         { name: 'event3', params: {} },
       ];
-      
-      events.forEach(event => {
+
+      events.forEach((event) => {
         trackEvent(event.name, event.params);
       });
-      
+
       expect(mockGtag).toHaveBeenCalledTimes(3);
     });
 
     it('should not throw on missing gtag in production', () => {
       const originalEnv = process.env.NODE_ENV;
       process.env.NODE_ENV = 'production';
-      
+
       window.gtag = undefined;
       expect(() => {
         trackPageview('/blog');
         trackEvent('test', {});
       }).not.toThrow();
-      
+
       window.gtag = mockGtag;
       process.env.NODE_ENV = originalEnv;
     });
@@ -243,10 +268,10 @@ describe('Analytics Utils (lib/analytics.js)', () => {
     it('should queue events if gtag not ready', () => {
       window.gtag = undefined;
       trackEvent('queued_event', { test: true });
-      
+
       // Should not throw even if gtag is missing
       expect(window.gtag).toBeUndefined();
-      
+
       window.gtag = mockGtag;
     });
   });

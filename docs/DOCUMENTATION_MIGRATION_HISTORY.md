@@ -87,16 +87,16 @@ Introduce hierarchical section-based documentation organization while maintainin
 
 **Created New Section Directories:**
 
-| Section | Purpose | Contents |
-|---------|---------|----------|
-| `01-Getting-Started/` | Setup guides and quick starts | Local-Development-Setup.md, README.md |
-| `02-Tutorials/` | Guided learning tracks | Your-First-Workflow.md, Custom-Workflows.md, OAuth-Integration.md, Capability-Based-Tasks.md, README.md |
-| `02-Architecture/` | System design & patterns | System-Design.md, Multi-Agent-Pipeline.md, README.md |
-| `03-Features/` | Feature documentation | Task-Retry-And-Status-Visibility.md, Model-Selection.md, Analytics.md, Workflows-System.md, WebSocket-Communication.md, Custom-Workflows.md, OAuth-Integration.md, Service-Registry.md, README.md |
-| `04-Development/` | Development processes | Development-Workflow.md, README.md |
-| `05-Operations/` | Deployment & operations | Deployment.md, Monitoring-Diagnostics.md, Operations-Maintenance.md, README.md |
-| `06-Troubleshooting/` | Common issues & fixes | README.md, 01-railway-deployment.md, 04-build-fixes.md, 05-compilation.md |
-| `07-Appendices/` | References & indexes | CLI-Commands-Reference.md, Archive-Guide.md, Capability-Catalog.md, README.md |
+| Section               | Purpose                       | Contents                                                                                                                                                                                          |
+| --------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `01-Getting-Started/` | Setup guides and quick starts | Local-Development-Setup.md, README.md                                                                                                                                                             |
+| `02-Tutorials/`       | Guided learning tracks        | Your-First-Workflow.md, Custom-Workflows.md, OAuth-Integration.md, Capability-Based-Tasks.md, README.md                                                                                           |
+| `02-Architecture/`    | System design & patterns      | System-Design.md, Multi-Agent-Pipeline.md, README.md                                                                                                                                              |
+| `03-Features/`        | Feature documentation         | Task-Retry-And-Status-Visibility.md, Model-Selection.md, Analytics.md, Workflows-System.md, WebSocket-Communication.md, Custom-Workflows.md, OAuth-Integration.md, Service-Registry.md, README.md |
+| `04-Development/`     | Development processes         | Development-Workflow.md, README.md                                                                                                                                                                |
+| `05-Operations/`      | Deployment & operations       | Deployment.md, Monitoring-Diagnostics.md, Operations-Maintenance.md, README.md                                                                                                                    |
+| `06-Troubleshooting/` | Common issues & fixes         | README.md, 01-railway-deployment.md, 04-build-fixes.md, 05-compilation.md                                                                                                                         |
+| `07-Appendices/`      | References & indexes          | CLI-Commands-Reference.md, Archive-Guide.md, Capability-Catalog.md, README.md                                                                                                                     |
 
 **Maintained Legacy Structure for Backward Compatibility:**
 
@@ -107,11 +107,11 @@ Introduce hierarchical section-based documentation organization while maintainin
 
 **Link Updates Required:**
 
-| Source | Change | Reason |
-|--------|--------|--------|
-| docs/02-Tutorials/* | `../04-Features/` → `../03-Features/` | Section numbering adjustment |
-| docs/00-INDEX.md | Updated all section references to numbered paths | Navigation clarification |
-| Tutorial cross-references | Stale paths corrected | New section locations |
+| Source                    | Change                                           | Reason                       |
+| ------------------------- | ------------------------------------------------ | ---------------------------- |
+| docs/02-Tutorials/\*      | `../04-Features/` → `../03-Features/`            | Section numbering adjustment |
+| docs/00-INDEX.md          | Updated all section references to numbered paths | Navigation clarification     |
+| Tutorial cross-references | Stale paths corrected                            | New section locations        |
 
 #### Outcome
 
@@ -133,39 +133,39 @@ Integrate new Phase 3A task retry and status visibility feature documentation in
 
 **New Files Created:**
 
-| File | Type | Lines | Purpose |
-|------|------|-------|---------|
-| `docs/03-Features/Task-Retry-And-Status-Visibility.md` | Feature Guide | 498 | Comprehensive task retry & visibility feature documentation |
-| `CHANGELOG_v3.1.0.md` | Release Notes | 316 | GitHub-ready changelog for Phase 3A (v3.1.0) |
-| `archive/PHASE_3A_COMPLETION_SUMMARY.md` | Archive | 334 | Phase 3A execution summary with statistics |
+| File                                                   | Type          | Lines | Purpose                                                     |
+| ------------------------------------------------------ | ------------- | ----- | ----------------------------------------------------------- |
+| `docs/03-Features/Task-Retry-And-Status-Visibility.md` | Feature Guide | 498   | Comprehensive task retry & visibility feature documentation |
+| `CHANGELOG_v3.1.0.md`                                  | Release Notes | 316   | GitHub-ready changelog for Phase 3A (v3.1.0)                |
+| `archive/PHASE_3A_COMPLETION_SUMMARY.md`               | Archive       | 334   | Phase 3A execution summary with statistics                  |
 
 **Completed Files:**
 
-| File | Status | Purpose |
-|------|--------|---------|
-| `docs/02-Tutorials/Custom-Workflows.md` | ✅ Published | Custom workflow execution tutorial |
-| `docs/02-Tutorials/OAuth-Integration.md` | ✅ Published | OAuth authentication tutorial |
+| File                                          | Status       | Purpose                            |
+| --------------------------------------------- | ------------ | ---------------------------------- |
+| `docs/02-Tutorials/Custom-Workflows.md`       | ✅ Published | Custom workflow execution tutorial |
+| `docs/02-Tutorials/OAuth-Integration.md`      | ✅ Published | OAuth authentication tutorial      |
 | `docs/02-Tutorials/Capability-Based-Tasks.md` | ✅ Published | Intent-based task routing tutorial |
 
 **Link Corrections Applied:**
 
-| File | Fix | Type |
-|------|-----|------|
-| `docs/03-Features/Task-Retry-And-Status-Visibility.md` | Replaced dead links with existing docs | Reference correction |
-| `docs/02-Architecture/System-Design.md` | Updated `./XX.md` → `../XX.md` | Relative path fix |
-| `docs/02-Architecture/Multi-Agent-Pipeline.md` | Updated `./XX.md` → `../XX.md` | Relative path fix |
-| `docs/01-Getting-Started/Local-Development-Setup.md` | Fixed 07-BRANCH reference | Relative path fix |
-| `docs/05-Operations/Monitoring-Diagnostics.md` | 4 root-doc links corrected | Relative path fix |
-| `docs/03-Features/Analytics.md` | 3 root-doc links corrected | Relative path fix |
-| `docs/04-Development/Development-Workflow.md` | 3 links + npm command updated | Relative path & command fix |
+| File                                                   | Fix                                    | Type                        |
+| ------------------------------------------------------ | -------------------------------------- | --------------------------- |
+| `docs/03-Features/Task-Retry-And-Status-Visibility.md` | Replaced dead links with existing docs | Reference correction        |
+| `docs/02-Architecture/System-Design.md`                | Updated `./XX.md` → `../XX.md`         | Relative path fix           |
+| `docs/02-Architecture/Multi-Agent-Pipeline.md`         | Updated `./XX.md` → `../XX.md`         | Relative path fix           |
+| `docs/01-Getting-Started/Local-Development-Setup.md`   | Fixed 07-BRANCH reference              | Relative path fix           |
+| `docs/05-Operations/Monitoring-Diagnostics.md`         | 4 root-doc links corrected             | Relative path fix           |
+| `docs/03-Features/Analytics.md`                        | 3 root-doc links corrected             | Relative path fix           |
+| `docs/04-Development/Development-Workflow.md`          | 3 links + npm command updated          | Relative path & command fix |
 
 **Metadata Updates:**
 
-| File | Change | From | To |
-|------|--------|------|-----|
-| VERSION_HISTORY.md | Version | 3.0.2 | 3.1.0 |
-| VERSION_HISTORY.md | Last Updated | March 7, 2026 | March 8, 2026 |
-| 00-README.md | Updated timestamp | March 5, 2026 | (unchanged for now) |
+| File               | Change            | From          | To                  |
+| ------------------ | ----------------- | ------------- | ------------------- |
+| VERSION_HISTORY.md | Version           | 3.0.2         | 3.1.0               |
+| VERSION_HISTORY.md | Last Updated      | March 7, 2026 | March 8, 2026       |
+| 00-README.md       | Updated timestamp | March 5, 2026 | (unchanged for now) |
 
 #### Outcome
 
@@ -341,16 +341,16 @@ docs/
 
 ### Documents Moved to New Sections
 
-| Original Path | New Section Path | Status |
-|---------------|-----------------|--------|
-| docs/root | docs/01-Getting-Started/ | ✅ Referenced |
-| docs/root | docs/02-Tutorials/ | ✅ Referenced |
-| docs/02-Architecture/System-Design.md | docs/02-Architecture/ | ✅ Preserved |
-| docs/root | docs/03-Features/ | ✅ Referenced |
-| docs/04-Development/* | docs/04-Development/ | ✅ Preserved |
-| docs/05-Operations/* | docs/05-Operations/ | ✅ Preserved |
-| troubleshooting/* | docs/06-Troubleshooting/ | ✅ Preserved |
-| reference/* | docs/07-Appendices/ | ⚠️ Partially |
+| Original Path                         | New Section Path         | Status        |
+| ------------------------------------- | ------------------------ | ------------- |
+| docs/root                             | docs/01-Getting-Started/ | ✅ Referenced |
+| docs/root                             | docs/02-Tutorials/       | ✅ Referenced |
+| docs/02-Architecture/System-Design.md | docs/02-Architecture/    | ✅ Preserved  |
+| docs/root                             | docs/03-Features/        | ✅ Referenced |
+| docs/04-Development/\*                | docs/04-Development/     | ✅ Preserved  |
+| docs/05-Operations/\*                 | docs/05-Operations/      | ✅ Preserved  |
+| troubleshooting/\*                    | docs/06-Troubleshooting/ | ✅ Preserved  |
+| reference/\*                          | docs/07-Appendices/      | ⚠️ Partially  |
 
 ### Backward Compatibility Maintained
 
@@ -372,23 +372,23 @@ docs/
 
 ### Document Organization Before & After
 
-| Metric | Feb 23 | Current | Change |
-|--------|--------|---------|--------|
-| Docs in root | 60+ | 35 | -42% |
-| Organized sections | 0 | 8 | +8 |
-| Archived files | 0 | 54 | Archived |
-| Active tutorials | 1 | 4 | +3 |
-| Section READMEs | 0 | 8 | +8 |
-| Total organized docs | 20 | 80+ | +300% |
+| Metric               | Feb 23 | Current | Change   |
+| -------------------- | ------ | ------- | -------- |
+| Docs in root         | 60+    | 35      | -42%     |
+| Organized sections   | 0      | 8       | +8       |
+| Archived files       | 0      | 54      | Archived |
+| Active tutorials     | 1      | 4       | +3       |
+| Section READMEs      | 0      | 8       | +8       |
+| Total organized docs | 20     | 80+     | +300%    |
 
 ### Link Quality Metrics
 
-| Category | Valid | Invalid | Orphaned | Coverage |
-|----------|-------|---------|----------|----------|
-| Core (7) | 7 | 0 | 0 | 100% |
-| Reference (14) | 8 | 0 | 6 | 57% |
-| Components (5) | 3 | 0 | 2 | 60% |
-| **Overall** | **27** | **0** | **8** | **77%** |
+| Category       | Valid  | Invalid | Orphaned | Coverage |
+| -------------- | ------ | ------- | -------- | -------- |
+| Core (7)       | 7      | 0       | 0        | 100%     |
+| Reference (14) | 8      | 0       | 6        | 57%      |
+| Components (5) | 3      | 0       | 2        | 60%      |
+| **Overall**    | **27** | **0**   | **8**    | **77%**  |
 
 ---
 
@@ -404,13 +404,13 @@ docs/
 
 ### Challenges & Mitigations
 
-| Challenge | Mitigation | Status |
-|-----------|-----------|--------|
-| Maintaining dual structure | Keep legacy roots + new sections in parallel | ✅ Complete |
-| Updating cross-references | Systematic grep/find for stale paths | ✅ Applied |
-| Archive path references | Document actual paths; update references | ⚠️ Still need: archive-active → archive |
-| Orphaned reference docs | Create audit report; plan indexing update | ✅ Done |
-| Markdownlint violations | Accept scoped disables for release docs | ✅ Done |
+| Challenge                  | Mitigation                                   | Status                                  |
+| -------------------------- | -------------------------------------------- | --------------------------------------- |
+| Maintaining dual structure | Keep legacy roots + new sections in parallel | ✅ Complete                             |
+| Updating cross-references  | Systematic grep/find for stale paths         | ✅ Applied                              |
+| Archive path references    | Document actual paths; update references     | ⚠️ Still need: archive-active → archive |
+| Orphaned reference docs    | Create audit report; plan indexing update    | ✅ Done                                 |
+| Markdownlint violations    | Accept scoped disables for release docs      | ✅ Done                                 |
 
 ### Recommendations for Future Migrations
 

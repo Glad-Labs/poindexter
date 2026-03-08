@@ -8,11 +8,11 @@
 
 Every git push to any branch automatically increments the version based on branch tier:
 
-| Branch | Tier | Version Bump | Example |
-| --- | --- | --- | --- |
-| `main` | Production | Major (X.0.0) | 3.0.2 → **4**.0.0 |
-| `staging/*` | Feature Release | Minor (0.X.0) | 3.0.2 → 3.**1**.0 |
-| `dev/*`, `feature/*` | Build | Patch (0.0.X) | 3.0.2 → 3.0.**3** |
+| Branch               | Tier            | Version Bump  | Example           |
+| -------------------- | --------------- | ------------- | ----------------- |
+| `main`               | Production      | Major (X.0.0) | 3.0.2 → **4**.0.0 |
+| `staging/*`          | Feature Release | Minor (0.X.0) | 3.0.2 → 3.**1**.0 |
+| `dev/*`, `feature/*` | Build           | Patch (0.0.X) | 3.0.2 → 3.0.**3** |
 
 ### What Gets Updated
 
@@ -150,7 +150,7 @@ git push
 ✅ **Full Verification:** All 6 files checked after update  
 ✅ **Dry-Run Mode:** Test without committing  
 ✅ **Git Integration:** Auto-commit with proper messages  
-✅ **Tag Management:** Automatic git tags and GitHub releases  
+✅ **Tag Management:** Automatic git tags and GitHub releases
 
 ---
 
@@ -263,7 +263,7 @@ node scripts/bump-version.js --skip-git   # Update files only, no git ops
 
 **File:** `.github/workflows/version-auto-bump.yml`
 
-- Triggers: Any push to main, dev, feature/*, staging/*, release/*
+- Triggers: Any push to main, dev, feature/_, staging/_, release/\*
 - Does: Auto-detects tier, bumps version, commits, tags
 - Prevents: Infinite loops via [skip ci] tag
 

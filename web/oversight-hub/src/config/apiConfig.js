@@ -19,7 +19,9 @@ import logger from '@/lib/logger';
  */
 function getEnv(...keys) {
   const viteEnv =
-    typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env : {};
+    typeof import.meta !== 'undefined' && import.meta.env
+      ? import.meta.env
+      : {};
   const procEnv =
     typeof process !== 'undefined' && process.env ? process.env : {};
 

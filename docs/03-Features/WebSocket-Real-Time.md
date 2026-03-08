@@ -16,11 +16,13 @@ Real-time updates are exposed over WebSocket channels for workflow progress, ima
 **Client connects:**
 
 ```javascript
-const ws = new WebSocket('ws://localhost:8000/api/ws/workflow/550e8400-e29b-41d4-a716-446655440000');
+const ws = new WebSocket(
+  'ws://localhost:8000/api/ws/workflow/550e8400-e29b-41d4-a716-446655440000'
+);
 
 ws.onopen = () => {
   console.log('Connected');
-  ws.send(JSON.stringify({type: 'ping'}));
+  ws.send(JSON.stringify({ type: 'ping' }));
 };
 
 ws.onmessage = (event) => {
@@ -78,7 +80,7 @@ ws.onmessage = (event) => {
 **Request current progress:**
 
 ```json
-{"type": "get_progress"}
+{ "type": "get_progress" }
 ```
 
 ## Related REST Progress Endpoints
