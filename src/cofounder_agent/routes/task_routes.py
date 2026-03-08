@@ -1119,7 +1119,22 @@ async def update_task_status_enterprise(
             existing_metadata = task.get("task_metadata") or {}
             if isinstance(existing_metadata, str):
                 existing_metadata = json.loads(existing_metadata)
-            update_dict["task_metadata"] = {**existing_metadata, **update_data.metadata}
+
+            merged_metadata = {**existing_metadata, **update_data.metadata}
+
+            # Track retry attempts for UI visibility and auditability.
+            if str(update_data.metadata.get("action", "")).lower() == "retry":
+                previous_retry_count = existing_metadata.get("retry_count", 0)
+                try:
+                    previous_retry_count = int(previous_retry_count)
+                except (TypeError, ValueError):
+                    previous_retry_count = 0
+
+                merged_metadata["retry_count"] = previous_retry_count + 1
+                merged_metadata["last_retry_at"] = now.isoformat()
+                merged_metadata["last_retry_by"] = updated_by
+
+            update_dict["task_metadata"] = merged_metadata
 
         # Update task in database
         await db_service.update_task(task_id, update_dict)

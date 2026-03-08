@@ -301,38 +301,60 @@ class TaskExecutor:
         # Set per-task timeout (20 minutes max for content generation, including newsletter templates)
         TASK_TIMEOUT_SECONDS = 1200  # 20 minutes
 
-        try:
-            # 1. Update task status to 'in_progress'
-            logger.info(f"📝 [TASK_SINGLE] Marking task as in_progress...")
+        existing_metadata = task.get("task_metadata") or {}
+        if isinstance(existing_metadata, str):
+            try:
+                existing_metadata = json.loads(existing_metadata)
+            except (json.JSONDecodeError, TypeError):
+                existing_metadata = {}
+        if not isinstance(existing_metadata, dict):
+            existing_metadata = {}
+        progress_metadata = dict(existing_metadata)
+
+        async def update_processing_stage(stage: str, message: str, percentage: int) -> None:
+            """Persist current processing stage so UI can show live step-aware status."""
+            progress_metadata.update(
+                {
+                    "status": "processing",
+                    "stage": stage,
+                    "message": message,
+                    "percentage": percentage,
+                    "started_at": progress_metadata.get("started_at")
+                    or datetime.now(timezone.utc).isoformat(),
+                }
+            )
             await self.database_service.update_task(
                 task_id,
                 {
                     "status": "in_progress",
-                    "task_metadata": {
-                        "status": "processing",
-                        "started_at": datetime.now(timezone.utc).isoformat(),
-                    },
+                    "task_metadata": dict(progress_metadata),
                 },
             )
-            logger.info(f"✅ [TASK_SINGLE] Task marked as in_progress")
+            task["task_metadata"] = dict(progress_metadata)
 
-            # Emit WebSocket event for real-time progress tracking (Phase 4)
             try:
                 await emit_task_progress(
                     task_id=task_id,
                     status="RUNNING",
-                    progress=0,
-                    current_step="Processing task",
-                    total_steps=1,
-                    completed_steps=0,
-                    message=f"Starting task: {task_name}",
+                    progress=percentage,
+                    current_step=stage,
+                    total_steps=100,
+                    completed_steps=percentage,
+                    message=message,
                 )
             except Exception as e:
                 logger.error(
                     f"[_process_single_task] Failed to emit task progress event: {e}", exc_info=True
                 )
 
+        try:
+            # 1. Mark task as actively processing
+            logger.info(f"📝 [TASK_SINGLE] Marking task as in_progress...")
+            await update_processing_stage("queued", f"Queued task: {task_name}", 5)
+            logger.info(f"✅ [TASK_SINGLE] Task marked as in_progress")
+
             # 2. Process through orchestrator/agent pipeline with timeout
+            await update_processing_stage("content_generation", "Generating content", 20)
             logger.info(
                 f"🚀 [TASK_SINGLE] Executing task through pipeline (timeout: {TASK_TIMEOUT_SECONDS}s)..."
             )
@@ -354,6 +376,8 @@ class TaskExecutor:
             if isinstance(result, dict):
                 logger.debug(f"   Result keys: {list(result.keys())}")
 
+            await update_processing_stage("finalizing", "Finalizing task output", 90)
+
             # 3. Update task status (awaiting_approval or failed based on result)
             final_status = (
                 result.get("status", "awaiting_approval")
@@ -369,6 +393,8 @@ class TaskExecutor:
                 # Extract only the fields we want in task_metadata
                 fields_to_extract = [
                     "content",
+                    "generated_content",
+                    "content_length",
                     "excerpt",
                     "title",
                     "featured_image_url",
@@ -381,6 +407,10 @@ class TaskExecutor:
                     "orchestrator_error",
                     "message",
                     "constraint_compliance",
+                    "validation_details",
+                    "pipeline_summary",
+                    "word_count",
+                    "completed_at",
                     "stage",
                     "percentage",
                     "model_used",
@@ -404,18 +434,17 @@ class TaskExecutor:
                 if isinstance(content_val, str):
                     logger.info(f"   - Content preview: {content_val[:100]}...")
 
-            # ⚠️ IMPORTANT: Don't store incomplete content for failed tasks
-            # Only store content if task is approved/successful
-            # This prevents partial/truncated content from appearing in the database
+            # ✅ PRESERVE ALL WORK: Store content even on validation failure
+            # Failed validation ≠ incomplete content; content is complete but didn't meet quality thresholds
+            # Keeping all metadata enables:
+            # 1. User visibility into what was generated
+            # 2. Analysis of why validation failed  
+            # 3. Potential for refinement/resubmission workflows
             if final_status == "failed" or final_status == "rejected":
                 logger.warning(
-                    f"⚠️  Task status is '{final_status}' - NOT storing content to prevent partial/truncated data"
+                    f"⚠️  Task status is '{final_status}' - PRESERVING all content in task_metadata for audit trail"
                 )
-                # Remove content fields for failed tasks
-                task_metadata_updates.pop("content", None)
-                task_metadata_updates.pop("excerpt", None)
-                task_metadata_updates.pop("featured_image_url", None)
-                task_metadata_updates.pop("featured_image_data", None)
+                # Don't delete content - keep all metadata for root cause analysis
 
             # Use update_task to ensure normalization of content into columns
             logger.info(
@@ -1155,6 +1184,21 @@ class TaskExecutor:
             logger.info(f"✅ [LAZY_AI_PROOF_GATE] All validation gates passed (length, style, SEO)")
 
         # ===== Build Final Result =====
+        # IMPORTANT: Always store generated_content, even on validation failure
+        validation_details = {
+            "base_content_valid": base_content_valid,
+            "length_gate_passes": length_gate_passes,
+            "length_gate_detail": {
+                "word_count": word_count,
+                "target": effective_target_length,
+                "minimum": int(effective_target_length * 0.85) if effective_target_length else 0,
+                "tolerance_percent": 15,
+            },
+            "style_gate_passes": style_gate_passes,
+            "style_gate_detail": style_feedback,
+            "seo_gate_passes": seo_gate_passes,
+            "seo_gate_detail": seo_feedback,
+        }
         result = {
             "task_id": str(task_id),
             "task_name": task_name,
@@ -1163,29 +1207,25 @@ class TaskExecutor:
             "target_audience": target_audience,
             "category": category,
             "status": final_status,
-            # Generation phase - FULL CONTENT, not truncated!
-            # Store as both "content" (for database) and "generated_content" (for debugging)
-            "content": (generated_content if content_is_valid else None),  # For database storage
-            "generated_content": (
-                generated_content if content_is_valid else None
-            ),  # For compatibility
-            "content_length": (
-                len(generated_content) if (content_is_valid and generated_content) else 0
-            ),
+            "stage": "complete" if content_is_valid else "validation_failed",
+            "percentage": 100,
+            "message": "Ready for approval" if content_is_valid else "Validation failed",
+            "content": generated_content,  # Always store for preservation
+            "generated_content": generated_content,
+            "content_length": len(generated_content) if generated_content else 0,
             "orchestrator_error": orchestrator_error,
-            # Model tracking
+            "validation_details": validation_details,
             "model_used": model_used,
-            # Critique phase
             "quality_score": quality_score,
             "content_approved": approved,
             "critique_feedback": feedback_text,
             "critique_suggestions": suggestions_list,
-            # Metadata
             "word_count": word_count,
             "completed_at": datetime.now(timezone.utc).isoformat(),
             "pipeline_summary": {
                 "phase_1_generation": "✅" if generated_content else "❌",
                 "phase_2_critique": f"{'✅' if approved else '⚠️'} ({quality_score}/100)",
+                "phase_3_validation": "✅" if content_is_valid else "❌ (see validation_details)",
             },
         }
 

@@ -22,7 +22,10 @@
       "Bash(wc:*)",
       "Bash(gh label:*)",
       "Bash(grep:*)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(python3:*)",
+      "Read(//c/c/Users/mattm/glad-labs-website/**)",
+      "Bash(sed -n '69,110p' src/cofounder_agent/services/task_executor.py)"
     ]
   }
 }

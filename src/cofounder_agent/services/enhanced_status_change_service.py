@@ -93,7 +93,32 @@ class EnhancedStatusChangeService:
             update_data = {"status": new_status, "updated_at": datetime.utcnow()}
 
             if metadata:
-                update_data["task_metadata"] = metadata
+                # Merge incoming metadata with existing task_metadata to avoid overwriting
+                # previously persisted generation results and validation diagnostics.
+                existing_metadata = task.get("task_metadata") or {}
+                if isinstance(existing_metadata, str):
+                    try:
+                        existing_metadata = json.loads(existing_metadata)
+                    except (json.JSONDecodeError, TypeError):
+                        existing_metadata = {}
+                if not isinstance(existing_metadata, dict):
+                    existing_metadata = {}
+
+                merged_metadata = {**existing_metadata, **metadata}
+
+                # Persist retry counters for UI badge and auditability.
+                if str(metadata.get("action", "")).lower() == "retry":
+                    prior_retry_count = existing_metadata.get("retry_count", 0)
+                    try:
+                        prior_retry_count = int(prior_retry_count)
+                    except (TypeError, ValueError):
+                        prior_retry_count = 0
+
+                    merged_metadata["retry_count"] = prior_retry_count + 1
+                    merged_metadata["last_retry_at"] = datetime.utcnow().isoformat()
+                    merged_metadata["last_retry_by"] = user_id
+
+                update_data["task_metadata"] = merged_metadata
 
             updated = await self.db_service.update_task(task_id, update_data)
 
