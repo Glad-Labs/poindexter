@@ -20,7 +20,6 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 # Import global service container for DI-4
-from services.container import service_container
 
 logger = logging.getLogger(__name__)
 
@@ -268,12 +267,10 @@ class StartupManager:
             logger.debug(f"  [DEBUG] TaskExecutor init: orchestrator={self.orchestrator}")
 
             logger.debug("  [DEBUG] Creating TaskExecutor instance...")
-            # Pass service_container for DI-4: orchestrator will be resolved dynamically from container
             self.task_executor = TaskExecutor(
                 database_service=self.database_service,
-                orchestrator=None,  # Will be injected in main.py AFTER UnifiedOrchestrator is created
+                orchestrator=None,  # Injected via inject_orchestrator() in main.py after UnifiedOrchestrator is created
                 poll_interval=5,  # Poll every 5 seconds
-                service_container=service_container,  # DI-4: ServiceContainer for dynamic service resolution
             )
             logger.debug(f"  [DEBUG] TaskExecutor created: {self.task_executor}")
             logger.debug(

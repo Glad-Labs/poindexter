@@ -247,10 +247,10 @@ CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0"]
 
 **In main docs hub:**
 
-- Agent Architecture: `docs/05-AI_AGENTS_AND_INTEGRATION.md`
+- Agent Architecture: `docs/02-Architecture/Multi-Agent-Pipeline.md`
 - Model Selection: `docs/guides/MODEL_SELECTION_GUIDE.md` (if exists)
 - Testing: `docs/guides/PYTHON_TESTS_SETUP.md`
-- Deployment: `docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md`
+- Deployment: `docs/05-Operations/Operations-Maintenance.md`
 
 ---
 
@@ -258,6 +258,6 @@ CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0"]
 
 - **Development**: Local setup in `src/cofounder_agent/README.md`
 - **Intelligence**: `INTELLIGENT_COFOUNDER.md`
-- **Architecture**: `docs/05-AI_AGENTS_AND_INTEGRATION.md`
+- **Architecture**: `docs/02-Architecture/Multi-Agent-Pipeline.md`
 - **Testing**: `docs/guides/PYTHON_TESTS_SETUP.md`
-- **Deployment**: `docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md`
+- **Deployment**: `docs/05-Operations/Operations-Maintenance.md`

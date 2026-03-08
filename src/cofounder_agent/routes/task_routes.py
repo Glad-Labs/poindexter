@@ -32,6 +32,7 @@ from uuid import UUID
 
 import aiohttp
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from services.error_handler import AppError
 from pydantic import BaseModel, Field
 
 from routes.auth_unified import get_current_user, get_current_user_optional
@@ -318,6 +319,8 @@ async def create_task(
             )
 
     except HTTPException:
+        raise
+    except AppError:
         raise
     except Exception as e:
         logger.error(f"❌ [UNIFIED_TASK_CREATE] Exception: {str(e)}", exc_info=True)
@@ -879,6 +882,8 @@ async def get_task(
         return task
     except HTTPException:
         raise
+    except AppError:
+        raise
     except Exception as e:
         logger.error(f"Failed to fetch task {task_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch task: {str(e)}")
@@ -921,6 +926,8 @@ async def get_task_status(
             "error_message": task.get("error_message"),
         }
     except HTTPException:
+        raise
+    except AppError:
         raise
     except Exception as e:
         logger.error(f"Failed to fetch task status {task_id}: {str(e)}")
@@ -974,6 +981,8 @@ async def get_task_result(
             "error_message": task.get("error_message"),
         }
     except HTTPException:
+        raise
+    except AppError:
         raise
     except Exception as e:
         logger.error(f"Failed to fetch task result {task_id}: {str(e)}")
@@ -1141,6 +1150,8 @@ async def update_task_status_enterprise(
 
     except HTTPException:
         raise
+    except AppError:
+        raise
     except Exception as e:
         logger.error(f"Error updating task status for {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(
@@ -1307,6 +1318,8 @@ async def get_task_status_info(
         )
 
     except HTTPException:
+        raise
+    except AppError:
         raise
     except Exception as e:
         logger.error(f"Error fetching status info for {task_id}: {str(e)}")
@@ -1531,6 +1544,8 @@ async def update_task(
         )
 
     except HTTPException:
+        raise
+    except AppError:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update task: {str(e)}")
@@ -2366,6 +2381,8 @@ async def publish_task(
 
     except HTTPException:
         raise
+    except AppError:
+        raise
     except Exception as e:
         logger.error(f"Failed to publish task {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to publish task: {str(e)}")
@@ -2443,6 +2460,8 @@ async def reject_task(
         )
 
     except HTTPException:
+        raise
+    except AppError:
         raise
     except Exception as e:
         logger.error(f"Failed to reject task {task_id}: {str(e)}", exc_info=True)
@@ -2780,6 +2799,8 @@ async def generate_task_image(
 
     except HTTPException:
         raise
+    except AppError:
+        raise
     except Exception as e:
         logger.error(f"Failed to generate image for task {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to generate image: {str(e)}")
@@ -2843,6 +2864,8 @@ async def delete_task(
         logger.info(f"Task {task_id} deleted successfully")
 
     except HTTPException:
+        raise
+    except AppError:
         raise
     except Exception as e:
         logger.error(f"Failed to delete task {task_id}: {str(e)}", exc_info=True)

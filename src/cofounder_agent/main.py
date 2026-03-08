@@ -20,7 +20,6 @@ from config import get_config
 config = get_config()
 
 from services.auth import AuthService
-from services.container import service_container
 
 # Import services
 from services.logger_config import get_logger
@@ -96,7 +95,6 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # Initialize auth service
         logger.info("[LIFESPAN] Initializing authentication service. ..")
         auth_service = AuthService()
-        service_container.register("auth", auth_service)
         logger.info("[LIFESPAN] ✅ Authentication service initialized")
 
         # Initialize capability system
@@ -112,15 +110,14 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # Initialize quality service
         logger.info("[LIFESPAN] Initializing quality service. ..")
         quality_service = UnifiedQualityService()
-        service_container.register("quality", quality_service)
         logger.info("[LIFESPAN] ✅ Quality service initialized")
 
-        # Initialize UnifiedOrchestrator for task execution
+        # Initialize UnifiedOrchestrator and inject into task executor
         logger.info("[LIFESPAN] Initializing UnifiedOrchestrator. ..")
+        orchestrator = None
         try:
             orchestrator = UnifiedOrchestrator()
-            service_container.register("orchestrator", orchestrator)
-            logger.info("[LIFESPAN] ✅ UnifiedOrchestrator initialized via ServiceContainer")
+            logger.info("[LIFESPAN] ✅ UnifiedOrchestrator initialized")
         except Exception as e:
             logger.error(
                 f"[LIFESPAN] ❌ Failed to initialize UnifiedOrchestrator: {e}", exc_info=True
@@ -128,6 +125,12 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
             logger.warning(
                 "[LIFESPAN] ⚠️ Orchestrator initialization failed - system will use fallback template-based generation"
             )
+
+        # Inject orchestrator into task executor via Depends()-compatible setter
+        task_executor = services.get("task_executor")
+        if task_executor and orchestrator:
+            task_executor.inject_orchestrator(orchestrator)
+            logger.info("[LIFESPAN] ✅ Orchestrator injected into TaskExecutor")
 
         # Register services in the global DI container for dependency injection
         logger.info("[LIFESPAN] Registering services in global DI container. ..")

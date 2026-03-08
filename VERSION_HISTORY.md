@@ -61,7 +61,7 @@ This document tracks all major development phases, sprints, and implementations 
 - Consistent error handling patterns across entire backend
 - Foundation for better monitoring and diagnostics
 
-**Reference:** See `docs/TECHNICAL_DEBT_TRACKER.md` Issue #6 section
+**Reference:** See `docs/07-Appendices/Technical-Debt-Tracker.md` Issue #6 section
 
 ---
 
@@ -163,7 +163,7 @@ This document tracks all major development phases, sprints, and implementations 
 - `quality_evaluation` - Critique and suggest improvements
 - `publishing` - Post to web, social media, email
 
-**Reference:** See `docs/CAPABILITY_BASED_TASK_SYSTEM.md`
+**Reference:** See `docs/03-Features/Capability-Based-Tasks.md`
 
 ---
 
@@ -276,8 +276,8 @@ archive/
 
 ## References
 
-- **Technical Debt:** `docs/TECHNICAL_DEBT_TRACKER.md`
-- **Architecture:** `docs/02-ARCHITECTURE_AND_DESIGN.md`
-- **Development Workflow:** `docs/04-DEVELOPMENT_WORKFLOW.md`
-- **Testing Guide:** `docs/reference/TESTING.md`
+- **Technical Debt:** `docs/07-Appendices/Technical-Debt-Tracker.md`
+- **Architecture:** `docs/02-Architecture/System-Design.md`
+- **Development Workflow:** `docs/04-Development/Development-Workflow.md`
+- **Testing Guide:** `docs/04-Development/Testing-Guide.md`
 - **Troubleshooting:** `docs/troubleshooting/`

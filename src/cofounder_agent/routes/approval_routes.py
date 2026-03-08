@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional
 from uuid import uuid4 as uuid_lib_uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from services.error_handler import AppError
 from pydantic import BaseModel, ConfigDict, Field
 
 from routes.auth_unified import get_current_user
@@ -439,6 +440,8 @@ async def approve_task(
 
     except HTTPException:
         raise
+    except AppError:
+        raise
     except Exception as e:
         logger.error(f"❌ [APPROVAL] Failed to approve task {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(
@@ -583,6 +586,8 @@ async def reject_task(
         }
 
     except HTTPException:
+        raise
+    except AppError:
         raise
     except Exception as e:
         logger.error(f"❌ [REJECTION] Failed to reject task {task_id}: {str(e)}", exc_info=True)
@@ -1037,6 +1042,8 @@ async def get_task_approval_status(
             "can_be_approved": task.get("status") == "awaiting_approval",
         }
     except HTTPException:
+        raise
+    except AppError:
         raise
     except Exception as e:
         logger.error(f"❌ Failed to get approval status: {str(e)}", exc_info=True)

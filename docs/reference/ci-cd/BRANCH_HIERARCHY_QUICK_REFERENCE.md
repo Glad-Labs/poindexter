@@ -112,7 +112,7 @@ git push origin main                       # Cost: ~25 min (deploy + security) â
 
 ## âœ… Checklist
 
-- [ ] Read `docs/04-DEVELOPMENT_WORKFLOW.md` (complete overview)
+- [ ] Read `docs/04-Development/Development-Workflow.md` (complete overview)
 - [ ] Review `.github/workflows/test-on-dev.yml` (new workflow)
 - [ ] Configure GitHub Secrets for staging (see guide)
 - [ ] Configure GitHub Secrets for production (see guide)

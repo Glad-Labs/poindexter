@@ -538,11 +538,11 @@ DEFAULT_WRITING_STYLE_ID=...         # Default style for content
 
 ## When to Reference Full Documentation
 
-- **Architecture questions:** → `docs/02-ARCHITECTURE_AND_DESIGN.md`
-- **Deployment questions:** → `docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md`
-- **CI/CD and branching:** → `docs/04-DEVELOPMENT_WORKFLOW.md`
-- **Agent capabilities:** → `docs/05-AI_AGENTS_AND_INTEGRATION.md`
-- **Operations/monitoring:** → `docs/06-OPERATIONS_AND_MAINTENANCE.md`
+- **Architecture questions:** → `docs/02-Architecture/System-Design.md`
+- **Deployment questions:** → `docs/05-Operations/Operations-Maintenance.md`
+- **CI/CD and branching:** → `docs/04-Development/Development-Workflow.md`
+- **Agent capabilities:** → `docs/02-Architecture/Multi-Agent-Pipeline.md`
+- **Operations/monitoring:** → `docs/05-Operations/Monitoring-Diagnostics.md`
 - **Recent implementations:** → `VERSION_HISTORY.md` (all phases and implementation milestones)
 - **Troubleshooting:** → `docs/troubleshooting/` folder
 
@@ -569,7 +569,7 @@ DEFAULT_WRITING_STYLE_ID=...         # Default style for content
 - Improved debugging and troubleshooting capabilities
 - No regressions, all code compiles successfully
 
-**Reference:** `docs/TECHNICAL_DEBT_TRACKER.md` Issue #6 section for detailed progress
+**Reference:** `docs/07-Appendices/Technical-Debt-Tracker.md` Issue #6 section for detailed progress
 
 ---
 

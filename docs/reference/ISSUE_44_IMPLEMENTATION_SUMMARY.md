@@ -21,7 +21,7 @@ Completed on March 6, 2026.
 - `src/cofounder_agent/services/phases/publishing_phases.py`
 - `src/cofounder_agent/services/phases/__init__.py` (defensive import guard for missing `phase_registry`)
 - `tests/unit/backend/services/test_publishing_phases.py`
-- `docs/TECHNICAL_DEBT_TRACKER.md`
+- `docs/07-Appendices/Technical-Debt-Tracker.md`
 
 ## Tests Added
 

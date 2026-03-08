@@ -282,9 +282,9 @@ curl http://localhost:11434/api/tags
 ## 📚 Related Documentation
 
 - **[Agent System Integration](../../docs/components/agents-system.md)** - Full integration guide
-- **[AI Agents & Integration](../../docs/05-AI_AGENTS_AND_INTEGRATION.md)** - Architecture
+- **[AI Agents & Integration](../../docs/02-Architecture/Multi-Agent-Pipeline.md)** - Architecture
 - **[Co-Founder Agent README](../../src/cofounder_agent/README.md)** - API reference
-- **[Testing Guide](../../docs/reference/TESTING.md)** - Testing strategies
+- **[Testing Guide](../../docs/04-Development/Testing-Guide.md)** - Testing strategies
 
 ---
 

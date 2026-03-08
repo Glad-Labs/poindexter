@@ -230,8 +230,8 @@ _None currently. All decisions are active._
 
 - `WHY_FASTAPI.md` - FastAPI decision details
 - `WHY_POSTGRESQL.md` - PostgreSQL decision details
-- `docs/02-ARCHITECTURE_AND_DESIGN.md` - System architecture
-- `docs/04-DEVELOPMENT_WORKFLOW.md` - Process decisions
+- `docs/02-Architecture/System-Design.md` - System architecture
+- `docs/04-Development/Development-Workflow.md` - Process decisions
 
 ---
 
