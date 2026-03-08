@@ -13,7 +13,10 @@
       "Bash(poetry run:*)",
       "Bash(npm run:*)",
       "Bash(do:*)",
-      "Bash(git stash:*)"
+      "Bash(git stash:*)",
+      "Bash(python:*)",
+      "Read(//c/Users/mattm/glad-labs-website/web/oversight-hub/**)",
+      "Bash(npx vitest run)"
     ]
   }
 }

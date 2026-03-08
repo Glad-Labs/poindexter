@@ -46,7 +46,7 @@ class PublishingAgent:
             # 4. Create the post in Strapi
             post_id, post_url = self.strapi_client.create_post(post)
             if not post_id:
-                raise Exception("Publishing agent failed to return a Strapi post ID.")
+                raise RuntimeError("Publishing agent failed to return a Strapi post ID.")
 
             post.strapi_id = post_id
             post.strapi_url = post_url

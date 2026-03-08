@@ -12,6 +12,8 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import aiohttp
 
+from .error_handler import ServiceError
+
 logger = logging.getLogger(__name__)
 
 
@@ -151,15 +153,15 @@ class HuggingFaceClient:
                         return generated_text
 
                     logger.error(f"Unexpected response format: {data}")
-                    raise Exception(f"Unexpected response format: {data}")
+                    raise ValueError(f"Unexpected response format: {data}")
                 else:
                     error_text = await response.text()
                     logger.error(f"HuggingFace error ({response.status}): {error_text}")
-                    raise Exception(f"HuggingFace error: {response.status} - {error_text}")
+                    raise ServiceError(f"HuggingFace error: {response.status} - {error_text}")
 
         except asyncio.TimeoutError:
             logger.error(f"HuggingFace request timeout for model {model}")
-            raise Exception("HuggingFace request timed out")
+            raise TimeoutError("HuggingFace request timed out")
         except Exception as e:
             logger.error(f"[_generate] HuggingFace generation failed: {e}", exc_info=True)
             raise

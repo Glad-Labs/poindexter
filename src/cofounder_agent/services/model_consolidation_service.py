@@ -38,6 +38,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import structlog
 
+from .error_handler import ServiceError
 from .provider_checker import ProviderChecker
 
 logger = structlog.get_logger(__name__)
@@ -375,7 +376,7 @@ class AnthropicAdapter(ProviderAdapter):
     ) -> ModelResponse:
         """Generate text using Anthropic Claude"""
         if not self.client:
-            raise Exception(
+            raise ValueError(
                 "Anthropic client not configured. Set ANTHROPIC_API_KEY environment variable."
             )
 
@@ -452,7 +453,7 @@ class OpenAIAdapter(ProviderAdapter):
     ) -> ModelResponse:
         """Generate text using OpenAI GPT"""
         if not self.client:
-            raise Exception(
+            raise ValueError(
                 "OpenAI client not configured. Set OPENAI_API_KEY environment variable."
             )
 
@@ -719,7 +720,7 @@ class ModelConsolidationService:
         self.metrics["failed_requests"] += 1
         error_msg = f"All model providers failed. Last error: {str(last_error)}"
         logger.error("🚨 All providers exhausted", error=error_msg)
-        raise Exception(error_msg)
+        raise ServiceError(error_msg)
 
     def get_status(self) -> Dict[str, Any]:
         """Get status of all providers"""

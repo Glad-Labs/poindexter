@@ -106,10 +106,10 @@ class GeminiClient:
             Exception: If generation fails
         """
         if not self.is_configured():
-            raise Exception("Gemini API key not configured")
+            raise ValueError("Gemini API key not configured. Set GOOGLE_API_KEY environment variable.")
 
         if _GENAI_SDK == "none":
-            raise Exception(
+            raise ImportError(
                 "No Gemini SDK installed. Run: pip install google-genai"
             )
 
@@ -139,7 +139,7 @@ class GeminiClient:
 
         except Exception as e:
             logger.error(f"[_generate] Gemini generation failed: {e}", exc_info=True)
-            raise Exception(f"Gemini generation error: {str(e)}")
+            raise RuntimeError(f"Gemini generation error: {str(e)}")
 
     async def chat(
         self,
@@ -163,10 +163,10 @@ class GeminiClient:
             Generated response text
         """
         if not self.is_configured():
-            raise Exception("Gemini API key not configured")
+            raise ValueError("Gemini API key not configured. Set GOOGLE_API_KEY environment variable.")
 
         if _GENAI_SDK == "none":
-            raise Exception(
+            raise ImportError(
                 "No Gemini SDK installed. Run: pip install google-genai"
             )
 
@@ -209,7 +209,7 @@ class GeminiClient:
 
         except Exception as e:
             logger.error(f"[_chat] Gemini chat failed: {e}", exc_info=True)
-            raise Exception(f"Gemini chat error: {str(e)}")
+            raise RuntimeError(f"Gemini chat error: {str(e)}")
 
     async def check_health(self) -> Dict[str, Any]:
         """
