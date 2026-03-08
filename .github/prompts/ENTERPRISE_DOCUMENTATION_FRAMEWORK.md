@@ -336,6 +336,7 @@ Use this template for new architecture decisions:
 - Deployment procedures change
 - New decision made
 - Troubleshooting solution found (issue appeared 3+ times)
+- PRs with significant architectural changes must update affected `docs/`, remove stale references, audit moved or renamed internal links, and note any deferred larger doc update
 
 ❌ **Don't update for:**
 
