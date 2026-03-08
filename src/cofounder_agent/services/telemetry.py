@@ -12,6 +12,12 @@ try:
 
     OPENTELEMETRY_AVAILABLE = True
 except (ImportError, AttributeError) as e:
+    trace = None  # type: ignore[assignment]
+    OTLPSpanExporter = None  # type: ignore[assignment,misc]
+    FastAPIInstrumentor = None  # type: ignore[assignment,misc]
+    Resource = None  # type: ignore[assignment,misc]
+    TracerProvider = None  # type: ignore[assignment,misc]
+    BatchSpanProcessor = None  # type: ignore[assignment,misc]
     OPENTELEMETRY_AVAILABLE = False
     logging.error(
         f"[setup_telemetry] OpenTelemetry not fully available: {e}. Tracing disabled.",
@@ -27,12 +33,12 @@ logging.getLogger("urllib3.connectionpool").setLevel(logging.CRITICAL)
 
 # Try to import OpenAI instrumentation if available
 try:
-    from opentelemetry.instrumentation.openai import OpenAIInstrumentor
+    from opentelemetry.instrumentation.openai import OpenAIInstrumentor  # type: ignore[import-untyped]
 except ImportError:
     try:
-        from opentelemetry.instrumentation.openai_v2 import OpenAIInstrumentor
+        from opentelemetry.instrumentation.openai_v2 import OpenAIInstrumentor  # type: ignore[import-untyped]
     except ImportError:
-        OpenAIInstrumentor = None
+        OpenAIInstrumentor = None  # type: ignore[assignment,misc]
 
 
 def setup_telemetry(app, service_name="cofounder-agent"):
@@ -45,7 +51,7 @@ def setup_telemetry(app, service_name="cofounder-agent"):
         service_name: The name of the service to appear in traces.
     """
     # Skip if OpenTelemetry is not available
-    if not OPENTELEMETRY_AVAILABLE:
+    if not OPENTELEMETRY_AVAILABLE or Resource is None or TracerProvider is None or OTLPSpanExporter is None or BatchSpanProcessor is None or trace is None or FastAPIInstrumentor is None:
         logging.warning(
             f"[TELEMETRY] OpenTelemetry not available - tracing disabled for {service_name}"
         )
