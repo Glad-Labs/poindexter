@@ -6,100 +6,88 @@ This document helps you find and understand archived documentation that is no lo
 
 ### Primary Archives
 
-- **`docs/archive-active/`** - Main archive for historical documentation and reports
-- **`docs/archive/`** - Legacy/historical archive (older content)
-- **`.archive/cleanup-feb2026/`** - Oversight Hub service-specific archived docs
+- **`archive/`** - Canonical archive root for historical phase/session/testing documentation
+- **`docs/archive-old-sessions.tar.gz`** - Compressed snapshot of older documentation sessions
+- **`docs/archive-root-consolidated.tar.gz`** - Consolidated compressed archive from root cleanup operations
 
 ---
 
-## Archive Directories in `docs/archive-active/`
+## Archive Directories in `archive/`
 
-### 1. **root-cleanup-feb2026/**
+### 1. **phase1/**
 
-**Purpose:** Root-level documentation files moved during February 2026 cleanup
-**Contains:** Phase reports, session summaries, quick references from previous development phases
-**Size:** ~20 files
-**When to use:**
-
-- Understanding previous implementation phases
-- Finding context about early development decisions
-- Referencing historical quick start guides that may no longer apply
-
-**Notable files:**
-
-- PHASE_1B_1C_DISCOVERY_QUICK_REF.md
-- SESSION_QUICK_REFERENCE.md
-- QUICK_REFERENCE.md
-- SPRINT_2_QUICK_REFERENCE.md
-- OVERSIGHT_HUB_QUICK_START.md
-
----
-
-### 2. **audits-and-testing/**
-
-**Purpose:** Test audits, E2E references, and testing documentation from past iterations
-**Contains:** Testing procedures, audit reports, quality assurance documentation
-**Size:** ~5 files
-**When to use:**
-
-- Understanding historical test structures
-- Finding old E2E testing patterns (reference only - use current TESTING.md)
-- Reviewing past audit findings
-
-**Notable files:**
-
-- E2E_QUICK_REFERENCE.md - Old E2E testing guide
-- Implementation testing docs
-
----
-
-### 3. **cleanup-and-implementation/**
-
-**Purpose:** Documentation from code cleanup and refactoring sessions
-**Contains:** Cleanup procedures, implementation quick references, cookie banner setup
-**Size:** ~3 files
-**When to use:**
-
-- Understanding past code organization changes
-- Reference for similar cleanup tasks
-- Cookie banner implementation history
-
-**Notable files:**
-
-- CLEANUP_QUICK_REFERENCE.txt
-- PRIORITY_1_QUICK_REFERENCE.txt
-- QUICK_START_COOKIE_BANNER.txt
-
----
-
-### 4. **historical-reports/**
-
-**Purpose:** Session reports, audit summaries, and historical documentation
-**Contains:** Documentation audit results, environment variable references, implementation notes
+**Purpose:** Phase 1 completion and testing artifacts
+**Contains:** Phase summaries, infrastructure/testing milestone reports
 **Size:** ~4 files
 **When to use:**
 
-- Understanding system audit histories
-- Environmental configuration historical context
-- Finding past documentation decisions
+- Reviewing Phase 1 deliverables and decisions
+- Understanding early implementation/testing checkpoints
 
 **Notable files:**
 
-- DOCUMENTATION_AUDIT_QUICK_START.md
-- ENV_QUICK_REFERENCE.md
+- PHASE_1_COMPLETION_REPORT.md
+- PHASE_1_TEST_INFRASTRUCTURE.md
+- PHASE_1_VISUAL_SUMMARY.md
 
 ---
 
-### 5. **debug-logs/**
+### 2. **phase2/**
 
-**Purpose:** Debugging information and troubleshooting logs from past sessions
-**Contains:** Error logs, debug traces, problem-solving documentation
-**Size:** Varies
+**Purpose:** Phase 2 completion and test status artifacts
+**Contains:** Phase 2 completion summaries and test status records
+**Size:** ~2 files
 **When to use:**
 
-- Researching similar bugs that have appeared before
-- Understanding how past issues were diagnosed
-- Learning troubleshooting approaches
+- Reviewing outcomes from Phase 2 milestones
+- Cross-checking historical test pass/fail status
+
+**Notable files:**
+
+- PHASE2_COMPLETION_SUMMARY.md
+- PHASE2_TEST_STATUS.md
+
+---
+
+### 3. **phase3/**
+
+**Purpose:** Placeholder for future phase 3 archived artifacts
+**Contains:** Phase 3 archival files as they are finalized
+**Size:** Currently minimal
+**When to use:**
+
+- Reviewing finalized phase 3 archival records
+
+### 4. **sessions/**
+
+**Purpose:** Session-level implementation summaries and fix notes
+**Contains:** Session summaries, implementation notes, and one-off fix reports
+**Size:** ~6 files
+**When to use:**
+
+- Reconstructing work done during specific implementation sessions
+- Tracing historical reasoning for targeted fixes
+
+### 5. **testing/**
+
+**Purpose:** Historical testing guides and completion reports
+**Contains:** Legacy testing documentation retained for historical reference
+**Size:** ~4 files
+**When to use:**
+
+- Finding prior testing workflows for comparison
+- Understanding legacy testing process changes over time
+
+---
+
+### 6. **Top-level archive files**
+
+**Purpose:** Fast access to major cross-phase summaries
+**Contains:** Aggregate archive index and phase completion summaries
+**Notable files:**
+
+- `archive/README.md`
+- `archive/PHASE_3A_COMPLETION_SUMMARY.md`
 
 ---
 

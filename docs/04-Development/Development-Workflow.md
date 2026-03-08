@@ -160,7 +160,7 @@ Located in `.github/workflows/`:
 - `VERCEL_TOKEN` - Vercel API access
 - `DATABASE_URL` - Production DB connection
 
-See [07-BRANCH_SPECIFIC_VARIABLES.md](07-BRANCH_SPECIFIC_VARIABLES.md) for per-environment configuration.
+See [07-BRANCH_SPECIFIC_VARIABLES.md](../07-BRANCH_SPECIFIC_VARIABLES.md) for per-environment configuration.
 
 ---
 
@@ -178,7 +178,7 @@ See [07-BRANCH_SPECIFIC_VARIABLES.md](07-BRANCH_SPECIFIC_VARIABLES.md) for per-e
 
 ```bash
 # Setup
-npm run setup:all              # Full fresh install
+npm run setup                  # Full setup (Node + Python + env)
 
 # Development
 npm run dev                    # All three services
@@ -198,6 +198,6 @@ npm run clean:install         # Reset everything
 
 ## 🔗 Related Documentation
 
-- **[02-ARCHITECTURE_AND_DESIGN.md](02-ARCHITECTURE_AND_DESIGN.md)** - System design
-- **[07-BRANCH_SPECIFIC_VARIABLES.md](07-BRANCH_SPECIFIC_VARIABLES.md)** - Environment config
-- **[reference/ci-cd/](reference/ci-cd/)** - GitHub Actions details
+- **[02-ARCHITECTURE_AND_DESIGN.md](../02-ARCHITECTURE_AND_DESIGN.md)** - System design
+- **[07-BRANCH_SPECIFIC_VARIABLES.md](../07-BRANCH_SPECIFIC_VARIABLES.md)** - Environment config
+- **[reference/ci-cd/](../reference/ci-cd/)** - GitHub Actions details

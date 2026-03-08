@@ -97,10 +97,10 @@ Each tutorial follows this pattern:
 
 ## Complementary Resources
 
-- **Need a quick reference?** → See [04-Features/README.md](../04-Features/README.md) for API contracts and examples
-- **Want to understand the architecture?** → Read [03-Architecture/System-Design.md](../03-Architecture/System-Design.md)
-- **Running into issues?** → Check [07-Troubleshooting/README.md](../07-Troubleshooting/README.md)
-- **Need CLI help?** → See [08-Appendices/CLI-Commands-Reference.md](../08-Appendices/CLI-Commands-Reference.md)
+- **Need a quick reference?** → See [03-Features/README.md](../03-Features/README.md) for API contracts and examples
+- **Want to understand the architecture?** → Read [02-Architecture/System-Design.md](../02-Architecture/System-Design.md)
+- **Running into issues?** → Check [06-Troubleshooting/README.md](../06-Troubleshooting/README.md)
+- **Need CLI help?** → See [07-Appendices/CLI-Commands-Reference.md](../07-Appendices/CLI-Commands-Reference.md)
 
 ---
 
@@ -113,9 +113,9 @@ graph TD
     A["Your First Workflow"] --> B["Building Custom Workflows"]
     B --> C["Integrating OAuth"]
     B --> D["Using Capability-Based Tasks"]
-    C --> E["04-Features Deep Dive"]
+    C --> E["03-Features Deep Dive"]
     D --> E
-    E --> F["03-Architecture Understanding"]
+    E --> F["02-Architecture Understanding"]
 ```
 
 **For operators/DevOps:**
@@ -123,8 +123,8 @@ graph TD
 ```mermaid
 graph TD
     A["01-Getting-Started"] --> B["Environment Setup"]
-    B --> C["06-Operations & Deployment"]
-    C --> D["07-Troubleshooting If Needed"]
+    B --> C["05-Operations & Deployment"]
+    C --> D["06-Troubleshooting If Needed"]
 ```
 
 ---

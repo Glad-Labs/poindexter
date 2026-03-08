@@ -885,6 +885,12 @@ class TasksDatabase(DatabaseServiceMixin):
             List of status change records
         """
         try:
+            if not self.pool:
+                logger.error(
+                    "[get_status_history] Database pool is not initialized; returning empty history"
+                )
+                return []
+
             sql = """
                 SELECT id, task_id, old_status, new_status, reason, metadata, timestamp
                 FROM task_status_history
@@ -928,6 +934,12 @@ class TasksDatabase(DatabaseServiceMixin):
             List of validation failure records with details
         """
         try:
+            if not self.pool:
+                logger.error(
+                    "[get_validation_failures] Database pool is not initialized; returning empty failures"
+                )
+                return []
+
             sql = """
                 SELECT id, task_id, old_status, new_status, reason, metadata, timestamp
                 FROM task_status_history

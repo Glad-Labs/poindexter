@@ -13,10 +13,12 @@ Use this section for user-facing and platform-facing feature documentation with 
 - `Custom-Workflows.md`
 - `OAuth-Integration.md`
 - `Service-Registry.md`
+- `Task-Retry-And-Status-Visibility.md` ✅
 - `Components/`
 
 ## Current Source Documents
 
+- `docs/03-Features/Task-Retry-And-Status-Visibility.md` ✅ **NEW**
 - `docs/03-Features/Capability-Based-Tasks.md`
 - `docs/03-Features/Analytics.md`
 - `docs/03-Features/Workflows-System.md`

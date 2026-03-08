@@ -1392,12 +1392,7 @@ async def get_task_status_history(
     ```
     """
     try:
-        # Get status history directly from database service which is more reliable
-        # than the enhanced service dependency injection
-        from services.tasks_db import TasksDatabase
-
-        task_db = TasksDatabase(db_service._pool if hasattr(db_service, "_pool") else None)
-        history = await task_db.get_status_history(task_id, limit)
+        history = await db_service.tasks.get_status_history(task_id, limit)
 
         return {
             "task_id": task_id,

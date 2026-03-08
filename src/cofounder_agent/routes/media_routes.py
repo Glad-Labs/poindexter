@@ -30,6 +30,7 @@ try:
 
     CLOUDINARY_AVAILABLE = True
 except ImportError:
+    cloudinary = None  # type: ignore[assignment]
     CLOUDINARY_AVAILABLE = False
 
 try:
@@ -38,6 +39,8 @@ try:
 
     S3_AVAILABLE = True
 except ImportError:
+    boto3 = None  # type: ignore[assignment]
+    Config = None  # type: ignore[assignment,misc]
     S3_AVAILABLE = False
 
 from services.image_service import FeaturedImageMetadata, ImageService
@@ -50,7 +53,7 @@ media_router = APIRouter(prefix="/api/media", tags=["Media"])
 # CLOUDINARY SETUP (Primary - Free Tier)
 # ═══════════════════════════════════════════════════════════════════════════
 
-if CLOUDINARY_AVAILABLE and os.getenv("CLOUDINARY_CLOUD_NAME"):
+if cloudinary is not None and os.getenv("CLOUDINARY_CLOUD_NAME"):
     cloudinary.config(
         cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
         api_key=os.getenv("CLOUDINARY_API_KEY"),
@@ -72,7 +75,7 @@ async def upload_to_cloudinary(file_path: str, task_id: Optional[str] = None) ->
     Returns:
         Public URL if successful, None if Cloudinary not configured or upload fails
     """
-    if not CLOUDINARY_AVAILABLE or not os.getenv("CLOUDINARY_CLOUD_NAME"):
+    if cloudinary is None or not os.getenv("CLOUDINARY_CLOUD_NAME"):
         return None
 
     try:
@@ -106,14 +109,14 @@ def get_s3_client():
     global _s3_client
     if _s3_client is None:
         # Check if AWS credentials are configured
-        if S3_AVAILABLE and os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_S3_BUCKET"):
+        if boto3 is not None and os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_S3_BUCKET"):
             try:
                 _s3_client = boto3.client(
                     "s3",
                     aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
                     aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
                     region_name=os.getenv("AWS_S3_REGION", "us-east-1"),
-                    config=Config(signature_version="s3v4") if S3_AVAILABLE else None,
+                    config=Config(signature_version="s3v4") if Config is not None else None,
                 )
                 logger.info("✅ S3 client initialized (fallback)")
             except Exception as e:

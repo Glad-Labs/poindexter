@@ -562,11 +562,11 @@ curl http://localhost:8000/api/agents/memory/stats
 
 - **[Architecture](./02-ARCHITECTURE_AND_DESIGN.md)** - System overview
 - **[Setup Guide](./01-SETUP_AND_OVERVIEW.md)** - Getting started
-- **[Development](./04-DEVELOPMENT_WORKFLOW.md)** - Development patterns
-- **[Deployment](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md)** - Production setup
+- **[Development](../04-DEVELOPMENT_WORKFLOW.md)** - Development patterns
+- **[Deployment](../03-DEPLOYMENT_AND_INFRASTRUCTURE.md)** - Production setup
 
 ---
 
-**[← Back to Documentation Hub](./00-README.md)**
+**[← Back to Documentation Hub](../00-README.md)**
 
-[Setup](./01-SETUP_AND_OVERVIEW.md) • [Architecture](./02-ARCHITECTURE_AND_DESIGN.md) • [Development](./04-DEVELOPMENT_WORKFLOW.md) • [Operations](./06-OPERATIONS_AND_MAINTENANCE.md)
+[Setup](../01-SETUP_AND_OVERVIEW.md) • [Architecture](../02-ARCHITECTURE_AND_DESIGN.md) • [Development](../04-DEVELOPMENT_WORKFLOW.md) • [Operations](../06-OPERATIONS_AND_MAINTENANCE.md)

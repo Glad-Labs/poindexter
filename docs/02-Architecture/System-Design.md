@@ -775,14 +775,14 @@ CREATE TABLE memories (
 
 ## 📚 Related Documentation
 
-- **[Setup Guide](./01-SETUP_AND_OVERVIEW.md)** - Getting started
-- **[Deployment Guide](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md)** - Production setup
-- **[Development Workflow](./04-DEVELOPMENT_WORKFLOW.md)** - Git and testing
-- **[AI Agents & Integration](./05-AI_AGENTS_AND_INTEGRATION.md)** - Agent details
-- **[Operations Guide](./06-OPERATIONS_AND_MAINTENANCE.md)** - Production support
+- **[Setup Guide](../01-SETUP_AND_OVERVIEW.md)** - Getting started
+- **[Deployment Guide](../03-DEPLOYMENT_AND_INFRASTRUCTURE.md)** - Production setup
+- **[Development Workflow](../04-DEVELOPMENT_WORKFLOW.md)** - Git and testing
+- **[AI Agents & Integration](../05-AI_AGENTS_AND_INTEGRATION.md)** - Agent details
+- **[Operations Guide](../06-OPERATIONS_AND_MAINTENANCE.md)** - Production support
 
 ---
 
-**[← Back to Documentation Hub](./00-README.md)**
+**[← Back to Documentation Hub](../00-README.md)**
 
-[Setup](./01-SETUP_AND_OVERVIEW.md) • [Deployment](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) • [Development](./04-DEVELOPMENT_WORKFLOW.md)
+[Setup](../01-SETUP_AND_OVERVIEW.md) • [Deployment](../03-DEPLOYMENT_AND_INFRASTRUCTURE.md) • [Development](../04-DEVELOPMENT_WORKFLOW.md)

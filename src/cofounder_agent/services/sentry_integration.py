@@ -80,7 +80,7 @@ class SentryIntegration:
         Returns:
             bool: True if Sentry was successfully initialized, False otherwise
         """
-        if not SENTRY_AVAILABLE:
+        if not SENTRY_AVAILABLE or sentry_sdk is None:
             logger.warning("[ERROR] Sentry SDK not available - error tracking disabled")
             return False
 
@@ -140,7 +140,7 @@ class SentryIntegration:
                     0.1 if environment == "production" else 1.0
                 ),  # Profile 10% of transactions
                 # Before sending event to Sentry (filter sensitive data)
-                before_send=cls._before_send,
+                before_send=cls._before_send,  # type: ignore[arg-type]
                 # Include local variables in stack traces
                 include_local_variables=True,
                 # Error attachment configurations
@@ -216,7 +216,7 @@ class SentryIntegration:
             context: Additional context dictionary
             level: Severity level (fatal, error, warning, info, debug)
         """
-        if not cls._sentry_enabled:
+        if not cls._sentry_enabled or sentry_sdk is None:
             return
 
         try:
@@ -225,7 +225,7 @@ class SentryIntegration:
                     for key, value in context.items():
                         scope.set_context(key, value)
 
-                scope.set_level(level)
+                scope.set_level(level)  # type: ignore[arg-type]
                 sentry_sdk.capture_exception(error)
         except Exception as e:
             logger.error(
@@ -242,7 +242,7 @@ class SentryIntegration:
             level: Severity level (fatal, error, warning, info, debug)
             context: Additional context dictionary
         """
-        if not cls._sentry_enabled:
+        if not cls._sentry_enabled or sentry_sdk is None:
             return
 
         try:
@@ -251,7 +251,7 @@ class SentryIntegration:
                     for key, value in context.items():
                         scope.set_context(key, value)
 
-                sentry_sdk.capture_message(message, level=level)
+                sentry_sdk.capture_message(message, level=level)  # type: ignore[arg-type]
         except Exception as e:
             logger.error(
                 f"[_capture_message] Failed to capture message in Sentry: {e}", exc_info=True
@@ -268,7 +268,7 @@ class SentryIntegration:
             email: User email address
             username: User's username
         """
-        if not cls._sentry_enabled:
+        if not cls._sentry_enabled or sentry_sdk is None:
             return
 
         try:
@@ -281,7 +281,7 @@ class SentryIntegration:
     @classmethod
     def clear_user_context(cls):
         """Clear user context after logout."""
-        if not cls._sentry_enabled:
+        if not cls._sentry_enabled or sentry_sdk is None:
             return
 
         try:
@@ -305,7 +305,7 @@ class SentryIntegration:
             level: Severity level (critical, error, warning, info, debug)
             data: Additional data dictionary
         """
-        if not cls._sentry_enabled:
+        if not cls._sentry_enabled or sentry_sdk is None:
             return
 
         try:
@@ -330,7 +330,7 @@ class SentryIntegration:
         Returns:
             Sentry transaction object or None
         """
-        if not cls._sentry_enabled:
+        if not cls._sentry_enabled or sentry_sdk is None:
             return None
 
         try:

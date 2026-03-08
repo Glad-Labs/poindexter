@@ -37,4 +37,4 @@ npm run dev # Daily development
 
 ## ���️ Configuration
 
-All configuration is managed via the \`.env.local\` file in the root. See [07-BRANCH_SPECIFIC_VARIABLES.md](07-BRANCH_SPECIFIC_VARIABLES.md) for details.
+All configuration is managed via the `.env.local` file in the root. See [07-BRANCH_SPECIFIC_VARIABLES.md](../07-BRANCH_SPECIFIC_VARIABLES.md) for details.

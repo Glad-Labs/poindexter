@@ -17,6 +17,8 @@ Use this section for indexes, catalogs, governance documents, and supporting ref
 
 - `docs/07-Appendices/API-Endpoint-Index.md`
 - `docs/07-Appendices/Workflow-Templates-Matrix.md`
+- `docs/07-Appendices/Capability-Catalog.md`
+- `docs/07-Appendices/CLI-Commands-Reference.md`
 - `docs/07-Appendices/Technical-Debt-Tracker.md`
 - `docs/07-Appendices/Documentation-Maintenance.md`
 - `docs/07-Appendices/Archive-Guide.md`

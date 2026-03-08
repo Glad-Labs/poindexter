@@ -35,6 +35,7 @@ try:
 
     SENTRY_AVAILABLE = True
 except ImportError:
+    sentry_sdk = None  # type: ignore[assignment]
     SENTRY_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
@@ -117,7 +118,7 @@ class ErrorContext:
     max_attempts: int = 3
     request_id: Optional[str] = None
     user_id: Optional[str] = None
-    timestamp: datetime = None
+    timestamp: Optional[datetime] = None
     error: Optional[Exception] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -136,7 +137,7 @@ class ErrorContext:
             "attempt": self.attempt,
             "request_id": self.request_id,
             "user_id": self.user_id,
-            "timestamp": self.timestamp.isoformat(),
+            "timestamp": self.timestamp.isoformat() if self.timestamp else datetime.utcnow().isoformat(),
             "error_type": type(self.error).__name__ if self.error else None,
             "error_message": str(self.error) if self.error else None,
             **self.metadata,
@@ -429,7 +430,7 @@ class CircuitBreaker:
         name: str,
         failure_threshold: int = 5,
         recovery_timeout: int = 60,
-        expected_exception: type = Exception,
+        expected_exception: type[BaseException] = Exception,
     ):
         self.name = name
         self.failure_threshold = failure_threshold
@@ -498,7 +499,7 @@ class CircuitBreaker:
                 logger.error(f"🔴 Circuit breaker '{self.name}' is now OPEN")
 
                 # Report to Sentry if available
-                if SENTRY_AVAILABLE:
+                if sentry_sdk is not None:
                     sentry_sdk.capture_exception(e)
 
             raise
@@ -547,7 +548,7 @@ class CircuitBreaker:
                 logger.error(f"🔴 Circuit breaker '{self.name}' is now OPEN")
 
                 # Report to Sentry if available
-                if SENTRY_AVAILABLE:
+                if sentry_sdk is not None:
                     sentry_sdk.capture_exception(e)
 
             raise
@@ -725,7 +726,7 @@ def log_error_context(context: ErrorContext) -> None:
     logger.error(log_message, extra=context_dict, exc_info=context.error)
 
     # Send to Sentry if available
-    if SENTRY_AVAILABLE and context.error:
+    if sentry_sdk is not None and context.error:
         with sentry_sdk.push_scope() as scope:
             scope.set_context("error_context", context_dict)
             if context.request_id:

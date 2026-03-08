@@ -30,7 +30,7 @@ By the end, you'll understand the complete workflow lifecycle: request → execu
 
 **Recommended:**
 
-- ~5 minutes to read [04-Features/Workflows-System.md](../04-Features/Workflows-System.md) to understand workflow concepts
+- ~5 minutes to read [03-Features/Workflows-System.md](../03-Features/Workflows-System.md) to understand workflow concepts
 
 ---
 
@@ -110,7 +110,7 @@ curl -X POST http://localhost:8000/api/workflows/execute/blog_post \
 - `keywords` — Key terms to incorporate
 - `target_audience` — Who this is written for (helps tune language and examples)
 - `tone` — Voice and style preferences
-- `model` — Which LLM to use (see [04-Features/Model-Selection.md](../04-Features/Model-Selection.md) for options)
+- `model` — Which LLM to use (see [03-Features/Model-Selection.md](../03-Features/Model-Selection.md) for options)
 
 **Expected Response (HTTP 202 - Accepted):**
 
@@ -267,7 +267,7 @@ curl -X GET http://localhost:8000/api/workflows/exec-xyz789 \
 
 ## Real-Time Monitoring (Optional)
 
-Instead of polling, you can monitor progress in real-time using WebSocket. See [04-Features/WebSocket-Real-Time.md](../04-Features/WebSocket-Real-Time.md) for a JavaScript example.
+Instead of polling, you can monitor progress in real-time using WebSocket. See [03-Features/WebSocket-Real-Time.md](../03-Features/WebSocket-Real-Time.md) for a JavaScript example.
 
 Quick example:
 
@@ -349,8 +349,8 @@ curl -X GET http://localhost:8000/api/workflows/templates \
 
 - [Building Custom Workflows](Custom-Workflows.md) — Compose your own multi-phase workflows
 - [Integrating OAuth](OAuth-Integration.md) — Add authentication to your app
-- [04-Features/Workflows-System.md](../04-Features/Workflows-System.md) — Deep dive into workflow concepts
-- [04-Features/Model-Selection.md](../04-Features/Model-Selection.md) — Understand model options and costs
+- [03-Features/Workflows-System.md](../03-Features/Workflows-System.md) — Deep dive into workflow concepts
+- [03-Features/Model-Selection.md](../03-Features/Model-Selection.md) — Understand model options and costs
 
 ---
 
