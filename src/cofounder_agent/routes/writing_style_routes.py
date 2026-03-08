@@ -131,7 +131,7 @@ async def upload_writing_sample(
             )
 
         # Create the writing sample
-        user_id = current_user.get("id") if isinstance(current_user, dict) else current_user
+        user_id: str = str(current_user.get("id", "")) if isinstance(current_user, dict) else str(current_user)
         sample = await db_service.writing_style.create_writing_sample(
             user_id=user_id,
             title=title,
@@ -162,7 +162,7 @@ async def list_writing_samples(
         List of WritingSampleResponse objects
     """
     try:
-        user_id = current_user.get("id") if isinstance(current_user, dict) else current_user
+        user_id: str = str(current_user.get("id", "")) if isinstance(current_user, dict) else str(current_user)
         samples = await db_service.writing_style.get_user_writing_samples(user_id)
 
         # Find active sample if any
@@ -195,7 +195,7 @@ async def get_active_writing_sample(
         Active WritingSampleResponse or null if no active sample
     """
     try:
-        user_id = current_user.get("id") if isinstance(current_user, dict) else current_user
+        user_id: str = str(current_user.get("id", "")) if isinstance(current_user, dict) else str(current_user)
         sample = await db_service.writing_style.get_active_writing_sample(user_id)
 
         if not sample:
@@ -224,9 +224,9 @@ async def set_active_writing_sample(
         Updated WritingSampleResponse
     """
     try:
-        user_id = current_user.get("id") if isinstance(current_user, dict) else current_user
+        user_id: str = str(current_user.get("id", "")) if isinstance(current_user, dict) else str(current_user)
         # Verify sample belongs to user
-        sample = await db_service.writing_style.get_writing_sample(sample_id)
+        sample = await db_service.writing_style.get_writing_sample(str(sample_id))
         if not sample:
             raise HTTPException(status_code=404, detail="Writing sample not found")
 
@@ -234,7 +234,7 @@ async def set_active_writing_sample(
             raise HTTPException(status_code=403, detail="Unauthorized")
 
         # Set as active
-        updated = await db_service.writing_style.set_active_writing_sample(user_id, sample_id)
+        updated = await db_service.writing_style.set_active_writing_sample(user_id, str(sample_id))
 
         logger.info(f"✅ User {user_id} set writing sample {sample_id} as active")
         return WritingSampleResponse(**updated)
@@ -264,9 +264,9 @@ async def update_writing_sample(
         Updated WritingSampleResponse
     """
     try:
-        user_id = current_user.get("id") if isinstance(current_user, dict) else current_user
+        user_id: str = str(current_user.get("id", "")) if isinstance(current_user, dict) else str(current_user)
         # Verify sample belongs to user
-        sample = await db_service.writing_style.get_writing_sample(sample_id)
+        sample = await db_service.writing_style.get_writing_sample(str(sample_id))
         if not sample:
             raise HTTPException(status_code=404, detail="Writing sample not found")
 
@@ -308,9 +308,9 @@ async def delete_writing_sample(
         Success message
     """
     try:
-        user_id = current_user.get("id") if isinstance(current_user, dict) else current_user
+        user_id: str = str(current_user.get("id", "")) if isinstance(current_user, dict) else str(current_user)
         # Verify sample belongs to user
-        sample = await db_service.writing_style.get_writing_sample(sample_id)
+        sample = await db_service.writing_style.get_writing_sample(str(sample_id))
         if not sample:
             raise HTTPException(status_code=404, detail="Writing sample not found")
 

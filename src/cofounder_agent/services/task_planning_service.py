@@ -13,7 +13,7 @@ Phase 3 of Unified Task Orchestration System.
 """
 
 import logging
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -51,9 +51,9 @@ class ExecutionPlanStage:
     estimated_duration_ms: int
     estimated_cost: float
     model: str
-    parallelizable_with: List[str] = None  # Which other stages can run in parallel
-    depends_on: List[str] = None  # Which stages must complete first
-    quality_metrics: Dict[str, Any] = None  # Metrics to measure quality
+    parallelizable_with: Optional[List[str]] = None  # Which other stages can run in parallel
+    depends_on: Optional[List[str]] = None  # Which stages must complete first
+    quality_metrics: Optional[Dict[str, Any]] = None  # Metrics to measure quality
 
 
 @dataclass
@@ -68,10 +68,10 @@ class ExecutionPlan:
     stages: List[ExecutionPlanStage]
     parallelization_strategy: str  # "sequential", "parallel", "mixed"
     resource_requirements: Dict[str, Any]  # GPU, memory, etc.
-    alternative_strategies: List["ExecutionPlan"] = None  # Other ways to accomplish goal
-    estimated_quality_score: float  # 0-100
-    success_probability: float  # 0-1 based on historical data
-    created_at: str = None
+    estimated_quality_score: float = 0.0  # 0-100
+    success_probability: float = 0.0  # 0-1 based on historical data
+    alternative_strategies: Optional[List["ExecutionPlan"]] = None  # Other ways to accomplish goal
+    created_at: Optional[str] = None
     user_confirmed: bool = False
 
 
@@ -85,8 +85,8 @@ class ExecutionPlanSummary:
     estimated_cost: str  # "$1.25"
     confidence: str  # "High", "Medium", "Low"
     key_stages: List[str]  # Top-level stages to show
-    warnings: List[str] = None  # "May require manual image selection", etc.
-    opportunities: List[str] = None  # "Can save $0.50 by skipping QA", etc.
+    warnings: Optional[List[str]] = None  # "May require manual image selection", etc.
+    opportunities: Optional[List[str]] = None  # "Can save $0.50 by skipping QA", etc.
 
 
 # ============================================================================

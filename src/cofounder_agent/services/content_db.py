@@ -85,13 +85,13 @@ class ContentDatabase(DatabaseServiceMixin):
         logger.info(f"🔍 INSERTING POST WITH THESE VALUES:")
         logger.info(f"   - id: {post_id}")
         logger.info(
-            f"   - title: {post_data.get('title')[:50] if post_data.get('title') else 'EMPTY'}"
+            f"   - title: {str(post_data.get('title') or 'EMPTY')[:50]}"
         )
         logger.info(f"   - slug: {post_data.get('slug')}")
         logger.info(f"   - featured_image_url: {post_data.get('featured_image_url')}")
         logger.info(f"   - seo_title: {post_data.get('seo_title')}")
         logger.info(
-            f"   - seo_description: {post_data.get('seo_description')[:50] if post_data.get('seo_description') else 'EMPTY'}"
+            f"   - seo_description: {str(post_data.get('seo_description') or 'EMPTY')[:50]}"
         )
         logger.info(f"   - seo_keywords: {seo_keywords}")
         logger.info(f"   - status: {post_data.get('status', 'draft')}")
@@ -509,24 +509,22 @@ class ContentDatabase(DatabaseServiceMixin):
                     )
 
                 return MetricsResponse(
-                    total_tasks=total_tasks or 0,
-                    completed_tasks=completed_tasks or 0,
-                    failed_tasks=failed_tasks or 0,
-                    pending_tasks=pending_tasks or 0,
-                    success_rate=round(success_rate, 2),
-                    avg_execution_time=avg_execution_time,
-                    total_cost=total_cost,
+                    totalTasks=total_tasks or 0,
+                    completedTasks=completed_tasks or 0,
+                    failedTasks=failed_tasks or 0,
+                    successRate=round(success_rate, 2),
+                    avgExecutionTime=avg_execution_time,
+                    totalCost=total_cost,
                 )
         except Exception as e:
             logger.error(f"[_get_metrics] ❌ Failed to get metrics: {e}", exc_info=True)
             return MetricsResponse(
-                total_tasks=0,
-                completed_tasks=0,
-                failed_tasks=0,
-                pending_tasks=0,
-                success_rate=0,
-                avg_execution_time=0,
-                total_cost=0,
+                totalTasks=0,
+                completedTasks=0,
+                failedTasks=0,
+                successRate=0,
+                avgExecutionTime=0,
+                totalCost=0,
             )
 
     async def create_orchestrator_training_data(

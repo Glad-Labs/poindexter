@@ -99,33 +99,33 @@ async def get_usage_metrics(
             }
 
         # Calculate metrics
-        total_input = sum(op.get("tokens_in", 0) for op in completed_ops)
-        total_output = sum(op.get("tokens_out", 0) for op in completed_ops)
+        total_input = sum(op.input_tokens for op in completed_ops)
+        total_output = sum(op.output_tokens for op in completed_ops)
         total_tokens = total_input + total_output
-        total_cost = sum(op.get("cost_estimate", 0.0) for op in completed_ops)
+        total_cost = sum(op.total_cost_usd for op in completed_ops)
         total_ops = len(completed_ops)
-        successful_ops = sum(1 for op in completed_ops if op.get("success", False))
+        successful_ops = sum(1 for op in completed_ops if op.success)
         failed_ops = total_ops - successful_ops
 
         # Group by model
         by_model = {}
         for op in completed_ops:
-            model = op.get("model", "unknown")
+            model = op.model_name
             if model not in by_model:
                 by_model[model] = {"operations": 0, "tokens": 0, "cost": 0.0}
             by_model[model]["operations"] += 1
-            by_model[model]["tokens"] += op.get("tokens_in", 0) + op.get("tokens_out", 0)
-            by_model[model]["cost"] += op.get("cost_estimate", 0.0)
+            by_model[model]["tokens"] += op.input_tokens + op.output_tokens
+            by_model[model]["cost"] += op.total_cost_usd
 
         # Group by operation type
         by_operation = {}
         for op in completed_ops:
-            op_type = op.get("operation_type", "unknown")
+            op_type = op.operation_type
             if op_type not in by_operation:
                 by_operation[op_type] = {"count": 0, "cost": 0.0, "success": 0}
             by_operation[op_type]["count"] += 1
-            by_operation[op_type]["cost"] += op.get("cost_estimate", 0.0)
-            if op.get("success", False):
+            by_operation[op_type]["cost"] += op.total_cost_usd
+            if op.success:
                 by_operation[op_type]["success"] += 1
 
         # Projections
@@ -134,7 +134,7 @@ async def get_usage_metrics(
             (
                 datetime.utcnow()
                 - datetime.fromisoformat(
-                    completed_ops[0].get("started_at", datetime.utcnow().isoformat())
+                    completed_ops[0].created_at
                 )
             ).days
             or 1,
@@ -269,19 +269,19 @@ async def get_cost_metrics(
                 }
 
             # Calculate totals
-            total_cost = sum(op.get("cost_estimate", 0.0) for op in completed_ops)
+            total_cost = sum(op.total_cost_usd for op in completed_ops)
             total_tokens = sum(
-                op.get("tokens_in", 0) + op.get("tokens_out", 0) for op in completed_ops
+                op.input_tokens + op.output_tokens for op in completed_ops
             )
 
             # Group by model
             by_model = {}
             for op in completed_ops:
-                model = op.get("model", "unknown")
+                model = op.model_name
                 if model not in by_model:
                     by_model[model] = {"tokens": 0, "cost": 0.0, "provider": "unknown"}
-                by_model[model]["tokens"] += op.get("tokens_in", 0) + op.get("tokens_out", 0)
-                by_model[model]["cost"] += op.get("cost_estimate", 0.0)
+                by_model[model]["tokens"] += op.input_tokens + op.output_tokens
+                by_model[model]["cost"] += op.total_cost_usd
 
                 # Infer provider from model name
                 if "ollama" in model.lower() or model == "mistral" or model == "llama2":
@@ -343,7 +343,7 @@ async def get_metrics(current_user: UserProfile = Depends(get_current_user)) -> 
 
         # Calculate uptime
         uptime = (datetime.now() - _start_time).total_seconds()
-        failed_ops = sum(1 for op in completed_ops if not op.get("success", False))
+        failed_ops = sum(1 for op in completed_ops if not op.success)
 
         return {
             "status": "healthy",
@@ -361,13 +361,13 @@ async def get_metrics(current_user: UserProfile = Depends(get_current_user)) -> 
             },
             "latest_operations": [
                 {
-                    "id": op.get("operation_id"),
-                    "type": op.get("operation_type"),
-                    "model": op.get("model"),
-                    "success": op.get("success"),
-                    "timestamp": op.get("completed_at", op.get("started_at")),
+                    "id": op.operation_id,
+                    "type": op.operation_type,
+                    "model": op.model_name,
+                    "success": op.success,
+                    "timestamp": op.created_at,
                 }
-                for op in completed_ops[-5:]  # Last 5 operations
+                for op in completed_ops[-5:]
             ],
         }
 

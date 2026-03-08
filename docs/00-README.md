@@ -9,7 +9,7 @@
 **Project:** Glad Labs AI Co-Founder System v3.0.2 | AGPL-3.0 License
 **Policy:** 🎯 **HIGH-LEVEL ONLY** (Architecture-focused, source-of-truth documentation)
 
-> **Recent Update (Feb 23, 2026):** Second documentation cleanup pass completed. 54 additional Phase/Sprint/Session/Testing reports moved from root to `archive-active/root-cleanup-feb2026/`. Repository root now contains only `README.md`, `SECURITY.md`, and `CLAUDE.md`. See [archive-active/](archive-active/) for all archived files.
+> **Recent Update (Feb 23, 2026):** Second documentation cleanup pass completed. 54 additional Phase/Sprint/Session/Testing reports moved from root to `archive/root-cleanup-feb2026/`. Repository root now contains only `README.md`, `SECURITY.md`, and `CLAUDE.md`. See [archive/](archive/) for all archived files.
 
 > **Documentation Philosophy:** This hub contains only high-level, architecture-stable documentation. Implementation details belong in code. This set has been revamped to reflect the **Unified Task API** and **Async PostgreSQL Architecture**.
 
@@ -188,12 +188,20 @@ All components of the enterprise documentation framework are now active and main
 - [Testing Guide](./reference/TESTING.md) - Test strategy & coverage
 - [Glad Labs Standards](./reference/GLAD-LABS-STANDARDS.md) - Code quality standards
 - [GitHub Secrets Setup](./reference/GITHUB_SECRETS_SETUP.md) - Production secrets management
+- [Environment Setup](./reference/ENVIRONMENT_SETUP.md) - Environment configuration guide
+- [Quick Start Guide](./reference/QUICK_START_GUIDE.md) - Quick reference for getting started
+- [Issue #31 Implementation](./reference/ISSUE_31_IMPLEMENTATION_SUMMARY.md) - Feature implementation summary
+- [Issue #32 Implementation](./reference/ISSUE_32_IMPLEMENTATION_SUMMARY.md) - Feature implementation summary
+- [Issue #35 Implementation](./reference/ISSUE_35_IMPLEMENTATION_SUMMARY.md) - Feature implementation summary
+- [Issue #44 Implementation](./reference/ISSUE_44_IMPLEMENTATION_SUMMARY.md) - Feature implementation summary
 
 ### Component Documentation
 
 - [Co-founder Agent](./components/cofounder-agent/README.md) - AI agent architecture
 - [Oversight Hub](./components/oversight-hub/README.md) - Admin dashboard
 - [Public Site](./components/public-site/README.md) - Customer website
+- [Co-founder Agent Quick Fixes](./components/cofounder-agent/troubleshooting/QUICK_FIX_COMMANDS.md) - Common fixes
+- [Railway Web Console](./components/cofounder-agent/troubleshooting/RAILWAY_WEB_CONSOLE_STEPS.md) - Railway deployment guidance
 
 ### Troubleshooting & Support
 
@@ -207,7 +215,7 @@ All components of the enterprise documentation framework are now active and main
 ## 📦 Historical Archive
 
 - **[Archive Navigation Guide](./ARCHIVE_NAVIGATION.md)** ⭐ Start here for finding archived docs
-- **[Archive Folder](./archive-active/)** - Phase/Sprint/Session reports and historical documentation
+- **[Archive Folder](./archive/)** - Phase/Sprint/Session reports and historical documentation
   - **February 2026:** Root-level session files archived to improve organization
   - **February 23, 2025:** Archive structure refined with clear navigation
   - **Status:** Well-organized; reference for historical context only
