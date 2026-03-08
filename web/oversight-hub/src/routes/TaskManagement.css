@@ -525,6 +525,12 @@
   white-space: nowrap;
 }
 
+.status-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
 .status-badge {
   display: inline-block;
   padding: 0.4rem 0.8rem;
@@ -535,6 +541,27 @@
   letter-spacing: 0.5px;
 }
 
+.status-step-text {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.retry-count-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid #00d9ff;
+  color: #00d9ff;
+  background: rgba(0, 217, 255, 0.12);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
 .status-badge.status-pending {
   background-color: rgba(255, 193, 7, 0.15);
   color: #ffc107;
@@ -592,6 +619,18 @@
   border: 1px solid #f44336;
 }
 
+.status-badge.status-queued {
+  background-color: rgba(255, 193, 7, 0.15);
+  color: #ffc107;
+  border: 1px solid #ffc107;
+}
+
+.status-badge.status-image-generating {
+  background-color: rgba(156, 39, 176, 0.15);
+  color: #9c27b0;
+  border: 1px solid #9c27b0;
+  animation: pulse 1.5s ease-in-out infinite;
+}
 .status-badge.status-on-hold {
   background-color: rgba(158, 158, 158, 0.15);
   color: #9e9e9e;
@@ -1036,18 +1075,64 @@
 
 .progress-bar {
   flex: 1;
-  height: 6px;
+  height: 8px;
   background-color: var(--bg-tertiary);
-  border-radius: 3px;
+  border-radius: 4px;
   overflow: hidden;
   min-width: 80px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 .progress-fill {
   height: 100%;
   background: linear-gradient(90deg, var(--accent-primary), var(--accent-primary-light));
-  transition: width 0.3s ease;
-  border-radius: 3px;
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 4px;
+    position: relative;
+    box-shadow: 0 0 8px rgba(0, 217, 255, 0.4);
+  }
+  
+  /* Stage-based progress colors */
+  .progress-fill[data-stage="queued"] {
+    background: linear-gradient(90deg, #ffa726, #ffb74d);
+    box-shadow: 0 0 8px rgba(255, 167, 38, 0.4);
+  }
+  
+  .progress-fill[data-stage="content_generation"],
+  .progress-fill[data-stage="generating"] {
+    background: linear-gradient(90deg, #42a5f5, #64b5f6);
+    box-shadow: 0 0 8px rgba(66, 165, 245, 0.4);
+  }
+  
+  .progress-fill[data-stage="finalizing"],
+  .progress-fill[data-stage="complete"] {
+    background: linear-gradient(90deg, #66bb6a, #81c784);
+    box-shadow: 0 0 8px rgba(102, 187, 106, 0.4);
+  }
+  
+  /* Animated shimmer effect for active progress */
+  .progress-fill.active::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(90deg,
+        transparent 0%,
+        rgba(255, 255, 255, 0.3) 50%,
+        transparent 100%);
+    animation: shimmer 2s infinite;
+  }
+  
+  @keyframes shimmer {
+    0% {
+      transform: translateX(-100%);
+    }
+  
+    100% {
+      transform: translateX(100%);
+    }
 }
 
 .progress-text {

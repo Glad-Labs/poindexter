@@ -27,7 +27,13 @@ export const StatusAuditTrail = ({ taskId, limit = 100 }) => {
       try {
         setLoading(true);
         const data = await unifiedStatusService.getHistory(taskId, limit);
-        setHistory(Array.isArray(data) ? data : []);
+        if (Array.isArray(data)) {
+          setHistory(data);
+        } else if (Array.isArray(data?.history)) {
+          setHistory(data.history);
+        } else {
+          setHistory([]);
+        }
       } catch (err) {
         setError(err.message || 'Failed to load audit trail');
       } finally {
@@ -164,19 +170,71 @@ export const StatusTimeline = ({
 
 /**
  * ValidationFailureUI Component
- * Displays validation failures for a task
+ * Displays validation failures from task metadata (updated with validation_details)
  */
-export const ValidationFailureUI = ({ taskId, limit = 50 }) => {
+export const ValidationFailureUI = ({ task, taskId, limit = 50 }) => {
   const [failures, setFailures] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
+    if (task && task.task_metadata && task.task_metadata.validation_details) {
+      // Use validation_details from task metadata (new approach)
+      const details = task.task_metadata.validation_details;
+      const failingGates = [];
+
+      if (!details.base_content_valid) {
+        failingGates.push({
+          constraint_name: '❌ Content Validity',
+          message: 'Content too short or empty',
+          severity: 'error',
+        });
+      }
+
+      if (!details.length_gate_passes && details.length_gate_detail) {
+        const detail = details.length_gate_detail;
+        failingGates.push({
+          constraint_name: '❌ Length Gate',
+          message: `Word count insufficient`,
+          details: `Generated: ${detail.word_count} words | Target: ${detail.target} | Minimum: ${detail.minimum} (tolerance: ${detail.tolerance_percent}%)`,
+          severity: 'error',
+        });
+      }
+
+      if (!details.style_gate_passes && details.style_gate_detail) {
+        failingGates.push({
+          constraint_name: '❌ Style Gate',
+          message: 'Style inconsistent',
+          details: details.style_gate_detail,
+          severity: 'warning',
+        });
+      }
+
+      if (!details.seo_gate_passes && details.seo_gate_detail) {
+        failingGates.push({
+          constraint_name: '❌ SEO Gate',
+          message: 'SEO issues detected',
+          details: details.seo_gate_detail,
+          severity: 'error',
+        });
+      }
+
+      setFailures(failingGates);
+      return;
+    }
+
+    // Fallback: Load from legacy failures endpoint
     const fetchFailures = async () => {
       try {
         setLoading(true);
         const data = await unifiedStatusService.getFailures(taskId, limit);
-        setFailures(Array.isArray(data) ? data : []);
+        if (Array.isArray(data)) {
+          setFailures(data);
+        } else if (Array.isArray(data?.failures)) {
+          setFailures(data.failures);
+        } else {
+          setFailures([]);
+        }
       } catch (err) {
         setError(err.message || 'Failed to load validation failures');
       } finally {
@@ -187,18 +245,46 @@ export const ValidationFailureUI = ({ taskId, limit = 50 }) => {
     if (taskId) {
       fetchFailures();
     }
-  }, [taskId, limit]);
+  }, [task, taskId, limit]);
 
   if (loading) return <CircularProgress size={24} />;
   if (error) return <Typography color="error">⚠️ {error}</Typography>;
 
   if (!failures || failures.length === 0) {
     return (
-      <Typography color="success.main">
-        ✅ No validation failures recorded.
-      </Typography>
+      <Box
+        sx={{
+          p: 2,
+          backgroundColor: '#e8f5e9',
+          border: '1px solid #4caf50',
+          borderRadius: 1,
+        }}
+      >
+        <Typography
+          color="success.main"
+          sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+        >
+          ✅ All validation gates passed!
+        </Typography>
+      </Box>
     );
   }
+
+  const getSeverityColor = (severity) => {
+    return severity === 'error'
+      ? '#f44336'
+      : severity === 'warning'
+        ? '#ff9800'
+        : '#2196f3';
+  };
+
+  const getBackgroundColor = (severity) => {
+    return severity === 'error'
+      ? '#ffebee'
+      : severity === 'warning'
+        ? '#fff3e0'
+        : '#e3f2fd';
+  };
 
   return (
     <Box sx={{ space: 2 }}>
@@ -206,8 +292,26 @@ export const ValidationFailureUI = ({ taskId, limit = 50 }) => {
         variant="subtitle2"
         sx={{ mb: 2, fontWeight: 600, color: '#f44336' }}
       >
-        {failures.length} Validation Failure{failures.length !== 1 ? 's' : ''}
+        ⚠️ {failures.length} Validation Gate{failures.length !== 1 ? 's' : ''}{' '}
+        Failed
       </Typography>
+
+      <Box
+        sx={{
+          mb: 2,
+          p: 2,
+          backgroundColor: '#fffde7',
+          border: '1px solid #fbc02d',
+          borderRadius: 1,
+        }}
+      >
+        <Typography variant="body2" sx={{ color: '#f57f17' }}>
+          <strong>Work Preserved:</strong> Generated content (
+          {task?.task_metadata?.word_count || task?.word_count || 'unknown'}{' '}
+          words) has been saved to the database even though validation failed.
+          You can review it below.
+        </Typography>
+      </Box>
 
       {failures.map((failure, idx) => (
         <Paper
@@ -215,30 +319,56 @@ export const ValidationFailureUI = ({ taskId, limit = 50 }) => {
           sx={{
             p: 2,
             mb: 2,
-            backgroundColor: '#ffebee',
-            borderLeft: '4px solid #f44336',
+            backgroundColor: getBackgroundColor(failure.severity || 'error'),
+            borderLeft: `4px solid ${getSeverityColor(failure.severity || 'error')}`,
           }}
         >
-          <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
+          <Typography
+            variant="subtitle2"
+            sx={{
+              mb: 1,
+              fontWeight: 600,
+              color: getSeverityColor(failure.severity || 'error'),
+            }}
+          >
             {failure.constraint_name || 'Validation Error'}
           </Typography>
 
           {failure.message && (
             <Typography variant="body2" sx={{ mb: 1 }}>
-              <strong>Message:</strong> {failure.message}
+              {failure.message}
             </Typography>
           )}
 
-          {failure.details && (
+          {typeof failure.details === 'string' ? (
             <Typography
               variant="caption"
               display="block"
-              sx={{ whiteSpace: 'pre-wrap' }}
+              sx={{
+                whiteSpace: 'pre-wrap',
+                fontFamily: 'monospace',
+                p: 1,
+                backgroundColor: 'rgba(0,0,0,0.05)',
+                borderRadius: 0.5,
+              }}
             >
-              <strong>Details:</strong>{' '}
+              {failure.details}
+            </Typography>
+          ) : failure.details && typeof failure.details === 'object' ? (
+            <Typography
+              variant="caption"
+              display="block"
+              sx={{
+                whiteSpace: 'pre-wrap',
+                fontFamily: 'monospace',
+                p: 1,
+                backgroundColor: 'rgba(0,0,0,0.05)',
+                borderRadius: 0.5,
+              }}
+            >
               {JSON.stringify(failure.details, null, 2)}
             </Typography>
-          )}
+          ) : null}
 
           <Typography
             variant="caption"

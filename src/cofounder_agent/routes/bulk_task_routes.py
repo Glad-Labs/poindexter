@@ -44,7 +44,7 @@ async def bulk_task_operations(
 
     **Actions:**
     - `pause`: Set status to paused (pause execution)
-    - `resume`: Resume paused tasks (set to in_progress)
+    - `resume`: Resume paused tasks (set to pending for queue pickup)
     - `cancel`: Cancel pending/running tasks (set to cancelled)
     - `reject`: Mark tasks as rejected (set to rejected for audit tracking)
 
@@ -111,7 +111,7 @@ async def bulk_task_operations(
     # Map actions to statuses
     status_map = {
         "pause": "paused",
-        "resume": "in_progress",
+        "resume": "pending",
         "cancel": "cancelled",
         "reject": "rejected",
         "retry": "pending",

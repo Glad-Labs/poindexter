@@ -210,7 +210,7 @@ async def get_active_writing_sample(
 
 @router.put("/{sample_id}/set-active", response_model=WritingSampleResponse)
 async def set_active_writing_sample(
-    sample_id: str,
+    sample_id: int,
     current_user: str = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
@@ -248,7 +248,7 @@ async def set_active_writing_sample(
 
 @router.put("/{sample_id}", response_model=WritingSampleResponse)
 async def update_writing_sample(
-    sample_id: str,
+    sample_id: int,
     request: WritingSampleRequest,
     current_user: str = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
@@ -294,7 +294,7 @@ async def update_writing_sample(
 
 @router.delete("/{sample_id}")
 async def delete_writing_sample(
-    sample_id: str,
+    sample_id: int,
     current_user: str = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):

@@ -183,6 +183,55 @@ const TaskDetailModal = ({ onClose, onUpdate }) => {
   // Return null after all hooks have been called
   if (!selectedTask) return null;
 
+  const getRetryCount = (task) => {
+    const metadata = task?.task_metadata;
+    if (!metadata) return 0;
+
+    if (typeof metadata === 'object' && metadata !== null) {
+      return Number(metadata.retry_count || 0);
+    }
+
+    if (typeof metadata === 'string') {
+      try {
+        const parsed = JSON.parse(metadata);
+        return Number(parsed?.retry_count || 0);
+      } catch {
+        return 0;
+      }
+    }
+
+    return 0;
+  };
+
+  const retryCount = getRetryCount(selectedTask);
+
+  // Extract task metadata for progress display
+  const getTaskMetadata = () => {
+    const metadata = selectedTask?.task_metadata;
+    if (!metadata) return {};
+    if (typeof metadata === 'object' && metadata !== null) return metadata;
+    if (typeof metadata === 'string') {
+      try {
+        const parsed = JSON.parse(metadata);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch {
+        return {};
+      }
+    }
+    return {};
+  };
+
+  const taskMetadata = getTaskMetadata();
+  const taskStage = taskMetadata.stage || taskMetadata.status || '';
+  const taskMessage = taskMetadata.message || '';
+  const taskPercentage =
+    typeof taskMetadata.percentage === 'number'
+      ? taskMetadata.percentage
+      : selectedTask.progress || 0;
+  const isActiveTask = ['pending', 'in_progress', 'running'].includes(
+    selectedTask.status?.toLowerCase()
+  );
+
   return (
     <Dialog
       open={!!selectedTask}
@@ -212,8 +261,102 @@ const TaskDetailModal = ({ onClose, onUpdate }) => {
           fontWeight: 'bold',
         }}
       >
-        Task Details:{' '}
-        {selectedTask.topic || selectedTask.task_name || 'Untitled'}
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 1.5,
+          }}
+        >
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              flexWrap: 'wrap',
+            }}
+          >
+            <span>
+              Task Details:{' '}
+              {selectedTask.topic || selectedTask.task_name || 'Untitled'}
+            </span>
+            {retryCount > 0 && (
+              <Box
+                component="span"
+                sx={{
+                  display: 'inline-block',
+                  px: 1,
+                  py: 0.3,
+                  borderRadius: '10px',
+                  border: '1px solid #00d9ff',
+                  color: '#00d9ff',
+                  backgroundColor: 'rgba(0, 217, 255, 0.12)',
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                  letterSpacing: '0.2px',
+                }}
+                title={`Retry attempts: ${retryCount}`}
+              >
+                Retry #{retryCount}
+              </Box>
+            )}
+          </Box>
+
+          {/* Progress Bar Section */}
+          {isActiveTask && taskPercentage > 0 && (
+            <Box sx={{ width: '100%' }}>
+              <Box
+                sx={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  mb: 0.5,
+                }}
+              >
+                <Box
+                  component="span"
+                  sx={{
+                    fontSize: '0.8rem',
+                    color: '#aaa',
+                    fontWeight: 500,
+                  }}
+                >
+                  {taskMessage || taskStage || 'Processing...'}
+                </Box>
+                <Box
+                  component="span"
+                  sx={{
+                    fontSize: '0.8rem',
+                    color: '#00d9ff',
+                    fontWeight: 700,
+                  }}
+                >
+                  {taskPercentage}%
+                </Box>
+              </Box>
+              <Box
+                sx={{
+                  width: '100%',
+                  height: '6px',
+                  backgroundColor: '#2a2a2a',
+                  borderRadius: '3px',
+                  overflow: 'hidden',
+                }}
+              >
+                <Box
+                  sx={{
+                    width: `${taskPercentage}%`,
+                    height: '100%',
+                    backgroundColor: '#00d9ff',
+                    transition: 'width 0.3s ease-in-out',
+                    borderRadius: '3px',
+                    boxShadow: '0 0 10px rgba(0, 217, 255, 0.5)',
+                  }}
+                />
+              </Box>
+            </Box>
+          )}
+        </Box>
       </DialogTitle>
 
       <DialogContent
@@ -238,7 +381,30 @@ const TaskDetailModal = ({ onClose, onUpdate }) => {
             }}
           >
             <Tab label="Content & Approval" id="taskdetail-tab-0" />
-            <Tab label="Timeline" id="taskdetail-tab-1" />
+            <Tab
+              label={
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  Timeline
+                  {isActiveTask && (
+                    <Box
+                      component="span"
+                      sx={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: '50%',
+                        backgroundColor: '#00d9ff',
+                        animation: 'pulse 2s infinite',
+                        '@keyframes pulse': {
+                          '0%, 100%': { opacity: 1 },
+                          '50%': { opacity: 0.3 },
+                        },
+                      }}
+                    />
+                  )}
+                </Box>
+              }
+              id="taskdetail-tab-1"
+            />
             <Tab label="History" id="taskdetail-tab-2" />
             <Tab label="Validation" id="taskdetail-tab-3" />
             <Tab label="Metrics" id="taskdetail-tab-4" />
@@ -318,6 +484,64 @@ const TaskDetailModal = ({ onClose, onUpdate }) => {
 
         {/* Tab 1: Timeline */}
         <TabPanel value={tabValue} index={1}>
+          {/* Current Execution Status */}
+          {isActiveTask && (taskStage || taskMessage) && (
+            <Box
+              sx={{
+                mb: 3,
+                p: 2,
+                backgroundColor: '#1a1a1a',
+                borderRadius: 1,
+                border: '1px solid #00d9ff',
+              }}
+            >
+              <Box
+                sx={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  mb: 1,
+                }}
+              >
+                <Box
+                  component="h4"
+                  sx={{
+                    margin: 0,
+                    color: '#00d9ff',
+                    fontSize: '0.9rem',
+                    fontWeight: 600,
+                  }}
+                >
+                  🔄 Current Execution Stage
+                </Box>
+                <Box
+                  component="span"
+                  sx={{
+                    px: 1.5,
+                    py: 0.5,
+                    borderRadius: '12px',
+                    backgroundColor: 'rgba(0, 217, 255, 0.15)',
+                    color: '#00d9ff',
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                  }}
+                >
+                  {taskPercentage}% Complete
+                </Box>
+              </Box>
+              <Box
+                sx={{
+                  color: '#e0e0e0',
+                  fontSize: '0.85rem',
+                  fontStyle: 'italic',
+                  mt: 1,
+                }}
+              >
+                {taskMessage || taskStage || 'Processing task...'}
+              </Box>
+            </Box>
+          )}
+
           <StatusTimeline
             currentStatus={selectedTask.status}
             statusHistory={selectedTask.statusHistory || []}
@@ -332,7 +556,11 @@ const TaskDetailModal = ({ onClose, onUpdate }) => {
 
         {/* Tab 3: Validation Failures */}
         <TabPanel value={tabValue} index={3}>
-          <ValidationFailureUI taskId={selectedTask.id} limit={50} />
+          <ValidationFailureUI
+            task={selectedTask}
+            taskId={selectedTask.id}
+            limit={50}
+          />
         </TabPanel>
 
         {/* Tab 4: Metrics */}

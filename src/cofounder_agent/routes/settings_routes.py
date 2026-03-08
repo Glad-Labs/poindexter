@@ -20,7 +20,7 @@ All endpoints require:
 """
 
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request, status
 
@@ -43,6 +43,107 @@ from utils.route_utils import get_database_dependency
 
 # Create router
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+
+
+# Built-in defaults used during first-run bootstrap when a setting key
+# does not exist in the database yet.
+DEFAULT_SETTING_VALUES: Dict[str, Dict[str, Any]] = {
+    "auto_refresh_interval": {
+        "value": "30",
+        "category": SettingCategoryEnum.PERFORMANCE,
+        "description": "UI auto-refresh interval in seconds.",
+    },
+    "task_table_row_limit": {
+        "value": "10",
+        "category": SettingCategoryEnum.PERFORMANCE,
+        "description": "Default number of task rows per table page.",
+    },
+    "enable_notifications": {
+        "value": "true",
+        "category": SettingCategoryEnum.GENERAL,
+        "description": "Global notification toggle.",
+    },
+    "default_task_quality": {
+        "value": "balanced",
+        "category": SettingCategoryEnum.GENERAL,
+        "description": "Default quality tier for generated tasks.",
+    },
+    "primary_llm_provider": {
+        "value": "ollama",
+        "category": SettingCategoryEnum.INTEGRATION,
+        "description": "Primary LLM provider selection.",
+    },
+    "fallback_llm_providers": {
+        "value": '["anthropic","openai","google"]',
+        "category": SettingCategoryEnum.INTEGRATION,
+        "description": "Ordered fallback provider list.",
+    },
+    "cost_optimized": {
+        "value": "true",
+        "category": SettingCategoryEnum.PERFORMANCE,
+        "description": "Prefer lower-cost models when available.",
+    },
+    "preferred_models": {
+        "value": "{}",
+        "category": SettingCategoryEnum.INTEGRATION,
+        "description": "Provider-specific preferred model mapping.",
+    },
+    "cost_alert_threshold": {
+        "value": "10",
+        "category": SettingCategoryEnum.GENERAL,
+        "description": "Cost alert threshold in USD.",
+    },
+    "enable_cost_alerts": {
+        "value": "true",
+        "category": SettingCategoryEnum.GENERAL,
+        "description": "Enable or disable cost alerts.",
+    },
+    "enable_email_notifications": {
+        "value": "false",
+        "category": SettingCategoryEnum.GENERAL,
+        "description": "Enable email notifications.",
+    },
+    "enable_desktop_notifications": {
+        "value": "true",
+        "category": SettingCategoryEnum.GENERAL,
+        "description": "Enable desktop browser notifications.",
+    },
+    "enable_inapp_notifications": {
+        "value": "true",
+        "category": SettingCategoryEnum.GENERAL,
+        "description": "Enable in-app notifications.",
+    },
+    "notification_threshold": {
+        "value": "5",
+        "category": SettingCategoryEnum.GENERAL,
+        "description": "Notification threshold value.",
+    },
+}
+
+
+def _build_default_setting_response(setting_id: str) -> SettingResponse:
+    """Create a typed response object for a known default setting key."""
+    default = DEFAULT_SETTING_VALUES[setting_id]
+    now = datetime.utcnow()
+    value = str(default["value"])
+
+    return SettingResponse(
+        id=0,
+        key=setting_id,
+        value=value,
+        data_type=SettingDataTypeEnum.STRING,
+        category=default["category"],
+        environment=SettingEnvironmentEnum.ALL,
+        description=default["description"],
+        is_encrypted=False,
+        is_read_only=False,
+        tags=["default"],
+        created_at=now,
+        updated_at=now,
+        created_by_id=0,
+        updated_by_id=None,
+        value_preview=value[:50],
+    )
 
 
 # ============================================================================
@@ -205,6 +306,9 @@ async def get_setting(
         setting = await db_service.get_setting(setting_id)
 
         if not setting:
+            if setting_id in DEFAULT_SETTING_VALUES:
+                return _build_default_setting_response(setting_id)
+
             raise HTTPException(status_code=404, detail=f"Setting '{setting_id}' not found")
 
         # Convert database result to SettingResponse

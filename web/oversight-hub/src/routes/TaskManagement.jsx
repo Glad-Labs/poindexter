@@ -11,6 +11,7 @@ import logger from '@/lib/logger';
 import React, { useState } from 'react';
 import useStore from '../store/useStore';
 import { bulkUpdateTasks } from '../services/cofounderAgentClient';
+import { unifiedStatusService } from '../services/unifiedStatusService';
 import useFetchTasks from '../hooks/useFetchTasks';
 import CreateTaskModal from '../components/tasks/CreateTaskModal';
 import TaskDetailModal from '../components/tasks/TaskDetailModal';
@@ -65,7 +66,8 @@ function TaskManagement() {
       // Use 'reject' action instead of 'delete' to set status to REJECTED
       const result = await bulkUpdateTasks([taskId], 'reject');
 
-      if (result.updated_count > 0) {
+      const updatedCount = result?.updated ?? result?.updated_count ?? 0;
+      if (updatedCount > 0) {
         setSuccessMessage('Task rejected successfully');
         setTimeout(() => setSuccessMessage(null), 3000);
         // Refresh task list using the hook
@@ -92,12 +94,24 @@ function TaskManagement() {
   const handleTaskAction = async (taskId, action) => {
     try {
       setError(null);
-      const result = await bulkUpdateTasks([taskId], action);
+      if (action === 'retry') {
+        // Use validated status transition endpoint for richer metadata + audit trail.
+        await unifiedStatusService.retry(
+          taskId,
+          'Manual retry from Task Management UI'
+        );
+        setSuccessMessage('Task queued for retry');
+        setTimeout(() => setSuccessMessage(null), 3000);
+        refreshTasks();
+        return;
+      }
 
-      if (result.updated_count > 0) {
+      const result = await bulkUpdateTasks([taskId], action);
+      const updatedCount = result?.updated ?? result?.updated_count ?? 0;
+
+      if (updatedCount > 0) {
         setSuccessMessage(`Task ${action} successful`);
         setTimeout(() => setSuccessMessage(null), 3000);
-        // Refresh task list
         refreshTasks();
       } else {
         setError(`Failed to ${action} task`);
@@ -156,6 +170,74 @@ function TaskManagement() {
     setSortBy('created_at');
     setSortDirection('desc');
     setPage(1);
+  };
+
+  const getTaskMetadata = (task) => {
+    const metadata = task?.task_metadata;
+    if (!metadata) return {};
+
+    if (typeof metadata === 'object' && metadata !== null) {
+      return metadata;
+    }
+
+    if (typeof metadata === 'string') {
+      try {
+        const parsed = JSON.parse(metadata);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch {
+        return {};
+      }
+    }
+
+    return {};
+  };
+
+  const getStatusClass = (status) =>
+    String(status || 'unknown')
+      .toLowerCase()
+      .replace(/[_\s]+/g, '-');
+
+  const formatStatusLabel = (status) => {
+    const normalized = String(status || 'unknown')
+      .toLowerCase()
+      .replace(/_/g, ' ');
+
+    return normalized
+      .split(' ')
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+  };
+
+  const formatStepLabel = (step) => {
+    if (!step) return '';
+    const normalized = String(step)
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  };
+
+  const getTaskStepLabel = (task) => {
+    const metadata = getTaskMetadata(task);
+    const rawStep = metadata.message || metadata.stage || metadata.status;
+    if (!rawStep) return '';
+
+    const status = String(task?.status || '').toLowerCase();
+    if (
+      status !== 'pending' &&
+      status !== 'in_progress' &&
+      status !== 'running'
+    ) {
+      return '';
+    }
+
+    return formatStepLabel(rawStep);
+  };
+
+  const getRetryCount = (task) => {
+    const metadata = getTaskMetadata(task);
+    return Number(metadata.retry_count || 0);
   };
 
   const filteredTasks = getFilteredTasks();
@@ -284,7 +366,7 @@ function TaskManagement() {
                 {filteredTasks.map((task) => (
                   <tr
                     key={task.id}
-                    className={`status-${task.status?.toLowerCase()} clickable-row`}
+                    className={`status-${getStatusClass(task.status)} clickable-row`}
                     onClick={() => handleEditTask(task)}
                     title="Click to view details"
                   >
@@ -299,18 +381,44 @@ function TaskManagement() {
                         : task.topic || task.task_name || '-'}
                     </td>
                     <td>
-                      <span
-                        className={`status-badge status-${task.status?.toLowerCase()}`}
-                      >
-                        {task.status
-                          ? task.status.charAt(0).toUpperCase() +
-                            task.status.slice(1)
-                          : 'Unknown'}
-                      </span>
+                      <div className="status-cell">
+                        <span
+                          className={`status-badge status-${getStatusClass(task.status)}`}
+                        >
+                          {formatStatusLabel(task.status)}
+                        </span>
+                        {getRetryCount(task) > 0 && (
+                          <span
+                            className="retry-count-badge"
+                            title={`Retry attempts: ${getRetryCount(task)}`}
+                          >
+                            Retry #{getRetryCount(task)}
+                          </span>
+                        )}
+                        {getTaskStepLabel(task) && (
+                          <div
+                            className="status-step-text"
+                            title={getTaskStepLabel(task)}
+                          >
+                            {getTaskStepLabel(task)}
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="progress">
                       {(() => {
-                        const progressValue = task.progress;
+                        const metadata = getTaskMetadata(task);
+                        const progressValue =
+                          typeof metadata.percentage === 'number'
+                            ? metadata.percentage
+                            : task.progress || 0;
+                        const stage = metadata.stage || metadata.status || '';
+                        const isActive = [
+                          'pending',
+                          'in_progress',
+                          'running',
+                        ].includes(String(task.status || '').toLowerCase());
+
                         if (
                           typeof progressValue === 'number' &&
                           progressValue > 0
@@ -319,8 +427,10 @@ function TaskManagement() {
                             <>
                               <div className="progress-bar">
                                 <div
-                                  className="progress-fill"
+                                  className={`progress-fill ${isActive ? 'active' : ''}`}
+                                  data-stage={stage}
                                   style={{ width: `${progressValue}%` }}
+                                  title={stage ? `Stage: ${stage}` : ''}
                                 />
                               </div>
                               <span className="progress-text">
@@ -361,7 +471,8 @@ function TaskManagement() {
                       >
                         👁️
                       </button>
-                      {task.status?.toLowerCase() === 'running' && (
+                      {(task.status?.toLowerCase() === 'running' ||
+                        task.status?.toLowerCase() === 'in_progress') && (
                         <>
                           <button
                             className="action-btn pause"
@@ -381,7 +492,8 @@ function TaskManagement() {
                           </button>
                         </>
                       )}
-                      {task.status?.toLowerCase() === 'paused' && (
+                      {(task.status?.toLowerCase() === 'paused' ||
+                        task.status?.toLowerCase() === 'on_hold') && (
                         <button
                           className="action-btn resume"
                           onClick={() => handleTaskAction(task.id, 'resume')}

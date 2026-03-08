@@ -198,7 +198,21 @@ export async function makeRequest(
           `Request timeout after ${timeout}ms - operation took too long`
         );
       }
-      if (process.env.NODE_ENV === 'development') {
+
+      const status =
+        fetchError?.status ||
+        fetchError?.statusCode ||
+        fetchError?.response?.status ||
+        0;
+      const suppressErrorLog = isErrorLogSuppressed({
+        endpoint,
+        method,
+        status,
+        error: fetchError,
+        response: fetchError?.response,
+      });
+
+      if (!suppressErrorLog && process.env.NODE_ENV === 'development') {
         logger.error(
           `[cofounderAgentClient] FETCH ERROR: ${method} ${endpoint}`,
           fetchError
