@@ -133,6 +133,7 @@ Route selection is **automatic** based on API key availability + model configura
 - **Feature branches:** `feature/*`, `bugfix/*`, `docs/*` - test locally with `npm run dev`
 - **Staging:** `dev` branch auto-deploys to Railway staging on push
 - **Production:** `main` branch auto-deploys to Vercel (frontend) + Railway (backend)
+- **Documentation hygiene:** PRs with significant architectural changes must update affected `docs/`, remove stale references, audit moved or renamed internal links, and note any deferred larger doc update
 
 **Testing:**
 
