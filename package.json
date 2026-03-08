@@ -1,6 +1,6 @@
 {
   "name": "glad-labs-monorepo",
-  "version": "3.0.2",
+  "version": "3.0.3",
   "private": true,
   "description": "Complete AI orchestration system with intelligent business management and autonomous agents. Phase 3B: Vite migration complete. Phase 1C: Error handling standardization in progress.",
   "license": "AGPL-3.0-or-later",
@@ -10,7 +10,7 @@
     "web/oversight-hub"
   ],
   "scripts": {
-    "//": "=== UTILITIES ===",
+    "//": "=== VERSIONING (Branch-tier automatic) ===",
     "dev": "npm run setup:dev && npm run link:env && concurrently \"npm run dev:cofounder\" \"npm run dev:frontend\"",
     "dev:all": "npm run setup:dev && npm run link:env && concurrently \"npm run dev:cofounder\" \"npm run dev:public\" \"npm run dev:oversight\"",
     "dev:backend": "npm run dev:cofounder",
@@ -57,7 +57,6 @@
     "lint:python": "cd src/cofounder_agent && python -m pylint src/ --disable=C0111,C0103,W0612",
     "lint:python:sql": "cd src/cofounder_agent && python -m pylint src/ --disable=all --enable=E0001,E0101,E0203,E0211,E0213,E1121,E1123,E1136,E1200,E1201,E1205,E1206,E1300,E1301,E1302,E1303,E1304,E1305,E1306,E1307,E1401,E1999",
     "env:select": "node scripts/select-env.js",
-    "//": "=== VERSIONING (Branch-tier automatic) ===",
     "bump-version": "node scripts/bump-version.js",
     "bump-version:auto": "node scripts/bump-version.js",
     "bump-version:patch": "node scripts/bump-version.js -- --patch",
