@@ -130,7 +130,7 @@ class SerperClient:
             Structured search summary
         """
         try:
-            results = self.search(query, num=max_results)
+            results = await self.search(query, num=max_results)
 
             return {
                 "query": query,

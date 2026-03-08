@@ -593,7 +593,7 @@ class NLPIntentRecognizer:
             success = (
                 result.status == "success"
                 if hasattr(result, "status")
-                else result.get("success", False)
+                else result.get("success", False)  # type: ignore[attr-defined]
             )
 
             return {
@@ -603,7 +603,7 @@ class NLPIntentRecognizer:
                 "service": service_name,
                 "confidence": intent_match.confidence,
                 "result": result.data if hasattr(result, "data") else result,
-                "errors": result.errors if hasattr(result, "errors") else [],
+                "errors": result.errors if hasattr(result, "errors") else [],  # type: ignore[attr-defined]
             }
 
         except Exception as e:

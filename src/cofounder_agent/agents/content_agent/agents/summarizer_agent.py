@@ -33,7 +33,7 @@ class SummarizerAgent:
             prompt = prompt_template.format(text=text_to_summarize)
             logger.info("SummarizerAgent: Summarizing text.")
             summary = self.llm_client.generate_summary(prompt)
-            return summary
+            return summary  # type: ignore[return-value]
         except Exception as e:
             logger.error(f"SummarizerAgent: An error occurred during summarization: {e}")
             return ""  # Return empty string on failure

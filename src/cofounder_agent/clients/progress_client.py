@@ -201,7 +201,7 @@ class WorkflowProgressClient:
         url = f"{self.api_base}/phase/complete/{execution_id}"
         params = {"phase_name": phase_name}
         if duration_ms is not None:
-            params["duration_ms"] = duration_ms
+            params["duration_ms"] = str(duration_ms)
 
         try:
             async with session.post(
@@ -268,7 +268,7 @@ class WorkflowProgressClient:
         url = f"{self.api_base}/complete/{execution_id}"
         params = {"message": message}
         if duration_ms is not None:
-            params["duration_ms"] = duration_ms
+            params["duration_ms"] = str(duration_ms)
 
         try:
             async with session.post(

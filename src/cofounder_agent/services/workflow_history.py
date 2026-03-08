@@ -515,7 +515,7 @@ class WorkflowHistoryService:
             )
             raise
 
-    def _row_to_dict(self, row) -> Dict[str, Any]:
+    def _row_to_dict(self, row) -> Optional[Dict[str, Any]]:
         """Convert asyncpg row to dict with proper serialization"""
         if row is None:
             return None

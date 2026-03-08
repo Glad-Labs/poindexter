@@ -141,7 +141,7 @@ class BlogPublisherAgent:
             logger.info(f"[BlogPublisherAgent] Creating post: {title}")
 
             # Create post in database
-            result = await self.database_service.create_post(post_data)
+            result = await self.database_service.create_post(post_data)  # type: ignore[attr-defined]
 
             logger.info(f"[BlogPublisherAgent] Post created successfully: {slug}")
 

@@ -80,7 +80,7 @@ class ModelValidator:
     def set_available_models(self, models: List[str]) -> None:
         """Update the list of available models"""
         self.available_models = {
-            model: ModelInfo(name=model, provider="unknown", available=True) for model in models
+            model: ModelInfo(name=model, provider="unknown", available=True, cost_per_token=0.0) for model in models
         }
         logger.info(f"✅ Available models updated: {models}")
 

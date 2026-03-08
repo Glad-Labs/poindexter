@@ -111,7 +111,7 @@ class ProgressService:
 
     def mark_complete(
         self, task_id: str, message: str = "Generation complete"
-    ) -> GenerationProgress:
+    ) -> Optional[GenerationProgress]:
         """Mark a task as completed"""
         progress = self._progress.get(task_id)
         if progress:
@@ -127,7 +127,7 @@ class ProgressService:
 
         return progress
 
-    def mark_failed(self, task_id: str, error: str) -> GenerationProgress:
+    def mark_failed(self, task_id: str, error: str) -> Optional[GenerationProgress]:
         """Mark a task as failed"""
         progress = self._progress.get(task_id)
         if progress:

@@ -427,7 +427,7 @@ async def pause_workflow(
             )
 
         # Also update database for persistence
-        await history_service.update_workflow_status(  # type: ignore[attr-defined]workflow_id, "paused")
+        await history_service.update_workflow_status(workflow_id, "paused")  # type: ignore[attr-defined]
 
         return {"success": True, "workflow_id": workflow_id, "status": "paused"}
     except HTTPException:
@@ -493,7 +493,7 @@ async def resume_workflow(
             )
 
         # Also update database for persistence
-        await history_service.update_workflow_status(  # type: ignore[attr-defined]workflow_id, "running")
+        await history_service.update_workflow_status(workflow_id, "running")  # type: ignore[attr-defined]
 
         return {"success": True, "workflow_id": workflow_id, "status": "running"}
     except HTTPException:
@@ -560,7 +560,7 @@ async def cancel_workflow(
             )
 
         # Also update database for persistence
-        await history_service.update_workflow_status(  # type: ignore[attr-defined]workflow_id, "cancelled")
+        await history_service.update_workflow_status(workflow_id, "cancelled")  # type: ignore[attr-defined]
 
         return {"success": True, "workflow_id": workflow_id, "status": "cancelled"}
     except HTTPException:

@@ -199,7 +199,7 @@ class TaskPlanningService:
         resource_requirements = self._determine_resource_requirements(stages, quality_preference)
 
         plan = ExecutionPlan(
-            task_id=task_intent_request.task_id or str(__import__("uuid").uuid4()),
+            task_id=task_intent_request.task_id or str(__import__("uuid").uuid4()),  # type: ignore[attr-defined]
             task_type=task_intent_request.task_type,
             total_estimated_duration_ms=total_duration,
             total_estimated_cost=total_cost,
@@ -553,13 +553,13 @@ class TaskPlanningService:
         # Strategy 1: Draft quality (fast, cheap)
         draft_metrics = {**business_metrics, "quality_preference": "draft"}
         plan_draft = await self.generate_plan(task_intent_request, draft_metrics)
-        plan_draft.title = "Fast & Budget-Friendly"
+        plan_draft.title = "Fast & Budget-Friendly"  # type: ignore[attr-defined]
         alternatives.append(plan_draft)
 
         # Strategy 2: High quality (slower, more expensive)
         high_metrics = {**business_metrics, "quality_preference": "high"}
         plan_high = await self.generate_plan(task_intent_request, high_metrics)
-        plan_high.title = "Premium Quality"
+        plan_high.title = "Premium Quality"  # type: ignore[attr-defined]
         alternatives.append(plan_high)
 
         # Strategy 3: Minimal (skip images and QA)

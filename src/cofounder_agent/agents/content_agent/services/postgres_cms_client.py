@@ -202,7 +202,7 @@ class PostgresCMSClient:
 
                 # Add tags if provided (from category)
                 if post.category:
-                    tag_id = await self._get_or_create_tag(conn, post.category)
+                    tag_id = await self._get_or_create_tag(conn, post.category)  # type: ignore[arg-type]
                     await conn.execute(
                         """
                         INSERT INTO post_tags (post_id, tag_id) VALUES ($1, $2)

@@ -285,7 +285,7 @@ async def update_writing_sample(
 
         # Update the sample
         updated = await db_service.writing_style.update_writing_sample(
-            sample_id=sample_id,
+            sample_id=str(sample_id),
             user_id=user_id,
             title=request.title,
             description=request.description,
@@ -330,7 +330,7 @@ async def delete_writing_sample(
             raise HTTPException(status_code=403, detail="Unauthorized")
 
         # Delete the sample
-        success = await db_service.writing_style.delete_writing_sample(sample_id, user_id)
+        success = await db_service.writing_style.delete_writing_sample(str(sample_id), user_id)
 
         if not success:
             raise HTTPException(status_code=404, detail="Writing sample not found")

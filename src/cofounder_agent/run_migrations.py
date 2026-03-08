@@ -3,7 +3,7 @@ import logging
 import os
 
 from services.database_service import DatabaseService
-from services.migrations import MigrationService
+from services.migrations import MigrationService  # type: ignore[import]
 
 logger = logging.getLogger(__name__)
 

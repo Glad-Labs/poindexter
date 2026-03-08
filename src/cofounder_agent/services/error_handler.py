@@ -607,7 +607,7 @@ def retry_with_backoff(
             for attempt in range(max_retries + 1):
                 try:
                     return await func(*args, **kwargs)
-                except on_exception as e:
+                except on_exception as e:  # type: ignore[misc]
                     last_exception = e
 
                     if attempt >= max_retries:
@@ -638,7 +638,7 @@ def retry_with_backoff(
             for attempt in range(max_retries + 1):
                 try:
                     return func(*args, **kwargs)
-                except on_exception as e:
+                except on_exception as e:  # type: ignore[misc]
                     if attempt >= max_retries:
                         logger.error(
                             f"❌ {func.__name__} failed after {max_retries + 1} attempts: {e}",

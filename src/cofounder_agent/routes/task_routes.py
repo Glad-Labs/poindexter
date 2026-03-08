@@ -1530,7 +1530,7 @@ async def update_task(
 
         # Add result if provided
         if update_data.result:
-            update_dict["result"] = update_data.result
+            update_dict["result"] = update_data.result  # type: ignore[assignment]
 
         # Merge metadata if provided
         if update_data.metadata:

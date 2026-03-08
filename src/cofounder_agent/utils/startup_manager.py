@@ -262,7 +262,7 @@ class StartupManager:
 
             logger.debug(f"  [DEBUG] TaskExecutor init: database_service={self.database_service}")
             logger.debug(
-                f"  [DEBUG] TaskExecutor init: database_service.tasks={self.database_service.tasks}"
+                f"  [DEBUG] TaskExecutor init: database_service.tasks={self.database_service.tasks}"  # type: ignore[union-attr]
             )
             logger.debug(f"  [DEBUG] TaskExecutor init: orchestrator={self.orchestrator}")
 
@@ -300,7 +300,7 @@ class StartupManager:
 
             if self.database_service:
                 # Initialize training data service
-                self.training_data_service = TrainingDataService(self.database_service.pool)
+                self.training_data_service = TrainingDataService(self.database_service.pool)  # type: ignore[arg-type]
                 logger.info("   Training data service initialized")
 
                 # Initialize fine-tuning service

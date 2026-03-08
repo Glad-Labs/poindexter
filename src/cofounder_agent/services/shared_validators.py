@@ -538,10 +538,10 @@ def validate_choice(
 
     if enum_class:
         try:
-            enum_class[value.upper()]
+            enum_class[value.upper()]  # type: ignore[index]
             return value
         except KeyError as e:
-            choices = [e.name.lower() for e in enum_class]
+            choices = [e.name.lower() for e in enum_class]  # type: ignore[union-attr]
 
     if choices and value not in choices:
         choices_str = ", ".join(choices)

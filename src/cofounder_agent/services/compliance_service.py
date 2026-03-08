@@ -65,7 +65,7 @@ class ComplianceService:
             Dictionary with compliance status and issues found
         """
         try:
-            from agents.compliance_agent.agents.compliance_agent import ComplianceAgent
+            from agents.compliance_agent.agents.compliance_agent import ComplianceAgent  # type: ignore[import]
 
             compliance_agent = ComplianceAgent()
             result = await compliance_agent.run(

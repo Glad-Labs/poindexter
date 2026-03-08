@@ -202,7 +202,7 @@ class PexelsClient:
 
         for query in search_queries[:3]:  # Try up to 3 queries
             try:
-                images = await self.search_images(query, per_page=count, page=1)
+                images = await self.search_images(query, per_page=count)
                 all_images.extend(images)
 
                 if len(all_images) >= count:

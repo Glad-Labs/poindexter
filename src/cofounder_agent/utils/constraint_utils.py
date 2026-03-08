@@ -522,7 +522,7 @@ def auto_expand_content(
             loop = asyncio.new_event_loop()
             try:
                 expanded_content = loop.run_until_complete(
-                    model_router.generate_with_fallback(
+                    model_router.generate_with_fallback(  # type: ignore[union-attr]
                         expansion_prompt, max_tokens=target_words + 500
                     )
                 )

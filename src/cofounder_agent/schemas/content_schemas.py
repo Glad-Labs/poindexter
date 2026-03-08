@@ -69,10 +69,10 @@ class CreateBlogPostRequest(BaseModel):
         examples=[1500, 2000, 3000],
     )
     tags: Optional[List[str]] = Field(
-        None, min_items=0, max_items=10, description="Tags for categorization (max 10)"
+        None, min_items=0, max_items=10, description="Tags for categorization (max 10)"  # type: ignore[call-overload]
     )
     categories: Optional[List[str]] = Field(
-        None, min_items=0, max_items=5, description="Categories for blog posts (max 5)"
+        None, min_items=0, max_items=5, description="Categories for blog posts (max 5)"  # type: ignore[call-overload]
     )
     generate_featured_image: bool = Field(
         True, description="Search Pexels for featured image (free)"

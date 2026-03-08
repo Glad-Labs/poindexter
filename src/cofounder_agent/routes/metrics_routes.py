@@ -619,9 +619,9 @@ async def get_kpi_analytics(
         # Query task counts from database
         from sqlalchemy import and_, func, select
 
-        from schemas.common_schemas import ContentTask
+        from schemas.common_schemas import ContentTask  # type: ignore[import]
 
-        async with db_service.get_session() as session:
+        async with db_service.get_session() as session:  # type: ignore[attr-defined]
             # Count completed tasks
             completed_count = await session.execute(
                 select(func.count(ContentTask.id)).where(

@@ -357,5 +357,5 @@ class SampleUploadService:
                 f"[store_sample] Failed to store sample for user {user_id}: {str(e)}",
                 exc_info=True,
             )
-            await db.rollback()
+            await db.rollback()  # type: ignore[union-attr]
             raise ValueError(f"Failed to store sample: {str(e)}")

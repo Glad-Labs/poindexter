@@ -338,8 +338,8 @@ class CapabilityTaskExecutor:
                         break
                     else:
                         # Success - update context
-                        context[step.output_key] = step_result["output"]
-                        result.step_results.append(step_result)
+                        context[step.output_key] = step_result["output"]  # type: ignore[index]
+                        result.step_results.append(step_result)  # type: ignore[arg-type]
 
                 if result.status == "failed":
                     break

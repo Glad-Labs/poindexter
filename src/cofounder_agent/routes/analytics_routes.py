@@ -295,7 +295,7 @@ async def get_kpi_metrics(
                         cost_by_phase[phase] = phase_cost
 
         avg_cost_per_task = (total_cost / total_tasks) if total_tasks > 0 else 0.0
-        primary_model = max(models_used, key=models_used.get) if models_used else "none"
+        primary_model = max(models_used, key=lambda k: models_used[k]) if models_used else "none"
 
         logger.debug(f"  💰 Total cost: ${total_cost:.6f}, Avg/task: ${avg_cost_per_task:.6f}")
         logger.debug(f"  🤖 Primary model: {primary_model}")
@@ -459,7 +459,7 @@ async def get_task_distributions(
             start_time = None
 
         # Query task distribution
-        distributions_raw = await db.query(
+        distributions_raw = await db.query(  # type: ignore[attr-defined]
             """
             SELECT task_type, status, COUNT(*) as count
             FROM tasks

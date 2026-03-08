@@ -20,7 +20,7 @@ class WebSocketMessage:
     type: str
     event: str
     data: dict
-    timestamp: str = None
+    timestamp: Optional[str] = None
 
     def __post_init__(self):
         if self.timestamp is None:

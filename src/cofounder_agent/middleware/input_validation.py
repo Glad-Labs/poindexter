@@ -11,7 +11,7 @@ from typing import Callable
 
 from fastapi import HTTPException, Request, status
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ class InputValidationMiddleware(BaseHTTPMiddleware):
         "/openapi.json",
     }
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Callable:
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:  # type: ignore[override]
         """Process incoming request with validation"""
 
         try:
@@ -206,7 +206,7 @@ class PayloadInspectionMiddleware(BaseHTTPMiddleware):
         "/api/content",
     }
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Callable:
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:  # type: ignore[override]
         """
         Pass through without payload inspection.
 

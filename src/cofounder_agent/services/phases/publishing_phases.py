@@ -174,7 +174,7 @@ class CreatePostPhase(BasePhase):
             image_url = inputs.get("image_url")
 
             # Generate slug from title
-            slug = slugify(seo_title)
+            slug = slugify(seo_title or "")  # type: ignore[arg-type]
 
             post_data = {
                 "title": seo_title,

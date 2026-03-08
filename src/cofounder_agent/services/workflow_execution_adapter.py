@@ -692,15 +692,15 @@ async def execute_custom_workflow(
 
             # Get handler for this phase
             handler = await create_phase_handler(
-                phase_name=phase_data.get("name"),
-                agent_name=phase_data.get("agent"),
+                phase_name=phase_data.get("name"),  # type: ignore[arg-type]
+                agent_name=phase_data.get("agent"),  # type: ignore[arg-type]
                 database_service=database_service,
                 phase_metadata=phase_data.get("metadata") or {},
             )
 
             # Create WorkflowPhase with configuration from custom workflow
             phase = WorkflowPhase(
-                name=phase_data.get("name"),
+                name=phase_data.get("name"),  # type: ignore[arg-type]
                 handler=handler,
                 description=phase_data.get("description", ""),
                 timeout_seconds=phase_data.get("timeout_seconds", 300),

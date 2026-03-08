@@ -272,10 +272,10 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                 params.append(content)
                 param_count += 1
                 updates.append(f"word_count = ${param_count}")
-                params.append(word_count)
+                params.append(word_count)  # type: ignore[arg-type]
                 param_count += 1
                 updates.append(f"char_count = ${param_count}")
-                params.append(char_count)
+                params.append(char_count)  # type: ignore[arg-type]
 
             if not updates:
                 raise ValueError("No fields to update")

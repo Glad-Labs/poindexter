@@ -682,6 +682,7 @@ async def process_content_generation_task(
 
         featured_image = None
         image_metadata = None
+        search_keywords: list = []
 
         if generate_featured_image:
             search_keywords = tags or [topic]
@@ -1206,7 +1207,7 @@ async def _select_category_for_topic(
 
     # Get category ID
     try:
-        async with database_service.pool.acquire() as conn:
+        async with database_service.pool.acquire() as conn:  # type: ignore[union-attr]
             cat_id = await conn.fetchval(
                 "SELECT id FROM categories WHERE slug = $1", matched_category
             )
@@ -1223,7 +1224,7 @@ async def _get_or_create_default_author(database_service: DatabaseService) -> Op
     Returns author UUID
     """
     try:
-        async with database_service.pool.acquire() as conn:
+        async with database_service.pool.acquire() as conn:  # type: ignore[union-attr]
             # Try to get existing Poindexter AI author
             author_id = await conn.fetchval(
                 "SELECT id FROM authors WHERE slug = 'poindexter-ai' LIMIT 1"

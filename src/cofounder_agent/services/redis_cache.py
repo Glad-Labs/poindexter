@@ -121,7 +121,7 @@ class RedisCache:
 
         try:
             # Create async Redis connection
-            redis_instance = await aioredis.from_url(
+            redis_instance = await aioredis.from_url(  # type: ignore[union-attr]
                 redis_url,
                 encoding="utf-8",
                 decode_responses=True,

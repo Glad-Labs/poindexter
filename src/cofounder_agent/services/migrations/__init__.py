@@ -10,6 +10,7 @@ Migration files are run in alphabetical order by default.
 """
 
 import importlib
+import importlib.util
 import logging
 import sys
 from pathlib import Path

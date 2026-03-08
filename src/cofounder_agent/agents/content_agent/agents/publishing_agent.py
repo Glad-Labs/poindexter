@@ -44,7 +44,7 @@ class PublishingAgent:
             post.body_content_blocks = markdown_to_strapi_blocks(final_content)
 
             # 4. Create the post in Strapi
-            post_id, post_url = self.strapi_client.create_post(post)
+            post_id, post_url = self.strapi_client.create_post(post)  # type: ignore[misc]
             if not post_id:
                 raise RuntimeError("Publishing agent failed to return a Strapi post ID.")
 

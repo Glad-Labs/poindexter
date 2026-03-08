@@ -179,7 +179,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
                         alternatives = [
                             m
                             for m in available_models
-                            if "llama" in m.lower() or len(available_models) == 0
+                            if "llama" in str(m).lower() or len(available_models) == 0
                         ]
                         if not alternatives:
                             alternatives = available_models[:3] if available_models else ["llama2"]
@@ -189,7 +189,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
                         )
                         response_text = (
                             f"❌ Model '{actual_ollama_model}' not available.\n\n"
-                            f"Available models: {', '.join(alternatives[:5])}\n\n"
+                            f"Available models: {', '.join(str(m) for m in alternatives[:5])}\n\n"
                             f"Pull a model with: ollama pull {alternatives[0] if alternatives else 'llama2'}"
                         )
                         tokens_used = len(response_text.split())

@@ -327,7 +327,7 @@ class QualityScorePersistence:
             latest = await self.get_latest_evaluation(content_id)
 
             # Get all evaluations
-            history = await self.get_evaluation_history(content_id, limit=None)
+            history = await self.get_evaluation_history(content_id, limit=None)  # type: ignore[arg-type]
 
             # Get improvement logs
             query = """

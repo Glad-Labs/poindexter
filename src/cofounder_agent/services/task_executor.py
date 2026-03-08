@@ -658,7 +658,7 @@ class TaskExecutor:
                     logger.info(f"   Result attributes: {list(result.__dict__.keys())}")
 
                 if hasattr(result, "final_formatting"):
-                    final_formatting = result.final_formatting
+                    final_formatting = result.final_formatting  # type: ignore[attr-defined]
                     logger.debug(
                         f"   Found final_formatting attribute: {len(str(final_formatting)) if final_formatting else 0} chars"
                     )
@@ -1066,7 +1066,7 @@ class TaskExecutor:
                 strict_mode=True,  # Enforce strictly for lazy-AI-proof
             )
             constraint_result = validate_constraints(
-                content=generated_content,
+                content=generated_content or "",  # type: ignore[arg-type]
                 constraints=constraints,
                 phase_name="finalization",
                 word_count_target=effective_target_length,

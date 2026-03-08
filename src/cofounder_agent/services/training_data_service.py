@@ -662,7 +662,7 @@ class TrainingDataService:
             quality_score=float(row["quality_score"] or 0),
             success=row["success"],
             tags=row["tags"] or [],
-            created_at=row["created_at"].isoformat() if row["created_at"] else None,
+            created_at=row["created_at"].isoformat() if row["created_at"] else None,  # type: ignore[arg-type]
             post_publication_metrics=row.get("post_publication_metrics"),
             patterns_discovered=row.get("patterns_discovered"),
         )

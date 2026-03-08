@@ -155,7 +155,7 @@ class ServiceBase(ABC):
     version: str = "0.1.0"
     description: str = ""
 
-    def __init__(self, service_registry: "ServiceRegistry" = None):
+    def __init__(self, service_registry: Optional["ServiceRegistry"] = None):
         """
         Initialize service with optional registry reference.
 

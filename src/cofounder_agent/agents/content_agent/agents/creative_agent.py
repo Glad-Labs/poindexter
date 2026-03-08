@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+from typing import Optional
 
 from services.prompt_manager import get_prompt_manager
 
@@ -42,7 +43,7 @@ class CreativeAgent:
         self,
         post: BlogPost,
         is_refinement: bool = False,
-        word_count_target: int = None,
+        word_count_target: Optional[int] = None,
         constraints=None,
     ) -> BlogPost:
         """
@@ -227,7 +228,7 @@ class CreativeAgent:
 
             post.title = seo_assets.get("title", "")
             post.meta_description = seo_assets.get("meta_description", "")
-            post.slug = slugify(post.title)  # Generate slug from title
+            post.slug = slugify(post.title or "")  # Generate slug from title
         else:
             logger.error(
                 f"CreativeAgent: Could not extract JSON from SEO assets response: {seo_assets_text}"

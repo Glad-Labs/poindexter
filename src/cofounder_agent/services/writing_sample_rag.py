@@ -505,7 +505,7 @@ class RAGRetrievalResult:
             "samples": [
                 {
                     "title": s.get("title"),
-                    "score": scores[i] if i < len(self.scores) else 0,
+                    "score": self.scores[i] if i < len(self.scores) else 0,
                     "style": s.get("analysis", {}).get("detected_style"),
                 }
                 for i, s in enumerate(self.samples)

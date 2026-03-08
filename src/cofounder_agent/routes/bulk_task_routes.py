@@ -191,7 +191,7 @@ async def bulk_create_tasks(
         for i, task in enumerate(request.tasks):
             try:
                 # Create task in database
-                result = await db_service.create_task(
+                result = await db_service.create_task(  # type: ignore[attr-defined]
                     title=task.task_name,
                     description=task.description or task.topic,
                     status="pending",
