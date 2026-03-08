@@ -55,8 +55,21 @@ describe('settingsService', () => {
 
       expect(cofounderAgentClient.makeRequest).toHaveBeenCalledWith(
         '/api/settings/theme',
-        'GET'
+        'GET',
+        null,
+        false,
+        null,
+        30000,
+        expect.objectContaining({
+          shouldSuppressErrorLog: expect.any(Function),
+        })
       );
+
+      const suppressFn =
+        cofounderAgentClient.makeRequest.mock.calls[0][6]
+          .shouldSuppressErrorLog;
+      expect(suppressFn({ status: 404 })).toBe(true);
+      expect(suppressFn({ status: 500 })).toBe(false);
 
       expect(result).toEqual(mockSetting);
     });

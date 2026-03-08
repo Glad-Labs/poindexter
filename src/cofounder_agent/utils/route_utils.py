@@ -20,10 +20,9 @@ Found in: content_routes, task_routes, subtask_routes, bulk_task_routes, setting
 """
 
 import logging
-from functools import lru_cache
 from typing import Any, Optional
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import FastAPI
 
 logger = logging.getLogger(__name__)
 
@@ -441,55 +440,6 @@ def initialize_services(
     return _services
 
 
-# ============================================================================
-# REQUEST-SCOPED SERVICE ACCESS
-# ============================================================================
-
-
-def get_db_from_request(request: Request) -> Any:
-    """
-    Get database service from request state.
-
-    Usage:
-        @app.get("/tasks")
-        async def list_tasks(request: Request):
-            db = get_db_from_request(request)
-            tasks = await db.pool.fetch("SELECT * FROM tasks")
-            return tasks
-
-    Args:
-        request: FastAPI Request object
-
-    Returns:
-        Database service instance
-
-    Raises:
-        RuntimeError: If services not initialized in request.state
-    """
-    if not hasattr(request.app.state, "services"):
-        raise RuntimeError("Services not initialized in app.state")
-    return request.app.state.services.get_database()
-
-
-def get_orchestrator_from_request(request: Request) -> Any:
-    """Get orchestrator from request state"""
-    if not hasattr(request.app.state, "services"):
-        raise RuntimeError("Services not initialized in app.state")
-    return request.app.state.services.get_orchestrator()
-
-
-def get_task_executor_from_request(request: Request) -> Any:
-    """Get task executor from request state"""
-    if not hasattr(request.app.state, "services"):
-        raise RuntimeError("Services not initialized in app.state")
-    return request.app.state.services.get_task_executor()
-
-
-def get_service_from_request(request: Request, service_name: str) -> Any:
-    """Get arbitrary service from request state"""
-    if not hasattr(request.app.state, "services"):
-        raise RuntimeError("Services not initialized in app.state")
-    return request.app.state.services.get_service(service_name)
 
 
 # ============================================================================

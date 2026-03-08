@@ -302,6 +302,8 @@ export const WritingStyleManager = () => {
                   }}
                 >
                   <ListItemText
+                    primaryTypographyProps={{ component: 'div' }}
+                    secondaryTypographyProps={{ component: 'div' }}
                     primary={
                       <Box
                         sx={{ display: 'flex', alignItems: 'center', gap: 1 }}

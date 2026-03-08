@@ -164,10 +164,10 @@ git push origin main  # Auto-deploys to Vercel
 
 **In main docs hub:**
 
-- Frontend Architecture: `docs/02-ARCHITECTURE_AND_DESIGN.md#frontend-layer`
+- Frontend Architecture: `docs/02-Architecture/System-Design.md`
 - Strapi Integration: `docs/guides/STRAPI_BACKED_PAGES_GUIDE.md`
 - Testing Guide: `docs/guides/TESTING_SUMMARY.md`
-- Deployment: `docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md`
+- Deployment: `docs/05-Operations/Operations-Maintenance.md`
 
 ---
 
@@ -176,5 +176,5 @@ git push origin main  # Auto-deploys to Vercel
 - **Development**: Local setup in `web/public-site/README.md`
 - **Deployment**: `VERCEL_DEPLOYMENT.md`
 - **Readiness**: `DEPLOYMENT_READINESS.md`
-- **Testing**: `docs/guides/TESTING_SUMMARY.md`
-- **Architecture**: `docs/02-ARCHITECTURE_AND_DESIGN.md`
+- **Testing**: `docs/04-Development/Testing-Guide.md`
+- **Architecture**: `docs/02-Architecture/System-Design.md`

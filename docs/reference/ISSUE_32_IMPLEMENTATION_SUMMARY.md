@@ -186,7 +186,7 @@ LOG_LEVEL=DEBUG
 7. `.env.example` - Added query monitoring configuration section
 
 **Documentation:**
-8. `docs/TECHNICAL_DEBT_TRACKER.md` - Marked issue #32 as completed
+8. `docs/07-Appendices/Technical-Debt-Tracker.md` - Marked issue #32 as completed
 
 ## Benefits
 
@@ -240,8 +240,8 @@ LOG_LEVEL=DEBUG
 ## References
 
 - **GitHub Issue:** [#32 - Add query performance monitoring and logging](https://github.com/Glad-Labs/glad-labs-codebase/issues/32)
-- **Technical Debt Tracker:** `docs/TECHNICAL_DEBT_TRACKER.md` (P2-High section)
-- **Architecture Reference:** `docs/02-ARCHITECTURE_AND_DESIGN.md` (Database Service section)
+- **Technical Debt Tracker:** `docs/07-Appendices/Technical-Debt-Tracker.md` (P2-High section)
+- **Architecture Reference:** `docs/02-Architecture/System-Design.md` (Database Service section)
 - **Related Memory:** Repository memory on logging configuration (`services/logger_config.py`)
 
 ---

@@ -32,12 +32,23 @@ try:
     from sentry_sdk.integrations.asyncio import AsyncioIntegration
     from sentry_sdk.integrations.fastapi import FastApiIntegration
     from sentry_sdk.integrations.logging import LoggingIntegration
-    from sentry_sdk.integrations.sqlalchemy import SqlAlchemyIntegration
     from sentry_sdk.integrations.starlette import StarletteIntegration
     from sentry_sdk.integrations.threading import ThreadingIntegration
 
+    try:
+        from sentry_sdk.integrations.sqlalchemy import SqlAlchemyIntegration
+    except ImportError:
+        SqlAlchemyIntegration = None  # type: ignore[assignment,misc]
+
     SENTRY_AVAILABLE = True
 except ImportError:
+    sentry_sdk = None  # type: ignore[assignment]
+    AsyncioIntegration = None  # type: ignore[assignment,misc]
+    FastApiIntegration = None  # type: ignore[assignment,misc]
+    LoggingIntegration = None  # type: ignore[assignment,misc]
+    SqlAlchemyIntegration = None  # type: ignore[assignment,misc]
+    StarletteIntegration = None  # type: ignore[assignment,misc]
+    ThreadingIntegration = None  # type: ignore[assignment,misc]
     SENTRY_AVAILABLE = False
     logging.warning(
         "Sentry SDK not installed. Error tracking disabled. Install with: pip install sentry-sdk[fastapi]"

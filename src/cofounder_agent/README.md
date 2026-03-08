@@ -624,12 +624,12 @@ curl http://localhost:8000/api/agents/logs?level=error&limit=10
 
 ## 📚 Related Documentation
 
-- **[Architecture Guide](../../docs/02-ARCHITECTURE_AND_DESIGN.md)** - System design
-- **[AI Agents & Integration](../../docs/05-AI_AGENTS_AND_INTEGRATION.md)** - Agent details
-- **[Development Workflow](../../docs/04-DEVELOPMENT_WORKFLOW.md)** - Testing & CI/CD
-- **[Operations Guide](../../docs/06-OPERATIONS_AND_MAINTENANCE.md)** - Production support
+- **[Architecture Guide](../../docs/02-Architecture/System-Design.md)** - System design
+- **[AI Agents & Integration](../../docs/02-Architecture/Multi-Agent-Pipeline.md)** - Agent details
+- **[Development Workflow](../../docs/04-Development/Development-Workflow.md)** - Testing & CI/CD
+- **[Operations Guide](../../docs/05-Operations/Operations-Maintenance.md)** - Production support
 - **[Agent System](../agents/README.md)** - Individual agent documentation
-- **[Testing Guide](../../docs/reference/TESTING.md)** - Comprehensive test documentation
+- **[Testing Guide](../../docs/04-Development/Testing-Guide.md)** - Comprehensive test documentation
 
 ---
 

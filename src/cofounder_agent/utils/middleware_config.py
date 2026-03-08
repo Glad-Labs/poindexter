@@ -55,6 +55,7 @@ class MiddlewareConfig:
         """
         # Register in reverse order (last added = first executed)
         # Profiling should execute FIRST, so it's added LAST
+        self._setup_cache_control(app)
         self._setup_input_validation(app)
         self._setup_rate_limiting(app)
         self._setup_token_validation(app)
@@ -82,6 +83,21 @@ class MiddlewareConfig:
             logger.info("✅ Profiling middleware initialized")
         except ImportError as e:
             logger.warning(f"⚠️  Profiling middleware not available: {e}")
+
+    def _setup_cache_control(self, app: FastAPI) -> None:
+        """
+        Setup HTTP Cache-Control middleware.
+
+        Sets Cache-Control headers on all responses based on route category:
+        - Mutations (POST/PUT/PATCH/DELETE): no-store
+        - Auth / WebSocket routes: no-store
+        - Private data (tasks, workflows, user): private, max-age=60
+        - Public content (posts, cms, analytics): public, max-age=300
+        """
+        from middleware.cache_control import CacheControlMiddleware
+
+        app.add_middleware(CacheControlMiddleware)
+        logger.info("✅ Cache-Control middleware initialized")
 
     def _setup_input_validation(self, app: FastAPI) -> None:
         """

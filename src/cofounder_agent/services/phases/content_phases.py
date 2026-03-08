@@ -543,22 +543,60 @@ class CaptureTrainingDataPhase(BasePhase):
             self.error = error
             raise ValueError(error)
 
-        try:
-            # TODO: Implement training data capture
-            # This would store to quality_evaluations and orchestrator_training_data tables
-            # For now, just log that we would capture it
+        content = inputs.get("content", "")
+        overall_score = inputs.get("overall_score")
+        topic = inputs.get("topic", "")
+        model_used = inputs.get("model_used", "unknown")
+        scores = inputs.get("scores", {})
 
-            content = inputs.get("content")
-            overall_score = inputs.get("overall_score")
-            topic = inputs.get("topic")
-
-            logger.info(
-                f"[CaptureTrainingDataPhase] Capturing training data "
-                f"(topic: {topic}, score: {overall_score})"
-            )
-
+        # Feature flag: opt-out via environment variable
+        import os
+        if os.getenv("ENABLE_TRAINING_CAPTURE", "true").lower() == "false":
+            logger.info("[CaptureTrainingDataPhase] Skipped (ENABLE_TRAINING_CAPTURE=false)")
             self.status = "completed"
-            self.result = {"stored": True}
+            self.result = {"stored": False, "reason": "disabled"}
+            return self.result
+
+        # Database service may be injected via config for phase-level capture
+        database_service = config.get("database_service")
+
+        try:
+            execution_id = config.get("execution_id") or config.get("task_id") or self.phase_id
+
+            payload = {
+                "execution_id": str(execution_id),
+                "user_request": f"Generate content on: {topic}",
+                "intent": "content_generation",
+                "business_state": {
+                    "topic": topic,
+                    "model_used": model_used,
+                    "content_length": len(content),
+                    "quality_scores": scores,
+                },
+                "execution_result": "success",
+                "quality_score": float(overall_score) / 10 if overall_score is not None else None,
+                "success": (overall_score or 0) >= 70,
+                "tags": [topic] if topic else [],
+                "source_agent": "capture_training_data_phase",
+            }
+
+            if database_service is not None:
+                await database_service.create_orchestrator_training_data(payload)
+                logger.info(
+                    f"[CaptureTrainingDataPhase] Stored to DB "
+                    f"(topic: {topic}, score: {overall_score}, id: {execution_id})"
+                )
+                self.status = "completed"
+                self.result = {"stored": True}
+            else:
+                # No database_service injected — log the payload so it's not silently lost
+                logger.info(
+                    f"[CaptureTrainingDataPhase] No database_service in config — "
+                    f"logging payload only (topic: {topic}, score: {overall_score})"
+                )
+                logger.debug(f"[CaptureTrainingDataPhase] Payload: {payload}")
+                self.status = "completed"
+                self.result = {"stored": False, "reason": "no_database_service"}
 
             return self.result
 
@@ -566,6 +604,6 @@ class CaptureTrainingDataPhase(BasePhase):
             self.status = "failed"
             self.error = str(e)
             logger.error(f"[CaptureTrainingDataPhase] Error: {str(e)}", exc_info=True)
-            # Non-terminal failure - continue on
-            self.result = {"stored": False}
+            # Non-terminal failure — content generation pipeline continues
+            self.result = {"stored": False, "reason": "error"}
             return self.result

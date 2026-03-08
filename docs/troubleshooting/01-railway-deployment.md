@@ -213,9 +213,9 @@ pwd
 
 ## 📚 Documentation
 
-- [Deployment Guide](../docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md) - Full deployment documentation
-- [Setup Guide](../docs/01-SETUP_AND_OVERVIEW.md) - Local development setup
-- [Architecture](../docs/02-ARCHITECTURE_AND_DESIGN.md) - System design
+- [Deployment Guide](../05-Operations/Operations-Maintenance.md) - Full deployment documentation
+- [Setup Guide](../01-Getting-Started/Local-Development-Setup.md) - Local development setup
+- [Architecture](../02-Architecture/System-Design.md) - System design
 
 ---
 

@@ -396,16 +396,16 @@ vercel --prod
 - **Material-UI Docs:** https://mui.com/material-ui/
 - **Zustand Docs:** https://github.com/pmndrs/zustand
 - **React Docs:** https://react.dev
-- **Glad Labs Architecture:** [docs/02-ARCHITECTURE_AND_DESIGN.md](../../docs/02-ARCHITECTURE_AND_DESIGN.md)
+- **Glad Labs Architecture:** [docs/02-Architecture/System-Design.md](../../docs/02-Architecture/System-Design.md)
 - **API Documentation:** [docs/reference/API_CONTRACT_CONTENT_CREATION.md](../../docs/reference/API_CONTRACT_CONTENT_CREATION.md)
 
 ---
 
 ## 📖 Resources & Documentation
 
-- **[Setup Guide](../../docs/01-SETUP_AND_OVERVIEW.md)** - Getting started
-- **[Architecture](../../docs/02-ARCHITECTURE_AND_DESIGN.md)** - System design
-- **[Development Workflow](../../docs/04-DEVELOPMENT_WORKFLOW.md)** - Testing & CI/CD
-- **[Operations Guide](../../docs/06-OPERATIONS_AND_MAINTENANCE.md)** - Production support
-- **[Testing Guide](../../docs/reference/TESTING.md)** - Comprehensive test documentation
+- **[Setup Guide](../../docs/01-Getting-Started/Local-Development-Setup.md)** - Getting started
+- **[Architecture](../../docs/02-Architecture/System-Design.md)** - System design
+- **[Development Workflow](../../docs/04-Development/Development-Workflow.md)** - Testing & CI/CD
+- **[Operations Guide](../../docs/05-Operations/Operations-Maintenance.md)** - Production support
+- **[Testing Guide](../../docs/04-Development/Testing-Guide.md)** - Comprehensive test documentation
 - **[API Documentation](../../docs/reference/API_CONTRACTS.md)** - REST API specifications

@@ -165,9 +165,9 @@ CMD ["npm", "start"]
 
 **In main docs hub:**
 
-- Dashboard Architecture: `docs/02-ARCHITECTURE_AND_DESIGN.md#dashboard-react`
+- Dashboard Architecture: `docs/02-Architecture/System-Design.md`
 - Firebase Setup: `docs/guides/FIREBASE_SETUP.md` (if exists)
-- Deployment: `docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md`
+- Deployment: `docs/05-Operations/Operations-Maintenance.md`
 
 ---
 
@@ -191,5 +191,5 @@ REACT_APP_API_URL=http://localhost:8000  # FastAPI backend
 ## ✅ Quick Links
 
 - **Development**: Local setup in `web/oversight-hub/README.md`
-- **Architecture**: `docs/02-ARCHITECTURE_AND_DESIGN.md`
-- **Deployment**: `docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md`
+- **Architecture**: `docs/02-Architecture/System-Design.md`
+- **Deployment**: `docs/05-Operations/Operations-Maintenance.md`

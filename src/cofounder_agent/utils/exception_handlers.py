@@ -87,19 +87,41 @@ async def validation_error_handler(request, exc: RequestValidationError):
     )
 
 
+_STATUS_TO_ERROR_CODE = {
+    400: "VALIDATION_ERROR",
+    401: "UNAUTHORIZED",
+    403: "FORBIDDEN",
+    404: "NOT_FOUND",
+    409: "CONFLICT",
+    422: "INVALID_STATE",
+    429: "RATE_LIMITED",
+    500: "INTERNAL_ERROR",
+    502: "SERVICE_ERROR",
+    503: "SERVICE_UNAVAILABLE",
+    504: "TIMEOUT_ERROR",
+}
+
+
 async def http_exception_handler(request, exc: StarletteHTTPException):
     """
     Handle HTTPException from Starlette with structured response.
 
-    Converts HTTPException to standardized error format.
+    Maps HTTP status codes to semantic error codes so callers receive
+    consistent, machine-readable codes rather than the generic "HTTP_ERROR".
     """
     request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
+    error_code = _STATUS_TO_ERROR_CODE.get(exc.status_code, "HTTP_ERROR")
 
-    response = {
-        "error_code": "HTTP_ERROR",
-        "message": exc.detail or "HTTP Error",
-        "request_id": request_id,
-    }
+    # If detail is already a structured dict (e.g. from AppError.to_http_exception()),
+    # use it directly so the structured payload isn't double-wrapped.
+    if isinstance(exc.detail, dict):
+        response = {**exc.detail, "request_id": request_id}
+    else:
+        response = {
+            "error_code": error_code,
+            "message": exc.detail or "HTTP Error",
+            "request_id": request_id,
+        }
 
     logger.warning(f"HTTP Error {exc.status_code}: {exc.detail}", extra={"request_id": request_id})
 

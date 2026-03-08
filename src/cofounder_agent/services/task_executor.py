@@ -71,7 +71,6 @@ class TaskExecutor:
         database_service,
         orchestrator=None,
         poll_interval: int = 5,
-        service_container=None,
     ):
         """
         Initialize task executor
@@ -80,11 +79,9 @@ class TaskExecutor:
             database_service: DatabaseService instance
             orchestrator: Optional Orchestrator instance for processing
             poll_interval: Seconds between polling for pending tasks (default: 5)
-            service_container: Optional ServiceContainer for getting updated orchestrator reference via DI
         """
         self.database_service = database_service
-        self.orchestrator_initial = orchestrator  # Initial orchestrator from startup
-        self.service_container = service_container  # Reference to ServiceContainer for dynamic orchestrator resolution (DI-4)
+        self._orchestrator = orchestrator
         self.quality_service = UnifiedQualityService()  # Quality validation service
         self.content_generator = AIContentGenerator()  # Fallback content generation
         self.poll_interval = poll_interval
@@ -102,19 +99,14 @@ class TaskExecutor:
             f"content_generator={'✅'}"
         )
 
+    def inject_orchestrator(self, orchestrator) -> None:
+        """Inject the orchestrator after startup completes."""
+        self._orchestrator = orchestrator
+        logger.info(f"[TaskExecutor] Orchestrator injected: {type(orchestrator).__name__}")
+
     @property
     def orchestrator(self):
-        """
-        Get the orchestrator dynamically from ServiceContainer.
-        First tries to get from service_container (registered via DI during startup),
-        then falls back to the initial orchestrator from startup.
-        This ensures we use the properly-initialized UnifiedOrchestrator when available.
-        """
-        if self.service_container:
-            orch = self.service_container.get("orchestrator")
-            if orch is not None:
-                return orch
-        return self.orchestrator_initial
+        return self._orchestrator
 
     async def start(self) -> None:
         """Start the background task processor"""

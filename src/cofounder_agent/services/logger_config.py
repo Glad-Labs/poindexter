@@ -34,10 +34,10 @@ from typing import Optional
 # Try to import structlog for structured logging support
 try:
     import structlog
-
-    STRUCTLOG_AVAILABLE = True
 except ImportError:
-    STRUCTLOG_AVAILABLE = False
+    structlog = None  # type: ignore[assignment]
+
+STRUCTLOG_AVAILABLE = structlog is not None
 
 # ============================================================================
 # CONFIGURATION
@@ -81,7 +81,7 @@ def configure_structlog() -> bool:
     Configure structlog for structured JSON logging.
     Returns True if successful, False if structlog unavailable.
     """
-    if not STRUCTLOG_AVAILABLE:
+    if structlog is None:
         return False
 
     try:
@@ -206,7 +206,7 @@ def get_logger(name: Optional[str] = None):
         logger = logger.bind(user_id=123)
         logger.info("user_action", action="login")
     """
-    if STRUCTLOG_AVAILABLE and _structlog_configured:
+    if structlog is not None and _structlog_configured:
         return structlog.get_logger(name)
     else:
         return logging.getLogger(name)
@@ -227,7 +227,7 @@ def set_log_level(level: str) -> None:
     if level_upper not in VALID_LOG_LEVELS:
         raise ValueError(f"Invalid log level: {level}. Must be one of {VALID_LOG_LEVELS}")
 
-    if STRUCTLOG_AVAILABLE and _structlog_configured:
+    if structlog is not None and _structlog_configured:
         # For structlog, we need to update the processors
         # This is a simplified approach - a full implementation would be more complex
         structlog.configure(

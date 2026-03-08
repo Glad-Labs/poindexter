@@ -196,7 +196,7 @@ After running cleanup, remember to:
 ## Related Documentation
 
 - [VERSION_HISTORY.md](../VERSION_HISTORY.md) - Project timeline and phase tracking
-- [DOCUMENTATION_MAINTENANCE_GUIDE.md](../docs/DOCUMENTATION_MAINTENANCE_GUIDE.md) - Full maintenance guide
+- [Documentation-Maintenance.md](../docs/07-Appendices/Documentation-Maintenance.md) - Full maintenance guide
 - [00-README.md](../docs/00-README.md) - Documentation navigation hub
 
 ---

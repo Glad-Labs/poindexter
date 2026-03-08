@@ -1,5 +1,8 @@
 # 📚 Glad Labs Documentation Hub
 
+> ⚠️ **Migration in progress:** The documentation is moving to a section-based structure.
+> Start with [00-INDEX.md](00-INDEX.md).
+
 **Last Updated:** March 5, 2026
 **Status:** ✅ Production-Ready | Cleaned & Organized | Root Docs Archived
 **Structure:** 7 Core Docs | Maintenance Guide | Intelligence Layer | Infrastructure & Ops | Organized Archive

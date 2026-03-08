@@ -20,7 +20,9 @@
       "Bash(npx vitest:*)",
       "Bash(poetry:*)",
       "Bash(wc:*)",
-      "Bash(gh label:*)"
+      "Bash(gh label:*)",
+      "Bash(grep:*)",
+      "Read(//tmp/**)"
     ]
   }
 }

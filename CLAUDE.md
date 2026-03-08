@@ -147,8 +147,8 @@ npm workspaces cover `web/public-site` and `web/oversight-hub`. `npm install` at
 
 ## Reference Documentation
 
-- Architecture: `docs/02-ARCHITECTURE_AND_DESIGN.md`
-- Deployment/CI: `docs/03-DEPLOYMENT_AND_INFRASTRUCTURE.md`, `docs/04-DEVELOPMENT_WORKFLOW.md`
-- AI agents: `docs/05-AI_AGENTS_AND_INTEGRATION.md`
+- Architecture: `docs/02-Architecture/System-Design.md`
+- Deployment/CI: `docs/05-Operations/Operations-Maintenance.md`, `docs/04-Development/Development-Workflow.md`
+- AI agents: `docs/02-Architecture/Multi-Agent-Pipeline.md`
 - Troubleshooting: `docs/troubleshooting/`
 - Full env variable reference: `.env.example` (52+ variables)

@@ -22,6 +22,7 @@ from routes.auth_unified import get_current_user
 from schemas.auth_schemas import UserProfile
 from services.database_service import DatabaseService
 from services.websocket_event_broadcaster import emit_analytics_update
+from services.error_handler import AppError
 from utils.error_handler import handle_route_error
 from utils.route_utils import get_database_dependency
 
@@ -400,6 +401,8 @@ async def get_kpi_metrics(
 
     except HTTPException:
         raise
+    except AppError:
+        raise
     except Exception as e:
         raise await handle_route_error(e, "get_kpi_metrics", logger)
 
@@ -491,6 +494,8 @@ async def get_task_distributions(
         )
 
     except HTTPException:
+        raise
+    except AppError:
         raise
     except Exception as e:
         raise await handle_route_error(e, "get_task_distributions", logger)
