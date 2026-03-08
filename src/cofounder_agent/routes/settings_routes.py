@@ -418,7 +418,7 @@ async def create_setting(
             key=created_setting.get("key", setting_data.key),
             value=created_setting.get("value", ""),
             data_type=setting_data.data_type or SettingDataTypeEnum.STRING,
-            category=setting_data.category or SettingCategoryEnum.SYSTEM,
+            category=setting_data.category or SettingCategoryEnum.GENERAL,
             environment=setting_data.environment or SettingEnvironmentEnum.PRODUCTION,
             description=created_setting.get("description", ""),
             is_encrypted=False,
@@ -458,7 +458,7 @@ async def batch_update_settings(
         key="user_preferences",
         value=update_data.value or "updated_value",
         data_type=SettingDataTypeEnum.STRING,
-        category=SettingCategoryEnum.SYSTEM,
+        category=SettingCategoryEnum.GENERAL,
         environment=SettingEnvironmentEnum.ALL,
         description="Batch updated user settings",
         is_encrypted=False,
@@ -506,7 +506,7 @@ async def update_setting(
     setting_id: int = Path(..., gt=0, description="Setting ID"),
     update_data: SettingUpdate = Body(...),
     current_user=Depends(get_current_user),
-    request: Request = None,
+    request: Optional[Request] = None,
 ):
     """
     Update an existing setting (admin/editor).
@@ -545,15 +545,15 @@ async def update_setting(
     old_value = f"old_value_{setting_id}"
     new_value = update_data.value if update_data.value else f"value_{setting_id}"
 
-    log_audit(
-        action=SettingsAuditLogger.ACTION_UPDATE,
+    log_audit(  # type: ignore[name-defined]
+        action=SettingsAuditLogger.ACTION_UPDATE,  # type: ignore[name-defined]
         setting_id=str(setting_id),
         user_id=current_user.get("user_id", "unknown"),
         old_value=old_value,
         new_value=new_value,
         user_email=current_user.get("email", "unknown"),
         change_description=f"Updated setting {setting_id}: {update_data.description or 'no description'}",
-        ip_address=request.client.host if request else None,
+        ip_address=request.client.host if request and request.client else None,
         user_agent=request.headers.get("user-agent") if request else None,
     )
 
@@ -593,7 +593,7 @@ async def delete_setting(
     setting_id: str = Path(..., description="Setting ID or key name"),
     current_user=Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
-    request: Request = None,
+    request: Optional[Request] = None,
 ):
     """
     Delete a setting (admin only).

@@ -37,7 +37,7 @@ except ImportError:
     HTTPX_AVAILABLE = False
 
 try:
-    import torch
+    import torch  # type: ignore[import-untyped]
 
     TORCH_AVAILABLE = True
 except ImportError:
@@ -49,7 +49,7 @@ from PIL import Image
 
 # Try to import diffusers - optional for SDXL generation
 try:
-    from diffusers import StableDiffusionXLPipeline
+    from diffusers import StableDiffusionXLPipeline  # type: ignore[import-untyped]
 
     DIFFUSERS_AVAILABLE = True
 except (ImportError, RuntimeError) as e:
@@ -59,7 +59,7 @@ except (ImportError, RuntimeError) as e:
 
 # Optional optimization packages
 try:
-    import xformers
+    import xformers  # type: ignore[import-untyped]
 
     XFORMERS_AVAILABLE = True
 except ImportError:
@@ -67,7 +67,7 @@ except ImportError:
     XFORMERS_AVAILABLE = False
 
 try:
-    from optimum.intel import OVModelForFeatureExtraction
+    from optimum.intel import OVModelForFeatureExtraction  # type: ignore[import-untyped]
 
     OPTIMUM_AVAILABLE = True
 except ImportError:
@@ -337,7 +337,7 @@ class ImageService:
             # 5. Enable model CPU offload for memory-constrained GPUs
             if device == "cuda":
                 try:
-                    gpu_mem = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+                    gpu_mem = torch.cuda.get_device_properties(0).total_memory / (1024**3)  # type: ignore[union-attr]
                     if gpu_mem < 20:
                         pipe.enable_model_cpu_offload()
                         logger.info("   ✓ Model CPU offload enabled (constrained GPU memory)")
@@ -512,8 +512,8 @@ class ImageService:
         Returns:
             List of FeaturedImageMetadata objects
         """
-        # Skip search if API key is not configured
-        if not self.pexels_api_key:
+        # Skip search if API key is not configured or httpx not available
+        if not self.pexels_api_key or httpx is None:
             logger.debug(f"Pexels API key not configured - skipping search for '{query}'")
             return []
 
@@ -748,7 +748,7 @@ class ImageService:
             callback=progress_callback if task_id else None,
             callback_steps=1 if task_id else None,
         )
-        base_image_pil = base_result.images[0]
+        base_image_pil = base_result.images[0]  # type: ignore[union-attr]
         logger.info(f"   ✓ Stage 1 complete: Base image generated")
 
         # =====================================================================
@@ -790,7 +790,9 @@ class ImageService:
                     output_type="pil",
                     callback=refiner_progress_callback if task_id else None,
                     callback_steps=1 if task_id else None,
-                ).images[0]
+                ).images[
+                    0
+                ]  # type: ignore[union-attr]
 
                 logger.info(f"   ✓ Stage 2 complete: Refinement applied successfully")
                 refined_image.save(output_path)

@@ -19,11 +19,13 @@ logger = logging.getLogger(__name__)
 _GENAI_SDK: str = "none"
 try:
     import google.genai as _genai_module  # noqa: F401
+
     _GENAI_SDK = "new"
     logger.debug("google.genai (new SDK) loaded for GeminiClient")
 except ImportError:
     try:
         import google.generativeai as _genai_module  # noqa: F401
+
         _GENAI_SDK = "legacy"
         logger.warning(
             "GeminiClient: google.genai not found, falling back to deprecated "
@@ -106,12 +108,12 @@ class GeminiClient:
             Exception: If generation fails
         """
         if not self.is_configured():
-            raise ValueError("Gemini API key not configured. Set GOOGLE_API_KEY environment variable.")
+            raise ValueError(
+                "Gemini API key not configured. Set GOOGLE_API_KEY environment variable."
+            )
 
         if _GENAI_SDK == "none":
-            raise ImportError(
-                "No Gemini SDK installed. Run: pip install google-genai"
-            )
+            raise ImportError("No Gemini SDK installed. Run: pip install google-genai")
 
         try:
             if _GENAI_SDK == "new":
@@ -163,12 +165,12 @@ class GeminiClient:
             Generated response text
         """
         if not self.is_configured():
-            raise ValueError("Gemini API key not configured. Set GOOGLE_API_KEY environment variable.")
+            raise ValueError(
+                "Gemini API key not configured. Set GOOGLE_API_KEY environment variable."
+            )
 
         if _GENAI_SDK == "none":
-            raise ImportError(
-                "No Gemini SDK installed. Run: pip install google-genai"
-            )
+            raise ImportError("No Gemini SDK installed. Run: pip install google-genai")
 
         try:
             if _GENAI_SDK == "new":

@@ -295,9 +295,7 @@ class TemplateExecutionService:
             return result
 
         except ValueError as e:
-            logger.error(
-                f"[_execute_template] Template validation error: {str(e)}", exc_info=True
-            )
+            logger.error(f"[_execute_template] Template validation error: {str(e)}", exc_info=True)
             raise
         except Exception as e:
             logger.error(f"[_execute_template] Template execution error: {str(e)}", exc_info=True)

@@ -123,11 +123,11 @@ class AIContentGenerator:
         word_count = len(content.split())
         min_words = int(target_length * 0.9)
         max_words = int(target_length * 1.1)
-        
+
         # Calculate severity based on how far from target
         if word_count < min_words:
             deficit_pct = ((min_words - word_count) / target_length) * 100
-            
+
             # Very short content (< 70% of target) should FAIL quality check
             if word_count < target_length * 0.7:
                 issues.append(
@@ -321,7 +321,7 @@ class AIContentGenerator:
             # Calculate min/max word counts for prompt
             min_words = int(target_length * 0.9)
             max_words = int(target_length * 1.1)
-            
+
             system_prompt = pm.get_prompt(
                 "blog_generation.blog_system_prompt",
                 style=style,
@@ -332,7 +332,9 @@ class AIContentGenerator:
                 tags=", ".join(tags) if tags else "general",
             )
             logger.info(f"✓ System prompt loaded ({len(system_prompt)} chars)")
-            logger.info(f"   Word count requirement: {min_words}-{max_words} words (target: {target_length})")
+            logger.info(
+                f"   Word count requirement: {min_words}-{max_words} words (target: {target_length})"
+            )
         except Exception as e:
             logger.error(f"[_generate_blog_post] Failed to load system prompt: {e}", exc_info=True)
             raise

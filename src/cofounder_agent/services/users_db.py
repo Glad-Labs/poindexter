@@ -237,7 +237,9 @@ class UsersDatabase(DatabaseServiceMixin):
             logger.info("✅ Created new OAuth user: %s", user_id)
             return ModelConverter.to_user_response(user) if user else None
 
-    @log_query_performance(operation="get_oauth_accounts", category="user_relationships", slow_threshold_ms=50)
+    @log_query_performance(
+        operation="get_oauth_accounts", category="user_relationships", slow_threshold_ms=50
+    )
     async def get_oauth_accounts(self, user_id: str) -> List[OAuthAccountResponse]:
         """
         Get all OAuth accounts linked to a user.

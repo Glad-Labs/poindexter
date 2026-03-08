@@ -551,6 +551,7 @@ class CaptureTrainingDataPhase(BasePhase):
 
         # Feature flag: opt-out via environment variable
         import os
+
         if os.getenv("ENABLE_TRAINING_CAPTURE", "true").lower() == "false":
             logger.info("[CaptureTrainingDataPhase] Skipped (ENABLE_TRAINING_CAPTURE=false)")
             self.status = "completed"

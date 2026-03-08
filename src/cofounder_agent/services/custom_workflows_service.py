@@ -498,7 +498,7 @@ class CustomWorkflowsService:
                     owner_id=workflow.owner_id or "",
                     execution_status=overall_status,
                     phase_results=phase_results,
-                    duration_ms=duration_ms,
+                    duration_ms=int(duration_ms),
                     initial_input=initial_inputs,
                     final_output=final_output,
                     error_message=(
@@ -785,7 +785,7 @@ class CustomWorkflowsService:
                         )
                     )
 
-        return CustomWorkflow(
+        return CustomWorkflow(  # type: ignore[call-arg]
             id=str(row["id"]) if row.get("id") is not None else None,
             name=row["name"],
             description=row["description"],
@@ -1077,7 +1077,7 @@ class CustomWorkflowsService:
                 limit,
                 offset,
             )
-            return [self._row_to_execution_dict(row) for row in rows] if rows else []
+            return [self._row_to_execution_dict(row) for row in rows] if rows else []  # type: ignore[attr-defined]
         except Exception as e:
             logger.error(
                 f"[get_all_executions] Error fetching executions for owner {owner_id}: {str(e)}",
@@ -1204,7 +1204,7 @@ class CustomWorkflowsService:
                 owner_id,
             )
             if row:
-                execution = self._row_to_execution_dict(row)
+                execution = self._row_to_execution_dict(row)  # type: ignore[attr-defined]
                 # Add detailed results
                 return {
                     **execution,

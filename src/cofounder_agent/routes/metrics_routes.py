@@ -131,13 +131,7 @@ async def get_usage_metrics(
         # Projections
         days_active = max(
             1,
-            (
-                datetime.utcnow()
-                - datetime.fromisoformat(
-                    completed_ops[0].created_at
-                )
-            ).days
-            or 1,
+            (datetime.utcnow() - datetime.fromisoformat(completed_ops[0].created_at)).days or 1,
         )
         projected_monthly = (total_cost / days_active * 30) if days_active > 0 else 0
 
@@ -270,9 +264,7 @@ async def get_cost_metrics(
 
             # Calculate totals
             total_cost = sum(op.total_cost_usd for op in completed_ops)
-            total_tokens = sum(
-                op.input_tokens + op.output_tokens for op in completed_ops
-            )
+            total_tokens = sum(op.input_tokens + op.output_tokens for op in completed_ops)
 
             # Group by model
             by_model = {}

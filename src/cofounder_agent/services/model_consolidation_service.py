@@ -247,7 +247,7 @@ class HuggingFaceAdapter(ProviderAdapter):
                 provider=self.provider_type,
                 model=model,
                 tokens_used=len(prompt.split()) + len(response.split()),  # Rough estimate
-                cost=0.0 if not api_token else 0.0001,  # Free tier or minimal cost
+                cost=0.0001,  # Minimal cost estimate
                 response_time_ms=elapsed_ms,
             )
         except Exception as e:
@@ -384,7 +384,7 @@ class AnthropicAdapter(ProviderAdapter):
         start_time = datetime.utcnow()
 
         try:
-            response = self.client.messages.create(
+            response = self.client.messages.create(  # type: ignore[union-attr]
                 model=model,
                 max_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}],
@@ -473,10 +473,14 @@ class OpenAIAdapter(ProviderAdapter):
             text = response.choices[0].message.content if response.choices else ""
 
             return ModelResponse(
-                text=text,
+                text=text or "",
                 provider=self.provider_type,
                 model=model,
-                tokens_used=response.usage.prompt_tokens + response.usage.completion_tokens,
+                tokens_used=(
+                    (response.usage.prompt_tokens + response.usage.completion_tokens)
+                    if response.usage
+                    else 0
+                ),
                 cost=0.0006,  # Approximate cost per token (GPT-4 is expensive!)
                 response_time_ms=elapsed_ms,
             )
@@ -769,4 +773,4 @@ def get_model_consolidation_service() -> ModelConsolidationService:
     if _model_consolidation_service is None:
         initialize_model_consolidation_service()
 
-    return _model_consolidation_service
+    return _model_consolidation_service  # type: ignore[return-value]

@@ -14,6 +14,7 @@ and content generation (Phase 3.3).
 
 import logging
 import re
+from collections import Counter
 from typing import Any, Dict, Optional
 
 from services.database_service import DatabaseService
@@ -36,7 +37,7 @@ class WritingStyleIntegrationService:
         self.writing_style_service = WritingStyleService(database_service)
 
     async def get_sample_for_content_generation(
-        self, writing_style_id: str, user_id: Optional[str] = None
+        self, writing_style_id: Optional[str], user_id: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Get writing sample for use in content generation with full analysis.
@@ -176,7 +177,9 @@ class WritingStyleIntegrationService:
             "conversational": conversational_count,
         }
         detected_tone = (
-            max(tone_scores, key=tone_scores.get) if max(tone_scores.values()) > 0 else "neutral"
+            max(tone_scores, key=lambda k: tone_scores[k])
+            if max(tone_scores.values()) > 0
+            else "neutral"
         )
 
         # Detect style characteristics
@@ -197,7 +200,9 @@ class WritingStyleIntegrationService:
             "thought-leadership": has_quotes or authoritative_count > casual_count,
         }
         detected_style = (
-            max(style_markers, key=style_markers.get) if any(style_markers.values()) else "general"
+            max(style_markers, key=lambda k: style_markers[k])
+            if any(style_markers.values())
+            else "general"
         )
 
         # Calculate vocabulary complexity

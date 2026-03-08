@@ -18,7 +18,11 @@ class ErrorResponse:
     """Standardized error response format."""
 
     def __init__(
-        self, status_code: int, detail: str, operation: Optional[str] = None, error_type: Optional[str] = None
+        self,
+        status_code: int,
+        detail: str,
+        operation: Optional[str] = None,
+        error_type: Optional[str] = None,
     ):
         """
         Initialize error response.
@@ -278,7 +282,9 @@ def forbidden(detail: str = "Access denied", operation: Optional[str] = None) ->
     return HTTPException(status_code=403, detail=detail)
 
 
-def internal_error(detail: str = "Internal server error", operation: Optional[str] = None) -> HTTPException:
+def internal_error(
+    detail: str = "Internal server error", operation: Optional[str] = None
+) -> HTTPException:
     """Raise 500 Internal Server Error."""
     if operation:
         logger.error(f"[{operation}] Internal error: {detail}")

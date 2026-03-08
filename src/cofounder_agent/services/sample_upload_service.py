@@ -20,7 +20,7 @@ from fastapi import UploadFile
 from sqlalchemy import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models.database_models import WritingSample
+from ..models.database_models import WritingSample  # type: ignore[import-untyped]
 
 
 class SampleUploadService:
@@ -63,9 +63,7 @@ class SampleUploadService:
             return True, ""
 
         except Exception as e:
-            logger.error(
-                f"[validate_file] File validation failed: {str(e)}", exc_info=True
-            )
+            logger.error(f"[validate_file] File validation failed: {str(e)}", exc_info=True)
             return False, f"File validation error: {str(e)}"
 
     async def parse_file(self, file: UploadFile, content_type: str) -> Optional[str]:
@@ -131,19 +129,13 @@ class SampleUploadService:
             return text.strip()
 
         except json.JSONDecodeError as e:
-            logger.error(
-                f"[parse_file] Invalid JSON in file: {str(e)}", exc_info=True
-            )
+            logger.error(f"[parse_file] Invalid JSON in file: {str(e)}", exc_info=True)
             raise ValueError(f"Invalid JSON: {str(e)}")
         except UnicodeDecodeError as e:
-            logger.error(
-                f"[parse_file] File encoding not supported: {str(e)}", exc_info=True
-            )
+            logger.error(f"[parse_file] File encoding not supported: {str(e)}", exc_info=True)
             raise ValueError("File encoding not supported. Use UTF-8")
         except Exception as e:
-            logger.error(
-                f"[parse_file] File parsing error: {str(e)}", exc_info=True
-            )
+            logger.error(f"[parse_file] File parsing error: {str(e)}", exc_info=True)
             raise ValueError(f"File parsing error: {str(e)}")
 
     async def extract_metadata(
@@ -204,9 +196,7 @@ class SampleUploadService:
             return metadata
 
         except Exception as e:
-            logger.error(
-                f"[extract_metadata] Metadata extraction failed: {str(e)}", exc_info=True
-            )
+            logger.error(f"[extract_metadata] Metadata extraction failed: {str(e)}", exc_info=True)
             raise ValueError(f"Metadata extraction error: {str(e)}")
 
     def _detect_tone(self, content: str) -> str:
@@ -226,7 +216,7 @@ class SampleUploadService:
             "conversational": sum(1 for word in conversational_indicators if word in content_lower),
         }
 
-        detected = max(scores, key=scores.get) if max(scores.values()) > 0 else "neutral"
+        detected = max(scores, key=lambda k: scores[k]) if max(scores.values()) > 0 else "neutral"
         return detected
 
     def _detect_style(self, content: str) -> str:
@@ -247,7 +237,7 @@ class SampleUploadService:
             "thought-leadership": 0,  # Check for industry insights, perspectives
         }
 
-        detected = max(scores, key=scores.get) if max(scores.values()) > 0 else "general"
+        detected = max(scores, key=lambda k: scores[k]) if max(scores.values()) > 0 else "general"
         return detected
 
     def _extract_tone_markers(self, content: str) -> list:
@@ -316,8 +306,8 @@ class SampleUploadService:
         style: Optional[str] = None,
         tone: Optional[str] = None,
         metadata: Optional[dict] = None,
-        db: AsyncSession = None,
-    ) -> int:
+        db: Optional[AsyncSession] = None,
+    ) -> Optional[int]:
         """
         Store writing sample in database.
 

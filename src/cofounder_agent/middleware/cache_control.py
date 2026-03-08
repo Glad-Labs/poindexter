@@ -30,8 +30,8 @@ _NO_STORE_PREFIXES = (
     "/api/auth",
     "/api/oauth",
     "/api/token",
-    "/ws",          # WebSocket upgrade requests
-    "/dev/",        # Dev/debug endpoints
+    "/ws",  # WebSocket upgrade requests
+    "/dev/",  # Dev/debug endpoints
 )
 
 # Paths serving public, non-user-specific content
@@ -60,8 +60,8 @@ _PRIVATE_PREFIXES = (
     "/api/admin",
 )
 
-_PUBLIC_MAX_AGE = 300    # 5 minutes
-_PRIVATE_MAX_AGE = 60    # 1 minute
+_PUBLIC_MAX_AGE = 300  # 5 minutes
+_PRIVATE_MAX_AGE = 60  # 1 minute
 
 
 def _cache_directive(path: str, method: str) -> str:

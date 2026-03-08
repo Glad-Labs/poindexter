@@ -95,7 +95,9 @@ def log_query_performance(
                 duration_ms = (end_time - start_time) * 1000
 
                 # Determine if this is a slow query
-                threshold = slow_threshold_ms if slow_threshold_ms is not None else SLOW_QUERY_THRESHOLD_MS
+                threshold = (
+                    slow_threshold_ms if slow_threshold_ms is not None else SLOW_QUERY_THRESHOLD_MS
+                )
                 is_slow = duration_ms > threshold
 
                 # Build context
@@ -115,7 +117,8 @@ def log_query_performance(
                 if kwargs:
                     # Filter out sensitive fields
                     safe_kwargs = {
-                        k: v for k, v in kwargs.items()
+                        k: v
+                        for k, v in kwargs.items()
                         if k not in ["password", "token", "secret", "api_key"]
                     }
                     if safe_kwargs:
@@ -126,23 +129,21 @@ def log_query_performance(
                     logger.error(
                         f"[{operation}] Query failed after {duration_ms:.2f}ms",
                         extra=context,
-                        exc_info=True
+                        exc_info=True,
                     )
                 elif is_slow:
                     logger.warning(
                         f"[{operation}] ⚠️  SLOW QUERY: {duration_ms:.2f}ms (threshold: {threshold}ms)",
-                        extra=context
+                        extra=context,
                     )
                 elif LOG_ALL_QUERIES:
                     logger.info(
-                        f"[{operation}] Query completed in {duration_ms:.2f}ms",
-                        extra=context
+                        f"[{operation}] Query completed in {duration_ms:.2f}ms", extra=context
                     )
                 else:
                     # Log at debug level for fast queries when not logging all
                     logger.debug(
-                        f"[{operation}] Query completed in {duration_ms:.2f}ms",
-                        extra=context
+                        f"[{operation}] Query completed in {duration_ms:.2f}ms", extra=context
                     )
 
         return wrapper
@@ -170,7 +171,7 @@ def log_api_call(provider: str, operation: str):
         async def wrapper(*args, **kwargs) -> Any:
             start_time = time.perf_counter()
             error_occurred = False
-            
+
             try:
                 result = await func(*args, **kwargs)
                 return result
@@ -192,12 +193,12 @@ def log_api_call(provider: str, operation: str):
                     logger.error(
                         f"[{provider}:{operation}] API call failed after {duration_ms:.2f}ms",
                         extra=context,
-                        exc_info=True
+                        exc_info=True,
                     )
                 else:
                     logger.info(
                         f"[{provider}:{operation}] API call completed in {duration_ms:.2f}ms",
-                        extra=context
+                        extra=context,
                     )
 
         return wrapper

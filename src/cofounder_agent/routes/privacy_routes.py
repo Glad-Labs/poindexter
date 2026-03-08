@@ -116,7 +116,9 @@ async def submit_data_request(
         base_url = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000")
         verification_link = f"{base_url}/api/privacy/data-requests/verify/{token}"
 
-        background_tasks.add_task(_send_verification_email, request_data.email, request_id, verification_link)
+        background_tasks.add_task(
+            _send_verification_email, request_data.email, request_id, verification_link
+        )
         await gdpr_service.mark_verification_sent(request_id)
 
         return {
@@ -129,9 +131,9 @@ async def submit_data_request(
             "request_id": request_id,
             "verification_required": True,
             "verification_link_preview": verification_link,
-            "processing_deadline": created["deadline_at"].isoformat()
-            if created.get("deadline_at")
-            else None,
+            "processing_deadline": (
+                created["deadline_at"].isoformat() if created.get("deadline_at") else None
+            ),
             "next_steps": [
                 "1. Verify your email address (link sent to your inbox)",
                 "2. We'll confirm receipt within 2 weeks",
@@ -142,7 +144,9 @@ async def submit_data_request(
         }
 
     except Exception as e:
-        logger.error(f"[submit_data_request] Error processing GDPR data request: {e}", exc_info=True)
+        logger.error(
+            f"[submit_data_request] Error processing GDPR data request: {e}", exc_info=True
+        )
         raise HTTPException(
             status_code=500, detail="Failed to process request. Please email privacy@gladlabs.ai"
         ) from e
@@ -164,18 +168,20 @@ async def verify_data_request(
             "status": "verified",
             "request_id": str(verified["id"]),
             "request_type": verified["request_type"],
-            "verified_at": verified["verified_at"].isoformat()
-            if verified.get("verified_at")
-            else None,
-            "processing_deadline": verified["deadline_at"].isoformat()
-            if verified.get("deadline_at")
-            else None,
+            "verified_at": (
+                verified["verified_at"].isoformat() if verified.get("verified_at") else None
+            ),
+            "processing_deadline": (
+                verified["deadline_at"].isoformat() if verified.get("deadline_at") else None
+            ),
             "message": "Request verified. Processing can now begin.",
         }
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[verify_data_request] Failed to verify GDPR request token: {e}", exc_info=True)
+        logger.error(
+            f"[verify_data_request] Failed to verify GDPR request token: {e}", exc_info=True
+        )
         raise HTTPException(status_code=500, detail="Failed to verify GDPR request") from e
 
 
@@ -201,22 +207,27 @@ async def get_data_request_status(
             "request_id": str(request_data["id"]),
             "request_type": request_data["request_type"],
             "status": request_data["status"],
-            "created_at": request_data["created_at"].isoformat()
-            if request_data.get("created_at")
-            else None,
-            "verified_at": request_data["verified_at"].isoformat()
-            if request_data.get("verified_at")
-            else None,
+            "created_at": (
+                request_data["created_at"].isoformat() if request_data.get("created_at") else None
+            ),
+            "verified_at": (
+                request_data["verified_at"].isoformat() if request_data.get("verified_at") else None
+            ),
             "deadline_at": deadline.isoformat() if deadline else None,
             "deadline_status": deadline_status,
-            "completed_at": request_data["completed_at"].isoformat()
-            if request_data.get("completed_at")
-            else None,
+            "completed_at": (
+                request_data["completed_at"].isoformat()
+                if request_data.get("completed_at")
+                else None
+            ),
         }
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[get_data_request_status] Failed to load GDPR request {request_id}: {e}", exc_info=True)
+        logger.error(
+            f"[get_data_request_status] Failed to load GDPR request {request_id}: {e}",
+            exc_info=True,
+        )
         raise HTTPException(status_code=500, detail="Failed to retrieve GDPR request status") from e
 
 
@@ -234,7 +245,9 @@ async def export_data_request(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        logger.error(f"[export_data_request] Failed to export GDPR request {request_id}: {e}", exc_info=True)
+        logger.error(
+            f"[export_data_request] Failed to export GDPR request {request_id}: {e}", exc_info=True
+        )
         raise HTTPException(status_code=500, detail="Failed to export GDPR data") from e
 
 
@@ -252,7 +265,9 @@ async def process_deletion_request(
             "request_id": str(updated["id"]),
             "status": updated["status"],
             "request_type": updated["request_type"],
-            "deadline_at": updated["deadline_at"].isoformat() if updated.get("deadline_at") else None,
+            "deadline_at": (
+                updated["deadline_at"].isoformat() if updated.get("deadline_at") else None
+            ),
             "message": "Deletion workflow started and is tracked against GDPR 30-day SLA.",
         }
     except ValueError as e:

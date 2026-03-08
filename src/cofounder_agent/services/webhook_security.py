@@ -231,9 +231,7 @@ class WebhookValidator:
         return True
 
     @staticmethod
-    def validate_content_type(
-        content_type: str, allowed_types: Optional[List[str]] = None
-    ) -> bool:
+    def validate_content_type(content_type: str, allowed_types: Optional[List[str]] = None) -> bool:
         """
         Validate webhook content type.
 

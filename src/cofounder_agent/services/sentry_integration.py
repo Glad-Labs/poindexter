@@ -116,18 +116,18 @@ class SentryIntegration:
                 dsn=sentry_dsn,
                 integrations=[
                     # Framework integrations
-                    FastApiIntegration(),
-                    StarletteIntegration(),
-                    AsyncioIntegration(),
+                    FastApiIntegration(),  # type: ignore[misc]
+                    StarletteIntegration(),  # type: ignore[misc]
+                    AsyncioIntegration(),  # type: ignore[misc]
                     # Database and ORM integrations
-                    SqlAlchemyIntegration(),
+                    SqlAlchemyIntegration(),  # type: ignore[misc]
                     # Logging integration with custom level
-                    LoggingIntegration(
+                    LoggingIntegration(  # type: ignore[misc]
                         level=logging.INFO,  # Capture info level and above
                         event_level=logging.ERROR,  # Send error level events to Sentry
                     ),
                     # Threading integration for background tasks
-                    ThreadingIntegration(propagate_hub=True),
+                    ThreadingIntegration(propagate_hub=True),  # type: ignore[misc]
                 ],
                 # Environment and release information
                 environment=environment,

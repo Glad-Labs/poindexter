@@ -99,7 +99,7 @@ class WorkflowProgressService:
         phase_index: int,
         phase_name: str,
         message: Optional[str] = None,
-    ) -> WorkflowProgress:
+    ) -> Optional[WorkflowProgress]:
         """Mark phase execution start"""
         progress = self._progress.get(execution_id)
         if not progress:
@@ -128,7 +128,7 @@ class WorkflowProgressService:
         phase_name: str,
         phase_output: Optional[Dict[str, Any]] = None,
         duration_ms: Optional[float] = None,
-    ) -> WorkflowProgress:
+    ) -> Optional[WorkflowProgress]:
         """Mark phase as completed"""
         progress = self._progress.get(execution_id)
         if not progress:
@@ -162,7 +162,7 @@ class WorkflowProgressService:
         execution_id: str,
         phase_name: str,
         error: str,
-    ) -> WorkflowProgress:
+    ) -> Optional[WorkflowProgress]:
         """Mark phase as failed"""
         progress = self._progress.get(execution_id)
         if not progress:
@@ -188,7 +188,7 @@ class WorkflowProgressService:
         final_output: Optional[Dict[str, Any]] = None,
         duration_ms: Optional[float] = None,
         message: str = "Workflow execution completed",
-    ) -> WorkflowProgress:
+    ) -> Optional[WorkflowProgress]:
         """Mark workflow execution as completed"""
         progress = self._progress.get(execution_id)
         if not progress:
@@ -214,7 +214,7 @@ class WorkflowProgressService:
         execution_id: str,
         error: str,
         failed_phase: Optional[str] = None,
-    ) -> WorkflowProgress:
+    ) -> Optional[WorkflowProgress]:
         """Mark workflow execution as failed"""
         progress = self._progress.get(execution_id)
         if not progress:
@@ -237,7 +237,7 @@ class WorkflowProgressService:
         self,
         execution_id: str,
         elapsed_time: float,
-    ) -> WorkflowProgress:
+    ) -> Optional[WorkflowProgress]:
         """Update elapsed time for execution"""
         progress = self._progress.get(execution_id)
         if not progress:

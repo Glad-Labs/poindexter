@@ -59,6 +59,7 @@ def _extract_field(payload: Any, field: str, default: Any = None) -> Any:
 
     return getattr(payload, field, default)
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -198,9 +199,7 @@ class CreatePostPhase(BasePhase):
 
             post_id = str(_extract_field(created_post, "id", ""))
             persisted_slug = _extract_field(created_post, "slug", slug)
-            persisted_status = _extract_field(
-                created_post, "status", config.get("status", "draft")
-            )
+            persisted_status = _extract_field(created_post, "status", config.get("status", "draft"))
 
             self.status = "completed"
             self.result = {

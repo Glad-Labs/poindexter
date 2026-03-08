@@ -29,13 +29,14 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 try:
-    import redis.asyncio as aioredis
-    from redis.asyncio import Redis
-    from redis.exceptions import ConnectionError as RedisConnectionError
-    from redis.exceptions import RedisError
+    import redis.asyncio as aioredis  # type: ignore[import-untyped]
+    from redis.asyncio import Redis  # type: ignore[import-untyped]
+    from redis.exceptions import ConnectionError as RedisConnectionError  # type: ignore[import-untyped]
+    from redis.exceptions import RedisError  # type: ignore[import-untyped]
 
     REDIS_AVAILABLE = True
 except ImportError:
+    aioredis = None  # type: ignore[assignment]
     REDIS_AVAILABLE = False
     # Type placeholder when Redis is not available
     if TYPE_CHECKING:

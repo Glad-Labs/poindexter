@@ -352,14 +352,14 @@ class WorkflowExecutor:
             execution_time_ms = (time.time() - start_time) * 1000
 
             # Extract status from agent output
-            agent_status = result_output.get("status", "unknown")
+            agent_status = result_output.get("status", "unknown")  # type: ignore[union-attr]
 
             # Check for errors in agent output
             if agent_status == "failed":
                 return PhaseResult(
                     status="failed",
-                    output=result_output,
-                    error=result_output.get("error", "Agent execution failed"),
+                    output=result_output,  # type: ignore[arg-type]
+                    error=result_output.get("error", "Agent execution failed"),  # type: ignore[union-attr]
                     execution_time_ms=execution_time_ms,
                     model_used=phase_def.agent_type,
                     tokens_used=None,
@@ -367,7 +367,7 @@ class WorkflowExecutor:
 
             return PhaseResult(
                 status="completed" if agent_status == "success" else "completed",
-                output=result_output,
+                output=result_output,  # type: ignore[arg-type]
                 error=None,
                 execution_time_ms=execution_time_ms,
                 model_used=phase_def.agent_type,
