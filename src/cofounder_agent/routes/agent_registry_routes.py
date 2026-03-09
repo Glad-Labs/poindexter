@@ -114,7 +114,7 @@ async def get_agent_registry_endpoint(redis_cache=Depends(get_redis_cache_option
             logger.debug(f"Agent registry cached with TTL 300s")
 
         return result
-    except Exception as e:
+    except (AttributeError, KeyError, TypeError, ValueError) as e:
         logger.error(f"Error retrieving agent registry: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to retrieve agent registry: {str(e)}")
 
@@ -147,7 +147,7 @@ async def list_agents(request: Request):
         registry = get_agent_registry()
         agents = registry.list_agents()
         return agents
-    except Exception as e:
+    except (AttributeError, KeyError, TypeError, ValueError) as e:
         logger.error(f"Error listing agents: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to list agents: {str(e)}")
 
@@ -196,7 +196,7 @@ async def get_agent_metadata(agent_name: str):
         return agent
     except HTTPException:
         raise
-    except Exception as e:
+    except (AttributeError, KeyError, TypeError, ValueError) as e:
         logger.error(f"Error retrieving agent '{agent_name}': {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to retrieve agent: {str(e)}")
 
@@ -232,7 +232,7 @@ async def get_agent_phases(agent_name: str):
         return phases
     except HTTPException:
         raise
-    except Exception as e:
+    except (AttributeError, KeyError, TypeError, ValueError) as e:
         logger.error(f"Error retrieving phases for agent '{agent_name}': {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to retrieve agent phases: {str(e)}")
 
@@ -268,7 +268,7 @@ async def get_agent_capabilities(agent_name: str):
         return capabilities
     except HTTPException:
         raise
-    except Exception as e:
+    except (AttributeError, KeyError, TypeError, ValueError) as e:
         logger.error(f"Error retrieving capabilities for agent '{agent_name}': {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail=f"Failed to retrieve agent capabilities: {str(e)}"
@@ -317,7 +317,7 @@ async def get_agents_by_phase(phase: str):
                 agents.append(metadata)
 
         return agents
-    except Exception as e:
+    except (AttributeError, KeyError, TypeError, ValueError) as e:
         logger.error(f"Error retrieving agents for phase '{phase}': {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail=f"Failed to retrieve agents for phase: {str(e)}"
@@ -365,7 +365,7 @@ async def get_agents_by_capability(capability: str):
                 agents.append(metadata)
 
         return agents
-    except Exception as e:
+    except (AttributeError, KeyError, TypeError, ValueError) as e:
         logger.error(f"Error retrieving agents for capability '{capability}': {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail=f"Failed to retrieve agents for capability: {str(e)}"
@@ -414,7 +414,7 @@ async def get_agents_by_category(category: str):
                 agents.append(metadata)
 
         return agents
-    except Exception as e:
+    except (AttributeError, KeyError, TypeError, ValueError) as e:
         logger.error(f"Error retrieving agents in category '{category}': {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail=f"Failed to retrieve agents for category: {str(e)}"
@@ -473,6 +473,6 @@ async def search_agents(
             all_agents = [a for a in all_agents if a.get("category") == category]
 
         return all_agents
-    except Exception as e:
+    except (AttributeError, KeyError, TypeError, ValueError) as e:
         logger.error(f"Error searching agents: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to search agents: {str(e)}")

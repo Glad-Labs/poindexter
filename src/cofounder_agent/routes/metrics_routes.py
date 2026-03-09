@@ -11,6 +11,8 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+import asyncpg
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
@@ -163,7 +165,7 @@ async def get_usage_metrics(
             "by_operation_type": by_operation,
         }
 
-    except Exception as e:
+    except (asyncpg.PostgresError, ValueError, ZeroDivisionError, AttributeError) as e:
         logger.error(f"Error retrieving usage metrics: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to retrieve metrics: {str(e)}")
 
@@ -242,7 +244,7 @@ async def get_cost_metrics(
                     ],
                     "by_provider": {},
                 }
-            except Exception as db_error:
+            except asyncpg.PostgresError as db_error:
                 logger.warning(f"Database costs failed, falling back to tracker: {db_error}")
                 use_db = False
 
@@ -311,7 +313,7 @@ async def get_cost_metrics(
                 "source": "tracker",
             }
 
-    except Exception as e:
+    except (asyncpg.PostgresError, ValueError, ZeroDivisionError, AttributeError) as e:
         logger.error(f"Error retrieving cost metrics: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to retrieve metrics: {str(e)}")
 
@@ -363,7 +365,7 @@ async def get_metrics(current_user: UserProfile = Depends(get_current_user)) -> 
             ],
         }
 
-    except Exception as e:
+    except (asyncpg.PostgresError, ValueError, ZeroDivisionError, AttributeError) as e:
         logger.error(f"Error retrieving metrics: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to retrieve metrics: {str(e)}")
 
@@ -470,7 +472,7 @@ async def get_costs_by_phase(
         result = await cost_service.get_breakdown_by_phase(period=period)
 
         return result
-    except Exception as e:
+    except (asyncpg.PostgresError, ValueError, ZeroDivisionError) as e:
         logger.error(f"Error getting phase breakdown: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -498,7 +500,7 @@ async def get_costs_by_model(
         result = await cost_service.get_breakdown_by_model(period=period)
 
         return result
-    except Exception as e:
+    except (asyncpg.PostgresError, ValueError, ZeroDivisionError) as e:
         logger.error(f"Error getting model breakdown: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -525,7 +527,7 @@ async def get_cost_history(
         result = await cost_service.get_history(period=period)
 
         return result
-    except Exception as e:
+    except (asyncpg.PostgresError, ValueError) as e:
         logger.error(f"Error getting cost history: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -557,7 +559,7 @@ async def get_budget_status(
         result = await cost_service.get_budget_status(monthly_budget=monthly_budget)
 
         return result
-    except Exception as e:
+    except (asyncpg.PostgresError, ValueError) as e:
         logger.error(f"Error getting budget status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -727,7 +729,7 @@ async def get_kpi_analytics(
             "timestamp": datetime.utcnow().isoformat(),
             "range": range,
         }
-    except Exception as e:
+    except (asyncpg.PostgresError, ValueError, ZeroDivisionError, AttributeError) as e:
         logger.error(f"Error getting KPI analytics: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
