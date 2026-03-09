@@ -755,7 +755,7 @@ async def list_tasks(
             limit=limit,
         )
     except Exception as e:
-        logger.error(f"Failed to list tasks: {str(e)}")
+        logger.error(f"Failed to list tasks: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to list tasks: {str(e)}")
 
 
@@ -884,7 +884,7 @@ async def get_task(
     except AppError:
         raise
     except Exception as e:
-        logger.error(f"Failed to fetch task {task_id}: {str(e)}")
+        logger.error(f"Failed to fetch task {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to fetch task: {str(e)}")
 
 
@@ -929,7 +929,7 @@ async def get_task_status(
     except AppError:
         raise
     except Exception as e:
-        logger.error(f"Failed to fetch task status {task_id}: {str(e)}")
+        logger.error(f"Failed to fetch task status {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to fetch task status: {str(e)}")
 
 
@@ -984,7 +984,7 @@ async def get_task_result(
     except AppError:
         raise
     except Exception as e:
-        logger.error(f"Failed to fetch task result {task_id}: {str(e)}")
+        logger.error(f"Failed to fetch task result {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to fetch task result: {str(e)}")
 
 
@@ -1336,7 +1336,7 @@ async def get_task_status_info(
     except AppError:
         raise
     except Exception as e:
-        logger.error(f"Error fetching status info for {task_id}: {str(e)}")
+        logger.error(f"Error fetching status info for {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to fetch status info: {str(e)}")
 
 
@@ -2688,7 +2688,7 @@ async def generate_task_image(
                 logger.warning(f"Pexels API timeout for query: {search_query}")
                 raise HTTPException(status_code=504, detail="Pexels API timeout. Please try again.")
             except Exception as e:
-                logger.error(f"Unexpected error fetching from Pexels: {type(e).__name__}: {e}")
+                logger.error(f"Unexpected error fetching from Pexels: {type(e).__name__}: {e}", exc_info=True)
                 raise HTTPException(
                     status_code=500, detail="Unexpected error fetching image from Pexels"
                 )

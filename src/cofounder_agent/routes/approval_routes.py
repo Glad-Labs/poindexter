@@ -696,7 +696,7 @@ async def bulk_approve_tasks(
                 approved_count += 1
 
             except Exception as e:
-                logger.error(f"Failed to approve task {task_id}: {e}")
+                logger.error(f"Failed to approve task {task_id}: {e}", exc_info=True)
                 failed_ids.append(task_id)
                 failed_count += 1
 
@@ -817,7 +817,7 @@ async def bulk_reject_tasks(
                 rejected_count += 1
 
             except Exception as e:
-                logger.error(f"Failed to reject task {task_id}: {e}")
+                logger.error(f"Failed to reject task {task_id}: {e}", exc_info=True)
                 failed_ids.append(task_id)
                 failed_count += 1
 
@@ -935,7 +935,7 @@ async def get_pending_approvals(
                 pending_tasks = result.get("tasks", []) if isinstance(result, dict) else []
                 total = result.get("total", 0) if isinstance(result, dict) else 0
         except Exception as e:
-            logger.error(f"❌ [PENDING_APPROVAL] Database query failed: {e}")
+            logger.error(f"❌ [PENDING_APPROVAL] Database query failed: {e}", exc_info=True)
             pending_tasks = []
             total = 0
 
