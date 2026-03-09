@@ -1,6 +1,6 @@
 # Technical Debt Tracking - Glad Labs
 
-**Last Updated:** March 6, 2026
+**Last Updated:** March 9, 2026
 **Repository:** `Glad-Labs/glad-labs-codebase` (branch: `dev`)
 
 This tracker is aligned to:
@@ -10,13 +10,13 @@ This tracker is aligned to:
 
 ## Current Snapshot
 
-| Priority    | Open Issues | Notes                                                                                                                    |
-| ----------- | ----------- | ------------------------------------------------------------------------------------------------------------------------ |
-| P1-Critical | 0           | All critical issues resolved                                                                                             |
-| P2-High     | 0           | All high-priority workflow/security/debt items completed                                                                 |
-| P3-Medium   | 10          | Includes OAuth/state consistency + auth centralization issues (plus 1 legacy open item not normalized to current labels) |
-| P4-Low      | 2           | Newly added performance/security ops items                                                                               |
-| Total       | 12          | Canonical active debt set in this tracker                                                                                |
+| Priority    | Open Issues | Notes                                                                                                                                     |
+| ----------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| P1-Critical | 0           | All critical issues resolved (most recent: #81 GET /api/tasks 404, fixed March 9 2026)                                                   |
+| P2-High     | 0           | All high-priority items completed                                                                                                         |
+| P3-Medium   | 8           | #7 Pyright, #11 monolith refactor, #13 E2E coverage, #20 frontend gates, #23 SWR caching, #45 async queue, #78 exception handlers, #80 SELECT * |
+| P4-Low      | 2           | #14 benchmarking, #79 closed (Strapi removed March 9)                                                                                    |
+| Total       | 10          | See open issues for current canonical set                                                                                                 |
 
 ## Canonical Open Debt Issues
 
@@ -24,8 +24,22 @@ This tracker is aligned to:
 
 _No open critical issues_ ✅
 
+## Known Systemic Risk
+
+**Silent route registration failures:** `route_registration.py` wraps every router import in `try/except Exception`, silently swallowing import errors. This caused `GET /api/tasks` to return 404 when `task_routes.py` failed to load (#81). Any route file with a broken import will be silently skipped with no runtime indication. Consider logging failures at CRITICAL level or surfacing them via `/api/health`.
+
 ## Recently Closed (Completed)
 
+**March 9, 2026:**
+- [#81](https://github.com/Glad-Labs/glad-labs-codebase/issues/81) `[P1-Critical] GET /api/tasks 404` — `Optional[BackgroundTasks]` in task_routes.py prevented startup import; all /api/tasks endpoints were unavailable (fixed commit bc86aee)
+- [#79](https://github.com/Glad-Labs/glad-labs-codebase/issues/79) `[P4-Low] Remove deprecated Strapi webhook code` — deleted webhooks.py, unregistered webhook_router, removed no-op _register_route_services()
+- [#77](https://github.com/Glad-Labs/glad-labs-codebase/issues/77) `[P3-Medium] Consolidate root-level markdown files` — 13 .md files moved into docs/ hierarchy
+- [#75](https://github.com/Glad-Labs/glad-labs-codebase/issues/75) `[P3-Medium] Fix google.genai import pattern` — already resolved with try/except SDK fallback
+- [#74](https://github.com/Glad-Labs/glad-labs-codebase/issues/74) `[P3-Medium] Fix invalid DatabaseService method calls` — fixed get_session()/get_connection_pool() usage, update_workflow_status(), duplicate route
+- [#73](https://github.com/Glad-Labs/glad-labs-codebase/issues/73) `[P3-Medium] Fix SQLAlchemy string API misuse` — rewrote capability_tasks_service.py to use asyncpg
+- [#72](https://github.com/Glad-Labs/glad-labs-codebase/issues/72) `[P3-Medium] Optimize SELECT * queries` — audited 17+ occurrences; fixed users_db.py; closed as mostly necessary full-row fetches
+
+**March 6, 2026:**
 - [#46](https://github.com/Glad-Labs/glad-labs-codebase/issues/46) `[P1-CRITICAL][Security] Migrate auth tokens from localStorage to httpOnly secure cookies` (closed March 5, 2026)
 - [#47](https://github.com/Glad-Labs/glad-labs-codebase/issues/47) `[P2-HIGH][Security] Add strict environment variable validation for API URL config` (closed March 5, 2026)
 - [#50](https://github.com/Glad-Labs/glad-labs-codebase/issues/50) `[P2-HIGH][Security] Remove hardcoded localhost API endpoint fallbacks` (closed March 5, 2026)
