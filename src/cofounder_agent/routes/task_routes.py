@@ -187,9 +187,9 @@ router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 )
 async def create_task(
     request: UnifiedTaskRequest,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
-    background_tasks: Optional[BackgroundTasks] = None,
 ):
     """
     Unified task creation endpoint - routes to appropriate handler based on task_type.
@@ -2225,9 +2225,9 @@ async def approve_task(
 )
 async def publish_task(
     task_id: str,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
-    background_tasks: Optional[BackgroundTasks] = None,
 ):
     """
     Publish an approved task to specified channels.
