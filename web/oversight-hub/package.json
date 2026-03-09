@@ -1,6 +1,6 @@
 {
   "name": "oversight-hub",
-  "version": "3.0.20",
+  "version": "3.0.21",
   "private": true,
   "description": "Oversight Hub - React 18 admin interface for monitoring and controlling AI content agents with real-time integration",
   "license": "MIT",
