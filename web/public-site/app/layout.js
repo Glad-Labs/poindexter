@@ -2,6 +2,7 @@ import AdSenseScript from '../components/AdSenseScript';
 import CookieConsentBanner from '../components/CookieConsentBanner.jsx';
 import Footer from '../components/Footer';
 import TopNavigation from '../components/TopNav.js';
+import WebVitals from '../components/WebVitals.jsx';
 // import { Analytics } from '@vercel/analytics/react'; // Temporarily disabled for local dev
 import '../styles/globals.css';
 
@@ -59,6 +60,7 @@ export default function RootLayout({ children }) {
         </main>
         <Footer />
         {/* Client-side components that need hydration */}
+        <WebVitals />
         <AdSenseScript />
         <CookieConsentBanner />
         {/* <Analytics /> */}{' '}
