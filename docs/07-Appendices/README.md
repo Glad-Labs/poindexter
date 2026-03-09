@@ -22,3 +22,6 @@ Use this section for indexes, catalogs, governance documents, and supporting ref
 - `docs/07-Appendices/Technical-Debt-Tracker.md`
 - `docs/07-Appendices/Documentation-Maintenance.md`
 - `docs/07-Appendices/Archive-Guide.md`
+- `docs/07-Appendices/Changelog-v3.1.0.md`
+- `docs/07-Appendices/Version-History.md`
+- `docs/07-Appendices/Versioning-Guide.md`
