@@ -1,6 +1,6 @@
 {
   "name": "glad-labs-public-site",
-  "version": "3.0.18",
+  "version": "3.0.19",
   "private": true,
   "type": "module",
   "description": "Next.js 15 public website for Glad Labs - P1 complete: removed react-scripts. Phase 3B ready for Vite migration. SSG optimization, FastAPI integration, markdown rendering, Vercel deployment.",
