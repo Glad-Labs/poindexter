@@ -86,10 +86,7 @@ class StartupManager:
             # Step 9: Verify connections
             await self._verify_connections()
 
-            # Step 10: Register services with routes
-            await self._register_route_services()
-
-            # Step 11: Initialize agent registry
+            # Step 10: Initialize agent registry
             await self._initialize_agent_registry()
 
             # Step 12: Initialize custom workflows service
@@ -332,15 +329,6 @@ class StartupManager:
                     logger.warning(f"   Database health check returned: {health}")
             except Exception as e:
                 logger.warning(f"   Database health check failed: {e}", exc_info=True)
-
-    async def _register_route_services(self) -> None:
-        """Register database service with all route modules (deprecated - now using dependency injection)"""
-        # Service injection is now handled via Depends(get_database_dependency) in routes
-        # This method is kept for backward compatibility but no longer performs any operations
-        if self.database_service:
-            logger.debug(
-                "   Database service available via dependency injection (get_database_dependency)"
-            )
 
     async def _initialize_agent_registry(self) -> None:
         """Initialize agent registry with all available agents"""

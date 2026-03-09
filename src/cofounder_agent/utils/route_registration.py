@@ -212,17 +212,6 @@ def register_all_routes(
         status["ollama_router"] = False
 
     try:
-        # ===== WEBHOOKS =====
-        from routes.webhooks import webhook_router
-
-        app.include_router(webhook_router)
-        logger.info(" webhook_router registered")
-        status["webhook_router"] = True
-    except Exception as e:
-        logger.error(f" webhook_router failed: {e}")
-        status["webhook_router"] = False
-
-    try:
         # ===== SOCIAL MEDIA MANAGEMENT =====
         from routes.social_routes import social_router
 
@@ -306,11 +295,6 @@ def register_all_routes(
     # after database and workflow_history services are initialized. Do NOT register here
     # or routes will be duplicated on startup.
     status["workflow_history_router"] = False  # updated to True by lifespan if successful
-
-    # ===== INTELLIGENT ORCHESTRATOR (DEPRECATED - replaced by UnifiedOrchestrator) =====
-    # This router is no longer registered. Use orchestrator_routes instead.
-    logger.info(" intelligent_orchestrator_routes SKIPPED (deprecated, use orchestrator_routes)")
-    status["intelligent_orchestrator_router"] = False
 
     try:
         # ===== SERVICE REGISTRY - Service discovery and introspection =====
