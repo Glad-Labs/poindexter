@@ -611,8 +611,7 @@ class TasksDatabase(DatabaseServiceMixin):
 
         # Build WHERE clauses
         where_clauses = []
-        if user_id:
-            where_clauses.append(("owner_id", SQLOperator.EQ, user_id))
+        # Note: owner_id column doesn't exist in schema, skipping user_id filter
         if status:
             where_clauses.append(("status", SQLOperator.EQ, status))
         if category:
@@ -870,7 +869,8 @@ class TasksDatabase(DatabaseServiceMixin):
                 VALUES ($1, $2, $3, $4, $5, $6)
             """
 
-            now = datetime.now(timezone.utc)
+            # Use naive UTC datetime to avoid asyncpg timezone mismatch
+            now = datetime.utcnow()
             metadata_json = json.dumps(metadata or {})
 
             async with self.pool.acquire() as conn:
