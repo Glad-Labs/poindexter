@@ -70,7 +70,7 @@ async def _get_provider_health_cached(redis_cache):
 
         return result
     except Exception as e:
-        logger.error(f"Error fetching provider health: {e}")
+        logger.error(f"Error fetching provider health: {e}", exc_info=True)
         raise
 
 
@@ -120,7 +120,7 @@ async def get_available_models():
         )
 
     except Exception as e:
-        logger.error(f"Error getting available models: {e}")
+        logger.error(f"Error getting available models: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error getting available models: {str(e)}")
 
 
@@ -138,7 +138,7 @@ async def get_provider_status(redis_cache=Depends(get_redis_cache_optional)):
     try:
         return await _get_provider_health_cached(redis_cache)
     except Exception as e:
-        logger.error(f"Error getting provider status: {e}")
+        logger.error(f"Error getting provider status: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error getting provider status: {str(e)}")
 
 
@@ -166,7 +166,7 @@ async def refresh_provider_health(redis_cache=Depends(get_redis_cache_optional))
         result["cache_refreshed"] = True
         return result
     except Exception as e:
-        logger.error(f"Error refreshing provider health: {e}")
+        logger.error(f"Error refreshing provider health: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error refreshing provider health: {str(e)}")
 
 
@@ -219,7 +219,7 @@ async def get_recommended_models():
         )
 
     except Exception as e:
-        logger.error(f"Error getting recommended models: {e}")
+        logger.error(f"Error getting recommended models: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error getting recommended models: {str(e)}")
 
 
@@ -273,7 +273,7 @@ async def get_rtx5070_models():
         )
 
     except Exception as e:
-        logger.error(f"Error getting RTX5070 models: {e}")
+        logger.error(f"Error getting RTX5070 models: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error getting RTX5070 models: {str(e)}")
 
 

@@ -1102,8 +1102,8 @@ async def update_task_status_enterprise(
 
         update_dict = {
             "status": target_status.value,
-            "status_updated_at": now,
-            "status_updated_by": updated_by,
+            # Note: status_updated_at and status_updated_by columns don't exist in schema
+            # Status changes are tracked in task_status_history table via log_status_change()
         }
 
         # Handle timestamps based on target status
@@ -1140,16 +1140,15 @@ async def update_task_status_enterprise(
 
         # Log status change to audit table
         try:
-            await db_service.log_status_change(  # type: ignore[attr-defined]
+            await db_service.log_status_change(
                 task_id=task_id,
                 old_status=current_status.value,
                 new_status=target_status.value,
-                changed_by=updated_by,
                 reason=update_data.reason,
                 metadata=update_data.metadata,
             )
         except Exception as audit_error:
-            logger.warning(f"Failed to log status change for {task_id}: {audit_error}")
+            logger.warning(f"Failed to log status change for {task_id}: {audit_error}", exc_info=True)
             # Don't fail the status update if audit logging fails
 
         # Return success response
@@ -1308,12 +1307,13 @@ async def get_task_status_info(
             raise HTTPException(status_code=422, detail=f"Invalid status in database: {status_str}")
 
         # Calculate duration
-        status_updated_at = task.get("status_updated_at")
+        # Note: status_updated_at column doesn't exist; use created_at as fallback  
+        created_at = task.get("created_at")
         duration_minutes = None
-        if status_updated_at:
-            if isinstance(status_updated_at, str):
-                status_updated_at = datetime.fromisoformat(status_updated_at.replace("Z", "+00:00"))
-            duration_minutes = (datetime.now(timezone.utc) - status_updated_at).total_seconds() / 60
+        if created_at:
+            if isinstance(created_at, str):
+                created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+            duration_minutes = (datetime.now(timezone.utc) - created_at).total_seconds() / 60
 
         # Get allowed transitions
         allowed_transitions = sorted(get_allowed_transitions(status))
@@ -1321,8 +1321,8 @@ async def get_task_status_info(
         return TaskStatusInfo(
             task_id=task_id,
             current_status=status.value,
-            status_updated_at=status_updated_at or task.get("created_at"),
-            status_updated_by=task.get("status_updated_by"),
+            status_updated_at=task.get("created_at"),
+            status_updated_by=None,  # Field removed - no longer persisted
             created_at=task.get("created_at"),
             started_at=task.get("started_at"),
             completed_at=task.get("completed_at"),

@@ -82,7 +82,7 @@ def get_user_id(request: Request) -> str:
             logger.warning(f"Invalid JWT token in get_user_id(): {e}")
             raise HTTPException(status_code=401, detail="Invalid token")
         except Exception as e:
-            logger.warning(f"Error extracting user ID from JWT: {e}")
+            logger.warning(f"Error extracting user ID from JWT: {e}", exc_info=True)
             raise HTTPException(status_code=401, detail="Authentication failed")
 
     # Development fallback (no token provided)

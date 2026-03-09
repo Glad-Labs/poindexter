@@ -346,7 +346,7 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
         try:
             claims = JWTTokenValidator.verify_token(token)
         except Exception as e:
-            logger.warning(f"[get_current_user] Token verification failed: {str(e)}")
+            logger.warning(f"[get_current_user] Token verification failed: {str(e)}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired token",
@@ -620,7 +620,7 @@ async def unified_logout(
         )
 
     except Exception as e:
-        logger.error(f"Logout error for user {user_id}: {str(e)}")
+        logger.error(f"Logout error for user {user_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Logout failed"
         )

@@ -58,7 +58,7 @@ async def initialize_progress(
         logger.info(f"Initialized progress for execution {execution_id}")
         return {"success": True, "execution_id": execution_id, "progress": progress.to_dict()}
     except Exception as e:
-        logger.error(f"Failed to initialize progress: {e}")
+        logger.error(f"Failed to initialize progress: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -85,7 +85,7 @@ async def start_execution(
         logger.info(f"Started execution {execution_id}")
         return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
     except Exception as e:
-        logger.error(f"Failed to start execution: {e}")
+        logger.error(f"Failed to start execution: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -121,7 +121,7 @@ async def start_phase(
         logger.debug(f"Started phase {phase_index} for execution {execution_id}")
         return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
     except Exception as e:
-        logger.error(f"Failed to start phase: {e}")
+        logger.error(f"Failed to start phase: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -157,7 +157,7 @@ async def complete_phase(
         logger.debug(f"Completed phase {phase_name} for execution {execution_id}")
         return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
     except Exception as e:
-        logger.error(f"Failed to complete phase: {e}")
+        logger.error(f"Failed to complete phase: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -190,7 +190,7 @@ async def fail_phase(
         logger.warning(f"Phase {phase_name} failed for execution {execution_id}: {error}")
         return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
     except Exception as e:
-        logger.error(f"Failed to mark phase as failed: {e}")
+        logger.error(f"Failed to mark phase as failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -226,7 +226,7 @@ async def mark_complete(
         logger.info(f"Completed execution {execution_id}")
         return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
     except Exception as e:
-        logger.error(f"Failed to mark execution as complete: {e}")
+        logger.error(f"Failed to mark execution as complete: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -259,7 +259,7 @@ async def mark_failed(
         logger.error(f"Execution {execution_id} failed: {error}")
         return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
     except Exception as e:
-        logger.error(f"Failed to mark execution as failed: {e}")
+        logger.error(f"Failed to mark execution as failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -286,7 +286,7 @@ async def get_progress_status(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get progress status: {e}")
+        logger.error(f"Failed to get progress status: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -380,5 +380,5 @@ async def cleanup_progress(
         logger.info(f"Cleaned up progress for execution {execution_id}")
         return {"success": True, "message": f"Progress cleaned up for {execution_id}"}
     except Exception as e:
-        logger.error(f"Failed to clean up progress: {e}")
+        logger.error(f"Failed to clean up progress: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

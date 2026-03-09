@@ -340,7 +340,7 @@ async def get_conversation(conversation_id: str) -> Dict[str, Any]:
         }
 
     except Exception as e:
-        logger.error(f"[Chat] Error retrieving conversation: {str(e)}")
+        logger.error(f"[Chat] Error retrieving conversation: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -367,7 +367,7 @@ async def clear_conversation(conversation_id: str) -> Dict[str, str]:
         }
 
     except Exception as e:
-        logger.error(f"[Chat] Error clearing conversation: {str(e)}")
+        logger.error(f"[Chat] Error clearing conversation: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

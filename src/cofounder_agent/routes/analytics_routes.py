@@ -370,7 +370,7 @@ async def get_kpi_metrics(
                 running_now=pending_tasks,
             )
         except Exception as e:
-            logger.warning(f"⚠️ Failed to emit analytics update: {e}")
+            logger.warning(f"⚠️ Failed to emit analytics update: {e}", exc_info=True)
 
         # ===== BUILD RESPONSE =====
         return KPIMetrics(

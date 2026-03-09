@@ -57,7 +57,7 @@ async def dispatch_command(request: CommandRequest) -> Dict[str, Any]:
 
         return cmd.to_dict()
     except Exception as e:
-        logger.error(f"Failed to dispatch command: {e}")
+        logger.error(f"Failed to dispatch command: {e}", exc_info=True)
         raise HTTPException(status_code=400, detail=str(e))
 
 

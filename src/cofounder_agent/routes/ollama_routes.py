@@ -107,7 +107,7 @@ async def check_ollama_health() -> OllamaHealthResponse:
         )
 
     except Exception as e:
-        logger.error(f"[Ollama] Health check failed: {str(e)}")
+        logger.error(f"[Ollama] Health check failed: {str(e)}", exc_info=True)
         return OllamaHealthResponse(
             connected=False,
             status="error",
@@ -278,7 +278,7 @@ async def warmup_ollama(model: str = "mistral:latest") -> OllamaWarmupResponse:
         )
 
     except Exception as e:
-        logger.error(f"[Ollama] Warm-up error: {str(e)}")
+        logger.error(f"[Ollama] Warm-up error: {str(e)}", exc_info=True)
         return OllamaWarmupResponse(
             status="error",
             model=model,
@@ -402,7 +402,7 @@ async def select_ollama_model(request: OllamaModelSelection) -> Dict[str, Any]:
                 }
 
     except Exception as e:
-        logger.error(f"[Ollama] Model selection error: {str(e)}")
+        logger.error(f"[Ollama] Model selection error: {str(e)}", exc_info=True)
         return {
             "success": False,
             "selected_model": None,

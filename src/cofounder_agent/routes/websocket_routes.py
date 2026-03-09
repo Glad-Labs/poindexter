@@ -54,7 +54,7 @@ class ConnectionManager:
             try:
                 await connection.send_json(message)
             except Exception as e:
-                logger.warning(f"Failed to send message to WebSocket: {e}")
+                logger.warning(f"Failed to send message to WebSocket: {e}", exc_info=True)
                 disconnected.add(connection)
 
         # Clean up disconnected connections
@@ -134,7 +134,7 @@ async def websocket_image_progress(websocket: WebSocket, task_id: str):
         await connection_manager.disconnect(task_id, websocket)
         logger.info(f"WebSocket disconnected for task {task_id}")
     except Exception as e:
-        logger.error(f"WebSocket error for task {task_id}: {e}")
+        logger.error(f"WebSocket error for task {task_id}: {e}", exc_info=True)
         await connection_manager.disconnect(task_id, websocket)
 
 
@@ -237,7 +237,7 @@ async def websocket_workflow_progress(websocket: WebSocket, execution_id: str):
         await connection_manager.disconnect(execution_id, websocket)
         logger.info(f"WebSocket disconnected for execution {execution_id}")
     except Exception as e:
-        logger.error(f"WebSocket error for execution {execution_id}: {e}")
+        logger.error(f"WebSocket error for execution {execution_id}: {e}", exc_info=True)
         await connection_manager.disconnect(execution_id, websocket)
 
 
@@ -348,7 +348,7 @@ async def websocket_endpoint(websocket: WebSocket):
         try:
             await websocket.close(code=1011, reason=str(e))
         except Exception as close_error:
-            logger.error(f"Error closing WebSocket: {close_error}")
+            logger.error(f"Error closing WebSocket: {close_error}", exc_info=True)
 
 
 # Statistics endpoint
@@ -401,7 +401,7 @@ async def websocket_approval_updates(websocket: WebSocket, task_id: str):
         await connection_manager.disconnect(task_id, websocket)
         logger.info(f"Approval WebSocket disconnected for task {task_id}")
     except Exception as e:
-        logger.error(f"Approval WebSocket error for task {task_id}: {e}")
+        logger.error(f"Approval WebSocket error for task {task_id}: {e}", exc_info=True)
         await connection_manager.disconnect(task_id, websocket)
 
 

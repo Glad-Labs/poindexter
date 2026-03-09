@@ -120,7 +120,7 @@ def get_s3_client():
                 )
                 logger.info("✅ S3 client initialized (fallback)")
             except Exception as e:
-                logger.warning(f"⚠️ S3 client initialization failed: {e}")
+                logger.warning(f"⚠️ S3 client initialization failed: {e}", exc_info=True)
                 _s3_client = False  # Mark as explicitly disabled
         else:
             logger.info("ℹ️ AWS S3 not configured (optional fallback)")
@@ -441,7 +441,7 @@ async def generate_featured_image(request: ImageGenerationRequest):
                 else:
                     logger.warning(f"⚠️ STEP 1 FAILED: No Pexels image found for: {search_prompt}")
             except Exception as e:
-                logger.warning(f"⚠️ STEP 1 ERROR: Pexels search failed: {e}")
+                logger.warning(f"⚠️ STEP 1 ERROR: Pexels search failed: {e}", exc_info=True)
         else:
             logger.info(f"ℹ️ STEP 1 SKIPPED: use_pexels=false")
 
@@ -522,7 +522,7 @@ async def generate_featured_image(request: ImageGenerationRequest):
                     )
                     logger.info(f"✅ Created image metadata (local preview): {output_path}")
             except Exception as e:
-                logger.warning(f"⚠️ SDXL generation failed: {e}")
+                logger.warning(f"⚠️ SDXL generation failed: {e}", exc_info=True)
         elif image and not request.use_generation:
             logger.info(f"ℹ️ STEP 2 SKIPPED: Pexels found image, use_generation=false")
         elif not image and not request.use_generation:

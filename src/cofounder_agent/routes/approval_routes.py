@@ -389,7 +389,7 @@ async def approve_task(
                 },
             )
         except Exception as e:
-            logger.warning(f"Failed to broadcast approval status: {e}")
+            logger.warning(f"Failed to broadcast approval status: {e}", exc_info=True)
 
         # Build response based on whether auto_publish happened
         response_data = {
@@ -434,7 +434,7 @@ async def approve_task(
                     if published_url:
                         response_data["published_url"] = published_url
             except Exception as e:
-                logger.warning(f"[WARNING] Could not fetch post_id from updated task: {e}")
+                logger.warning(f"[WARNING] Could not fetch post_id from updated task: {e}", exc_info=True)
 
         return response_data
 
@@ -570,7 +570,7 @@ async def reject_task(
                 },
             )
         except Exception as e:
-            logger.warning(f"Failed to broadcast rejection status: {e}")
+            logger.warning(f"Failed to broadcast rejection status: {e}", exc_info=True)
 
         return {
             "task_id": task_id,
@@ -690,7 +690,7 @@ async def bulk_approve_tasks(
                         },
                     )
                 except Exception as e:
-                    logger.warning(f"Failed to broadcast approval for {task_id}: {e}")
+                    logger.warning(f"Failed to broadcast approval for {task_id}: {e}", exc_info=True)
 
                 successful_ids.append(task_id)
                 approved_count += 1
@@ -811,7 +811,7 @@ async def bulk_reject_tasks(
                         },
                     )
                 except Exception as e:
-                    logger.warning(f"Failed to broadcast rejection for {task_id}: {e}")
+                    logger.warning(f"Failed to broadcast rejection for {task_id}: {e}", exc_info=True)
 
                 successful_ids.append(task_id)
                 rejected_count += 1
