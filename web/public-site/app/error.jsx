@@ -1,5 +1,6 @@
 'use client';
 import logger from '@/lib/logger';
+import * as Sentry from '@sentry/nextjs';
 
 import Link from 'next/link';
 import { useEffect } from 'react';
@@ -11,8 +12,8 @@ import { useEffect } from 'react';
  */
 export default function Error({ error, reset }) {
   useEffect(() => {
-    // Log error to monitoring service (e.g., Sentry)
     logger.error('Error caught:', error);
+    Sentry.captureException(error);
   }, [error]);
 
   const isNetworkError =

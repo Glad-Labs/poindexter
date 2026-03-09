@@ -17,6 +17,7 @@
     "postbuild": "node ./scripts/generate-sitemap.js"
   },
   "dependencies": {
+    "@sentry/nextjs": "^10.42.0",
     "@vercel/analytics": "^1.6.1",
     "cross-env": "^7.0.3",
     "date-fns": "^4.1.0",

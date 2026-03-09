@@ -1,4 +1,5 @@
 /** @type {import('next').NextConfig} */
+import { withSentryConfig } from '@sentry/nextjs';
 
 // ── Build-time environment validation ──────────────────────────────────────
 // Runs when Next.js boots (`next build` and `next dev`).
@@ -271,4 +272,21 @@ const nextConfig = {
   reactStrictMode: false,
 };
 
-export default nextConfig;
+// Only apply Sentry wrapping if DSN is configured; otherwise pass through unchanged.
+// This prevents build overhead and telemetry when Sentry is not yet set up.
+const hasSentryDsn =
+  Boolean(process.env.SENTRY_DSN) || Boolean(process.env.NEXT_PUBLIC_SENTRY_DSN);
+
+export default hasSentryDsn
+  ? withSentryConfig(nextConfig, {
+      // Suppress Sentry CLI output during builds
+      silent: true,
+      // Only upload source maps in production
+      disableServerWebpackPlugin: process.env.NODE_ENV !== 'production',
+      disableClientWebpackPlugin: process.env.NODE_ENV !== 'production',
+      // Automatically tree-shake Sentry logger statements
+      disableLogger: true,
+      // Use a tunneling route to avoid ad-blocker interference
+      tunnelRoute: '/monitoring',
+    })
+  : nextConfig;

@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/nextjs';
 import logger from './logger';
 /**
  * Error Handling Utilities for Glad Labs
@@ -17,17 +18,10 @@ export function logError(error, context = {}) {
     url: typeof window !== 'undefined' ? window.location.href : 'unknown',
   };
 
-  // In production, send to error tracking service
   if (process.env.NODE_ENV === 'production') {
-    // Example: Send to Sentry
-    // Sentry.captureException(error, { extra: context });
-
-    // For now, log to console
-    logger.error('Error logged:', errorInfo);
-  } else {
-    // Development: Always log
-    logger.error('Error (dev):', errorInfo);
+    Sentry.captureException(error, { extra: context });
   }
+  logger.error('Error:', errorInfo);
 
   return errorInfo;
 }
