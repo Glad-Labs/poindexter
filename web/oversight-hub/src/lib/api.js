@@ -112,8 +112,8 @@ export const connectToStatusUpdates = (
 ) => {
   // Determine WebSocket URL from API base URL
   const wsBaseUrl =
-    process.env.REACT_APP_WS_BASE_URL ||
-    (process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000')
+    import.meta.env.VITE_WS_BASE_URL ||
+    (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000')
       .replace('http://', 'ws://')
       .replace('https://', 'wss://');
 

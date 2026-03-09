@@ -4,7 +4,7 @@ import axios from 'axios';
 import useStore from '../../store/useStore';
 import { getAuthToken } from '../../services/authService';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 export const useTasks = (page = 1, limit = 10) => {
   const [tasks, setTasks] = useState([]);
