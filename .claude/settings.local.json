@@ -27,7 +27,13 @@
       "Read(//c/c/Users/mattm/glad-labs-website/**)",
       "Bash(sed -n '69,110p' src/cofounder_agent/services/task_executor.py)",
       "Bash(git checkout:*)",
-      "mcp__github__create_issue"
+      "mcp__github__create_issue",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(ls:*)",
+      "Bash(mkdir:*)",
+      "Bash(git:*)",
+      "Bash(curl:*)"
     ]
   }
 }
