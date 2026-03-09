@@ -81,7 +81,10 @@ interface RelatedPostsProps {
  * Related Posts Component
  * Displays a grid of related articles at the bottom of article pages
  */
-export default function RelatedPosts({ posts = [], onPostClick = null }: RelatedPostsProps) {
+export default function RelatedPosts({
+  posts = [],
+  onPostClick = null,
+}: RelatedPostsProps) {
   if (!posts || posts.length === 0) {
     return null;
   }
@@ -225,7 +228,10 @@ interface RelatedPostsListProps {
 /**
  * Alternative: Minimal Related Posts (used in sidebars)
  */
-export function RelatedPostsList({ posts = [], maxItems = 5 }: RelatedPostsListProps) {
+export function RelatedPostsList({
+  posts = [],
+  maxItems = 5,
+}: RelatedPostsListProps) {
   if (!posts || posts.length === 0) {
     return null;
   }
@@ -262,7 +268,10 @@ export function RelatedPostsList({ posts = [], maxItems = 5 }: RelatedPostsListP
 /**
  * Alternative: Featured Related Posts (larger, 2-column layout)
  */
-export function RelatedPostsFeatured({ posts = [], maxItems = 2 }: RelatedPostsListProps) {
+export function RelatedPostsFeatured({
+  posts = [],
+  maxItems = 2,
+}: RelatedPostsListProps) {
   if (!posts || posts.length === 0) {
     return null;
   }

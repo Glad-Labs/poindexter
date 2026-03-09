@@ -275,7 +275,8 @@ const nextConfig = {
 // Only apply Sentry wrapping if DSN is configured; otherwise pass through unchanged.
 // This prevents build overhead and telemetry when Sentry is not yet set up.
 const hasSentryDsn =
-  Boolean(process.env.SENTRY_DSN) || Boolean(process.env.NEXT_PUBLIC_SENTRY_DSN);
+  Boolean(process.env.SENTRY_DSN) ||
+  Boolean(process.env.NEXT_PUBLIC_SENTRY_DSN);
 
 export default hasSentryDsn
   ? withSentryConfig(nextConfig, {

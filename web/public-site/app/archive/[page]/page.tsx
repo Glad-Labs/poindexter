@@ -36,8 +36,10 @@ export default function ArchivePage({ params }: ArchivePageProps) {
     defaultSwrOptions
   );
 
-  const posts: Post[] = data?.data || data?.items || (Array.isArray(data) ? data : []);
-  const total = data?.meta?.pagination?.total || data?.total || posts.length || 0;
+  const posts: Post[] =
+    data?.data || data?.items || (Array.isArray(data) ? data : []);
+  const total =
+    data?.meta?.pagination?.total || data?.total || posts.length || 0;
   const totalPages = Math.ceil(total / POSTS_PER_PAGE);
 
   return (
@@ -72,7 +74,9 @@ export default function ArchivePage({ params }: ArchivePageProps) {
           {/* Error State */}
           {error && !isLoading && (
             <div className="bg-red-900/20 border border-red-500/50 rounded-lg p-6 text-center">
-              <p className="text-red-400">{error.message || 'Failed to load posts'}</p>
+              <p className="text-red-400">
+                {error.message || 'Failed to load posts'}
+              </p>
               <p className="text-slate-400 text-sm mt-2">
                 Please try refreshing the page
               </p>

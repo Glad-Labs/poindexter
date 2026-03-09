@@ -15,7 +15,10 @@ interface AdUnitProps {
   className?: string;
 }
 
-export default function AdUnit({ format = 'responsive', className = '' }: AdUnitProps) {
+export default function AdUnit({
+  format = 'responsive',
+  className = '',
+}: AdUnitProps) {
   const adSenseId = process.env.NEXT_PUBLIC_ADSENSE_ID;
 
   useEffect(() => {

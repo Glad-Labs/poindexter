@@ -10,13 +10,13 @@ This tracker is aligned to:
 
 ## Current Snapshot
 
-| Priority    | Open Issues | Notes                                                                                                  |
-| ----------- | ----------- | ------------------------------------------------------------------------------------------------------ |
-| P1-Critical | 0           | All critical issues resolved                                                                           |
-| P2-High     | 0           | All high-priority items completed                                                                      |
+| Priority    | Open Issues | Notes                                                                                                              |
+| ----------- | ----------- | ------------------------------------------------------------------------------------------------------------------ |
+| P1-Critical | 0           | All critical issues resolved                                                                                       |
+| P2-High     | 0           | All high-priority items completed                                                                                  |
 | P3-Medium   | 5           | #7 Pyright, #11 monolith refactor, #13 E2E coverage, #45 async queue, #78 exception handlers (partial), #89 JSX→TS |
-| P4-Low      | 0           | All P4 items completed                                                                                 |
-| Total       | 6           | See open issues for current canonical set                                                              |
+| P4-Low      | 0           | All P4 items completed                                                                                             |
+| Total       | 6           | See open issues for current canonical set                                                                          |
 
 ## Canonical Open Debt Issues
 
@@ -48,6 +48,7 @@ _No open P4 issues_ ✅
 ## Recently Closed (Completed)
 
 **March 9, 2026 (session 2):**
+
 - [#84](https://github.com/Glad-Labs/glad-labs-codebase/issues/84) `[Public Site] Replace console.log with structured logger` — audited; production code is CLEAN, closed as non-issue
 - [#80](https://github.com/Glad-Labs/glad-labs-codebase/issues/80) `[P3-Medium] Eliminate SELECT * queries` — full audit; only users_db.py needed fixing (done); rest are full-row converters
 - [#90](https://github.com/Glad-Labs/glad-labs-codebase/issues/90) `[Public Site] Add metadata exports to all route pages` — generateMetadata() added to category, tag, author; archive uses layout.tsx
@@ -60,8 +61,9 @@ _No open P4 issues_ ✅
 - [#14](https://github.com/Glad-Labs/glad-labs-codebase/issues/14) `[P4-Low] API performance benchmarking` — pytest-benchmark added, 8 endpoint benchmarks, npm run benchmark scripts
 
 **March 9, 2026 (session 1):**
+
 - [#81](https://github.com/Glad-Labs/glad-labs-codebase/issues/81) `[P1-Critical] GET /api/tasks 404` — `Optional[BackgroundTasks]` in task_routes.py prevented startup import; all /api/tasks endpoints were unavailable (fixed commit bc86aee)
-- [#79](https://github.com/Glad-Labs/glad-labs-codebase/issues/79) `[P4-Low] Remove deprecated Strapi webhook code` — deleted webhooks.py, unregistered webhook_router, removed no-op _register_route_services()
+- [#79](https://github.com/Glad-Labs/glad-labs-codebase/issues/79) `[P4-Low] Remove deprecated Strapi webhook code` — deleted webhooks.py, unregistered webhook_router, removed no-op \_register_route_services()
 - [#77](https://github.com/Glad-Labs/glad-labs-codebase/issues/77) `[P3-Medium] Consolidate root-level markdown files` — 13 .md files moved into docs/ hierarchy
 - [#75](https://github.com/Glad-Labs/glad-labs-codebase/issues/75) `[P3-Medium] Fix google.genai import pattern` — already resolved with try/except SDK fallback
 - [#74](https://github.com/Glad-Labs/glad-labs-codebase/issues/74) `[P3-Medium] Fix invalid DatabaseService method calls` — fixed get_session()/get_connection_pool() usage, update_workflow_status(), duplicate route
@@ -69,6 +71,7 @@ _No open P4 issues_ ✅
 - [#72](https://github.com/Glad-Labs/glad-labs-codebase/issues/72) `[P3-Medium] Optimize SELECT * queries` — audited 17+ occurrences; fixed users_db.py; closed as mostly necessary full-row fetches
 
 **March 6, 2026:**
+
 - [#46](https://github.com/Glad-Labs/glad-labs-codebase/issues/46) `[P1-CRITICAL][Security] Migrate auth tokens from localStorage to httpOnly secure cookies` (closed March 5, 2026)
 - [#47](https://github.com/Glad-Labs/glad-labs-codebase/issues/47) `[P2-HIGH][Security] Add strict environment variable validation for API URL config` (closed March 5, 2026)
 - [#50](https://github.com/Glad-Labs/glad-labs-codebase/issues/50) `[P2-HIGH][Security] Remove hardcoded localhost API endpoint fallbacks` (closed March 5, 2026)

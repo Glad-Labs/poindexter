@@ -11,7 +11,10 @@ export default function Loading() {
       <div className="px-4 sm:px-6 lg:px-8 pb-20">
         <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="bg-slate-800/50 border border-slate-700 rounded-lg overflow-hidden">
+            <div
+              key={i}
+              className="bg-slate-800/50 border border-slate-700 rounded-lg overflow-hidden"
+            >
               <div className="w-full h-40 bg-slate-700"></div>
               <div className="p-4">
                 <div className="h-5 bg-slate-700 rounded mb-3"></div>

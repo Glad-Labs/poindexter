@@ -21,7 +21,10 @@ interface ErrorBoundaryState {
  * Catches React errors and displays a fallback UI
  * Usage: Wrap pages or sections with <ErrorBoundary>Content</ErrorBoundary>
  */
-export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+export default class ErrorBoundary extends Component<
+  ErrorBoundaryProps,
+  ErrorBoundaryState
+> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = {
@@ -94,7 +97,12 @@ interface ErrorFallbackProps {
  * Error Fallback Component
  * Displays user-friendly error message with full WCAG 2.1 AA compliance
  */
-function ErrorFallback({ error, errorType, onReset, isDevelopment }: ErrorFallbackProps) {
+function ErrorFallback({
+  error,
+  errorType,
+  onReset,
+  isDevelopment,
+}: ErrorFallbackProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const errorMessage = getErrorMessage(error, errorType as any);
 

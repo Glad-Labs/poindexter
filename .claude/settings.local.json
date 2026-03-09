@@ -35,7 +35,14 @@
       "Bash(git:*)",
       "Bash(curl:*)",
       "Bash(npm install:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(gh repo:*)",
+      "Read(//c/Users/mattm/glad-labs-website/web/public-site/components/**)",
+      "Bash(gh auth:*)",
+      "Bash(du:*)",
+      "Bash(rm:*)",
+      "Bash(npx jest:*)",
+      "Bash(node_modules/.bin/vitest run:*)"
     ]
   }
 }

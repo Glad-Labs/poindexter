@@ -124,7 +124,8 @@ const NewsletterModal = ({ isOpen, onClose }: NewsletterModalProps) => {
       logger.error('Newsletter signup error:', error);
       setMessage({
         type: 'error',
-        text: (error as Error).message || 'Failed to subscribe. Please try again.',
+        text:
+          (error as Error).message || 'Failed to subscribe. Please try again.',
       });
     } finally {
       setIsLoading(false);

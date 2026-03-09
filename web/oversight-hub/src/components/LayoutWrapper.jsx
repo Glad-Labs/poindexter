@@ -401,6 +401,7 @@ const LayoutWrapper = ({ children }) => {
         <div className="header-top">
           <button
             className="nav-menu-btn"
+            aria-label="Navigation menu"
             onClick={() => setNavMenuOpen(!navMenuOpen)}
           >
             ☰
@@ -413,10 +414,13 @@ const LayoutWrapper = ({ children }) => {
       </header>
 
       {/* Navigation Menu */}
-      {navMenuOpen && (
-        <div className="nav-menu-dropdown">
-          <div className="nav-menu-header">Navigation</div>
-          {navigationItems.map((item) => (
+      <nav
+        className={`nav-menu-dropdown${navMenuOpen ? '' : ' nav-menu-hidden'}`}
+        aria-label="Main navigation"
+      >
+        {navMenuOpen && <div className="nav-menu-header">Navigation</div>}
+        {navMenuOpen &&
+          navigationItems.map((item) => (
             <button
               key={item.path}
               className="nav-menu-item"
@@ -439,12 +443,11 @@ const LayoutWrapper = ({ children }) => {
               <span className="nav-menu-label">{item.label}</span>
             </button>
           ))}
-        </div>
-      )}
+      </nav>
 
       {/* Main Content Area */}
       <div className="oversight-hub-layout">
-        <div className="main-panel">{children}</div>
+        <main className="main-panel">{children}</main>
 
         {/* Chat Panel Resize Handle */}
         <div

@@ -14,7 +14,10 @@ const THRESHOLDS: Record<VitalName, { good: number; poor: number }> = {
   INP: { good: 200, poor: 500 },
 };
 
-function getRating(name: string, value: number): 'good' | 'needs-improvement' | 'poor' | 'unknown' {
+function getRating(
+  name: string,
+  value: number
+): 'good' | 'needs-improvement' | 'poor' | 'unknown' {
   const t = THRESHOLDS[name as VitalName];
   if (!t) return 'unknown';
   if (value <= t.good) return 'good';
@@ -22,7 +25,15 @@ function getRating(name: string, value: number): 'good' | 'needs-improvement' | 
   return 'poor';
 }
 
-function sendToGoogleAnalytics({ name, value, id }: { name: string; value: number; id: string }) {
+function sendToGoogleAnalytics({
+  name,
+  value,
+  id,
+}: {
+  name: string;
+  value: number;
+  id: string;
+}) {
   type WGtag = { gtag?: (...args: unknown[]) => void };
   const w = window as unknown as WGtag;
   if (typeof window === 'undefined' || !w.gtag) return;
@@ -41,10 +52,13 @@ export default function WebVitals() {
 
     if (process.env.NODE_ENV === 'development') {
       // eslint-disable-next-line no-console
-      console.debug(`[Web Vitals] ${name}: ${Math.round(value)}ms — ${rating}`, {
-        id,
-        rating,
-      });
+      console.debug(
+        `[Web Vitals] ${name}: ${Math.round(value)}ms — ${rating}`,
+        {
+          id,
+          rating,
+        }
+      );
     }
 
     sendToGoogleAnalytics({ name, value, id });

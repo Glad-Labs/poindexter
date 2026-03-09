@@ -17,7 +17,11 @@ export default function Loading() {
         {/* Content skeleton */}
         <div className="space-y-4">
           {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="h-4 bg-slate-700 rounded" style={{ width: `${85 + Math.random() * 15}%` }}></div>
+            <div
+              key={i}
+              className="h-4 bg-slate-700 rounded"
+              style={{ width: `${85 + Math.random() * 15}%` }}
+            ></div>
           ))}
         </div>
       </div>
