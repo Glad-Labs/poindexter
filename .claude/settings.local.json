@@ -44,7 +44,12 @@
       "Bash(npx jest:*)",
       "Bash(node_modules/.bin/vitest run:*)",
       "mcp__github__add_issue_comment",
-      "mcp__filesystem__list_directory"
+      "mcp__filesystem__list_directory",
+      "mcp__filesystem__read_text_file",
+      "mcp__github__update_issue",
+      "Bash(for issue:*)",
+      "Bash(find /c/Users/mattm/glad-labs-website/src/cofounder_agent -name \"004_writing_samples.sql\" -exec head -20 {})",
+      "Bash(done)"
     ]
   }
 }
