@@ -869,13 +869,11 @@ class ImageService:
         Returns:
             Optimization result dict or None
         """
-        # Placeholder for future image optimization
-        # Could integrate with imgix, Cloudinary, or local optimization
-        logger.info(f"Image optimization placeholder for {image_url}")
+        # No external optimization service configured — return original URL unchanged.
+        # To enable optimization, set CLOUDINARY_URL or IMGIX_DOMAIN in the environment.
         return {
             "url": image_url,
             "optimized": False,
-            "note": "Image optimization not yet implemented",
         }
 
     def get_search_cache(self, query: str) -> Optional[List[FeaturedImageMetadata]]:

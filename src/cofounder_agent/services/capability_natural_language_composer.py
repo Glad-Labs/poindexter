@@ -231,49 +231,18 @@ Now generate the task JSON for the user's request:"""
         Returns:
             LLM response text
         """
-        # In production, this would use:
-        # response = await self.model_router.generate(prompt, cost_tier="cheap")
-        # return response.text
+        from .model_consolidation_service import get_model_consolidation_service
 
-        # For now, mock implementation
-        logger.warning("[Composer] Using mock LLM response - implement real LLM integration")
+        service = get_model_consolidation_service()
+        result = await service.generate(
+            prompt=prompt,
+            temperature=0.3,  # Low temperature for structured JSON output
+        )
 
-        # Mock response for testing
-        if "blog" in prompt.lower():
-            return """{
-  "name": "Blog Content Creation Pipeline",
-  "description": "Create a blog post with AI generation and image selection",
-  "steps": [
-    {
-      "capability_name": "research",
-      "inputs": {"topic": "AI trends and developments"},
-      "output_key": "research_data",
-      "order": 0
-    },
-    {
-      "capability_name": "generate_content",
-      "inputs": {"topic": "AI trends", "research": "$research_data", "style": "professional"},
-      "output_key": "blog_content",
-      "order": 1
-    },
-    {
-      "capability_name": "select_images",
-      "inputs": {"content": "$blog_content", "count": 3},
-      "output_key": "images",
-      "order": 2
-    },
-    {
-      "capability_name": "publish",
-      "inputs": {"content": "$blog_content", "images": "$images", "platform": "blog"},
-      "output_key": "published_post",
-      "order": 3
-    }
-  ]
-}"""
+        if result and result.text:
+            return result.text
 
-        return """{
-  "error": "Could not determine capabilities for this request"
-}"""
+        raise RuntimeError("[Composer] LLM returned empty response")
 
     def _parse_llm_response(self, response: str) -> Dict[str, Any]:
         """

@@ -118,31 +118,18 @@ class MarketService:
             Dictionary with competitor analysis
         """
         try:
-            competitors = []
-
-            # Placeholder competitor research structure
-            for i in range(min(top_n, 5)):
-                competitors.append(
-                    {
-                        "rank": i + 1,
-                        "name": f"Competitor {i + 1}",
-                        "market_share": 0.25 - (i * 0.05),
-                        "key_strengths": [
-                            "Feature A",
-                            "Feature B",
-                        ],
-                        "weaknesses": ["Area X", "Area Y"],
-                        "recent_moves": ["Action 1", "Action 2"],
-                    }
-                )
-
-            logger.info(f"Competitor research completed for segment: {market_segment}")
+            # Real competitor data requires a SERP/search API integration.
+            # Configure SERPAPI_KEY or BRAVE_SEARCH_API_KEY to enable.
+            logger.warning(
+                f"[research_competitors] No search API configured — competitor data unavailable for segment: {market_segment}"
+            )
 
             return {
                 "analysis_type": "competitor_research",
                 "market_segment": market_segment,
-                "competitors_analyzed": len(competitors),
-                "competitors": competitors,
+                "competitors_analyzed": 0,
+                "competitors": [],
+                "data_source": "unavailable",
                 "timestamp": datetime.utcnow().isoformat(),
             }
 
@@ -239,30 +226,22 @@ class MarketService:
         try:
             sources = sources or ["social_media", "reviews"]
 
-            # Mock sentiment analysis
-            sentiment_distribution = {
-                "positive": 0.65,
-                "neutral": 0.25,
-                "negative": 0.10,
-            }
-
-            key_themes = [
-                {"theme": "Value for money", "sentiment": 0.7},
-                {"theme": "Customer support", "sentiment": 0.6},
-                {"theme": "Product quality", "sentiment": 0.8},
-            ]
-
-            logger.info(f"Customer sentiment analysis completed for topic: {topic}")
+            # Real sentiment data requires a social listening / NLP API integration.
+            # Configure a sentiment provider to enable.
+            logger.warning(
+                f"[analyze_customer_sentiment] No sentiment API configured — data unavailable for topic: {topic}"
+            )
 
             return {
                 "analysis_type": "sentiment_analysis",
                 "topic": topic,
                 "sources": sources,
-                "overall_sentiment": "positive",
-                "sentiment_score": 0.65,
-                "sentiment_distribution": sentiment_distribution,
-                "key_themes": key_themes,
-                "total_mentions": 2500,
+                "overall_sentiment": "unavailable",
+                "sentiment_score": None,
+                "sentiment_distribution": {},
+                "key_themes": [],
+                "total_mentions": 0,
+                "data_source": "unavailable",
                 "timestamp": datetime.utcnow().isoformat(),
             }
 
