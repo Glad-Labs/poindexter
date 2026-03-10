@@ -1173,11 +1173,17 @@ class TaskExecutor:
             )
             length_gate_passes = constraint_result.word_count_within_tolerance
 
+            min_required = int(effective_target_length * 0.85) if effective_target_length else 0
+            max_allowed = int(effective_target_length * 1.15) if effective_target_length else 0
             logger.info(
                 f"🔍 [LENGTH_GATE] words={word_count}, target={effective_target_length}, "
-                f"tolerance=15%, required={int(effective_target_length*0.85) if effective_target_length else 0}, "
-                f"pass={length_gate_passes}"
+                f"tolerance=15% (range: {min_required}-{max_allowed}), pass={length_gate_passes}"
             )
+            if not length_gate_passes:
+                if word_count < min_required:
+                    logger.warning(f"⚠️  Content too SHORT: {word_count} < {min_required}")
+                elif word_count > max_allowed:
+                    logger.warning(f"⚠️  Content too LONG: {word_count} > {max_allowed}")
         except Exception as e:
             logger.error(f"[LENGTH_GATE] Constraint validation error: {e}", exc_info=True)
             length_gate_passes = False
@@ -1277,9 +1283,25 @@ class TaskExecutor:
                     f"content too short or empty ({len(generated_content) if generated_content else 0} chars)"
                 )
             if not length_gate_passes:
-                failure_reasons.append(
-                    f"word count insufficient ({word_count} < {int(effective_target_length*0.85) if effective_target_length else 0})"
-                )
+                # Use the detailed violation message from constraint_result
+                if constraint_result and constraint_result.violation_message:
+                    failure_reasons.append(constraint_result.violation_message)
+                else:
+                    # Fallback: determine if too short or too long
+                    min_required = int(effective_target_length * 0.85) if effective_target_length else 0
+                    max_allowed = int(effective_target_length * 1.15) if effective_target_length else 0
+                    if word_count < min_required:
+                        failure_reasons.append(
+                            f"word count too short ({word_count} < {min_required}, target: {effective_target_length} ±15%)"
+                        )
+                    elif word_count > max_allowed:
+                        failure_reasons.append(
+                            f"word count too long ({word_count} > {max_allowed}, target: {effective_target_length} ±15%)"
+                        )
+                    else:
+                        failure_reasons.append(
+                            f"word count outside tolerance ({word_count} words, target: {effective_target_length} ±15%)"
+                        )
             if not style_gate_passes:
                 failure_reasons.append(f"style inconsistent ({style_feedback})")
             if not seo_gate_passes:
