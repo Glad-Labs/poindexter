@@ -28,9 +28,18 @@ from services.capability_task_executor import (
     CapabilityTaskDefinition,
     execute_capability_task,
 )
+import asyncpg
 from services.capability_tasks_service import CapabilityTasksService
 from services.database_service import DatabaseService
 from utils.route_utils import get_database_dependency
+
+
+def _require_pool(db_service: DatabaseService) -> asyncpg.Pool:
+    """Return the connection pool or raise 503 if not yet initialised."""
+    if db_service.pool is None:
+        raise HTTPException(status_code=503, detail="Database pool not initialised")
+    return db_service.pool
+
 
 # ============ Request/Response Models ============
 
@@ -109,7 +118,7 @@ class CreateTaskRequest(BaseModel):
 
     name: str = Field(..., min_length=1)
     description: Optional[str] = None
-    steps: List[StepInputModel] = Field(..., min_items=1)
+    steps: List[StepInputModel] = Field(..., min_length=1)
     tags: Optional[List[str]] = None
 
 
@@ -335,7 +344,7 @@ async def compose_task_from_natural_language(
 
         # Optionally save the task to database
         if payload.save_task and result.task_definition:
-            task_service = CapabilityTasksService(db_service.pool)
+            task_service = CapabilityTasksService(_require_pool(db_service))
             await task_service.create_task(
                     name=result.task_definition.name,
                     description=result.task_definition.description,
@@ -415,7 +424,7 @@ async def create_capability_task(
     ]
 
     # Create and persist task to database
-    task_service = CapabilityTasksService(db_service.pool)
+    task_service = CapabilityTasksService(_require_pool(db_service))
     task = await task_service.create_task(
         name=request.name,
         description=request.description or "",
@@ -453,7 +462,7 @@ async def list_capability_tasks(
     """List capability tasks for the current user."""
     owner_id = current_user.get("id", "unknown")
 
-    task_service = CapabilityTasksService(db_service.pool)
+    task_service = CapabilityTasksService(_require_pool(db_service))
     tasks, total = await task_service.list_tasks(
         owner_id=owner_id,
         skip=skip,
@@ -496,7 +505,7 @@ async def get_capability_task(
     """Get details of a specific task."""
     owner_id = current_user.get("id", "unknown")
 
-    task_service = CapabilityTasksService(db_service.pool)
+    task_service = CapabilityTasksService(_require_pool(db_service))
     task = await task_service.get_task(task_id, owner_id)
 
     if not task:
@@ -550,7 +559,7 @@ async def update_capability_task(
         for i, step in enumerate(request.steps)
     ]
 
-    task_service = CapabilityTasksService(db_service.pool)
+    task_service = CapabilityTasksService(_require_pool(db_service))
     # Check task exists and is owned by user
     task = await task_service.get_task(task_id, owner_id)
     if not task:
@@ -565,6 +574,9 @@ async def update_capability_task(
         steps=steps,
         tags=request.tags or [],
     )
+
+    if updated_task is None:
+        raise HTTPException(status_code=404, detail="Task not found after update")
 
     return TaskResponse(
         id=updated_task.id,
@@ -594,7 +606,7 @@ async def delete_capability_task(
     """Delete a capability task."""
     owner_id = current_user.get("id", "unknown")
 
-    task_service = CapabilityTasksService(db_service.pool)
+    task_service = CapabilityTasksService(_require_pool(db_service))
     # Check task exists and is owned by user
     task = await task_service.get_task(task_id, owner_id)
     if not task:
@@ -624,7 +636,7 @@ async def execute_capability_task_endpoint(
     owner_id = current_user.get("id", "unknown")
 
     # Get task from database
-    task_service = CapabilityTasksService(db_service.pool)
+    task_service = CapabilityTasksService(_require_pool(db_service))
     task = await task_service.get_task(task_id, owner_id)
 
     if not task:
@@ -687,7 +699,7 @@ async def get_execution_result(
     """Get the result of a specific task execution."""
     owner_id = current_user.get("id", "unknown")
 
-    task_service = CapabilityTasksService(db_service.pool)
+    task_service = CapabilityTasksService(_require_pool(db_service))
     execution = await task_service.get_execution(exec_id, owner_id)
 
     if not execution:
@@ -731,7 +743,7 @@ async def list_executions(
     owner_id = current_user.get("id", "unknown")
 
     # Verify task exists and is owned by user
-    task_service = CapabilityTasksService(db_service.pool)
+    task_service = CapabilityTasksService(_require_pool(db_service))
     task = await task_service.get_task(task_id, owner_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")

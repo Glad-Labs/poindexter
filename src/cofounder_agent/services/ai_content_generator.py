@@ -469,10 +469,10 @@ class AIContentGenerator:
                 # Configure API key based on SDK version
                 if use_new_sdk:
                     # New google.genai SDK: Pass API key directly
-                    genai.api_key = ProviderChecker.get_gemini_api_key()
+                    genai.api_key = ProviderChecker.get_gemini_api_key()  # type: ignore[attr-defined]
                 else:
                     # Old google.generativeai SDK: Use configure() method
-                    genai.configure(api_key=ProviderChecker.get_gemini_api_key())
+                    genai.configure(api_key=ProviderChecker.get_gemini_api_key())  # type: ignore[attr-defined]
 
                 # Map generic model names to actual Gemini API models
                 model_name = (
@@ -522,7 +522,7 @@ class AIContentGenerator:
 
                     if use_new_sdk:
                         # New google.genai SDK: Use client.models.generate_content()
-                        client = genai.Client(api_key=ProviderChecker.get_gemini_api_key())
+                        client = genai.Client(api_key=ProviderChecker.get_gemini_api_key())  # type: ignore[attr-defined]
                         response = client.models.generate_content(
                             model=f"models/{model_name}",
                             contents=f"{system_prompt}\n\n{generation_prompt}",
@@ -533,10 +533,10 @@ class AIContentGenerator:
                         )
                     else:
                         # Old google.generativeai SDK: Use GenerativeModel
-                        model = genai.GenerativeModel(model_name)
+                        model = genai.GenerativeModel(model_name)  # type: ignore[attr-defined]
                         response = model.generate_content(
                             f"{system_prompt}\n\n{generation_prompt}",
-                            generation_config=genai.types.GenerationConfig(
+                            generation_config=genai.types.GenerationConfig(  # type: ignore[attr-defined]
                                 max_output_tokens=max_tokens,
                                 temperature=0.7,
                             ),
@@ -554,7 +554,7 @@ class AIContentGenerator:
                         if hasattr(response, "text"):
                             generated_content = response.text or ""
                         elif hasattr(response, "content"):
-                            generated_content = response.content or ""
+                            generated_content = response.content or ""  # type: ignore[reportAttributeAccessIssue]
                         else:
                             logger.error(
                                 f"Gemini response missing text/content attribute. Keys: {dir(response)}"
@@ -626,7 +626,7 @@ class AIContentGenerator:
                         max_tokens_refinement = int(target_length * 4.5)
                         try:
                             if use_new_sdk:
-                                client = genai.Client(api_key=ProviderChecker.get_gemini_api_key())
+                                client = genai.Client(api_key=ProviderChecker.get_gemini_api_key())  # type: ignore[attr-defined]
                                 refinement_response = client.models.generate_content(
                                     model=f"models/{model_name}",
                                     contents=f"{system_prompt}\n\n{refinement_prompt}",
@@ -636,10 +636,10 @@ class AIContentGenerator:
                                     },
                                 )
                             else:
-                                model = genai.GenerativeModel(model_name)
+                                model = genai.GenerativeModel(model_name)  # type: ignore[attr-defined]
                                 refinement_response = model.generate_content(
                                     f"{system_prompt}\n\n{refinement_prompt}",
-                                    generation_config=genai.types.GenerationConfig(
+                                    generation_config=genai.types.GenerationConfig(  # type: ignore[attr-defined]
                                         max_output_tokens=max_tokens_refinement,
                                         temperature=0.7,
                                     ),
@@ -650,7 +650,7 @@ class AIContentGenerator:
                                 refined_content = (
                                     refinement_response.text
                                     if hasattr(refinement_response, "text")
-                                    else refinement_response.content
+                                    else refinement_response.content  # type: ignore[union-attr]
                                 )
                             else:
                                 refined_content = (
@@ -1175,12 +1175,12 @@ class AIContentGenerator:
 
                 logger.debug(f"Configuring Gemini with API key...")
                 if use_new_sdk:
-                    genai.api_key = ProviderChecker.get_gemini_api_key()
-                    client = genai.Client(api_key=ProviderChecker.get_gemini_api_key())
+                    genai.api_key = ProviderChecker.get_gemini_api_key()  # type: ignore[attr-defined]
+                    _gemini_client = genai.Client(api_key=ProviderChecker.get_gemini_api_key())  # type: ignore[attr-defined]
                     logger.debug(f"✓ Gemini client initialized (new SDK)")
                 else:
-                    genai.configure(api_key=ProviderChecker.get_gemini_api_key())
-                    model = genai.GenerativeModel("gemini-2.5-flash")
+                    genai.configure(api_key=ProviderChecker.get_gemini_api_key())  # type: ignore[attr-defined]
+                    _gemini_model = genai.GenerativeModel("gemini-2.5-flash")  # type: ignore[attr-defined]
                     logger.debug(f"✓ Gemini model initialized (legacy SDK)")
 
                 metrics["generation_attempts"] += 1
@@ -1190,7 +1190,7 @@ class AIContentGenerator:
 
                 if use_new_sdk:
                     # New google.genai SDK
-                    response = client.models.generate_content(
+                    response = _gemini_client.models.generate_content(  # type: ignore[possibly-undefined]
                         model="models/gemini-2.5-flash",
                         contents=f"{system_prompt}\n\n{generation_prompt}",
                         config={
@@ -1200,15 +1200,15 @@ class AIContentGenerator:
                     )
                 else:
                     # Old google.generativeai SDK
-                    response = model.generate_content(
+                    response = _gemini_model.generate_content(  # type: ignore[possibly-undefined]
                         f"{system_prompt}\n\n{generation_prompt}",
-                        generation_config=genai.types.GenerationConfig(
+                        generation_config=genai.types.GenerationConfig(  # type: ignore[attr-defined]
                             max_output_tokens=max_tokens_fallback,
                             temperature=0.7,
                         ),
                     )
 
-                generated_content = response.text
+                generated_content = response.text or ""
                 logger.info(f"   Generated {len(generated_content)} characters")
                 if generated_content and len(generated_content) > 100:
                     # Self-check: Validate content quality
@@ -1240,10 +1240,6 @@ class AIContentGenerator:
                 # Fallback for older SDK versions - try client API
                 logger.warning(f"Gemini SDK format not supported: {e}")
                 attempts.append(("Gemini", f"SDK error: {str(e)[:100]}"))
-
-            except ImportError as e:
-                logger.error(f"google.generativeai not installed: {e}", exc_info=True)
-                attempts.append(("Gemini", "SDK not installed"))
             except Exception as e:
                 logger.error(f"[_gemini_generate] Gemini generation failed: {e}", exc_info=True)
                 attempts.append(("Gemini", str(e)[:150]))
@@ -1360,8 +1356,8 @@ async def test_generation():
 
     logger.info("Testing content generation...")
     logger.debug(f"Ollama available: {generator.ollama_available}")
-    logger.debug(f"HuggingFace token: {'✓' if generator.hf_token else '✗'}")
-    logger.debug(f"Gemini key: {'✓' if generator.gemini_key else '✗'}")
+    logger.debug(f"HuggingFace token: {'✓' if getattr(generator, 'hf_token', None) else '✗'}")
+    logger.debug(f"Gemini key: {'✓' if getattr(generator, 'gemini_key', None) else '✗'}")
 
     logger.info("Generating blog post...")
     content, model, metrics = await generator.generate_blog_post(
