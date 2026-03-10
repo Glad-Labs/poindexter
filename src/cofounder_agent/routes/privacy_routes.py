@@ -6,6 +6,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+import asyncpg
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
@@ -49,7 +50,7 @@ async def _send_verification_email(email: str, request_id: str, verification_lin
             request_id,
             verification_link,
         )
-    except Exception as e:
+    except (OSError, RuntimeError, AttributeError) as e:
         logger.error(
             f"[gdpr_send_verification_email] Failed to send verification email for request {request_id}: {e}",
             exc_info=True,
@@ -143,7 +144,7 @@ async def submit_data_request(
             "support_email": "privacy@gladlabs.ai",
         }
 
-    except Exception as e:
+    except (asyncpg.PostgresError, KeyError, AttributeError, TypeError) as e:
         logger.error(
             f"[submit_data_request] Error processing GDPR data request: {e}", exc_info=True
         )
@@ -178,7 +179,7 @@ async def verify_data_request(
         }
     except HTTPException:
         raise
-    except Exception as e:
+    except (asyncpg.PostgresError, KeyError, AttributeError, TypeError) as e:
         logger.error(
             f"[verify_data_request] Failed to verify GDPR request token: {e}", exc_info=True
         )
@@ -223,7 +224,7 @@ async def get_data_request_status(
         }
     except HTTPException:
         raise
-    except Exception as e:
+    except (asyncpg.PostgresError, KeyError, AttributeError, TypeError) as e:
         logger.error(
             f"[get_data_request_status] Failed to load GDPR request {request_id}: {e}",
             exc_info=True,
@@ -244,7 +245,7 @@ async def export_data_request(
         return payload
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
+    except (asyncpg.PostgresError, KeyError, AttributeError, TypeError) as e:
         logger.error(
             f"[export_data_request] Failed to export GDPR request {request_id}: {e}", exc_info=True
         )
@@ -272,7 +273,7 @@ async def process_deletion_request(
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
+    except (asyncpg.PostgresError, KeyError, AttributeError, TypeError) as e:
         logger.error(
             f"[process_deletion_request] Failed to start deletion processing for request {request_id}: {e}",
             exc_info=True,

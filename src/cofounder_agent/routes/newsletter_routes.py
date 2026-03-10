@@ -9,6 +9,7 @@ import re
 from datetime import datetime
 from typing import List, Optional
 
+import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr
 
@@ -130,7 +131,7 @@ async def subscribe_to_newsletter(
             subscriber_id=subscriber_id,
         )
 
-    except Exception as e:
+    except (asyncpg.PostgresError, ValueError, TypeError, AttributeError) as e:
         logger.error(f"❌ Newsletter subscription error: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -177,7 +178,7 @@ async def unsubscribe_from_newsletter(
             success=True, message="Successfully unsubscribed from newsletter"
         )
 
-    except Exception as e:
+    except (asyncpg.PostgresError, ValueError, AttributeError) as e:
         logger.error(f"❌ Unsubscribe error: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -197,7 +198,7 @@ async def get_subscriber_count(db=Depends(get_database_dependency)):
         )
 
         return {"success": True, "subscriber_count": count or 0}
-    except Exception as e:
+    except (asyncpg.PostgresError, ValueError, AttributeError) as e:
         logger.error(f"❌ Error fetching subscriber count: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

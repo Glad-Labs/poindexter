@@ -82,7 +82,7 @@ async def trigger_nextjs_revalidation(paths: Optional[list] = None) -> bool:
     except httpx.TimeoutException:
         logger.warning(f"⚠️ ISR revalidation timed out (10s)")
         return False
-    except Exception as e:
+    except (httpx.HTTPError, OSError) as e:
         logger.warning(f"⚠️ Failed to trigger ISR revalidation: {type(e).__name__}: {e}", exc_info=True)
         return False
 
