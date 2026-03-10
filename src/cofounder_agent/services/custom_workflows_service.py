@@ -643,7 +643,6 @@ class CustomWorkflowsService:
 
         logger.info(f"Loaded {len(available_phases)} available phases from registry")
         return available_phases
-        return available_phases
 
     # ========================================================================
     # Private Methods
