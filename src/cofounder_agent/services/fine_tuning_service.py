@@ -154,10 +154,10 @@ PARAMETER learning_rate {learning_rate}
         try:
             # Import google-genai library (new package, replaces deprecated google.generativeai)
             try:
-                import google.genai as genai
+                import google.genai as genai  # type: ignore
             except ImportError:
                 # Fallback to old deprecated package if new one not available
-                import google.generativeai as genai
+                import google.generativeai as genai  # type: ignore
 
             key = api_key or os.getenv("GOOGLE_API_KEY")
             if not key:
@@ -170,11 +170,11 @@ PARAMETER learning_rate {learning_rate}
             # Try new SDK first, fall back to old one
             use_new_sdk = False
             try:
-                import google.genai as genai
+                import google.genai as genai  # type: ignore
 
                 use_new_sdk = True
             except ImportError:
-                import google.generativeai as genai
+                import google.generativeai as genai  # type: ignore
 
             # Configure API key based on SDK version
             if use_new_sdk:
@@ -251,7 +251,7 @@ PARAMETER learning_rate {learning_rate}
 
             # Upload training data
             with open(dataset_path, "rb") as f:
-                file_response = client.beta.files.upload(
+                file_response = client.beta.files.upload(  # type: ignore[attr-defined]
                     file=(os.path.basename(dataset_path), f, "text/jsonl")
                 )
 

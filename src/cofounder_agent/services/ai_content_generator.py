@@ -454,7 +454,7 @@ class AIContentGenerator:
                 # Import google-genai library (new package, replaces deprecated google-generativeai)
                 use_new_sdk = False
                 try:
-                    import google.genai as genai
+                    import google.genai as genai  # type: ignore
 
                     use_new_sdk = True
                     logger.info("✅ Using google.genai (new SDK) for Gemini API calls")
@@ -1164,7 +1164,7 @@ class AIContentGenerator:
                 except ImportError:
                     # Fallback to newer google.genai if available
                     try:
-                        import google.genai as genai
+                        import google.genai as genai  # type: ignore
 
                         use_new_sdk = True
                         logger.debug("Using google.genai (new SDK)")

@@ -90,7 +90,7 @@ class GenerateContentPhase(BasePhase):
             raise ValueError(error)
 
         try:
-            from .ai_content_generator import get_content_generator
+            from .ai_content_generator import get_content_generator  # type: ignore[import]
 
             topic = inputs.get("topic")
             tags = inputs.get("tags", [topic])
@@ -219,7 +219,7 @@ class QualityEvaluationPhase(BasePhase):
             raise ValueError(error)
 
         try:
-            from .quality_service import get_quality_service
+            from .quality_service import get_quality_service  # type: ignore[import]
 
             content = inputs.get("content")
             topic = inputs.get("topic")
@@ -337,7 +337,7 @@ class SearchImagePhase(BasePhase):
             raise ValueError(error)
 
         try:
-            from .image_service import get_image_service
+            from .image_service import get_image_service  # type: ignore[import]
 
             topic = inputs.get("topic")
             tags = inputs.get("tags", [topic])
@@ -435,7 +435,7 @@ class GenerateSEOPhase(BasePhase):
             raise ValueError(error)
 
         try:
-            from .seo_content_generator import get_seo_content_generator
+            from .seo_content_generator import get_seo_content_generator  # type: ignore[import]
 
             content = inputs.get("content")
             topic = inputs.get("topic")

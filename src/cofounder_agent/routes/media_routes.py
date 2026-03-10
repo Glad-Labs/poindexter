@@ -25,8 +25,8 @@ from pydantic import BaseModel, Field
 
 # Cloud storage imports
 try:
-    import cloudinary
-    import cloudinary.uploader
+    import cloudinary  # type: ignore
+    import cloudinary.uploader  # type: ignore
 
     CLOUDINARY_AVAILABLE = True
 except ImportError:
@@ -34,8 +34,8 @@ except ImportError:
     CLOUDINARY_AVAILABLE = False
 
 try:
-    import boto3
-    from botocore.config import Config
+    import boto3  # type: ignore
+    from botocore.config import Config  # type: ignore
 
     S3_AVAILABLE = True
 except ImportError:

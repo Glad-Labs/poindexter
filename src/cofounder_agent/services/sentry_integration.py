@@ -36,7 +36,7 @@ try:
     from sentry_sdk.integrations.threading import ThreadingIntegration
 
     try:
-        from sentry_sdk.integrations.sqlalchemy import SqlAlchemyIntegration
+        from sentry_sdk.integrations.sqlalchemy import SqlAlchemyIntegration  # type: ignore
     except ImportError:
         SqlAlchemyIntegration = None  # type: ignore[assignment,misc]
 

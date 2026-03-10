@@ -808,9 +808,9 @@ class ImageService:
                     output_type="pil",
                     callback=refiner_progress_callback if task_id else None,
                     callback_steps=1 if task_id else None,
-                ).images[
+                ).images[  # type: ignore
                     0
-                ]  # type: ignore[union-attr]
+                ]
 
                 logger.info(f"   ✓ Stage 2 complete: Refinement applied successfully")
                 refined_image.save(output_path)

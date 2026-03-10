@@ -4,7 +4,7 @@ from typing import Optional
 
 # Try to import crewai_tools, fall back to mock if not available
 try:
-    from crewai_tools import (
+    from crewai_tools import (  # type: ignore
         CodeInterpreterTool,
         DirectoryReadTool,
         FileReadTool,

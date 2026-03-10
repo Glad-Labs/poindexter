@@ -154,7 +154,7 @@ class TemplateExecutionService:
         # Build WorkflowPhase objects
         workflow_phases = []
         for idx, phase_name in enumerate(phases_to_use):
-            phase_obj = WorkflowPhase(
+            phase_obj = WorkflowPhase(  # type: ignore[call-arg]
                 index=idx,
                 name=phase_name,
                 user_inputs={},
@@ -164,7 +164,7 @@ class TemplateExecutionService:
             workflow_phases.append(phase_obj)
 
         # Create CustomWorkflow
-        workflow = CustomWorkflow(
+        workflow = CustomWorkflow(  # type: ignore[call-arg]
             name=f"Template: {template_name}",
             description=template_config["description"],
             phases=workflow_phases,

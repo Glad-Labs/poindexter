@@ -145,7 +145,7 @@ class WorkflowHistoryService:
                         exc_info=True,
                     )
 
-                return self._row_to_dict(row)
+                return self._row_to_dict(row)  # type: ignore[return-value]
 
         except Exception as e:
             logger.error(

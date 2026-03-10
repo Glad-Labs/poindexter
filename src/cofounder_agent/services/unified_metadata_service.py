@@ -63,11 +63,11 @@ try:
     # Try new SDK first, fall back to old one
     use_new_sdk = False
     try:
-        import google.genai as genai
+        import google.genai as genai  # type: ignore
 
         use_new_sdk = True
     except ImportError:
-        import google.generativeai as genai
+        import google.generativeai as genai  # type: ignore
 
     GOOGLE_AVAILABLE = ProviderChecker.is_gemini_available()
     if GOOGLE_AVAILABLE:
@@ -414,7 +414,7 @@ class UnifiedMetadataService:
 
         try:
             if ANTHROPIC_AVAILABLE and anthropic_client is not None:
-                response = anthropic_client.messages.create(
+                response = anthropic_client.messages.create(  # type: ignore[attr-defined]
                     model="claude-3-haiku-20240307",
                     max_tokens=max_length,
                     messages=[{"role": "user", "content": prompt}],
@@ -692,7 +692,7 @@ class UnifiedMetadataService:
 
         try:
             if ANTHROPIC_AVAILABLE and anthropic_client is not None:
-                response = anthropic_client.messages.create(
+                response = anthropic_client.messages.create(  # type: ignore[attr-defined]
                     model="claude-3-haiku-20240307",
                     max_tokens=100,
                     messages=[{"role": "user", "content": prompt}],
@@ -808,7 +808,7 @@ class UnifiedMetadataService:
 
         try:
             if ANTHROPIC_AVAILABLE and anthropic_client is not None:
-                response = anthropic_client.messages.create(
+                response = anthropic_client.messages.create(  # type: ignore[attr-defined]
                     model="claude-3-haiku-20240307",
                     max_tokens=100,
                     messages=[{"role": "user", "content": prompt}],

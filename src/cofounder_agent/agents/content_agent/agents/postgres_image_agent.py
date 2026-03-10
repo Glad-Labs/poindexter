@@ -241,7 +241,7 @@ Only return the JSON array, no other text."""
 
             # Try to get image from Pexels API (async)
             try:
-                images = await self.pexels_client.search_images(
+                images = await self.pexels_client.search_images(  # type: ignore[attr-defined]
                     query, per_page=1, orientation="landscape", size="large"
                 )
 
