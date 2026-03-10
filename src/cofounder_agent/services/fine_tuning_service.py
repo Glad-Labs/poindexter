@@ -178,17 +178,17 @@ PARAMETER learning_rate {learning_rate}
 
             # Configure API key based on SDK version
             if use_new_sdk:
-                genai.api_key = key
+                genai.api_key = key  # type: ignore
             else:
-                genai.configure(api_key=key)
+                genai.configure(api_key=key)  # type: ignore
 
             # Upload training data
-            media = genai.upload_file(dataset_path)
+            media = genai.upload_file(dataset_path)  # type: ignore
 
             # Start fine-tuning operation
             base_model = "models/gemini-1.5-pro-latest"
 
-            operation = genai.types.Operation()
+            operation = genai.types.Operation()  # type: ignore
             # Note: Actual fine-tuning depends on Google's API
             # This is a placeholder for the actual implementation
 
@@ -258,7 +258,7 @@ PARAMETER learning_rate {learning_rate}
             file_id = file_response.id
 
             # Start fine-tuning job
-            job_response = client.beta.fine_tuning.jobs.create(
+            job_response = client.beta.fine_tuning.jobs.create(  # type: ignore
                 model="claude-3-5-sonnet-20241022",
                 training_data={"type": "file", "file_id": file_id},
             )
@@ -323,12 +323,12 @@ PARAMETER learning_rate {learning_rate}
 
             # Upload training file
             with open(dataset_path, "rb") as f:
-                file_response = openai.File.create(file=f, purpose="fine-tune")
+                file_response = openai.File.create(file=f, purpose="fine-tune")  # type: ignore
 
             file_id = file_response.id
 
             # Start fine-tuning job
-            job_response = openai.FineTuningJob.create(training_file=file_id, model="gpt-4")
+            job_response = openai.FineTuningJob.create(training_file=file_id, model="gpt-4")  # type: ignore
 
             job_id_api = job_response.id
             self.jobs[job_id] = {
@@ -414,7 +414,7 @@ PARAMETER learning_rate {learning_rate}
                     return {"status": "error", "error": "ANTHROPIC_API_KEY not set"}
 
                 client = anthropic.Anthropic(api_key=key)
-                job_api = client.beta.fine_tuning.jobs.retrieve(job["job_id_api"])
+                job_api = client.beta.fine_tuning.jobs.retrieve(job["job_id_api"])  # type: ignore
 
                 status_map = {
                     "queued": "queued",
@@ -446,7 +446,7 @@ PARAMETER learning_rate {learning_rate}
                     return {"status": "error", "error": "OPENAI_API_KEY not set"}
 
                 openai.api_key = key
-                job_api = openai.FineTuningJob.retrieve(job["job_id_api"])
+                job_api = openai.FineTuningJob.retrieve(job["job_id_api"])  # type: ignore
 
                 status_map = {
                     "queued": "queued",

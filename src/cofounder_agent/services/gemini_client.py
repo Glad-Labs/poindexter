@@ -123,16 +123,16 @@ class GeminiClient:
                 response = await client.aio.models.generate_content(
                     model=f"models/{model}",
                     contents=prompt,
-                    config={"max_output_tokens": max_tokens, "temperature": temperature, **kwargs},
+                    config={"max_output_tokens": max_tokens, "temperature": temperature, **kwargs},  # type: ignore
                 )
             else:
                 import google.generativeai as genai
 
-                genai.configure(api_key=self.api_key)
-                gemini_model = genai.GenerativeModel(model)
+                genai.configure(api_key=self.api_key)  # type: ignore
+                gemini_model = genai.GenerativeModel(model)  # type: ignore
                 response = await gemini_model.generate_content_async(
                     prompt,
-                    generation_config=genai.types.GenerationConfig(
+                    generation_config=genai.types.GenerationConfig(  # type: ignore
                         max_output_tokens=max_tokens, temperature=temperature, **kwargs
                     ),
                 )
@@ -188,21 +188,21 @@ class GeminiClient:
                 ]
                 response = await client.aio.models.generate_content(
                     model=f"models/{model}",
-                    contents=contents,
-                    config={"max_output_tokens": max_tokens, "temperature": temperature, **kwargs},
+                    contents=contents,  # type: ignore
+                    config={"max_output_tokens": max_tokens, "temperature": temperature, **kwargs},  # type: ignore
                 )
             else:
                 import google.generativeai as genai
 
-                genai.configure(api_key=self.api_key)
-                gemini_model = genai.GenerativeModel(model)
+                genai.configure(api_key=self.api_key)  # type: ignore
+                gemini_model = genai.GenerativeModel(model)  # type: ignore
                 chat_session = gemini_model.start_chat(history=[])
                 for msg in messages[:-1]:
                     if msg["role"] == "user":
                         chat_session.send_message(msg["content"])
                 response = await chat_session.send_message_async(
                     messages[-1]["content"],
-                    generation_config=genai.types.GenerationConfig(
+                    generation_config=genai.types.GenerationConfig(  # type: ignore
                         max_output_tokens=max_tokens, temperature=temperature, **kwargs
                     ),
                 )

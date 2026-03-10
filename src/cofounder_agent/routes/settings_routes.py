@@ -454,10 +454,12 @@ async def batch_update_settings(
 ):
     """Batch update user settings — updates the user_preferences key."""
     try:
-        if not update_data.key and not update_data.value:
+        _extra = update_data.model_extra or {}
+        _key = _extra.get("key")
+        if not _key and not update_data.value:
             raise HTTPException(status_code=400, detail="At least 'key' or 'value' is required")
 
-        target_key = update_data.key or "user_preferences"
+        target_key = _key or "user_preferences"
         new_value = update_data.value or ""
 
         await db_service.set_setting(
@@ -474,9 +476,9 @@ async def batch_update_settings(
             id=updated.get("id") or 1,
             key=updated.get("key", target_key),
             value=updated.get("value", new_value),
-            data_type=update_data.data_type or SettingDataTypeEnum.STRING,
-            category=update_data.category or SettingCategoryEnum.GENERAL,
-            environment=update_data.environment or SettingEnvironmentEnum.ALL,
+            data_type=_extra.get("data_type") or SettingDataTypeEnum.STRING,
+            category=_extra.get("category") or SettingCategoryEnum.GENERAL,
+            environment=_extra.get("environment") or SettingEnvironmentEnum.ALL,
             description=updated.get("description") or update_data.description or "",
             is_encrypted=False,
             is_read_only=False,
@@ -588,13 +590,14 @@ async def update_setting(
         if not updated:
             raise HTTPException(status_code=500, detail="Failed to retrieve updated setting")
 
+        _extra2 = update_data.model_extra or {}
         return SettingResponse(
             id=updated.get("id") or setting_id,
             key=updated.get("key", setting_key),
             value=updated.get("value", new_value),
-            data_type=update_data.data_type or SettingDataTypeEnum.STRING,
-            category=update_data.category or SettingCategoryEnum.GENERAL,
-            environment=update_data.environment or SettingEnvironmentEnum.ALL,
+            data_type=_extra2.get("data_type") or SettingDataTypeEnum.STRING,
+            category=_extra2.get("category") or SettingCategoryEnum.GENERAL,
+            environment=_extra2.get("environment") or SettingEnvironmentEnum.ALL,
             description=updated.get("description") or "",
             is_encrypted=False,
             is_read_only=False,

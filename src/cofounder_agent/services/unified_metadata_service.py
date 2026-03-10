@@ -73,9 +73,9 @@ try:
     if GOOGLE_AVAILABLE:
         # Configure API key based on SDK version
         if use_new_sdk:
-            genai.api_key = ProviderChecker.get_gemini_api_key()
+            genai.api_key = ProviderChecker.get_gemini_api_key()  # type: ignore[attr-defined]
         else:
-            genai.configure(api_key=ProviderChecker.get_gemini_api_key())
+            genai.configure(api_key=ProviderChecker.get_gemini_api_key())  # type: ignore[attr-defined]
     else:
         logger.debug("⚠️  GOOGLE_API_KEY not set in environment")
 except ImportError:
@@ -210,8 +210,10 @@ class UnifiedMetadataService:
             metadata.tag_ids = tag_ids
             # Get tag names for display
             metadata.tags = [
-                next((t.get("name") for t in available_tags if t.get("id") == tid), "")
+                t.get("name") or ""
                 for tid in tag_ids
+                for t in available_tags
+                if t.get("id") == tid
             ]
 
         # 7. Generate featured image prompt
@@ -411,25 +413,28 @@ class UnifiedMetadataService:
         prompt = pm.get_prompt("seo.generate_excerpt", max_length=max_length, content=content[:800])
 
         try:
-            if ANTHROPIC_AVAILABLE:
+            if ANTHROPIC_AVAILABLE and anthropic_client is not None:
                 response = anthropic_client.messages.create(
                     model="claude-3-haiku-20240307",
                     max_tokens=max_length,
                     messages=[{"role": "user", "content": prompt}],
                 )
-                excerpt = response.content[0].text.strip()
+                block = response.content[0]
+                text = getattr(block, "text", None) or ""
+                excerpt = text.strip()
                 return excerpt[:max_length] if excerpt else None
 
             if OPENAI_AVAILABLE:
                 import openai as openai_module
 
-                response = openai_module.ChatCompletion.create(
+                client = openai_module.OpenAI()  # type: ignore[attr-defined]
+                resp = client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=max_length,
                     temperature=0.7,
                 )
-                excerpt = response.choices[0].message.content.strip()
+                excerpt = (resp.choices[0].message.content or "").strip()
                 return excerpt[:max_length] if excerpt else None
 
         except Exception as e:
@@ -615,7 +620,9 @@ class UnifiedMetadataService:
         best_category, score = self._keyword_match_category(content, available_categories, title)
         if score > 0:
             logger.debug(
-                "Keyword matched category: %s (score=%s)", best_category.get("name"), score
+                "Keyword matched category: %s (score=%s)",
+                best_category.get("name") if best_category else None,
+                score,
             )
             return best_category
 
@@ -684,25 +691,27 @@ class UnifiedMetadataService:
         )
 
         try:
-            if ANTHROPIC_AVAILABLE:
+            if ANTHROPIC_AVAILABLE and anthropic_client is not None:
                 response = anthropic_client.messages.create(
                     model="claude-3-haiku-20240307",
                     max_tokens=100,
                     messages=[{"role": "user", "content": prompt}],
                 )
-                category_name = response.content[0].text.strip()
+                block = response.content[0]
+                category_name = (getattr(block, "text", None) or "").strip()
                 return next((c for c in available_categories if c["name"] == category_name), None)
 
             if OPENAI_AVAILABLE:
                 import openai as openai_module
 
-                response = openai_module.ChatCompletion.create(
+                client = openai_module.OpenAI()  # type: ignore[attr-defined]
+                resp = client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=100,
                     temperature=0.7,
                 )
-                category_name = response.choices[0].message.content.strip()
+                category_name = (resp.choices[0].message.content or "").strip()
                 return next((c for c in available_categories if c["name"] == category_name), None)
 
         except Exception as e:
@@ -769,7 +778,7 @@ class UnifiedMetadataService:
             tag_slug = tag.get("slug", "").lower()
             tag_id = tag.get("id")
 
-            if tag_name in search_text or tag_slug in search_text:
+            if (tag_name in search_text or tag_slug in search_text) and tag_id is not None:
                 matched_tag_ids.append(tag_id)
 
         return matched_tag_ids
@@ -798,40 +807,45 @@ class UnifiedMetadataService:
         )
 
         try:
-            if ANTHROPIC_AVAILABLE:
+            if ANTHROPIC_AVAILABLE and anthropic_client is not None:
                 response = anthropic_client.messages.create(
                     model="claude-3-haiku-20240307",
                     max_tokens=100,
                     messages=[{"role": "user", "content": prompt}],
                 )
-                tags_str = response.content[0].text.strip()
+                block = response.content[0]
+                tags_str = (getattr(block, "text", None) or "").strip()
                 tag_names = [t.strip() for t in tags_str.split(",")]
                 return [
-                    next((tag["id"] for tag in available_tags if tag["name"] == name), None)
+                    tag["id"]
                     for name in tag_names
-                    if any(tag["name"] == name for tag in available_tags)
+                    for tag in available_tags
+                    if tag["name"] == name
                 ]
 
             if OPENAI_AVAILABLE:
                 import openai as openai_module
 
-                response = openai_module.ChatCompletion.create(
+                client = openai_module.OpenAI()  # type: ignore[attr-defined]
+                resp = client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=100,
                     temperature=0.7,
                 )
-                tags_str = response.choices[0].message.content.strip()
+                tags_str = (resp.choices[0].message.content or "").strip()
                 tag_names = [t.strip() for t in tags_str.split(",")]
                 return [
-                    next((tag["id"] for tag in available_tags if tag["name"] == name), None)
+                    tag["id"]
                     for name in tag_names
-                    if any(tag["name"] == name for tag in available_tags)
+                    for tag in available_tags
+                    if tag["name"] == name
                 ]
 
         except Exception as e:
             logger.error(f"[_llm_extract_tags] LLM tag extraction error: {e}", exc_info=True)
-            return []
+
+        return []
 
     # ========================================================================
     # FEATURED IMAGE & SOCIAL METADATA
@@ -850,8 +864,6 @@ class UnifiedMetadataService:
             category=category or "General",
             content_context=context,
         )
-
-        return prompt
 
     def generate_social_metadata(
         self, title: str, excerpt: str, image_url: Optional[str] = None
