@@ -49,7 +49,7 @@ from agents.content_agent.utils.helpers import extract_json_from_string
 # With the sys.path fix above, this should work even with poetry run
 genai = None
 try:
-    import google.genai as genai_module
+    import google.genai as genai_module  # type: ignore
 
     genai = genai_module
     logging.info("✅ google.genai successfully imported")

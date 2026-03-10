@@ -13,7 +13,7 @@ Available phases can be discovered via PhaseRegistry.
 from .base_phase import BasePhase, PhaseConfig, PhaseInputSpec, PhaseOutputSpec
 
 try:
-    from .phase_registry import get_phase_registry
+    from .phase_registry import get_phase_registry  # type: ignore[import]
 except ImportError:
     get_phase_registry = None
 

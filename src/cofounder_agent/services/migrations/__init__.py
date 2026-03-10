@@ -49,8 +49,8 @@ async def run_migrations(database_service) -> bool:
             try:
                 # Dynamically import the migration module
                 spec = importlib.util.spec_from_file_location(migration_name[:-3], migration_file)
-                migration_module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(migration_module)
+                migration_module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+                spec.loader.exec_module(migration_module)  # type: ignore[union-attr]
 
                 # Check if the migration has an up() function
                 if not hasattr(migration_module, "up"):

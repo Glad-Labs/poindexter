@@ -71,6 +71,7 @@ from .database_response_models import (
     AuthorResponse,
     CategoryResponse,
     CostLogResponse,
+    ErrorResponse,
     FinancialEntryResponse,
     FinancialSummaryResponse,
     LogResponse,
@@ -144,7 +145,6 @@ from .quality_schemas import (
 
 # Settings schemas
 from .settings_schemas import (
-    ErrorResponse,
     SettingBase,
     SettingBulkUpdateRequest,
     SettingCategoryEnum,

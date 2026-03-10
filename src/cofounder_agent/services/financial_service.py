@@ -67,8 +67,8 @@ class FinancialService:
             Dictionary with cost analysis, ROI metrics, recommendations
         """
         try:
-            from agents.financial_agent.agents.financial_agent import (
-                FinancialAgent,  # type: ignore[import]
+            from agents.financial_agent.agents.financial_agent import (  # type: ignore
+                FinancialAgent,
             )
 
             financial_agent = FinancialAgent()

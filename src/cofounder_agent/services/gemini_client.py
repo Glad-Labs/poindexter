@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # Resolve which SDK is available once at import time
 _GENAI_SDK: str = "none"
 try:
-    import google.genai as _genai_module  # noqa: F401
+    import google.genai as _genai_module  # type: ignore  # noqa: F401
 
     _GENAI_SDK = "new"
     logger.debug("google.genai (new SDK) loaded for GeminiClient")
@@ -117,7 +117,7 @@ class GeminiClient:
 
         try:
             if _GENAI_SDK == "new":
-                import google.genai as genai
+                import google.genai as genai  # type: ignore
 
                 client = genai.Client(api_key=self.api_key)
                 response = await client.aio.models.generate_content(
@@ -174,8 +174,8 @@ class GeminiClient:
 
         try:
             if _GENAI_SDK == "new":
-                import google.genai as genai
-                import google.genai.types as genai_types
+                import google.genai as genai  # type: ignore
+                import google.genai.types as genai_types  # type: ignore
 
                 client = genai.Client(api_key=self.api_key)
                 # Format conversation as alternating user/model turns

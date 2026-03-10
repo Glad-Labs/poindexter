@@ -15,14 +15,14 @@ import httpx
 
 # Optional dependencies for enhanced functionality
 try:
-    import feedparser
+    import feedparser  # type: ignore
 
     FEEDPARSER_AVAILABLE = True
 except ImportError:
     FEEDPARSER_AVAILABLE = False
 
 try:
-    from bs4 import BeautifulSoup
+    from bs4 import BeautifulSoup  # type: ignore
 
     BS4_AVAILABLE = True
 except ImportError:

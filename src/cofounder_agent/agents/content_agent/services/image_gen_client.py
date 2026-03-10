@@ -1,6 +1,6 @@
 import logging
 
-import torch
+import torch  # type: ignore
 from diffusers import StableDiffusionXLPipeline  # type: ignore[attr-defined]
 
 import config

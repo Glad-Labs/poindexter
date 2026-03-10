@@ -80,7 +80,7 @@ class MarketInsightAgent:
                 },
             }
             prompt = f"Generate three blog post ideas based on the trend: '{trend}'."
-            response = self.llm_client.generate_with_tools(prompt, tools=[tool_schema])
+            response = self.llm_client.generate_with_tools(prompt, tools=[tool_schema])  # type: ignore[attr-defined]
             suggestions = response.get("ideas", [])
 
             # Tasks would be created via REST API in production

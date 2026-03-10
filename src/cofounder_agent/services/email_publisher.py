@@ -22,8 +22,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any, Dict, List, Optional, cast
 
-import aiosmtplib
-import html2text
+import aiosmtplib  # type: ignore
+import html2text  # type: ignore
 
 logger = logging.getLogger(__name__)
 
