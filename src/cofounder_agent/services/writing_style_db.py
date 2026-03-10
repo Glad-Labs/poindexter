@@ -111,7 +111,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                            word_count, char_count, metadata, created_at, updated_at
                     FROM writing_samples WHERE id = $1
                     """,
-                    sample_id,
+                    int(sample_id),
                 )
                 return self._format_sample(row) if row else None
         except Exception as e:
@@ -198,7 +198,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                 await conn.execute(
                     "UPDATE writing_samples SET is_active = FALSE WHERE user_id = $1 AND id != $2",
                     user_id,
-                    sample_id,
+                    int(sample_id),
                 )
 
                 # Activate the specified sample
@@ -207,10 +207,10 @@ class WritingStyleDatabase(DatabaseServiceMixin):
                     UPDATE writing_samples 
                     SET is_active = TRUE, updated_at = NOW()
                     WHERE id = $1 AND user_id = $2
-                    RETURNING id, user_id, title, description, content, is_active, 
+                    RETURNING id, user_id, title, description, content, is_active,
                               word_count, char_count, metadata, created_at, updated_at
                     """,
-                    sample_id,
+                    int(sample_id),
                     user_id,
                 )
 
@@ -251,7 +251,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
         try:
             # Build dynamic update query
             updates = []
-            params = [sample_id, user_id]
+            params = [int(sample_id), user_id]
             param_count = 2
 
             if title is not None:
@@ -322,7 +322,7 @@ class WritingStyleDatabase(DatabaseServiceMixin):
         try:
             async with self.pool.acquire() as conn:
                 result = await conn.execute(
-                    "DELETE FROM writing_samples WHERE id = $1 AND user_id = $2", sample_id, user_id
+                    "DELETE FROM writing_samples WHERE id = $1 AND user_id = $2", int(sample_id), user_id
                 )
 
                 # Parse result to check if row was deleted

@@ -2,7 +2,7 @@
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from services.tasks_db import TasksDatabase
@@ -74,7 +74,7 @@ class EnhancedStatusChangeService:
                 "user_id": user_id,
                 "reason": reason,
                 "validation_context": metadata or {},
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
 
             # Log to history table
@@ -90,7 +90,7 @@ class EnhancedStatusChangeService:
                 logger.warning(f"⚠️  Failed to log status change for {task_id}")
 
             # Update task
-            update_data = {"status": new_status, "updated_at": datetime.utcnow()}
+            update_data = {"status": new_status, "updated_at": datetime.now(timezone.utc)}
 
             if metadata:
                 # Merge incoming metadata with existing task_metadata to avoid overwriting
@@ -115,7 +115,7 @@ class EnhancedStatusChangeService:
                         prior_retry_count = 0
 
                     merged_metadata["retry_count"] = prior_retry_count + 1
-                    merged_metadata["last_retry_at"] = datetime.utcnow().isoformat()
+                    merged_metadata["last_retry_at"] = datetime.now(timezone.utc).isoformat()
                     merged_metadata["last_retry_by"] = user_id
 
                 update_data["task_metadata"] = merged_metadata
