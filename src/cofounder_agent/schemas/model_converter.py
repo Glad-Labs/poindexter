@@ -63,6 +63,11 @@ class ModelConverter:
             "business_state",
             "suggestions",
             "cost_breakdown",
+            # Model tracking JSON fields (#128): must be parsed from stored JSON string
+            # so get_model_for_phase() receives a dict, not a string
+            "model_selections",
+            "models_used_by_phase",
+            "model_selection_log",
         ]
         for key in json_fields:
             if key in data and data[key] is not None:

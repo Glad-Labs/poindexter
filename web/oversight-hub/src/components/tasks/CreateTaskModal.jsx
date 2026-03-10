@@ -4,6 +4,31 @@ import { createTask, makeRequest } from '../../services/cofounderAgentClient';
 import ModelSelectionPanel from '../ModelSelectionPanel';
 import { WritingStyleSelector } from '../WritingStyleSelector';
 
+const TASK_TYPE_TO_BACKEND = {
+  blog_post: 'blog_post',
+  social_media_post: 'social_media',
+  email_campaign: 'email',
+  content_brief: 'market_research',
+  image_generation: 'data_retrieval',
+};
+
+const TONE_TO_BACKEND = {
+  professional: 'professional',
+  casual: 'casual',
+  academic: 'academic',
+  inspirational: 'inspirational',
+  authoritative: 'professional',
+  friendly: 'casual',
+};
+
+const toBackendTaskType = (uiTaskType) =>
+  TASK_TYPE_TO_BACKEND[uiTaskType] || 'blog_post';
+
+const toBackendTone = (tone) => {
+  if (!tone) return undefined;
+  return TONE_TO_BACKEND[tone] || 'professional';
+};
+
 const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
   const [taskType, setTaskType] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -289,6 +314,7 @@ const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
     try {
       // ✅ ROUTE TO CORRECT ENDPOINT BASED ON TASK TYPE
       let taskPayload;
+      const backendTaskType = toBackendTaskType(taskType);
 
       if (taskType === 'image_generation') {
         // 🖼️ Handle image generation task
@@ -337,12 +363,14 @@ const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
 
         // Create task record with image results
         taskPayload = {
-          task_type: 'image_generation', // Correct type for image generation tasks
+          // Store as backend-supported task type while preserving UI subtype in metadata.
+          task_type: backendTaskType,
           task_name: `Image: ${formData.description.substring(0, 40)}...`,
           topic: formData.description || '',
           category: 'image_generation',
           metadata: {
             task_type: 'image_generation',
+            backend_task_type: backendTaskType,
             style: formData.style || 'realistic',
             resolution: formData.resolution || '1024x1024',
             count: formData.count || 1,
@@ -377,7 +405,7 @@ const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
           // ⚠️ IMPORTANT: Send actual values or undefined, not hardcoded fallbacks
           // This allows backend Pydantic defaults to apply correctly
           style: formData.style || undefined,
-          tone: formData.tone || undefined,
+          tone: toBackendTone(formData.tone),
           target_length: parseInt(formData.word_count) || 1500,
           generate_featured_image: formData.generate_featured_image !== false,
           tags: formData.keywords
@@ -393,7 +421,8 @@ const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
             task_type: 'blog_post',
             task_name: `Blog: ${formData.topic}`,
             style: formData.style,
-            tone: formData.tone,
+            tone: toBackendTone(formData.tone),
+            original_tone: formData.tone,
             word_count: parseInt(formData.word_count) || 1500,
             generate_featured_image: formData.generate_featured_image !== false,
             publish_mode: 'draft',
@@ -408,18 +437,20 @@ const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
         logger.log('📤 [CreateTaskModal] Generic task - Form data:', formData);
 
         taskPayload = {
-          task_type: taskType || 'blog_post',
+          task_type: backendTaskType,
           topic: formData.topic || formData.description || '',
           category: formData.category || taskType || 'general',
           // Use undefined instead of hardcoded fallbacks
           style: formData.style || undefined,
-          tone: formData.tone || undefined,
+          tone: toBackendTone(formData.tone),
           models_by_phase: modelSelection.modelSelections || {},
           quality_preference: modelSelection.qualityPreference || 'balanced',
           metadata: {
             task_type: taskType,
+            backend_task_type: backendTaskType,
             style: formData.style,
-            tone: formData.tone,
+            tone: toBackendTone(formData.tone),
+            original_tone: formData.tone,
             word_count: formData.word_count,
             ...formData, // Include all original form data in metadata
           },
@@ -462,6 +493,19 @@ const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
             typeof err.response.detail === 'string'
               ? err.response.detail
               : JSON.stringify(err.response.detail);
+        } else if (err.response?.details) {
+          const details = err.response.details;
+          if (typeof details === 'string') {
+            errorMessage = details;
+          } else if (details && typeof details === 'object') {
+            const entries = Object.entries(details);
+            if (entries.length > 0) {
+              const [field, message] = entries[0];
+              errorMessage = `${field}: ${String(message)}`;
+            } else {
+              errorMessage = 'Request validation failed';
+            }
+          }
         } else if (err.response?.message) {
           errorMessage =
             typeof err.response.message === 'string'
@@ -470,6 +514,11 @@ const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
         } else if (err.message) {
           errorMessage = err.message;
         }
+      }
+
+      if (errorMessage === 'Failed to fetch') {
+        errorMessage =
+          'Cannot reach backend service (it may be restarting). Please wait a few seconds and try again.';
       }
 
       setError(`Failed to create task: ${errorMessage}`);

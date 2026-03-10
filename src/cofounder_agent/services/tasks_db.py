@@ -706,6 +706,25 @@ class TasksDatabase(DatabaseServiceMixin):
                 )
             if "published_at" not in normalized_updates and "published_at" in task_metadata:
                 normalized_updates["published_at"] = task_metadata.get("published_at")
+            # Model tracking columns (#112): populated from _execute_task execution data
+            if (
+                "models_used_by_phase" not in normalized_updates
+                and "models_used_by_phase" in task_metadata
+            ):
+                models_by_phase = task_metadata.get("models_used_by_phase")
+                normalized_updates["models_used_by_phase"] = (
+                    json.dumps(models_by_phase)
+                    if isinstance(models_by_phase, dict)
+                    else models_by_phase
+                )
+            if (
+                "model_selection_log" not in normalized_updates
+                and "model_selection_log" in task_metadata
+            ):
+                sel_log = task_metadata.get("model_selection_log")
+                normalized_updates["model_selection_log"] = (
+                    json.dumps(sel_log) if isinstance(sel_log, dict) else sel_log
+                )
 
         # Serialize values for PostgreSQL
         serialized_updates = {}

@@ -21,10 +21,15 @@ const CACHE_HEADERS = {
 };
 
 /**
- * Generic fetch wrapper with error handling
+ * Generic fetch wrapper with error handling and structured error logging.
+ *
+ * Logs all errors in both dev and production (issue #97). Error context
+ * includes endpoint, method, HTTP status (when available), error message,
+ * and stack trace to aid production debugging.
  */
 async function fetchAPI(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`;
+  const method = options.method || 'GET';
 
   try {
     const response = await fetch(url, {
@@ -38,14 +43,33 @@ async function fetchAPI(endpoint, options = {}) {
     });
 
     if (!response.ok) {
-      throw new Error(`API Error: ${response.status} ${response.statusText}`);
+      const httpError = new Error(
+        `API Error: ${response.status} ${response.statusText}`
+      );
+      logger.error('[FastAPI] HTTP error response', {
+        endpoint,
+        method,
+        status: response.status,
+        statusText: response.statusText,
+        message: httpError.message,
+      });
+      throw httpError;
     }
 
     const data = await response.json();
     return data;
   } catch (error) {
-    if (process.env.NODE_ENV !== 'production') {
-      logger.error(`[FastAPI] Error fetching ${endpoint}:`, error.message);
+    // Log all errors regardless of environment — production failures are
+    // equally important to diagnose (issue #97).
+    if (!(error.message && error.message.startsWith('API Error:'))) {
+      // Avoid double-logging HTTP errors already logged above
+      logger.error('[FastAPI] Network or parse error', {
+        endpoint,
+        method,
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        timestamp: new Date().toISOString(),
+      });
     }
     throw error;
   }
@@ -111,9 +135,10 @@ export async function getFeaturedPost() {
     }
     return null;
   } catch (error) {
-    if (process.env.NODE_ENV !== 'production') {
-      logger.error('[FastAPI] Error fetching featured post:', error);
-    }
+    logger.error('[FastAPI] Error fetching featured post', {
+      message: error instanceof Error ? error.message : String(error),
+      endpoint: '/posts',
+    });
     return null;
   }
 }
@@ -141,9 +166,10 @@ export async function getPostBySlug(slug) {
 
     return null;
   } catch (error) {
-    if (process.env.NODE_ENV !== 'production') {
-      logger.error(`[FastAPI] Error fetching post ${slug}:`, error);
-    }
+    logger.error('[FastAPI] Error fetching post by slug', {
+      slug,
+      message: error instanceof Error ? error.message : String(error),
+    });
     return null;
   }
 }
@@ -158,9 +184,9 @@ export async function getCategories() {
     const response = await fetchAPI('/categories');
     return response.data || [];
   } catch (error) {
-    if (process.env.NODE_ENV !== 'production') {
-      logger.error('[FastAPI] Error fetching categories:', error);
-    }
+    logger.error('[FastAPI] Error fetching categories', {
+      message: error instanceof Error ? error.message : String(error),
+    });
     return [];
   }
 }

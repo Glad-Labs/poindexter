@@ -1,32 +1,22 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import NewsletterModal from './NewsletterModal';
 
 const Footer = () => {
-  const [mounted, setMounted] = useState(false);
-  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
+  // currentYear is computed at render time. suppressHydrationWarning on the
+  // containing element tells Next.js to accept minor mismatches (e.g. a
+  // year-boundary edge case) without throwing a hydration error — no mounted
+  // state boilerplate required (issue #96).
+  const currentYear = new Date().getFullYear();
   const [isNewsletterModalOpen, setIsNewsletterModalOpen] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-    setCurrentYear(new Date().getFullYear());
-  }, []);
-
-  if (!mounted) {
-    // Return minimal server-side placeholder
-    return (
-      <footer className="bg-slate-950 py-8">
-        <p className="text-slate-500 text-center text-sm">Loading...</p>
-      </footer>
-    );
-  }
 
   return (
     <footer
       className="relative bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 border-t border-slate-800/50 mt-auto overflow-hidden"
       role="contentinfo"
+      suppressHydrationWarning
     >
       {/* Animated gradient overlay */}
       <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-transparent pointer-events-none" />

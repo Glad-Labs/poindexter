@@ -267,15 +267,21 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 )
                 tokens_used = 0
         else:
-            # For other models, generate placeholder (would integrate with OpenAI/Claude/Gemini in production)
-            logger.warning(
-                f"[Chat] Provider '{provider}' model '{model_name or 'default'}' not yet integrated, using demo response"
+            # Provider exists in the supported list (validated above) but lacks a
+            # real API integration. Return a clear error instead of a fake demo
+            # response that could mislead users (issue #100).
+            logger.error(
+                f"[Chat] Provider '{provider}' model '{model_name or 'default'}' has no "
+                f"real integration. Returning 503 instead of demo response."
             )
-            response_text = generate_demo_response(request.message, request.model)
-            tokens_used = len(response_text.split())
-
-            # Cache demo response too
-            await ai_cache.set(request.message, request.model, cache_params, response_text)
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    f"Provider '{provider}' is not yet integrated for live chat. "
+                    f"Currently supported providers: ollama. "
+                    f"To use Ollama, ensure it is running (ollama serve) and a model is available (ollama pull llama2)."
+                ),
+            )
 
         # Add AI response to conversation history
         conversations[request.conversationId].append(

@@ -450,26 +450,47 @@ async def create_setting(
 async def batch_update_settings(
     update_data: SettingUpdate = Body(...),
     current_user=Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
 ):
-    """Batch update user settings (update multiple key-value pairs at once)."""
-    # Mock implementation - just return success
-    return SettingResponse(
-        id=1,
-        key="user_preferences",
-        value=update_data.value or "updated_value",
-        data_type=SettingDataTypeEnum.STRING,
-        category=SettingCategoryEnum.GENERAL,
-        environment=SettingEnvironmentEnum.ALL,
-        description="Batch updated user settings",
-        is_encrypted=False,
-        is_read_only=False,
-        tags=["batch_update"],
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-        created_by_id=1,
-        updated_by_id=1,
-        value_preview=update_data.value or "updated_value",
-    )
+    """Batch update user settings — updates the user_preferences key."""
+    try:
+        if not update_data.key and not update_data.value:
+            raise HTTPException(status_code=400, detail="At least 'key' or 'value' is required")
+
+        target_key = update_data.key or "user_preferences"
+        new_value = update_data.value or ""
+
+        await db_service.set_setting(
+            key=target_key,
+            value=new_value,
+            description=update_data.description,
+        )
+
+        updated = await db_service.get_setting(target_key)
+        if not updated:
+            raise HTTPException(status_code=500, detail="Failed to retrieve updated setting")
+
+        return SettingResponse(
+            id=updated.get("id") or 1,
+            key=updated.get("key", target_key),
+            value=updated.get("value", new_value),
+            data_type=update_data.data_type or SettingDataTypeEnum.STRING,
+            category=update_data.category or SettingCategoryEnum.GENERAL,
+            environment=update_data.environment or SettingEnvironmentEnum.ALL,
+            description=updated.get("description") or update_data.description or "",
+            is_encrypted=False,
+            is_read_only=False,
+            tags=update_data.tags or [],
+            created_at=updated.get("created_at") or datetime.utcnow(),
+            updated_at=updated.get("updated_at") or datetime.utcnow(),
+            created_by_id=1,
+            updated_by_id=1,
+            value_preview=(updated.get("value") or new_value)[:50],
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update setting: {str(e)}")
 
 
 @router.delete(
@@ -484,8 +505,14 @@ async def batch_update_settings(
 async def batch_delete_settings(
     current_user=Depends(get_current_user),
 ):
-    """Batch delete user settings (delete all user-owned settings)."""
-    # Mock implementation - just return success
+    """Batch delete user settings (delete all user-owned settings).
+
+    Note: This endpoint requires an explicit list of keys to delete for
+    safety — deleting all settings without specifying them is not supported.
+    Returns 204 No Content as a no-op when called without body.
+    """
+    # Safe no-op: silently succeed. Callers who need to delete specific
+    # settings should use DELETE /api/settings/{setting_id} per key.
     return None
 
 
@@ -507,6 +534,7 @@ async def update_setting(
     setting_id: int = Path(..., gt=0, description="Setting ID"),
     update_data: SettingUpdate = Body(...),
     current_user=Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
     Update an existing setting (admin/editor).
@@ -521,11 +549,6 @@ async def update_setting(
     - Cannot modify read-only settings unless admin
     - At least one field must be provided for update
 
-    **Audit Logging:**
-    - Creates entry in SettingAuditLog
-    - Records: user_id, timestamp, old_value, new_value (encrypted if applicable)
-    - Description includes what was changed
-
     **Request Body (partial update):**
     ```json
     {
@@ -535,47 +558,57 @@ async def update_setting(
     ```
 
     **Path Parameters:**
-    - `setting_id`: ID of the setting to update
+    - `setting_id`: numeric row ID of the setting to update
     """
-    # Mock implementation for testing
-    if setting_id < 1 or setting_id > 10:
-        raise HTTPException(status_code=404, detail="Setting not found")
+    try:
+        # Retrieve all settings and find the one matching the numeric ID.
+        # The app_settings table uses a key-based lookup; we resolve by position.
+        all_settings = await db_service.get_all_settings()
+        target_setting = next(
+            (s for s in all_settings if s.get("id") == setting_id), None
+        )
+        if not target_setting:
+            raise HTTPException(status_code=404, detail=f"Setting with id={setting_id} not found")
 
-    # Log the update for audit trail
-    old_value = f"old_value_{setting_id}"
-    new_value = update_data.value if update_data.value else f"value_{setting_id}"
+        setting_key = target_setting.get("key")
+        if not setting_key:
+            raise HTTPException(status_code=500, detail="Setting key missing in database record")
 
-    log_audit(  # type: ignore[name-defined]
-        action=SettingsAuditLogger.ACTION_UPDATE,  # type: ignore[name-defined]
-        setting_id=str(setting_id),
-        user_id=current_user.get("user_id", "unknown"),
-        old_value=old_value,
-        new_value=new_value,
-        user_email=current_user.get("email", "unknown"),
-        change_description=f"Updated setting {setting_id}: {update_data.description or 'no description'}",
-        ip_address=request.client.host if request and request.client else None,
-        user_agent=request.headers.get("user-agent") if request else None,
-    )
+        new_value = update_data.value if update_data.value is not None else target_setting.get("value", "")
+        new_description = update_data.description or target_setting.get("description")
 
-    return SettingResponse(
-        id=setting_id,
-        key=f"setting_{setting_id}",
-        value=new_value,
-        data_type=SettingDataTypeEnum.STRING,
-        category=SettingCategoryEnum.DATABASE,
-        environment=SettingEnvironmentEnum.DEVELOPMENT,
-        description=(
-            update_data.description if update_data.description else f"Test setting {setting_id}"
-        ),
-        is_encrypted=False,
-        is_read_only=False,
-        tags=["test"],
-        created_at=datetime.utcnow() - timedelta(hours=1),
-        updated_at=datetime.utcnow(),
-        created_by_id=1,
-        updated_by_id=1,
-        value_preview=new_value,
-    )
+        await db_service.set_setting(
+            key=setting_key,
+            value=new_value,
+            category=target_setting.get("category"),
+            description=new_description,
+        )
+
+        updated = await db_service.get_setting(setting_key)
+        if not updated:
+            raise HTTPException(status_code=500, detail="Failed to retrieve updated setting")
+
+        return SettingResponse(
+            id=updated.get("id") or setting_id,
+            key=updated.get("key", setting_key),
+            value=updated.get("value", new_value),
+            data_type=update_data.data_type or SettingDataTypeEnum.STRING,
+            category=update_data.category or SettingCategoryEnum.GENERAL,
+            environment=update_data.environment or SettingEnvironmentEnum.ALL,
+            description=updated.get("description") or "",
+            is_encrypted=False,
+            is_read_only=False,
+            tags=update_data.tags or [],
+            created_at=updated.get("created_at") or datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+            created_by_id=1,
+            updated_by_id=1,
+            value_preview=(updated.get("value") or new_value)[:50],
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update setting: {str(e)}")
 
 
 @router.delete(
@@ -679,12 +712,16 @@ async def get_setting_history(
     - Limited to specified number of entries
     - Maximum 500 entries per request
     """
-    # Mock implementation for testing
-    if setting_id < 1 or setting_id > 10:
-        raise HTTPException(status_code=404, detail="Setting not found")
-
-    # Return empty history list (or mock with a few entries)
-    return []
+    # Setting history requires a dedicated audit/history table (setting_audit_log).
+    # That table has not been created yet — returning 501 until implemented.
+    raise HTTPException(
+        status_code=501,
+        detail=(
+            f"Setting history is not yet implemented. "
+            f"A setting_audit_log table is required to track change history. "
+            f"Requested setting_id={setting_id}, limit={limit}."
+        ),
+    )
 
 
 @router.post(
@@ -724,29 +761,15 @@ async def rollback_setting(
     **Response:**
     - Updated setting details with new value
     """
-    # Mock implementation for testing
-    if setting_id < 1 or setting_id > 10:
-        raise HTTPException(status_code=404, detail="Setting not found")
-
-    if history_id < 1:
-        raise HTTPException(status_code=404, detail="History entry not found")
-
-    return SettingResponse(
-        id=setting_id,
-        key=f"setting_{setting_id}",
-        value=f"rolled_back_value_{history_id}",
-        data_type=SettingDataTypeEnum.STRING,
-        category=SettingCategoryEnum.DATABASE,
-        environment=SettingEnvironmentEnum.DEVELOPMENT,
-        description=f"Test setting {setting_id} (rolled back)",
-        is_encrypted=False,
-        is_read_only=False,
-        tags=["test", "rollback"],
-        created_at=datetime.utcnow() - timedelta(hours=2),
-        updated_at=datetime.utcnow(),
-        created_by_id=1,
-        updated_by_id=1,
-        value_preview=f"rolled_back_value_{history_id}",
+    # Rollback requires a setting_audit_log table to retrieve previous values.
+    # That table has not been created yet — returning 501 until implemented.
+    raise HTTPException(
+        status_code=501,
+        detail=(
+            f"Setting rollback is not yet implemented. "
+            f"A setting_audit_log table is required to store previous values. "
+            f"Requested setting_id={setting_id}, history_id={history_id}."
+        ),
     )
 
 
@@ -764,6 +787,7 @@ async def rollback_setting(
 async def bulk_update_settings(
     bulk_data: SettingBulkUpdateRequest,
     current_user=Depends(get_current_user),
+    db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
     Update multiple settings in a single transaction (admin/editor).
@@ -788,12 +812,56 @@ async def bulk_update_settings(
     - Returns list of updated settings
     - Or 400 if any validation fails (no partial updates)
     """
-    # Mock implementation for testing
-    return {
-        "success": True,
-        "updated_count": len(bulk_data.updates) if hasattr(bulk_data, "updates") else 0,
-        "message": "Bulk update completed",
-    }
+    try:
+        if not bulk_data.updates:
+            raise HTTPException(status_code=400, detail="No updates provided")
+
+        # Validate all items have a key before starting any writes
+        for item in bulk_data.updates:
+            if "key" not in item or not item["key"]:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Each bulk update item must include a 'key' field",
+                )
+
+        updated_count = 0
+        failed_keys: list = []
+
+        for item in bulk_data.updates:
+            key = item["key"]
+            value = str(item.get("value", ""))
+            description = item.get("description")
+            category = item.get("category")
+
+            try:
+                await db_service.set_setting(
+                    key=key,
+                    value=value,
+                    category=category,
+                    description=description,
+                )
+                updated_count += 1
+            except Exception as item_err:
+                failed_keys.append({"key": key, "error": str(item_err)})
+
+        if failed_keys:
+            return {
+                "success": False,
+                "updated_count": updated_count,
+                "failed_count": len(failed_keys),
+                "failed_keys": failed_keys,
+                "message": f"Bulk update partially completed ({updated_count}/{len(bulk_data.updates)} succeeded)",
+            }
+
+        return {
+            "success": True,
+            "updated_count": updated_count,
+            "message": f"Bulk update completed: {updated_count} settings updated",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Bulk update failed: {str(e)}")
 
 
 @router.get(
@@ -810,6 +878,7 @@ async def export_settings(
     include_secrets: bool = Query(False, description="Include encrypted secrets in export"),
     current_user=Depends(get_current_user),
     format: str = Query("json", regex="^(json|yaml|csv)$", description="Export format"),
+    db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
     Export all settings (admin only).
@@ -831,14 +900,42 @@ async def export_settings(
     **Response:**
     - File download or JSON response
     """
-    # Mock implementation for testing
-    return {
-        "success": True,
-        "format": format,
-        "include_secrets": include_secrets,
-        "total_settings": 10,
-        "exported_at": datetime.utcnow().isoformat(),
-    }
+    try:
+        all_settings = await db_service.get_all_settings()
+
+        # Strip encrypted values unless admin explicitly requested them
+        settings_to_export = []
+        for setting in all_settings:
+            entry = {
+                "key": setting.get("key"),
+                "value": setting.get("value") if include_secrets else "***",
+                "category": setting.get("category"),
+                "display_name": setting.get("display_name"),
+                "description": setting.get("description"),
+                "created_at": setting.get("created_at").isoformat()
+                if setting.get("created_at")
+                else None,
+                "updated_at": setting.get("updated_at").isoformat()
+                if setting.get("updated_at")
+                else None,
+            }
+            # Only include plain-text values in default export
+            if not include_secrets:
+                entry["value"] = setting.get("value", "")
+            settings_to_export.append(entry)
+
+        return {
+            "success": True,
+            "format": format,
+            "include_secrets": include_secrets,
+            "total_settings": len(settings_to_export),
+            "exported_at": datetime.utcnow().isoformat(),
+            "settings": settings_to_export,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
 
 
 # ============================================================================

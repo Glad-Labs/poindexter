@@ -182,15 +182,43 @@ async def get_workflow_execution_progress(
         ```
     """
     try:
-        # Return stub response for now
+        # Query real execution record from the database (issue #101).
+        if not db_service or not db_service.pool:
+            raise HTTPException(status_code=503, detail="Database unavailable")
+
+        pool = db_service.pool
+        history_service = WorkflowHistoryService(pool)
+        execution = await history_service.get_workflow_execution(execution_id)
+
+        if execution is None:
+            raise HTTPException(
+                status_code=404, detail=f"Execution '{execution_id}' not found"
+            )
+
+        # Map stored execution data to the progress response shape.
+        # workflow_executions stores status, current_phase, and progress info.
+        phases_completed = execution.get("completed_phases") or []
+        phases_remaining = execution.get("remaining_phases") or []
+        total_phases = len(phases_completed) + len(phases_remaining)
+        progress_percent = (
+            int(len(phases_completed) / total_phases * 100)
+            if total_phases > 0
+            else (100 if execution.get("status") in ("COMPLETED", "completed") else 0)
+        )
+
         return {
             "execution_id": execution_id,
-            "status": "completed",
-            "current_phase": None,
-            "progress_percent": 100,
-            "phases_completed": [],
-            "phases_remaining": [],
+            "status": execution.get("status", "unknown"),
+            "current_phase": execution.get("current_phase"),
+            "progress_percent": progress_percent,
+            "phases_completed": phases_completed,
+            "phases_remaining": phases_remaining,
+            "error": execution.get("error_message"),
+            "started_at": execution.get("created_at"),
+            "updated_at": execution.get("updated_at"),
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error getting workflow progress: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to get progress: {str(e)}")
@@ -233,12 +261,41 @@ async def cancel_workflow_execution(
         ```
     """
     try:
-        # Return stub response for now
+        # Perform real cancellation via the database (issue #101).
+        if not db_service or not db_service.pool:
+            raise HTTPException(status_code=503, detail="Database unavailable")
+
+        pool = db_service.pool
+        history_service = WorkflowHistoryService(pool)
+
+        # Verify the execution exists before attempting cancellation
+        execution = await history_service.get_workflow_execution(execution_id)
+        if execution is None:
+            raise HTTPException(
+                status_code=404, detail=f"Execution '{execution_id}' not found"
+            )
+
+        current_status = execution.get("status", "")
+        if current_status in ("COMPLETED", "completed", "CANCELLED", "cancelled", "FAILED", "failed"):
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cannot cancel execution with status '{current_status}'",
+            )
+
+        # Mark as cancelled in the database so the executor can detect it
+        cancelled = await history_service.update_workflow_execution(
+            execution_id, status="cancelled"
+        )
+        logger.info(f"[cancel_workflow] Execution {execution_id} marked as cancelled")
+
         return {
             "execution_id": execution_id,
             "status": "cancelled",
             "message": "Workflow execution cancelled successfully",
+            "previous_status": current_status,
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error cancelling workflow: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to cancel workflow: {str(e)}")

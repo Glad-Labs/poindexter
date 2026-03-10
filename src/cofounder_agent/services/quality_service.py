@@ -23,8 +23,11 @@ Quality Framework (7 Criteria):
 6. Readability (0-10) - Grammar, flow, formatting?
 7. Engagement (0-10) - Is content compelling and interesting?
 
-Overall Score = Average of 7 criteria
+Overall Score = Average of 7 criteria (with minimum-dimension enforcement)
 Pass Threshold = 7.0/10 (70%)
+Critical Floor = 50/100 — if clarity, readability, or relevance falls below this
+  threshold the overall score is capped at that dimension's value, preventing
+  compensatory passing from high scores in other dimensions.
 """
 
 import logging
@@ -110,9 +113,27 @@ class QualityDimensions:
     readability: float  # 0-100
     engagement: float  # 0-100
 
+    # Critical dimensions that, if severely low, cap the overall score.
+    # Any critical dimension below CRITICAL_FLOOR causes overall score to be
+    # capped at that dimension's value, preventing high scores in other
+    # dimensions from masking critical weaknesses (issue #127).
+    CRITICAL_FLOOR: float = 50.0
+    CRITICAL_DIMENSIONS: tuple = ("clarity", "readability", "relevance")
+
     def average(self) -> float:
-        """Calculate average score"""
-        return (
+        """Calculate overall score with minimum-dimension enforcement.
+
+        Returns the arithmetic mean of all 7 dimensions, but caps the result
+        at the lowest critical dimension score if that score is below
+        CRITICAL_FLOOR. This prevents content with critically low readability
+        (e.g. 48/100) from receiving a passing overall score solely because
+        other dimensions scored well.
+
+        Examples:
+            clarity=80, readability=48 → overall capped at 48 → FAIL
+            clarity=80, readability=70 → normal average → may PASS
+        """
+        raw_average = (
             self.clarity
             + self.accuracy
             + self.completeness
@@ -121,6 +142,23 @@ class QualityDimensions:
             + self.readability
             + self.engagement
         ) / 7.0
+
+        # Enforce minimum-dimension constraint on critical dimensions
+        critical_values = {
+            "clarity": self.clarity,
+            "readability": self.readability,
+            "relevance": self.relevance,
+        }
+        for dim_name, dim_value in critical_values.items():
+            if dim_value < self.CRITICAL_FLOOR:
+                logger.debug(
+                    f"Quality cap applied: {dim_name}={dim_value:.1f} < "
+                    f"CRITICAL_FLOOR={self.CRITICAL_FLOOR} — "
+                    f"overall capped from {raw_average:.1f} to {dim_value:.1f}"
+                )
+                raw_average = min(raw_average, dim_value)
+
+        return raw_average
 
     def to_dict(self) -> Dict[str, float]:
         """Convert to dictionary"""

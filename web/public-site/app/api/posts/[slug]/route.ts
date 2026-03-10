@@ -6,11 +6,6 @@ import logger from '@/lib/logger';
 
 import { NextRequest, NextResponse } from 'next/server';
 
-interface Post {
-  slug: string;
-  [key: string]: any;
-}
-
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ||
   process.env.NEXT_PUBLIC_FASTAPI_URL ||
@@ -25,33 +20,38 @@ export async function GET(
     // Unwrap the params promise (Next.js 15+)
     const { slug } = await params;
 
-    // Fetch published posts and filter by slug
+    // Query the backend directly by slug — avoids fetching the full post
+    // collection (previously fetched limit=1000 and filtered client-side,
+    // issue #93). The /api/posts/{slug} endpoint returns a single post or 404.
     const response = await fetch(
-      `${API_BASE}/api/posts?published_only=true&limit=1000`,
+      `${API_BASE}/api/posts/${encodeURIComponent(slug)}`,
       {
         next: { revalidate: 3600 }, // ISR: revalidate every hour
       }
     );
 
+    if (response.status === 404) {
+      return NextResponse.json({ error: 'Post not found' }, { status: 404 });
+    }
+
     if (!response.ok) {
       return NextResponse.json(
-        { error: 'Failed to fetch posts' },
+        { error: 'Failed to fetch post' },
         { status: 500 }
       );
     }
 
-    const data = await response.json();
-    const posts = data.data || data || [];
-    const post = posts.find((p: Post) => p.slug === slug);
-
-    if (!post) {
-      return NextResponse.json({ error: 'Post not found' }, { status: 404 });
-    }
+    const post = await response.json();
 
     return NextResponse.json(post);
   } catch (error) {
-    const slug = (params as any).slug || 'unknown';
-    logger.error(`Error fetching post ${slug}:`, error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    logger.error('Error fetching post', {
+      message: errorMessage,
+      stack: errorStack,
+      endpoint: '/api/posts/[slug]',
+    });
     return NextResponse.json(
       { error: 'Failed to fetch post' },
       { status: 500 }

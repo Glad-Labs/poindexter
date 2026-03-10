@@ -492,6 +492,14 @@ class TaskExecutor:
                     "model_used",
                     "fallback_info",
                     "execution_trace",
+                    # Cost fields (#111): written back to content_tasks.actual_cost
+                    # and content_tasks.cost_breakdown via tasks_db.update_task normalization
+                    "actual_cost",
+                    "cost_breakdown",
+                    # Model tracking fields (#112): written back to
+                    # content_tasks.models_used_by_phase and model_selection_log
+                    "models_used_by_phase",
+                    "model_selection_log",
                 ]
                 for field in fields_to_extract:
                     if field in result:
@@ -1468,8 +1476,53 @@ class TaskExecutor:
                 }
                 await self.database_service.log_cost(cost_log)
                 logger.debug(f"✅ Logged task cost: ${cost_log['cost_usd']:.6f} to database")
+
+                # Write actual_cost and cost_breakdown back to result so they
+                # are persisted in content_tasks by _process_single_task (issues #111).
+                actual_cost_usd = operation_metrics_dict.get("total_cost_usd", 0.0)
+                if isinstance(result, dict):
+                    result["actual_cost"] = actual_cost_usd
+                    result["cost_breakdown"] = {
+                        "content_generation": {
+                            "model": cost_log["model"],
+                            "provider": cost_log["provider"],
+                            "input_tokens": cost_log["input_tokens"],
+                            "output_tokens": cost_log["output_tokens"],
+                            "cost_usd": actual_cost_usd,
+                        }
+                    }
+                    logger.debug(
+                        f"✅ Injected actual_cost=${actual_cost_usd:.6f} into result for DB persistence"
+                    )
             except Exception as e:
                 logger.error(f"[_execute_task] Failed to persist cost metrics: {e}", exc_info=True)
+
+        # Build models_used_by_phase and model_selection_log from execution data
+        # and write them into result so _process_single_task can persist them (issue #112).
+        models_used_by_phase: Dict[str, str] = {}
+        model_selection_log: Dict[str, Any] = {}
+
+        if model_used:
+            # Record the draft phase model (primary generation phase)
+            draft_phase_model = (
+                fallback_info.get("model_used") or model_used
+                if fallback_info.get("used_fallback")
+                else model_used
+            )
+            models_used_by_phase["draft"] = draft_phase_model
+            model_selection_log["draft"] = {
+                "requested": execution_trace.get("draft_model_requested"),
+                "actual": draft_phase_model,
+                "fallback_used": fallback_info.get("used_fallback", False),
+                "fallback_reason": fallback_info.get("reason"),
+            }
+
+        if isinstance(result, dict):
+            result["models_used_by_phase"] = models_used_by_phase
+            result["model_selection_log"] = model_selection_log
+            logger.debug(
+                f"✅ Injected models_used_by_phase={models_used_by_phase} into result"
+            )
 
         # Store metadata in result
         metadata = {

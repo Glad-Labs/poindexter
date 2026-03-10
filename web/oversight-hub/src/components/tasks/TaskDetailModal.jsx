@@ -16,6 +16,7 @@ import {
   approveTask,
   rejectTask,
   publishTask,
+  getContentTask,
 } from '../../services/taskService';
 import { generateTaskImage } from '../../services/cofounderAgentClient';
 import {
@@ -156,11 +157,28 @@ const TaskDetailModal = ({ onClose, onUpdate }) => {
     async (feedback) => {
       setApprovalLoading(true);
       try {
+        // Guard against stale modal state by re-syncing current status first.
+        const latestTask = await getContentTask(selectedTask.id);
+        const latestStatus = latestTask?.status?.toLowerCase();
+
+        if (latestStatus && latestStatus !== 'awaiting_approval') {
+          handleTaskUpdate(latestTask);
+          alert(
+            `ℹ️ Task is already '${latestTask.status}'. Reject is only available when status is 'awaiting_approval'.`
+          );
+          return;
+        }
+
         // Use the proper taskService method which handles auth headers correctly
-        await rejectTask(
+        const rejectedTask = await rejectTask(
           selectedTask.id,
           feedback || 'Rejected from oversight hub'
         );
+
+        // Sync UI state immediately so status changes are visible without waiting for polling.
+        if (rejectedTask && typeof rejectedTask === 'object') {
+          handleTaskUpdate(rejectedTask);
+        }
 
         alert('✅ Task rejected successfully');
         // Reset form state
@@ -171,13 +189,24 @@ const TaskDetailModal = ({ onClose, onUpdate }) => {
         setSelectedTask(null);
         onClose();
       } catch (error) {
+        // If backend rejects due to stale status, re-fetch and sync task state immediately.
+        if (error?.status === 400) {
+          try {
+            const latestTask = await getContentTask(selectedTask.id);
+            if (latestTask) {
+              handleTaskUpdate(latestTask);
+            }
+          } catch {
+            // Ignore secondary refresh errors and surface original rejection error.
+          }
+        }
         logger.error('❌ Rejection error:', error);
         alert(`❌ Error rejecting task: ${error.message}`);
       } finally {
         setApprovalLoading(false);
       }
     },
-    [selectedTask, setSelectedTask, onClose]
+    [selectedTask, setSelectedTask, onClose, handleTaskUpdate]
   );
 
   // Return null after all hooks have been called

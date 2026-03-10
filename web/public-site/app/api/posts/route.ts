@@ -38,7 +38,13 @@ export async function GET(request: NextRequest) {
       total: data.meta?.pagination?.total || data.total || 0,
     });
   } catch (error) {
-    logger.error('Error in posts API route:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    logger.error('Error in posts API route', {
+      message: errorMessage,
+      stack: errorStack,
+      endpoint: '/api/posts',
+    });
     return NextResponse.json(
       { error: 'Failed to fetch posts', items: [], total: 0 },
       { status: 500 }
