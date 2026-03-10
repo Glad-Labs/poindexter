@@ -490,6 +490,8 @@ class TaskExecutor:
                     "stage",
                     "percentage",
                     "model_used",
+                    "fallback_info",
+                    "execution_trace",
                 ]
                 for field in fields_to_extract:
                     if field in result:
@@ -684,6 +686,23 @@ class TaskExecutor:
         model_used = get_model_for_phase("draft", model_selections, quality_preference)
         logger.info(f"   Determined model for execution: {model_used}")
 
+        execution_trace: Dict[str, Any] = {
+            "orchestrator_attempted": False,
+            "orchestrator_available": self.orchestrator is not None,
+            "selected_models": model_selections,
+            "quality_preference": quality_preference,
+            "draft_model_requested": model_used,
+            "fallback_triggered": False,
+            "fallback_reason": None,
+            "fallback_model": None,
+        }
+        fallback_info: Dict[str, Any] = {
+            "used_fallback": False,
+            "reason": None,
+            "model_used": None,
+            "timestamp": None,
+        }
+
         # ===== SPRINT 5: Initialize metrics collection =====
         task_metrics = TaskMetrics(str(task_id))
         metrics_service = get_metrics_service(self.database_service)
@@ -703,8 +722,15 @@ class TaskExecutor:
         logger.info(f"📝 [TASK_EXECUTE] PHASE 1: Generating content via orchestrator...")
         if self.orchestrator:
             try:
+                execution_trace["orchestrator_attempted"] = True
+                orchestration_start = time.time()
                 logger.info(f"   Orchestrator available: YES")
                 logger.info(f"   Type: {type(self.orchestrator).__name__}")
+                logger.info(
+                    f"   [MODEL_TRACE] Orchestrator attempt for task {task_id}: "
+                    f"selected_models={model_selections}, quality_preference={quality_preference}, "
+                    f"draft_model_requested={model_used}"
+                )
 
                 # Using UnifiedOrchestrator (IntelligentOrchestrator is deprecated)
                 logger.info(f"   🚀 Using UnifiedOrchestrator (unified system)")
@@ -741,6 +767,11 @@ class TaskExecutor:
                     result = await self.orchestrator.process_command_async(
                         command=prompt, context=execution_context
                     )
+
+                orchestration_elapsed_ms = int((time.time() - orchestration_start) * 1000)
+                logger.info(
+                    f"   [MODEL_TRACE] Orchestrator returned in {orchestration_elapsed_ms}ms for task {task_id}"
+                )
 
                 # Extract content from result
                 # Result can be either an object with attributes or a dict
@@ -867,11 +898,28 @@ class TaskExecutor:
                         logger.warning(f"      FULL content: {content_preview}")
 
                     # Try fallback content generation instead of retrying orchestrator
+                    fallback_reason = (
+                        "orchestrator_content_below_threshold"
+                        if generated_content is not None
+                        else "orchestrator_no_content"
+                    )
+                    execution_trace["fallback_triggered"] = True
+                    execution_trace["fallback_reason"] = fallback_reason
+                    fallback_info["used_fallback"] = True
+                    fallback_info["reason"] = fallback_reason
+                    fallback_info["timestamp"] = datetime.now(timezone.utc).isoformat()
+                    logger.warning(
+                        f"⚠️  [FALLBACK_TRACE] Fallback triggered for task {task_id}: "
+                        f"reason={fallback_reason}, requested_draft_model={model_used}"
+                    )
                     logger.info(f"   ⚙️ Attempting fallback content generation...")
                     try:
-                        generated_content = await self._fallback_generate_content(task)
+                        generated_content, fallback_model = await self._fallback_generate_content(task)
+                        fallback_info["model_used"] = fallback_model
+                        execution_trace["fallback_model"] = fallback_model
+                        model_used = fallback_model or model_used
                         logger.info(
-                            f"   ✅ Fallback generation succeeded: {len(generated_content)} chars"
+                            f"   ✅ [FALLBACK_TRACE] Fallback generation succeeded via {fallback_model}: {len(generated_content)} chars"
                         )
                     except Exception as fallback_err:
                         logger.error(
@@ -911,10 +959,22 @@ class TaskExecutor:
             logger.warning(
                 f"   Falling back to simple template-based generation (limited features)"
             )
+            execution_trace["fallback_triggered"] = True
+            execution_trace["fallback_reason"] = "orchestrator_unavailable"
+            fallback_info["used_fallback"] = True
+            fallback_info["reason"] = "orchestrator_unavailable"
+            fallback_info["timestamp"] = datetime.now(timezone.utc).isoformat()
+            logger.warning(
+                f"⚠️  [FALLBACK_TRACE] Fallback triggered for task {task_id}: "
+                f"reason=orchestrator_unavailable, requested_draft_model={model_used}"
+            )
             # Fallback: Simple template-based generation
-            generated_content = await self._fallback_generate_content(task)
+            generated_content, fallback_model = await self._fallback_generate_content(task)
+            fallback_info["model_used"] = fallback_model
+            execution_trace["fallback_model"] = fallback_model
+            model_used = fallback_model or model_used
             logger.info(
-                f"✅ [TASK_EXECUTE] PHASE 1 Complete (fallback): Generated {len(generated_content)} chars"
+                f"✅ [TASK_EXECUTE] PHASE 1 Complete (fallback): Generated {len(generated_content)} chars via {fallback_model}"
             )
             task_metrics.record_phase_end("content_generation", phase_1_start, status="success")
 
@@ -1347,6 +1407,8 @@ class TaskExecutor:
             "orchestrator_error": orchestrator_error,
             "validation_details": validation_details,
             "model_used": model_used,
+            "fallback_info": fallback_info,
+            "execution_trace": execution_trace,
             "quality_score": quality_score,
             "content_approved": approved,
             "critique_feedback": feedback_text,
@@ -1420,7 +1482,7 @@ class TaskExecutor:
 
         return result
 
-    async def _fallback_generate_content(self, task: Dict[str, Any]) -> str:
+    async def _fallback_generate_content(self, task: Dict[str, Any]) -> tuple[str, str]:
         """
         Fallback content generation when orchestrator not available
 
@@ -1434,7 +1496,7 @@ class TaskExecutor:
             task: Task dict with topic, primary_keyword, target_audience, category
 
         Returns:
-            Generated content as string (markdown formatted)
+            Tuple of generated content (markdown formatted) and model used
         """
         topic = task.get("topic") or "Topic"
         keyword = task.get("primary_keyword") or "keyword"
@@ -1468,7 +1530,7 @@ class TaskExecutor:
                 tags=tags,
             )
             logger.info(f"✅ Fallback generation succeeded via {model_used}: {len(content)} chars")
-            return content
+            return content, str(model_used)
 
         except Exception as e:
             logger.error(

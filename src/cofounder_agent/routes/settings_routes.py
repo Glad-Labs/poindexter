@@ -503,10 +503,10 @@ async def batch_delete_settings(
     },
 )
 async def update_setting(
+    request: Request,
     setting_id: int = Path(..., gt=0, description="Setting ID"),
     update_data: SettingUpdate = Body(...),
     current_user=Depends(get_current_user),
-    request: Optional[Request] = None,
 ):
     """
     Update an existing setting (admin/editor).
@@ -590,10 +590,10 @@ async def update_setting(
     },
 )
 async def delete_setting(
+    request: Request,
     setting_id: str = Path(..., description="Setting ID or key name"),
     current_user=Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
-    request: Optional[Request] = None,
 ):
     """
     Delete a setting (admin only).

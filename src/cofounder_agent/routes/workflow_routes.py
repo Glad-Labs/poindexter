@@ -96,10 +96,10 @@ async def get_workflow_phases(request: Request):
 
 @router.get("/executions", response_model=Dict[str, Any], name="List Workflow Executions")
 async def list_workflow_executions(
+    request: Request,
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
     status: Optional[str] = Query(None),
-    request: Optional[Request] = None,
 ):
     """
     Get workflow execution history.
