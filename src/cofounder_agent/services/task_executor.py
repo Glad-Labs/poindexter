@@ -62,6 +62,22 @@ from .websocket_event_broadcaster import (
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Stale-task recovery configuration
+# ---------------------------------------------------------------------------
+# Tasks stuck in in_progress for longer than this are considered orphaned
+# (server restart, unhandled crash, etc.).  Must be > TASK_TIMEOUT_SECONDS
+# (20 min) so we don't race with the asyncio.wait_for guard inside the task.
+STALE_TASK_TIMEOUT_MINUTES: int = 30
+
+# After this many stale-timeout resets the task is permanently failed instead
+# of being re-queued, preventing infinite retry loops on pathological tasks.
+MAX_TASK_RETRIES: int = 3
+
+# Seconds between stale-sweep runs.  Independent of poll_interval so we don't
+# hammer the DB on every 5-second poll.
+SWEEP_INTERVAL_SECONDS: int = 60
+
 
 class TaskExecutor:
     """Background task executor service"""
@@ -140,7 +156,7 @@ class TaskExecutor:
             try:
                 await self._processor_task
             except asyncio.CancelledError:
-                logger.error("Task processor task cancelled successfully", exc_info=True)
+                logger.info("Task processor task cancelled successfully")
 
         logger.info(
             f"✅ Task executor stopped (processed: {self.task_count}, success: {self.success_count}, errors: {self.error_count})"
@@ -152,8 +168,18 @@ class TaskExecutor:
         logger.info("📋 TASK EXECUTOR: Main processing loop has started.")
         logger.info("=" * 80)
 
+        last_sweep_at: float = 0.0  # force a sweep on the first iteration
+
         while self.running:
             try:
+                # ------------------------------------------------------------------
+                # Periodic stale-task sweep (runs every SWEEP_INTERVAL_SECONDS)
+                # ------------------------------------------------------------------
+                now = time.monotonic()
+                if now - last_sweep_at >= SWEEP_INTERVAL_SECONDS:
+                    await self._sweep_stale_tasks()
+                    last_sweep_at = time.monotonic()
+
                 # Get pending tasks from database
                 logger.debug(f"🔍 [TASK_EXEC_LOOP] Polling for pending tasks...")
                 pending_tasks = await self.database_service.get_pending_tasks(limit=10)
@@ -272,6 +298,29 @@ class TaskExecutor:
                 continue
 
         logger.info("📋 [TASK_EXEC_LOOP] Task executor processor loop stopped")
+
+    async def _sweep_stale_tasks(self) -> None:
+        """
+        Find orphaned in_progress tasks and recover them.
+
+        Delegates to DatabaseService.sweep_stale_tasks which resets tasks that
+        have been stuck longer than STALE_TASK_TIMEOUT_MINUTES back to pending
+        (up to MAX_TASK_RETRIES times), then permanently fails them.
+        """
+        try:
+            result = await self.database_service.sweep_stale_tasks(
+                timeout_minutes=STALE_TASK_TIMEOUT_MINUTES,
+                max_retries=MAX_TASK_RETRIES,
+            )
+            if result.get("total_stale", 0) > 0:
+                logger.warning(
+                    f"[sweep_stale_tasks] Stale task sweep: "
+                    f"{result['reset']} reset to pending, "
+                    f"{result['failed']} permanently failed "
+                    f"(of {result['total_stale']} total stale)"
+                )
+        except Exception:
+            logger.error("[sweep_stale_tasks] Sweep failed unexpectedly", exc_info=True)
 
     async def _process_single_task(self, task: Dict[str, Any]) -> None:
         """Process a single task through the pipeline"""

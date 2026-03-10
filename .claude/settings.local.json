@@ -42,7 +42,9 @@
       "Bash(du:*)",
       "Bash(rm:*)",
       "Bash(npx jest:*)",
-      "Bash(node_modules/.bin/vitest run:*)"
+      "Bash(node_modules/.bin/vitest run:*)",
+      "mcp__github__add_issue_comment",
+      "mcp__filesystem__list_directory"
     ]
   }
 }

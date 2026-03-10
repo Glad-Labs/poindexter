@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
@@ -28,10 +29,32 @@ from .decorators import log_query_performance
 logger = logging.getLogger(__name__)
 
 
+class _PostgresJSONEncoder(json.JSONEncoder):
+    """JSON encoder that safely handles types returned by asyncpg/Pydantic.
+
+    Covers the gap between _convert_row_to_dict (which sanitises top-level
+    Decimal values) and ModelConverter.to_dict (which may leave Decimal,
+    datetime, or UUID objects inside nested dicts/lists).
+    """
+
+    def default(self, o: Any) -> Any:
+        if isinstance(o, Decimal):
+            return float(o)
+        if isinstance(o, datetime):
+            return o.isoformat()
+        if isinstance(o, UUID):
+            return str(o)
+        return super().default(o)
+
+
 def serialize_value_for_postgres(value: Any) -> Any:
     """Serialize Python value for PostgreSQL, keeping datetimes naive UTC."""
     if value is None:
         return None
+
+    # Decimal → float before any other check (asyncpg NUMERIC columns)
+    if isinstance(value, Decimal):
+        return float(value)
 
     # Handle datetime objects first - keep naive, let PostgreSQL handle timezone
     if isinstance(value, datetime):
@@ -44,9 +67,9 @@ def serialize_value_for_postgres(value: Any) -> Any:
         return value
 
     if isinstance(value, dict):
-        return json.dumps(value)
+        return json.dumps(value, cls=_PostgresJSONEncoder)
     if isinstance(value, list):
-        return json.dumps(value)
+        return json.dumps(value, cls=_PostgresJSONEncoder)
     if isinstance(value, (int, float, bool)):
         return value
     if isinstance(value, str):
@@ -137,6 +160,151 @@ class TasksDatabase(DatabaseServiceMixin):
                 f"[get_pending_tasks] Error fetching pending tasks: {str(e)}", exc_info=True
             )
             return []
+
+    async def get_stale_in_progress_tasks(
+        self, timeout_minutes: int = 30, limit: int = 50
+    ) -> List[dict]:
+        """
+        Get in_progress tasks that have not been updated within timeout_minutes.
+
+        These are tasks that were claimed by the executor but never completed —
+        typically caused by a server restart, unhandled crash, or a hung pipeline.
+
+        Args:
+            timeout_minutes: Tasks with updated_at older than this are considered stale
+            limit: Maximum tasks to return
+
+        Returns:
+            List of stale task dicts ordered oldest-first
+        """
+        QUERY_TIMEOUT = 5
+        try:
+            if not self.pool:
+                return []
+            sql = """
+                SELECT * FROM content_tasks
+                WHERE status = 'in_progress'
+                  AND updated_at < NOW() - ($1 * INTERVAL '1 minute')
+                ORDER BY updated_at ASC
+                LIMIT $2
+            """
+            try:
+                async with self.pool.acquire() as conn:
+                    rows = await asyncio.wait_for(
+                        conn.fetch(sql, timeout_minutes, limit),
+                        timeout=QUERY_TIMEOUT,
+                    )
+                    return [self._convert_row_to_dict(row) for row in rows]
+            except asyncio.TimeoutError:
+                logger.error(
+                    f"[get_stale_in_progress_tasks] Query timeout after {QUERY_TIMEOUT}s",
+                    exc_info=True,
+                )
+                return []
+        except Exception as e:
+            logger.error(
+                f"[get_stale_in_progress_tasks] Error fetching stale tasks: {e}", exc_info=True
+            )
+            return []
+
+    async def sweep_stale_tasks(
+        self, timeout_minutes: int = 30, max_retries: int = 3
+    ) -> dict:
+        """
+        Sweep stale in_progress tasks and reset or permanently fail them.
+
+        Tasks stuck in in_progress longer than timeout_minutes are either:
+        - Reset to pending (if retry_count < max_retries) so the executor picks them up again
+        - Marked permanently failed (if retry_count >= max_retries)
+
+        Retry count is stored in task_metadata so no schema migration is required.
+
+        Args:
+            timeout_minutes: Staleness threshold in minutes
+            max_retries: Maximum reset attempts before permanent failure
+
+        Returns:
+            Dict with 'reset', 'failed', and 'total_stale' counts
+        """
+        stale_tasks = await self.get_stale_in_progress_tasks(timeout_minutes)
+        if not stale_tasks:
+            return {"reset": 0, "failed": 0, "total_stale": 0}
+
+        logger.warning(
+            f"[sweep_stale_tasks] Found {len(stale_tasks)} stale in_progress task(s) "
+            f"(stuck > {timeout_minutes}min)"
+        )
+
+        reset_count = 0
+        failed_count = 0
+
+        for task in stale_tasks:
+            task_id = task.get("task_id") or str(task.get("id", ""))
+            if not task_id:
+                logger.warning("[sweep_stale_tasks] Skipping stale task with no identifiable ID")
+                continue
+
+            metadata = task.get("task_metadata") or {}
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
+                except (json.JSONDecodeError, TypeError):
+                    metadata = {}
+            if not isinstance(metadata, dict):
+                metadata = {}
+
+            retry_count = int(metadata.get("retry_count", 0))
+
+            if retry_count < max_retries:
+                new_retry_count = retry_count + 1
+                await self.update_task(
+                    task_id,
+                    {
+                        "status": "pending",
+                        "error_message": (
+                            f"Reset after stale timeout — attempt {new_retry_count}/{max_retries}"
+                        ),
+                        "task_metadata": {
+                            **metadata,
+                            "retry_count": new_retry_count,
+                            "last_reset_reason": "stale_timeout",
+                            "last_reset_at": datetime.utcnow().isoformat(),
+                        },
+                    },
+                )
+                logger.info(
+                    f"[sweep_stale_tasks] Reset task {task_id} to pending "
+                    f"(retry {new_retry_count}/{max_retries})"
+                )
+                reset_count += 1
+            else:
+                await self.update_task(
+                    task_id,
+                    {
+                        "status": "failed",
+                        "error_message": (
+                            f"Permanently failed: stale timeout exceeded after "
+                            f"{max_retries} retry attempts"
+                        ),
+                        "task_metadata": {
+                            **metadata,
+                            "permanently_failed": True,
+                            "failed_reason": "stale_timeout_max_retries_exceeded",
+                            "failed_at": datetime.utcnow().isoformat(),
+                        },
+                    },
+                )
+                logger.warning(
+                    f"[sweep_stale_tasks] Permanently failed task {task_id} "
+                    f"(exhausted {max_retries} retries)"
+                )
+                failed_count += 1
+
+        logger.info(
+            f"[sweep_stale_tasks] Sweep complete: {reset_count} reset to pending, "
+            f"{failed_count} permanently failed"
+        )
+        return {"reset": reset_count, "failed": failed_count, "total_stale": len(stale_tasks)}
 
     async def get_all_tasks(self, limit: int = 100) -> List[TaskResponse]:
         """

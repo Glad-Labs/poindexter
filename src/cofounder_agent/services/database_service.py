@@ -195,6 +195,12 @@ class DatabaseService:
         """Delegate to tasks module."""
         return await self.tasks.get_pending_tasks(limit)
 
+    async def sweep_stale_tasks(
+        self, timeout_minutes: int = 30, max_retries: int = 3
+    ) -> dict:
+        """Delegate to tasks module."""
+        return await self.tasks.sweep_stale_tasks(timeout_minutes, max_retries)
+
     async def get_all_tasks(self, limit: int = 100) -> List[Any]:
         """Delegate to tasks module."""
         return await self.tasks.get_all_tasks(limit)
