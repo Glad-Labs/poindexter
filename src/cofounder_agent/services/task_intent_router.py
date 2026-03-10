@@ -370,7 +370,7 @@ class TaskIntentRouter:
             "confidence": f"{intent_request.confidence * 100:.0f}%",
             "steps": steps,
             "total_estimated_time": self._format_duration(total_duration_ms),
-            "cost_estimate": "$2.15",  # Placeholder - removed async await call in sync function
+            "cost_estimate": None,  # Real cost requires async model_router call; omitted in sync context
             "next_action": (
                 "Ready to execute"
                 if not intent_request.requires_confirmation
