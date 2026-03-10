@@ -104,7 +104,7 @@ class TestWritingStyleDatabaseRetrieval:
             "updated_at": now
         }
         
-        sample = await writing_style_db.get_writing_sample(sample_id="sample_1")
+        sample = await writing_style_db.get_writing_sample(sample_id="1")
         
         assert sample is not None
         assert isinstance(sample, dict)
@@ -118,7 +118,7 @@ class TestWritingStyleDatabaseRetrieval:
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         mock_conn.fetchrow.return_value = None
         
-        sample = await writing_style_db.get_writing_sample(sample_id="nonexistent")
+        sample = await writing_style_db.get_writing_sample(sample_id="99999")
         
         assert sample is None
 
@@ -149,7 +149,7 @@ class TestWritingStyleDatabaseUpdates:
         # Check if update_writing_sample method exists
         if hasattr(writing_style_db, "update_writing_sample"):
             result = await writing_style_db.update_writing_sample(
-                sample_id="sample_1",
+                sample_id="1",
                 user_id="user_123",
                 title="Updated Title",
                 content="Updated content..."
@@ -170,7 +170,7 @@ class TestWritingStyleDatabaseDeletion:
         mock_conn.execute.return_value = "DELETE 1"
         
         result = await writing_style_db.delete_writing_sample(
-            sample_id="sample_1",
+            sample_id="1",
             user_id="user_123"
         )
         
@@ -188,7 +188,7 @@ class TestWritingStyleDatabaseDeletion:
         mock_conn.execute.return_value = "DELETE 0"
         
         result = await writing_style_db.delete_writing_sample(
-            sample_id="nonexistent",
+            sample_id="99999",
             user_id="user_123"
         )
         
