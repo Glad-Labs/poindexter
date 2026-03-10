@@ -38,6 +38,7 @@ import hashlib
 import json
 import logging
 import os
+from typing import Optional
 
 import httpx
 
@@ -71,7 +72,7 @@ except (ImportError, ModuleNotFoundError) as e:
 class LLMClient:
     """Client for interacting with a configured Large Language Model."""
 
-    def __init__(self, model_name: str = None):
+    def __init__(self, model_name: Optional[str] = None):
         """
         Initializes the LLM client based on the provider specified in the config.
 
@@ -108,8 +109,8 @@ class LLMClient:
 
                     # Use override model if provided, otherwise use config default
                     model_to_use = model_name if model_name else config.GEMINI_MODEL
-                    self.model = genai.GenerativeModel(model_to_use)
-                    self.summarizer_model = genai.GenerativeModel(config.SUMMARIZER_MODEL)
+                    self.model = genai.GenerativeModel(model_to_use)  # type: ignore
+                    self.summarizer_model = genai.GenerativeModel(config.SUMMARIZER_MODEL)  # type: ignore
                     logging.info(f"✅ Initialized Gemini client with model: {model_to_use}")
 
             if self.provider == "local" or self.provider == "ollama":
@@ -153,7 +154,7 @@ class LLMClient:
 
     def _generate_json_gemini(self, prompt: str) -> dict:
         try:
-            response = self.model.generate_content(prompt)
+            response = self.model.generate_content(prompt)  # type: ignore[union-attr]
             return json.loads(response.text)
         except json.JSONDecodeError:
             logging.error("Failed to decode JSON from Gemini response.")
@@ -235,7 +236,7 @@ class LLMClient:
 
     def _generate_text_gemini(self, prompt: str) -> str:
         try:
-            response = self.model.generate_content(prompt)
+            response = self.model.generate_content(prompt)  # type: ignore[union-attr]
             return response.text
         except Exception as e:
             logging.error(f"Error generating text content from Gemini: {e}")
@@ -288,7 +289,7 @@ class LLMClient:
 
     def _generate_summary_gemini(self, prompt: str) -> str:
         try:
-            response = self.summarizer_model.generate_content(prompt)
+            response = self.summarizer_model.generate_content(prompt)  # type: ignore[union-attr]
             return response.text
         except Exception as e:
             logging.error(f"Error generating summary from Gemini: {e}")

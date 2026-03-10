@@ -28,7 +28,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-class WebSearchTool(SerperDevTool):
+class WebSearchTool(SerperDevTool):  # type: ignore[misc]
     """
     A tool for performing web searches to gather real-time information,
     find external links, and enrich content. This is a direct integration
@@ -44,7 +44,7 @@ class WebSearchTool(SerperDevTool):
             logger.warning("SERPER_API_KEY not set - web search will be limited")
 
 
-class CompetitorContentSearchTool(WebsiteSearchTool):
+class CompetitorContentSearchTool(WebsiteSearchTool):  # type: ignore[misc]
     """
     RAG-based search tool for analyzing competitor websites and content.
     Uses semantic search to find relevant information within web pages.
@@ -68,7 +68,7 @@ class CompetitorContentSearchTool(WebsiteSearchTool):
             self._is_available = False
 
 
-class DocumentAccessTool(FileReadTool):
+class DocumentAccessTool(FileReadTool):  # type: ignore[misc]
     """
     Tool for reading and extracting content from various file formats.
     Supports: txt, md, json, csv, pdf, docx, and more.
@@ -81,7 +81,7 @@ class DocumentAccessTool(FileReadTool):
         super().__init__()
         logger.info("DocumentAccessTool initialized")
 
-    def read_research_file(self, file_path: str) -> str:
+    def read_research_file(self, file_path: str) -> Optional[str]:
         """Read a research document with error handling"""
         try:
             content = self.run(file_path)
@@ -95,7 +95,7 @@ class DocumentAccessTool(FileReadTool):
             return None
 
 
-class DirectoryAccessTool(DirectoryReadTool):
+class DirectoryAccessTool(DirectoryReadTool):  # type: ignore[misc]
     """
     Tool for navigating and analyzing directory structures.
     Useful for understanding content organization and finding related files.
@@ -112,7 +112,7 @@ class DirectoryAccessTool(DirectoryReadTool):
         logger.info(f"DirectoryAccessTool initialized for: {directory or './'}")
 
 
-class DataProcessingTool(CodeInterpreterTool):
+class DataProcessingTool(CodeInterpreterTool):  # type: ignore[misc]
     """
     Tool for executing Python code to process data, run calculations,
     and transform information. Useful for data cleaning and analysis.
@@ -126,7 +126,7 @@ class DataProcessingTool(CodeInterpreterTool):
         super().__init__()
         logger.info("DataProcessingTool initialized")
 
-    def process_data(self, code: str) -> str:
+    def process_data(self, code: str) -> Optional[str]:
         """Execute data processing code with error handling"""
         try:
             result = self.run(code)

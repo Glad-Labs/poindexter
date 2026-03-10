@@ -163,7 +163,7 @@ async def upload_to_s3(file_path: str, task_id: Optional[str] = None) -> Optiona
             metadata["task-id"] = task_id
 
         # Upload to S3
-        s3.upload_fileobj(
+        s3.upload_fileobj(  # type: ignore
             BytesIO(file_data),
             bucket,
             image_key,
@@ -269,10 +269,10 @@ class ImageGenerationResponse(BaseModel):
     message: Optional[str] = Field(None, description="Status message or error")
     generation_time: Optional[float] = Field(None, description="Time taken in seconds")
     local_path: Optional[str] = Field(
-        None, description="Local file path (for generated images in Downloads)"
+        default=None, description="Local file path (for generated images in Downloads)"
     )
     preview_mode: Optional[bool] = Field(
-        False, description="Whether this is a preview (not yet in CDN)"
+        default=False, description="Whether this is a preview (not yet in CDN)"
     )
 
 
@@ -538,7 +538,7 @@ async def generate_featured_image(request: ImageGenerationRequest):
             # Unload SDXL models after generation to free memory
             # ═══════════════════════════════════════════════════════════
             if hasattr(image_service, "_unload_sdxl"):
-                image_service._unload_sdxl()
+                image_service._unload_sdxl()  # type: ignore
 
             # ═══════════════════════════════════════════════════════════
             # NOTE: Image is in Downloads folder for preview/approval
@@ -569,7 +569,7 @@ async def generate_featured_image(request: ImageGenerationRequest):
         # Unload SDXL models if generation was requested but failed
         # ═══════════════════════════════════════════════════════════
         if request.use_generation and hasattr(image_service, "_unload_sdxl"):
-            image_service._unload_sdxl()
+            image_service._unload_sdxl()  # type: ignore
 
         elapsed = time.time() - start_time
         return ImageGenerationResponse(
