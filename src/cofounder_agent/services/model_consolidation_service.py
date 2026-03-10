@@ -648,7 +648,8 @@ class ModelConsolidationService:
                 chain.append(provider)
 
         # Try each provider in order
-        last_error = None
+        last_error: Optional[Exception] = None
+        skip_reasons: list[str] = []
         logger.info(
             f"🔗 Starting provider fallback chain ({len(chain)} providers to try)",
             chain=[p.value for p in chain],
@@ -660,6 +661,8 @@ class ModelConsolidationService:
                 logger.debug(f"⏳ Checking {provider_type.value} availability...")
                 is_available = await self._check_provider_availability(provider_type)
                 if not is_available:
+                    reason = f"{provider_type.value}: not available"
+                    skip_reasons.append(reason)
                     logger.info(
                         f"⏭️  {provider_type.value} not available, skipping",
                         provider=provider_type.value,
@@ -669,6 +672,8 @@ class ModelConsolidationService:
                 # Try to generate
                 adapter = self.adapters.get(provider_type)
                 if not adapter:
+                    reason = f"{provider_type.value}: no adapter configured"
+                    skip_reasons.append(reason)
                     logger.warning(
                         f"⚠️  No adapter for {provider_type.value}, skipping",
                         provider=provider_type.value,
@@ -712,6 +717,7 @@ class ModelConsolidationService:
 
             except Exception as e:
                 last_error = e
+                skip_reasons.append(f"{provider_type.value}: {e}")
                 logger.error(
                     f"❌ {provider_type.value} generation failed",
                     exc_info=True,
@@ -722,7 +728,10 @@ class ModelConsolidationService:
 
         # All providers failed
         self.metrics["failed_requests"] += 1
-        error_msg = f"All model providers failed. Last error: {str(last_error)}"
+        if last_error is not None:
+            error_msg = f"All model providers failed. Last error: {last_error}"
+        else:
+            error_msg = f"All model providers unavailable. Reasons: {'; '.join(skip_reasons)}"
         logger.error("🚨 All providers exhausted", error=error_msg)
         raise ServiceError(error_msg)
 

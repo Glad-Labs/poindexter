@@ -89,27 +89,24 @@ class CreativeAgent:
                     )
                     return post  # Return without further refinement
 
+            if word_count_target and constraints:
+                tolerance = constraints.word_count_tolerance
+                min_words = int(word_count_target * (1 - tolerance / 100))
+                max_words = int(word_count_target * (1 + tolerance / 100))
+                word_count_constraint = f"{min_words}–{max_words} words (target: {word_count_target} ±{tolerance}%)"
+            else:
+                word_count_constraint = "No strict word count constraint"
             refinement_prompt = self.pm.get_prompt(
                 "blog_generation.iterative_refinement",
                 draft=post.raw_content,
-                critique=accumulated_feedback,  # ← CHANGED: Use ALL feedback, not just [-1]
+                critique=accumulated_feedback,
                 target_audience=post.target_audience or "General",
-                primary_keyword=post.primary_keyword or "topic",
+                word_count_constraint=word_count_constraint,
             )
 
             # Include writing sample guidance in refinement too
             if post.metadata and post.metadata.get("writing_sample_guidance"):
                 refinement_prompt += f"\n\n{post.metadata['writing_sample_guidance']}"
-
-            # Inject word count constraint for refinement
-            if word_count_target and constraints:
-                tolerance = constraints.word_count_tolerance
-                min_words = int(word_count_target * (1 - tolerance / 100))
-                max_words = int(word_count_target * (1 + tolerance / 100))
-                refinement_prompt = (
-                    f"[WORD COUNT CONSTRAINT: {min_words}-{max_words} words (target: {word_count_target})]\n\n"
-                    + refinement_prompt
-                )
 
             logger.info(f"CreativeAgent: Refining content for '{post.topic}' based on QA feedback.")
             raw_draft = await self.llm_client.generate_text(refinement_prompt)

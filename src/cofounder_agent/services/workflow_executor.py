@@ -47,7 +47,7 @@ class WorkflowExecutor:
         self.registry = registry or PhaseRegistry.get_instance()
         self.mapper = mapper or PhaseMapper(self.registry)
 
-    def execute_workflow(
+    async def execute_workflow(
         self,
         workflow: CustomWorkflow,
         initial_inputs: Optional[Dict[str, Any]] = None,
@@ -149,7 +149,7 @@ class WorkflowExecutor:
 
                 # Execute the phase
                 try:
-                    result = self._execute_phase(phase, phase_inputs, execution_id)
+                    result = await self._execute_phase(phase, phase_inputs, execution_id)
                 except Exception as e:
                     logger.error(
                         f"[_execute_workflow] Phase {i} ({phase.name}) failed: {str(e)}",
@@ -286,7 +286,7 @@ class WorkflowExecutor:
 
         return inputs, traces
 
-    def _execute_phase(
+    async def _execute_phase(
         self, phase: WorkflowPhase, inputs: Dict[str, Any], execution_id: str
     ) -> PhaseResult:
         """
@@ -326,18 +326,9 @@ class WorkflowExecutor:
             # Run the agent (handle both sync and async agents)
             start_time = time.time()
             if hasattr(agent, "run") and callable(agent.run):
-                # Check if it's an async method
                 if asyncio.iscoroutinefunction(agent.run):
-                    # For async agents, we need to run in event loop
-                    try:
-                        loop = asyncio.get_event_loop()
-                    except RuntimeError:
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-
-                    result_output = loop.run_until_complete(agent.run(inputs))
+                    result_output = await agent.run(inputs)
                 else:
-                    # For sync agents
                     result_output = agent.run(inputs)
             else:
                 return PhaseResult(

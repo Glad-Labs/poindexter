@@ -219,12 +219,19 @@ class TaskExecutor:
                                     {
                                         "status": "failed",
                                         "error_message": str(e),
+                                        "completed_at": datetime.now(timezone.utc),
                                         "task_metadata": {
                                             "error": str(e),
                                             "error_type": "ServiceError",
                                             "timestamp": datetime.now(timezone.utc).isoformat(),
                                         },
                                     },
+                                )
+                                await self.database_service.log_status_change(
+                                    task_id,
+                                    "in_progress",
+                                    "failed",
+                                    reason=f"ServiceError: {str(e)}",
                                 )
                             except Exception:
                                 logger.error(
@@ -248,11 +255,18 @@ class TaskExecutor:
                                     {
                                         "status": "failed",
                                         "error_message": str(e),
+                                        "completed_at": datetime.now(timezone.utc),
                                         "task_metadata": {
                                             "error": str(e),
                                             "timestamp": datetime.now(timezone.utc).isoformat(),
                                         },
                                     },
+                                )
+                                await self.database_service.log_status_change(
+                                    task_id,
+                                    "in_progress",
+                                    "failed",
+                                    reason=f"Unexpected error: {str(e)}",
                                 )
                                 logger.info(
                                     f"📝 [TASK_EXEC_LOOP] Updated task {task_id} status to failed"
@@ -396,10 +410,23 @@ class TaskExecutor:
                     f"[_process_single_task] Failed to emit task progress event: {e}", exc_info=True
                 )
 
+        # Capture previous status for audit logging
+        previous_status = task.get("status", "pending")
+
         try:
             # 1. Mark task as actively processing
             logger.info(f"📝 [TASK_SINGLE] Marking task as in_progress...")
             await update_processing_stage("queued", f"Queued task: {task_name}", 5)
+            # Audit: log the pending → in_progress transition
+            try:
+                await self.database_service.log_status_change(
+                    task_id,
+                    previous_status,
+                    "in_progress",
+                    reason="Task picked up by executor",
+                )
+            except Exception:
+                logger.error("[_process_single_task] Failed to log status change to in_progress", exc_info=True)
             logger.info(f"✅ [TASK_SINGLE] Task marked as in_progress")
 
             # 2. Process through orchestrator/agent pipeline with timeout
@@ -501,7 +528,12 @@ class TaskExecutor:
             )
 
             # Also store model_used in the normalized column if it's in the result
-            update_payload = {"status": final_status, "task_metadata": task_metadata_updates}
+            completed_now = datetime.now(timezone.utc)
+            update_payload = {
+                "status": final_status,
+                "task_metadata": task_metadata_updates,
+                "completed_at": completed_now,
+            }
             if isinstance(result, dict) and "model_used" in result:
                 update_payload["model_used"] = result["model_used"]
                 logger.info(
@@ -522,6 +554,25 @@ class TaskExecutor:
 
             await self.database_service.update_task(task_id, update_payload)
             logger.info(f"✅ [DEBUG] update_task completed for {task_id}")
+
+            # Audit: log the in_progress → final_status transition
+            try:
+                audit_reason = (
+                    "Content generation complete — awaiting human approval"
+                    if final_status not in ("failed", "cancelled")
+                    else update_payload.get("error_message", "Task failed during processing")
+                )
+                await self.database_service.log_status_change(
+                    task_id,
+                    "in_progress",
+                    final_status,
+                    reason=audit_reason,
+                )
+            except Exception:
+                logger.error(
+                    f"[_process_single_task] Failed to log final status change to {final_status}",
+                    exc_info=True,
+                )
 
             if final_status == "failed":
                 logger.error(f"❌ [TASK_SINGLE] Task failed: {task_id}")

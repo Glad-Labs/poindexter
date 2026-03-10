@@ -201,6 +201,21 @@ class DatabaseService:
         """Delegate to tasks module."""
         return await self.tasks.sweep_stale_tasks(timeout_minutes, max_retries)
 
+    async def log_status_change(
+        self,
+        task_id: str,
+        old_status: str,
+        new_status: str,
+        reason: str = "",
+        metadata: dict = None,  # type: ignore[assignment]
+    ) -> bool:
+        """Delegate to tasks module."""
+        return await self.tasks.log_status_change(task_id, old_status, new_status, reason, metadata)
+
+    async def get_status_history(self, task_id: str, limit: int = 100) -> list:
+        """Delegate to tasks module."""
+        return await self.tasks.get_status_history(task_id, limit)
+
     async def get_all_tasks(self, limit: int = 100) -> List[Any]:
         """Delegate to tasks module."""
         return await self.tasks.get_all_tasks(limit)

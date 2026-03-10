@@ -10,6 +10,7 @@ Provides:
 """
 
 import logging
+import uuid
 from typing import Any, Dict, List, Optional
 
 from schemas.custom_workflow_schemas import CustomWorkflow, WorkflowPhase
@@ -261,12 +262,14 @@ class TemplateExecutionService:
                         workflow.id = workflow_save.id
                         logger.info(f"Persisted template workflow: {workflow.id}")
                 except Exception as e:
-                    logger.error(
-                        f"[_execute_template] Failed to persist/retrieve template workflow: {e}",
+                    logger.warning(
+                        f"[_execute_template] Could not persist/retrieve template workflow, "
+                        f"assigning ephemeral ID: {e}",
                         exc_info=True,
                     )
-                    # Don't continue - we cannot execute without a valid workflow ID
-                    raise ValueError(f"Cannot persist template workflow: {str(e)}")
+                    # Assign an ephemeral ID and continue — execution results
+                    # won't be persisted to workflow_executions but the pipeline runs.
+                    workflow.id = str(uuid.uuid4())
 
             # Extract model parameter from task_input if provided
             selected_model = None

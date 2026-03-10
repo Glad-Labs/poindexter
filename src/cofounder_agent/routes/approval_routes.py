@@ -197,6 +197,7 @@ async def approve_task(
 
         # Update task status and approval fields
         approval_date = datetime.now(timezone.utc)
+        approver_id = current_user.get("id")
 
         # Store approval data in dedicated database columns
         await db_service.update_task(
@@ -204,7 +205,7 @@ async def approve_task(
             {
                 "status": "approved",
                 "approval_status": "approved",
-                "approved_by": current_user.get("id"),
+                "approved_by": approver_id,
                 "approval_timestamp": approval_date,
                 "approval_notes": request.reviewer_notes or request.feedback,
                 "human_feedback": request.feedback,
@@ -212,7 +213,19 @@ async def approve_task(
             },
         )
 
-        logger.info(f"[OK] [APPROVAL] Task {task_id} approved by {current_user.get('id')}")
+        # Audit: log awaiting_approval → approved
+        try:
+            await db_service.log_status_change(
+                task_id,
+                current_status,
+                "approved",
+                reason=f"Approved by user {approver_id}",
+                metadata={"approved_by": approver_id, "feedback": request.feedback},
+            )
+        except Exception:
+            logger.error("[APPROVAL] Failed to log status change to approved", exc_info=True)
+
+        logger.info(f"[OK] [APPROVAL] Task {task_id} approved by {approver_id}")
 
         # Handle auto-publish if requested
         logger.info(f"[APPROVAL] ============================================")
@@ -331,7 +344,7 @@ async def approve_task(
                     author_id = await _get_or_create_default_author(db_service)
                     category_id = await _select_category_for_topic(post_title, db_service)
 
-                    # Create post
+                    # Create post — include audit fields so we know who published
                     post = await db_service.create_post(
                         {
                             "title": post_title,
@@ -346,6 +359,8 @@ async def approve_task(
                             "seo_description": seo_description,
                             "seo_keywords": parse_seo_keywords(seo_keywords),
                             "metadata": metadata,
+                            "created_by": approver_id,
+                            "updated_by": approver_id,
                         }
                     )
                     logger.info(
@@ -356,7 +371,7 @@ async def approve_task(
                     post_id = str(post.id) if hasattr(post, "id") else str(post.get("id"))
                     publish_metadata = {
                         "published_at": datetime.utcnow().isoformat(),
-                        "published_by": current_user.get("id"),
+                        "published_by": approver_id,
                         "post_id": post_id,
                         "post_slug": slug,
                         "published_url": f"/posts/{slug}",
@@ -372,6 +387,19 @@ async def approve_task(
                     await db_service.update_task_status(
                         task_id, "published", result=safe_json_dumps(final_result)
                     )
+
+                    # Audit: log approved → published
+                    try:
+                        await db_service.log_status_change(
+                            task_id,
+                            "approved",
+                            "published",
+                            reason=f"Auto-published by user {approver_id}",
+                            metadata={"post_id": post_id, "post_slug": slug, "published_by": approver_id},
+                        )
+                    except Exception:
+                        logger.error("[APPROVAL] Failed to log status change to published", exc_info=True)
+
                     logger.info(f"[OK] Task {task_id} published with post_id: {post_id}")
             except Exception as e:
                 logger.warning(f"[WARNING] Auto-publish failed: {str(e)}", exc_info=True)

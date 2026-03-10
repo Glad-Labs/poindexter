@@ -241,6 +241,24 @@ class ImageService:
                 torch_dtype = torch.float32
                 logger.info("ℹ️  CPU mode: using fp32 (full precision)")
 
+            # Validate HuggingFace cache path before attempting model load
+            # (prevents [Errno 22] on Windows due to long/invalid cache paths)
+            import os as _os
+            hf_cache = _os.getenv("HF_HOME") or _os.getenv("HUGGINGFACE_HUB_CACHE") or _os.path.expanduser("~/.cache/huggingface")
+            try:
+                _os.makedirs(hf_cache, exist_ok=True)
+                _test_path = _os.path.join(hf_cache, ".sdxl_path_test")
+                with open(_test_path, "w") as _f:
+                    _f.write("")
+                _os.remove(_test_path)
+            except OSError as path_err:
+                logger.warning(
+                    f"⚠️  SDXL cache path invalid ({hf_cache}): {path_err}. "
+                    "Set HF_HOME to a short, writable path (e.g. D:/hf_cache). Skipping SDXL."
+                )
+                self.sdxl_available = False
+                return
+
             # Load base SDXL model with optimizations
             logger.info(f"🎨 Loading SDXL base model (device: {use_device})...")
             self.sdxl_pipe = StableDiffusionXLPipeline.from_pretrained(

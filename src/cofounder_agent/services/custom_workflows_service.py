@@ -11,7 +11,7 @@ Provides:
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -444,7 +444,7 @@ class CustomWorkflowsService:
 
         try:
             # Execute workflow using executor
-            phase_results = self.workflow_executor.execute_workflow(
+            phase_results = await self.workflow_executor.execute_workflow(
                 workflow,
                 initial_inputs=initial_inputs,
                 execution_id=execution_id,
@@ -1061,6 +1061,9 @@ class CustomWorkflowsService:
             "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
         }
 
+    # Alias used in get_all_executions and get_execution_details
+    _row_to_execution_dict = _row_to_execution
+
     async def get_all_executions(
         self, owner_id: str, limit: int = 100, offset: int = 0
     ) -> List[Dict[str, Any]]:
@@ -1077,7 +1080,7 @@ class CustomWorkflowsService:
                 limit,
                 offset,
             )
-            return [self._row_to_execution_dict(row) for row in rows] if rows else []  # type: ignore[attr-defined]
+            return [self._row_to_execution_dict(row) for row in rows] if rows else []
         except Exception as e:
             logger.error(
                 f"[get_all_executions] Error fetching executions for owner {owner_id}: {str(e)}",
@@ -1135,16 +1138,16 @@ class CustomWorkflowsService:
     ) -> Dict[str, Any]:
         """Get workflow performance metrics over time."""
         try:
-            interval_map = {
-                "7d": "7 days",
-                "30d": "30 days",
-                "90d": "90 days",
-                "all": "1 year",
+            interval_map: Dict[str, timedelta] = {
+                "7d": timedelta(days=7),
+                "30d": timedelta(days=30),
+                "90d": timedelta(days=90),
+                "all": timedelta(days=365),
             }
-            interval = interval_map.get(time_range, "30 days")
+            interval = interval_map.get(time_range, timedelta(days=30))
 
             query = """
-                SELECT 
+                SELECT
                     DATE_TRUNC('day', created_at)::DATE as date,
                     COUNT(*) as executions,
                     SUM(CASE WHEN execution_status = 'completed' THEN 1 ELSE 0 END) as successful,
@@ -1153,7 +1156,7 @@ class CustomWorkflowsService:
                     MAX(progress_percent) as max_completion
                 FROM workflow_executions
                 WHERE owner_id = $1
-                    AND created_at >= NOW() - ($2::interval)
+                    AND created_at >= NOW() - $2
                 GROUP BY DATE_TRUNC('day', created_at)
                 ORDER BY date DESC
             """
@@ -1204,7 +1207,7 @@ class CustomWorkflowsService:
                 owner_id,
             )
             if row:
-                execution = self._row_to_execution_dict(row)  # type: ignore[attr-defined]
+                execution = self._row_to_execution_dict(row)
                 # Add detailed results
                 return {
                     **execution,
