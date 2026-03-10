@@ -668,9 +668,10 @@ async def get_kpi_analytics(
         ai_savings_current = int(tasks_completed * 150)
         ai_savings_previous = int(prev_tasks * 150)
 
-        # Mock engagement and uptime (would come from analytics/monitoring)
-        engagement_current = 4.8
-        engagement_previous = 3.2
+        # Engagement and uptime require an external analytics/monitoring integration.
+        # Return null until a provider (PostHog, GA4, etc.) is configured.
+        engagement_current = None
+        engagement_previous = None
 
         return {
             "kpis": {
@@ -710,20 +711,18 @@ async def get_kpi_analytics(
                 "engagementRate": {
                     "current": engagement_current,
                     "previous": engagement_previous,
-                    "change": int(
-                        ((engagement_current - engagement_previous) / engagement_previous * 100)
-                        if engagement_previous > 0
-                        else 0
-                    ),
+                    "change": None,
                     "unit": "%",
                     "icon": "📊",
+                    "data_source": "unavailable",
                 },
                 "agentUptime": {
-                    "current": 99.8,
-                    "previous": 99.2,
-                    "change": 1,
+                    "current": None,
+                    "previous": None,
+                    "change": None,
                     "unit": "%",
                     "icon": "⚙️",
+                    "data_source": "unavailable",
                 },
             },
             "timestamp": datetime.utcnow().isoformat(),
