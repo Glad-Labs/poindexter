@@ -192,7 +192,7 @@ class SearXNGResearchService:
             response = await self.client.get(url, follow_redirects=True)
             response.raise_for_status()
 
-            soup = BeautifulSoup(response.text, "html.parser")
+            soup = BeautifulSoup(response.text, "html.parser")  # type: ignore
 
             # Remove script and style elements
             for script in soup(["script", "style"]):
@@ -256,7 +256,7 @@ class SearXNGResearchService:
 
                 for result in results[:limit]:
                     try:
-                        feed = feedparser.parse(result.get("url", ""))
+                        feed = feedparser.parse(result.get("url", ""))  # type: ignore
                         if feed.entries:
                             entries.extend(
                                 {

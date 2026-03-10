@@ -1,7 +1,7 @@
 import logging
 
 import torch
-from diffusers import StableDiffusionXLPipeline
+from diffusers import StableDiffusionXLPipeline  # type: ignore[attr-defined]
 
 import config
 
@@ -33,12 +33,12 @@ class ImageGenClient:
         try:
             logging.info(f"Generating image for prompt: '{prompt}'")
             # FIX: Add the negative_prompt from the config to improve image quality.
-            image = self.pipe(
+            image = self.pipe(  # type: ignore[misc]
                 prompt=prompt,
-                negative_prompt=config.SD_NEGATIVE_PROMPT,
+                negative_prompt=config.SD_NEGATIVE_PROMPT,  # type: ignore[attr-defined]
                 num_inference_steps=30,
                 guidance_scale=7.5,
-            ).images[0]
+            ).images[0]  # type: ignore[index]
 
             # Save the generated image to the provided output path
             image.save(output_path)

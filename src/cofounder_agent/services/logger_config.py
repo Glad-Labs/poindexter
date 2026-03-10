@@ -270,9 +270,9 @@ if __name__ == "__main__":
     logger = get_logger("logger_config")
     logger.info(  # type: ignore[call-arg]
         "Logger configuration initialized",
-        environment=ENVIRONMENT,
-        log_level=LOG_LEVEL,
-        log_format=LOG_FORMAT,
-        structlog_available=STRUCTLOG_AVAILABLE,
-        using_structlog=_structlog_configured,
+        environment=ENVIRONMENT,  # type: ignore[call-arg]
+        log_level=LOG_LEVEL,  # type: ignore[call-arg]
+        log_format=LOG_FORMAT,  # type: ignore[call-arg]
+        structlog_available=STRUCTLOG_AVAILABLE,  # type: ignore[call-arg]
+        using_structlog=_structlog_configured,  # type: ignore[call-arg]
     )

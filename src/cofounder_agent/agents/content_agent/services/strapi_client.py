@@ -22,8 +22,8 @@ class StrapiClient:
         """
         Initializes the Strapi client with the API URL and token from the config.
         """
-        self.api_url = config.STRAPI_API_URL
-        self.api_token = config.STRAPI_API_TOKEN
+        self.api_url = config.STRAPI_API_URL  # type: ignore[attr-defined]
+        self.api_token = config.STRAPI_API_TOKEN  # type: ignore[attr-defined]
         if not self.api_url or not self.api_token:
             raise ValueError("STRAPI_API_URL and STRAPI_API_TOKEN must be set in the environment.")
         self.headers = {
@@ -106,9 +106,9 @@ class StrapiClient:
 
         except httpx.HTTPError as e:
             logger.error(f"Error making {method} request to {endpoint}: {e}")
-            if hasattr(e, "response") and e.response is not None:
-                logger.error(f"Response status: {e.response.status_code}")
-                logger.error(f"Response text: {e.response.text}")
+            if hasattr(e, "response") and e.response is not None:  # type: ignore
+                logger.error(f"Response status: {e.response.status_code}")  # type: ignore
+                logger.error(f"Response text: {e.response.text}")  # type: ignore
             return None
 
     async def create_post(self, post_data: BlogPost) -> tuple[Optional[int], Optional[str]]:

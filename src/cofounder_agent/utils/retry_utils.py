@@ -8,7 +8,7 @@ in database connections and external API calls.
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable, TypeVar
+from typing import Any, Awaitable, Callable, Optional, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +115,7 @@ async def async_retry(
     operation: Callable[..., Awaitable[T]],
     *args,
     config: RetryConfig = DB_RETRY_CONFIG,
-    on_retry: Callable[[Exception, int, float], Awaitable[None]] = None,
+    on_retry: Optional[Callable[[Exception, int, float], Awaitable[None]]] = None,
     retryable_exceptions: tuple = (Exception,),
     **kwargs,
 ) -> T:
@@ -221,7 +221,7 @@ async def with_connection_retry(
     """
 
     async def _execute() -> T:
-        async with pool_acquire_func() as conn:
+        async with pool_acquire_func() as conn:  # type: ignore[attr-defined]
             return await query_func(conn)
 
     try:

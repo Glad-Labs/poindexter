@@ -393,7 +393,8 @@ class AnthropicAdapter(ProviderAdapter):
 
             elapsed_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
 
-            text = response.content[0].text if response.content else ""
+            block = response.content[0] if response.content else None
+            text = (getattr(block, "text", None) or "") if block else ""
 
             return ModelResponse(
                 text=text,

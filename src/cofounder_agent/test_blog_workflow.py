@@ -24,11 +24,11 @@ async def test_blog_workflow():
     from services.workflow_executor import WorkflowExecutor
 
     # Create workflow with blog phases
-    workflow = CustomWorkflow(
+    workflow = CustomWorkflow(  # type: ignore[call-arg]
         name="Blog Post Generation",
         description="Complete blog post generation workflow",
         phases=[
-            WorkflowPhase(
+            WorkflowPhase(  # type: ignore[call-arg]
                 index=0,
                 name="blog_generate_content",
                 user_inputs={
@@ -39,17 +39,17 @@ async def test_blog_workflow():
                     "tags": ["AI", "Healthcare", "Machine Learning"],
                 },
             ),
-            WorkflowPhase(
+            WorkflowPhase(  # type: ignore[call-arg]
                 index=1,
                 name="blog_quality_evaluation",
                 user_inputs={"evaluation_method": "pattern-based"},
             ),
-            WorkflowPhase(
+            WorkflowPhase(  # type: ignore[call-arg]
                 index=2,
                 name="blog_search_image",
                 user_inputs={"image_count": 1, "orientation": "landscape"},
             ),
-            WorkflowPhase(index=3, name="blog_create_post", user_inputs={"publish": True}),
+            WorkflowPhase(index=3, name="blog_create_post", user_inputs={"publish": True}),  # type: ignore[call-arg]
         ],
     )
 

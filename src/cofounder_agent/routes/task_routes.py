@@ -1100,7 +1100,7 @@ async def update_task_status_enterprise(
             current_user.get("email") if current_user else "system"
         )
 
-        update_dict = {
+        update_dict: dict[str, Any] = {
             "status": target_status.value,
             # Note: status_updated_at and status_updated_by columns don't exist in schema
             # Status changes are tracked in task_status_history table via log_status_change()
@@ -1144,8 +1144,8 @@ async def update_task_status_enterprise(
                 task_id=task_id,
                 old_status=current_status.value,
                 new_status=target_status.value,
-                reason=update_data.reason,
-                metadata=update_data.metadata,
+                reason=update_data.reason or "",
+                metadata=update_data.metadata or {},
             )
         except Exception as audit_error:
             logger.warning(f"Failed to log status change for {task_id}: {audit_error}", exc_info=True)

@@ -123,12 +123,12 @@ class EmailPublisher:
                 port=self.smtp_port,
                 use_tls=self.use_tls,
             ) as smtp:
-                await smtp.login(self.smtp_user, self.smtp_password)
+                await smtp.login(self.smtp_user or "", self.smtp_password or "")
 
                 send_result = await smtp.send_message(
                     msg,
-                    mail_from=self.email_from,
-                    rcpt_tos=recipient_emails,
+                    sender=self.email_from,
+                    recipients=recipient_emails,
                 )
 
             logger.info(f"✅ Email sent to {len(recipient_emails)} recipient(s)")

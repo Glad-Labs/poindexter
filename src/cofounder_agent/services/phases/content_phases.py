@@ -225,7 +225,7 @@ class QualityEvaluationPhase(BasePhase):
             topic = inputs.get("topic")
             tags = inputs.get("tags", [topic])
 
-            logger.info(f"[QualityEvaluationPhase] Evaluating content ({len(content)} chars)")
+            logger.info(f"[QualityEvaluationPhase] Evaluating content ({len(content or '')} chars)")
 
             # Use existing quality service
             quality_service = get_quality_service()
