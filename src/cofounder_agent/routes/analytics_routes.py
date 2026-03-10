@@ -369,7 +369,7 @@ async def get_kpi_metrics(
                 failed_today=failed_tasks,
                 running_now=pending_tasks,
             )
-        except Exception as e:
+        except (OSError, RuntimeError, AttributeError, TypeError) as e:
             logger.warning(f"⚠️ Failed to emit analytics update: {e}", exc_info=True)
 
         # ===== BUILD RESPONSE =====
@@ -403,7 +403,7 @@ async def get_kpi_metrics(
         raise
     except AppError:
         raise
-    except Exception as e:
+    except (KeyError, ValueError, TypeError, ZeroDivisionError, AttributeError) as e:
         raise await handle_route_error(e, "get_kpi_metrics", logger)
 
 
@@ -497,5 +497,5 @@ async def get_task_distributions(
         raise
     except AppError:
         raise
-    except Exception as e:
+    except (KeyError, ValueError, TypeError, ZeroDivisionError, AttributeError) as e:
         raise await handle_route_error(e, "get_task_distributions", logger)
