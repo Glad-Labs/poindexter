@@ -33,6 +33,7 @@ from schemas.auth_schemas import (
     UserProfile,
 )
 from services.database_service import DatabaseService
+from services.token_blocklist import add_token as blocklist_add, is_revoked as blocklist_is_revoked
 from services.token_manager import TokenManager
 from services.token_validator import AuthConfig, JWTTokenValidator
 from utils.route_utils import get_database_dependency
@@ -342,6 +343,15 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
                 "token": token,
             }
 
+        # Reject tokens that have been explicitly revoked (logged out)
+        if blocklist_is_revoked(token):
+            logger.warning("[get_current_user] Revoked token rejected")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked. Please log in again.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
         # Verify token
         try:
             claims = JWTTokenValidator.verify_token(token)
@@ -575,8 +585,9 @@ async def unified_logout(
     - **OAuth**: Revoke refresh token with OAuth provider
     - **GitHub OAuth**: Invalidate session with GitHub
 
-    In current implementation (stub), simply acknowledges logout.
-    Token is invalidated on frontend by removing it from localStorage/cookies.
+    The JWT is added to an in-memory blocklist so it is rejected on subsequent
+    requests even before its natural expiry. The blocklist is not persistent across
+    server restarts; for multi-instance deployments, replace with a Redis-backed store.
 
     Headers:
         Authorization: Bearer <JWT token>
@@ -603,13 +614,16 @@ async def unified_logout(
     logger.info(f"Logout request for user {user_id} (auth_provider: {auth_provider})")
 
     try:
-        # In production, implement provider-specific logout:
-        # if auth_provider == "github":
-        #     await revoke_github_session(user_id)
-        # elif auth_provider == "oauth":
-        #     await revoke_oauth_refresh_token(current_user["token_id"])
-        # else:
-        #     await add_token_to_blacklist(current_user["token"])
+        # Revoke the JWT so it cannot be reused even before its natural expiry
+        raw_token = current_user.get("token")
+        if raw_token and raw_token not in ("dev-token",) and not raw_token.lower().startswith("dev-"):
+            try:
+                import time as _time
+                payload = jwt.decode(raw_token, options={"verify_signature": False})
+                exp = payload.get("exp", _time.time() + 3600)
+                blocklist_add(raw_token, float(exp))
+            except Exception as _e:
+                logger.warning("[logout] Could not extract token expiry for blocklist: %s", _e)
 
         clear_auth_cookie(response)
 
