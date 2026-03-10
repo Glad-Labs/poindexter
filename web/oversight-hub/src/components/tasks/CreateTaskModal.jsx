@@ -61,6 +61,20 @@ const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
       fields: [
         { name: 'topic', label: 'Topic', type: 'text', required: true },
         {
+          name: 'primary_keyword',
+          label: 'Primary Keyword',
+          type: 'text',
+          required: false,
+          description: 'Main SEO keyword to target (e.g. "machine learning best practices")',
+        },
+        {
+          name: 'target_audience',
+          label: 'Target Audience',
+          type: 'text',
+          required: false,
+          description: 'Who is this article for? (e.g. "senior software engineers")',
+        },
+        {
           name: 'word_count',
           label: 'Target Word Count',
           type: 'number',
@@ -294,7 +308,12 @@ const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
     }
 
     // Validate that we have at least a topic for the backend
-    const hasTopic = formData.topic || formData.description || formData.title;
+    const hasTopic =
+      formData.topic ||
+      formData.description ||
+      formData.title ||
+      formData.subject ||
+      formData.goal;
     if (!hasTopic) {
       setError('Please provide a topic or description');
       return false;
@@ -408,6 +427,8 @@ const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
           tone: toBackendTone(formData.tone),
           target_length: parseInt(formData.word_count) || 1500,
           generate_featured_image: formData.generate_featured_image !== false,
+          primary_keyword: formData.primary_keyword || undefined,
+          target_audience: formData.target_audience || undefined,
           tags: formData.keywords
             ? formData.keywords
                 .split(',')
@@ -416,6 +437,7 @@ const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
             : [],
           models_by_phase: modelSelection.modelSelections || {},
           quality_preference: modelSelection.qualityPreference || 'balanced',
+          writing_style_id: selectedWritingStyleId || undefined,
           context,
           metadata: {
             task_type: 'blog_post',
@@ -436,9 +458,17 @@ const CreateTaskModal = ({ isOpen, onClose, onTaskCreated }) => {
         // Generic task payload - also remove hardcoded fallbacks
         logger.log('📤 [CreateTaskModal] Generic task - Form data:', formData);
 
+        // Derive topic from whichever field the form uses for this task type
+        const derivedTopic =
+          formData.topic ||
+          formData.description ||
+          formData.subject ||
+          formData.goal ||
+          '';
+
         taskPayload = {
           task_type: backendTaskType,
-          topic: formData.topic || formData.description || '',
+          topic: derivedTopic,
           category: formData.category || taskType || 'general',
           // Use undefined instead of hardcoded fallbacks
           style: formData.style || undefined,
