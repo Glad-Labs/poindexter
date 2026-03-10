@@ -362,11 +362,13 @@ class AdminDatabase(DatabaseServiceMixin):
             Setting value or default
         """
         setting = await self.get_setting(key)
-        if not setting or not setting.value:
+        if not setting:
             return default
 
-        # Try to parse as JSON if it looks like JSON
-        value_str = setting.value
+        # Handle both Pydantic model and dict returns
+        value_str = setting.get("value") if isinstance(setting, dict) else getattr(setting, "value", None)
+        if not value_str:
+            return default
         try:
             return json.loads(value_str)
         except (json.JSONDecodeError, ValueError, TypeError):

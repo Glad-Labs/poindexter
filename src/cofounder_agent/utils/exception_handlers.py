@@ -63,27 +63,31 @@ async def validation_error_handler(request, exc: RequestValidationError):
     Handle Pydantic request validation errors.
 
     Extracts field-level errors and returns them in structured format.
+    All field errors are included in the response under the ``errors`` key
+    so callers can surface field-specific validation feedback.
     """
     request_id = request.headers.get("x-request-id", str(uuid.uuid4()))
 
-    # Extract field-level errors
+    # Extract all field-level errors (not just the first one)
     errors = {}
     for error in exc.errors():
-        field = ".".join(str(x) for x in error["loc"][1:])
+        # loc[0] is "body"/"query"/"path" — skip it; the rest is the field path
+        field_parts = error["loc"][1:]
+        field = ".".join(str(x) for x in field_parts) if field_parts else "unknown"
         errors[field] = error["msg"]
-
-    response = create_error_response(
-        ValidationError(
-            "Request validation failed", field=list(errors.keys())[0] if errors else "unknown"
-        ),
-        request_id=request_id,
-    )
 
     logger.warning(f"Request validation error: {errors}", extra={"request_id": request_id})
 
+    response_body = {
+        "error_code": "VALIDATION_ERROR",
+        "message": "Request validation failed",
+        "errors": errors,
+        "request_id": request_id,
+    }
+
     return JSONResponse(
         status_code=400,
-        content=response.model_dump(exclude_none=True),
+        content=response_body,
         headers={"X-Request-ID": request_id},
     )
 

@@ -470,3 +470,14 @@ class ErrorResponse(BaseModel):
     message: str = Field(..., description="Error message")
     details: Optional[Dict[str, Any]] = Field(None, description="Additional error details")
     timestamp: datetime = Field(default_factory=datetime.utcnow, description="Error timestamp")
+
+
+# ---------------------------------------------------------------------------
+# Database-prefixed aliases — use these in new code to avoid name collisions
+# with identically-named models in task_schemas.py / settings_schemas.py.
+# Existing imports of the bare names continue to work unchanged.
+# ---------------------------------------------------------------------------
+DatabaseTaskResponse = TaskResponse
+DatabaseMetricsResponse = MetricsResponse
+DatabaseErrorResponse = ErrorResponse
+DatabaseQualityEvaluationResponse = QualityEvaluationResponse

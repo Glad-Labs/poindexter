@@ -780,7 +780,7 @@ async def get_workflow_execution_status(
         raise HTTPException(status_code=500, detail=f"Failed to retrieve status: {str(e)}")
 
 
-@router.get("/history", name="Get Workflow Execution History")
+@router.get("/templates/history", name="Get Template Workflow Execution History")
 async def get_workflow_history(
     limit: int = Query(50, ge=1, le=1000, description="Maximum number of executions to return"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),

@@ -431,7 +431,7 @@ async def list_workflow_executions(
         raise HTTPException(status_code=500, detail=f"Failed to list workflow executions: {str(e)}")
 
 
-@router.get("/history", name="Get Workflow Execution History")
+@router.get("/custom/history", name="Get Custom Workflow Execution History")
 async def get_workflow_history(
     request: Request,
     service: CustomWorkflowsService = Depends(get_custom_workflows_service_dependency),

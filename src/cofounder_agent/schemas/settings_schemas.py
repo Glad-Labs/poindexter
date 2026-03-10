@@ -168,8 +168,12 @@ class SettingBulkUpdateRequest(BaseModel):
     updates: List[dict] = Field(..., description="List of {setting_id, value} objects")
 
 
-class ErrorResponse(BaseModel):
-    """Standard error response"""
+class SettingsErrorResponse(BaseModel):
+    """Standard error response for settings endpoints.
+
+    Named SettingsErrorResponse to avoid collision with the canonical ErrorResponse
+    defined in schemas/database_response_models.py.
+    """
 
     status: str = Field(..., description="Error status")
     message: str = Field(..., description="Error message")

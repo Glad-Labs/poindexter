@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Request, status
 
 from schemas.settings_schemas import (
-    ErrorResponse,
+    SettingsErrorResponse,
     SettingBase,
     SettingBulkUpdateRequest,
     SettingCategoryEnum,
