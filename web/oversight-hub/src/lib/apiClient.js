@@ -54,22 +54,53 @@ const apiClient = axios.create({
 // Import centralized auth client for token management
 import { authClient } from './authClient';
 
-// Response interceptor: Handle common errors and backend connectivity state
+// Transient HTTP status codes that warrant a retry
+const RETRYABLE_STATUSES = new Set([502, 503, 504]);
+const MAX_RETRIES = 3;
+
+function isRetryableError(error) {
+  if (!error.response) return true; // Network failure / no response
+  return RETRYABLE_STATUSES.has(error.response.status);
+}
+
+function retryDelay(attempt) {
+  // Exponential backoff: 1s, 2s, 4s
+  return 1000 * Math.pow(2, attempt);
+}
+
+// Response interceptor: retry transient errors, track backend connectivity
 apiClient.interceptors.response.use(
   (response) => {
     serviceStatus.markOnline();
     return response;
   },
-  (error) => {
+  async (error) => {
+    const config = error.config;
+
     if (error.response?.status === 401) {
       // Session expired, clear auth data and force re-auth
       authClient.logout();
       window.location.href = '/login';
+      return Promise.reject(error);
     }
+
+    // Retry transient errors with exponential backoff
+    if (config && isRetryableError(error)) {
+      config._retryCount = (config._retryCount || 0) + 1;
+      if (config._retryCount <= MAX_RETRIES) {
+        serviceStatus.markOffline();
+        await new Promise((resolve) =>
+          setTimeout(resolve, retryDelay(config._retryCount - 1))
+        );
+        return apiClient(config);
+      }
+    }
+
     // Network-level failure (no response) = backend unreachable
     if (!error.response) {
       serviceStatus.markOffline();
     }
+
     return Promise.reject(error);
   }
 );
