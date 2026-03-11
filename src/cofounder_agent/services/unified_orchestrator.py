@@ -531,9 +531,49 @@ class UnifiedOrchestrator:
             )
 
     def _extract_content_params(self, text: str) -> Dict[str, Any]:
-        """Extract content parameters from natural language"""
-        # Simple extraction - can be enhanced with LLM
-        params = {"topic": text}
+        """Extract content parameters from natural language or structured request format.
+
+        Handles the structured format produced by blog_generation.blog_generation_request:
+            Topic: <value>
+            Primary Keyword: <value>
+            Style: <value>
+            ...
+        Falls back to keyword-based detection for unstructured natural language input.
+        Fixes #151.
+        """
+        params: Dict[str, Any] = {}
+
+        # Try to parse the structured format (from blog_generation_request prompt template)
+        for line in text.strip().split("\n"):
+            line = line.strip()
+            if line.startswith("Topic:"):
+                params["topic"] = line[6:].strip()
+            elif line.startswith("Primary Keyword:"):
+                params["primary_keyword"] = line[16:].strip()
+            elif line.startswith("Target Audience:"):
+                params["target_audience"] = line[16:].strip()
+            elif line.startswith("Category:"):
+                params["category"] = line[9:].strip()
+            elif line.startswith("Style:"):
+                params["style"] = line[6:].strip()
+            elif line.startswith("Tone:"):
+                params["tone"] = line[5:].strip()
+            elif line.startswith("Target Length:"):
+                try:
+                    params["target_length"] = int(line[14:].strip().split()[0])
+                except (ValueError, IndexError):
+                    pass
+
+        if "topic" in params:
+            # Successfully parsed structured format — return with defaults for missing fields
+            if "style" not in params:
+                params["style"] = "professional"
+            if "tone" not in params:
+                params["tone"] = "informative"
+            return params
+
+        # Fallback: unstructured natural language — use keyword detection
+        params["topic"] = text
 
         if "professional" in text.lower():
             params["style"] = "professional"
@@ -767,13 +807,13 @@ class UnifiedOrchestrator:
 
             post = BlogPost(
                 topic=topic,
-                primary_keyword=topic,
-                target_audience="general",
-                category="general",
+                primary_keyword=request.parameters.get("primary_keyword") or topic,
+                target_audience=request.parameters.get("target_audience") or "general",
+                category=request.parameters.get("category") or "general",
                 status="draft",
                 research_data=research_text,
                 writing_style=style,
-            )
+            )  # fix #152: use extracted params instead of hardcoded defaults
 
             # Store writing style guidance in post metadata for creative agent to use
             if writing_style_guidance:
