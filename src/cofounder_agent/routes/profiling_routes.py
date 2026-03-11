@@ -7,7 +7,8 @@ Helps identify slow endpoints and performance bottlenecks.
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from routes.auth_unified import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,11 @@ def init_profiling_routes(app, middleware_instance):
     profiling_middleware = middleware_instance
 
 
-router = APIRouter(prefix="/api/profiling", tags=["profiling"])
+router = APIRouter(
+    prefix="/api/profiling",
+    tags=["profiling"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 @router.get("/slow-endpoints")

@@ -11,13 +11,18 @@ import logging
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
+from routes.auth_unified import get_current_user
 
 from services.service_base import get_service_registry
 from utils.route_utils import get_database_dependency
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/services", tags=["services"])
+router = APIRouter(
+    prefix="/api/services",
+    tags=["services"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 @router.get(

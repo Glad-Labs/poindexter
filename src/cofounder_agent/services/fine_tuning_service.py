@@ -76,8 +76,17 @@ class FineTuningService:
         job_id = f"ollama_finetune_{datetime.now().timestamp()}"
 
         try:
-            # Check if Ollama is running
-            result = subprocess.run(["ollama", "list"], capture_output=True, text=True, timeout=5)
+            # Check if Ollama is running (async to avoid blocking event loop)
+            proc = await asyncio.create_subprocess_exec(
+                "ollama", "list",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                await asyncio.wait_for(proc.communicate(), timeout=5)
+            except asyncio.TimeoutError:
+                proc.kill()
+            result = type("_R", (), {"returncode": proc.returncode})()
 
             if result.returncode != 0:
                 return {

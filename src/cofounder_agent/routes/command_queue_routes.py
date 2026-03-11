@@ -10,7 +10,8 @@ import os
 import sys
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from routes.auth_unified import get_current_user
 from pydantic import BaseModel
 
 # Add parent directory to path
@@ -31,7 +32,11 @@ from services.command_queue import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/commands", tags=["commands"])
+router = APIRouter(
+    prefix="/api/commands",
+    tags=["commands"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 @router.post("/", response_model=CommandResponse)
