@@ -149,7 +149,7 @@ async def upload_writing_sample(
         raise
     except Exception as e:
         logger.error(f"❌ Error uploading writing sample: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to upload sample: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to upload sample")
 
 
 @router.get("/samples", response_model=WritingSamplesListResponse)
@@ -184,7 +184,7 @@ async def list_writing_samples(
 
     except Exception as e:
         logger.error(f"❌ Error listing writing samples: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to list samples: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to list samples")
 
 
 @router.get("/active", response_model=Optional[WritingSampleResponse])
@@ -211,7 +211,7 @@ async def get_active_writing_sample(
 
     except Exception as e:
         logger.error(f"❌ Error getting active writing sample: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to get active sample: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get active sample")
 
 
 @router.put("/{sample_id}/set-active", response_model=WritingSampleResponse)
@@ -251,7 +251,7 @@ async def set_active_writing_sample(
         raise
     except Exception as e:
         logger.error(f"❌ Error setting active writing sample: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to set active sample: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to set active sample")
 
 
 @router.put("/{sample_id}", response_model=WritingSampleResponse)
@@ -299,7 +299,7 @@ async def update_writing_sample(
         raise
     except Exception as e:
         logger.error(f"❌ Error updating writing sample: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to update sample: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update sample")
 
 
 @router.delete("/{sample_id}")
@@ -342,7 +342,7 @@ async def delete_writing_sample(
         raise
     except Exception as e:
         logger.error(f"❌ Error deleting writing sample: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to delete sample: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete sample")
 
 
 # ============================================================================
@@ -467,7 +467,7 @@ async def retrieve_relevant_samples(
 
     except Exception as e:
         logger.error(f"❌ Error retrieving samples: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve samples: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve samples")
 
 
 @router.get("/retrieve-by-style/{style}")
@@ -538,7 +538,7 @@ async def retrieve_by_style(
 
     except Exception as e:
         logger.error(f"❌ Error retrieving samples by style: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve samples: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve samples")
 
 
 @router.get("/retrieve-by-tone/{tone}")
@@ -606,4 +606,4 @@ async def retrieve_by_tone(
 
     except Exception as e:
         logger.error(f"❌ Error retrieving samples by tone: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve samples: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve samples")

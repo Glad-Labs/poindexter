@@ -116,7 +116,7 @@ async def get_agent_registry_endpoint(redis_cache=Depends(get_redis_cache_option
         return result
     except (AttributeError, KeyError, TypeError, ValueError) as e:
         logger.error(f"Error retrieving agent registry: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve agent registry: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve agent registry")
 
 
 @router.get("/list", response_model=List[str], name="List Agent Names")
@@ -149,7 +149,7 @@ async def list_agents(request: Request):
         return agents
     except (AttributeError, KeyError, TypeError, ValueError) as e:
         logger.error(f"Error listing agents: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to list agents: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to list agents")
 
 
 @router.get("/{agent_name}", response_model=Dict[str, Any], name="Get Agent Metadata")
@@ -198,7 +198,7 @@ async def get_agent_metadata(agent_name: str):
         raise
     except (AttributeError, KeyError, TypeError, ValueError) as e:
         logger.error(f"Error retrieving agent '{agent_name}': {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve agent: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve agent")
 
 
 @router.get("/{agent_name}/phases", response_model=List[str], name="Get Agent Phases")
@@ -234,7 +234,7 @@ async def get_agent_phases(agent_name: str):
         raise
     except (AttributeError, KeyError, TypeError, ValueError) as e:
         logger.error(f"Error retrieving phases for agent '{agent_name}': {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve agent phases: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve agent phases")
 
 
 @router.get("/{agent_name}/capabilities", response_model=List[str], name="Get Agent Capabilities")
@@ -271,7 +271,7 @@ async def get_agent_capabilities(agent_name: str):
     except (AttributeError, KeyError, TypeError, ValueError) as e:
         logger.error(f"Error retrieving capabilities for agent '{agent_name}': {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve agent capabilities: {str(e)}"
+            status_code=500, detail="Failed to retrieve agent capabilities"
         )
 
 
@@ -320,7 +320,7 @@ async def get_agents_by_phase(phase: str):
     except (AttributeError, KeyError, TypeError, ValueError) as e:
         logger.error(f"Error retrieving agents for phase '{phase}': {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve agents for phase: {str(e)}"
+            status_code=500, detail="Failed to retrieve agents for phase"
         )
 
 
@@ -368,7 +368,7 @@ async def get_agents_by_capability(capability: str):
     except (AttributeError, KeyError, TypeError, ValueError) as e:
         logger.error(f"Error retrieving agents for capability '{capability}': {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve agents for capability: {str(e)}"
+            status_code=500, detail="Failed to retrieve agents for capability"
         )
 
 
@@ -417,7 +417,7 @@ async def get_agents_by_category(category: str):
     except (AttributeError, KeyError, TypeError, ValueError) as e:
         logger.error(f"Error retrieving agents in category '{category}': {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Failed to retrieve agents for category: {str(e)}"
+            status_code=500, detail="Failed to retrieve agents for category"
         )
 
 
@@ -475,4 +475,4 @@ async def search_agents(
         return all_agents
     except (AttributeError, KeyError, TypeError, ValueError) as e:
         logger.error(f"Error searching agents: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to search agents: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to search agents")

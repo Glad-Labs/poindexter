@@ -179,7 +179,7 @@ async def list_workflow_executions(
         return {"executions": [], "total_count": 0}
     except Exception as e:
         logger.error(f"Error listing workflow executions: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to list executions: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to list executions")
 
 
 # ============================================================================
@@ -261,7 +261,7 @@ async def get_workflow_execution_progress(
         raise
     except Exception as e:
         logger.error(f"Error getting workflow progress: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to get progress: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get progress")
 
 
 # ============================================================================
@@ -338,7 +338,7 @@ async def cancel_workflow_execution(
         raise
     except Exception as e:
         logger.error(f"Error cancelling workflow: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to cancel workflow: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to cancel workflow")
 
 
 # ============================================================================
@@ -397,7 +397,7 @@ async def list_workflow_templates(request: Request):
         return templates
     except Exception as e:
         logger.error(f"Error listing workflow templates: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to list templates: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to list templates")
 
 
 @router.get("/status/{workflow_id}", response_model=Dict[str, Any], name="Get Workflow Status")
@@ -465,7 +465,7 @@ async def get_workflow_status(
         raise
     except Exception as e:
         logger.error(f"Error retrieving workflow status: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve workflow status: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve workflow status")
 
 
 @router.post("/pause/{workflow_id}", name="Pause Workflow")
@@ -531,7 +531,7 @@ async def pause_workflow(
         raise
     except Exception as e:
         logger.error(f"Error pausing workflow: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to pause workflow: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to pause workflow")
 
 
 @router.post("/resume/{workflow_id}", name="Resume Workflow")
@@ -597,7 +597,7 @@ async def resume_workflow(
         raise
     except Exception as e:
         logger.error(f"Error resuming workflow: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to resume workflow: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to resume workflow")
 
 
 @router.post("/cancel/{workflow_id}", name="Cancel Workflow")
@@ -664,7 +664,7 @@ async def cancel_workflow(
         raise
     except Exception as e:
         logger.error(f"Error cancelling workflow: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to cancel workflow: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to cancel workflow")
 
 
 @router.post("/execute/{template_name}", name="Execute Workflow Template", status_code=202)
@@ -761,7 +761,7 @@ async def execute_workflow_template(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error executing workflow template: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to execute workflow: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to execute workflow")
 
 
 @router.get("/templates/status/{execution_id}", name="Get Workflow Execution Status")
@@ -817,7 +817,7 @@ async def get_workflow_execution_status(
         raise
     except Exception as e:
         logger.error(f"Error retrieving execution status: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve status: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve status")
 
 
 @router.get("/templates/history", name="Get Template Workflow Execution History")
@@ -875,4 +875,4 @@ async def get_workflow_history(
 
     except Exception as e:
         logger.error(f"Error retrieving execution history: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve history: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve history")

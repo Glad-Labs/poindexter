@@ -457,7 +457,7 @@ async def approve_task(
         logger.error(f"❌ [APPROVAL] Failed to approve task {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail={"message": f"Failed to approve task: {str(e)}", "type": "internal_error"},
+            detail={"message": "Failed to approve task", "type": "internal_error"},
         )
 
 
@@ -604,7 +604,7 @@ async def reject_task(
         logger.error(f"❌ [REJECTION] Failed to reject task {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail={"message": f"Failed to reject task: {str(e)}", "type": "internal_error"},
+            detail={"message": "Failed to reject task", "type": "internal_error"},
         )
 
 
@@ -726,7 +726,7 @@ async def bulk_approve_tasks(
         logger.error(f"❌ [BULK_APPROVAL] Failed: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail={"message": f"Bulk approval failed: {str(e)}", "type": "internal_error"},
+            detail={"message": "Bulk approval failed", "type": "internal_error"},
         )
 
 
@@ -847,7 +847,7 @@ async def bulk_reject_tasks(
         logger.error(f"❌ [BULK_REJECTION] Failed: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail={"message": f"Bulk rejection failed: {str(e)}", "type": "internal_error"},
+            detail={"message": "Bulk rejection failed", "type": "internal_error"},
         )
 
 
@@ -999,7 +999,7 @@ async def get_pending_approvals(
         raise HTTPException(
             status_code=500,
             detail={
-                "message": f"Failed to fetch pending approvals: {str(e)}",
+                "message": "Failed to fetch pending approvals",
                 "type": "internal_error",
             },
         )
@@ -1058,7 +1058,7 @@ async def get_task_approval_status(
         raise
     except Exception as e:
         logger.error(f"❌ Failed to get approval status: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to get approval status: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get approval status")
 
 
 # ============================================================================

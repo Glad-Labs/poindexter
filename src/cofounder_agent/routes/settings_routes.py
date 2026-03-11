@@ -19,6 +19,7 @@ All endpoints require:
 5. Audit logging of all changes
 """
 
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -40,6 +41,8 @@ from services.database_service import DatabaseService
 from routes.auth_unified import get_current_user
 from utils.error_responses import ErrorResponseBuilder
 from utils.route_utils import get_database_dependency
+
+logger = logging.getLogger(__name__)
 
 # Create router
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -235,7 +238,8 @@ async def list_settings(
             total=total, page=page, per_page=per_page, pages=pages, items=items
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve settings: {str(e)}")
+        logger.error(f"[list_settings] {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve settings")
 
 
 @router.get(
@@ -302,7 +306,8 @@ async def get_setting(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve setting: {str(e)}")
+        logger.error(f"[get_setting] {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve setting")
 
 
 @router.post(
@@ -403,7 +408,8 @@ async def create_setting(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create setting: {str(e)}")
+        logger.error(f"[create_setting] {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to create setting")
 
 
 @router.put(
@@ -462,7 +468,8 @@ async def batch_update_settings(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to update setting: {str(e)}")
+        logger.error(f"[batch_update_settings] {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update setting")
 
 
 @router.delete(
@@ -581,7 +588,8 @@ async def update_setting(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to update setting: {str(e)}")
+        logger.error(f"[update_setting] {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update setting")
 
 
 @router.delete(
@@ -642,7 +650,8 @@ async def delete_setting(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete setting: {str(e)}")
+        logger.error(f"[delete_setting] {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to delete setting")
 
 
 # ============================================================================
@@ -796,7 +805,8 @@ async def bulk_update_settings(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Bulk update failed: {str(e)}")
+        logger.error(f"[bulk_update_settings] {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Bulk update failed")
 
 
 @router.get(
@@ -870,7 +880,8 @@ async def export_settings(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+        logger.error(f"[export_settings] {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Export failed")
 
 
 # ============================================================================
