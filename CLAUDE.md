@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Glad Labs is an AI orchestration system (v3.0.39) — a monorepo with three integrated services:
 
-- **Backend:** Python FastAPI orchestrator with 105+ service modules (port 8000)
+- **Backend:** Python FastAPI orchestrator with 118 service modules (port 8000)
 - **Admin UI:** React 18 + Material-UI dashboard for agent monitoring (port 3001)
 - **Public Site:** Next.js 15 content distribution website (port 3000)
 
@@ -90,7 +90,7 @@ npm run build                 # Build all workspaces
 
 ### Backend (`src/cofounder_agent/`)
 
-**Entry point:** `main.py` — FastAPI app initializing service container, database pools, orchestrator, and registering all 29+ route modules via `register_all_routes()`.
+**Entry point:** `main.py` — FastAPI app initializing service container, database pools, orchestrator, and registering all 26 route modules via `register_all_routes()`.
 
 **Key services:**
 
@@ -100,7 +100,7 @@ npm run build                 # Build all workspaces
 - `services/workflow_executor.py` — Phase-based workflow execution with real-time WebSocket progress events
 - `services/capability_registry.py` — Intent-based task routing; auto-selects agents from natural language requests
 
-**Agent system:** Four core agent types in `src/agents/`. The content agent runs a 7-stage self-critiquing pipeline: Research → Creative Draft → QA Critique → Creative Refinement → Image Selection → Publishing Prep → DB Storage. QA agents critique without rewriting; Creative agents apply the feedback.
+**Agent system:** Four core agent types in `src/agents/`. The content agent runs a 6-stage self-critiquing pipeline: Research → Creative Draft → QA Critique → Creative Refinement → Image Selection → Publishing Prep (with DB Storage). QA agents critique without rewriting; Creative agents apply the feedback.
 
 **Database:** SQLAlchemy 2.0 async ORM + Alembic migrations. Five domain modules delegate from `DatabaseService`.
 
@@ -116,7 +116,10 @@ npm run build                 # Build all workspaces
 
 ### Configuration
 
-**`.env.local`** at project root is the single source of truth for all three services (Python and Node both read it).
+Each service reads from its own `.env.local` file:
+- **Backend:** Reads `.env.local` from project root (configured in `src/cofounder_agent/config/__init__.py`)
+- **Public Site (Next.js):** Reads `.env.local` from `web/public-site/`
+- **Admin Hub (Vite):** Reads `.env.local` from `web/oversight-hub/`
 
 **Minimum required:**
 
