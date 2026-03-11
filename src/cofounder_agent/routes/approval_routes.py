@@ -213,7 +213,7 @@ async def approve_task(
                 reason=f"Approved by user {approver_id}",
                 metadata={"approved_by": approver_id, "feedback": request.feedback},
             )
-        except Exception:
+        except (ValueError, KeyError, AttributeError, TypeError, RuntimeError):
             logger.error("[APPROVAL] Failed to log status change to approved", exc_info=True)
 
         logger.info(f"[OK] [APPROVAL] Task {task_id} approved by {approver_id}")
@@ -380,11 +380,11 @@ async def approve_task(
                             reason=f"Auto-published by user {approver_id}",
                             metadata={"post_id": post_id, "post_slug": slug, "published_by": approver_id},
                         )
-                    except Exception:
+                    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError):
                         logger.error("[APPROVAL] Failed to log status change to published", exc_info=True)
 
                     logger.info(f"[OK] Task {task_id} published with post_id: {post_id}")
-            except Exception as e:
+            except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
                 logger.warning(f"[WARNING] Auto-publish failed: {str(e)}", exc_info=True)
                 # Don't fail the approval if auto-publish fails
 
@@ -399,7 +399,7 @@ async def approve_task(
                     "approval_date": approval_date.isoformat(),
                 },
             )
-        except Exception as e:
+        except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
             logger.warning(f"Failed to broadcast approval status: {e}", exc_info=True)
 
         # Build response based on whether auto_publish happened
@@ -444,7 +444,7 @@ async def approve_task(
                         response_data["post_slug"] = post_slug
                     if published_url:
                         response_data["published_url"] = published_url
-            except Exception as e:
+            except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
                 logger.warning(f"[WARNING] Could not fetch post_id from updated task: {e}", exc_info=True)
 
         return response_data
@@ -453,7 +453,7 @@ async def approve_task(
         raise
     except AppError:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"❌ [APPROVAL] Failed to approve task {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
@@ -580,7 +580,7 @@ async def reject_task(
                     "rejection_date": rejection_date.isoformat(),
                 },
             )
-        except Exception as e:
+        except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
             logger.warning(f"Failed to broadcast rejection status: {e}", exc_info=True)
 
         return {
@@ -600,7 +600,7 @@ async def reject_task(
         raise
     except AppError:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"❌ [REJECTION] Failed to reject task {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
@@ -700,13 +700,13 @@ async def bulk_approve_tasks(
                             "approval_date": approval_date,
                         },
                     )
-                except Exception as e:
+                except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
                     logger.warning(f"Failed to broadcast approval for {task_id}: {e}", exc_info=True)
 
                 successful_ids.append(task_id)
                 approved_count += 1
 
-            except Exception as e:
+            except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
                 logger.error(f"Failed to approve task {task_id}: {e}", exc_info=True)
                 failed_ids.append(task_id)
                 failed_count += 1
@@ -722,7 +722,7 @@ async def bulk_approve_tasks(
             "message": f"{approved_count} tasks approved, {failed_count} failed",
         }
 
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"❌ [BULK_APPROVAL] Failed: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
@@ -821,13 +821,13 @@ async def bulk_reject_tasks(
                             "rejection_date": rejection_date,
                         },
                     )
-                except Exception as e:
+                except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
                     logger.warning(f"Failed to broadcast rejection for {task_id}: {e}", exc_info=True)
 
                 successful_ids.append(task_id)
                 rejected_count += 1
 
-            except Exception as e:
+            except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
                 logger.error(f"Failed to reject task {task_id}: {e}", exc_info=True)
                 failed_ids.append(task_id)
                 failed_count += 1
@@ -843,7 +843,7 @@ async def bulk_reject_tasks(
             "message": f"{rejected_count} tasks rejected, {failed_count} failed",
         }
 
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"❌ [BULK_REJECTION] Failed: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
@@ -945,7 +945,7 @@ async def get_pending_approvals(
                 # Fallback for dict response format
                 pending_tasks = result.get("tasks", []) if isinstance(result, dict) else []
                 total = result.get("total", 0) if isinstance(result, dict) else 0
-        except Exception as e:
+        except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
             logger.error(f"❌ [PENDING_APPROVAL] Database query failed: {e}", exc_info=True)
             pending_tasks = []
             total = 0
@@ -991,7 +991,7 @@ async def get_pending_approvals(
             ],
         }
 
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(
             f"❌ [PENDING_APPROVAL] Failed to fetch pending approvals: {str(e)}",
             exc_info=True,
@@ -1056,7 +1056,7 @@ async def get_task_approval_status(
         raise
     except AppError:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"❌ Failed to get approval status: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get approval status")
 

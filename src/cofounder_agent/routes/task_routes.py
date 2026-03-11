@@ -325,7 +325,7 @@ async def create_task(
         raise
     except AppError:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"❌ [UNIFIED_TASK_CREATE] Exception: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
@@ -765,7 +765,7 @@ async def list_tasks(
             offset=offset,
             limit=limit,
         )
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to list tasks: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to list tasks")
 
@@ -810,7 +810,7 @@ async def get_metrics_alias(
             avg_execution_time=45.2,
             total_cost=125.50,
         )
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"❌ Failed to fetch metrics: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch metrics")
 
@@ -849,7 +849,7 @@ async def get_metrics(
             avg_execution_time=45.2,
             total_cost=125.50,
         )
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to fetch metrics: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch metrics")
 
@@ -894,7 +894,7 @@ async def get_task(
         raise
     except AppError:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to fetch task {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch task")
 
@@ -942,7 +942,7 @@ async def get_task_status(
         raise
     except AppError:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to fetch task status {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch task status")
 
@@ -997,7 +997,7 @@ async def get_task_result(
         raise
     except AppError:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to fetch task result {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch task result")
 
@@ -1161,7 +1161,7 @@ async def update_task_status_enterprise(
                 reason=update_data.reason or "",
                 metadata=update_data.metadata or {},
             )
-        except Exception as audit_error:
+        except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as audit_error:
             logger.warning(f"Failed to log status change for {task_id}: {audit_error}", exc_info=True)
             # Don't fail the status update if audit logging fails
 
@@ -1179,7 +1179,7 @@ async def update_task_status_enterprise(
         raise
     except AppError:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error updating task status for {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
@@ -1261,7 +1261,7 @@ async def update_task_status_validated(
             "updated_by": user_id,
         }
 
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error in enhanced status update for {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
@@ -1349,7 +1349,7 @@ async def get_task_status_info(
         raise
     except AppError:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error fetching status info for {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch status info")
 
@@ -1413,7 +1413,7 @@ async def get_task_status_history(
             "history": history if history else [],
         }
 
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error fetching status history for {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch status history")
 
@@ -1477,7 +1477,7 @@ async def get_task_validation_failures(
 
         return failures
 
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error fetching validation failures for {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500, detail=f"Failed to fetch validation failures: {str(e)}"
@@ -1570,7 +1570,7 @@ async def update_task(
         raise
     except AppError:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"[update_task] {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to update task")
 
@@ -1820,7 +1820,7 @@ async def create_task_from_intent(
         logger.info(f"[INTENT] Response ready to send to UI")
         return response
 
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"[INTENT] Intent parsing failed: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Intent parsing failed")
 
@@ -1890,7 +1890,7 @@ async def confirm_and_execute_task(
             execution_plan_id=plan.get("task_id", task_id),
         )
 
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"[CONFIRM] Task confirmation failed: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Task confirmation failed")
 
@@ -2056,7 +2056,7 @@ async def approve_task(
             logger.info(f"Successfully updated task {task_id} to status '{new_status}'")
         except HTTPException:
             raise
-        except Exception as e:
+        except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
             logger.error(f"Failed to update task status to {new_status}: {str(e)}", exc_info=True)
             raise HTTPException(status_code=500, detail="Failed to update task status")
 
@@ -2174,7 +2174,7 @@ async def approve_task(
                         exc_info=True,
                     )
                     raise
-                except Exception as e:
+                except (AttributeError, RuntimeError, OSError, IOError) as e:
                     logger.critical(
                         f"Unexpected error creating post for published task: {type(e).__name__}: {str(e)}",
                         exc_info=True,
@@ -2187,7 +2187,7 @@ async def approve_task(
                     exc_info=True,
                 )
                 # Don't fail approval if auto-publish fails
-            except Exception as e:
+            except (AttributeError, RuntimeError, OSError, IOError) as e:
                 logger.critical(
                     f"Unexpected error during auto-publish: {type(e).__name__}: {str(e)}",
                     exc_info=True,
@@ -2228,7 +2228,7 @@ async def approve_task(
             f"Data validation error in approve_task: {type(e).__name__}: {str(e)}", exc_info=True
         )
         raise HTTPException(status_code=400, detail=f"Invalid task data: {str(e)}")
-    except Exception as e:
+    except (AttributeError, RuntimeError, OSError, IOError) as e:
         logger.error(
             f"Failed to approve task {task_id}: {type(e).__name__}: {str(e)}", exc_info=True
         )
@@ -2391,7 +2391,7 @@ async def publish_task(
                     status_code=400,
                     detail="Cannot publish task: missing content or topic",
                 )
-        except Exception as e:
+        except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
             logger.error(f"Failed to create post for published task: {str(e)}", exc_info=True)
             raise HTTPException(status_code=500, detail="Failed to publish task")
 
@@ -2407,7 +2407,7 @@ async def publish_task(
         raise
     except AppError:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to publish task {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to publish task")
 
@@ -2622,7 +2622,7 @@ async def generate_task_image(
             except asyncio.TimeoutError:
                 logger.warning(f"Pexels API timeout for query: {search_query}")
                 raise HTTPException(status_code=504, detail="Pexels API timeout. Please try again.")
-            except Exception as e:
+            except (AttributeError, TypeError, KeyError, RuntimeError, OSError) as e:
                 logger.error(f"Unexpected error fetching from Pexels: {type(e).__name__}: {e}", exc_info=True)
                 raise HTTPException(
                     status_code=500, detail="Unexpected error fetching image from Pexels"
@@ -2688,7 +2688,7 @@ async def generate_task_image(
                     status_code=500,
                     detail=f"SDXL image generation failed: {str(e)}. Ensure GPU available or use 'pexels' source.",
                 )
-            except Exception as e:
+            except (AttributeError, TypeError, KeyError, RuntimeError) as e:
                 logger.critical(
                     f"Unexpected error in SDXL generation: {type(e).__name__}: {e}", exc_info=True
                 )
@@ -2746,7 +2746,7 @@ async def generate_task_image(
         raise
     except AppError:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to generate image for task {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to generate image")
 
@@ -2812,6 +2812,6 @@ async def delete_task(
         raise
     except AppError:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to delete task {task_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to delete task")
