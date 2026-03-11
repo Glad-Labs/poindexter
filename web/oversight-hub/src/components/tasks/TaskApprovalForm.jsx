@@ -23,6 +23,7 @@ const TaskApprovalForm = ({
   onApprove,
   onPublish,
   onReject,
+  onReReview,
   onFeedbackChange,
   onReviewerIdChange,
 }) => {
@@ -237,6 +238,8 @@ const TaskApprovalForm = ({
           )}
           <Button
             variant="outlined"
+            onClick={onReReview}
+            disabled={approvalLoading}
             sx={{
               borderColor: '#8b5cf6',
               color: '#8b5cf6',
@@ -245,7 +248,7 @@ const TaskApprovalForm = ({
               },
             }}
           >
-            ↺ Re-review Rejected Task
+            {approvalLoading ? 'Sending...' : 'Re-review Rejected Task'}
           </Button>
         </Box>
       )}
@@ -265,6 +268,7 @@ TaskApprovalForm.propTypes = {
   onApprove: PropTypes.func.isRequired,
   onPublish: PropTypes.func.isRequired,
   onReject: PropTypes.func.isRequired,
+  onReReview: PropTypes.func,
   onFeedbackChange: PropTypes.func.isRequired,
   onReviewerIdChange: PropTypes.func.isRequired,
 };

@@ -17,6 +17,7 @@ import {
   rejectTask,
   publishTask,
   getContentTask,
+  updateTask,
 } from '../../services/taskService';
 import { generateTaskImage } from '../../services/cofounderAgentClient';
 import {
@@ -208,6 +209,27 @@ const TaskDetailModal = ({ onClose, onUpdate }) => {
     },
     [selectedTask, setSelectedTask, onClose, handleTaskUpdate]
   );
+
+  // Handle re-review: reset rejected task back to pending for another review cycle (#197)
+  const handleReReview = useCallback(async () => {
+    setApprovalLoading(true);
+    try {
+      await updateTask(selectedTask.id, { status: 'pending' });
+      const updatedTask = await getContentTask(selectedTask.id);
+      if (updatedTask) {
+        handleTaskUpdate(updatedTask);
+      }
+      alert('Task sent back for re-review. Status reset to pending.');
+      setApprovalFeedback('');
+      setSelectedTask(null);
+      onClose();
+    } catch (error) {
+      logger.error('Re-review error:', error);
+      alert(`Error resetting task for re-review: ${error.message}`);
+    } finally {
+      setApprovalLoading(false);
+    }
+  }, [selectedTask, setSelectedTask, onClose, handleTaskUpdate]);
 
   // Return null after all hooks have been called
   if (!selectedTask) return null;
@@ -505,6 +527,7 @@ const TaskDetailModal = ({ onClose, onUpdate }) => {
               }
               onPublish={handlePublishTask}
               onReject={() => handleRejectTask(approvalFeedback)}
+              onReReview={handleReReview}
               onFeedbackChange={setApprovalFeedback}
               onReviewerIdChange={setReviewerId}
             />
