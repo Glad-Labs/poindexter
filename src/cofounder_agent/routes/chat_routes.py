@@ -10,6 +10,7 @@ Provides endpoints for:
 
 import logging
 import time
+from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -39,8 +40,12 @@ ai_cache = AIResponseCache()  # Response caching (uses Redis if available)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
-# Store conversations in memory (in production, use database)
-conversations: Dict[str, list] = {}
+# Store conversations in memory with bounded size (issue #214).
+# Uses OrderedDict to evict oldest conversations when the cap is reached.
+# In production, migrate to PostgreSQL for persistence across restarts.
+MAX_CONVERSATIONS = 500
+MAX_MESSAGES_PER_CONVERSATION = 100
+conversations: OrderedDict[str, list] = OrderedDict()
 
 
 @router.post("", response_model=ChatResponse)
@@ -93,9 +98,21 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
         logger.info(f"[Chat] PARSED MODEL - provider: '{provider}', model_name: '{model_name}'")
 
-        # Initialize conversation if needed
+        # Initialize conversation if needed; evict oldest if at capacity
         if request.conversationId not in conversations:
+            if len(conversations) >= MAX_CONVERSATIONS:
+                evicted_id, _ = conversations.popitem(last=False)
+                logger.debug(f"[Chat] Evicted oldest conversation {evicted_id} (capacity: {MAX_CONVERSATIONS})")
             conversations[request.conversationId] = []
+        else:
+            # Move to end so it's treated as most recently used
+            conversations.move_to_end(request.conversationId)
+
+        # Trim per-conversation message history
+        if len(conversations[request.conversationId]) >= MAX_MESSAGES_PER_CONVERSATION:
+            conversations[request.conversationId] = conversations[request.conversationId][
+                -MAX_MESSAGES_PER_CONVERSATION:
+            ]
 
         # Add user message to conversation history
         conversations[request.conversationId].append(
