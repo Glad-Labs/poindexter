@@ -121,6 +121,36 @@ class StyleConsistencyValidator:
                 "in my opinion",
                 "let me tell you",
             ],
+            # fix #153: academic tone was missing — tasks with tone=academic always failed
+            "academic": [
+                "research",
+                "study",
+                "hypothesis",
+                "empirical",
+                "methodology",
+                "theoretical",
+                "scholarly",
+                "findings",
+                "demonstrate",
+                "literature",
+                "framework",
+                "analysis",
+                "peer-reviewed",
+                "citation",
+            ],
+            "professional": [
+                "best practice",
+                "industry",
+                "enterprise",
+                "solution",
+                "stakeholder",
+                "deliverable",
+                "leverage",
+                "optimize",
+                "scalable",
+                "roi",
+                "kpi",
+            ],
         }
 
         self.style_markers = {
@@ -365,10 +395,12 @@ class StyleConsistencyValidator:
         text_lower = ""  # Would need to pass content here
 
         # Related tones get partial credit — grouped by semantic family
+        # fix #153: added academic and professional families
         related_tones = {
-            "formal": ["authoritative", "professional"],
-            "authoritative": ["formal", "professional"],
+            "formal": ["authoritative", "professional", "academic"],
+            "authoritative": ["formal", "professional", "academic"],
             "professional": ["formal", "authoritative"],
+            "academic": ["formal", "authoritative"],
             "casual": ["conversational"],
             "conversational": ["casual"],
             "neutral": ["formal", "professional", "authoritative"],
