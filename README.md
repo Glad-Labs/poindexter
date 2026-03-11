@@ -6,7 +6,7 @@
 
 Production-ready AI orchestration system with autonomous agents, multi-provider LLM routing, and full-stack web applications.
 
-> **Documentation Cleanup (March 2026):** Root directory streamlined from 20+ files to 7 essential documents. All completed phase reports, session summaries, and testing documentation moved to `archive/` for improved organization. See [VERSION_HISTORY.md](VERSION_HISTORY.md) for comprehensive project timeline.
+> **Documentation Cleanup (March 2026):** Root directory streamlined from 20+ files to 7 essential documents. All completed phase reports, session summaries, and testing documentation moved to `archive/` for improved organization. See [Version History](docs/07-Appendices/Version-History.md) for comprehensive project timeline.
 
 ## 📁 Project Structure
 
