@@ -151,7 +151,7 @@ async def get_all_agents_status(orchestrator=Depends(get_orchestrator_dependency
             agents=agents_status,
             system_health=system_status,
         )
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError) as e:
         logger.error(f"Error fetching all agents status: {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail="Failed to fetch agents status"
@@ -192,7 +192,7 @@ async def get_agent_status(agent_name: str, orchestrator=Depends(get_orchestrato
     try:
         agent_status = format_agent_status(agent_name, orchestrator)
         return agent_status
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError) as e:
         logger.error(f"Error fetching status for agent {agent_name}: {e}", exc_info=True)
         raise HTTPException(
             status_code=500, detail="Failed to fetch agent status"
@@ -257,7 +257,7 @@ async def send_agent_command(
             },
             timestamp=datetime.now(timezone.utc),
         )
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError) as e:
         logger.error(f"Error sending command to agent {agent_name}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to send command") from e
 
@@ -321,7 +321,7 @@ async def get_agent_logs(
                 "offset": offset,
             },
         )
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError) as e:
         logger.error(f"Error fetching agent logs: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch logs")
 
@@ -393,7 +393,7 @@ async def get_memory_stats(orchestrator=Depends(get_orchestrator_dependency)):
             memory_usage_mb=0.0,
             by_agent=by_agent,
         )
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError) as e:
         logger.error(f"Error fetching memory stats: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch memory stats")
 
@@ -477,6 +477,6 @@ async def get_agent_system_health(orchestrator=Depends(get_orchestrator_dependen
             uptime_seconds=int(system_status.get("uptime_seconds", 0)),
             details=details,
         )
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError) as e:
         logger.error(f"Error fetching agent health: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch health")

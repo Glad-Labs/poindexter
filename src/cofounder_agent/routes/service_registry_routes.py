@@ -84,7 +84,7 @@ async def get_registry_schema():
         registry = get_service_registry()
         schema = registry.get_registry_schema()
         return {"services": schema}
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError) as e:
         logger.error(f"Failed to get registry schema: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail={"message": str(e), "type": "registry_error"})
 
@@ -110,7 +110,7 @@ async def list_services():
         registry = get_service_registry()
         services = registry.list_services()
         return services
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError) as e:
         logger.error(f"Failed to list services: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail={"message": str(e), "type": "registry_error"})
 
@@ -162,7 +162,7 @@ async def get_service_metadata(service_name: str):
 
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError) as e:
         logger.error(f"Failed to get service metadata for {service_name}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail={"message": str(e), "type": "registry_error"})
 
@@ -203,7 +203,7 @@ async def get_service_actions(service_name: str):
 
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError) as e:
         logger.error(f"Failed to get actions for {service_name}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail={"message": str(e), "type": "registry_error"})
 
@@ -256,7 +256,7 @@ async def get_action_details(service_name: str, action_name: str):
 
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError) as e:
         logger.error(
             f"Failed to get action details for {service_name}.{action_name}: {e}",
             exc_info=True,
@@ -329,7 +329,7 @@ async def execute_service_action(
     except ValueError as e:
         logger.warning(f"Invalid parameters for {service_name}.{action_name}: {e}")
         raise HTTPException(status_code=400, detail={"message": str(e), "type": "validation_error"})
-    except Exception as e:
+    except (KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to execute {service_name}.{action_name}: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
