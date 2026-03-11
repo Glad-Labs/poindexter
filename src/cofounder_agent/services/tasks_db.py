@@ -433,18 +433,18 @@ class TasksDatabase(DatabaseServiceMixin):
                 serialized_data[key] = serialized
 
             # 🔍 DEBUG: Log critical fields before DB insert
-            logger.info(f"📊 [add_task] Critical fields being inserted:")
-            logger.info(f"   task_id: {serialized_data.get('task_id')}")
-            logger.info(
+            logger.debug(f"📊 [add_task] Critical fields being inserted:")
+            logger.debug(f"   task_id: {serialized_data.get('task_id')}")
+            logger.debug(
                 f"   style: {serialized_data.get('style')} (original: {task_data.get('style')})"
             )
-            logger.info(
+            logger.debug(
                 f"   tone: {serialized_data.get('tone')} (original: {task_data.get('tone')})"
             )
-            logger.info(
+            logger.debug(
                 f"   model_selections: {serialized_data.get('model_selections')} (original: {task_data.get('model_selections')})"
             )
-            logger.info(f"   quality_preference: {serialized_data.get('quality_preference')}")
+            logger.debug(f"   quality_preference: {serialized_data.get('quality_preference')}")
 
             builder = ParameterizedQueryBuilder()
             sql, params = builder.insert(
@@ -635,18 +635,18 @@ class TasksDatabase(DatabaseServiceMixin):
         Returns:
             Updated task dict or None
         """
-        logger.info(f"\n{'='*80}")
-        logger.info(f"🔵 TasksDatabase.update_task() ENTRY")
-        logger.info(f"   Task ID: {task_id}")
-        logger.info(f"   Updates received: {list(updates.keys())}")
-        logger.info(f"{'='*80}")
+        logger.debug(f"\n{'='*80}")
+        logger.debug(f"🔵 TasksDatabase.update_task() ENTRY")
+        logger.debug(f"   Task ID: {task_id}")
+        logger.debug(f"   Updates received: {list(updates.keys())}")
+        logger.debug(f"{'='*80}")
 
         if not updates:
-            logger.info(f"   No updates provided, returning current task")
+            logger.debug(f"   No updates provided, returning current task")
             return await self.get_task(task_id)
 
         # Extract task_metadata for normalization
-        logger.info(f"🔍 Extracting task_metadata for normalization...")
+        logger.debug(f"🔍 Extracting task_metadata for normalization...")
         task_metadata = updates.get("task_metadata", {})
         if isinstance(task_metadata, str):
             try:
@@ -743,11 +743,11 @@ class TasksDatabase(DatabaseServiceMixin):
             serialized_updates[key] = serialize_value_for_postgres(value)
 
         # DEBUG: Log normalized updates
-        logger.info(f"🔍 [DEBUG] Normalized updates for task {task_id}:")
-        logger.info(f"   - Keys: {list(normalized_updates.keys())}")
-        logger.info(f"   - Has 'content' in normalized: {'content' in normalized_updates}")
+        logger.debug(f"🔍 [DEBUG] Normalized updates for task {task_id}:")
+        logger.debug(f"   - Keys: {list(normalized_updates.keys())}")
+        logger.debug(f"   - Has 'content' in normalized: {'content' in normalized_updates}")
         if "content" in normalized_updates:
-            logger.info(
+            logger.debug(
                 f"   - Content length: {len(normalized_updates.get('content') or '')} chars"
             )
 
@@ -767,16 +767,15 @@ class TasksDatabase(DatabaseServiceMixin):
             async with self.pool.acquire() as conn:
                 row = await conn.fetchrow(sql, *params)
                 if row:
-                    # DEBUG: Verify content was persisted
-                    logger.info(f"✅ [DEBUG] Update returned row for task {task_id}")
-                    logger.info(f"   - Row has 'content': {row.get('content') is not None}")
+                    logger.debug(f"[update_task] Row returned for task {task_id}")
+                    logger.debug(f"   - Row has 'content': {row.get('content') is not None}")
                     if row.get("content"):
-                        logger.info(
+                        logger.debug(
                             f"   - Persisted content length: {len(row.get('content'))} chars"
                         )
                     task_response = ModelConverter.to_task_response(row)
                     return ModelConverter.to_dict(task_response)
-                logger.warning(f"⚠️  [DEBUG] Update returned no row for task {task_id}")
+                logger.warning(f"[update_task] No row returned for task {task_id}")
                 return None
         except Exception as e:
             logger.error(f"[update_task] Failed to update task {task_id}: {e}", exc_info=True)
