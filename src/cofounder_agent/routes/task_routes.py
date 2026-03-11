@@ -379,6 +379,7 @@ async def _handle_blog_post_creation(
             **(request.metadata or {}),
             "generate_featured_image": request.generate_featured_image,
             "tags": request.tags,
+            "enforce_constraints": request.enforce_constraints if request.enforce_constraints is not None else True,
         },
         "created_at": datetime.now(timezone.utc),
     }
@@ -756,6 +757,10 @@ async def list_tasks(
                     except (json.JSONDecodeError, TypeError):
                         task["cost_breakdown"] = None
 
+                # Map DB 'title' column to schema 'task_name' field
+                if not task.get("task_name") and task.get("title"):
+                    task["task_name"] = task["title"]
+
                 validated_tasks.append(UnifiedTaskResponse(**task))
             else:
                 validated_tasks.append(task)
@@ -776,41 +781,60 @@ async def list_tasks(
 # ============================================================================
 
 
+async def _compute_real_metrics(db_service: DatabaseService) -> MetricsResponse:
+    """Query the DB for real task metrics."""
+    sql = """
+        SELECT
+            COUNT(*) AS total_tasks,
+            COUNT(*) FILTER (WHERE status IN ('published', 'approved', 'completed')) AS completed_tasks,
+            COUNT(*) FILTER (WHERE status IN ('failed', 'validation_failed', 'failed_revisions_requested')) AS failed_tasks,
+            COUNT(*) FILTER (WHERE status IN ('pending', 'queued', 'in_progress')) AS pending_tasks,
+            AVG(EXTRACT(EPOCH FROM (COALESCE(completed_at, updated_at) - started_at)))
+                FILTER (WHERE started_at IS NOT NULL AND status IN ('published', 'approved', 'completed'))
+                AS avg_execution_time,
+            COALESCE(SUM(actual_cost), SUM(estimated_cost), 0) AS total_cost
+        FROM content_tasks
+    """
+    async with db_service.pool.acquire() as conn:
+        row = await conn.fetchrow(sql)
+    total = int(row["total_tasks"] or 0)
+    completed = int(row["completed_tasks"] or 0)
+    failed = int(row["failed_tasks"] or 0)
+    pending = int(row["pending_tasks"] or 0)
+    success_rate = round((completed / total * 100), 1) if total > 0 else 0.0
+    avg_time = float(row["avg_execution_time"] or 0)
+    total_cost = float(row["total_cost"] or 0)
+    return MetricsResponse(
+        total_tasks=total,
+        completed_tasks=completed,
+        failed_tasks=failed,
+        pending_tasks=pending,
+        success_rate=success_rate,
+        avg_execution_time=avg_time,
+        total_cost=total_cost,
+    )
+
+
 @router.get("/metrics", response_model=MetricsResponse, summary="Get task metrics (alias endpoint)")
 async def get_metrics_alias(
     time_range: Optional[str] = Query(None, description="Time range filter (optional)"),
+    db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
     Get aggregated metrics for all tasks (alias for /metrics/summary).
-    
+
     **Returns:**
     - Total tasks, completed, failed, pending
     - Success rate percentage
     - Average execution time
     - Total estimated cost
-    
+
     **Query Parameters:**
     - `time_range` (optional): Time range filter (e.g., "7d", "30d", "90d") - for future use
-    
-    **Example cURL:**
-    ```bash
-    curl -X GET http://localhost:8000/api/tasks/metrics \
-      -H "Authorization: Bearer YOUR_JWT_TOKEN"
-    ```
     """
     logger.info(f"🔵 Metrics endpoint called with time_range={time_range}")
     try:
-        # ✅ FIXED: Return operational metrics
-        # Note: Database integration available via get_services() but wrapped to avoid dependency injection issues
-        return MetricsResponse(
-            total_tasks=100,
-            completed_tasks=80,
-            failed_tasks=5,
-            pending_tasks=15,
-            success_rate=94.1,
-            avg_execution_time=45.2,
-            total_cost=125.50,
-        )
+        return await _compute_real_metrics(db_service)
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"❌ Failed to fetch metrics: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch metrics")
@@ -819,37 +843,22 @@ async def get_metrics_alias(
 @router.get("/metrics/summary", response_model=MetricsResponse, summary="Get task metrics")
 async def get_metrics(
     time_range: Optional[str] = Query(None, description="Time range filter (optional)"),
+    db_service: DatabaseService = Depends(get_database_dependency),
 ):
     """
     Get aggregated metrics for all tasks.
-    
+
     **Returns:**
     - Total tasks, completed, failed, pending
     - Success rate percentage
     - Average execution time
     - Total estimated cost
-    
+
     **Query Parameters:**
     - `time_range` (optional): Time range filter (e.g., "7d", "30d", "90d") - for future use
-    
-    **Example cURL:**
-    ```bash
-    curl -X GET http://localhost:8000/api/tasks/metrics/summary \
-      -H "Authorization: Bearer YOUR_JWT_TOKEN"
-    ```
     """
     try:
-        # ✅ FIXED: Return operational metrics
-        # Note: Database integration available via get_services() but wrapped to avoid dependency injection issues
-        return MetricsResponse(
-            total_tasks=100,
-            completed_tasks=80,
-            failed_tasks=5,
-            pending_tasks=15,
-            success_rate=94.1,
-            avg_execution_time=45.2,
-            total_cost=125.50,
-        )
+        return await _compute_real_metrics(db_service)
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to fetch metrics: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch metrics")

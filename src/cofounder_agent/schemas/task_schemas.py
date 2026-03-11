@@ -105,6 +105,10 @@ class UnifiedTaskRequest(BaseModel):
     quality_preference: Optional[Literal["fast", "balanced", "quality"]] = Field(
         "balanced", description="Quality vs speed preference"
     )
+    enforce_constraints: Optional[bool] = Field(
+        True,
+        description="Whether to enforce word count and style validation gates. Set False to skip validation failures.",
+    )
     context: Optional[Dict[str, Any]] = Field(
         None, description="Request context (writing_style_id, user_id, etc.)"
     )

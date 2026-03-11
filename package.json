@@ -106,7 +106,20 @@
     "bump-version:major": "node scripts/bump-version.js -- --major",
     "docs:cleanup": "bash scripts/cleanup-docs.sh || powershell -ExecutionPolicy Bypass -File cleanup-docs.ps1",
     "docs:cleanup:ps": "powershell -ExecutionPolicy Bypass -File cleanup-docs.ps1",
-    "docs:cleanup:sh": "bash scripts/cleanup-docs.sh"
+    "docs:cleanup:sh": "bash scripts/cleanup-docs.sh",
+    "prepare": "husky",
+    "// validation": "=== VALIDATION ===",
+    "validate:env": "node scripts/validate-env.js",
+    "validate:all": "npm run format:check && npm run lint && npm run validate:env && npm run type:check"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx}": [
+      "prettier --write",
+      "eslint --fix --max-warnings=0 --no-warn-ignored"
+    ],
+    "*.{json,md,css}": [
+      "prettier --write"
+    ]
   },
   "devDependencies": {
     "@types/node": "^25.3.0",
@@ -115,7 +128,9 @@
     "baseline-browser-mapping": "^2.9.11",
     "concurrently": "^9.2.1",
     "cross-env": "^7.0.3",
-    "eslint": "^10.0.1",
+    "eslint": "^9.39.4",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.3.3",
     "markdownlint-cli": "^0.12.0",
     "npm-run-all": "^1.1.3",
     "playwright": "^1.58.2",

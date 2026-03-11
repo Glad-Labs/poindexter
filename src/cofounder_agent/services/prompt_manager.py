@@ -96,8 +96,10 @@ class UnifiedPromptManager:
 The target audience is {target_audience}. 
 The primary keyword to focus on is '{primary_keyword}'.
 
-🎯 MANDATORY WORD COUNT: You MUST write {word_count} words (±10% acceptable range).
-   Your content will be REJECTED if it's too short. Write detailed, thorough content.
+🎯 MANDATORY WORD COUNT: You MUST write EXACTLY {word_count} words (±10% acceptable range).
+   - Minimum: {word_count} × 0.9 ≈ words. Maximum: {word_count} × 1.1 ≈ words.
+   - STOP when you reach the maximum. DO NOT write more than {word_count} × 1.1 words.
+   - Content is REJECTED if too short OR too long. Aim precisely for {word_count} words.
 
 ⭐ CRITICAL REQUIREMENTS:
 1. Start your response with a Markdown heading (# Your Title Here) on the first line
@@ -691,7 +693,9 @@ Write for an educated but general audience.
    - Minimum acceptable: {min_words} words
    - Target: {target_length} words
    - Maximum: {max_words} words
-   - Your response will be REJECTED if it falls outside this range.
+   - STOP WRITING when you reach {max_words} words. DO NOT exceed {max_words} words under any circumstances.
+   - Before finishing, count your words. If you exceed {max_words} words, cut content until you are within range.
+   - Your response will be REJECTED if it exceeds {max_words} words.
 
 Format as Markdown with proper headings (# for title, ## for sections, ### for subsections).
 

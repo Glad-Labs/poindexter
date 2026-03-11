@@ -1192,6 +1192,18 @@ class TaskExecutor:
         logger.info(f"✅ [TASK_EXECUTE] PHASE 2 Complete: Quality assessment recorded")
 
         # ===== LAZY-AI-PROOF VALIDATION PIPELINE =====
+        # Respect enforce_constraints flag (stored in task_metadata at creation time).
+        # When False, word count / style / SEO gates are bypassed — content goes straight
+        # to awaiting_approval regardless of length or style issues.
+        _task_meta = task.get("task_metadata") or {}
+        if isinstance(_task_meta, str):
+            try:
+                import json as _json
+                _task_meta = _json.loads(_task_meta)
+            except (ValueError, TypeError):
+                _task_meta = {}
+        enforce_constraints = _task_meta.get("enforce_constraints", True) if isinstance(_task_meta, dict) else True
+
         # Gate 1: Content generation validity
         base_content_valid = (
             generated_content is not None
@@ -1321,6 +1333,15 @@ class TaskExecutor:
         except Exception as e:
             logger.warning(f"[SEO_GATE] Validation error (non-blocking): {e}", exc_info=True)
             # Non-blocking - continue even if SEO validation fails
+
+        # If enforce_constraints is disabled, bypass length/style/SEO gates
+        if not enforce_constraints:
+            logger.info(
+                "⚙️  [VALIDATION] enforce_constraints=False — bypassing length/style/SEO gates"
+            )
+            length_gate_passes = True
+            style_gate_passes = True
+            seo_gate_passes = True
 
         # Consolidated gating logic: LAZY-AI-PROOF requires ALL gates to pass
         content_is_valid = (
