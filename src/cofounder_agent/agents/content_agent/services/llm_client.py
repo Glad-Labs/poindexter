@@ -1,3 +1,4 @@
+import asyncio
 import sys
 from pathlib import Path
 
@@ -139,7 +140,8 @@ class LLMClient:
                 return json.load(f)
 
         if self.provider == "gemini":
-            result = self._generate_json_gemini(prompt)
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, self._generate_json_gemini, prompt)
         elif self.provider == "local" or self.provider == "ollama":
             result = await self._generate_json_local(prompt)
         else:
@@ -218,7 +220,8 @@ class LLMClient:
             return cache_path.read_text(encoding="utf-8")
 
         if self.provider == "gemini":
-            result = self._generate_text_gemini(prompt)
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, self._generate_text_gemini, prompt)
         elif self.provider == "local" or self.provider == "ollama":
             result = await self._generate_text_local(prompt)
         else:
@@ -270,7 +273,8 @@ class LLMClient:
             return cache_path.read_text()
 
         if self.provider == "gemini":
-            result = self._generate_summary_gemini(prompt)
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, self._generate_summary_gemini, prompt)
         elif self.provider == "local" or self.provider == "ollama":
             # For local/ollama provider, we can reuse the text generation with the summarizer model if needed
             # or use a specific endpoint if available. For now, we use the main model.
