@@ -13,6 +13,7 @@ import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr
 
+from routes.auth_unified import get_current_user
 from utils.route_utils import get_database_dependency
 
 logger = logging.getLogger(__name__)
@@ -187,7 +188,10 @@ async def unsubscribe_from_newsletter(
 
 
 @router.get("/subscribers/count")
-async def get_subscriber_count(db=Depends(get_database_dependency)):
+async def get_subscriber_count(
+    db=Depends(get_database_dependency),
+    current_user: dict = Depends(get_current_user),
+):
     """Get total active newsletter subscribers count"""
     try:
         count = await db.pool.fetchval(

@@ -14,8 +14,10 @@ from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+
+from routes.auth_unified import get_current_user
 
 from schemas.chat_schemas import (
     ChatMessage,
@@ -49,7 +51,10 @@ conversations: OrderedDict[str, list] = OrderedDict()
 
 
 @router.post("", response_model=ChatResponse)
-async def chat(request: ChatRequest) -> ChatResponse:
+async def chat(
+    request: ChatRequest,
+    current_user: dict = Depends(get_current_user),
+) -> ChatResponse:
     """
     Process a chat message and return AI response
 
@@ -329,7 +334,10 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
 
 @router.get("/history/{conversation_id}")
-async def get_conversation(conversation_id: str) -> Dict[str, Any]:
+async def get_conversation(
+    conversation_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
     """
     Get the full conversation history for a conversation ID
 
@@ -368,7 +376,10 @@ async def get_conversation(conversation_id: str) -> Dict[str, Any]:
 
 
 @router.delete("/history/{conversation_id}")
-async def clear_conversation(conversation_id: str) -> Dict[str, str]:
+async def clear_conversation(
+    conversation_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> Dict[str, str]:
     """
     Clear conversation history
 

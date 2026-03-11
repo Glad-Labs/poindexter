@@ -25,6 +25,7 @@ from schemas.custom_workflow_schemas import (
     WorkflowListPageResponse,
     WorkflowListResponse,
 )
+from routes.auth_unified import get_current_user
 from services.custom_workflows_service import CustomWorkflowsService
 from services.token_validator import JWTTokenValidator
 from utils.route_utils import get_custom_workflows_service_dependency
@@ -100,6 +101,7 @@ async def create_custom_workflow(
     workflow: CustomWorkflow,
     request: Request,
     service: CustomWorkflowsService = Depends(get_custom_workflows_service_dependency),
+    current_user: dict = Depends(get_current_user),
 ) -> CustomWorkflow:
     """
     Create and save a new custom workflow.
@@ -134,6 +136,7 @@ async def list_custom_workflows(
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     page_size: int = Query(20, ge=1, le=100, description="Results per page"),
     include_templates: bool = Query(True, description="Include shared templates"),
+    current_user: dict = Depends(get_current_user),
 ) -> WorkflowListPageResponse:
     """
     List workflows for the current user.
@@ -182,6 +185,7 @@ async def get_custom_workflow(
     workflow_id: str,
     request: Request,
     service: CustomWorkflowsService = Depends(get_custom_workflows_service_dependency),
+    current_user: dict = Depends(get_current_user),
 ) -> CustomWorkflow:
     """
     Retrieve a custom workflow by ID.
@@ -218,6 +222,7 @@ async def update_custom_workflow(
     workflow: CustomWorkflow,
     request: Request,
     service: CustomWorkflowsService = Depends(get_custom_workflows_service_dependency),
+    current_user: dict = Depends(get_current_user),
 ) -> CustomWorkflow:
     """
     Update an existing custom workflow.
@@ -256,6 +261,7 @@ async def delete_custom_workflow(
     workflow_id: str,
     request: Request,
     service: CustomWorkflowsService = Depends(get_custom_workflows_service_dependency),
+    current_user: dict = Depends(get_current_user),
 ) -> Dict[str, str]:
     """
     Delete a custom workflow.
@@ -295,6 +301,7 @@ async def execute_custom_workflow(
     request: Request,
     service: CustomWorkflowsService = Depends(get_custom_workflows_service_dependency),
 ) -> Dict[str, Any]:
+    current_user: dict = Depends(get_current_user),
     """
     Execute a saved custom workflow.
 
@@ -357,6 +364,7 @@ async def execute_custom_workflow(
 @router.get("/available-phases", name="Get Available Phases")
 async def get_available_phases(
     service: CustomWorkflowsService = Depends(get_custom_workflows_service_dependency),
+    current_user: dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """
     Get list of available phases that can be used when building workflows.
@@ -401,6 +409,7 @@ async def list_workflow_executions(
     limit: int = Query(20, ge=1, le=100, description="Max executions to return"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     status: Optional[str] = Query(None, description="Optional status filter"),
+    current_user: dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """List execution history for a specific workflow."""
     try:
@@ -438,6 +447,7 @@ async def get_workflow_history(
     limit: int = Query(50, ge=1, le=500, description="Max results"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     status: Optional[str] = Query(None, description="Filter by status"),
+    current_user: dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """Get workflow execution history for the user."""
     try:
