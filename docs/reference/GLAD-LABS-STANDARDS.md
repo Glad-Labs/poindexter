@@ -42,7 +42,7 @@ The entire system is built on a monorepo structure, with a central AI Co-Founder
 
 ### **4. Project Structure & Codebases**
 
-- **/src/cofounder_agent/**: Central orchestrator with 18+ route modules and 74+ service modules.
+- **/src/cofounder_agent/**: Central orchestrator with 29 route modules and 106 service modules.
 - **/src/agents/**: Specialized agents (content, financial, market, compliance).
 - **/src/mcp/**: Model Context Protocol implementations for cost optimization.
 - **/web/oversight-hub/**: React admin dashboard (port 3001).

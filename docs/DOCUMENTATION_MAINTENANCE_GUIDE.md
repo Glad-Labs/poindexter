@@ -401,10 +401,10 @@ Format: `MAJOR.MINOR` (e.g., 2.2, 3.0)
 
 ```
 OLD: "87+ service modules"
-NEW: "90+ service modules"
+NEW: "106 service modules" (actual count as of March 10, 2026)
 
 OLD: "29+ route modules"
-NEW: "30+ route modules"
+NEW: "29 route modules" (current stable count)
 ```
 
 **Validation:**
