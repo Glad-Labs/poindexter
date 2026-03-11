@@ -86,9 +86,9 @@ class FineTuningService:
                 await asyncio.wait_for(proc.communicate(), timeout=5)
             except asyncio.TimeoutError:
                 proc.kill()
-            result = type("_R", (), {"returncode": proc.returncode})()
+            ollama_returncode = proc.returncode
 
-            if result.returncode != 0:
+            if ollama_returncode != 0:
                 return {
                     "job_id": job_id,
                     "status": "failed",
