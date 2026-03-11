@@ -57,7 +57,7 @@ async def initialize_progress(
         )
         logger.info(f"Initialized progress for execution {execution_id}")
         return {"success": True, "execution_id": execution_id, "progress": progress.to_dict()}
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to initialize progress: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -84,7 +84,7 @@ async def start_execution(
         await broadcast_workflow_progress(execution_id, progress.to_dict())  # type: ignore[union-attr]
         logger.info(f"Started execution {execution_id}")
         return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to start execution: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -120,7 +120,7 @@ async def start_phase(
         await broadcast_workflow_progress(execution_id, progress.to_dict())  # type: ignore[union-attr]
         logger.debug(f"Started phase {phase_index} for execution {execution_id}")
         return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to start phase: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -156,7 +156,7 @@ async def complete_phase(
         await broadcast_workflow_progress(execution_id, progress.to_dict())  # type: ignore[union-attr]
         logger.debug(f"Completed phase {phase_name} for execution {execution_id}")
         return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to complete phase: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -189,7 +189,7 @@ async def fail_phase(
         await broadcast_workflow_progress(execution_id, progress.to_dict())  # type: ignore[union-attr]
         logger.warning(f"Phase {phase_name} failed for execution {execution_id}: {error}")
         return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to mark phase as failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -225,7 +225,7 @@ async def mark_complete(
         await broadcast_workflow_progress(execution_id, progress.to_dict())  # type: ignore[union-attr]
         logger.info(f"Completed execution {execution_id}")
         return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to mark execution as complete: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -258,7 +258,7 @@ async def mark_failed(
         await broadcast_workflow_progress(execution_id, progress.to_dict())  # type: ignore[union-attr]
         logger.error(f"Execution {execution_id} failed: {error}")
         return {"success": True, "progress": progress.to_dict()}  # type: ignore[union-attr]
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to mark execution as failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -285,7 +285,7 @@ async def get_progress_status(
         return progress.to_dict()
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to get progress status: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -317,7 +317,7 @@ async def websocket_workflow_progress(websocket: WebSocket, execution_id: str):
                 await websocket.send_text("pong")
     except WebSocketDisconnect:
         logger.info(f"WebSocket client disconnected for execution {execution_id}")
-    except Exception as e:
+    except (RuntimeError, OSError, ConnectionError) as e:
         logger.error(f"[websocket_workflow_progress] Unexpected error for {execution_id}: {e}", exc_info=True)
     finally:
         # Unregister connection
@@ -353,7 +353,7 @@ async def broadcast_workflow_progress(execution_id: str, progress: dict) -> None
     for websocket in active_connections[execution_id]:
         try:
             await websocket.send_text(message)
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError) as e:
             logger.debug(f"Failed to send progress to client: {e}")
             disconnected.append(websocket)
 
@@ -381,6 +381,6 @@ async def cleanup_progress(
         progress_service.cleanup(execution_id)
         logger.info(f"Cleaned up progress for execution {execution_id}")
         return {"success": True, "message": f"Progress cleaned up for {execution_id}"}
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Failed to clean up progress: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
