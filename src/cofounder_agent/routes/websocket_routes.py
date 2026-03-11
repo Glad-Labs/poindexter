@@ -332,8 +332,12 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
 
         # Keep connection alive and handle incoming messages
         while True:
-            # Receive message from client (for future client->server communication)
-            data = await websocket.receive_text()
+            # Receive message from client (or send keep-alive on timeout)
+            try:
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=30)
+            except asyncio.TimeoutError:
+                await websocket.send_json({"type": "keep-alive"})
+                continue
             logger.debug(f"WebSocket received: {data}")
 
             # Parse the message
