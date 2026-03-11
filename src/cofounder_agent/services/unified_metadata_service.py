@@ -32,11 +32,11 @@ logger = logging.getLogger(__name__)
 
 # Check for Anthropic availability and API key
 try:
-    from anthropic import Anthropic
+    from anthropic import AsyncAnthropic
 
     ANTHROPIC_AVAILABLE = ProviderChecker.is_anthropic_available()
     if ANTHROPIC_AVAILABLE:
-        anthropic_client = Anthropic(api_key=ProviderChecker.get_anthropic_api_key())
+        anthropic_client = AsyncAnthropic(api_key=ProviderChecker.get_anthropic_api_key())
     else:
         anthropic_client = None
         logger.debug("⚠️  ANTHROPIC_API_KEY not set in environment")
@@ -414,7 +414,7 @@ class UnifiedMetadataService:
 
         try:
             if ANTHROPIC_AVAILABLE and anthropic_client is not None:
-                response = anthropic_client.messages.create(  # type: ignore[attr-defined]
+                response = await anthropic_client.messages.create(  # type: ignore[attr-defined]
                     model="claude-3-haiku-20240307",
                     max_tokens=max_length,
                     messages=[{"role": "user", "content": prompt}],
@@ -425,10 +425,10 @@ class UnifiedMetadataService:
                 return excerpt[:max_length] if excerpt else None
 
             if OPENAI_AVAILABLE:
-                import openai as openai_module
+                from openai import AsyncOpenAI as _AsyncOpenAI
 
-                client = openai_module.OpenAI()  # type: ignore[attr-defined]
-                resp = client.chat.completions.create(
+                client = _AsyncOpenAI()
+                resp = await client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=max_length,
@@ -692,7 +692,7 @@ class UnifiedMetadataService:
 
         try:
             if ANTHROPIC_AVAILABLE and anthropic_client is not None:
-                response = anthropic_client.messages.create(  # type: ignore[attr-defined]
+                response = await anthropic_client.messages.create(  # type: ignore[attr-defined]
                     model="claude-3-haiku-20240307",
                     max_tokens=100,
                     messages=[{"role": "user", "content": prompt}],
@@ -702,10 +702,10 @@ class UnifiedMetadataService:
                 return next((c for c in available_categories if c["name"] == category_name), None)
 
             if OPENAI_AVAILABLE:
-                import openai as openai_module
+                from openai import AsyncOpenAI as _AsyncOpenAI
 
-                client = openai_module.OpenAI()  # type: ignore[attr-defined]
-                resp = client.chat.completions.create(
+                client = _AsyncOpenAI()
+                resp = await client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=100,
@@ -808,7 +808,7 @@ class UnifiedMetadataService:
 
         try:
             if ANTHROPIC_AVAILABLE and anthropic_client is not None:
-                response = anthropic_client.messages.create(  # type: ignore[attr-defined]
+                response = await anthropic_client.messages.create(  # type: ignore[attr-defined]
                     model="claude-3-haiku-20240307",
                     max_tokens=100,
                     messages=[{"role": "user", "content": prompt}],
@@ -824,10 +824,10 @@ class UnifiedMetadataService:
                 ]
 
             if OPENAI_AVAILABLE:
-                import openai as openai_module
+                from openai import AsyncOpenAI as _AsyncOpenAI
 
-                client = openai_module.OpenAI()  # type: ignore[attr-defined]
-                resp = client.chat.completions.create(
+                client = _AsyncOpenAI()
+                resp = await client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=100,
