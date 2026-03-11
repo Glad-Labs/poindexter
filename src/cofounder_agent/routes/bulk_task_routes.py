@@ -147,7 +147,7 @@ async def bulk_task_operations(
         except HTTPException as e:
             errors.append({"task_id": task_id, "error": e.detail})
             failed_count += 1
-        except Exception as e:
+        except (ValueError, KeyError, TypeError, AttributeError, ConnectionError) as e:
             errors.append({"task_id": task_id, "error": str(e)})
             failed_count += 1
             logger.error(f"Failed to update task {task_id}: {str(e)}", exc_info=True)
@@ -212,7 +212,7 @@ async def bulk_create_tasks(
                         "status": "pending",
                     }
                 )
-            except Exception as e:
+            except (ValueError, KeyError, TypeError, AttributeError, ConnectionError) as e:
                 logger.error(f"Error creating task {i+1}: {str(e)}", exc_info=True)
                 errors.append({"index": i, "task_name": task.task_name, "error": str(e)})
 
@@ -223,6 +223,6 @@ async def bulk_create_tasks(
             tasks=created_tasks if created_tasks else None,
             errors=errors if errors else None,
         )
-    except Exception as e:
+    except (ValueError, KeyError, TypeError, AttributeError, ConnectionError) as e:
         logger.error(f"Bulk create error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Bulk create failed: {str(e)}")

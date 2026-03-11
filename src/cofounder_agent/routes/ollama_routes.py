@@ -151,7 +151,7 @@ async def get_ollama_models() -> dict:
         # Return safe defaults if Ollama not available
         return {"models": ["llama2", "neural-chat", "mistral"], "connected": False}
 
-    except Exception as e:
+    except (httpx.HTTPError, ValueError, KeyError, AttributeError) as e:
         logger.debug(f"[Ollama] Error getting models: {str(e)}")
         return {"models": ["llama2", "neural-chat", "mistral"], "connected": False}
 
@@ -277,7 +277,7 @@ async def warmup_ollama(model: str = "mistral:latest") -> OllamaWarmupResponse:
             timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
-    except Exception as e:
+    except (httpx.HTTPError, ValueError, KeyError, AttributeError) as e:
         logger.error(f"[Ollama] Warm-up error: {str(e)}", exc_info=True)
         return OllamaWarmupResponse(
             status="error",
@@ -324,7 +324,7 @@ async def get_ollama_status() -> Dict[str, Any]:
                 "error": f"HTTP {response.status_code}",
             }
 
-    except Exception as e:
+    except (httpx.HTTPError, httpx.ConnectError, httpx.TimeoutException, ValueError, KeyError, AttributeError) as e:
         return {
             "running": False,
             "host": OLLAMA_HOST,
@@ -401,7 +401,7 @@ async def select_ollama_model(request: OllamaModelSelection) -> Dict[str, Any]:
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
 
-    except Exception as e:
+    except (httpx.HTTPError, httpx.ConnectError, httpx.TimeoutException, ValueError, KeyError, AttributeError) as e:
         logger.error(f"[Ollama] Model selection error: {str(e)}", exc_info=True)
         return {
             "success": False,

@@ -361,7 +361,7 @@ async def compose_task_from_natural_language(
             execution_id=result.execution_id,
         )
 
-    except Exception as e:
+    except (ValueError, KeyError, TypeError, AttributeError, RuntimeError, ConnectionError) as e:
         return NaturalLanguageResponse(
             success=False,
             explanation="Error composing task from natural language",
@@ -675,7 +675,7 @@ async def execute_capability_task_endpoint(
                 execution_result.completed_at.isoformat() if execution_result.completed_at else None
             ),
         )
-    except Exception as e:
+    except (ValueError, KeyError, TypeError, AttributeError, RuntimeError, ConnectionError, asyncpg.PostgresError) as e:
         return ExecutionResponse(
             execution_id="unknown",
             task_id=task_id,

@@ -61,7 +61,7 @@ async def dispatch_command(request: CommandRequest) -> Dict[str, Any]:
         logger.info(f"Command dispatched: {cmd.id} to {request.agent_type}")
 
         return cmd.to_dict()
-    except Exception as e:
+    except (ValueError, KeyError, TypeError, AttributeError) as e:
         logger.error(f"Failed to dispatch command: {e}", exc_info=True)
         raise HTTPException(status_code=400, detail=str(e))
 
