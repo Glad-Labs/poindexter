@@ -9,7 +9,7 @@ import asyncio
 import re
 import uuid
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from .capability_registry import get_registry
@@ -39,7 +39,7 @@ class CapabilityTaskDefinition:
     description: str = ""
     steps: List[CapabilityStep] = field(default_factory=list)
     tags: List[str] = field(default_factory=list)
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     owner_id: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
@@ -92,7 +92,7 @@ class TaskExecutionResult:
     final_outputs: Dict[str, Any] = field(default_factory=dict)
     total_duration_ms: float = 0.0
     error: Optional[str] = None
-    started_at: datetime = field(default_factory=datetime.utcnow)
+    started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = None
 
     def to_dict(self) -> Dict[str, Any]:
@@ -258,7 +258,7 @@ class CapabilityTaskExecutor:
 
         finally:
             result.total_duration_ms = (time.time() - start_time) * 1000
-            result.completed_at = datetime.utcnow()
+            result.completed_at = datetime.now(timezone.utc)
 
         return result
 
@@ -343,7 +343,7 @@ class CapabilityTaskExecutor:
 
         finally:
             result.total_duration_ms = (time.time() - start_time) * 1000
-            result.completed_at = datetime.utcnow()
+            result.completed_at = datetime.now(timezone.utc)
 
         return result
 
