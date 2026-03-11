@@ -10,6 +10,7 @@ import logger from '@/lib/logger';
  */
 
 import React, { useState, useEffect } from 'react';
+import DOMPurify from 'dompurify';
 import PropTypes from 'prop-types';
 import {
   Box,
@@ -304,7 +305,7 @@ const TaskContentPreview = ({ task, onTaskUpdate }) => {
               '& strong': { fontWeight: 'bold', color: '#fff' },
               '& em': { fontStyle: 'italic' },
             }}
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(editedContent) }}
+            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderMarkdown(editedContent)) }}
           />
         ) : (
           <Box

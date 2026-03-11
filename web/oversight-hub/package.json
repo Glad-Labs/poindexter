@@ -28,6 +28,7 @@
     "ajv": "^8.12.0",
     "axios": "^1.7.9",
     "confusing-browser-globals": "^1.0.11",
+    "dompurify": "^3.3.2",
     "firebase": "^10.14.1",
     "is-path-inside": "^3.0.3",
     "jsonwebtoken": "^9.0.3",
