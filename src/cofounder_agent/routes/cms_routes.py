@@ -313,7 +313,7 @@ async def list_posts(
                     }
                 },
             }
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         raise await handle_route_error(e, "list_posts", logger)
 
 
@@ -403,7 +403,7 @@ async def get_post_by_slug(
             }
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         raise await handle_route_error(e, "get_post_by_slug", logger)
 
 
@@ -437,7 +437,7 @@ async def list_categories():
                 categories.append(cat)
 
             return {"data": categories, "meta": {}}
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         raise await handle_route_error(e, "list_categories", logger)
 
 
@@ -471,7 +471,7 @@ async def list_tags():
                 tags.append(tag)
 
             return {"data": tags, "meta": {}}
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         raise await handle_route_error(e, "list_tags", logger)
 
 
@@ -574,5 +574,5 @@ async def populate_missing_excerpts(current_user: UserProfile = Depends(get_curr
             }
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         raise await handle_route_error(e, "populate_missing_excerpts", logger)
