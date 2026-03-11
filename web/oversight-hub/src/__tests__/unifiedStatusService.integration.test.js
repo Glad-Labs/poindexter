@@ -10,8 +10,9 @@ import {
 } from '../Constants/statusEnums';
 
 describe('Status Enums and Mappings', () => {
-  test('should have 9 new status values', () => {
-    expect(Object.keys(STATUS_ENUM).length).toBe(9);
+  test('should have 10 new status values', () => {
+    // FAILED_REVISIONS_REQUESTED was added as the 10th status
+    expect(Object.keys(STATUS_ENUM).length).toBe(10);
   });
 
   test('should have 5 legacy status values', () => {
