@@ -7,44 +7,44 @@
 ## 🚀 In 30 Seconds
 
 ```bash
-# Run all tests
+# Run all tests (Jest + Python + Playwright)
 npm run test:all
 
-# Run just Jest (378 tests)
+# Run just Jest (public-site tests)
 npm test
 
-# Run just Playwright E2E (when ready)
-npm run test:e2e
+# Run Playwright E2E tests (89/89 passing)
+npm run test:playwright
 
-# View test results
-npm run test:results
+# Run Vitest (oversight-hub - 503/505 passing)
+cd web/oversight-hub && npx vitest run
 ```
 
 ---
 
 ## 📋 What You Have
 
-### Unit & Component Testing ✅ DONE
+### Unit & Component Testing ✅ ACTIVE
 
-- **378 Jest tests** across 20 files
-- **6 applications** being tested (public + admin)
-- **100% passing** (all working)
+- **Oversight Hub (Vitest):** 503/505 tests passing
+- **Public Site (Jest):** Component tests passing
+- **Both workspaces:** Real-time testing via dev server
 - Command: `npm test`
 
-### Playwright E2E Testing ✅ CONFIGURED
+### Playwright E2E Testing ✅ PRODUCTION-READY
 
-- **3 production-grade configs** ready to use
-- **11 device profiles** configured (desktop, tablet, mobile)
-- **20+ test projects** defined (browsers, accessibility, visual, API)
-- **4 report formats** enabled (HTML, JSON, JUnit, GitHub Actions)
-- Ready for: `npm run test:e2e`
+- **89/89 tests passing (100%)**
+- **All browser profiles** tested (Chrome, Firefox, Safari, Edge)
+- **Accessibility & Visual** regression testing included
+- **CI/CD integration** for all pull requests
+- Run: `npm run test:playwright`
 
-### API Testing ✅ CONFIGURED
+### Python Backend Testing ✅ PRODUCTION-READY
 
-- **4 test project types** defined (general, performance, security, smoke)
-- **Pure API testing** setup with retry logic
-- **Global setup/teardown** hooks ready
-- Ready for: `npm run test:api`
+- **Integration & E2E tests** via pytest
+- **Unit tests** for all service modules
+- **Smoke tests** for quick validation
+- Run: `npm run test:python`
 
 ---
 
