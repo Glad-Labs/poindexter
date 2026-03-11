@@ -149,7 +149,7 @@ async def get_workflow_phases(request: Request):
             )
 
         return phases
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error getting workflow phases: {e}", exc_info=True)
         # Return empty list if phase registry not available
         return []
@@ -203,7 +203,7 @@ async def list_workflow_executions(
     try:
         # Return empty list for now (feature not fully implemented)
         return {"executions": [], "total_count": 0}
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error listing workflow executions: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to list executions")
 
@@ -285,7 +285,7 @@ async def get_workflow_execution_progress(
         }
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error getting workflow progress: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get progress")
 
@@ -362,7 +362,7 @@ async def cancel_workflow_execution(
         }
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error cancelling workflow: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to cancel workflow")
 
@@ -421,7 +421,7 @@ async def list_workflow_templates(request: Request):
         ]
 
         return templates
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error listing workflow templates: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to list templates")
 
@@ -489,7 +489,7 @@ async def get_workflow_status(
         }
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error retrieving workflow status: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve workflow status")
 
@@ -557,7 +557,7 @@ async def pause_workflow(
         return {"success": True, "workflow_id": workflow_id, "status": "paused"}
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error pausing workflow: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to pause workflow")
 
@@ -625,7 +625,7 @@ async def resume_workflow(
         return {"success": True, "workflow_id": workflow_id, "status": "running"}
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error resuming workflow: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to resume workflow")
 
@@ -694,7 +694,7 @@ async def cancel_workflow(
         return {"success": True, "workflow_id": workflow_id, "status": "cancelled"}
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error cancelling workflow: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to cancel workflow")
 
@@ -793,7 +793,7 @@ async def execute_workflow_template(
     except ValueError as e:
         logger.error(f"Validation error executing template: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error executing workflow template: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to execute workflow")
 
@@ -849,7 +849,7 @@ async def get_workflow_execution_status(
 
     except HTTPException:
         raise
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error retrieving execution status: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve status")
 
@@ -907,6 +907,6 @@ async def get_workflow_history(
         logger.info(f"Retrieved execution history: {len(result.get('executions', []))} items")
         return result
 
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Error retrieving execution history: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve history")

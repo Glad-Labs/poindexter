@@ -126,7 +126,7 @@ async def get_all_agents_status(orchestrator=Depends(get_orchestrator_dependency
             try:
                 agent_status = format_agent_status(agent_name, orchestrator)
                 agents_status[agent_name] = agent_status
-            except Exception as e:
+            except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
                 logger.warning(f"Error fetching status for agent {agent_name}: {e}", exc_info=True)
                 agents_status[agent_name] = AgentStatus(
                     name=agent_name,

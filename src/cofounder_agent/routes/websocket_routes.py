@@ -54,7 +54,7 @@ class ConnectionManager:
         for connection in self.active_connections[task_id]:
             try:
                 await connection.send_json(message)
-            except Exception as e:
+            except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
                 logger.warning(f"Failed to send message to WebSocket: {e}", exc_info=True)
                 disconnected.add(connection)
 
@@ -158,7 +158,7 @@ async def websocket_image_progress(websocket: WebSocket, task_id: str, token: st
     except WebSocketDisconnect:
         await connection_manager.disconnect(task_id, websocket)
         logger.info(f"WebSocket disconnected for task {task_id}")
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"WebSocket error for task {task_id}: {e}", exc_info=True)
         await connection_manager.disconnect(task_id, websocket)
 
@@ -263,7 +263,7 @@ async def websocket_workflow_progress(websocket: WebSocket, execution_id: str, t
     except WebSocketDisconnect:
         await connection_manager.disconnect(execution_id, websocket)
         logger.info(f"WebSocket disconnected for execution {execution_id}")
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"WebSocket error for execution {execution_id}: {e}", exc_info=True)
         await connection_manager.disconnect(execution_id, websocket)
 
@@ -369,18 +369,18 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
             f"Global WebSocket client disconnected. Total connections: {websocket_manager.get_connection_count()}"
         )
 
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"WebSocket error: {e}", exc_info=True)
         for ns in list(active_namespaces):
             try:
                 await websocket_manager.disconnect(websocket, ns)
-            except Exception as disconnect_error:
+            except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as disconnect_error:
                 logger.debug(
                     f"[websocket_cleanup] Error disconnecting from namespace {ns}: {disconnect_error}"
                 )
         try:
             await websocket.close(code=1011, reason=str(e))
-        except Exception as close_error:
+        except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as close_error:
             logger.error(f"Error closing WebSocket: {close_error}", exc_info=True)
 
 
@@ -435,7 +435,7 @@ async def websocket_approval_updates(websocket: WebSocket, task_id: str, token: 
     except WebSocketDisconnect:
         await connection_manager.disconnect(task_id, websocket)
         logger.info(f"Approval WebSocket disconnected for task {task_id}")
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"Approval WebSocket error for task {task_id}: {e}", exc_info=True)
         await connection_manager.disconnect(task_id, websocket)
 

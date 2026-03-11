@@ -94,7 +94,7 @@ async def upload_to_cloudinary(file_path: str, task_id: Optional[str] = None) ->
         logger.info(f"✅ Uploaded to Cloudinary: {public_url}")
         return public_url
 
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"❌ Cloudinary upload failed: {e}", exc_info=True)
         return None
 
@@ -121,7 +121,7 @@ def get_s3_client():
                     config=Config(signature_version="s3v4") if Config is not None else None,
                 )
                 logger.info("✅ S3 client initialized (fallback)")
-            except Exception as e:
+            except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
                 logger.warning(f"⚠️ S3 client initialization failed: {e}", exc_info=True)
                 _s3_client = False  # Mark as explicitly disabled
         else:
@@ -189,7 +189,7 @@ async def upload_to_s3(file_path: str, task_id: Optional[str] = None) -> Optiona
 
         return public_url
 
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"❌ S3 upload failed: {e}", exc_info=True)
         return None
 
@@ -404,7 +404,7 @@ async def generate_featured_image(request: Request, body: ImageGenerationRequest
 
     try:
         image_service = await get_image_service()
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"❌ Failed to initialize image service: {e}", exc_info=True)
         elapsed = time.time() - start_time
         return ImageGenerationResponse(
@@ -443,7 +443,7 @@ async def generate_featured_image(request: Request, body: ImageGenerationRequest
                     logger.info(f"✅ STEP 1 SUCCESS: Found image via Pexels: {image.url}")
                 else:
                     logger.warning(f"⚠️ STEP 1 FAILED: No Pexels image found for: {search_prompt}")
-            except Exception as e:
+            except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
                 logger.warning(f"⚠️ STEP 1 ERROR: Pexels search failed: {e}", exc_info=True)
         else:
             logger.info(f"ℹ️ STEP 1 SKIPPED: use_pexels=false")
@@ -524,7 +524,7 @@ async def generate_featured_image(request: Request, body: ImageGenerationRequest
                         search_query=body.prompt,
                     )
                     logger.info(f"✅ Created image metadata (local preview): {output_path}")
-            except Exception as e:
+            except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
                 logger.warning(f"⚠️ SDXL generation failed: {e}", exc_info=True)
         elif image and not body.use_generation:
             logger.info(f"ℹ️ STEP 2 SKIPPED: Pexels found image, use_generation=false")
@@ -584,7 +584,7 @@ async def generate_featured_image(request: Request, body: ImageGenerationRequest
             preview_mode=False,
         )
 
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"❌ Image generation error: {e}", exc_info=True)
         elapsed = time.time() - start_time
         return ImageGenerationResponse(
@@ -680,7 +680,7 @@ async def search_images(
             generation_time=elapsed,
         )
 
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"❌ Search error: {e}", exc_info=True)
         elapsed = time.time() - start_time
         return ImageGenerationResponse(
@@ -737,7 +737,7 @@ async def health_check():
             message=" | ".join(message_parts),
         )
 
-    except Exception as e:
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error(f"❌ Health check error: {e}", exc_info=True)
         return HealthResponse(
             status="error",
