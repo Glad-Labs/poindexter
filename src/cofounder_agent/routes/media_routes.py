@@ -363,7 +363,7 @@ def build_enhanced_search_prompt(
     description="Search Pexels for free stock images, with optional SDXL fallback",
 )
 @limiter.limit("5/minute")
-async def generate_featured_image(request: Request, body: ImageGenerationRequest, current_user: dict = Depends(get_current_user)):
+async def generate_featured_image(request: Request, body: ImageGenerationRequest, _current_user: dict = Depends(get_current_user)):
     """
     Generate or search for a featured image.
     
@@ -607,7 +607,7 @@ async def search_images(
     request: Request,
     query: str = Query(..., min_length=3, description="Search query"),
     count: int = Query(1, ge=1, le=20, description="Number of images (1-20)"),
-    current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ):
     """
     Search for images by query.
