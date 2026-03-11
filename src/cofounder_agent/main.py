@@ -522,7 +522,7 @@ async def process_command(
             metadata=response.get("metadata"),
         )
     except Exception as e:  # pylint: disable=broad-except
-        logger.error(f"Error processing command: {str(e)} | command={command.command}")
+        logger.error(f"Error processing command: {str(e)} | command={command.command}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"An internal error occurred: {str(e)}") from e
 
 
