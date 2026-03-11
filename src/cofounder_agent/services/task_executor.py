@@ -352,14 +352,8 @@ class TaskExecutor:
         logger.info(f"   Topic: {topic}")
         logger.info(f"   Category: {category}")
 
-        # ======================================================================
-        # DEBUGGING: Dump entire task object to inspect its structure
-        try:
-            logger.info("🕵️  [DEBUG] RAW TASK DATA FROM DB:")
-            logger.info(json.dumps(task, indent=2, default=str))
-        except Exception as e:
-            logger.error(f"[_process_single_task] [DEBUG] Failed to dump task: {e}", exc_info=True)
-        # ======================================================================
+        # Task data available at DEBUG level for troubleshooting
+        logger.debug("[TASK_SINGLE] Raw task data: %s", json.dumps(task, default=str))
 
         # Set per-task timeout (20 minutes max for content generation, including newsletter templates)
         TASK_TIMEOUT_SECONDS = 1200  # 20 minutes
@@ -507,18 +501,10 @@ class TaskExecutor:
             else:
                 task_metadata_updates["output"] = str(result)
 
-            # DEBUG: Log all extracted metadata
-            logger.info(f"🔍 [DEBUG] Extracted metadata for task {task_id}:")
-            logger.info(f"   - Fields extracted: {list(task_metadata_updates.keys())}")
-            logger.info(f"   - Has 'content': {'content' in task_metadata_updates}")
-            if "content" in task_metadata_updates:
-                content_val = task_metadata_updates.get("content")
-                logger.info(f"   - Content type: {type(content_val).__name__}")
-                logger.info(
-                    f"   - Content length: {len(content_val) if isinstance(content_val, str) else 'N/A'} chars"
-                )
-                if isinstance(content_val, str):
-                    logger.info(f"   - Content preview: {content_val[:100]}...")
+            # Metadata extraction details at DEBUG level
+            logger.debug(
+                f"[TASK_SINGLE] Extracted metadata for task {task_id}: fields={list(task_metadata_updates.keys())}"
+            )
 
             # ✅ PRESERVE ALL WORK: Store content even on validation failure
             # Failed validation ≠ incomplete content; content is complete but didn't meet quality thresholds

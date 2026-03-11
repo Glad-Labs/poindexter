@@ -156,23 +156,14 @@ async def approve_task(
     """
     try:
         logger.info(f"[APPROVAL] approve_task called for task {task_id}")
-        logger.info(f"[APPROVAL] request.auto_publish = {request.auto_publish!r}")
 
         # Map human_feedback to feedback if feedback is empty
         if not request.feedback and request.human_feedback:
             request.feedback = request.human_feedback
-            logger.info(f"[APPROVAL] Mapped human_feedback to feedback")
+            logger.debug(f"[APPROVAL] Mapped human_feedback to feedback")
 
         logger.info(f"[APPROVAL] User {current_user.get('id')} approving task {task_id}")
-        logger.info(f"[APPROVAL] ApprovalRequest object: {request}")
-        logger.info(
-            f"[APPROVAL] Request: approved={request.approved}, auto_publish={request.auto_publish}, type={type(request.auto_publish)}"
-        )
-        logger.info(f"[APPROVAL] Bool check: auto_publish is True? {request.auto_publish is True}")
-        logger.info(f"[APPROVAL] Bool check: auto_publish == True? {request.auto_publish == True}")
-        logger.info(f"[APPROVAL] Bool check: bool(auto_publish)? {bool(request.auto_publish)}")
-        logger.info(f"[APPROVAL] Has feedback: {bool(request.feedback)}")
-        logger.info(f"[APPROVAL] Human feedback: {request.human_feedback}")
+        logger.debug(f"[APPROVAL] ApprovalRequest: approved={request.approved}, auto_publish={bool(request.auto_publish)}")
 
         # Fetch task from database
         task = await db_service.get_task(task_id)
@@ -228,15 +219,7 @@ async def approve_task(
         logger.info(f"[OK] [APPROVAL] Task {task_id} approved by {approver_id}")
 
         # Handle auto-publish if requested
-        logger.info(f"[APPROVAL] ============================================")
-        logger.info(f"[APPROVAL] AUTO-PUBLISH CHECK:")
-        logger.info(f"[APPROVAL]   request.auto_publish = {request.auto_publish!r}")
-        logger.info(f"[APPROVAL]   type = {type(request.auto_publish)}")
-        logger.info(f"[APPROVAL]   is True = {request.auto_publish is True}")
-        logger.info(f"[APPROVAL]   == True = {request.auto_publish == True}")
-        logger.info(f"[APPROVAL]   bool() = {bool(request.auto_publish)}")
-        logger.info(f"[APPROVAL]   if check will trigger? {request.auto_publish}")
-        logger.info(f"[APPROVAL] ============================================")
+        logger.debug(f"[APPROVAL] Auto-publish check: {bool(request.auto_publish)}")
 
         if request.auto_publish:
             logger.info(f"[APPROVAL] AUTO-PUBLISH TRIGGERED!")
