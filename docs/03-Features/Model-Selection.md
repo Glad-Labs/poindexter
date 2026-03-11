@@ -116,27 +116,31 @@ curl -X GET "http://localhost:8000/api/analytics/model-usage?range=7d" \
 {
   "period": "7d",
   "total_executions": 247,
-  "by_model": {
-    "claude-3-5-sonnet": {
+  "by_tier": {
+    "premium": {
       "count": 150,
       "percentage": 60.7,
       "total_cost": 7.5,
-      "avg_execution_time_ms": 4234
+      "avg_execution_time_ms": 4234,
+      "actual_models": ["Claude Opus", "GPT-4 Turbo"]
     },
-    "gpt-4-turbo": {
+    "standard": {
       "count": 75,
       "percentage": 30.4,
-      "total_cost": 5.25,
-      "avg_execution_time_ms": 3891
+      "total_cost": 2.25,
+      "avg_execution_time_ms": 3891,
+      "actual_models": ["Claude Haiku", "GPT-3.5 Turbo"]
     },
-    "ollama/mistral": {
+    "free": {
       "count": 22,
       "percentage": 8.9,
       "total_cost": 0.0,
-      "avg_execution_time_ms": 2156
+      "avg_execution_time_ms": 2156,
+      "actual_models": ["Ollama Mistral", "Ollama Llama2"]
     }
   },
-  "total_cost": 12.75
+  "total_cost": 9.75,
+  "cost_savings": 34.2
 }
 ```
 
