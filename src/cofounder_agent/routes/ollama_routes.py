@@ -10,11 +10,10 @@ Provides endpoints for:
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import httpx
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 
 from schemas.ollama_schemas import (
     OllamaHealthResponse,

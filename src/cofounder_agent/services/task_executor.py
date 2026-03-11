@@ -703,7 +703,6 @@ class TaskExecutor:
         logger.info(f"📊 [METRICS] Initialized metrics collection for task {task_id}")
 
         # Start usage tracking for entire task execution
-        task_start_time = time.time()
         self.usage_tracker.start_operation(
             f"task_execution_{task_id}", "content_generation", "multi-agent-orchestrator"
         )
@@ -1429,7 +1428,6 @@ class TaskExecutor:
         }
 
         # End usage tracking with actual metrics
-        task_duration_ms = (time.time() - task_start_time) * 1000
         content_tokens_estimate = (
             len(generated_content.split()) * 1.3 if generated_content else 0
         )  # Estimate ~1.3 tokens per word
@@ -1522,15 +1520,6 @@ class TaskExecutor:
                 f"✅ Injected models_used_by_phase={models_used_by_phase} into result"
             )
 
-        # Store metadata in result
-        metadata = {
-            "task_id": str(task_id),
-            "task_name": task_name,
-            "content_length": len(generated_content) if generated_content else 0,
-            "quality_score": quality_score,
-            "approved": approved,
-        }
-
         return result
 
     async def _fallback_generate_content(self, task: Dict[str, Any]) -> tuple[str, str]:
@@ -1573,7 +1562,7 @@ class TaskExecutor:
                 target_length = 1200
             tags = [keyword] if keyword and keyword != "keyword" else []
 
-            content, model_used, _metrics = await self.content_generator.generate_blog_post(
+            content, model_used, _ = await self.content_generator.generate_blog_post(
                 topic=topic,
                 style=style,
                 tone=tone,
