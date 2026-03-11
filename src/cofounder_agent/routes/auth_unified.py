@@ -52,50 +52,90 @@ AUTH_COOKIE_MAX_AGE_SECONDS = AuthConfig.ACCESS_TOKEN_EXPIRE_MINUTES * 60
 GITHUB_CLIENT_ID = os.getenv("GH_OAUTH_CLIENT_ID", "")
 GITHUB_CLIENT_SECRET = os.getenv("GH_OAUTH_CLIENT_SECRET", "")
 
-# CSRF State Store - stores valid states with expiration
-# In production, replace with Redis or session store for distributed deployments
-_CSRF_STATES: Dict[str, datetime] = {}
+# CSRF State Store — Redis-backed with in-memory fallback (fix #159)
+_CSRF_STATES: Dict[str, datetime] = {}  # in-memory fallback only
 CSRF_STATE_EXPIRY_SECONDS = 600  # 10 minutes
+
+# Redis connection for CSRF state persistence (lazy-initialised)
+_csrf_redis: Optional[Any] = None
+_csrf_redis_checked: bool = False
+
+
+async def _get_csrf_redis() -> Optional[Any]:
+    """Return a Redis connection for CSRF state, or None if unavailable."""
+    global _csrf_redis, _csrf_redis_checked
+    if _csrf_redis_checked:
+        return _csrf_redis
+    _csrf_redis_checked = True
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    redis_enabled = os.getenv("REDIS_ENABLED", "true").lower() in ("true", "1", "yes")
+    if not redis_enabled:
+        return None
+    try:
+        import redis.asyncio as _aioredis  # type: ignore[import-untyped]
+        conn = await _aioredis.from_url(redis_url, encoding="utf-8", decode_responses=True, socket_connect_timeout=3)
+        await conn.ping()
+        _csrf_redis = conn
+        logger.info("[csrf_state] Redis connected — CSRF state will persist across restarts")
+    except Exception as exc:
+        logger.warning("[csrf_state] Redis unavailable (%s) — using in-memory fallback", exc)
+        _csrf_redis = None
+    return _csrf_redis
 
 # ============================================================================
 # Helper Functions
 # ============================================================================
 
 
-def generate_csrf_state() -> str:
-    """Generate a cryptographically secure CSRF state token."""
+async def generate_csrf_state() -> str:
+    """Generate a cryptographically secure CSRF state token and persist it."""
     state = secrets.token_urlsafe(32)
-    expiry = datetime.now(timezone.utc) + timedelta(seconds=CSRF_STATE_EXPIRY_SECONDS)
-    _CSRF_STATES[state] = expiry
-    logger.debug(f"Generated CSRF state token (expires in {CSRF_STATE_EXPIRY_SECONDS}s)")
+    r = await _get_csrf_redis()
+    if r is not None:
+        try:
+            await r.setex(f"csrf_state:{state}", CSRF_STATE_EXPIRY_SECONDS, "1")
+            logger.debug("Generated CSRF state token in Redis (TTL %ds)", CSRF_STATE_EXPIRY_SECONDS)
+            return state
+        except Exception as exc:
+            logger.warning("[csrf_state] Redis write failed (%s) — falling back to memory", exc)
+    # in-memory fallback
+    _CSRF_STATES[state] = datetime.now(timezone.utc) + timedelta(seconds=CSRF_STATE_EXPIRY_SECONDS)
+    logger.debug("Generated CSRF state token in memory (expires in %ds)", CSRF_STATE_EXPIRY_SECONDS)
     return state
 
 
-def validate_csrf_state(state: str) -> bool:
+async def validate_csrf_state(state: str) -> bool:
     """
-    Validate CSRF state token.
-
-    Checks:
-    - State exists in store
-    - State has not expired
-    - Removes state from store after validation (one-time use)
-
-    Returns:
-        True if state is valid, False otherwise
+    Validate CSRF state token (one-time use).  Returns True if valid, False otherwise.
+    Removes the state from the store on first successful validation.
     """
-    if not state or state not in _CSRF_STATES:
-        logger.warning("CSRF state validation failed: state not found in store")
+    if not state:
+        logger.warning("CSRF state validation failed: empty state")
         return False
 
+    r = await _get_csrf_redis()
+    if r is not None:
+        try:
+            # GETDEL is atomic: returns the value and deletes the key in one operation
+            result = await r.getdel(f"csrf_state:{state}")
+            if result is None:
+                logger.warning("CSRF state validation failed: not found or already used (Redis)")
+                return False
+            logger.debug("CSRF state validation successful (Redis)")
+            return True
+        except Exception as exc:
+            logger.warning("[csrf_state] Redis read failed (%s) — falling back to memory", exc)
+
+    # in-memory fallback
+    if state not in _CSRF_STATES:
+        logger.warning("CSRF state validation failed: state not found in store (memory)")
+        return False
     expiry = _CSRF_STATES[state]
+    del _CSRF_STATES[state]  # one-time use
     if datetime.now(timezone.utc) > expiry:
-        logger.warning("CSRF state validation failed: state expired")
-        del _CSRF_STATES[state]
+        logger.warning("CSRF state validation failed: state expired (memory)")
         return False
-
-    # Remove state after successful validation (one-time use only)
-    del _CSRF_STATES[state]
-    logger.debug("CSRF state validation successful")
+    logger.debug("CSRF state validation successful (memory)")
     return True
 
 
@@ -344,7 +384,7 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
             }
 
         # Reject tokens that have been explicitly revoked (logged out)
-        if blocklist_is_revoked(token):
+        if await blocklist_is_revoked(token):
             logger.warning("[get_current_user] Revoked token rejected")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -447,7 +487,7 @@ async def github_callback(
         raise HTTPException(status_code=400, detail="Missing state parameter")
 
     # Validate CSRF state against server-side store
-    if not validate_csrf_state(state):
+    if not await validate_csrf_state(state):
         logger.warning("GitHub callback CSRF validation failed - possible CSRF attack")
         raise HTTPException(status_code=403, detail="Invalid or expired CSRF token")
 
@@ -621,7 +661,7 @@ async def unified_logout(
                 import time as _time
                 payload = jwt.decode(raw_token, options={"verify_signature": False})
                 exp = payload.get("exp", _time.time() + 3600)
-                blocklist_add(raw_token, float(exp))
+                await blocklist_add(raw_token, float(exp))
             except Exception as _e:
                 logger.warning("[logout] Could not extract token expiry for blocklist: %s", _e)
 
