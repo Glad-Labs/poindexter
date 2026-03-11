@@ -285,7 +285,8 @@ class TestGetModelForPhase:
     def test_auto_selection_falls_back_to_default(self):
         selections = {"draft": "auto"}
         result = get_model_for_phase("draft", selections, "balanced")
-        assert result == "ollama/gpt-oss:20b"
+        # draft phase uses best model in balanced tier (#196 phase differentiation)
+        assert result == "ollama/gpt-oss:120b"
 
     def test_empty_selections_uses_quality_preference(self):
         result = get_model_for_phase("draft", {}, "quality")
@@ -293,11 +294,13 @@ class TestGetModelForPhase:
 
     def test_unknown_quality_preference_falls_back_to_balanced(self):
         result = get_model_for_phase("draft", {}, "nonexistent_tier")
-        assert result == "ollama/gpt-oss:20b"
+        # falls back to balanced tier; draft uses best model (#196)
+        assert result == "ollama/gpt-oss:120b"
 
     def test_none_quality_preference_defaults_to_balanced(self):
         result = get_model_for_phase("draft", {}, None)
-        assert result == "ollama/gpt-oss:20b"
+        # defaults to balanced tier; draft uses best model (#196)
+        assert result == "ollama/gpt-oss:120b"
 
     def test_unknown_phase_returns_fallback(self):
         result = get_model_for_phase("unknown_phase", {}, "balanced")
