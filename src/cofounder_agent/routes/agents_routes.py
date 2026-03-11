@@ -154,7 +154,7 @@ async def get_all_agents_status(orchestrator=Depends(get_orchestrator_dependency
     except Exception as e:
         logger.error(f"Error fetching all agents status: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Failed to fetch agents status: {str(e)}"
+            status_code=500, detail="Failed to fetch agents status"
         ) from e
 
 
@@ -195,7 +195,7 @@ async def get_agent_status(agent_name: str, orchestrator=Depends(get_orchestrato
     except Exception as e:
         logger.error(f"Error fetching status for agent {agent_name}: {e}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Failed to fetch agent status: {str(e)}"
+            status_code=500, detail="Failed to fetch agent status"
         ) from e
 
 
@@ -259,7 +259,7 @@ async def send_agent_command(
         )
     except Exception as e:
         logger.error(f"Error sending command to agent {agent_name}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to send command: {str(e)}") from e
+        raise HTTPException(status_code=500, detail="Failed to send command") from e
 
 
 @router.get("/logs", response_model=AgentLogs)
@@ -323,7 +323,7 @@ async def get_agent_logs(
         )
     except Exception as e:
         logger.error(f"Error fetching agent logs: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch logs: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch logs")
 
 
 @router.get("/memory/stats", response_model=MemoryStats)
@@ -395,7 +395,7 @@ async def get_memory_stats(orchestrator=Depends(get_orchestrator_dependency)):
         )
     except Exception as e:
         logger.error(f"Error fetching memory stats: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch memory stats: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch memory stats")
 
 
 @router.get("/health", response_model=AgentHealth)
@@ -479,4 +479,4 @@ async def get_agent_system_health(orchestrator=Depends(get_orchestrator_dependen
         )
     except Exception as e:
         logger.error(f"Error fetching agent health: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch health: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch health")

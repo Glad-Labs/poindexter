@@ -767,7 +767,7 @@ async def list_tasks(
         )
     except Exception as e:
         logger.error(f"Failed to list tasks: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to list tasks: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to list tasks")
 
 
 # ============================================================================
@@ -812,7 +812,7 @@ async def get_metrics_alias(
         )
     except Exception as e:
         logger.error(f"❌ Failed to fetch metrics: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch metrics: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch metrics")
 
 
 @router.get("/metrics/summary", response_model=MetricsResponse, summary="Get task metrics")
@@ -851,7 +851,7 @@ async def get_metrics(
         )
     except Exception as e:
         logger.error(f"Failed to fetch metrics: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch metrics: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch metrics")
 
 
 # ============================================================================
@@ -896,7 +896,7 @@ async def get_task(
         raise
     except Exception as e:
         logger.error(f"Failed to fetch task {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch task: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch task")
 
 
 @router.get("/{task_id}/status", response_model=Dict[str, Any], summary="Get task execution status")
@@ -944,7 +944,7 @@ async def get_task_status(
         raise
     except Exception as e:
         logger.error(f"Failed to fetch task status {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch task status: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch task status")
 
 
 @router.get(
@@ -999,7 +999,7 @@ async def get_task_result(
         raise
     except Exception as e:
         logger.error(f"Failed to fetch task result {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch task result: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch task result")
 
 
 @router.put(
@@ -1351,7 +1351,7 @@ async def get_task_status_info(
         raise
     except Exception as e:
         logger.error(f"Error fetching status info for {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch status info: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch status info")
 
 
 @router.get(
@@ -1415,7 +1415,7 @@ async def get_task_status_history(
 
     except Exception as e:
         logger.error(f"Error fetching status history for {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch status history: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch status history")
 
 
 @router.get(
@@ -1571,7 +1571,8 @@ async def update_task(
     except AppError:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to update task: {str(e)}")
+        logger.error(f"[update_task] {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update task")
 
 
 # ============================================================================
@@ -1821,7 +1822,7 @@ async def create_task_from_intent(
 
     except Exception as e:
         logger.error(f"[INTENT] Intent parsing failed: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Intent parsing failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Intent parsing failed")
 
 
 @router.post("/confirm-intent", response_model=TaskConfirmResponse)
@@ -1891,7 +1892,7 @@ async def confirm_and_execute_task(
 
     except Exception as e:
         logger.error(f"[CONFIRM] Task confirmation failed: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Task confirmation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Task confirmation failed")
 
 
 # ============================================================================
@@ -2057,7 +2058,7 @@ async def approve_task(
             raise
         except Exception as e:
             logger.error(f"Failed to update task status to {new_status}: {str(e)}", exc_info=True)
-            raise HTTPException(status_code=500, detail=f"Failed to update task status: {str(e)}")
+            raise HTTPException(status_code=500, detail="Failed to update task status")
 
         # Auto-publish if approved and auto_publish=True
         if approved and auto_publish:
@@ -2231,7 +2232,7 @@ async def approve_task(
         logger.error(
             f"Failed to approve task {task_id}: {type(e).__name__}: {str(e)}", exc_info=True
         )
-        raise HTTPException(status_code=500, detail=f"Failed to approve task: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to approve task")
 
 
 @router.post(
@@ -2392,7 +2393,7 @@ async def publish_task(
                 )
         except Exception as e:
             logger.error(f"Failed to create post for published task: {str(e)}", exc_info=True)
-            raise HTTPException(status_code=500, detail=f"Failed to publish task: {str(e)}")
+            raise HTTPException(status_code=500, detail="Failed to publish task")
 
         # Fetch updated task
         updated_task = await db_service.get_task(task_id)
@@ -2408,7 +2409,7 @@ async def publish_task(
         raise
     except Exception as e:
         logger.error(f"Failed to publish task {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to publish task: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to publish task")
 
 
 class GenerateImageRequest(BaseModel):
@@ -2747,7 +2748,7 @@ async def generate_task_image(
         raise
     except Exception as e:
         logger.error(f"Failed to generate image for task {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to generate image: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate image")
 
 
 @router.delete(
@@ -2813,4 +2814,4 @@ async def delete_task(
         raise
     except Exception as e:
         logger.error(f"Failed to delete task {task_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to delete task: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete task")
