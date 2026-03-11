@@ -56,7 +56,9 @@ async def _get_redis() -> Optional[object]:  # type: ignore[return]
         logger.info("[token_blocklist] Redis connected — tokens will persist across restarts")
     except Exception as exc:
         logger.warning(
-            "[token_blocklist] Redis unavailable (%s) — using in-memory fallback", exc
+            "[token_blocklist] Redis unavailable (%s) — using in-memory fallback",
+            exc,
+            exc_info=True,
         )
         _redis = None
 
@@ -84,7 +86,11 @@ async def add_token(token: str, exp: float) -> None:
             logger.info("[token_blocklist] Token revoked in Redis (TTL %ds)", ttl_seconds)
             return
         except Exception as exc:
-            logger.warning("[token_blocklist] Redis write failed (%s) — falling back to memory", exc)
+            logger.warning(
+                "[token_blocklist] Redis write failed (%s) — falling back to memory",
+                exc,
+                exc_info=True,
+            )
 
     # in-memory fallback
     _prune()
@@ -102,7 +108,11 @@ async def is_revoked(token: str) -> bool:
             result = await r.exists(f"{_KEY_PREFIX}{key}")  # type: ignore[union-attr]
             return bool(result)
         except Exception as exc:
-            logger.warning("[token_blocklist] Redis read failed (%s) — falling back to memory", exc)
+            logger.warning(
+                "[token_blocklist] Redis read failed (%s) — falling back to memory",
+                exc,
+                exc_info=True,
+            )
 
     # in-memory fallback
     _prune()

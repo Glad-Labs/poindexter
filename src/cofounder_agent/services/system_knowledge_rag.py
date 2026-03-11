@@ -5,11 +5,14 @@ Provides semantic search and retrieval of system knowledge about Glad Labs.
 Uses similarity scoring to find relevant knowledge base sections.
 """
 
+import logging
 import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -44,7 +47,11 @@ class SystemKnowledgeRAG:
         try:
             with open(kb_path, "r", encoding="utf-8") as f:
                 return f.read()
-        except Exception:
+        except OSError:
+            logger.warning(
+                "[_load_knowledge_base] Failed to read knowledge base file: %s", kb_path,
+                exc_info=True,
+            )
             return ""
 
     def _parse_sections(self) -> dict:

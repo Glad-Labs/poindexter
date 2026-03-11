@@ -1141,7 +1141,7 @@ class UnifiedOrchestrator:
                 feedback="Financial analysis complete",
             )
         except Exception as e:  # pylint: disable=broad-except
-            logger.error(f"[_handle_financial_analysis] Financial analysis failed: {e}")
+            logger.error(f"[_handle_financial_analysis] Financial analysis failed: {e}", exc_info=True)
             return ExecutionResult(
                 request_id=request.request_id,
                 request_type=request.request_type,

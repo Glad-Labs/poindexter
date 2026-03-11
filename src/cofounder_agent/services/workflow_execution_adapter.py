@@ -324,6 +324,7 @@ async def _execute_generic_phase_fallback(
         combined_reason = f"{fallback_reason}; model_fallback_error: {str(model_error)}"
         logger.warning(
             "Generic phase fallback used placeholder output",
+            exc_info=True,
             extra={
                 "phase": phase_name,
                 "selected_model": selected_model,
