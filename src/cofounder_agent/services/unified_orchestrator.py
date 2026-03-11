@@ -603,6 +603,11 @@ class UnifiedOrchestrator:
         """
         Get the appropriate LLM model for a given generation phase.
 
+        Phase-differentiated model tiers (#196) — different phases have different needs:
+        - draft/outline: complex creative generation → best available model
+        - research/assess/finalize: simple filtering/classification → cheap model
+        - refine: editing existing draft → cheap/medium model
+
         Args:
             phase: Generation phase ('research', 'draft', 'assess', 'refine', 'finalize')
             model_selections: User's per-phase model selections
@@ -611,6 +616,8 @@ class UnifiedOrchestrator:
         Returns:
             Model identifier (e.g., "gpt-4", "claude-opus") or None to use config default
         """
+        from .model_router import get_model_for_phase  # pylint: disable=import-outside-toplevel
+
         # Try to get specific model selection for this phase
         if model_selections and phase in model_selections:
             selected = model_selections[phase]
@@ -619,10 +626,12 @@ class UnifiedOrchestrator:
                 logger.info("   Model selection: Using %s for %s phase", selected, phase)
                 return selected
 
+        # Return differentiated default via model_router (#196)
+        default = get_model_for_phase(phase, model_selections or {}, quality_preference or "balanced")
         logger.info(
-            "   Model selection: Using default for %s phase (quality=%s)", phase, quality_preference
+            "   Model selection: %s for %s phase (quality=%s)", default, phase, quality_preference
         )
-        return None
+        return default
 
     # ========================================================================
     # REQUEST HANDLERS
