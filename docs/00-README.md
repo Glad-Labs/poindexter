@@ -92,7 +92,7 @@
 
 ### Core Documentation (Updated within 30 days)
 
-- ✅ All 8 core docs present and current
+- ✅ All 7 core docs present and current (docs 01-07)
 - ✅ No broken links
 - ✅ Written at architecture level
 
@@ -139,7 +139,7 @@
 
 All components of the enterprise documentation framework are now active and maintained:
 
-- ✅ Core 8 documents (active, current)
+- ✅ Core 7 documents (01-07, active, current)
 - ✅ Decision record system (3 records, master index)
 - ✅ Comprehensive reference library (10+ technical specs)
 - ✅ Troubleshooting hub (4 documented solutions)
@@ -158,11 +158,10 @@ All components of the enterprise documentation framework are now active and main
 | 📊 **Production Operations** | [06 - Operations & Maintenance](./06-OPERATIONS_AND_MAINTENANCE.md) |
 | ⚙️ **Environment Config** | [07 - Branch-Specific Variables](./07-BRANCH_SPECIFIC_VARIABLES.md) |
 
-### 📋 All 8 Core Docs at a Glance
+### 📋 All 7 Core Docs (01-07) at a Glance
 
 | #      | Document                                                             | Purpose                                                       | For Whom               |
 | ------ | -------------------------------------------------------------------- | ------------------------------------------------------------- | ---------------------- |
-| **00** | [Documentation Hub](./00-README.md)                                  | Navigation (you are here)                                     | Everyone               |
 | **01** | [Setup & Overview](./01-SETUP_AND_OVERVIEW.md)                       | Prerequisites, local development, quick start                 | Developers, DevOps     |
 | **02** | [Architecture & Design](./02-ARCHITECTURE_AND_DESIGN.md)             | System design, component relationships, AI agents, tech stack | Architects, Tech Leads |
 | **03** | [Deployment & Infrastructure](./03-DEPLOYMENT_AND_INFRASTRUCTURE.md) | Cloud deployment, environments, scaling, CI/CD                | DevOps, Infrastructure |
