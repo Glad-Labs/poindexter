@@ -2,13 +2,17 @@
 Blog Workflow Integration Test
 
 Tests the end-to-end blog post generation workflow using the phase-based system.
+Requires a live backend server and database — run with INTEGRATION_TESTS=1.
 
 Workflow: [blog_generate_content] → [blog_quality_evaluation] → [blog_search_image] → [blog_create_post]
 """
 
 import asyncio
 import logging
+import os
 from typing import Any, Dict
+
+import pytest
 
 # Setup logging
 logging.basicConfig(
@@ -17,6 +21,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+@pytest.mark.integration
+@pytest.mark.skipif(
+    not os.getenv("INTEGRATION_TESTS"),
+    reason="Set INTEGRATION_TESTS=1 to run integration tests (requires live server)"
+)
 async def test_blog_workflow():
     """Test complete blog workflow execution"""
     from schemas.custom_workflow_schemas import CustomWorkflow, WorkflowPhase
