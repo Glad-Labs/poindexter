@@ -1,9 +1,9 @@
 # 📋 API Contract Reference
 
-**Version:** 2.0 (Phase 6+)  
-**Current:** 1.0 in production  
-**Base URL:** `https://api.glad-labs.com` (or `http://localhost:8000` local)  
+**Version:** 1.0 (Current)
+**Base URL:** `https://api.glad-labs.com` (or `http://localhost:8000` local)
 **Status:** ✅ Production Ready
+**Last Updated:** March 10, 2026
 
 ---
 
@@ -17,36 +17,48 @@ Complete documentation of all REST API endpoints for the Glad Labs Co-Founder sy
 - **JSON:** All requests/responses in JSON format
 - **Versioning:** URL-based versioning (`/api/v1/`, `/api/v2/`)
 - **Authentication:** Bearer token in Authorization header
-- **Rate Limiting:** 1000 requests/minute per API key
+- **Rate Limiting:** 10 requests/minute on authentication and task creation endpoints
 - **Pagination:** Limit/offset for list endpoints
 
 ---
 
 ## 🔐 Authentication
 
-### API Key
+### JWT Bearer Token
 
-All requests require authentication:
+All requests to protected endpoints require a JWT Bearer token in the Authorization header:
 
 ```bash
-curl -H "Authorization: Bearer YOUR_API_KEY" \
-     https://api.glad-labs.com/api/tasks
+curl -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+     http://localhost:8000/api/tasks
 ```
 
-### Getting an API Key
+### Token Sources
 
-1. Log in to Oversight Hub
-2. Go to Settings → API Keys
-3. Click "Create New Key"
-4. Copy the key immediately (it won't be shown again)
-5. Use in requests
+1. **GitHub OAuth** (Production): Log in via GitHub through Oversight Hub; JWT token issued automatically
+2. **Dev Token** (Development): Use `Bearer dev-token` for local development without OAuth setup
 
-### Token Format
+### Development Bypass
 
-- **Type:** Bearer token
-- **Length:** 32+ characters
-- **Rotation:** Rotate every 90 days
-- **Revocation:** Immediate via UI
+For testing without GitHub OAuth credentials:
+
+```bash
+curl -H "Authorization: Bearer dev-token" \
+     http://localhost:8000/api/tasks
+```
+
+### Protected Routes
+
+The following routes require authentication:
+- `/api/tasks` - Task management
+- `/api/workflows` - Workflow execution
+- `/api/agents` - Agent control
+- `/api/custom-workflows` - Custom workflow management
+- Plus 15+ additional admin and system routes
+
+### Development Mode
+
+Set `DEVELOPMENT_MODE=true` in `.env.local` to allow unauthenticated access with a mock user for testing.
 
 ---
 

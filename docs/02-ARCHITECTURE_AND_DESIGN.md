@@ -174,7 +174,7 @@ The backend is built with FastAPI and handles all asynchronous task execution an
 
 | Service        | Provider/Tech                         | Purpose                        | Status       |
 | -------------- | ------------------------------------- | ------------------------------ | ------------ |
-| **Database**   | PostgreSQL (prod) / SQLite (local)    | Content and operational data   | ✅ Active    |
+| **Database**   | PostgreSQL (required, no SQLite)      | Content and operational data   | ✅ Active    |
 | **Cache**      | Redis                                 | Session management and caching | ✅ Available |
 | **Storage**    | File system / Cloud Storage           | Media files and assets         | ✅ Active    |
 | **Task Queue** | REST API + async workers (dev/prod)   | Async task processing          | ✅ Active    |
