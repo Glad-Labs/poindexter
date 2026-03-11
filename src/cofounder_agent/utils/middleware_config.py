@@ -161,9 +161,10 @@ class MiddlewareConfig:
             allow_credentials=True,
             # SECURITY: Restricted from ["*"] to specific methods
             allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-            # SECURITY: Restricted from ["*"] to specific headers
-            allow_headers=["*"],
-            expose_headers=["*"],
+            # SECURITY: Explicit header list required — allow_headers=["*"] with
+            # allow_credentials=True violates the CORS spec (#220)
+            allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With", "X-Request-ID"],
+            expose_headers=["X-Request-ID"],
             max_age=600,
         )
 
