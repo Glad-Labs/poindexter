@@ -13,7 +13,6 @@ jobs:
   test-and-deploy:
     runs-on: ubuntu-latest
 
-    # 🔑 KEY: This line tells GitHub which environment's secrets to use
     environment: staging
 
     env:
@@ -39,43 +38,35 @@ jobs:
       # INSTALL PHASE
       # ============================================
 
-      - name: 📦 Install Python dependencies (CI/CD - Optimized)
+      - name: 📦 Install Node dependencies
+        run: npm ci
+
+      - name: 📦 Install Poetry
         run: |
-          python -m pip install --upgrade pip
-          pip install --no-cache-dir -r scripts/requirements-ci.txt
-        continue-on-error: false
+          python -m pip install --upgrade pip poetry
+          poetry config virtualenvs.create false
 
-      - name: 🗑️ Clean pip cache
-        run: pip cache purge
-
-      - name: 📦 Install backend-specific requirements
+      - name: 📦 Install Python dependencies via Poetry
+        # fix #146: use Poetry (same as prod) to ensure dependency parity
         run: |
-          pip install --no-cache-dir -r src/cofounder_agent/requirements.txt
-        continue-on-error: false
-
-      - name: 🗑️ Clean pip cache again
-        run: pip cache purge
+          cd src/cofounder_agent
+          poetry install --no-root
+          cd ../..
 
       # ============================================
-      # TEST PHASE (Full suite before staging)
+      # TEST PHASE (must pass before deploy)
       # ============================================
 
       - name: 🧪 Run tests
         run: npm run test:ci
-        continue-on-error: true
+        # fix #144: removed continue-on-error — test failures block staging deploy
 
       - name: 🧪 Run backend tests
         run: npm run test:python
-        continue-on-error: true
+        # fix #144: removed continue-on-error — test failures block staging deploy
 
       - name: 🏗️ Build all workspaces
         run: npm run build --if-present
-
-      # ============================================
-      # NOTE: Strapi CMS deployment removed (not in use)
-      # ============================================
-      # Strapi CMS deployment is not configured for this project
-      # The Co-Founder Agent handles all content management
 
       # ============================================
       # DEPLOYMENT PHASE - CO-FOUNDER AGENT
@@ -84,14 +75,12 @@ jobs:
       - name: 🚀 Deploy Co-Founder Agent to Railway (Staging)
         run: |
           echo "📤 Deploying Co-Founder Agent to staging environment..."
-          cd src/cofounder_agent
-          npx railway up
-          cd ../..
+          npm install -g @railway/cli
+          railway link --project ${{ secrets.RAILWAY_STAGING_PROJECT_ID }}
+          railway up --service cofounder-agent-staging
           echo "✅ Co-Founder Agent staging deployment completed"
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_STAGING_PROJECT_ID }}
-          RAILWAY_SERVICE_ID: cofounder-agent-staging
           DATABASE_URL: ${{ secrets.DATABASE_STAGING_URL }}
           JWT_SECRET_KEY: ${{ secrets.COFOUNDER_STAGING_JWT_SECRET }}
           OPENAI_API_KEY: ${{ secrets.COFOUNDER_STAGING_OPENAI_API_KEY }}
@@ -138,9 +127,10 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: ${{ secrets.OVERSIGHT_STAGING_PROJECT_ID }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          REACT_APP_API_URL: ${{ secrets.OVERSIGHT_STAGING_API_URL }}
-          REACT_APP_AGENT_URL: ${{ secrets.OVERSIGHT_STAGING_AGENT_URL }}
-          REACT_APP_AUTH_SECRET: ${{ secrets.OVERSIGHT_STAGING_AUTH_SECRET }}
+          # fix #143: use VITE_* prefix (app migrated from CRA to Vite)
+          VITE_API_URL: ${{ secrets.OVERSIGHT_STAGING_API_URL }}
+          VITE_AGENT_URL: ${{ secrets.OVERSIGHT_STAGING_AGENT_URL }}
+          VITE_AUTH_SECRET: ${{ secrets.OVERSIGHT_STAGING_AUTH_SECRET }}
           SENTRY_DSN: ${{ secrets.OVERSIGHT_STAGING_SENTRY_DSN }}
 
       # ============================================
@@ -153,29 +143,31 @@ jobs:
           echo "Waiting for services to stabilize (15 seconds)..."
           sleep 15
 
+          COFOUNDER_URL="${{ secrets.COFOUNDER_STAGING_URL }}"
+          OVERSIGHT_URL="${{ secrets.OVERSIGHT_STAGING_URL }}"
+          PUBLIC_SITE_URL="${{ secrets.PUBLIC_SITE_STAGING_SITE_URL }}"
+
+          # fix #147: use real secrets, retry on failure, still soft-fail for first deploy
           echo "Testing Co-Founder Agent..."
-          curl -f https://agent-staging.railway.app/docs || echo "⚠️ Agent health check pending"
+          curl -f --retry 3 --retry-delay 5 "${COFOUNDER_URL}/health" || echo "⚠️ Agent health check pending — verify COFOUNDER_STAGING_URL secret"
 
           echo "Testing Public Site..."
-          curl -f https://public-site-staging.vercel.app || echo "⚠️ Public Site health check pending"
+          curl -f --retry 3 --retry-delay 5 "${PUBLIC_SITE_URL}" || echo "⚠️ Public Site check pending — verify PUBLIC_SITE_STAGING_SITE_URL secret"
 
           echo "Testing Oversight Hub..."
-          curl -f https://oversight-staging.vercel.app || echo "⚠️ Oversight Hub health check pending"
+          curl -f --retry 3 --retry-delay 5 "${OVERSIGHT_URL}" || echo "⚠️ Oversight Hub check pending — verify OVERSIGHT_STAGING_URL secret"
 
           echo "✅ All components deployed successfully to staging!"
-          echo "📊 Staging environment is now live"
 
       - name: 📢 Notification
         if: always()
         run: |
           if [ "${{ job.status }}" == "success" ]; then
             echo "✅ Staging deployment completed successfully"
-            echo "📊 All services are operational"
             echo "🌍 Staging URLs:"
-            echo "  - Agent API: https://agent-staging.railway.app/docs"
-            echo "  - Public Site: https://public-site-staging.vercel.app"
-            echo "  - Oversight Hub: https://oversight-staging.vercel.app"
+            echo "  - Agent API: ${{ secrets.COFOUNDER_STAGING_URL }}/docs"
+            echo "  - Public Site: ${{ secrets.PUBLIC_SITE_STAGING_SITE_URL }}"
+            echo "  - Oversight Hub: ${{ secrets.OVERSIGHT_STAGING_URL }}"
           else
-            echo "❌ Staging deployment failed"
-            echo "🔍 Check GitHub Actions logs for details"
+            echo "❌ Staging deployment failed — check GitHub Actions logs"
           fi

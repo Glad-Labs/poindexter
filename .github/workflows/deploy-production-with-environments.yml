@@ -43,7 +43,7 @@ jobs:
       # ============================================
 
       - name: 📦 Install Node dependencies
-        run: npm ci && npm ci --workspaces
+        run: npm ci  # fix #145: root npm ci handles all workspaces automatically
 
       - name: 📦 Install Poetry
         run: |
@@ -53,9 +53,8 @@ jobs:
       - name: 📦 Install Python dependencies via Poetry
         run: |
           cd src/cofounder_agent
-          poetry install
+          poetry install --no-root
           cd ../..
-        continue-on-error: false
 
       # ============================================
       # TEST PHASE (Full suite + security before production)
@@ -63,31 +62,33 @@ jobs:
 
       - name: 🧪 Run all tests
         run: npm run test:ci
+        # No continue-on-error — broken tests must block production (#144)
 
       - name: 🧪 Run backend tests
         run: npm run test:python
+        # No continue-on-error — broken tests must block production (#144)
 
       - name: 🏗️ Build all workspaces
         run: npm run build --if-present
 
       - name: 🔍 Run security checks
         run: npm audit --audit-level=moderate
-        continue-on-error: true
-
-      # ============================================
-      # CMS NOTE: Content managed by Co-Founder Agent
-      # ============================================
-      # No external CMS required. The Co-Founder Agent
-      # handles all content generation and management.
+        continue-on-error: true  # advisory only — known false positives in deps
 
       # ============================================
       # DEPLOYMENT PHASE - CO-FOUNDER AGENT
       # ============================================
 
+      - name: 📦 Cache Railway CLI
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm-global
+          key: railway-cli-v1
+
       - name: 🚀 Deploy Co-Founder Agent to Railway (Production)
         run: |
           echo "📤 Deploying Co-Founder Agent to production environment..."
-          npm install -g @railway/cli
+          npm install -g @railway/cli  # fix #148: cached above
           railway link --project ${{ secrets.RAILWAY_PROD_PROJECT_ID }}
           railway up --service cofounder-agent-prod
           echo "✅ Co-Founder Agent production deployment completed"
@@ -139,9 +140,10 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: ${{ secrets.OVERSIGHT_PROD_PROJECT_ID }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          REACT_APP_API_URL: ${{ secrets.OVERSIGHT_PROD_API_URL }}
-          REACT_APP_AGENT_URL: ${{ secrets.OVERSIGHT_PROD_AGENT_URL }}
-          REACT_APP_AUTH_SECRET: ${{ secrets.OVERSIGHT_PROD_AUTH_SECRET }}
+          # fix #143: use VITE_* prefix (app migrated from CRA to Vite)
+          VITE_API_URL: ${{ secrets.OVERSIGHT_PROD_API_URL }}
+          VITE_AGENT_URL: ${{ secrets.OVERSIGHT_PROD_AGENT_URL }}
+          VITE_AUTH_SECRET: ${{ secrets.OVERSIGHT_PROD_AUTH_SECRET }}
           SENTRY_DSN: ${{ secrets.OVERSIGHT_PROD_SENTRY_DSN }}
 
       # ============================================
@@ -151,31 +153,30 @@ jobs:
       - name: 🧪 Smoke Tests
         run: |
           echo "🔍 Running smoke tests against production..."
-
           echo "Waiting for services to stabilize (20 seconds)..."
           sleep 20
 
-          # Get actual deployment URLs from environment or use defaults
           COFOUNDER_URL="${{ secrets.COFOUNDER_PROD_URL }}"
           OVERSIGHT_URL="${{ secrets.OVERSIGHT_PROD_URL }}"
 
           echo "Testing Co-Founder Agent health..."
-          curl -f "${COFOUNDER_URL}/health" || echo "⚠️ Co-Founder Agent health check pending"
+          curl -f --retry 3 --retry-delay 5 "${COFOUNDER_URL}/health" || echo "⚠️ Co-Founder Agent health check pending"
 
           echo "Testing Public Site health..."
-          curl -f https://glad-labs.com || echo "⚠️ Public Site health check pending"
+          curl -f --retry 3 --retry-delay 5 https://glad-labs.com || echo "⚠️ Public Site health check pending"
 
           echo "Testing Oversight Hub health..."
-          curl -f "${OVERSIGHT_URL}" || echo "⚠️ Oversight Hub health check pending"
+          curl -f --retry 3 --retry-delay 5 "${OVERSIGHT_URL}" || echo "⚠️ Oversight Hub health check pending"
 
           echo "✅ Smoke tests completed"
 
       - name: 📊 Health Checks
         run: |
           echo "🔍 Performing production health checks..."
+          COFOUNDER_URL="${{ secrets.COFOUNDER_PROD_URL }}"
 
           echo "Checking Co-Founder Agent connectivity..."
-          curl -f https://agent-prod.railway.app/health/detailed || echo "⚠️ Agent check pending"
+          curl -f --retry 3 --retry-delay 5 "${COFOUNDER_URL}/health/detailed" || echo "⚠️ Agent check pending"
 
           echo "Checking SSL/TLS certificates..."
           openssl s_client -connect glad-labs.com:443 -servername glad-labs.com < /dev/null | grep -o "Verify return code"
@@ -184,7 +185,6 @@ jobs:
 
       - name: ✅ Verify Production Deployment
         run: |
-          echo "🔍 Verifying production deployment..."
           echo "✅ All components deployed successfully to production!"
           echo "🌍 Production URLs:"
           echo "  - Co-Founder Agent API: ${{ secrets.COFOUNDER_PROD_URL }}/docs"
@@ -200,13 +200,10 @@ jobs:
         if: success()
         run: |
           echo "✅ Production deployment completed successfully"
-          echo "🎉 All systems are operational"
-          echo ""
           echo "📋 Deployment Summary:"
           echo "  ✅ Co-Founder Agent deployed to Railway"
           echo "  ✅ Public Site deployed to Vercel"
           echo "  ✅ Oversight Hub deployed to Vercel"
-          echo ""
           echo "🔗 Production Links:"
           echo "  - Public Site: https://glad-labs.com"
           echo "  - Co-Founder Agent API: ${{ secrets.COFOUNDER_PROD_URL }}/docs"
@@ -215,18 +212,11 @@ jobs:
       - name: 📢 Failure Notification
         if: failure()
         run: |
-          echo "❌ Production deployment failed"
-          echo "🚨 IMMEDIATE ACTION REQUIRED"
-          echo ""
+          echo "❌ Production deployment failed — IMMEDIATE ACTION REQUIRED"
           echo "📋 Troubleshooting Steps:"
           echo "  1. Check GitHub Actions logs for error details"
           echo "  2. Verify all secrets are correctly configured"
-          echo "  3. Check Railway and Vercel dashboards for deployment status"
+          echo "  3. Check Railway and Vercel dashboards"
           echo "  4. Review recent code changes for breaking issues"
           echo "  5. Consider rolling back to previous stable version"
-          echo ""
-          echo "🔗 Debug Resources:"
-          echo "  - GitHub Actions: https://github.com/mattg-stack/glad-labs-website/actions"
-          echo "  - Railway Dashboard: https://railway.app"
-          echo "  - Vercel Dashboard: https://vercel.com"
           exit 1
