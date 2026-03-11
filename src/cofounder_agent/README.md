@@ -40,7 +40,7 @@ src/cofounder_agent/
 │   ├── __init__.py
 │   ├── model_router.py        # LLM provider routing with fallback chain
 │   ├── performance_monitor.py # Metrics collection and tracking
-│   └── database.py            # PostgreSQL/SQLite ORM (SQLAlchemy)
+│   └── database_service.py    # PostgreSQL ORM (SQLAlchemy 2.0)
 ├── routes/
 │   ├── __init__.py
 │   ├── task_routes.py         # Task management endpoints
@@ -67,7 +67,7 @@ src/cofounder_agent/
 - **Async-First Architecture**: Built on FastAPI with full async/await support
 - **Multi-Provider Model Routing**: Ollama (local) → Claude 3 Opus → GPT-4 → Gemini → Fallback
 - **PostgreSQL-Based**: Production data storage with SQLAlchemy ORM
-- **REST API First**: 50+ endpoints for tasks, agents, models, and content
+- **REST API First**: 160+ endpoints for tasks, agents, models, content, workflows, and more
 - **Structured Logging**: Production-ready logging with error tracking
 - **OpenAPI Documentation**: Automatic Swagger UI at `/docs`
 - **Error Handling**: Comprehensive error recovery and circuit breakers
@@ -79,7 +79,7 @@ src/cofounder_agent/
 ### Prerequisites
 
 - Python 3.12+
-- PostgreSQL (production) or SQLite (development)
+- PostgreSQL (required; no SQLite fallback)
 - Node.js 18+ (for running alongside frontend services)
 
 ### Local Development
@@ -101,8 +101,8 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # Set up environment
-cp .env.example .env
-# Edit .env with your API keys (Ollama, OpenAI, Anthropic, Google)
+cp .env.example .env.local
+# Edit .env.local with your API keys (Ollama, OpenAI, Anthropic, Google)
 
 # Run server with auto-reload
 python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
@@ -262,23 +262,33 @@ The model router automatically selects providers in this order:
 
 ### Configuration
 
+Use **cost tiers** instead of hardcoded model names. The system automatically selects the best model based on tier:
+
 ```python
-# Per-agent model configuration
-MODEL_CONFIG = {
+# Cost-tier based configuration (preferred approach)
+COST_TIERS = {
+    "ultra_cheap": "ollama",       # Free, local models
+    "cheap": "gemini-1.5-flash",  # Budget LLMs
+    "balanced": "claude-3.5-sonnet", # Standard quality
+    "premium": "claude-3-opus",   # High quality reasoning
+}
+
+# Per-agent configuration
+AGENT_CONFIG = {
     "content": {
-        "primary": "ollama:mistral",
-        "fallback_chain": ["claude-opus", "gpt-4", "gemini-pro"],
-        "temperature": 0.7,  # Creative writing
+        "cost_tier": "balanced",   # Use Claude 3.5 Sonnet
+        "temperature": 0.7,        # Creative writing
         "max_tokens": 3000,
     },
     "financial": {
-        "primary": "ollama:llama3.2",
-        "fallback_chain": ["gpt-4", "claude-opus", "gemini-pro"],
-        "temperature": 0.2,  # Analytical
+        "cost_tier": "premium",    # Use Claude 3 Opus
+        "temperature": 0.2,        # Analytical
         "max_tokens": 2000,
     },
 }
 ```
+
+**Important:** Never hardcode model names like `"gpt-4"` or `"claude-opus"`. Use cost tiers instead—the model router will select the appropriate provider based on availability and configuration.
 
 ### Testing Model Connectivity
 
