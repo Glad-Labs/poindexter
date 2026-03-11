@@ -32,7 +32,7 @@ class MarketInsightAgent:
         """
         try:
             # Get real-time data from the web
-            search_results = self.research_agent.run(base_query, [])
+            search_results = await self.research_agent.run(base_query, [])
 
             # Generate suggestions based on the search results
             prompt = f"Based on the following search results, generate three blog post titles related to '{base_query}'. Return them as a numbered list.\n\n---SEARCH RESULTS---\n{search_results}\n---END SEARCH RESULTS---"
