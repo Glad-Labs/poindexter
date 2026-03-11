@@ -1,6 +1,6 @@
 # Analytics & Profiling: Monitoring & Diagnostics Guide
 
-**Last Updated:** February 20, 2026  
+**Last Updated:** March 10, 2026
 **For:** DevOps, Platform Engineers, Development Team
 
 ---

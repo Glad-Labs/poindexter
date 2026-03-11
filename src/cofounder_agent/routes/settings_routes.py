@@ -682,6 +682,7 @@ async def delete_setting(
 @router.get(
     "/{setting_id}/history",
     status_code=status.HTTP_501_NOT_IMPLEMENTED,
+    include_in_schema=False,
     summary="Get setting change history (not yet implemented)",
     responses={
         501: {"description": "Not implemented — setting_audit_log table not yet created"},
@@ -710,6 +711,7 @@ async def get_setting_history(
 @router.post(
     "/{setting_id}/rollback",
     status_code=status.HTTP_501_NOT_IMPLEMENTED,
+    include_in_schema=False,
     summary="Rollback setting to previous value (not yet implemented)",
     responses={
         501: {"description": "Not implemented — setting_audit_log table not yet created"},

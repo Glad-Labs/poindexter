@@ -216,7 +216,11 @@ markers = [
     "slow: slow tests",
     "voice: voice interface tests",
     "websocket: websocket tests",
+    "approval: approval workflow tests",
+    "concurrent: concurrency tests",
+    "smoke: smoke tests",
 ]
+norecursedirs = ["needs_work", ".git", "__pycache__", ".pytest_cache", "node_modules"]
 filterwarnings = [
     "ignore::DeprecationWarning",
     "ignore::PendingDeprecationWarning",

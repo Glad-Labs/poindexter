@@ -1,7 +1,7 @@
 # 01 - Getting Started
 
 **Last Updated:** February 10, 2026  
-**Version:** 3.0.2
+**Version:** 3.0.33
 **Status:** ✅ Active
 
 ---
@@ -13,7 +13,7 @@
 Ensure you have the following installed:
 
 - **Node.js**: v18+
-- **Python**: v3.12+
+- **Python**: v3.10+
 - **PostgreSQL**: v15+ (Local or Remote)
 - **Poetry**: Python package manager
 
@@ -21,7 +21,7 @@ Ensure you have the following installed:
 
 From the project root, run:
 \`\`\`bash
-npm run setup:all # First time setup
+npm run setup # First time setup
 npm run dev # Daily development
 \`\`\`
 

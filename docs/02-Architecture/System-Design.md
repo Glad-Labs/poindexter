@@ -1,7 +1,7 @@
 # 02 - Architecture & Design
 
-**Last Updated:** January 10, 2026  
-**Version:** 3.0.2
+**Last Updated:** March 10, 2026
+**Version:** 3.0.33
 **Status:** ✅ Production Ready | Multi-Agent System | Fast API Backend
 
 ---
@@ -174,7 +174,7 @@ The backend is built with FastAPI and handles all asynchronous task execution an
 
 | Service        | Provider/Tech                         | Purpose                        | Status       |
 | -------------- | ------------------------------------- | ------------------------------ | ------------ |
-| **Database**   | PostgreSQL (prod) / SQLite (local)    | Content and operational data   | ✅ Active    |
+| **Database**   | PostgreSQL only (no SQLite fallback)  | Content and operational data   | ✅ Active    |
 | **Cache**      | Redis                                 | Session management and caching | ✅ Available |
 | **Storage**    | File system / Cloud Storage           | Media files and assets         | ✅ Active    |
 | **Task Queue** | REST API + async workers (dev/prod)   | Async task processing          | ✅ Active    |
@@ -215,35 +215,35 @@ The backend is built with FastAPI and handles all asynchronous task execution an
 
 ```text
 public-site/
-├── pages/
-│   ├── index.js           # Homepage
-│   ├── posts/[slug].js    # Dynamic post pages
-│   ├── category/[slug].js # Category pages
-│   ├── _app.js            # App wrapper
-│   └── _document.js       # HTML document
+├── app/                        # Next.js 15 app router
+│   ├── page.js                 # Homepage
+│   ├── layout.js               # Root layout
+│   ├── posts/[slug]/page.tsx   # Dynamic post pages
+│   ├── category/[slug]/page.tsx # Category pages
+│   ├── tag/[slug]/page.tsx     # Tag pages
+│   ├── archive/[page]/page.tsx # Paginated archive
+│   └── author/[id]/page.tsx   # Author pages
 ├── components/
-│   ├── Layout.js          # Main layout
-│   ├── PostCard.js        # Post preview card
-│   ├── Header.js          # Navigation header
-│   ├── Footer.js          # Footer
-│   └── SEO.js             # SEO metadata
+│   ├── TopNav.js              # Navigation header
+│   ├── PostCard.js            # Post preview card
+│   ├── Footer.js              # Footer
+│   └── [other components]
 ├── lib/
-│   ├── api.js             # FastAPI client
-│   ├── constants.js       # App constants
-│   └── utils.js           # Helper functions
+│   ├── api.js                 # FastAPI client
+│   └── utils.js               # Helper functions
 ├── styles/
-│   └── globals.css        # Tailwind styles
+│   └── globals.css            # Tailwind styles
 └── public/
-    └── images/            # Static images
+    └── images/                # Static images
 ```
 
 **Data Flow:**
 
 ```text
 Build Time:
-  pages/posts/[slug].js → getStaticPaths → FastAPI
+  app/posts/[slug]/page.tsx → generateStaticParams → FastAPI
   ↓
-  getStaticProps → Fetch post data
+  generateMetadata + page render → Fetch post data
   ↓
   Generate static HTML (ISR enabled)
 

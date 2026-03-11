@@ -1,7 +1,7 @@
 # 04 - Development Workflow
 
-**Last Updated:** February 10, 2026  
-**Version:** 3.0.2
+**Last Updated:** March 10, 2026
+**Version:** 3.0.33
 **Status:** ✅ Production Ready
 
 ---
@@ -178,7 +178,7 @@ See [07-BRANCH_SPECIFIC_VARIABLES.md](07-BRANCH_SPECIFIC_VARIABLES.md) for per-e
 
 ```bash
 # Setup
-npm run setup:all              # Full fresh install
+npm run setup                  # Full fresh install
 
 # Development
 npm run dev                    # All three services

@@ -2,7 +2,7 @@
 
 **Last Updated:** October 25, 2025  
 **Status:** ✅ Production Ready  
-**Test Framework:** Jest (Frontend) + pytest (Backend)  
+**Test Framework:** Vitest (oversight-hub) + Jest (public-site) + pytest (Backend)  
 **Coverage Goal:** >80% for critical paths  
 **Current Status:** ✅ 93+ tests passing
 
@@ -22,24 +22,22 @@
 
 ## 🏗️ Test Framework Overview
 
-### Frontend: Jest + React Testing Library
+### Frontend: Vitest (oversight-hub) + Jest (public-site)
 
-**What is Jest?**
+**oversight-hub uses Vitest:**
 
-- JavaScript testing framework from Facebook
-- Works with React, Vue, Node.js projects
-- Zero-config setup with Create React App
+- Fast, Vite-native test runner (not Jest)
+- Compatible with Jest API (`describe`, `it`, `expect`, `vi.fn()`)
+- Run: `npx vitest run --pool=forks --poolOptions.forks.maxForks=4`
+- Config: `web/oversight-hub/vitest.config.ts`
+
+**public-site uses Jest + React Testing Library:**
+
+- Standard Jest framework with React Testing Library
 - Snapshot testing for UI regression detection
-- Mocking and spying capabilities
+- Config: `web/public-site/jest.config.cjs`
 
-**What is React Testing Library?**
-
-- Modern best practices for React component testing
-- Focuses on user behavior, not implementation details
-- Query APIs for finding elements by role, label, text
-- Great async handling for promises and callbacks
-
-**Installation:** Already included in both `web/public-site/` and `web/oversight-hub/`
+**Installation:** Already included in both workspaces
 
 ### Backend: pytest + pytest-asyncio
 
@@ -149,8 +147,8 @@ src/cofounder_agent/
 # Frontend + Backend together
 npm test
 
-# Frontend only
-npm run test:frontend
+# Frontend only (public-site Jest + oversight-hub Vitest)
+npm run test:web
 
 # Backend only
 npm run test:python
@@ -158,14 +156,14 @@ npm run test:python
 
 #### Run Specific Test Suite
 
-**Frontend - Oversight Hub:**
+**Frontend - Oversight Hub (Vitest):**
 
 ```bash
 cd web/oversight-hub
-npm test                                    # Interactive watch mode
-npm test -- --passWithNoTests              # No tests, pass anyway
-npm test SettingsManager                    # Specific component
-npm test -- --testNamePattern="renders"     # By test name pattern
+npx vitest run                              # Run all tests once
+npx vitest run --pool=forks --poolOptions.forks.maxForks=4  # Stable on Windows
+npx vitest run src/components/MyComponent.test.jsx  # Specific component
+npx vitest --reporter=verbose               # With test names
 ```
 
 **Frontend - Public Site:**
@@ -209,8 +207,8 @@ python -m pytest tests/ -v -m "not slow"
 
 ```bash
 # Frontend CI (non-interactive, with coverage)
-npm run test:frontend:ci
-# Runs with: --ci --coverage --watchAll=false
+npm run test:ci
+# Runs Jest (public-site) + Vitest (oversight-hub) in CI mode
 
 # Backend smoke tests (quick validation)
 npm run test:python:smoke
@@ -223,9 +221,11 @@ npm run test:python:smoke
 
 ```bash
 cd web/oversight-hub
-npm test                          # Press 'a' for all, 'p' for pattern, 'q' to quit
-npm test -- --watch              # Watch mode
-npm test -- --coverage --watch   # With coverage in watch mode
+npx vitest                        # Vitest watch mode (interactive)
+npx vitest --coverage             # With coverage in watch mode
+
+cd web/public-site
+npm test -- --watch               # Jest watch mode
 ```
 
 **Backend - Watch mode with pytest-watch:**
@@ -616,13 +616,13 @@ it('should fetch data', async () => {
 
 ## 🐛 Troubleshooting
 
-### Jest Issues
+### Jest Issues (public-site)
 
 **Problem: "Cannot find module" error**
 
 ```bash
 # Solution: Clear Jest cache
-npm test -- --clearCache
+cd web/public-site && npm test -- --clearCache
 ```
 
 **Problem: Tests timeout**
@@ -719,7 +719,7 @@ def db():
 npm test
 
 # With coverage report
-npm run test:frontend:ci
+npm run test:ci
 npm run test:python -- --cov=. --cov-report=term
 
 # Quickly during development

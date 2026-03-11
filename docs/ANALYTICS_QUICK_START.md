@@ -1,8 +1,8 @@
 # Analytics & Profiling: Developer Quick Start
 
-**For:** Frontend developers, DevOps engineers  
-**Time to Setup:** 5 minutes  
-**Last Updated:** February 20, 2026
+**For:** Frontend developers, DevOps engineers
+**Time to Setup:** 5 minutes
+**Last Updated:** March 10, 2026
 
 ---
 

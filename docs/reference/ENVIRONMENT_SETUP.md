@@ -53,14 +53,14 @@ NEXT_PUBLIC_COFOUNDER_AGENT_URL=http://localhost:8000
 NEXT_PUBLIC_SITE_URL=http://localhost:3000
 ```
 
-### Oversight Hub (React)
+### Oversight Hub (Vite)
 
 ```env
-REACT_APP_API_URL=http://localhost:8000
-REACT_APP_API_BASE_URL=http://localhost:8000
-REACT_APP_WS_BASE_URL=http://localhost:8000
-REACT_APP_AGENT_URL=http://localhost:8000
-REACT_APP_GH_OAUTH_CLIENT_ID=
+VITE_API_URL=http://localhost:8000
+VITE_API_BASE_URL=http://localhost:8000
+VITE_WS_BASE_URL=ws://localhost:8000
+VITE_AGENT_URL=http://localhost:8000
+VITE_GH_OAUTH_CLIENT_ID=
 ```
 
 ---
@@ -72,7 +72,7 @@ These exist for backward compatibility and should not be introduced in new code/
 - `OLLAMA_HOST` → `OLLAMA_BASE_URL`
 - `JWT_SECRET` → `JWT_SECRET_KEY`
 - `NEXT_PUBLIC_FASTAPI_URL` remains supported, but prefer `NEXT_PUBLIC_API_BASE_URL`
-- `REACT_APP_API_BASE_URL` remains supported alongside `REACT_APP_API_URL`
+- `VITE_API_BASE_URL` remains supported alongside `VITE_API_URL`
 
 ---
 
@@ -93,7 +93,7 @@ For full CI/CD secret mapping, use `docs/reference/GITHUB_SECRETS_SETUP.md`.
 - `DATABASE_URL` points to reachable PostgreSQL
 - At least one model provider is configured
 - `NEXT_PUBLIC_API_BASE_URL` points to backend (`http://localhost:8000` in dev)
-- `REACT_APP_API_URL` points to backend (`http://localhost:8000` in dev)
+- `VITE_API_URL` points to backend (`http://localhost:8000` in dev)
 - `npm run dev` starts backend, public site, and oversight hub
 
 ---

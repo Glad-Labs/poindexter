@@ -36,7 +36,7 @@ This is the **complete, authoritative guide** covering:
 DATABASE_URL=postgresql://postgres:password@localhost:5432/glad_labs
 OLLAMA_BASE_URL=http://localhost:11434
 LOG_LEVEL=debug
-REACT_APP_API_URL=http://localhost:8000
+VITE_API_URL=http://localhost:8000
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 ```
 
