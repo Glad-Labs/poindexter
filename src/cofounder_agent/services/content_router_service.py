@@ -997,9 +997,16 @@ async def process_content_generation_task(
         # ================================================================================
         # UPDATE CONTENT_TASK WITH FINAL STATUS AND ALL METADATA
         # ================================================================================
-        # Enforce hard length gate before allowing human approval queue.
+        # Enforce word count constraint: target +/-10% (issue #193).
+        # The prompt declares this MANDATORY but previously only checked minimum.
         min_words_required = int(target_length * 0.9) if target_length else 0
-        meets_length_requirement = word_count >= min_words_required
+        max_words_allowed = int(target_length * 1.1) if target_length else float("inf")
+        meets_length_requirement = min_words_required <= word_count <= max_words_allowed
+        if not meets_length_requirement and target_length:
+            logger.warning(
+                f"Word count {word_count} outside target {target_length} +/-10% "
+                f"(allowed: {min_words_required}-{max_words_allowed})"
+            )
 
         # Enforce quality gate — content must pass quality threshold (issue #186).
         # Previously, quality_result.passing was evaluated but never checked before

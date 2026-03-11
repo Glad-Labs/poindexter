@@ -240,15 +240,28 @@ class CreativeAgent:
                     logger.error(
                         f"CreativeAgent: Failed to decode JSON from SEO assets response: {seo_assets_json}"
                     )
-                    return post
+                    seo_assets = None
 
-            post.title = seo_assets.get("title", "")
-            post.meta_description = seo_assets.get("meta_description", "")
-            post.slug = slugify(post.title or "")  # Generate slug from title
+            if seo_assets:
+                post.title = seo_assets.get("title", "")
+                post.meta_description = seo_assets.get("meta_description", "")
+                post.slug = slugify(post.title or "")  # Generate slug from title
         else:
             logger.error(
                 f"CreativeAgent: Could not extract JSON from SEO assets response: {seo_assets_text}"
             )
+
+        # Fallback: ensure SEO fields are never empty (issue #195).
+        # Posts with empty title/meta_description cause SEO damage and broken URLs.
+        if not post.title:
+            post.title = (post.topic[:60] if post.topic else "Untitled Post").strip()
+            logger.warning(f"CreativeAgent: Using fallback title from topic: '{post.title}'")
+        if not post.meta_description:
+            post.meta_description = f"An in-depth guide covering {post.topic}."[:160] if post.topic else "Read more about this topic."
+            logger.warning(f"CreativeAgent: Using fallback meta_description")
+        if not post.slug:
+            post.slug = slugify(post.title)
+            logger.warning(f"CreativeAgent: Using fallback slug: '{post.slug}'")
 
         return post
 

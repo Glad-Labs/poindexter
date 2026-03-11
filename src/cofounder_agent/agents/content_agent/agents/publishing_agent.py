@@ -58,10 +58,16 @@ class PublishingAgent:
         return post
 
     def _replace_image_placeholders(self, post: BlogPost) -> str:
-        """Replaces markdown image placeholders with markdown image tags."""
+        """Replaces markdown image placeholders with markdown image tags.
+
+        After substitution, scans for any remaining [IMAGE-N] placeholders
+        and strips them to prevent raw placeholder text from being published
+        (issue #194).
+        """
         content = post.raw_content or ""
         if not post.images:
-            return content
+            # Still strip any placeholders that the LLM inserted without images
+            return self._strip_unreplaced_placeholders(content)
 
         for i, image_data in enumerate(post.images):
             placeholder = f"[IMAGE-{i+1}]"
@@ -70,6 +76,18 @@ class PublishingAgent:
                 content = content.replace(placeholder, markdown_image)
             else:
                 logging.warning(f"Image {i+1} has no public URL. Cannot replace placeholder.")
+
+        return self._strip_unreplaced_placeholders(content)
+
+    @staticmethod
+    def _strip_unreplaced_placeholders(content: str) -> str:
+        """Remove any remaining [IMAGE-N] placeholders from content."""
+        remaining = re.findall(r"\[IMAGE-\d+\]", content)
+        if remaining:
+            logging.warning(
+                f"Stripping {len(remaining)} unreplaced image placeholder(s): {remaining}"
+            )
+            content = re.sub(r"\[IMAGE-\d+\]", "", content)
         return content
 
     def _clean_content(self, content: str) -> str:
