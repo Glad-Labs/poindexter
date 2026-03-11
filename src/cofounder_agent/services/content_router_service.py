@@ -492,7 +492,27 @@ async def process_content_generation_task(
         )
 
         image_service = get_image_service()
-        quality_service = UnifiedQualityService(database_service=database_service)
+
+        # Wrap model_consolidation_service so UnifiedQualityService can call generate_text().
+        # Uses cheap-tier provider fallback (Ollama → HuggingFace → Gemini → Anthropic).
+        from .model_consolidation_service import get_model_consolidation_service
+
+        _consolidation_svc = get_model_consolidation_service()
+
+        class _LLMClientAdapter:
+            """Thin adapter: exposes generate_text() over ModelConsolidationService.generate()."""
+
+            def __init__(self, svc):
+                self._svc = svc
+
+            async def generate_text(self, prompt: str) -> str:
+                result = await self._svc.generate(prompt=prompt)
+                return result.text if result and result.text else ""
+
+        quality_service = UnifiedQualityService(
+            database_service=database_service,
+            llm_client=_LLMClientAdapter(_consolidation_svc),
+        )
         logger.debug(
             f"[BG-TASK] Services initialized: image_service={image_service}, quality_service={quality_service}"
         )
@@ -684,8 +704,10 @@ async def process_content_generation_task(
         # ================================================================================
         _MAX_REFINEMENTS = 3
         _refinement_count = 0
+        _initial_score = quality_result.overall_score  # track for improvement logging
 
         while not quality_result.passing and _refinement_count < _MAX_REFINEMENTS:
+            _score_before = quality_result.overall_score
             _refinement_count += 1
             logger.info(
                 f"🔄 STAGE 2C: Refinement attempt {_refinement_count}/{_MAX_REFINEMENTS} "
@@ -721,6 +743,20 @@ async def process_content_generation_task(
                 f"   Refinement {_refinement_count}: "
                 f"score={quality_result.overall_score:.1f}, passing={quality_result.passing}"
             )
+
+            # Persist per-attempt improvement data (#192)
+            try:
+                await database_service.create_quality_improvement_log({
+                    "content_id": task_id,
+                    "initial_score": _score_before,
+                    "improved_score": quality_result.overall_score,
+                    "refinement_type": f"auto-critique-attempt-{_refinement_count}",
+                    "changes_made": quality_result.feedback,
+                })
+            except Exception as _log_err:
+                logger.warning(
+                    f"[REFINEMENT] Failed to persist improvement log (non-fatal): {_log_err}"
+                )
 
         if _refinement_count > 0:
             # Update result with potentially improved content
@@ -942,13 +978,16 @@ async def process_content_generation_task(
                 "content_id": task_id,
                 "task_id": task_id,
                 "overall_score": quality_result.overall_score,
-                "clarity": quality_result.dimensions.clarity,
-                "accuracy": quality_result.dimensions.accuracy,
-                "completeness": quality_result.dimensions.completeness,
-                "relevance": quality_result.dimensions.relevance,
-                "seo_quality": quality_result.dimensions.seo_quality,
-                "readability": quality_result.dimensions.readability,
-                "engagement": quality_result.dimensions.engagement,
+                # Nest dimension scores under "criteria" as create_quality_evaluation expects
+                "criteria": {
+                    "clarity": quality_result.dimensions.clarity,
+                    "accuracy": quality_result.dimensions.accuracy,
+                    "completeness": quality_result.dimensions.completeness,
+                    "relevance": quality_result.dimensions.relevance,
+                    "seo_quality": quality_result.dimensions.seo_quality,
+                    "readability": quality_result.dimensions.readability,
+                    "engagement": quality_result.dimensions.engagement,
+                },
                 "passing": quality_result.passing,
                 "feedback": quality_result.feedback,
                 "suggestions": quality_result.suggestions,
