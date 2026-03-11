@@ -1,6 +1,6 @@
 {
   "name": "glad-labs-monorepo",
-  "version": "3.0.38",
+  "version": "3.0.39",
   "private": true,
   "description": "Complete AI orchestration system with intelligent business management and autonomous agents. Phase 3B: Vite migration complete. Phase 1C: Error handling standardization in progress.",
   "license": "AGPL-3.0-or-later",
