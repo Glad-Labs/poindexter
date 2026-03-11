@@ -532,45 +532,109 @@ class UnifiedQualityService:
         return 5.0
 
     def _score_accuracy(self, content: str, context: Dict[str, Any]) -> float:
-        """Score accuracy - placeholder, would check facts in real implementation"""
-        # Pattern-based: check for citations, quotes, etc.
-        if '"' in content or "according to" in content.lower():
-            return 7.5
-        return 6.5  # Generic content, unknown accuracy
+        """Score accuracy based on citation patterns and factual anchors."""
+        score = 6.0  # Neutral baseline for unverifiable content
+        content_lower = content.lower()
+
+        # External links are a strong accuracy signal
+        link_count = len(re.findall(r"https?://\S+", content))
+        score += min(link_count * 0.5, 1.5)
+
+        # Citation/reference patterns: [1], (Smith 2023), Source:, References:
+        citation_patterns = [
+            r"\[\d+\]",            # [1], [12]
+            r"\(\w[^)]{1,40}\d{4}\)",  # (Author 2023)
+            r"(?:source|reference|cited|per|via):",
+            r"according to\b",
+            r"research (?:shows?|suggests?|finds?|indicates?)\b",
+            r"studies? (?:show|suggest|find|indicate)\b",
+            r"published (?:in|by)\b",
+        ]
+        for pat in citation_patterns:
+            if re.search(pat, content_lower):
+                score += 0.3
+
+        # Named quotes in proper context (not decorative use of quotation marks)
+        named_quote = re.search(r'"[^"]{10,}"[,\s]+(?:said|wrote|noted|according)', content)
+        if named_quote:
+            score += 0.5
+
+        return min(score, 10.0)
 
     def _score_completeness(self, content: str, context: Dict[str, Any]) -> float:
-        """Score completeness based on content depth"""
+        """Score completeness based on depth signals beyond raw word count."""
         word_count = len(content.split())
+        score = 0.0
 
+        # Word-count baseline (necessary but not sufficient)
         if word_count >= 2000:
-            return 9.0
-        if word_count >= 1500:
-            return 8.0
-        if word_count >= 1000:
-            return 7.5
-        if word_count >= 500:
-            return 6.5
-        return 5.0
+            score += 5.0
+        elif word_count >= 1500:
+            score += 4.5
+        elif word_count >= 1000:
+            score += 4.0
+        elif word_count >= 500:
+            score += 3.0
+        else:
+            score += 1.5
+
+        # Structural depth signals
+        heading_count = len(re.findall(r"^#{1,3}\s", content, re.MULTILINE))
+        score += min(heading_count * 0.4, 2.0)  # Up to +2 for 5+ headings
+
+        paragraphs = [p.strip() for p in content.split("\n\n") if p.strip()]
+        if len(paragraphs) >= 5:
+            score += 0.5
+
+        # Intro/conclusion present (first and last paragraphs are non-trivial)
+        if paragraphs and len(paragraphs[0].split()) >= 30:
+            score += 0.5
+        if len(paragraphs) > 1 and len(paragraphs[-1].split()) >= 20:
+            score += 0.5
+
+        # Contains lists (signals structured coverage)
+        if re.search(r"^[-*]\s", content, re.MULTILINE):
+            score += 0.5
+
+        return min(score, 10.0)
 
     def _score_relevance(self, content: str, context: Dict[str, Any]) -> float:
-        """Score relevance based on keyword presence and focus"""
-        topic = context.get("topic", "")
+        """Score relevance using topic-word family matching to resist keyword stuffing."""
+        topic = context.get("topic", "") or context.get("primary_keyword", "")
         if not topic:
             return 6.0
 
-        # Count topic mentions
-        topic_count = content.lower().count(topic.lower())
+        content_lower = content.lower()
+        topic_words = [w.lower() for w in re.findall(r"\b\w{4,}\b", topic)]
         word_count = len(content.split())
-        topic_density = topic_count / (word_count / 100) if word_count > 0 else 0
 
-        # Ideal: 1-3% keyword density
-        if 1 <= topic_density <= 3:
-            return 9.0
-        if 0.5 <= topic_density <= 5:
-            return 7.5
-        if topic_count > 0:
+        if not topic_words or word_count == 0:
             return 6.0
-        return 3.0  # Topic not mentioned
+
+        # Match each meaningful topic word (≥4 chars) — broader family
+        matched_words = sum(1 for w in topic_words if w in content_lower)
+        coverage = matched_words / len(topic_words)
+
+        # Density of exact topic phrase (penalise over-stuffing)
+        exact_count = content_lower.count(topic.lower())
+        density = exact_count / (word_count / 100)  # per 100 words
+
+        if coverage >= 0.8:
+            base = 8.5
+        elif coverage >= 0.5:
+            base = 7.0
+        elif coverage >= 0.25:
+            base = 5.5
+        else:
+            base = 3.0
+
+        # Penalise keyword stuffing (>5% density is suspicious)
+        if density > 5:
+            base = min(base, 5.5)
+        elif density > 3:
+            base = min(base, 7.0)
+
+        return min(base, 10.0)
 
     def _score_seo(self, content: str, context: Dict[str, Any]) -> float:
         """Score SEO quality"""
