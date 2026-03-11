@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from routes.auth_unified import get_current_user
+from utils.rate_limiter import limiter
 
 from schemas.chat_schemas import (
     ChatMessage,
@@ -51,8 +52,10 @@ conversations: OrderedDict[str, list] = OrderedDict()
 
 
 @router.post("", response_model=ChatResponse)
+@limiter.limit("20/minute")
 async def chat(
-    request: ChatRequest,
+    request: Request,
+    body: ChatRequest,
     current_user: dict = Depends(get_current_user),
 ) -> ChatResponse:
     """
@@ -85,12 +88,12 @@ async def chat(
     try:
         # Log incoming request details
         logger.info(
-            f"[Chat] Incoming request - model: '{request.model}', message length: {len(request.message)}"
+            f"[Chat] Incoming request - model: '{body.model}', message length: {len(body.message)}"
         )
 
         # Parse model specification (e.g., "ollama-mistral" -> provider="ollama", model_name="mistral")
         # Also accept generic names like "ollama", "openai", etc.
-        model_parts = request.model.split("-", 1)  # Split on first dash only
+        model_parts = body.model.split("-", 1)  # Split on first dash only
         provider = model_parts[0]  # First part is the provider (ollama, openai, claude, gemini)
         model_name = model_parts[1] if len(model_parts) > 1 else None  # Rest is specific model name
 
@@ -104,44 +107,44 @@ async def chat(
         logger.info(f"[Chat] PARSED MODEL - provider: '{provider}', model_name: '{model_name}'")
 
         # Initialize conversation if needed; evict oldest if at capacity
-        if request.conversationId not in conversations:
+        if body.conversationId not in conversations:
             if len(conversations) >= MAX_CONVERSATIONS:
                 evicted_id, _ = conversations.popitem(last=False)
                 logger.debug(f"[Chat] Evicted oldest conversation {evicted_id} (capacity: {MAX_CONVERSATIONS})")
-            conversations[request.conversationId] = []
+            conversations[body.conversationId] = []
         else:
             # Move to end so it's treated as most recently used
-            conversations.move_to_end(request.conversationId)
+            conversations.move_to_end(body.conversationId)
 
         # Trim per-conversation message history
-        if len(conversations[request.conversationId]) >= MAX_MESSAGES_PER_CONVERSATION:
-            conversations[request.conversationId] = conversations[request.conversationId][
+        if len(conversations[body.conversationId]) >= MAX_MESSAGES_PER_CONVERSATION:
+            conversations[body.conversationId] = conversations[body.conversationId][
                 -MAX_MESSAGES_PER_CONVERSATION:
             ]
 
         # Add user message to conversation history
-        conversations[request.conversationId].append(
+        conversations[body.conversationId].append(
             {
                 "role": "user",
-                "content": request.message,
+                "content": body.message,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
         )
 
         # Check cache first (before doing any heavy processing)
         cache_params = {
-            "temperature": request.temperature or 0.7,
-            "max_tokens": request.max_tokens or 500,
+            "temperature": body.temperature or 0.7,
+            "max_tokens": body.max_tokens or 500,
         }
-        cached_response = await ai_cache.get(request.message, request.model, cache_params)
+        cached_response = await ai_cache.get(body.message, body.model, cache_params)
         if cached_response:
-            logger.info(f"[Chat] Cache hit for query (saved ~{request.max_tokens or 500} tokens)")
+            logger.info(f"[Chat] Cache hit for query (saved ~{body.max_tokens or 500} tokens)")
             # Still add to conversation history
-            conversations[request.conversationId].append(
+            conversations[body.conversationId].append(
                 {
                     "role": "assistant",
                     "content": cached_response,
-                    "model": request.model,
+                    "model": body.model,
                     "provider": provider,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "cached": True,
@@ -149,21 +152,21 @@ async def chat(
             )
             return ChatResponse(
                 response=cached_response,
-                model=request.model,
-                conversationId=request.conversationId,
+                model=body.model,
+                conversationId=body.conversationId,
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 tokens_used=len(cached_response.split()),
                 cached=True,
             )
 
         # Check if this is a system knowledge question
-        is_system_question = PromptTemplates.detect_system_question(request.message)
+        is_system_question = PromptTemplates.detect_system_question(body.message)
         system_context = None
         system_knowledge_used = False
 
         if is_system_question:
             logger.info("[Chat] System question detected, retrieving from knowledge base")
-            knowledge_result = system_knowledge_rag.retrieve(request.message)
+            knowledge_result = system_knowledge_rag.retrieve(body.message)
             if knowledge_result and knowledge_result.confidence > 0.5:
                 system_context = knowledge_result.content
                 system_knowledge_used = True
@@ -180,7 +183,7 @@ async def chat(
         logger.info(
             f"[Chat] Processing message with: provider={provider}, model={model_name or 'default'}"
         )
-        logger.debug(f"[Chat] Message: {request.message}")
+        logger.debug(f"[Chat] Message: {body.message}")
 
         # Get actual AI response based on provider selection
         if provider == "ollama":
@@ -217,11 +220,11 @@ async def chat(
                         tokens_used = len(response_text.split())
 
                         # Fall through to add response to history and return
-                        conversations[request.conversationId].append(
+                        conversations[body.conversationId].append(
                             {
                                 "role": "assistant",
                                 "content": response_text,
-                                "model": request.model,
+                                "model": body.model,
                                 "provider": provider,
                                 "timestamp": datetime.now(timezone.utc).isoformat(),
                             }
@@ -229,8 +232,8 @@ async def chat(
 
                         return ChatResponse(
                             response=response_text,
-                            model=request.model,
-                            conversationId=request.conversationId,
+                            model=body.model,
+                            conversationId=body.conversationId,
                             timestamp=datetime.now(timezone.utc).isoformat(),
                             tokens_used=tokens_used,
                         )
@@ -238,13 +241,13 @@ async def chat(
                     logger.debug(f"[Chat] Could not check available models: {str(e)}")
 
                 # Prepare messages for Ollama chat
-                messages_to_send = conversations[request.conversationId].copy()
+                messages_to_send = conversations[body.conversationId].copy()
 
                 # If we have system knowledge, create a system-aware prompt and prepend it
                 if system_knowledge_used:
                     system_prompt = PromptTemplates.system_aware_chat_prompt(
                         system_context=system_context,
-                        user_query=request.message,
+                        user_query=body.message,
                     )
                     # Insert system message at the beginning (before user messages)
                     messages_to_send.insert(0, {"role": "system", "content": system_prompt})
@@ -253,8 +256,8 @@ async def chat(
                 chat_result = await ollama_client.chat(
                     messages=messages_to_send,
                     model=actual_ollama_model,
-                    temperature=request.temperature or 0.7,
-                    max_tokens=request.max_tokens or 500,
+                    temperature=body.temperature or 0.7,
+                    max_tokens=body.max_tokens or 500,
                 )
                 # ollama_client.chat returns {"content": "...", "tokens": ...}
                 response_text = chat_result.get(
@@ -271,7 +274,7 @@ async def chat(
 
                 # Cache the response for future similar queries
                 await ai_cache.set(
-                    request.message, request.model, cache_params, response_text
+                    body.message, body.model, cache_params, response_text
                 )  # 24 hour TTL for system questions
                 logger.debug(f"[Chat] Response cached (TTL: 24h)")
 
@@ -306,11 +309,11 @@ async def chat(
             )
 
         # Add AI response to conversation history
-        conversations[request.conversationId].append(
+        conversations[body.conversationId].append(
             {
                 "role": "assistant",
                 "content": response_text,
-                "model": request.model,  # Keep original full model specification
+                "model": body.model,  # Keep original full model specification
                 "provider": provider,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
@@ -318,8 +321,8 @@ async def chat(
 
         return ChatResponse(
             response=response_text,
-            model=request.model,  # Return original full model specification
-            conversationId=request.conversationId,
+            model=body.model,  # Return original full model specification
+            conversationId=body.conversationId,
             timestamp=datetime.now(timezone.utc).isoformat(),
             tokens_used=len(response_text.split()),  # Rough estimate
         )

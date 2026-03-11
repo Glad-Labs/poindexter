@@ -8,9 +8,10 @@ in real-time with live progress bars and status updates.
 import asyncio
 import json
 import logging
+import os
 from typing import Dict, Optional, Set
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 
 from services.progress_service import get_progress_service
 from services.websocket_manager import websocket_manager
@@ -70,12 +71,34 @@ class ConnectionManager:
 connection_manager = ConnectionManager()
 
 
+async def _validate_ws_token(websocket: WebSocket, token: str) -> bool:
+    """
+    Validate a WebSocket token query parameter.
+
+    Returns True if valid (or dev bypass accepted), False and closes the
+    connection with code 1008 if invalid.
+    """
+    if os.getenv("DEVELOPMENT_MODE", "false").lower() == "true" and token.lower().startswith("dev-"):
+        return True
+    try:
+        from services.token_validator import JWTTokenValidator
+
+        claims = JWTTokenValidator.verify_token(token)
+        if not claims:
+            await websocket.close(code=1008, reason="Invalid token")
+            return False
+    except Exception:
+        await websocket.close(code=1008, reason="Invalid token")
+        return False
+    return True
+
+
 @websocket_router.websocket("/image-generation/{task_id}")
-async def websocket_image_progress(websocket: WebSocket, task_id: str):
+async def websocket_image_progress(websocket: WebSocket, task_id: str, token: str = Query(...)):
     """
     WebSocket endpoint for real-time image generation progress.
 
-    Connect to: ws://localhost:8000/ws/image-generation/{task_id}
+    Connect to: ws://localhost:8000/ws/image-generation/{task_id}?token=<jwt>
 
     Receives messages like:
     {
@@ -91,6 +114,8 @@ async def websocket_image_progress(websocket: WebSocket, task_id: str):
         "message": "Generating base image (step 32/50)"
     }
     """
+    if not await _validate_ws_token(websocket, token):
+        return
     await connection_manager.connect(task_id, websocket)
 
     try:
@@ -159,7 +184,7 @@ async def broadcast_approval_status(
 
 
 @websocket_router.websocket("/workflow/{execution_id}")
-async def websocket_workflow_progress(websocket: WebSocket, execution_id: str):
+async def websocket_workflow_progress(websocket: WebSocket, execution_id: str, token: str = Query(...)):
     """
     WebSocket endpoint for real-time workflow execution progress.
 
@@ -192,6 +217,8 @@ async def websocket_workflow_progress(websocket: WebSocket, execution_id: str):
     });
     ```
     """
+    if not await _validate_ws_token(websocket, token):
+        return
     await connection_manager.connect(execution_id, websocket)
 
     try:
@@ -259,11 +286,11 @@ def get_connection_manager() -> ConnectionManager:
 
 
 @websocket_router.websocket("/")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
     """
     Global WebSocket endpoint for real-time updates (Phase 4)
 
-    Connect to: ws://localhost:8000/ws
+    Connect to: ws://localhost:8000/ws?token=<jwt>
 
     Clients can subscribe to:
     - Task progress: `task.progress.{task_id}`
@@ -281,7 +308,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     Example Usage (JavaScript):
     ```javascript
-    const ws = new WebSocket('ws://localhost:8000/ws');
+    const ws = new WebSocket('ws://localhost:8000/ws?token=<jwt>');
     ws.addEventListener('message', (event) => {
         const msg = JSON.parse(event.data);
         if (msg.event === 'task.progress.task-123') {
@@ -290,6 +317,8 @@ async def websocket_endpoint(websocket: WebSocket):
     });
     ```
     """
+    if not await _validate_ws_token(websocket, token):
+        return
     await websocket.accept()
     active_namespaces = {"global"}
 
@@ -355,11 +384,11 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 @websocket_router.websocket("/approval/{task_id}")
-async def websocket_approval_updates(websocket: WebSocket, task_id: str):
+async def websocket_approval_updates(websocket: WebSocket, task_id: str, token: str = Query(...)):
     """
     WebSocket endpoint for real-time approval status updates.
 
-    Connect to: ws://localhost:8000/api/ws/approval/{task_id}
+    Connect to: ws://localhost:8000/api/ws/approval/{task_id}?token=<jwt>
 
     Receives messages like:
     {
@@ -376,6 +405,8 @@ async def websocket_approval_updates(websocket: WebSocket, task_id: str):
     - Update UI when approval/rejection happens
     - Disconnect when component unmounts
     """
+    if not await _validate_ws_token(websocket, token):
+        return
     await connection_manager.connect(task_id, websocket)
 
     try:

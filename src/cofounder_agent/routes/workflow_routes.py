@@ -16,6 +16,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 
 from services.database_service import DatabaseService
 from services.workflow_history import WorkflowHistoryService
+from utils.rate_limiter import limiter
 from utils.route_utils import (
     get_database_dependency,
     get_template_execution_service_dependency,
@@ -68,6 +69,31 @@ async def list_workflows(request: Request):
             "status": "/api/workflows/status/{workflow_id}",
             "history": "/api/workflows/templates/history",
         },
+    }
+
+
+@router.post("", response_model=Dict[str, Any], name="Create Workflow", status_code=202)
+@limiter.limit("10/minute")
+async def create_workflow(
+    request: Request,
+    body: Dict[str, Any] = Body(..., description="Workflow creation payload"),
+):
+    """
+    Create a new workflow execution.
+
+    Accepts a workflow payload and delegates to the appropriate execution path
+    based on the ``template`` field.  Use ``POST /api/workflows/execute/{name}``
+    for template-based workflows.
+
+    Rate limited to 10 requests per minute per IP.
+    """
+    template = body.get("template")
+    if not template:
+        raise HTTPException(status_code=400, detail="'template' field is required")
+    return {
+        "status": "accepted",
+        "message": f"Use POST /api/workflows/execute/{template} to execute this template.",
+        "template": template,
     }
 
 
@@ -469,8 +495,10 @@ async def get_workflow_status(
 
 
 @router.post("/pause/{workflow_id}", name="Pause Workflow")
+@limiter.limit("30/minute")
 async def pause_workflow(
     workflow_id: str,
+    request: Request,
     db_service: DatabaseService = Depends(get_database_dependency),
     workflow_engine: Any = Depends(get_workflow_engine_dependency),
 ):
@@ -535,8 +563,10 @@ async def pause_workflow(
 
 
 @router.post("/resume/{workflow_id}", name="Resume Workflow")
+@limiter.limit("30/minute")
 async def resume_workflow(
     workflow_id: str,
+    request: Request,
     db_service: DatabaseService = Depends(get_database_dependency),
     workflow_engine: Any = Depends(get_workflow_engine_dependency),
 ):
@@ -601,8 +631,10 @@ async def resume_workflow(
 
 
 @router.post("/cancel/{workflow_id}", name="Cancel Workflow")
+@limiter.limit("30/minute")
 async def cancel_workflow(
     workflow_id: str,
+    request: Request,
     db_service: DatabaseService = Depends(get_database_dependency),
     workflow_engine: Any = Depends(get_workflow_engine_dependency),
 ):
@@ -668,8 +700,10 @@ async def cancel_workflow(
 
 
 @router.post("/execute/{template_name}", name="Execute Workflow Template", status_code=202)
+@limiter.limit("5/minute")
 async def execute_workflow_template(
     template_name: str,
+    request: Request,
     task_input: Dict[str, Any] = Body(..., description="Input data for the workflow"),
     skip_phases: Optional[List[str]] = Query(None, description="Phases to skip"),
     quality_threshold: float = Query(
