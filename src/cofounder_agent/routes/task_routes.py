@@ -31,7 +31,7 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 import aiohttp
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from routes.auth_unified import get_current_user, get_current_user_optional
@@ -63,6 +63,7 @@ from services.enhanced_status_change_service import EnhancedStatusChangeService
 from services.error_handler import AppError
 from utils.error_responses import ErrorResponseBuilder
 from utils.json_encoder import convert_decimals, safe_json_dumps
+from utils.rate_limiter import limiter
 from utils.route_utils import get_database_dependency
 
 # Import task status utilities (ENTERPRISE)
@@ -185,8 +186,10 @@ router = APIRouter(prefix="/api/tasks", tags=["tasks"])
     summary="Create task - unified endpoint for all task types",
     status_code=202,
 )
+@limiter.limit("10/minute")
 async def create_task(
-    request: UnifiedTaskRequest,
+    request: Request,
+    body: UnifiedTaskRequest,
     background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
     db_service: DatabaseService = Depends(get_database_dependency),
@@ -272,39 +275,39 @@ async def create_task(
     """
     try:
         logger.info(
-            f"📥 [UNIFIED_TASK_CREATE] Received: task_type={request.task_type}, topic={request.topic}"
+            f"📥 [UNIFIED_TASK_CREATE] Received: task_type={body.task_type}, topic={body.topic}"
         )
 
         # Route based on task_type
-        if request.task_type == "blog_post":
-            return await _handle_blog_post_creation(request, current_user, db_service)
+        if body.task_type == "blog_post":
+            return await _handle_blog_post_creation(body, current_user, db_service)
 
-        elif request.task_type == "social_media":
-            return await _handle_social_media_creation(request, current_user, db_service)
+        elif body.task_type == "social_media":
+            return await _handle_social_media_creation(body, current_user, db_service)
 
-        elif request.task_type == "email":
-            return await _handle_email_creation(request, current_user, db_service)
+        elif body.task_type == "email":
+            return await _handle_email_creation(body, current_user, db_service)
 
-        elif request.task_type == "newsletter":
-            return await _handle_newsletter_creation(request, current_user, db_service)
+        elif body.task_type == "newsletter":
+            return await _handle_newsletter_creation(body, current_user, db_service)
 
-        elif request.task_type == "business_analytics":
-            return await _handle_business_analytics_creation(request, current_user, db_service)
+        elif body.task_type == "business_analytics":
+            return await _handle_business_analytics_creation(body, current_user, db_service)
 
-        elif request.task_type == "data_retrieval":
-            return await _handle_data_retrieval_creation(request, current_user, db_service)
+        elif body.task_type == "data_retrieval":
+            return await _handle_data_retrieval_creation(body, current_user, db_service)
 
-        elif request.task_type == "market_research":
-            return await _handle_market_research_creation(request, current_user, db_service)
+        elif body.task_type == "market_research":
+            return await _handle_market_research_creation(body, current_user, db_service)
 
-        elif request.task_type == "financial_analysis":
-            return await _handle_financial_analysis_creation(request, current_user, db_service)
+        elif body.task_type == "financial_analysis":
+            return await _handle_financial_analysis_creation(body, current_user, db_service)
 
         else:
             raise HTTPException(
                 status_code=400,
                 detail={
-                    "message": f"Unknown task_type: {request.task_type}",
+                    "message": f"Unknown task_type: {body.task_type}",
                     "supported": [
                         "blog_post",
                         "social_media",

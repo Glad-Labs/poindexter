@@ -36,6 +36,7 @@ from services.database_service import DatabaseService
 from services.token_blocklist import add_token as blocklist_add, is_revoked as blocklist_is_revoked
 from services.token_manager import TokenManager
 from services.token_validator import AuthConfig, JWTTokenValidator
+from utils.rate_limiter import limiter
 from utils.route_utils import get_database_dependency
 
 logger = logging.getLogger(__name__)
@@ -446,7 +447,9 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
 
 
 @router.post("/github/callback")
+@limiter.limit("10/minute")
 async def github_callback(
+    request: Request,
     request_data: GitHubCallbackRequest,
     response: Response,
     db: DatabaseService = Depends(get_database_dependency),
@@ -589,7 +592,9 @@ async def github_callback(
 
 
 @router.post("/github-callback")
+@limiter.limit("10/minute")
 async def github_callback_fallback(
+    request: Request,
     request_data: GitHubCallbackRequest,
     response: Response,
     db: DatabaseService = Depends(get_database_dependency),
@@ -607,7 +612,7 @@ async def github_callback_fallback(
         "Deprecated endpoint /api/auth/github-callback called. Use /api/auth/github/callback instead."
     )
     # Forward to the main handler with database service
-    return await github_callback(request_data, response, db)
+    return await github_callback(request, request_data, response, db)
 
 
 @router.post("/logout", response_model=LogoutResponse)

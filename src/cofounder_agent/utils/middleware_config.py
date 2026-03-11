@@ -179,12 +179,13 @@ class MiddlewareConfig:
         Uses slowapi library for efficient rate limiting.
         """
         try:
-            from slowapi import Limiter
             from slowapi.errors import RateLimitExceeded
-            from slowapi.util import get_remote_address
 
-            # Create limiter instance
-            self.limiter = Limiter(key_func=get_remote_address)
+            # Use the shared singleton so route @limiter.limit() decorators
+            # reference the same instance that is registered with app.state.
+            from utils.rate_limiter import limiter as _limiter
+
+            self.limiter = _limiter
 
             # Store limiter in app state for use in route decorators
             app.state.limiter = self.limiter
