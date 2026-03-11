@@ -13,7 +13,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 
 from services.workflow_progress_service import (
     WorkflowProgressService,
@@ -315,8 +315,10 @@ async def websocket_workflow_progress(websocket: WebSocket, execution_id: str):
             data = await websocket.receive_text()
             if data == "ping":
                 await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket client disconnected for execution {execution_id}")
     except Exception as e:
-        logger.debug(f"WebSocket error for {execution_id}: {e}")
+        logger.error(f"[websocket_workflow_progress] Unexpected error for {execution_id}: {e}", exc_info=True)
     finally:
         # Unregister connection
         if execution_id in active_connections:
