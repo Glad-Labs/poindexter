@@ -700,6 +700,7 @@ async def list_tasks(
         None, description="Filter by status (queued, pending, running, completed, failed)"
     ),
     category: Optional[str] = Query(None, description="Filter by category"),
+    search: Optional[str] = Query(None, min_length=1, max_length=100, description="Search task_name, topic, or category (case-insensitive)"),
     current_user: dict = Depends(get_current_user_optional),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
@@ -727,7 +728,7 @@ async def list_tasks(
 
         # get_tasks_paginated returns a tuple (tasks, total)
         tasks, total = await db_service.get_tasks_paginated(
-            offset=offset, limit=limit, status=status, category=category
+            offset=offset, limit=limit, status=status, category=category, search=search
         )
 
         # Convert raw task dicts to UnifiedTaskResponse objects if needed

@@ -791,6 +791,7 @@ class TasksDatabase(DatabaseServiceMixin):
         status: Optional[str] = None,
         category: Optional[str] = None,
         user_id: Optional[str] = None,
+        search: Optional[str] = None,
     ) -> tuple[List[Dict[str, Any]], int]:
         """
         Get paginated tasks from content_tasks with optional filtering.
@@ -804,45 +805,45 @@ class TasksDatabase(DatabaseServiceMixin):
         Returns:
             Tuple of (tasks list, total count)
         """
-        builder = ParameterizedQueryBuilder()
+        # Build parameterized WHERE conditions manually to support OR-search
+        params: list = []
+        where_parts: list = []
 
-        # Build WHERE clauses
-        where_clauses = []
-        # Note: owner_id column doesn't exist in schema, skipping user_id filter
         if status:
-            where_clauses.append(("status", SQLOperator.EQ, status))
+            params.append(status)
+            where_parts.append(f"status = ${len(params)}")
         if category:
-            where_clauses.append(("category", SQLOperator.EQ, category))
+            params.append(category)
+            where_parts.append(f"category = ${len(params)}")
+        if search:
+            # Strip to safe chars; wrap in % for ILIKE pattern matching
+            safe_search = "%" + "".join(c for c in search if c.isalnum() or c in " -_") + "%"
+            params.append(safe_search)
+            p = len(params)
+            where_parts.append(f"(task_name ILIKE ${p} OR topic ILIKE ${p} OR category ILIKE ${p})")
 
-        # Build count query
-        count_sql, count_params = builder.select(
-            columns=["COUNT(*) as count"],
-            table="content_tasks",
-            where_clauses=where_clauses if where_clauses else None,
+        where_sql = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
+        count_sql = f"SELECT COUNT(*) FROM content_tasks {where_sql}"
+        p_limit = len(params) + 1
+        p_offset = len(params) + 2
+        sql_list = (
+            f"SELECT * FROM content_tasks {where_sql} "
+            f"ORDER BY created_at DESC LIMIT ${p_limit} OFFSET ${p_offset}"
         )
-
-        # Reset builder for main query
-        builder = ParameterizedQueryBuilder()
-        sql_list, list_params = builder.select(
-            columns=["*"],
-            table="content_tasks",
-            where_clauses=where_clauses if where_clauses else None,
-            order_by=[("created_at", "DESC")],
-            limit=limit,
-            offset=offset,
-        )
+        count_params = params
+        list_params = params + [limit, offset]
 
         try:
             async with self.pool.acquire() as conn:
                 count_result = await conn.fetchval(count_sql, *count_params)
-                total = count_result or 0
+                total = int(count_result or 0)
 
                 rows = await conn.fetch(sql_list, *list_params)
 
                 tasks = [self._convert_row_to_dict(row) for row in rows]
                 logger.info(f"✅ Listed {len(tasks)} tasks (total: {total})")
                 return tasks, total
-        except Exception as e:
+        except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
             logger.error(f"[get_tasks_paginated] Failed to list tasks: {e}", exc_info=True)
             return [], 0
 

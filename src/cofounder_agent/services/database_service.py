@@ -183,9 +183,10 @@ class DatabaseService:
         status: Optional[str] = None,
         category: Optional[str] = None,
         user_id: Optional[str] = None,
+        search: Optional[str] = None,
     ) -> Any:
         """Delegate to tasks module."""
-        return await self.tasks.get_tasks_paginated(offset, limit, status, category, user_id)
+        return await self.tasks.get_tasks_paginated(offset, limit, status, category, user_id, search)
 
     async def get_task_counts(self) -> Any:
         """Delegate to tasks module."""
