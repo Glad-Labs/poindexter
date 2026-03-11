@@ -361,6 +361,7 @@ async def _handle_blog_post_creation(
         "task_name": f"Blog Post: {request.topic}",
         "task_type": "blog_post",
         "topic": request.topic.strip(),
+        "description": request.description,  # Human-written task description (#116)
         "category": request.category or "general",
         "target_audience": request.target_audience or "General",
         "primary_keyword": request.primary_keyword,
@@ -418,6 +419,7 @@ async def _handle_social_media_creation(
         "task_name": f"Social Media: {request.topic}",
         "task_type": "social_media",
         "topic": request.topic.strip(),
+        "description": request.description,  # Human-written task description (#116)
         "category": request.category or "general",
         "tone": request.tone or "professional",
         "style": request.style,
@@ -462,6 +464,7 @@ async def _handle_email_creation(
         "task_name": f"Email: {request.topic}",
         "task_type": "email",
         "topic": request.topic.strip(),
+        "description": request.description,  # Human-written task description (#116)
         "category": request.category or "general",
         "tone": request.tone or "professional",
         "model_selections": request.models_by_phase or {},
@@ -499,6 +502,7 @@ async def _handle_newsletter_creation(
         "task_name": f"Newsletter: {request.topic}",
         "task_type": "newsletter",
         "topic": request.topic.strip(),
+        "description": request.description,  # Human-written task description (#116)
         "category": request.category or "general",
         "model_selections": request.models_by_phase or {},
         "quality_preference": request.quality_preference or "balanced",
@@ -535,6 +539,7 @@ async def _handle_business_analytics_creation(
         "task_name": f"Analytics: {request.topic}",
         "task_type": "business_analytics",
         "topic": request.topic.strip(),
+        "description": request.description,  # Human-written task description (#116)
         "category": request.category or "general",
         "model_selections": request.models_by_phase or {},
         "quality_preference": request.quality_preference or "balanced",
@@ -576,6 +581,7 @@ async def _handle_data_retrieval_creation(
         "task_name": f"Data Retrieval: {request.topic}",
         "task_type": "data_retrieval",
         "topic": request.topic.strip(),
+        "description": request.description,  # Human-written task description (#116)
         "category": request.category or "general",
         "model_selections": request.models_by_phase or {},
         "status": "pending",
@@ -615,6 +621,7 @@ async def _handle_market_research_creation(
         "task_name": f"Market Research: {request.topic}",
         "task_type": "market_research",
         "topic": request.topic.strip(),
+        "description": request.description,  # Human-written task description (#116)
         "category": request.category or "general",
         "model_selections": request.models_by_phase or {},
         "quality_preference": request.quality_preference or "balanced",
@@ -651,6 +658,7 @@ async def _handle_financial_analysis_creation(
         "task_name": f"Financial Analysis: {request.topic}",
         "task_type": "financial_analysis",
         "topic": request.topic.strip(),
+        "description": request.description,  # Human-written task description (#116)
         "category": request.category or "general",
         "model_selections": request.models_by_phase or {},
         "quality_preference": request.quality_preference or "balanced",
@@ -921,7 +929,10 @@ async def get_task_status(
         return {
             "task_id": task_id,
             "status": task.get("status", "unknown"),
-            "progress": task.get("progress", 0),
+            # Use `percentage` (the canonical progress column) not `progress` JSONB (#114).
+            # The `progress` JSONB column exists but is never populated; `percentage` tracks
+            # completion as an integer 0-100.
+            "progress": task.get("percentage", 0),
             "error_message": task.get("error_message"),
         }
     except HTTPException:

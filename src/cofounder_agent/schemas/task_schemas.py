@@ -87,6 +87,11 @@ class UnifiedTaskRequest(BaseModel):
     filters: Optional[Dict[str, Any]] = Field(None, description="Data filters and query parameters")
 
     # COMMON OPTIONAL
+    description: Optional[str] = Field(
+        None,
+        description="Human-written task description (distinct from AI-generated excerpt). Useful for campaign briefs, e.g. 'Write a blog post about X for our Q1 campaign'.",
+        max_length=1000,
+    )
     category: Optional[str] = Field("general", description="Content category", max_length=50)
     target_audience: Optional[str] = Field(
         "General",

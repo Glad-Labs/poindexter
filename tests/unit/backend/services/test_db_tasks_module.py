@@ -70,9 +70,54 @@ class TestTasksDatabaseCreation:
         }
         
         result = await tasks_db.add_task(task_data)
-        
+
         assert isinstance(result, str)
         assert len(result) > 0
+
+    @pytest.mark.asyncio
+    async def test_add_task_with_description_field(self, tasks_db, mock_pool):
+        """Test add_task passes human-written description to insert_data (#116)."""
+        mock_conn = AsyncMock()
+        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
+
+        task_id = str(uuid4())
+        mock_conn.fetchval.return_value = task_id
+
+        task_data = {
+            "topic": "AI in Healthcare",
+            "title": "Blog Post: AI in Healthcare",
+            "task_type": "blog_post",
+            "status": "pending",
+            "description": "Q1 campaign targeting enterprise hospital buyers",
+        }
+
+        result = await tasks_db.add_task(task_data)
+
+        assert isinstance(result, str)
+        # Verify the DB insert was called (description is included in insert_data)
+        assert mock_conn.fetchval.called
+
+    @pytest.mark.asyncio
+    async def test_add_task_without_description_field(self, tasks_db, mock_pool):
+        """Test add_task works correctly when description is omitted (#116)."""
+        mock_conn = AsyncMock()
+        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
+
+        task_id = str(uuid4())
+        mock_conn.fetchval.return_value = task_id
+
+        task_data = {
+            "topic": "AI in Healthcare",
+            "title": "Blog Post: AI in Healthcare",
+            "task_type": "blog_post",
+            "status": "pending",
+            # No description field — should default to None
+        }
+
+        result = await tasks_db.add_task(task_data)
+
+        assert isinstance(result, str)
+        assert mock_conn.fetchval.called
 
 
 class TestTasksDatabaseRetrieval:

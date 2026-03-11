@@ -367,6 +367,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 "request_type": task_data.get("request_type", "content_generation"),
                 "status": task_data.get("status", "pending"),
                 "topic": task_data.get("topic", ""),
+                "description": task_data.get("description"),  # Human-written task description (#116)
                 "title": task_data.get("title")
                 or task_data.get("task_name"),  # Support both title and task_name
                 # CRITICAL: Don't override user selections - trust Pydantic schema defaults
@@ -399,6 +400,12 @@ class TasksDatabase(DatabaseServiceMixin):
                 "stage": metadata.get("stage", "pending"),
                 "percentage": metadata.get("percentage", 0),
                 "message": metadata.get("message"),
+                # NOTE (#114): The `progress` JSONB column exists in the schema but is intentionally
+                # not populated on insert. Progress is tracked via the dedicated scalar columns
+                # `stage`, `percentage`, and `message` which are simpler and indexed.
+                # The `result` JSONB column IS populated via update_task_status() after execution.
+                # Do not remove either column — `result` is written post-execution and `progress`
+                # may be used for structured phase-level tracking in a future iteration.
                 "tags": json.dumps(task_data.get("tags", [])),
                 "task_metadata": json.dumps(metadata or {}),
                 "model_used": task_data.get("model_used"),
@@ -659,6 +666,10 @@ class TasksDatabase(DatabaseServiceMixin):
         # Handle task_name -> title mapping
         if "task_name" in normalized_updates and "title" not in normalized_updates:
             normalized_updates["title"] = normalized_updates.pop("task_name")
+
+        # Normalize description from task_metadata if not already provided (#116)
+        if "description" not in normalized_updates and "description" in task_metadata:
+            normalized_updates["description"] = task_metadata.get("description")
 
         # Extract specific fields to dedicated columns
         if task_metadata:
