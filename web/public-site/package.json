@@ -19,6 +19,7 @@
   "dependencies": {
     "@sentry/nextjs": "^10.42.0",
     "@vercel/analytics": "^1.6.1",
+    "@vercel/speed-insights": "^2.0.0",
     "cross-env": "^7.0.3",
     "date-fns": "^4.1.0",
     "gray-matter": "^4.0.3",
